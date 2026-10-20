@@ -1,6 +1,6 @@
 # Install on a small server
 
-The core shape runs Mantle on a 2 vCPU / 4 GB server by leaving out the parts a small box cannot carry.
+The core shape runs MantleOS on a 2 vCPU / 4 GB server by leaving out the parts a small box cannot carry.
 
 | Keeps | Leaves out |
 |---|---|

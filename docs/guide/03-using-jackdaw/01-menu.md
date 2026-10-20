@@ -1,6 +1,6 @@
 # The menu
 
-Every item in the Jackdaw menu and what it is for. Each item links to its screen help.
+Every item in the app's menu and what it is for. Each item links to its screen help.
 
 ## Find your way
 

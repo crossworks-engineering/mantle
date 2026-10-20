@@ -9,7 +9,7 @@ Toolsmith is the agent that reads an outside service's API docs, builds tools fo
 
 ## Ask for a tool
 
-1. Open the assistant in Jackdaw (or message it on Telegram).
+1. Open the assistant in the app (or message it on Telegram).
 2. Describe the goal, the docs and who should get the tool:
 
    > Read the OpenWeather docs at https://openweathermap.org/api and build a tool that takes a city and returns the 5-day forecast. Grant it to my assistant.
@@ -30,7 +30,7 @@ Toolsmith also lists, retests, fixes and retires tools you already have. Ask it.
 
 ## From Claude Code
 
-The same tools are on the MCP server: `api_tool_create`, `api_tool_test`, `tool_group_ensure`, `agent_grant_tool_group` and the rest. Connected Claude Code runs the whole loop on your Claude subscription, with no model cost on your Mantle ([Connect Claude over MCP](01-connect-claude.md)). To make these tools read only over MCP, set `MANTLE_MCP_TOOLSMITH_WRITE=0` on the server.
+The same tools are on the MCP server: `api_tool_create`, `api_tool_test`, `tool_group_ensure`, `agent_grant_tool_group` and the rest. Connected Claude Code runs the whole loop on your Claude subscription, with no model cost on your MantleOS ([Connect Claude over MCP](01-connect-claude.md)). To make these tools read only over MCP, set `MANTLE_MCP_TOOLSMITH_WRITE=0` on the server.
 
 ## Safety
 

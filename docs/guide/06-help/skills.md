@@ -32,7 +32,7 @@ At each turn the agent's own prompt and its attached skills are put together
 in a fixed order; Studio shows the exact result. Studio also keeps each
 skill's history, with a diff and a revert.
 
-The default skills come from the system manifest. When Mantle is updated their
+The default skills come from the system manifest. When MantleOS is updated their
 text is replaced with the shipped version, so an edit to a default skill does
 not last; write your own skill instead. Skills you write yourself are never
 overwritten. The Toolsmith writes integration skills with `api_skill_set`.

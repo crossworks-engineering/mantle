@@ -5,7 +5,7 @@ toolGroups: [email, memory-core]
 
 ## Email
 
-Email shows the mail Mantle has taken in, by account and folder. It is also part of the brain, so the assistant can answer from it.
+Email shows the mail MantleOS has taken in, by account and folder. It is also part of the brain, so the assistant can answer from it.
 
 - Pick an account and a folder, then switch between **All mail** and **Unread**.
 - Click a message to read it in the reading pane.

@@ -2,7 +2,7 @@
 
 Have the assistant build a small app for you, try it, refine it, then make it live and share it.
 
-An app is a small single-purpose screen: a tip calculator, a job sheet, a stock count, a dashboard. The **Appsmith** agent writes the code. It runs in a sealed sandbox inside Jackdaw, in your theme.
+An app is a small single-purpose screen: a tip calculator, a job sheet, a stock count, a dashboard. The **Appsmith** agent writes the code. It runs in a sealed sandbox inside MantleOS, in your theme.
 
 ## Build an app
 

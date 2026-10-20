@@ -1,18 +1,18 @@
 # Build apps from an MCP client
 
-Claude Code or Claude Desktop can build a Mantle mini-app for you, end to end, over MCP.
+Claude Code or Claude Desktop can build a MantleOS mini-app for you, end to end, over MCP.
 
-A mini-app is a small React (TSX) app that Mantle bundles and runs in a sandboxed frame under **Apps**. It reaches your data only through the tools you allow it, and it can keep its own small SQLite database.
+A mini-app is a small React (TSX) app that MantleOS bundles and runs in a sandboxed frame under **Apps**. It reaches your data only through the tools you allow it, and it can keep its own small SQLite database.
 
 ## Before you start
 
-Claude is connected to your Mantle ([Connect Claude over MCP](01-connect-claude.md)).
+Claude is connected to your brain ([Connect Claude over MCP](01-connect-claude.md)).
 
 ## Ask Claude
 
 Tell Claude what you want, for example:
 
-> Build me a Mantle app that lists my open tasks by due date. Read the app authoring guide first.
+> Build me a MantleOS app that lists my open tasks by due date. Read the app authoring guide first.
 
 Claude then works through these tools:
 
@@ -28,7 +28,7 @@ Every edit lands in the draft. The published app does not change until `app_publ
 
 ## Check it worked
 
-Open **Apps** in Jackdaw and pick the app. The preview shows the draft build. After publishing, the live app shows the same.
+Open **Apps** in the app and pick the app. The preview shows the draft build. After publishing, the live app shows the same.
 
 ## If it fails
 
@@ -38,5 +38,5 @@ Open **Apps** in Jackdaw and pick the app. The preview shows the draft build. Af
 ## Next
 
 - The full reference Claude reads: [App authoring guide](../../app-authoring-guide.md).
-- [Apps](../03-using-jackdaw/10-apps.md): edit, publish and share in Jackdaw.
+- [Apps](../03-using-jackdaw/10-apps.md): edit, publish and share in the app.
 - [Member home apps](07-member-home-apps.md)

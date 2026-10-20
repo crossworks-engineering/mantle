@@ -6,7 +6,7 @@ toolGroups: []
 ## Team Portal
 
 The team portal and its team codes are retired. Old codes no longer work,
-and Jackdaw no longer shows this screen in the menu.
+and the app no longer shows this screen in the menu.
 
 Your team signs in with its own logins:
 

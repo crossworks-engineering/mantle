@@ -1,6 +1,6 @@
-# How Mantle remembers
+# How MantleOS remembers
 
-Everything you add to Mantle becomes memory on its own: you add it, and the brain reads it, indexes it and learns from it. There is no index button.
+Everything you add to MantleOS becomes memory on its own: you add it, and the brain reads it, indexes it and learns from it. There is no index button.
 
 ## What happens when something arrives
 

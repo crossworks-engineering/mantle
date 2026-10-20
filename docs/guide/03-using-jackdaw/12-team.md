@@ -15,7 +15,7 @@ Members chat with the assistant of the Team workspace. Set one on the Team works
 1. Open **Settings > Logins** and click **Invite**.
 2. Enter the email and, if you like, a name.
 3. Click **Create invite** and copy the **Invite link**.
-4. Send the link to the person yourself. Jackdaw does not email it.
+4. Send the link to the person yourself. MantleOS does not email it.
 5. They open it, set a password, and are signed in.
 
 An invite link works once and expires after 72 hours. A new invite for the same person replaces the old link. Open invites are listed at the top of **Settings > Logins**: select one to **Revoke** it or make a **New link**.

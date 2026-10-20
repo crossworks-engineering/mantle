@@ -1,6 +1,6 @@
 # Add a domain and HTTPS
 
-Point a domain at your server and Mantle gets a free Let's Encrypt certificate by itself.
+Point a domain at your server and MantleOS gets a free Let's Encrypt certificate by itself.
 
 ## Get a domain
 
@@ -57,13 +57,13 @@ Open `https://brain.example.com`. The certificate is issued on the first request
 ## If it fails
 
 - **The domain points somewhere else, or nowhere yet**: the installer offers to re-check, start on plain HTTP for now, or stop. A silent install falls back to HTTP. Fix the DNS record, then run the `--domain` command above again.
-- **Port 80 or 443 is taken by nginx or Apache**: free the ports, or keep your web server in front of Mantle:
+- **Port 80 or 443 is taken by nginx or Apache**: free the ports, or keep your web server in front of MantleOS:
 
   ```bash
   bash scripts/install.sh --behind-proxy --domain brain.example.com
   ```
 
-  Mantle then serves plain HTTP on `127.0.0.1:8080` (or the next free port). Point your web server at that address, forward the `Host` header, and let it handle HTTPS. `--behind-proxy` needs `--domain`: share and email links use that name. Without it the installer asks for the domain, and a `-y` install stops.
+  MantleOS then serves plain HTTP on `127.0.0.1:8080` (or the next free port). Point your web server at that address, forward the `Host` header, and let it handle HTTPS. `--behind-proxy` needs `--domain`: share and email links use that name. Without it the installer asks for the domain, and a `-y` install stops.
 - **You want to drop the domain**: run `bash scripts/install.sh --lan -y` for HTTP on the network, or `--localhost` for this machine only.
 
 ## Next

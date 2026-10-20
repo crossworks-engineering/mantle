@@ -1,6 +1,6 @@
 # Install without the script
 
-Fill in `.env` yourself and start Mantle with Docker Compose.
+Fill in `.env` yourself and start MantleOS with Docker Compose.
 
 ## Before you start
 

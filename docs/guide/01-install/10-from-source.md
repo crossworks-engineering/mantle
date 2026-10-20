@@ -1,6 +1,6 @@
 # Run from source
 
-Run the brain from a git checkout and the owner UI from the jackdaw repo, for working on Mantle itself.
+Run the brain from a git checkout and the owner UI from the jackdaw repo, for working on MantleOS itself.
 
 This repo is the brain only: it serves the API on `http://localhost:3000` and has no screens. For everyday use, install on a [server](03-server.md) instead. A laptop sleeps, so email sync and reminders stop with it.
 

@@ -1,12 +1,12 @@
 # API console
 
-The API console runs any Mantle call in place, and turns an HTTP request to an outside API into a tool your agents can use. Open it at **System > API Console**.
+The API console runs any MantleOS call in place, and turns an HTTP request to an outside API into a tool your agents can use. Open it at **System > API Console**.
 
 ## What the library holds
 
 | List | What it is | How a call runs |
 | --- | --- | --- |
-| **Built-in API** | Every Mantle `/api/` route, with example bodies | As you, in the browser |
+| **Built-in API** | Every MantleOS `/api/` route, with example bodies | As you, in the browser |
 | **Built-in MCP** | The tools an MCP client sees, read live from the MCP server | Through the real MCP server |
 | **Agent tools** | Every tool in your tool registry | Through the same dispatcher agents use |
 
@@ -30,7 +30,7 @@ Example: a driving-time tool on Mapbox.
 7. Turn on **Requires operator confirm** for a tool that changes, pays or sends something. Each call then waits under **Pending**.
 8. Press **Create tool**.
 
-The key never reaches the model or the browser. Mantle fills `{{secret:mapbox/default}}` at call time and scrubs it from results.
+The key never reaches the model or the browser. MantleOS fills `{{secret:mapbox/default}}` at call time and scrubs it from results.
 
 ## Give the tool to an agent
 

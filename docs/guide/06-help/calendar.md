@@ -13,7 +13,7 @@ Calendars subscribes to outside calendars by their iCal (.ics) link, so their ev
 
 Each row shows the event count and the last sync time. Use the sync button to pull now.
 
-Subscriptions are read-only. Nothing is written back to the source, and an edit made in Mantle is overwritten at the next sync. Change those events where they live.
+Subscriptions are read-only. Nothing is written back to the source, and an edit made in MantleOS is overwritten at the next sync. Change those events where they live.
 
 ## Assistant
 
@@ -28,5 +28,5 @@ New events the assistant makes go into your own calendar in Events, not into a s
 - Every enabled calendar syncs every two minutes.
 - Synced events are normal event nodes, tagged with the calendar's name. Events removed from the feed are removed here.
 - If a sync fails, the last good events stay and the row shows the error.
-- Synced events get no Mantle reminder. The source calendar sends its own.
+- Synced events get no MantleOS reminder. The source calendar sends its own.
 - A secret iCal link lets anyone who has it read the calendar. Treat it like a password.

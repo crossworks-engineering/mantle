@@ -5,13 +5,13 @@ toolGroups: [federation]
 
 ## Peers
 
-Peers are other people's Mantles, and this screen sets what each one may read
+Peers are other people's MantleOS brains, and this screen sets what each one may read
 from yours. Each brain stays separate; a peer can only ask yours questions
 about what you shared with it. A new peer sees nothing.
 
 To connect one:
 
-1. Under **Connect a Mantle**, enter a **Display name** and the peer's
+1. Under **Connect another brain**, enter a **Display name** and the peer's
    **Base URL**, then press **Add peer**.
 2. Copy **Your token for them**. It is shown once. Send it to the other owner.
 3. Paste the token they give you to finish pairing.
@@ -28,7 +28,7 @@ or with a public link or a contact share. Change those in the app.
 
 ## Assistant
 
-- "Does her Mantle have the insurance renewal date?"
+- "Does her brain have the insurance renewal date?"
 - "Ask the accountant's brain for last year's filing."
 
 Answers come from the peer's data as it is now, and say which peer they came

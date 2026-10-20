@@ -1,8 +1,8 @@
 # The HTTP API
 
-Mantle's public HTTP API lives under `/api/v1`. It is a versioned contract: a route there keeps its shape, and a breaking change ships as `/api/v2`. Version 1 stays for at least six months after version 2 ships.
+MantleOS's public HTTP API lives under `/api/v1`. It is a versioned contract: a route there keeps its shape, and a breaking change ships as `/api/v2`. Version 1 stays for at least six months after version 2 ships.
 
-The other `/api/` routes are the ones Jackdaw itself calls. They can change with any release. Use `/api/v1`, or MCP ([Connect Claude over MCP](01-connect-claude.md)), for anything you build.
+The other `/api/` routes are the ones the app itself calls. They can change with any release. Use `/api/v1`, or MCP ([Connect Claude over MCP](01-connect-claude.md)), for anything you build.
 
 ## Authenticate
 
@@ -57,7 +57,7 @@ curl -s "https://example.com/api/v1/search?q=invoice&ws=<workspace id>" \
   -H "Authorization: Bearer mtlk_..."
 ```
 
-**System > API Console** shows example bodies for the routes Jackdaw uses ([API console](04-api-console.md)).
+**System > API Console** shows example bodies for the routes the app uses ([API console](04-api-console.md)).
 
 ## Errors
 

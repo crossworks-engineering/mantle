@@ -1,4 +1,4 @@
-# Uninstall Mantle
+# Uninstall MantleOS
 
 Remove the stack and keep your data, or erase everything. Run the commands in the stack directory (the folder with `docker-compose.yml` and `.env`).
 
@@ -32,7 +32,7 @@ This also deletes the data directory and `.env`. That is the brain itself and `M
 
 | Option | What it does |
 |---|---|
-| `--images` | Also removes the downloaded Mantle images (about 4 GB). |
+| `--images` | Also removes the downloaded MantleOS images (about 4 GB). |
 | `--data-dir <path>` | Use this data directory instead of the one in `.env`. |
 | `--stack-dir <path>` | Where `docker-compose.yml` lives, when you run the script from elsewhere. |
 | `-y` | Skip the confirmation. With `--purge` this deletes everything without asking. |
@@ -43,7 +43,7 @@ This also deletes the data directory and `.env`. That is the brain itself and `M
 docker ps -a --filter name=mantle_
 ```
 
-No Mantle containers are listed.
+No MantleOS containers are listed.
 
 ## Next
 

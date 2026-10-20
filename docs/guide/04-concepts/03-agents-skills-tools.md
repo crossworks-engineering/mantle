@@ -6,7 +6,7 @@ An agent is an assistant, a tool is an action it can take, and a skill is know-h
 
 An agent has a name, a personality, a model, the tool groups it may use and the skills it follows. Each agent keeps its own conversation, but reads the same memory.
 
-- **The assistant** is the one you talk to, in Jackdaw and on Telegram.
+- **The assistant** is the one you talk to, in the app and on Telegram.
 - **Specialists** do one job well, for example Researcher (cited web answers), Toolsmith (builds tools for outside APIs) and Appsmith (builds apps). The assistant hands them work and uses the result. This is called delegation.
 - **AI workers** run in the background. They summarise, pull out facts, transcribe voice and read images. You never talk to them.
 

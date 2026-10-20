@@ -1,10 +1,10 @@
-# Desktop app
+# MantleOS Desktop
 
-Jackdaw for Linux, macOS and Windows opens a brain that is already installed. It adds desktop notifications and a tray icon, and can hold several brains.
+MantleOS Desktop, for Linux, macOS and Windows, opens a brain that is already installed. It adds desktop notifications and a tray icon, and can hold several brains.
 
 ## Install
 
-Download the installer for your system from the [Jackdaw releases page](https://github.com/crossworks-engineering/jackdaw/releases):
+Download the installer for your system from the [MantleOS Desktop releases page](https://github.com/crossworks-engineering/jackdaw/releases):
 
 | System | File |
 |---|---|
@@ -12,7 +12,7 @@ Download the installer for your system from the [Jackdaw releases page](https://
 | macOS (Apple Silicon) | `.dmg` or `.zip` |
 | Windows | `Setup.exe` |
 
-On macOS, drag **Jackdaw** to **Applications**, then open it. The Mac app is signed and notarized by Apple, so it opens with no warning.
+On macOS, drag the app to **Applications**, then open it. Finder still names it **Jackdaw**. The Mac app is signed and notarized by Apple, so it opens with no warning.
 
 On Windows, the installer is not signed. If SmartScreen says **Windows protected your PC**, click **More info**, then **Run anyway**.
 
@@ -26,7 +26,7 @@ xattr -dr com.apple.quarantine /Applications/Jackdaw.app
 
 ## Connect to your brain
 
-1. Open Jackdaw. The **Connect to your Mantle** screen appears.
+1. Open MantleOS Desktop. The **Connect to your MantleOS brain** screen appears.
 2. Type your brain's address, the same one you open in a browser, and click **Connect**. A bare name such as `brain.example.com` gets `https://` added. For a brain on plain HTTP, type `http://` in front.
 3. Sign in with your usual email and password.
 
@@ -42,7 +42,7 @@ The app checks for a new version at launch and every 4 hours, downloads it in th
 
 ## If it fails
 
-- **Couldn't reach a Mantle server at …**: open the same address in a browser. If that fails too, the server is down or the address is wrong.
+- **Couldn't reach a MantleOS server at …**: open the same address in a browser. If that fails too, the server is down or the address is wrong.
 - **macOS says the app is damaged**: you have a build up to 0.6.252. Download the newest release.
 
 ## Next

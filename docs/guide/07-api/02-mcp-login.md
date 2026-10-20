@@ -1,6 +1,6 @@
 # MCP as a login
 
-Let a team member, another admin or another Mantle use your brain from an MCP client, with that login's own rights and nothing more.
+Let a team member, another admin or another MantleOS brain use your brain from an MCP client, with that login's own rights and nothing more.
 
 The connector URL is the same one the owner uses, and every login gets the same tools. Each call runs in the workspaces of the login that connected: it reads what those workspaces hold, and changes only what that login may change there. A login has no MCP permission of its own to switch on or off.
 
@@ -8,7 +8,7 @@ The connector URL is the same one the owner uses, and every login gets the same 
 | ----------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
 | An admin          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
 | A member          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
-| A peer Mantle     | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
+| A peer brain        | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
 
 ## Before you start
 
@@ -82,11 +82,11 @@ A peer with **Write** on may not change the content of a page or a note others r
 - The person disconnecting that client in their own **Settings > MCP**, or revoking a key.
 - Turning an app's **MCP access** off ends MCP on that app, for everyone.
 
-Turning the whole connector off in **Settings > MCP** is a pause, not an end. While it is off no client can call Mantle or renew its sign-in. Turning it on again brings every sign-in back that has not expired.
+Turning the whole connector off in **Settings > MCP** is a pause, not an end. While it is off no client can call MantleOS or renew its sign-in. Turning it on again brings every sign-in back that has not expired.
 
 ## Check it worked
 
-In the person's client, the Mantle tool list holds the tools their workspaces allow, plus `app_data_list`, `app_data_schema` and `app_data_query` (and `app_data_write` on a connection that may write). A client that signed in also shows under **Connected clients** in **Settings > MCP**.
+In the person's client, the MantleOS tool list holds the tools their workspaces allow, plus `app_data_list`, `app_data_schema` and `app_data_query` (and `app_data_write` on a connection that may write). A client that signed in also shows under **Connected clients** in **Settings > MCP**.
 
 ## Next
 

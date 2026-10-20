@@ -4,7 +4,7 @@ title: Local network
 
 ## Local network
 
-Local network joins this Mantle to your Tailscale network, so it can use a machine you own that is not on the public internet, such as a GPU box at home running a local model.
+Local network joins this brain to your Tailscale network, so it can use a machine you own that is not on the public internet, such as a GPU box at home running a local model.
 
 1. Under **Activate Tailscale**, paste an **Auth key** from your Tailscale admin console and set a **Device name**.
 2. Click **Save key**, then **Activate**.

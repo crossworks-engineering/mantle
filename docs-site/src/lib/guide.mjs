@@ -17,12 +17,12 @@ const GITHUB_BLOB = 'https://github.com/crossworks-engineering/mantle/blob/main/
 /**
  * The public sections, in sidebar order. Only these folders are published:
  * anything else under docs/guide stays in the app and the brain only.
- * `06-help` (the screen help) is shown inside "Using Jackdaw".
+ * `06-help` (the screen help) is shown inside "Using MantleOS".
  */
 export const SECTIONS = [
   { dir: '01-install', label: 'Install' },
   { dir: '02-first-steps', label: 'First steps' },
-  { dir: '03-using-jackdaw', label: 'Using Jackdaw' },
+  { dir: '03-using-jackdaw', label: 'Using MantleOS' },
   { dir: '06-help', label: 'Screen help', parent: '03-using-jackdaw' },
   { dir: '04-concepts', label: 'Concepts' },
   { dir: '05-admin', label: 'Admin and self-hosting' },
@@ -172,16 +172,16 @@ export function changelogPages() {
   const pages = [...byMinor.entries()].map(([minor, entries]) => ({
     id: `changelog/v${minor.replace('.', '-')}`,
     title: `Release ${minor}`,
-    description: `Changes in Mantle ${minor}.x.`,
+    description: `Changes in MantleOS ${minor}.x.`,
     body: rewriteLinks(entries.join('\n\n'), 'CHANGELOG.md'),
     minor,
   }));
   const index = {
     id: 'changelog',
     title: 'Changelog',
-    description: 'What changed in each Mantle release, newest first.',
+    description: 'What changed in each MantleOS release, newest first.',
     body:
-      'What changed in each Mantle release, newest first.\n\n' +
+      'What changed in each MantleOS release, newest first.\n\n' +
       pages.map((p) => `- [${p.minor}](${hrefFor(p.id)})`).join('\n') +
       '\n',
   };
@@ -210,7 +210,7 @@ export function mcpToolsPage() {
     return cell(m ? m[1] : d);
   };
   let body =
-    `Every tool the Mantle MCP server offers, ${tools.length} in all, made from the server code at build. ` +
+    `Every tool the MantleOS MCP server offers, ${tools.length} in all, made from the server code at build. ` +
     'A login sees only the tools its access allows. See [Connect Claude over MCP](/api/connect-claude/).\n';
   for (const [prefix, list] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     body += `\n## ${prefix}\n\n| Tool | What it does |\n|---|---|\n`;
@@ -219,7 +219,7 @@ export function mcpToolsPage() {
   return {
     id: 'api/mcp-tools',
     title: 'MCP tools',
-    description: 'Every tool the Mantle MCP server offers.',
+    description: 'Every tool the MantleOS MCP server offers.',
     body,
   };
 }

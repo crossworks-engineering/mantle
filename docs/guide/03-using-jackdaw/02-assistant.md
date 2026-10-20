@@ -1,6 +1,6 @@
 # The assistant
 
-Talk to your brain in Jackdaw: type or speak, attach files, and keep or start chats.
+Talk to your brain in the app: type or speak, attach files, and keep or start chats.
 
 ## Open it
 

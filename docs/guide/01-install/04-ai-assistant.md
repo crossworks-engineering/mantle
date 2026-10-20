@@ -25,8 +25,8 @@ Some assistants can also control your screen. A chat-only assistant (Claude, Cha
 2. Paste this prompt. Change the IP address and the domain first, or delete the domain line to install without one.
 
    ```text
-   Install Mantle on my server.
-   Read https://mantle-ai.tech/ai-install.md first and follow it.
+   Install MantleOS on my server.
+   Read https://mantleos.io/ai-install.md first and follow it.
 
    - Server: ssh root@203.0.113.10
    - Domain: brain.example.com (check that it resolves to the server's IP first)
@@ -46,7 +46,7 @@ Read each command before you approve it. Never paste your OpenRouter key or a pa
 
 ## Check it worked
 
-The assistant reports **Installation complete** and an address. That address opens the Jackdaw sign-up screen.
+The assistant reports **Installation complete** and an address. That address opens the MantleOS sign-up screen.
 
 ## If it fails
 

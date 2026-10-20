@@ -59,7 +59,7 @@ Never share the other file, `id_ed25519`. It is the private half.
 
    Type `yes` the first time, to trust the server.
 
-4. Install Docker, which Mantle runs in:
+4. Install Docker, which MantleOS runs in:
 
    ```bash
    curl -fsSL https://get.docker.com | sh

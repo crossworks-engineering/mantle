@@ -4,7 +4,7 @@ title: Appearance
 
 ## Appearance
 
-Appearance sets how Jackdaw looks. Most choices apply as you click.
+Appearance sets how MantleOS looks. Most choices apply as you click.
 
 - **Mode**: Light, Dark or System.
 - **Color theme**: pick one of about forty full palettes. Type in the filter box to find one by name.

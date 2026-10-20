@@ -27,7 +27,7 @@ Backups run only while the stack is up.
 
 ## Copy backups off the box
 
-Mantle writes backups to the box only. Copy them somewhere else with the tool you trust. One `rsync` of `data/` without `data/postgres/` covers the scheduled dumps, your files and the attachments:
+MantleOS writes backups to the box only. Copy them somewhere else with the tool you trust. One `rsync` of `data/` without `data/postgres/` covers the scheduled dumps, your files and the attachments:
 
 ```bash
 rsync -a --exclude postgres/ /opt/mantle/data/ backup-host.example.com:mantle-data/
@@ -80,5 +80,5 @@ Sign in and open a few recent items and files.
 
 ## Next
 
-- [Update Mantle](01-update.md)
+- [Update MantleOS](01-update.md)
 - [Security](10-security.md)

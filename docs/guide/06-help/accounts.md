@@ -5,7 +5,7 @@ toolGroups: [email]
 
 ## Email accounts
 
-Email accounts connects your mailboxes and sets which folders Mantle reads.
+Email accounts connects your mailboxes and sets which folders MantleOS reads.
 
 1. Click **Add**, then fill in the IMAP form.
 2. Enter the **Email address**, **IMAP host**, **Port** (993 for TLS) and an **App password**.
@@ -22,7 +22,7 @@ Only mail from your contacts and your own addresses is taken in. A new account w
 - "Did anything come in from the supplier today?"
 - "Email Sam the revised quote."
 
-Mail is sent from your own address through your provider. Mantle runs no mail server.
+Mail is sent from your own address through your provider. MantleOS runs no mail server.
 
 ## Technical
 

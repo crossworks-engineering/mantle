@@ -1,6 +1,6 @@
 # Use local models
 
-Run chat models on your own machine and point agents or workers at them, even when Mantle runs on a cloud server. A bundled Tailscale connection reaches the machine without opening ports on your router.
+Run chat models on your own machine and point agents or workers at them, even when MantleOS runs on a cloud server. A bundled Tailscale connection reaches the machine without opening ports on your router.
 
 ## Before you start
 
@@ -18,13 +18,13 @@ A tailnet is your private Tailscale network.
 
 The **Connect a device** guide on **Settings > Local network** walks through these steps per platform.
 
-## Connect Mantle
+## Connect MantleOS
 
 1. Open **Settings > Local network**.
 2. Paste the key into **Auth key** and click **Save key**.
 3. Click **Activate**.
 
-Mantle joins your tailnet. Your model machine appears under **Reachable devices**.
+MantleOS joins your tailnet. Your model machine appears under **Reachable devices**.
 
 ## Point a route at the model
 
@@ -34,7 +34,7 @@ Mantle joins your tailnet. Your model machine appears under **Reachable devices*
 4. Switch on **Reach via Tailscale**.
 5. Pick the model and save.
 
-If Mantle and the model machine share a local network, you can leave **Reach via Tailscale** off and use the machine's local address.
+If MantleOS and the model machine share a local network, you can leave **Reach via Tailscale** off and use the machine's local address.
 
 Give the route a cloud model as its backup, so replies keep coming when the machine is off. See [Models and API keys](05-models-and-keys.md).
 

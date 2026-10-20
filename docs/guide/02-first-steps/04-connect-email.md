@@ -24,7 +24,7 @@ The first sync starts within two minutes.
 ## Let mail in with contacts
 
 1. Open **Contacts** and add a person with their email address. An entry can also be a whole domain, such as `@example.com`, for everyone there.
-2. Mantle brings in that sender's mail from now on, and also fetches their last 90 days or so.
+2. MantleOS brings in that sender's mail from now on, and also fetches their last 90 days or so.
 
 To find who has been writing to you, open **Discover**. It lists recent senders who are not contacts yet. Click **Add as contact** to let one in.
 

@@ -1,6 +1,6 @@
-# Update Mantle
+# Update MantleOS
 
-Update from **Settings > Updates** in Jackdaw with one click, or from the stack directory with two commands.
+Update from **Settings > Updates** in the app with one click, or from the stack directory with two commands.
 
 ## Before you start
 
@@ -8,7 +8,7 @@ Update from **Settings > Updates** in Jackdaw with one click, or from the stack 
 - Read the release notes when the version jumps more than a patch.
 - Expect about a minute of downtime. A reply in progress stops and needs a reload.
 
-## Update from Jackdaw
+## Update from the app
 
 1. Open **Settings > Updates**.
 2. Click **Check now**.
@@ -17,7 +17,7 @@ Update from **Settings > Updates** in Jackdaw with one click, or from the stack 
 
 The updater takes a full backup into `backups/pre-roll/` in the stack directory before it changes anything. If the backup fails, or the disk is too full for it, the update is refused and nothing changes. It keeps the newest 3 of these backups.
 
-An update moves the server and the Jackdaw interface together, to a pair tested as one. The **Interface** section can move the interface alone with **Update interface to**.
+An update moves the server and the web app together, to a pair tested as one. The **Interface** section can move the interface alone with **Update interface to**.
 
 ## Update from the command line
 

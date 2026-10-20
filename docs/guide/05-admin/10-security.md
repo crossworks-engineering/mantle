@@ -1,6 +1,6 @@
 # Keep a box secure
 
-A Mantle box exposes one front door, and its secrets live in `.env`. This page lists what is exposed, what leaves the box and what to keep safe.
+A MantleOS box exposes one front door, and its secrets live in `.env`. This page lists what is exposed, what leaves the box and what to keep safe.
 
 ## What is exposed
 
@@ -43,7 +43,7 @@ The installer generates these, and re-running it never replaces an existing key.
 
 ## The updater
 
-The updater container controls Docker on the host. It opens no ports and accepts only two requests from Jackdaw: update to a version, or switch an optional service. If you do not want that, stop the `updater` service and update from the command line. See [Update Mantle](01-update.md).
+The updater container controls Docker on the host. It opens no ports and accepts only two requests from the app: update to a version, or switch an optional service. If you do not want that, stop the `updater` service and update from the command line. See [Update MantleOS](01-update.md).
 
 ## Next
 

@@ -9,7 +9,7 @@ The MCP connector lets an outside AI client, such as Claude, connect to this bra
 1. Switch on **Enable remote MCP**.
 2. Copy the **Connector URL**.
 3. In claude.ai, open Settings, then Connectors, then Add custom connector, and paste the URL.
-4. Sign in to this Mantle and approve access when asked.
+4. Sign in to this brain and approve access when asked.
 
 Click **Check endpoint** to test that the connector answers. **Connected clients** lists every client that has signed in. Disconnect one to cut its access at once.
 

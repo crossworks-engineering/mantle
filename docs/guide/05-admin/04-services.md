@@ -39,7 +39,7 @@ The service shows as on in **Settings > Services**. Its pill on the dashboard sh
 
 The screen shows **The last switch did not work** with the reason. Click **Show the log** for the details. A failed switch puts `.env` back the way it was.
 
-If the screen says the brain cannot switch services yet, update the box first. See [Update Mantle](01-update.md).
+If the screen says the brain cannot switch services yet, update the box first. See [Update MantleOS](01-update.md).
 
 ## Next
 

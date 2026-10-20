@@ -1,6 +1,6 @@
 # Profile and appearance
 
-Set your timezone, writing rules and reminders in **Settings > Profile**, and the look of Jackdaw in **Settings > Appearance**.
+Set your timezone, writing rules and reminders in **Settings > Profile**, and the look of MantleOS in **Settings > Appearance**.
 
 ## Profile
 

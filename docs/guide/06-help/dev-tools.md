@@ -4,7 +4,7 @@ title: API Console
 
 ## API Console
 
-The API Console runs Mantle's own interfaces by hand: every REST route, every MCP tool and every agent tool. Send a real request and read the real response.
+The API Console runs MantleOS's own interfaces by hand: every REST route, every MCP tool and every agent tool. Send a real request and read the real response.
 
 - In **Library**, pick a call from **Built-in API**, **Built-in MCP** or **Agent tools**, or search for one.
 - Fill in **Params**, **Headers**, **Body** and **Auth**. Tool calls take a form or JSON.

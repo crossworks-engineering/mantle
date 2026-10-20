@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Build the docs site and deploy its files to the box that serves
-# mantle-ai.tech.
+# mantleos.io.
 #
 #   DOCS_DEPLOY_HOST=<user@host> ./scripts/deploy.sh            build + rsync
 #   DOCS_DEPLOY_HOST=<user@host> ./scripts/deploy.sh --no-build push dist/ as is
 #
-# This folder owns only the files. The shared Caddy (the docs.mantle-ai.tech
+# This folder owns only the files. The shared Caddy (the docs.mantleos.io
 # vhost, TLS, the /srv/docs bind mount) belongs to the mantle-site repo; see
 # its DEPLOY.md. A content deploy needs no Caddy reload: Caddy reads
 # ~/mantle-docs/site live. The ssh login is not in this public repo; it is in
@@ -26,4 +26,4 @@ fi
 ssh "$HOST" "mkdir -p ~/mantle-docs/site"
 rsync -az --delete dist/ "$HOST:~/mantle-docs/site/"
 
-echo "Deployed to https://docs.mantle-ai.tech"
+echo "Deployed to https://docs.mantleos.io"

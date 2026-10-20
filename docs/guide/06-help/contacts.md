@@ -5,7 +5,7 @@ toolGroups: [contacts, email]
 
 ## Contacts
 
-Contacts are the people and companies you deal with. They are also the email gate: Mantle only takes in mail from contacts, and the assistant only sends mail to contacts.
+Contacts are the people and companies you deal with. They are also the email gate: MantleOS only takes in mail from contacts, and the assistant only sends mail to contacts.
 
 - Click **+** (Add a contact) and fill in a name, a **Company**, **Email addresses**, a **Cell number** and tags.
 - Each email line is a full address (`orders@example.com`) or a whole domain (`@example.com`).

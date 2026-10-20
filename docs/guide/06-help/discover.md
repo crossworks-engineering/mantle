@@ -9,7 +9,7 @@ Discover senders lists people who emailed you in the last 30 days but are not in
 
 - The screen scans your connected mailboxes when it opens. Use the refresh button to scan again.
 - Each row shows the sender, their address, how many messages and the latest date.
-- Click **Add as contact** for anyone worth keeping. Mantle then pulls in the last 90 days of their mail.
+- Click **Add as contact** for anyone worth keeping. MantleOS then pulls in the last 90 days of their mail.
 
 If no email account is connected, the screen offers **Connect an account**.
 

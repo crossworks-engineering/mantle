@@ -8,7 +8,7 @@ Inside the brain, an item is shared by a grant to a workspace, in its **Grant Ac
 
 ## Public links
 
-Share an item and Mantle makes a link anyone can open without a login. Turn sharing off and the link stops working at once. **Team > Shared links** lists every live link.
+Share an item and MantleOS makes a link anyone can open without a login. Turn sharing off and the link stops working at once. **Team > Shared links** lists every live link.
 
 A link shows its item and the items you tick for it in the item's Grant Access panel. An image or embed you add to a page that already has a link is not shown on the link until you tick it there.
 
@@ -16,7 +16,7 @@ To show one item to one outsider without a public link, share it with a contact.
 
 ## Federation
 
-Federation links your Mantle with someone else's Mantle. Each brain stays its own; they answer each other only within what each side granted.
+Federation links your brain with someone else's. Each brain stays its own; they answer each other only within what each side granted.
 
 - You add the other brain under **Settings > Peers** and swap tokens.
 - You grant single items, or a whole kind (for example all pages, including pages you make later).
@@ -27,7 +27,7 @@ A peer can also connect over MCP as one of your logins ([MCP as a login](../07-a
 
 ## Example
 
-Your partner runs their own Mantle. You pair the two brains and grant them your "Holiday plans" page. Their assistant asks yours, "what are the flight times?" Your brain answers from that page only. Everything else in your brain stays invisible to them.
+Your partner runs their own MantleOS brain. You pair the two brains and grant them your "Holiday plans" page. Their assistant asks yours, "what are the flight times?" Your brain answers from that page only. Everything else in your brain stays invisible to them.
 
 ## Next
 

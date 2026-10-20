@@ -1,6 +1,6 @@
 # Install on a server
 
-One command installs Mantle on a Linux server and starts it.
+One command installs MantleOS on a Linux server and starts it.
 
 ## Before you start
 
@@ -11,7 +11,7 @@ One command installs Mantle on a Linux server and starts it.
 - For HTTPS: a domain that points at the server. See [Add a domain and HTTPS](05-domain-https.md).
 
 :::note[What OpenRouter is for]
-OpenRouter is one account and one key that reach many AI models. Mantle uses it by default for the agents' chat, the background work that summarises new items and pulls out facts, reading images and PDFs, web research, speech and image generation.
+OpenRouter is one account and one key that reach many AI models. MantleOS uses it by default for the agents' chat, the background work that summarises new items and pulls out facts, reading images and PDFs, web research, speech and image generation.
 
 Search embeddings use an online model on your OpenRouter or OpenAI key, picked in the setup wizard. You can move them to the bundled local embedder, and point any agent or worker at a model on your own machine. See [Use local models](../05-admin/06-local-models.md).
 
@@ -19,7 +19,7 @@ Set a credit limit on the key at [openrouter.ai/keys](https://openrouter.ai/keys
 :::
 
 :::tip[What the domain is for]
-A domain, for example `brain.example.com`, is the address of your brain. It points at the server that runs Mantle, and you open Jackdaw there. It also gives the brain HTTPS, which the remote MCP connector needs. See [Add a domain and HTTPS](05-domain-https.md).
+A domain, for example `brain.example.com`, is the address of your brain. It points at the server that runs MantleOS, and you open the app there. It also gives the brain HTTPS, which the remote MCP connector needs. See [Add a domain and HTTPS](05-domain-https.md).
 :::
 
 ## Install
@@ -43,7 +43,7 @@ A domain, for example `brain.example.com`, is the address of your brain. It poin
 3. Read the review and answer **Go ahead?** with Enter. The first install downloads about 2 GB.
 4. Note the address and the **setup code** printed at the end. You need both to [create your account](../02-first-steps/01-create-account.md).
 
-Mantle installs into `./mantle`. Running the command again is safe: it keeps your data and secrets.
+MantleOS installs into `./mantle`. Running the command again is safe: it keeps your data and secrets.
 
 Back up `mantle/.env`. It holds the master key that decrypts your stored API keys and mail passwords. See [Backups and restore](../05-admin/02-backups.md).
 

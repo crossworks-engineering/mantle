@@ -7,7 +7,7 @@ Store passwords, codes and keys in a sealed vault that the assistant can search 
 | Part | Who can read it |
 |---|---|
 | **Title**, **Description**, **Tags** | You, search and the assistant. |
-| Fields (label and value) and **Note (encrypted)** | Only you, in Jackdaw, after **Reveal**. |
+| Fields (label and value) and **Note (encrypted)** | Only you, in the app, after **Reveal**. |
 
 The sealed part is never sent to a model and never indexed. So the assistant can tell you a secret exists and what it is for, but cannot read the value out.
 

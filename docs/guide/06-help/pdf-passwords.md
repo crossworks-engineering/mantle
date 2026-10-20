@@ -4,7 +4,7 @@ title: PDF passwords
 
 ## PDF passwords
 
-This screen stores passwords for locked PDFs, so Mantle can read them. Bank
+This screen stores passwords for locked PDFs, so MantleOS can read them. Bank
 and investment statements often arrive locked with the same password every
 month, such as the last digits of an ID or account number.
 

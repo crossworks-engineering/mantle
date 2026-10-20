@@ -1,6 +1,6 @@
 # Email and contacts
 
-Read your mail in Jackdaw, send through the assistant, and choose whose mail the brain keeps.
+Read your mail in the app, send through the assistant, and choose whose mail the brain keeps.
 
 ## Before you start
 
@@ -42,7 +42,7 @@ Ask the assistant about the content, not the message:
 
 ## Send mail
 
-Jackdaw has no compose window. Ask the assistant:
+The app has no compose window. Ask the assistant:
 
 - "Reply to Sam and say Tuesday works."
 - "Email Sam the Site Handover page." (sends the page as formatted HTML)

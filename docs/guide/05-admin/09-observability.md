@@ -1,6 +1,6 @@
 # See what the brain did
 
-Every assistant turn, extraction and background job leaves a record in Jackdaw. These screens show what ran, in what order, how long it took and what it cost.
+Every assistant turn, extraction and background job leaves a record in the app. These screens show what ran, in what order, how long it took and what it cost.
 
 | Screen | Where | Use it to |
 |---|---|---|

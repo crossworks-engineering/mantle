@@ -3,15 +3,15 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { sidebar } from './src/lib/guide.mjs';
 
-// docs.mantle-ai.tech: a static build of the mantle repo's docs/guide tree.
+// docs.mantleos.io: a static build of the mantle repo's docs/guide tree.
 export default defineConfig({
-  site: 'https://docs.mantle-ai.tech',
+  site: 'https://docs.mantleos.io',
   trailingSlash: 'always',
   integrations: [
     starlight({
-      title: 'Mantle docs',
-      description: 'Install, use and run Mantle, the self-hosted AI brain, and Jackdaw, the app you open it in.',
-      logo: { src: './src/assets/brand/mantle-logo-full.svg', alt: 'Mantle', replacesTitle: true },
+      title: 'MantleOS docs',
+      description: 'Install, use and run MantleOS, the self-hosted operations system that learns from your company’s knowledge.',
+      logo: { src: './src/assets/brand/mantle-logo-os.svg', alt: 'MantleOS', replacesTitle: true },
       favicon: '/favicon.svg',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/crossworks-engineering/mantle' },

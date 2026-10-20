@@ -4,7 +4,7 @@ Make an agent act on a schedule without being asked, with quiet hours and a stop
 
 A heartbeat names a skill (what to do), an agent (who does it, with its tools), a schedule, and a surface where its message lands. It keeps a small state between firings, so it can remember what it already asked. It stops when its skill marks the job complete, or after a set number of firings.
 
-Mantle ships one: **Brain health**, a weekly check of capacity and search quality that stays silent unless something needs attention.
+MantleOS ships one: **Brain health**, a weekly check of capacity and search quality that stays silent unless something needs attention.
 
 ## Before you start
 

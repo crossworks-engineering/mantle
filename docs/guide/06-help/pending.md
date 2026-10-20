@@ -23,7 +23,7 @@ Decided items move to the history below, with their result.
 
 ## Assistant
 
-Agents in Jackdaw cannot approve or reject anything here; that would let an
+Agents in the app cannot approve or reject anything here; that would let an
 agent approve its own request. An MCP client signed in as you can, when you ask:
 
 - "What is waiting for my approval?"

@@ -1,6 +1,6 @@
 # Pages
 
-Write rich documents in Jackdaw, have the assistant edit them, and choose who can read them.
+Write rich documents in the app, have the assistant edit them, and choose who can read them.
 
 A page holds headings, callouts, columns, tables, to-do lists, code, images and diagrams. Use a page for writing you would hand to someone: a proposal, a runbook, meeting notes.
 

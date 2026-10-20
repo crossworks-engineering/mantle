@@ -24,7 +24,7 @@ workers can be members.
 
 ## Assistant
 
-Agents in Jackdaw have no tools for this screen. An MCP client signed in as
+Agents in the app have no tools for this screen. An MCP client signed in as
 you can manage groups when you ask:
 
 - "List my worker groups."

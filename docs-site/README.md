@@ -1,6 +1,6 @@
 # Docs site
 
-This folder builds docs.mantle-ai.tech from the pages in `docs/guide/` and the release notes in `CHANGELOG.md`. It holds no pages of its own.
+This folder builds docs.mantleos.io from the pages in `docs/guide/` and the release notes in `CHANGELOG.md`. It holds no pages of its own.
 
 ## Run it
 
@@ -34,7 +34,7 @@ A new page in a section folder shows in the sidebar on the next start. A new sec
 | Changelog | `CHANGELOG.md`, one page per minor version |
 | MCP tools | the real MCP server surface, by `scripts/mcp-tools.ts`. Needs `pnpm install` at the repo root. Without it, the page is left out. |
 
-The logo comes from `brand/` at build. Change it there.
+The logo (the wordmark) and the favicon (the sun icon) come from `brand/` at build. Change them there.
 
 ## Deploy
 
@@ -42,4 +42,4 @@ The logo comes from `brand/` at build. Change it there.
 DOCS_DEPLOY_HOST=<ssh login> ./scripts/deploy.sh
 ```
 
-It builds and copies `dist/` to `~/mantle-docs/site` on the box that serves mantle-ai.tech. The Caddy vhost for docs.mantle-ai.tech lives in the mantle-site repo (`deploy/Caddyfile`), and its DEPLOY.md has the ssh login.
+It builds and copies `dist/` to `~/mantle-docs/site` on the box that serves mantleos.io. The Caddy vhost for docs.mantleos.io (docs.mantle-ai.tech redirects there) lives in the mantle-site repo (`deploy/Caddyfile`), and its DEPLOY.md has the ssh login.
