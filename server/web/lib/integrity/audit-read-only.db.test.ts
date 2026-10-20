@@ -5,11 +5,14 @@
  *    the five checks that run shared catalog text through readSql among
  *    them;
  *  - the transaction is read only: a function readSql does not list that
- *    writes (a test-only function that inserts, and one that calls
- *    nextval) is refused by Postgres (25006) and leaves nothing, where the
- *    same call outside it writes.
+ *    writes (a test-only function that inserts an entity, and one that
+ *    calls nextval) is refused by Postgres (25006) and leaves no row, where
+ *    the insert outside it writes.
  *
- * Makes its own objects (unique names) and drops them after.
+ * Makes no table or sequence (a relation dropped while another file runs
+ * GRANT ... ON ALL TABLES fails that file): the writers use entities and an
+ * existing sequence. Makes its own functions (unique names), drops them
+ * and its rows after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/integrity/audit-read-only.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -29,8 +32,7 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   let anchor = '';
   const tag = `s10ro${randomUUID().slice(0, 8)}`;
-  const table = `${tag}_t`;
-  const seq = `${tag}_s`;
+  const written = `${tag} written`;
   const insertFn = `${tag}_insert`;
   const nextFn = `${tag}_next`;
 
@@ -49,17 +51,14 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
     const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
     await boss.start();
     await boss.stop({ graceful: false, timeout: 5_000 });
-    await su(`create table public.${table} (n int)`);
-    await su(`grant all on public.${table} to public`);
-    await su(`create sequence public.${seq}`);
-    await su(`grant all on sequence public.${seq} to public`);
     await su(
       `create function public.${insertFn}() returns int language sql
-         as $f$ insert into public.${table} values (1) returning 1 $f$`,
+         as $f$ insert into public.entities (owner_id, kind, name)
+                values ('${anchor}'::uuid, 'org', '${written}') returning 1 $f$`,
     );
     await su(
       `create function public.${nextFn}() returns bigint language sql
-         as $f$ select nextval('public.${seq}') $f$`,
+         as $f$ select nextval('public.heads_check_misses_id_seq') $f$`,
     );
   }, 60_000);
 
@@ -67,14 +66,13 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
     if (anchor) {
       await su(`drop function if exists public.${insertFn}()`);
       await su(`drop function if exists public.${nextFn}()`);
-      await su(`drop table if exists public.${table}`);
-      await su(`drop sequence if exists public.${seq}`);
+      await sql`delete from entities where owner_id = ${anchor} and name = ${written}`;
     }
     await m?.closeDb();
   });
 
   const rowsIn = async () =>
-    Number((await sql.unsafe(`select count(*)::int as n from public.${table}`))[0]!.n);
+    Number((await sql`select count(*)::int as n from entities where name = ${written}`)[0]!.n);
 
   it('completes every check with no write, the readSql checks among them', async () => {
     const { runCorpusAudit } = await import('./audit');
