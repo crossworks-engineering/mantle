@@ -598,9 +598,10 @@ async function isWatcherInsert(
  * does), then its grants replaced by one home row in `createWs`, Write off.
  * The stamp goes on before the home: on a snapshot copy the database lets
  * that home through (a private workspace, Write off) and nothing wider.
- * @heads-held by upsertFile (withHeads on the row).
+ * @heads-held by upsertFile (withHeads on the row). Exported for its write
+ * role cell only (restamp-write-role.db.test.ts); not part of the package.
  */
-async function restampRacedCreate(
+export async function restampRacedCreate(
   tx: Parameters<Parameters<typeof withHeads>[2]>[0],
   id: string,
   stamp: Readonly<Record<string, unknown>>,
@@ -618,9 +619,13 @@ async function restampRacedCreate(
     .where(eq(nodes.id, id));
   if (createWs) {
     await tx.delete(itemGrants).where(eq(itemGrants.nodeId, id));
-    await tx
-      .insert(itemGrants)
-      .values({ nodeId: id, workspaceId: createWs, isHome: true, write: false });
+    // Raw text on purpose: the write role may INSERT only some columns of
+    // item_grants (access-matrix.ts writeColumnsFor), and a drizzle insert
+    // names every column of the table (the rest as DEFAULT), which Postgres
+    // refuses for the role (42501). This statement names only the four the
+    // role may write (packages/files/src/restamp-write-role.db.test.ts).
+    await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
+                         values (${id}::uuid, ${createWs}::uuid, true, false)`);
   }
   const [row] = await tx.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   if (!row) throw new Error('upsertFile: the raced row is gone');
