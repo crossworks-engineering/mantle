@@ -323,6 +323,7 @@ function dbError(): Error {
 
 // The routes' own lookups.
 vi.mock('@/lib/auth', async (importOriginal) => {
+  const { loginStandIn } = await import('@/server/run-route-stand-ins');
   const user = {
     id: ANCHOR,
     email: 'jo@example.invalid',
@@ -331,23 +332,23 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     ownerCaller: () => user,
-    ownerLoginCaller: asOwnerLogin(() =>
+    // The owner row's Login (plan v3.2 section 2.2): an Admin user, or a member.
+    ownerLoginCaller: () =>
       h.login === 'admin'
-        ? { kind: 'admin', user, source: 'web', member: null }
-        : {
-            kind: 'member',
-            user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: MEMBER } },
-            source: 'web',
-            member: {
-              role: 'member',
-              loginId: MEMBER,
-              anchorId: ANCHOR,
-              email: 'pat@example.invalid',
-              displayName: 'Pat',
-              contactId: null,
-            },
-          },
-    ),
+        ? loginStandIn({
+            loginId: ACTOR,
+            brainId: ANCHOR,
+            email: user.email,
+            displayName: 'Jo',
+            actor: user.actor,
+            admin: true,
+          })
+        : loginStandIn({
+            loginId: MEMBER,
+            brainId: ANCHOR,
+            email: 'pat@example.invalid',
+            displayName: 'Pat',
+          }),
   };
 });
 vi.mock('@/lib/rate-limit', () => ({
@@ -404,43 +405,10 @@ import type { Actor, Tool } from '@mantle/db';
 import { loginActor, runAsActor } from '@mantle/db';
 import { externalAccessToolSig } from '@mantle/tools';
 
-/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
- *  in from the owner answer the test describes; adminFacts (mocked below)
- *  answers its kind. */
-function asOwnerLogin(owner: () => unknown): () => unknown {
-  return () => {
-    const o = owner() as {
-      kind: string;
-      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
-      member: {
-        loginId: string;
-        anchorId: string;
-        email: string;
-        displayName: string | null;
-      } | null;
-    };
-    const m = o.member;
-    return {
-      loginId: m ? m.loginId : o.user.actor.id,
-      brainId: m ? m.anchorId : o.user.id,
-      email: m ? m.email : o.user.email,
-      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
-      contactId: null,
-      source: 'web',
-      sessionEpoch: 0,
-      actor: m
-        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
-        : o.user.actor,
-      standInAdmin: o.kind === 'admin',
-    };
-  };
-}
+// adminFacts answers what the stood-in Login (loginStandIn) says of it.
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
 
 function builtinRow(slug: string): Tool {

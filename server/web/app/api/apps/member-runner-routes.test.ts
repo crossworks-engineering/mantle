@@ -14,43 +14,10 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
- *  in from the owner answer the test describes; adminFacts (mocked below)
- *  answers its kind. */
-function asOwnerLogin(owner: () => unknown): () => unknown {
-  return () => {
-    const o = owner() as {
-      kind: string;
-      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
-      member: {
-        loginId: string;
-        anchorId: string;
-        email: string;
-        displayName: string | null;
-      } | null;
-    };
-    const m = o.member;
-    return {
-      loginId: m ? m.loginId : o.user.actor.id,
-      brainId: m ? m.anchorId : o.user.id,
-      email: m ? m.email : o.user.email,
-      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
-      contactId: null,
-      source: 'web',
-      sessionEpoch: 0,
-      actor: m
-        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
-        : o.user.actor,
-      standInAdmin: o.kind === 'admin',
-    };
-  };
-}
+// adminFacts answers what the stood-in Login (loginStandIn) says of it.
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
@@ -125,6 +92,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 vi.mock('@/lib/auth', async (importOriginal) => {
+  const { loginStandIn } = await import('@/server/run-route-stand-ins');
   const member = () => ({
     role: 'member',
     loginId: LOGIN,
@@ -136,14 +104,14 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     // The shared runner's caller, as the pipeline answers it (A4 step 3b
-    // part 3): a member login.
-    ownerLoginCaller: asOwnerLogin(
-      vi.fn(() => ({
-        kind: 'member',
-        user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: LOGIN } },
-        source: 'web',
-        member: member(),
-      })),
+    // part 3): a member login, the owner row's Login (plan v3.2 section 2.2).
+    ownerLoginCaller: vi.fn(() =>
+      loginStandIn({
+        loginId: LOGIN,
+        brainId: ANCHOR,
+        email: 'pat@example.invalid',
+        displayName: h.displayName,
+      }),
     ),
     getMemberOr401: vi.fn(async () => member()),
     // The member route's reader (A4 step 3b part 5): the same stand-in.

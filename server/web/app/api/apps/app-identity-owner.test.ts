@@ -8,43 +8,10 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
- *  in from the owner answer the test describes; adminFacts (mocked below)
- *  answers its kind. */
-function asOwnerLogin(owner: () => unknown): () => unknown {
-  return () => {
-    const o = owner() as {
-      kind: string;
-      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
-      member: {
-        loginId: string;
-        anchorId: string;
-        email: string;
-        displayName: string | null;
-      } | null;
-    };
-    const m = o.member;
-    return {
-      loginId: m ? m.loginId : o.user.actor.id,
-      brainId: m ? m.anchorId : o.user.id,
-      email: m ? m.email : o.user.email,
-      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
-      contactId: null,
-      source: 'web',
-      sessionEpoch: 0,
-      actor: m
-        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
-        : o.user.actor,
-      standInAdmin: o.kind === 'admin',
-    };
-  };
-}
+// adminFacts answers what the stood-in Login (loginStandIn) says of it.
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
@@ -61,43 +28,39 @@ const h = vi.hoisted(() => ({
   frameTicket: null as unknown,
 }));
 
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/auth')>()),
-  getOwnerOr401: vi.fn(async () => ({
-    id: OWNER,
-    email: 'admin@example.invalid',
-    actor: {
-      id: ADMIN_LOGIN,
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const { loginStandIn } = await import('@/server/run-route-stand-ins');
+  return {
+    ...(await importOriginal<typeof import('@/lib/auth')>()),
+    getOwnerOr401: vi.fn(async () => ({
+      id: OWNER,
       email: 'admin@example.invalid',
-      displayName: 'Robin',
-      isOwner: false,
-    },
-  })),
-  // The owner runner routes take every login since W7e: here an Admin user.
-  // They read the caller the pipeline answers (A4 step 3b part 3); no login
-  // at all (a row still marked client resolves to none, W8a) is refused at
-  // the gate, before them (below).
-  ownerLoginCaller: asOwnerLogin(
-    vi.fn(() => ({
-      kind: 'admin' as const,
-      user: {
-        id: OWNER,
+      actor: {
+        id: ADMIN_LOGIN,
         email: 'admin@example.invalid',
-        actor: {
-          id: ADMIN_LOGIN,
-          email: 'admin@example.invalid',
-          displayName: 'Robin',
-          isOwner: false,
-        },
+        displayName: 'Robin',
+        isOwner: false,
       },
-      source: 'web',
-      member: null,
     })),
-  ),
-  adminLoginActive: vi.fn(async (id: string) => (h.actorsChecked.push(id), h.adminActive)),
-  // The frame documents' caller (A4 hand batch B): framed, below.
-  frameTicketCaller: vi.fn(() => h.frameTicket),
-}));
+    // The owner runner routes take every login since W7e: here an Admin user.
+    // They read the caller the pipeline answers (A4 step 3b part 3), the
+    // owner row's Login (plan v3.2 section 2.2); no login at all (a row
+    // still marked client resolves to none, W8a) is refused at the gate,
+    // before them (below).
+    ownerLoginCaller: vi.fn(() =>
+      loginStandIn({
+        loginId: ADMIN_LOGIN,
+        brainId: OWNER,
+        email: 'admin@example.invalid',
+        displayName: 'Robin',
+        admin: true,
+      }),
+    ),
+    adminLoginActive: vi.fn(async (id: string) => (h.actorsChecked.push(id), h.adminActive)),
+    // The frame documents' caller (A4 hand batch B): framed, below.
+    frameTicketCaller: vi.fn(() => h.frameTicket),
+  };
+});
 /** A frame route called as the gate serves it (A4 hand batch B): its caller
  *  is the `?t=` ticket the gate verified (frameTicketCaller), stood in here
  *  from the request the test sends. */

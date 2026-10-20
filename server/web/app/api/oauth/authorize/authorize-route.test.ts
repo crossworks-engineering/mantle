@@ -12,6 +12,7 @@
  * consent password write audit rows (T11).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { loginStandIn } from '@/server/run-route-stand-ins';
 
 const h = vi.hoisted(() => ({
   login: null as unknown,
@@ -42,13 +43,10 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 
 // Whether the login is an Admin user is adminFacts' answer (plan v3.2
-// section 2.2), stood in from the stand-in Login.
+// section 2.2), answered from the stood-in Login (loginStandIn, below).
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({
@@ -76,24 +74,18 @@ const QUERY = new URLSearchParams({
   state: 's1',
 });
 
-const admin = {
+const admin = loginStandIn({
   loginId: 'admin-1',
   brainId: 'anchor-1',
   email: 'admin@example.invalid',
-  displayName: null,
-  contactId: null,
   actor: { id: 'admin-1', email: 'admin@example.invalid', displayName: null, isOwner: true },
-  standInAdmin: true,
-};
-const member = {
+  admin: true,
+});
+const member = loginStandIn({
   loginId: 'member-1',
   brainId: 'anchor-1',
   email: 'm@example.invalid',
-  displayName: null,
-  contactId: null,
-  actor: { id: 'member-1', email: 'm@example.invalid', displayName: null, isOwner: false },
-  standInAdmin: false,
-};
+});
 
 const get = async () => {
   const { GET } = await import('./route');

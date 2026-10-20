@@ -42,52 +42,44 @@ const h = vi.hoisted(() => ({
   enqueued: [] as { id: string; input: unknown }[],
 }));
 
-/** The chat caller of a stand-in chat answer (chatCaller, plan v3.2
- *  section 2.2): the answer without its kind, with its Login; adminFacts
- *  (mocked below) answers the kind. */
-function standInChatCaller(chat: unknown) {
-  const c = chat as {
-    kind: string;
-    ownerId: string;
-    loginId: string;
-    source: string;
-    user: { id: string; email: string; actor: Record<string, unknown> };
-    displayName: string | null;
-    email: string;
-  } | null;
-  if (!c) throw new Error('chatCaller(): the pipeline answered no chat login');
-  const { kind, ...rest } = c;
-  return {
-    ...rest,
-    asLogin: {
-      loginId: c.loginId,
-      brainId: c.ownerId,
-      email: c.email,
-      displayName: c.displayName,
-      contactId: null,
-      source: c.source,
-      sessionEpoch: 0,
-      actor: c.user.actor,
-      standInAdmin: kind === 'admin',
-    },
-  };
-}
+// adminFacts answers what the stood-in Login (loginStandIn) says of it.
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getChatLoginOr401: vi.fn(async () => h.login),
-  // The reader a converted chat handler calls (A4 step 3b part 5): the
-  // same stand-in.
-  chatLoginCaller: vi.fn(() => h.login),
-  // The reader the chat handlers call now (chatCaller): the same stand-in.
-  chatCaller: vi.fn(() => standInChatCaller(h.login)),
-}));
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const { loginStandIn } = await import('@/server/run-route-stand-ins');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    getChatLoginOr401: vi.fn(async () => h.login),
+    // The reader a converted chat handler calls (A4 step 3b part 5): the
+    // same stand-in.
+    chatLoginCaller: vi.fn(() => h.login),
+    // The reader the chat handlers call now (chatCaller, plan v3.2 section
+    // 2.2): the same answer without its kind, with its Login.
+    chatCaller: vi.fn(() => {
+      const c = h.login as {
+        kind: string;
+        ownerId: string;
+        loginId: string;
+        displayName: string | null;
+        email: string;
+      } | null;
+      if (!c) throw new Error('chatCaller(): the pipeline answered no chat login');
+      const { kind, ...rest } = c;
+      return {
+        ...rest,
+        asLogin: loginStandIn({
+          loginId: c.loginId,
+          brainId: c.ownerId,
+          email: c.email,
+          displayName: c.displayName,
+          admin: kind === 'admin',
+        }),
+      };
+    }),
+  };
+});
 vi.mock('@/lib/dbos-client', () => ({
   getDbosClient: async () => ({
     enqueue: async (o: { workflowID?: string }, input: unknown) => {

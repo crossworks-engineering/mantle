@@ -12,26 +12,31 @@ const PROVIDER_TEXT = 'upstream 429: rate limited on key sk-hidden';
 const h = vi.hoisted(() => ({ kind: 'admin' as 'admin' | 'member' }));
 
 // Whether the login is an Admin user is adminFacts' answer (plan v3.2
-// section 2.2), stood in from the stand-in Login.
+// section 2.2), answered from the chat caller's stood-in Login (loginStandIn).
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  chatCaller: () => ({
-    asLogin: { standInAdmin: h.kind === 'admin' },
-    ownerId: 'owner-id',
-    loginId: `${h.kind}-id`,
-    source: 'cookie',
-    user: { id: 'owner-id', email: '', actor: { id: `${h.kind}-id` } },
-    displayName: null,
-    email: `${h.kind}@example.invalid`,
-  }),
-}));
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const { loginStandIn } = await import('@/server/run-route-stand-ins');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    chatCaller: () => ({
+      asLogin: loginStandIn({
+        loginId: `${h.kind}-id`,
+        brainId: 'owner-id',
+        email: `${h.kind}@example.invalid`,
+        admin: h.kind === 'admin',
+      }),
+      ownerId: 'owner-id',
+      loginId: `${h.kind}-id`,
+      source: 'cookie',
+      user: { id: 'owner-id', email: '', actor: { id: `${h.kind}-id` } },
+      displayName: null,
+      email: `${h.kind}@example.invalid`,
+    }),
+  };
+});
 vi.mock('@/lib/assistant-chat', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The turn's writes resolve through resolveChatAgentToWrite (S6 c3).

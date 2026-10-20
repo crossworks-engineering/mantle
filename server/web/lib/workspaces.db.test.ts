@@ -36,46 +36,21 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loginStandIn } from '@/server/run-route-stand-ins';
 import { appAnswerOf } from '@/server/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 const h = vi.hoisted(() => ({
   res: null as unknown,
+  /** The Login of the same answer (loginStandIn), for anyLoginCaller. */
+  login: null as unknown,
   audits: [] as Array<Record<string, unknown>>,
 }));
 
-/** The Login of a stand-in answer (an Admin user's or a member's legacy
- *  shape), with the answer's kind for the adminFacts stand-in. */
-function standInLogin(res: unknown) {
-  const r = res as {
-    kind: string;
-    loginId: string;
-    email: string;
-    user?: { id: string; actor: Record<string, unknown> };
-    member?: { anchorId: string };
-  } | null;
-  if (!r) throw new Error('anyLoginCaller(): the pipeline answered no login');
-  return {
-    loginId: r.loginId,
-    brainId: r.user ? r.user.id : r.member!.anchorId,
-    email: r.email,
-    displayName: null,
-    contactId: null,
-    source: 'web',
-    sessionEpoch: 0,
-    actor: r.user
-      ? r.user.actor
-      : { id: r.loginId, email: r.email, displayName: null, isOwner: false },
-    standInAdmin: r.kind === 'admin',
-  };
-}
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
-    admin: l.standInAdmin === true,
-    areas: new Set(),
-  })),
+  adminFacts: vi.fn((await import('@/server/run-route-stand-ins')).adminFactsStandIn),
 }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -85,9 +60,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // (pinned by the guard sweep's guard writes and gate-caller.test.ts).
   loginCaller: vi.fn(() => h.res),
   // The Login the routes read (anyLoginCaller, plan v3.2 section 2.2),
-  // stood in from the same answer; adminFacts (mocked below) answers its
-  // kind.
-  anyLoginCaller: vi.fn(() => standInLogin(h.res)),
+  // stood in alongside the same answer; adminFacts (mocked above) answers
+  // what it says.
+  anyLoginCaller: vi.fn(() => {
+    if (!h.login) throw new Error('anyLoginCaller(): the pipeline answered no login');
+    return h.login;
+  }),
 }));
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: (row: Record<string, unknown>) => h.audits.push(row),
@@ -143,6 +121,12 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       r!.role === 'admin'
         ? { kind: 'admin', loginId: id, email: r!.email, user }
         : { kind: 'member', loginId: id, email: r!.email, member: { anchorId: owner } };
+    h.login = loginStandIn({
+      loginId: id,
+      brainId: owner,
+      email: r!.email,
+      admin: r!.role === 'admin',
+    });
   };
   const req = (method: string, body?: unknown, q = '') =>
     new Request(`http://x/api/workspaces${q}`, {
