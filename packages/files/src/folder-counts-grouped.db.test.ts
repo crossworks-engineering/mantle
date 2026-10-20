@@ -11,7 +11,8 @@
  *  - the member's rail (listAllFoldersWithTrail) lists the folders it reads
  *    as before and the folders on the way to what it reads, each counted as
  *    folderCounts counts it for that reader;
- *  - the number of statements does not grow with the number of folders.
+ *  - the number of statements does not grow with the number of folders: two
+ *    for the rail, two for a list, one for a list with no folders in it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/folder-counts-grouped.db.test.ts
  */
@@ -72,10 +73,14 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
   const tag = `fc${randomUUID().replace(/-/g, '').slice(0, 8)}`;
 
   // The tree. a: granted to the member's workspace (its subtree with it),
-  // holding a file private to another login (a.y); b and b.z: not read, but
-  // b.z holds a file granted to the workspace (the way to it is a trail);
-  // c and c.w: not read at all; files at the root that nobody granted.
-  const folders = ['a', 'a.x', 'a.y', 'b', 'b.z', 'c', 'c.w', 'c.w.v'] as const;
+  // holding a file private to another login (a.y) and a subfolder private
+  // to it (a.q), so a folder the member reads has a subfolder it does not;
+  // b and b.z: not read, but b.z holds a file granted to the workspace (the
+  // way to it is a trail); c and c.w: not read at all; files at the root
+  // that nobody granted.
+  const folders = ['a', 'a.q', 'a.x', 'a.y', 'b', 'b.z', 'c', 'c.w', 'c.w.v'] as const;
+  /** Folders private to the other login. */
+  const privateFolders = new Set<string>(['a.q']);
   const id: Record<string, string> = Object.fromEntries(
     [...folders, 'files'].map((k) => [k, randomUUID()]),
   );
@@ -180,9 +185,9 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
       await ins(
         'branch',
         fp(k),
-        sqlTag`insert into nodes (id, owner_id, type, title, slug, path, data)
+        sqlTag`insert into nodes (id, owner_id, type, title, slug, path, login_id, data)
         values (${id[k]}, ${owner}, 'branch', ${`${tag} ${k}`}, ${slug}, ${fp(k)}::ltree,
-                ${JSON.stringify({ slug })}::jsonb)`,
+                ${privateFolders.has(k) ? other : null}, ${JSON.stringify({ slug })}::jsonb)`,
       );
     }
     const grants: string[] = [id.a!];
@@ -215,7 +220,7 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
     await rm(root, { recursive: true, force: true });
   });
 
-  it('the member reads part of the tree: a and below (not the other login’s files), and z1 (the fixture)', async () => {
+  it('the member reads part of the tree: a and below (not the other login’s folder and files), and z1 (the fixture)', async () => {
     const seen = await asMember(
       async () =>
         (await m.db.execute(
@@ -240,7 +245,8 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
     expect(await ops.listAllFolders(owner)).toEqual(ownerOld);
     expect(ownerOld.map((r) => [r.path, r.childFolderCount, r.fileCount])).toEqual([
       ['files', 3, 2],
-      ['files.a', 2, 3],
+      ['files.a', 3, 3],
+      ['files.a.q', 0, 0],
       ['files.a.x', 0, 1],
       ['files.a.y', 0, 1],
       ['files.b', 1, 0],
@@ -302,7 +308,10 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
     };
     const rail = () => ops.listAllFolders(owner);
     const list = () => ops.listFolders({ ownerId: owner, parentPath: 'files' });
+    // A folder with no subfolders: the list of them, and no count query.
+    const empty = () => ops.listFolders({ ownerId: owner, parentPath: 'files.a.x' });
     const before = { rail: await count(rail), list: await count(list) };
+    expect(await count(empty)).toBe(1);
     const oldBefore = await count(() => oldListAllFolders(owner));
     // Forty more folders, and a file in each.
     for (let i = 0; i < 40; i++) {
@@ -322,8 +331,8 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
     }
     expect(await count(rail)).toBe(before.rail);
     expect(await count(list)).toBe(before.list);
-    expect(before.rail).toBeLessThanOrEqual(2);
-    expect(before.list).toBeLessThanOrEqual(3);
+    expect(before.rail).toBe(2);
+    expect(before.list).toBe(2);
     // The meter counts: the per-folder path sends two more per folder.
     expect(await count(() => oldListAllFolders(owner))).toBe(oldBefore + 80);
     // And the answers still match it.
