@@ -238,6 +238,26 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     }
     await scratch.migrateRest(UNTIL);
     await installLoginIsAdmin(sql);
+    // The role=admin logins are users of the brain's Admin workspace, as
+    // every admin is once the workspaces switch ran: an Admin login is the
+    // Admin pair (role admin AND a user of Admin). After the migrations, so
+    // what they did is as before.
+    await sql`insert into workspaces (owner_id, name, is_admin)
+              select ${owner}, 'Admin', true
+               where not exists (select 1 from workspaces
+                                  where owner_id = ${owner} and is_admin)`;
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+              select w.id, l.id, true
+                from workspaces w, unnest(${[owner, admOff, admRo]}::uuid[]) as l(id)
+               where w.owner_id = ${owner} and w.is_admin and w.archived_at is null
+              on conflict do nothing`;
+    expect(
+      (
+        await sql`select count(*)::int as n from auth.users
+                  where id in (${owner}, ${admOff}, ${admRo})
+                    and mantle_login_is_admin(id)`
+      )[0]!.n,
+    ).toBe(3);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'mcp-revived-credentials-secret-32-chars!!';

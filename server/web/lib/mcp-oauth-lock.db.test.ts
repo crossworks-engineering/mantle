@@ -12,7 +12,12 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import {
+  createMigratedScratchDatabase,
+  ensureAdminUsers,
+  ensureTestAnchor,
+  superuserClient,
+} from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -33,6 +38,7 @@ vi.mock('./oauth-lock', async (importOriginal) => {
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('the OAuth lock', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let oauth: typeof import('./mcp-oauth');
@@ -58,7 +64,10 @@ describe.skipIf(!URL)('the OAuth lock', () => {
   };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own: its Admin workspace (ensureAdminUsers) never
+    // reaches the database the other files share.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'oauth-lock-db-test-secret-at-least-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
@@ -69,6 +78,15 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin'),
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'Mia Member')`;
+    // An Admin login is role admin AND a user of Admin. As the superuser:
+    // the app pools only read the workspace tables.
+    const su = superuserClient(scratch.url);
+    try {
+      await su`select set_config('mantle.actor', 'system:test', false)`;
+      await ensureAdminUsers(su, [admin]);
+    } finally {
+      await su.end();
+    }
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${`${tag} client`}, ${['https://c.example/cb']})`;
   }, 120_000);
@@ -80,7 +98,9 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     await sql`delete from oauth_clients where id = ${client}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
-  });
+    await m.closeDb();
+    await scratch?.drop();
+  }, 120_000);
 
   it('finishes more parallel refreshes than the pool has connections (N1)', async () => {
     const { refresh } = await grant(admin);

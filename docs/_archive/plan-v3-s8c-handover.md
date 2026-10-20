@@ -612,3 +612,96 @@ if that one statement fails (a database fault), it answers no, so an
 Admin user hears the fixed error sentence in place of the provider's
 detail (display only, fail closed). On main the detail came from the
 session's role with no database read.
+
+## Part c2, round 3
+
+Same branch, rebased onto main 2f5a75ad5 (v0.300.111, S10 round 1). No
+migration, no edit in packages/db. The rebase's one conflict was
+`scripts/arch-scoreboard.pins.json`: main's S10 values and notes for the
+raw SQL keys kept, this branch's `historyCodeComments` (2336) kept with its
+note appended to main's.
+
+### What changed (round 3)
+
+- **The four DB test files' stand-ins** (`server/web/lib/workspaces.db.test.ts`,
+  `server/web/lib/grants.db.test.ts`,
+  `server/web/app/api/assistant/threads/threads.db.test.ts`,
+  `server/web/server/w7c-chat.db.test.ts`): the routes read
+  `anyLoginCaller()` and `chatCaller()` now, so each file stands them in
+  from the same answer it stood in before (`standInLogin`,
+  `standInChatCaller`), and `adminFacts` answers the stand-in's kind, as
+  the round 2 unit tests do. No assertion changed.
+- **Item 5, the role reads in server/web outside lib/auth.** Three Admin
+  decisions moved to the Admin pair (`adminLogin`: role admin AND a user
+  of Admin now, read with the row). None of them has a Login (a bearer
+  read from its row, or a sign-in before any session), so the pair is the
+  row's form of the answer adminFacts gives, as round 1 did for the peer
+  and the pairing claim:
+  - `server/web/lib/mcp-auth.ts` (an MCP access key): an Admin caller only
+    for `adminLogin(key.login)` (verifyAccessKey's row already reads the
+    pair); any other login takes the member path, which serves a member
+    only.
+  - `server/web/lib/mcp-oauth.ts` `connectingLogin` (an Admin OAuth grant,
+    no session epoch: the /api/mcp bearer check, the code exchange and the
+    refresh): the row reads `mantle_login_is_admin` and asks
+    `adminLogin`. A member grant still reads role member and the epoch.
+  - `server/web/lib/token-login.ts` (POST /api/auth/mobile-login, the old
+    companion's Admin-only sign-in): the row reads `mantle_login_is_admin`
+    and asks `adminLogin`; a member still hears "Update the app" (426).
+- **Left, named** (27 role reads, by kind):
+  - member-path checks, where the pair would WIDEN (a role=admin login
+    outside Admin is no Admin user, but it is no member either, and the
+    session's member case reads the role until S8b):
+    `mcp-auth.ts` memberMcpCaller and mcpTargetLogin, `mcp-oauth.ts` a
+    member grant (`row.role === 'member'`), `pair-code.ts` the member code
+    (update-app) and the member bearer, `peer-access.ts` a peer bound to a
+    member;
+  - `owner-sso.ts`: which SSO cookie is audited (no right);
+  - `mcp-oauth.ts` `ownerFromBearer`: no caller outside its unit test (a
+    dead export; its role filter decides nothing a request reaches);
+  - a requested or target role (S8b): `users/route.ts`,
+    `login-update.ts` (2), `users/[id]/agent/route.ts` (2);
+  - row filters (S8b): `push/store.ts` (3), `access-keys-notify.ts`;
+  - display: `access-keys-admin.ts`, `oauth/authorize` (the consent
+    page's text);
+  - `lib/auth/session.ts` (5: the pair helper, resolvedFor's two cases,
+    memberLoginActive, findMemberAsset) and the packages' 2
+    (`packages/content/src/login-notices.ts`,
+    `packages/mcp-core/src/login-surface.ts`; c3 and c4).
+- **Cells** (`server/web/lib/auth/admin-facts-handlers.db.test.ts`, one
+  more): an MCP key's caller through `resolveMcpCaller` with a real key,
+  `actorMayConnect` for an Admin grant, and `handleTokenLogin` Admin-only,
+  for the five logins of c1's cells. Unit: `token-login.test.ts` (a
+  role=admin login taken out of Admin is 401) and `mcp-oauth.test.ts` (a
+  refresh for a login taken out of Admin is invalid_grant); their Admin
+  stand-in rows carry `adminMember: true`. `eslint-rules/admin-counts.test.ts`
+  asserts the three moved reads are gone (by the moved code).
+
+### Changed answers (round 3)
+
+Narrower only, and only for the role=admin login outside Admin (drift).
+Admin users (keys area on or off), the role=member login inside Admin and
+members are byte-equal (the cell).
+
+| site                                                                                    | role admin outside Admin: main                     | now                                  | cell                                                 |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| /api/mcp with an access key                                                             | an Admin caller (the brain, the key's risky tools) | 401 (no Admin caller, and no member) | "an MCP key's and an Admin OAuth grant's caller ..." |
+| /api/mcp with an Admin OAuth grant; the OAuth code exchange and refresh of such a grant | connects as Admin                                  | 401; invalid_grant                   | the same cell (actorMayConnect)                      |
+| POST /api/auth/mobile-login                                                             | 200, an Admin mobile bearer                        | 401, the one failure message         | the same cell (handleTokenLogin)                     |
+
+And the one the CEO ruled on (2026-10-20, ACCEPTED: display only, fails
+closed, matches the no-raw-error rule):
+
+| site                                                     | login                                                                  | main                        | now                      | cell                                                                                   |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| POST /api/assistant/turn, POST /api/assistant/transcribe | an Admin user, when adminFacts' one statement fails (a database fault) | the provider's error detail | the fixed error sentence | none (a database fault): adminFacts' catch answers no (`server/web/lib/auth/login.ts`) |
+
+### Pins (round 3)
+
+| pin                    | round 2 | round 3                                                                    |
+| ---------------------- | ------- | -------------------------------------------------------------------------- |
+| loginRoleDecisionReads | 30      | **27** (mcp-auth.ts the key, mcp-oauth.ts the Admin grant, token-login.ts) |
+| loginKindBranches      | 17      | 17                                                                         |
+| adminDecisionFlags     | 40      | 40                                                                         |
+| historyCodeComments    | 2336    | 2336                                                                       |
+| inHandlerAreaChecks    | 20      | 20                                                                         |

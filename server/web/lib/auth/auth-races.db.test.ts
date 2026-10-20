@@ -12,6 +12,11 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  createMigratedScratchDatabase,
+  ensureAdminUsers,
+  superuserClient,
+} from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** A token close enough to its end that a refresh rotates it (a token with
@@ -35,6 +40,7 @@ vi.mock('@/lib/audit', () => ({
 }));
 
 describe.skipIf(!URL)('credential races', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   const tag = `races-${randomUUID().slice(0, 8)}`;
@@ -48,7 +54,10 @@ describe.skipIf(!URL)('credential races', () => {
   const client = randomUUID();
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    // A brain of its own: its Admin workspace (ensureAdminUsers) never
+    // reaches the database the other files share.
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'auth-races-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
@@ -57,6 +66,15 @@ describe.skipIf(!URL)('credential races', () => {
       const role = id === member ? 'member' : 'admin';
       await sql`insert into auth.users (id, email, password_hash, role)
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.com`}, 'x', ${role})`;
+    }
+    // The OAuth code's actor is an Admin login: role admin AND a user of
+    // Admin. As the superuser: the app pools only read the workspace tables.
+    const su = superuserClient(scratch.url);
+    try {
+      await su`select set_config('mantle.actor', 'system:test', false)`;
+      await ensureAdminUsers(su, [admin]);
+    } finally {
+      await su.end();
     }
     await sql`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})`;
     await sql`insert into nodes (id, owner_id, type, title, path)
@@ -75,7 +93,9 @@ describe.skipIf(!URL)('credential races', () => {
     await sql`delete from nodes where owner_id = ${brain}`;
     await sql`delete from spaces where login_id in ${sql(logins)} or id in ${sql(logins)}`;
     await sql`delete from auth.users where id in ${sql(logins)}`;
-  });
+    await m.closeDb();
+    await scratch?.drop();
+  }, 120_000);
 
   it('exchanges an OAuth code once, however many try at once', async () => {
     const { mintAuthCode, exchangeAuthCode } = await import('../mcp-oauth');
