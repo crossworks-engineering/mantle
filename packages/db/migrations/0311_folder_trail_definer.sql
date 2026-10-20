@@ -18,7 +18,7 @@
 --    (a page's folders and what each of them unfolds to) that the scope does
 --    not read itself (the ones it reads, it lists). With no such folder, no
 --    other row is read. Otherwise the rows the scope reads below `under` are
---    read first (the read_ws index), at most 5000 of them: when that is all
+--    read first (the read_ws index), at most 2000 of them: when that is all
 --    of them, every such folder on the way to one is answered, at both
 --    levels. When the scope reads more there (a wide scope), each such
 --    folder one level down is probed down the path index instead, the
@@ -67,7 +67,7 @@ DECLARE
   ways ltree[];
   -- Up to this many rows the scope reads below `under` are read in one go;
   -- above it each candidate is probed instead (see the header).
-  cap constant int := 5000;
+  cap constant int := 2000;
 BEGIN
   -- The gate: a scope with a login, on this brain. Otherwise no row is read.
   IF NOT "public"."mantle_scope_active"() THEN RETURN; END IF;

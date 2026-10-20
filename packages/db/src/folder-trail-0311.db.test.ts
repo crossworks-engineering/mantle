@@ -265,14 +265,14 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     expect(can).toEqual({ v: true, w: true });
   });
 
-  it('a wide scope (over 5000 rows read below the folder): the same folders on the way one level down, each with a folder on the way below it', async () => {
-    // 5001 notes in v.d, read as v.d is (the workspace's).
+  it('a wide scope (over 2000 rows read below the folder): the same folders on the way one level down, each with a folder on the way below it', async () => {
+    // 2001 notes in v.d, read as v.d is (the workspace's).
     await ts.superuserExec(
       scratch!.url,
       sql`insert into nodes (owner_id, type, title, path, read_ws)
           select ${owner}, 'note', 'bulk ' || i, ${F.d.path}::ltree,
                  (select read_ws from nodes where id = ${F.d.id})
-            from generate_series(1, 5001) i`,
+            from generate_series(1, 2001) i`,
     );
     const [read] = await m.withViewer(
       { login: member },
@@ -281,7 +281,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
           sql`select count(*)::int as n from nodes where path <@ ${tag}::ltree`,
         )) as unknown as { n: number }[],
     );
-    expect(read!.n).toBeGreaterThan(5000);
+    expect(read!.n).toBeGreaterThan(2000);
     expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'b']);
     expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'b', 'p', 'q']);
     expect(await trailAs(member, owner, F.v.path)).toEqual([]);
