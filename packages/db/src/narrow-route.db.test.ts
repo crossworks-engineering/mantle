@@ -468,7 +468,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         }),
       'admin-area',
     );
-    expect(scoped).toEqual({ u: NARROW, ws: '' });
+    expect(scoped).toEqual({ u: NARROW, ws: '{}' });
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
