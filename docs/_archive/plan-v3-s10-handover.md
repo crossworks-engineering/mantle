@@ -854,16 +854,22 @@ a two-hop path outside a scope and runs the walk in a turn scope;
 audit-read-only.db.test.ts runs the whole audit on the anchor (pg-boss's
 schema made first, as the queue checks read it) and finds the five
 readSql checks among its rows. The refusal: each file makes a test-only
-function that inserts into a scratch table and one that calls nextval on
-a scratch sequence (neither on the list; readSql answers `select f()`
-unchanged), and Postgres refuses each with 25006 in the read-only
-transaction (graphPath's outside a scope and in a turn scope, the audit's
-helper), leaving no row and an uncalled sequence; the same calls outside
-it write (the cell has teeth). A cell reads
+function that inserts an entity and one that calls nextval on
+heads_check_misses_id_seq (neither name on the list; readSql answers
+`select f()` unchanged), and Postgres refuses each with 25006 in the
+read-only transaction (graphPath's outside a scope, and the insert in a
+turn scope too; the audit's helper), leaving no row; the insert outside it
+writes (the cell has teeth). A cell reads
 `current_setting('transaction_read_only')` as `on` inside
 readOnlyTransaction. Both files pass in the default run (actor check
 warn, where the system pool's client sets the actor in a transaction) and
-under test:runtime-role.
+under test:runtime-role. They make no table or sequence of their own: the
+first version did, and a full run failed another file
+(packages/content/src/read-only-writes.db.test.ts, `cache lookup failed
+for relation`) whose read-only role setup runs GRANT SELECT ON ALL TABLES
+while a scratch table was dropped. packages/db/src/narrow-route.db.test.ts
+and packages/search/src/scope.db.test.ts still make and drop tables in
+public, the same race.
 
 What READ ONLY does and does not stop, measured on pg18 (a probe in a
 throwaway container): it refuses INSERT, UPDATE, DELETE, MERGE, DDL
@@ -907,4 +913,43 @@ The repo's findings did not move (the four pins above).
 
 #### Gates
 
-GATES_TBD
+Code head b85564c39 (rebased on main a5bbb2373, v0.300.119). The
+commits after it change this file only.
+
+Mac, DATABASE_URL unset: on dfdb80073 (the code of b85564c39 but the two
+DB cells' first version, which skip here) `pnpm -r typecheck` 0, `pnpm
+lint` 0 (the one warning main has), `pnpm format:check` 0, `pnpm
+docs:check` 0, `pnpm arch:check` 0 (the four pins as above), `pnpm -C
+server/web build` 0, `vitest run server packages eslint-rules` 0 (867
+files passed, 11231 tests). On b85564c39: typecheck 0, lint 0, format:check
+0, docs:check 0, arch:check 0, vitest 0 (867 files, 11231 tests).
+
+Workstation (own clone ~/s10r2c/clone, own container s10r2c-pg on
+127.0.0.1:56571, pgvector pg18, max_connections=450, the `postgres` role
+as CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time):
+
+- on 8a1e227d8 (the cells' first version): full vitest 1 (14092 of 14093
+  passed: a2a-round-trips.db.test.ts counted one more round trip with the
+  edit check on, the pipelined actor RESET that runs after the caller's
+  answer; the file passed three times alone), then its one rerun 1 (all
+  14092 passed; read-only-writes.db.test.ts failed its setup on the
+  scratch table drop, above, which the cells then stopped making);
+  test:actor-off 0 (1315); test:runtime-role 0 (2845).
+- on b85564c39: full vitest 0 (1145 files, 14092 passed, 1 skipped);
+  test:actor-off 0 (135 files, 1315); test:runtime-role 0 (287 files,
+  2845).
+- The pg18 probe of what READ ONLY stops (above), in the same container.
+
+CI: CI_TBD
+
+#### Open items
+
+- narrow-route.ts sqlCode and handles.ts isWriteSql end a `--` comment at
+  `\n` only (above); the narrow route's refusals are the ones that matter.
+  The S7a lane folds narrow-route onto sql-text.
+- WRITE_FUNCTIONS stays a deny list for what READ ONLY does not stop
+  (session settings, locks, notify, stats and maintenance calls, server
+  functions): a new built-in of that kind needs a line there.
+- From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
+  rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
