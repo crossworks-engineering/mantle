@@ -343,3 +343,123 @@ exit 1 then (after the cells unwrap drizzle's error) narrow-route green;
 full DB vitest on 9f05ef055 exit 1 (23 files, 30 tests failed, 13841
 passed): the table above. Not run yet: test:actor-off, test:actor-on,
 test:edit-on, test:matrix, test:runtime-role.
+
+### Round 2
+
+Branch feat/s7a-a2 from round 1's eae808293; origin/main had not moved
+(0d8f745a2), no rebase. No migration.
+
+#### How each refusal was resolved
+
+No hand grant: profiles, nodes and space_items stay narrow 'read' (content
+tables, `narrowFor` throws on a wider hand value). Neither (a) nor (b)
+fitted: the login-self and area exits run with no scope to carry to the
+write role (entering one is session.ts work, S8c's), and no definer writes
+these rows. So (c), at the grain of the writer, not the exit: the work runs
+on the full route, keeping its actor, at a spot named in
+`FULL_ROUTE_SPOTS` (packages/db/src/viewer.ts, `onFullSystemRoute`), each
+with its why and a TODO naming S7b; the exits stay narrow, so
+systemWholeOnFull stays 0 and requestSystemExits area and login-self stay
+narrow. Outside a narrow exit (and with the switch off) a spot runs its work
+as it is.
+
+| Actor                  | Table       | Writer                                                        | Kind | Spot / file                                                     |
+| ---------------------- | ----------- | ------------------------------------------------------------- | ---- | --------------------------------------------------------------- |
+| system:http:login-self | profiles    | the login's own preferences (upsert, the default row)          | c    | profile-row: packages/content/src/profile-preferences.ts        |
+| system:http:admin-area | profiles    | the settings area's brain row, onboarding, the box switch      | c    | profile-row: the same six writes (`profileWrite`)               |
+| system:admin-area      | profiles    | a tool's preferences read making the default row               | c    | profile-row: `loadProfilePreferences`                           |
+| system:http:admin-area | nodes       | a peer's item (create; delete found by reading)                | c    | peer-item: packages/content/src/peers/registry.ts               |
+| system:admin-area      | nodes       | secret_create's Secrets root                                   | c    | secrets-root: packages/tools/src/builtins-secrets.ts            |
+| system:http:admin-area | nodes       | the integrity screen's landed delete (and its file delete)     | c    | integrity-delete: server/web/lib/integrity/landed.ts            |
+| system:http:admin-area | space_items | a promotion's personal-space settle (SELECT ... FOR UPDATE)    | c    | promotion-space: server/web/lib/login-update.ts (that tx only)  |
+| assistant:none         | viewer_test | the test's own schema through systemDb in a scope              | test | viewer.db.test.ts grants its schema to the narrow role          |
+
+The refused statements were found by noting the statement's text with each
+denial in tests (narrow-route.ts `refusedQueryOf`).
+
+#### The four failures without a refusal
+
+- w6b-member-writes, w7a-fix3, turn-create-home: the afterAll hook timed out
+  in closeDb. A narrow statement still in flight (fire and forget) held its
+  reserved connection when the pool's end began, and postgres.js never
+  finishes ending a pool whose connection comes back after that. Fixed: the
+  narrow route's statements and transactions are tracked in the set closeDb
+  waits on (actor-sql.ts `trackPipeline`, as the actor client's pipelines).
+  Flag off the same file passed, flag on it hung: narrow-induced, a route
+  fix, not a test change.
+- a2a-round-trips: the route tagged its BEGIN, SET, hold check and COMMIT
+  with the actor's tag, so with the check off the test saw the actor sent.
+  The route's statements now carry their own tag `/* mantle:narrow */`
+  (check-mode.ts `NARROW_SQL_TAG`), and the test counts them as the path's
+  in every mode (they are sent the same in off, warn and on). Answers are
+  equal; the test's rule for the actor is unchanged. The route's cost, check
+  off, switch off to on: page save 15/20 to 19/22 (statements/round trips),
+  member page save 19/26 to 23/28, chat turn start 104/144 to 148/166; tree
+  load, item open, search, MCP tool call unchanged.
+- Found on the way: w7a-area-system-sweep left two unhandled CONNECTION_CLOSED
+  rejections with the switch on (round 1 had them too). Its trap throws while
+  the narrow pipeline is built, after BEGIN went out: the sent statements
+  were never awaited and the connection went back with an open transaction.
+  narrowStatement now settles what it sent and ends that connection
+  (lease.end) instead of handing it back.
+
+#### Routes, final
+
+AS_SYSTEM_ROUTE is unchanged from round 1: narrow `admin-area`,
+`agent-workspace`, `connector-binding`, `connector-call`,
+`heartbeat-own-row`, `login-telegram`, `audit-log`, `pending-approval`; full
+`app-data`, `rule-in-query`, `keyword-candidates`, `app-trash`,
+`page-refold`, `brain-bookkeeping`, and `login-notice`, `snapshot-copies`,
+`space-taken-authors`, `test` (system work or no caller). Request exits:
+`area` narrow, `login-self` narrow. Full-route spots: five (above).
+
+systemDb files (eslint-rules/system-db-allowlist.mjs `SYSTEM_DB_ROUTE`): full
+`extract-parked.ts` (push worker), `extract-skip-backfill.ts` (maintenance
+script), `llm-guard.ts` (extract worker); every other of the 20 files narrow
+(reached in a turn or request scope). A file with uses and no mark fails
+arch:check.
+
+#### Pins
+
+systemWholeOnFull 0 (unchanged), asSystemNarrow 21, asSystemFull 34
+(unchanged). New: systemDbUses_narrow 66, systemDbUses_full 4 (systemDbUses
+70), requestSystemExits_narrow 3, fullRouteSpots 5, fullRouteSpotCalls 7
+(both down only).
+
+#### Changed answers
+
+Switch off: none expected (a spot reads the route only while it is on; the
+tag, the tracking and the build-time end are on the narrow route only); the
+full DB suite with MANTLE_NARROW_SYSTEM=0 below. Switch on: none against main
+in the suites (every refusal resolved at a spot); the statements differ by
+the route's own (above).
+
+#### Open items
+
+- a3: the actor check trigger counts a content write by system:<narrow
+  reason>; the five spots write content as such actors on the full route, so
+  the count should read `current_user = 'mantle_system_narrow'` (or the spots
+  will report on every peer create).
+- Area routes no suite drives may still write content on the narrow route
+  (plan 2.1 risk 6): a 500 for an Admin user in dev with the switch on. Read,
+  not measured: POST /api/secrets (createSecret in server/web/lib/secrets.ts
+  makes the Secrets root and a secret item), /api/email and /api/attachments
+  (mail items), /api/calendar, /api/docs/collections. a3's telemetry and the
+  area-route rows in the guard sweeps are the plan's limits; S7b decides.
+- The route's cost in round trips (above) before S7b turns it on by default.
+
+#### Rollback (part a2)
+
+- Switch: `MANTLE_NARROW_SYSTEM` is off by default in production, so a box
+  that rolls this release runs every statement as before: byte-equal answers
+  and the same statements (the full DB suite with MANTLE_NARROW_SYSTEM=0 is
+  the proof). Turning it off on a box where it was set on: unset it (or set
+  `0`) and restart; read once when the system pool opens.
+- Image N-1: the narrow route's code is gone (narrow-route.ts, the route
+  maps, the spots, the counters); the role `mantle_system_narrow` stays,
+  made and granted at migrate by part a1 (ensureRuntimeRoles) and unused.
+  No migration in a2, so nothing to revert in SQL. An N-1 restore of an N
+  dump needs the role first (part a1's note: `CREATE ROLE
+  mantle_system_narrow NOLOGIN`).
+- Miss rows with check `narrow-denied` written on a box with the switch on
+  stay in actor_check_misses; N-1 ignores the check name.

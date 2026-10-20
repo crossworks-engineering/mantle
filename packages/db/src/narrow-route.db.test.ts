@@ -87,7 +87,9 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
 
   it('is on by default outside production, and every reason picks a route', () => {
     rr.setNarrowSystemForTests(null);
-    expect(rr.narrowSystemOn()).toBe(true);
+    // The default, unless the run sets the switch (the suite once with
+    // MANTLE_NARROW_SYSTEM=0, the switch-off proof).
+    if (process.env.MANTLE_NARROW_SYSTEM === undefined) expect(rr.narrowSystemOn()).toBe(true);
     rr.setNarrowSystemForTests(true);
     const reasons = [...v.AS_SYSTEM_TURN_REASONS, ...v.AS_SYSTEM_OTHER_REASONS];
     expect(Object.keys(v.AS_SYSTEM_ROUTE).sort()).toEqual([...reasons].sort());
