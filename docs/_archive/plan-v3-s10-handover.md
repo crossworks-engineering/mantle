@@ -941,7 +941,9 @@ systemd-run --user, --maxWorkers=3, one at a time):
   2845).
 - The pg18 probe of what READ ONLY stops (above), in the same container.
 
-CI: CI_TBD
+CI: run 39473067928 on 36a4525b5 (code head b85564c39 plus this
+section before this line): success. The runs on dfdb80073 and b85564c39
+were cancelled by the next push.
 
 #### Open items
 
