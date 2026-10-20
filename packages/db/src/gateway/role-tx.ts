@@ -39,36 +39,8 @@ export type LoginWriteRoute = {
   scope: WorkspaceScope;
 };
 
-export type QueryMode = 'rows' | 'values' | 'simple';
-
-/** A postgres.js-like pending query over `run`: sent once, on the first
- *  `then`, `values` or `simple` (drizzle awaits it or calls `.values()`). */
-export function lazyQuery(run: (mode: QueryMode) => Promise<unknown>) {
-  let pending: Promise<unknown> | null = null;
-  const once = () => (pending ??= run('rows'));
-  return {
-    values: () => run('values'),
-    simple: () => run('simple'),
-    then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
-    catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
-    finally: (fn?: () => void) => once().finally(fn),
-  };
-}
-
-/** A pending query: postgres.js's, or lazyQuery's. */
-type QueryLike = PromiseLike<unknown> & { values(): unknown; simple(): unknown };
-
-/** `q` in `mode`, sent now: its `.then` is called before this returns, so
- *  statements sent one after another go out in that order (postgres.js
- *  queues a query when its `.then` is called). */
-export function sendIn(q: QueryLike, mode: QueryMode): Promise<unknown> {
-  const m = (
-    mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q
-  ) as PromiseLike<unknown>;
-  return new Promise<unknown>((resolve, reject) => {
-    m.then(resolve, reject);
-  });
-}
+import { lazyQuery, sendIn, type QueryLike, type QueryMode } from './actor-sql';
+export { lazyQuery, sendIn, type QueryMode } from './actor-sql';
 
 // ── Write-role denials (A2b2b fix round 1, H1) ──────────────────────────────
 

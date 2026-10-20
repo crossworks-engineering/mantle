@@ -55,7 +55,7 @@
  */
 import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
-import { env, feature } from '@mantle/config';
+import { env, feature, isProduction } from '@mantle/config';
 import { backoffMs, errorMessage, withRetry } from '@mantle/std';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE, narrowFor } from './access-matrix';
 import { viewerRoleName } from './viewer';
@@ -265,6 +265,31 @@ export function runtimeDatabaseUrl(adminUrl: string, password: string): string {
 /** Whether this process's pools log in as the runtime role. */
 export function runtimeRoleOn(): boolean {
   return feature('dbRuntimeRole');
+}
+
+/** The narrow route's switch, read once per process (narrowSystemOn). */
+let narrowSystem: boolean | null = null;
+
+/**
+ * Whether the system pool sends the work of a reason routed 'narrow'
+ * (viewer.ts AS_SYSTEM_ROUTE, REQUEST_SYSTEM_ROUTE) as the narrow system
+ * role (plan v3.2 S7a): MANTLE_NARROW_SYSTEM, on by default in tests and
+ * development, off by default in production (S7b turns it on). Read once,
+ * when the system pool opens (gateway/pools.ts); a production process logs
+ * it with the pool's login (reportDbRole). Off, every statement runs as
+ * before.
+ */
+export function narrowSystemOn(): boolean {
+  if (narrowSystem === null) {
+    narrowSystem = feature('narrowSystem', { default: !isProduction() });
+  }
+  return narrowSystem;
+}
+
+/** Tests only (not in index.ts): the narrow route's switch; null reads
+ *  MANTLE_NARROW_SYSTEM again. */
+export function setNarrowSystemForTests(on: boolean | null): void {
+  narrowSystem = on;
 }
 
 /**

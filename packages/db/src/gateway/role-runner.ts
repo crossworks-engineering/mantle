@@ -4,7 +4,9 @@
  * and COMMIT on one reserved connection), the outermost write transaction
  * and its begin, and a transaction or a statement joined to an open one.
  * It takes the route's SET only (route.setSql); whether a write takes the
- * write role at all is write-route.ts's decision.
+ * write role at all is write-route.ts's decision. The narrow system role's
+ * runner, the same shape on the system pool, is narrow-route.ts (it sits
+ * below pools.ts, which this file's role-tx.ts imports).
  */
 import type postgres from 'postgres';
 import { runTxHooks } from '../viewer';

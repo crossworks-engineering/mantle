@@ -415,6 +415,26 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     for (const q of seqs) {
       expect(['', 'SELECT,USAGE'], q.s).toContain(q.privs.join());
     }
+    // Schemas: USAGE on public, auth and pgboss, CREATE on none (the a1
+    // audit's pin gap).
+    const schemas = await admin<{ s: string; usage: boolean; create: boolean }[]>`
+      select n.nspname as s,
+             has_schema_privilege(${NARROW_ROLE}, n.oid, 'USAGE') as usage,
+             has_schema_privilege(${NARROW_ROLE}, n.oid, 'CREATE') as create
+        from pg_namespace n where n.nspname in ('public', 'auth', 'pgboss') order by 1`;
+    expect(schemas).toEqual([
+      { s: 'auth', usage: true, create: false },
+      { s: 'pgboss', usage: true, create: false },
+      { s: 'public', usage: true, create: false },
+    ]);
+    // pg-boss's tables: SELECT only, every one.
+    const boss = await admin<{ t: string; privs: string[] }[]>`
+      select c.oid::regclass::text as t,
+             array(select distinct a.privilege_type::text from aclexplode(c.relacl) a
+                    where a.grantee = to_regrole(${NARROW_ROLE}) order by 1) as privs
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'pgboss' and c.relkind in ('r', 'p')`;
+    for (const b of boss) expect(b.privs, b.t).toEqual(['SELECT']);
   });
 
   it('the narrow role runs the runtime allowlist less NARROW_DENIED_FUNCTIONS', async () => {

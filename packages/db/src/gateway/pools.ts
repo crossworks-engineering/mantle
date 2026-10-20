@@ -11,11 +11,12 @@ import { env, feature, isProduction } from '@mantle/config';
 import {
   DB_ROLE_SQL,
   dbRoleNote,
+  narrowSystemOn,
   runtimeRoleOn,
   systemDatabaseUrl,
   type DbRoleRow,
 } from '../runtime-role';
-import { viewerDatabaseUrl, viewerRolePassword, type PoolRole } from '../viewer';
+import { systemRouteNow, viewerDatabaseUrl, viewerRolePassword, type PoolRole } from '../viewer';
 import {
   forgetBoxActorCheckMode,
   onPgNotice,
@@ -26,6 +27,7 @@ import {
 } from '../actor';
 import { ACTOR_SQL_TAG, forgetActorCheckModePool, refreshActorCheckMode } from './check-mode';
 import { actorClient, actorPipelinesDone } from './actor-sql';
+import { narrowRouteClient } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
 
@@ -81,7 +83,14 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   const sql =
     globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
   globalThis.__mantleSql = sql;
-  const withActor = actorClient(sql);
+  // The narrow route (plan v3.2 S7a): its switch read once, here, and
+  // logged; a statement of a reason routed 'narrow' runs as the narrow role.
+  const narrow = narrowSystemOn();
+  const withActor = narrowRouteClient(
+    actorClient(sql),
+    sql,
+    () => narrow && systemRouteNow() === 'narrow',
+  );
   adminActorSql = withActor;
   const client = drizzle(withActor, { schema });
   globalThis.__mantleDb = client;
@@ -119,8 +128,11 @@ function reportDbRole(base: PgSql): void {
       const row = rows[0] as DbRoleRow | undefined;
       if (!row) return;
       const note = dbRoleNote(row, runtimeRoleOn());
-      if (note) console.warn(note);
-      else console.log(`[db] the system pool logs in as ${row.user} (arch A9 runtime role)`);
+      // The narrow route's switch, read once when the pool opened.
+      const narrow = `; narrow system route ${narrowSystemOn() ? 'on' : 'off'} (MANTLE_NARROW_SYSTEM)`;
+      if (note) console.warn(`${note}${narrow}`);
+      else
+        console.log(`[db] the system pool logs in as ${row.user} (arch A9 runtime role)${narrow}`);
     })
     .catch(() => {});
 }
@@ -128,6 +140,23 @@ function reportDbRole(base: PgSql): void {
 /** The system pool's client with the actor (actorClient over
  *  globalThis.__mantleSql): the login write gateway's system path. */
 let adminActorSql: PgSql | null = null;
+
+/** The system pool's handle on the narrow route, always (getNarrowDb). */
+let narrowDb: PostgresJsDatabase<typeof schema> | null = null;
+
+/**
+ * The system pool's drizzle handle whose every statement runs on the
+ * narrow route (plan v3.2 S7a): systemDb's inside a turn or request scope
+ * while the switch is on (gateway/handles.ts). The caller asks the switch.
+ */
+export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
+  getAdminDb();
+  const sql = globalThis.__mantleSql!;
+  return (narrowDb ??= drizzle(
+    narrowRouteClient(actorClient(sql), sql, () => true),
+    { schema },
+  ));
+}
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
  *  the transaction that missed, so it assigns that one no transaction id. */
@@ -278,6 +307,7 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleViewerDbs = undefined;
   globalThis.__mantleTurnDb = undefined;
   adminActorSql = null;
+  narrowDb = null;
   for (const reset of closeResets) reset();
   // The next pool reads its database's actor check mode afresh.
   forgetActorCheckModePool();

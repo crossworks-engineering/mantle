@@ -873,9 +873,11 @@ export function gapRerunCount(files) {
   const SWITCH =
     /\bset\s+(?:local\s+|session\s+)?role\s+(?:to\s+)?("?[^\s`'";)=]+"?)|set_config\(\s*'role'\s*,\s*([^,)]+)/gi;
   const ROLE_NAME = /^["']?(?:\$\{[^}]+\}|[a-z0-9]*_[a-z0-9_]*|postgres)["']?$/i;
-  // The pool's own roles are no rerun: the write role, and the workspace
-  // role a read switches to (a test grid's reads, matrix/test-support).
-  const WRITE = /^['"]?(?:\$\{(?:WRITE|VIEW)_ROLE\}|mantle_(?:write|view)_user)['"]?$/;
+  // The pool's own roles are no rerun: the write role, the workspace role a
+  // read switches to (a test grid's reads, matrix/test-support), and the
+  // narrow system role the narrow route takes (plan v3.2 S7a).
+  const WRITE =
+    /^['"]?(?:\$\{(?:WRITE|VIEW|NARROW)_ROLE\}|mantle_(?:write|view)_user|mantle_system_narrow)['"]?$/;
   let n = 0;
   for (const { text } of files) {
     for (const m of stripComments(text).matchAll(SWITCH)) {
@@ -883,6 +885,26 @@ export function gapRerunCount(files) {
       if (m[1] !== undefined && !ROLE_NAME.test(target)) continue;
       if (!WRITE.test(target) && target.toLowerCase() !== 'none') n++;
     }
+  }
+  return n;
+}
+
+/**
+ * The role resets outside the gateway (plan v3.2 S7a, the a1 audit): each
+ * `set_config('role', 'none', ...)`, `RESET ROLE` and `SET [LOCAL|SESSION]
+ * ROLE NONE` in counted source outside packages/db/src/gateway/ and outside
+ * test files, comments blanked. A reset inside narrow work leaves the
+ * narrow role (the route's hold check rolls such a transaction back); none
+ * is wanted outside the gateway, so 0, and a new one is a reviewed pin.
+ */
+export function roleResetCount(files) {
+  const RESET =
+    /\breset\s+role\b|\bset\s+(?:local\s+|session\s+)?role\s+(?:to\s+)?['"]?none\b|set_config\(\s*'role'\s*,\s*'none'/gi;
+  let n = 0;
+  for (const { path, text } of files) {
+    const p = path.replace(/\\/g, '/');
+    if (p.includes('packages/db/src/gateway/') || /\.test\.[cm]?[jt]sx?$/.test(p)) continue;
+    n += (stripComments(text).match(RESET) ?? []).length;
   }
   return n;
 }
@@ -1198,6 +1220,7 @@ export function measure(root) {
       actorsStepRefs: docQuotes.actorsStepRefs,
       docQuotesDangling: docQuotes.docQuotesDangling,
       gapTables: gapRerunCount(texts),
+      roleResets: roleResetCount(texts),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
       ...gateway.numbers,
       failOpenSites: failOpenSiteCount(texts),

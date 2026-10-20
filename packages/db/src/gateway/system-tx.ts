@@ -286,9 +286,15 @@ export type SystemPoolScope = {
 function writeScopeSettings(scope: SystemPoolScope) {
   const ws = scope.ws === null ? '' : uuidArrayLiteral(scope.ws, 'write scope ws');
   const modWs = scope.modWs === null ? '' : uuidArrayLiteral(scope.modWs, 'write scope modWs');
+  // The actor's write mode too, in every check mode: a definer's read-only
+  // refusal reads mantle.write_mode (mantle_ws_archive), and with the check
+  // off nothing else sets it on this path.
+  const actor = currentActor();
+  const writeMode = actor ? writeModeOf(actor) : '';
   return sqlTag`select set_config('mantle.ws', ${ws}, true),
                        set_config('mantle.mod_ws', ${modWs}, true),
-                       set_config('mantle.scope_login', ${checkedUuidOrEmpty(scope.loginId)}, true)`;
+                       set_config('mantle.scope_login', ${checkedUuidOrEmpty(scope.loginId)}, true),
+                       set_config('mantle.write_mode', ${writeMode}, true)`;
 }
 
 /** THE one system-pool transaction in a login's scope set by hand, for a

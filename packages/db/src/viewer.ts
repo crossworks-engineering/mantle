@@ -177,6 +177,9 @@ type RequestSlot = {
   systemWrites?: string[];
   /** Where a create in this request lands (W6b): see CreateHome. */
   createHome?: CreateHome;
+  /** The route of this request's system exit (noteRequestSystem,
+   *  REQUEST_SYSTEM_ROUTE), with the actor reason it binds. */
+  systemRoute?: SystemRouteEntry;
 };
 
 /**
@@ -387,8 +390,10 @@ export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' 
   // Arch A2a (plan 4.1): an Admin area route and the login's own things run
   // as system(reason); an Admin user's write or read on the system pool
   // stays its login (named by the guard).
-  if (why === 'area') setSlotActor(systemUnder('http:admin-area', slotActor()));
-  else if (why === 'login-self') setSlotActor(systemUnder('http:login-self', slotActor()));
+  const reason = why === 'area' ? 'http:admin-area' : 'http:login-self';
+  setSlotActor(systemUnder(reason, slotActor()));
+  // Plan v3.2 S7a: the exit picks its route (REQUEST_SYSTEM_ROUTE).
+  slot.systemRoute = Object.freeze({ route: REQUEST_SYSTEM_ROUTE[why], reason });
 }
 
 /**
@@ -944,6 +949,91 @@ export const AS_SYSTEM_OTHER_REASONS = [
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
 
+/** Which system role an exit runs on (plan v3.2 section 2.1): the narrow
+ *  one (mantle_system_narrow: system tables, content read only) or the full
+ *  one (the system pool's own login, every table). */
+export type SystemRoute = 'narrow' | 'full';
+
+/**
+ * The route of each asSystem reason (plan v3.2 S7a part a2), typed so a new
+ * reason must pick. A 'narrow' reason runs on mantle_system_narrow while
+ * MANTLE_NARROW_SYSTEM is on (narrowSystemOn, runtime-role.ts); off, every
+ * reason runs full as before. Measured with the switch on (the DB suites;
+ * docs/runtime-role.md, "The narrow route"): a narrow reason the role
+ * refuses is routed full here with its why, or granted narrowly in the
+ * access matrix. systemWork runs full whatever its reason (workers, boot
+ * steps).
+ *
+ * Full, each with why:
+ *  - `app-data`: an app's registry rows, its data tables' exports and its
+ *    undo snapshot, written for the app's caller: content tables.
+ *  - `rule-in-query`: the any-login routes hold the workspace rule in their
+ *    own SQL and write content rows (chat threads, access keys' items).
+ *  - `keyword-candidates`: reads every item's text in a big scope; content
+ *    reads stay full until S7c measures the read cells.
+ *  - `app-trash`: a deleted app's snapshots and trash rows (content).
+ *  - `page-refold`: folds the derived text of pages (nodes) again.
+ *  - `brain-bookkeeping`: the named system step writes content tables (a
+ *    table's history, a file's derived counts, the reap of derived items).
+ *  - `login-notice`, `snapshot-copies`: systemWork only (full by rule).
+ *  - `space-taken-authors`: no caller (kept for the spaces family).
+ *  - `test`: a test's own setup.
+ */
+export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Object.freeze({
+  'agent-workspace': 'narrow',
+  'connector-binding': 'narrow',
+  'connector-call': 'narrow',
+  'heartbeat-own-row': 'narrow',
+  'app-data': 'full',
+  'rule-in-query': 'full',
+  'admin-area': 'narrow',
+  'keyword-candidates': 'full',
+  'app-trash': 'full',
+  'login-telegram': 'narrow',
+  'audit-log': 'narrow',
+  'pending-approval': 'narrow',
+  'page-refold': 'full',
+  'brain-bookkeeping': 'full',
+  'login-notice': 'full',
+  'space-taken-authors': 'full',
+  'snapshot-copies': 'full',
+  test: 'full',
+});
+
+/** The route of each request system exit (noteRequestSystem): an Admin
+ *  area route and the login's own row run narrow (plan v3.2 section 2.1
+ *  point 4). Typed so a new exit must pick. */
+export const REQUEST_SYSTEM_ROUTE: Readonly<
+  Record<Extract<RequestOutcome, { kind: 'system' }>['why'], SystemRoute>
+> = Object.freeze({
+  area: 'narrow',
+  'login-self': 'narrow',
+});
+
+/** The route an exit picked, with the actor reason it bound: the route
+ *  holds only while that actor is the one bound (systemRouteNow). */
+type SystemRouteEntry = { readonly route: SystemRoute; readonly reason: string };
+
+const systemRoutes = new AsyncLocalStorage<SystemRouteEntry>();
+
+/**
+ * The route the system pool's statement sent now takes, or null (no exit
+ * picked one: system work, a worker, a login's write sent to the system
+ * pool). The nearest asSystem or systemWork decides; in a request whose
+ * guard let it through on the system pool, the request's exit
+ * (REQUEST_SYSTEM_ROUTE). The pick holds only while the actor the exit
+ * bound is still the one bound: code that binds another actor inside it (a
+ * named repair, the miss log) runs full, as its own actor.
+ */
+export function systemRouteNow(): SystemRoute | null {
+  let entry = systemRoutes.getStore();
+  if (!entry && store.getStore() === undefined) entry = requestSlots.getStore()?.systemRoute;
+  if (!entry) return null;
+  const actor = currentActor();
+  if (actor?.kind !== 'system' || actor.reason !== entry.reason) return null;
+  return entry.route;
+}
+
 /**
  * The workspace system work: the reasons whose actor
  * (system:<reason>) a workspace definer takes from a caller with no acting
@@ -1052,8 +1142,16 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
     typeof reason === 'string' && reason ? reason : 'unnamed',
     currentActor(),
   );
-  if (left) return leftStore.run(left, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
-  return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
+  // Plan v3.2 S7a: the reason's route (AS_SYSTEM_ROUTE); an unknown one
+  // runs full.
+  const entry: SystemRouteEntry = Object.freeze({
+    route: AS_SYSTEM_ROUTE[reason] ?? 'full',
+    reason: (actor as Extract<Actor, { kind: 'system' }>).reason,
+  });
+  const run = () =>
+    systemRoutes.run(entry, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
+  if (left) return leftStore.run(left, run);
+  return run();
 }
 
 /**
@@ -1096,7 +1194,9 @@ export function systemWork<T>(
     );
   }
   const actor = systemUnder(reason, currentActor());
-  return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
+  // Plan v3.2 S7a: system work runs full, whatever its reason.
+  const entry: SystemRouteEntry = Object.freeze({ route: 'full', reason });
+  return systemRoutes.run(entry, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
 }
 
 /** The workspace scope the nearest asSystem left (see scopeLeftForSystem). */

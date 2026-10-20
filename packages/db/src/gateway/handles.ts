@@ -10,7 +10,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type * as schema from '../schema/index';
 import { RuntimeFaultError } from '@mantle/std';
-import { runtimeRoleOn } from '../runtime-role';
+import { narrowSystemOn, runtimeRoleOn } from '../runtime-role';
 import {
   assertSystemDbCaller,
   carriedWriteScope,
@@ -26,7 +26,7 @@ import { checkActorBound } from '../actor';
 import { withMigratorConnection } from '../migrator-connection';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { actorParams, setActorSql } from './actor-sql';
-import { getAdminDb } from './pools';
+import { getAdminDb, getNarrowDb } from './pools';
 import { loginWritesMayRoute, systemWriteDb, typedWrite } from './write-route';
 import { systemPoolTxInScope } from './system-tx';
 import { getDb } from './scope';
@@ -174,8 +174,14 @@ export function executeWrite(
 export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
     if (STATEMENT_PROPS.has(prop)) checkActorBound(`systemDb.${String(prop)}`);
-    if (inTurnScope() && systemDbAccessChecked(prop)) assertSystemDbCaller();
-    return Reflect.get(getAdminDb() as object, prop);
+    const inScope = inTurnScope();
+    if (inScope && systemDbAccessChecked(prop)) assertSystemDbCaller();
+    // Plan v3.2 S7a: inside a turn or request scope its infrastructure
+    // writes (traces, spills, counters, logs) run on the narrow route while
+    // the switch is on; outside every scope (workers, boot) it is system
+    // work and runs full.
+    const handle = inScope && narrowSystemOn() ? getNarrowDb() : getAdminDb();
+    return Reflect.get(handle as object, prop);
   },
 });
 

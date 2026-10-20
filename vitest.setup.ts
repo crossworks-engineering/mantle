@@ -16,6 +16,7 @@ import { appendFileSync } from 'node:fs';
 import { afterEach, beforeAll, beforeEach, expect } from 'vitest';
 import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/db/src/actor';
 import { takeFailOpenHits } from './packages/db/src/fail-open';
+import { takeNarrowDenials, takeNarrowUses } from './packages/db/src/gateway/narrow-route';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -39,6 +40,37 @@ if (failOpenDump) {
     appendFileSync(failOpenDump, hits.map((h) => `${JSON.stringify({ ...h, file })}\n`).join(''));
   });
 }
+
+// Plan v3.2 S7a: MANTLE_NARROW_DUMP=<file> lists the narrow route's uses
+// by actor (one JSON line per test file and actor, with the count) and its
+// denials: how each reason routed 'narrow' was measured with the switch on
+// (docs/runtime-role.md, "The narrow route").
+const narrowDump = process.env.MANTLE_NARROW_DUMP;
+
+afterEach(() => {
+  // Plan v3.2 S7a: a right the narrow role does not hold, met on the narrow
+  // route (a caught one too). None may: each is a reason to route full with
+  // its why (viewer.ts AS_SYSTEM_ROUTE), or a table to grant narrowly.
+  const denied = takeNarrowDenials();
+  const uses = takeNarrowUses();
+  if (narrowDump && (denied.length > 0 || Object.keys(uses).length > 0)) {
+    const file = expect.getState().testPath ?? '?';
+    const lines = [
+      ...Object.entries(uses).map(([actor, n]) => JSON.stringify({ use: actor, n, file })),
+      ...denied.map((d) => JSON.stringify({ denied: d.actor, what: d.what, file })),
+    ];
+    appendFileSync(narrowDump, `${lines.join('\n')}\n`);
+  }
+  if (denied.length > 0) {
+    throw new Error(
+      `${denied.length} statement(s) on the narrow route met a right mantle_system_narrow does not hold (plan v3.2 S7a):\n` +
+        denied
+          .slice(0, 10)
+          .map((d) => `  ${d.actor}: ${d.what}`)
+          .join('\n'),
+    );
+  }
+});
 
 afterEach(() => {
   // Arch A2b2b: a right the write role does not hold, met by a login write
