@@ -353,12 +353,16 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
       getAdminDb().transaction(async (tx) => {
         if (writeScope) await sendWriteScope(tx, writeScope);
         if (homeSettings) {
-          await tx.execute(
-            sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
-                          set_config('mantle.private_ws', ${homeSettings[1]}, true),
-                          set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true),
-                          set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
-          );
+          // The gateway's own SET (where a create lands): on the narrow
+          // route only it may name these settings.
+          await gatewaySettings(async () => {
+            await tx.execute(
+              sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
+                            set_config('mantle.private_ws', ${homeSettings[1]}, true),
+                            set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true),
+                            set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
+            );
+          });
         }
         return run(tx);
       }),
