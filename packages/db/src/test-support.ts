@@ -67,6 +67,7 @@ import {
   RUNTIME_ROLES,
 } from './runtime-role';
 import { errorMessage, UUID_RE } from '@mantle/std';
+import { rawAdminSql } from './gateway/pools';
 
 type Sql = postgres.Sql;
 
@@ -360,6 +361,54 @@ export async function runWorkspacesSwitch<T = Record<string, unknown>>(
 ): Promise<T[]> {
   if (!url) throw new Error('runWorkspacesSwitch: no database URL (set DATABASE_URL)');
   return superuserExec<T>(url, 'select * from mantle_ws_migrate()');
+}
+
+/** One statement the system pool wrote to the wire: the postgres.js
+ *  connection it went on and its text. */
+export type SentStatement = { conn: number; text: string };
+
+/**
+ * Record every statement the system pool sends until `stop()`, in the order
+ * each is written to the wire: postgres.js calls its `debug` option as it
+ * writes a statement (its connection's id and the text), on every
+ * connection of the pool, the narrow route's reserved ones too. How a test
+ * sees what a caller's statements really ran in (sentReadOnly), whatever
+ * client wrapper sits between.
+ */
+export function recordSystemPoolSends(): { sent: SentStatement[]; stop: () => void } {
+  const options = (rawAdminSql() as unknown as { options: { debug?: unknown } }).options;
+  const before = options.debug;
+  const sent: SentStatement[] = [];
+  options.debug = (conn: number, text: string) => {
+    sent.push({ conn, text });
+  };
+  return {
+    sent,
+    stop: () => {
+      options.debug = before;
+    },
+  };
+}
+
+/** A statement's text without its leading tag comments, in lower case. */
+const statementHead = (text: string): string =>
+  text.replace(/^(?:\s*\/\*[^*]*\*\/)*\s*/, '').toLowerCase();
+
+/**
+ * Whether `sent[i]` went inside a READ ONLY transaction: on its connection,
+ * a `set transaction read only` was sent before it, with no BEGIN, COMMIT
+ * or ROLLBACK between (a statement sent before the SET, or outside any
+ * transaction, is not).
+ */
+export function sentReadOnly(sent: readonly SentStatement[], i: number): boolean {
+  const conn = sent[i]!.conn;
+  for (let j = i - 1; j >= 0; j -= 1) {
+    if (sent[j]!.conn !== conn) continue;
+    const head = statementHead(sent[j]!.text);
+    if (/^set\s+transaction\s+read\s+only\b/.test(head)) return true;
+    if (/^(?:begin|start\s+transaction|commit|rollback|end|abort)\b/.test(head)) return false;
+  }
+  return false;
 }
 
 /** Poll `check` until it holds, or fail after `timeoutMs`. */
