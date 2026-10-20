@@ -363,6 +363,24 @@ export function connectorCheck(caller: McpCaller) {
 }
 
 /**
+ * Whether the connection names no login to the builtins: a peer bound to a
+ * login with role admin that the owner did not register for the anchor. An
+ * app its app_delete sends to Recently deleted then waits there for the
+ * owner, who alone deletes it for good.
+ *
+ * It reads the peer's login role, not the Admin pair (role admin AND a user
+ * of Admin), until the role follows membership. The pair would answer
+ * "names its login" for a role admin outside Admin, and a named login is
+ * what app_delete, app_create, the share, Telegram, replay, runs, pending
+ * and delegation builtins act for: for the anchor taken out of Admin, its
+ * peer's app_delete would be purged. Every other login answers the same
+ * either way (the cells in login-surface-peer.test.ts).
+ */
+export function peerNamesNoLogin(caller: Pick<McpCaller, 'via' | 'role' | 'peerByOwner'>): boolean {
+  return caller.via === 'peer' && caller.role === 'admin' && !caller.peerByOwner;
+}
+
+/**
  * Register the one surface for this caller (W7b): the owner tools and the
  * connector tools of its workspaces, each listed when the one gate lists
  * it for the connection and called through it (gated-tools.ts, A5 step 4;
@@ -376,7 +394,6 @@ export function registerPreparedTools(
 ): void {
   const gateCaller = mcpGateCaller(prepared);
   const { caller } = prepared;
-  const adminRole = caller.role === 'admin';
   // Outside an Admin scope: nothing spends on the owner's keys (M-a).
   const keysOff = preparedKeysOff(prepared);
   const gate: McpGate = Object.freeze({
@@ -393,12 +410,7 @@ export function registerPreparedTools(
   const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
-    // A peer an admin did not register for the anchor names no login to the
-    // builtins: an app its app_delete sends to Recently deleted waits there
-    // for the owner, who alone deletes it for good (W6b fix round 3, M-1).
-    ...(caller.via === 'peer' && adminRole && !caller.peerByOwner
-      ? {}
-      : { loginId: caller.loginId }),
+    ...(peerNamesNoLogin(caller) ? {} : { loginId: caller.loginId }),
     mcp: channel,
     ...(via !== 'mcp' ? { via } : {}),
     gate,
