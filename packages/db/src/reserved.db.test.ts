@@ -15,7 +15,8 @@
  *  - postgres.js itself (patches/postgres@3.4.9.patch): a release, and a
  *    statement, on a reservation the server ended; a transaction (begin,
  *    drizzle's db.transaction) killed mid-statement, whose ROLLBACK went to
- *    the null socket the same way;
+ *    the null socket the same way; a reservation's new connection closed
+ *    during its array-type lookup, whose promise nobody held;
  *  - the system pool's write as the actor (actorClient, pipelined): the
  *    connection killed during the write, and a RESET that fails on a live
  *    connection (it then ends on purpose and is not handed back);
@@ -147,6 +148,60 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
       await answers(pool);
       expect(sock).not.toBe(first);
     } finally {
+      await pool.end({ timeout: 1 });
+    }
+  });
+
+  it('postgres.js: a reservation whose new connection dies during its type lookup leaves no unhandled rejection', async () => {
+    // The first statement of a fresh connection is postgres.js's array-type
+    // lookup. A reservation opens its connection with no statement of its
+    // own, so before the patch nothing held that lookup's promise: a forced
+    // DROP DATABASE at a test file's end killed one there, and vitest failed
+    // a run whose tests all passed on the unhandled CONNECTION_CLOSED. The
+    // pool's sockets are ours, so the first one closes exactly as the
+    // lookup is written.
+    const target = new globalThis.URL(scratch.url);
+    const sockets: net.Socket[] = [];
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const pool = postgres(scratch.url, {
+      max: 1,
+      prepare: false,
+      onnotice: () => {},
+      connect_timeout: 3,
+      // @ts-expect-error a runtime option (src/connection.js createSocket) its types omit
+      socket: async () => {
+        const s = net.connect(Number(target.port || 5432), target.hostname);
+        await once(s, 'connect');
+        if (sockets.length === 0) {
+          const write = s.write.bind(s) as (chunk: unknown) => boolean;
+          Object.assign(s, {
+            write: (chunk: unknown) => {
+              if (!Buffer.isBuffer(chunk) || !chunk.includes('typarray')) return write(chunk);
+              s.destroy();
+              return false;
+            },
+          });
+        }
+        sockets.push(s);
+        return s;
+      },
+    });
+    try {
+      // Not awaited: the close retries the reservation on a second
+      // connection, and in postgres.js 3.4.9 that retry never settles (the
+      // retried reservation has left the pool's queue, and the second
+      // connection opens to no one). Left as it is: this case pins only the
+      // lookup's promise.
+      void pool.reserve();
+      await until(() => sockets.length === 2, 'the second connection');
+      // The pool answers on the second connection, and nothing went unheld.
+      await answers(pool);
+      await sleep(50);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
       await pool.end({ timeout: 1 });
     }
   });

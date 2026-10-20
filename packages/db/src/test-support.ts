@@ -499,10 +499,13 @@ export function quotedQueryStart(query: string): string {
  * Promise.all that rejected early leaves its other queries running; a
  * fire-and-forget write). If closeDb() has already run, that work's next
  * `db` access opens a NEW pool, and the new connection's first query is
- * postgres.js's array-type lookup. A forced drop that kills it there rejects
- * a promise nobody holds: an unhandled CONNECTION_CLOSED that fails the run
- * though every test passed (w7e-member-scope.db.test.ts on v0.300.48). An idle
- * connection killed by the drop rejects nothing.
+ * postgres.js's array-type lookup. A forced drop that killed it there rejected
+ * a promise nobody held: an unhandled CONNECTION_CLOSED that failed the run
+ * though every test passed (w7e-member-scope.db.test.ts on v0.300.48). This
+ * wait cannot close that race (a connection still starting up runs nothing
+ * yet), so patches/postgres@3.4.9.patch now holds the lookup's promise and
+ * answers a connection error on it; reserved.db.test.ts pins it. The wait
+ * still keeps the drop from cutting work short, and its warning names it.
  *
  * Only `state = 'active'` counts as busy: an `idle in transaction` session
  * is waiting on its client, not running, so waiting on it would only cost

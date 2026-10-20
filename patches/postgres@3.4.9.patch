@@ -1,5 +1,5 @@
 diff --git a/cf/src/connection.js b/cf/src/connection.js
-index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..65adf3e88d7291e17ef9fa3224817b862f0315f3 100644
+index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..93e629705b2aed978d3b8fab45cc47def15a1f46 100644
 --- a/cf/src/connection.js
 +++ b/cf/src/connection.js
 @@ -427,6 +427,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
@@ -37,6 +37,35 @@ index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..65adf3e88d7291e17ef9fa3224817b86
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+@@ -563,7 +577,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+ 
+       if (needsTypes) {
+         initial.reserve && (initial = null)
+-        return fetchArrayTypes()
++        // mantle patch: nothing holds this promise, so a connection that dies
++        // during the lookup (a forced DROP DATABASE, a pg_terminate_backend)
++        // left an unhandled rejection. That death is already answered: the
++        // statement that opened the connection is rejected or retried by the
++        // close, and the next connect looks the types up again.
++        return fetchArrayTypes().catch(typesLookupFailed)
+       }
+ 
+       initial && !initial.reserve && execute(initial)
+@@ -780,6 +799,14 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     types.forEach(({ oid, typarray }) => addArrayType(oid, typarray))
+   }
+ 
++  // mantle patch: only a connection that is gone is answered here; any
++  // other failure of the lookup stays an unhandled rejection, as before.
++  function typesLookupFailed(err) {
++    if (err && ['CONNECTION_CLOSED', 'CONNECTION_DESTROYED', 'CONNECTION_ENDED', 'ECONNRESET', 'EPIPE'].includes(err.code))
++      return
++    throw err
++  }
++
+   function addArrayType(oid, typarray) {
+     if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
+     const parser = options.parsers[oid]
 diff --git a/cf/src/index.js b/cf/src/index.js
 index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a10b54b95a4b51b796296860f18aef69ed0e77 100644
 --- a/cf/src/index.js
@@ -108,7 +137,7 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a10b54b95a4b51b796296860f18aef
          c.queue === full
            ? queries.push(q)
 diff --git a/cjs/src/connection.js b/cjs/src/connection.js
-index 07f6716702ac888215c86ad6e0071aaf55ae519c..b2eeffcce5b96a567e4cda519490b3bb1416dbfd 100644
+index 07f6716702ac888215c86ad6e0071aaf55ae519c..a18395050cbc3b8f77cc227e71475f53b866d374 100644
 --- a/cjs/src/connection.js
 +++ b/cjs/src/connection.js
 @@ -425,6 +425,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
@@ -146,6 +175,35 @@ index 07f6716702ac888215c86ad6e0071aaf55ae519c..b2eeffcce5b96a567e4cda519490b3bb
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+@@ -561,7 +575,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+ 
+       if (needsTypes) {
+         initial.reserve && (initial = null)
+-        return fetchArrayTypes()
++        // mantle patch: nothing holds this promise, so a connection that dies
++        // during the lookup (a forced DROP DATABASE, a pg_terminate_backend)
++        // left an unhandled rejection. That death is already answered: the
++        // statement that opened the connection is rejected or retried by the
++        // close, and the next connect looks the types up again.
++        return fetchArrayTypes().catch(typesLookupFailed)
+       }
+ 
+       initial && !initial.reserve && execute(initial)
+@@ -778,6 +797,14 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     types.forEach(({ oid, typarray }) => addArrayType(oid, typarray))
+   }
+ 
++  // mantle patch: only a connection that is gone is answered here; any
++  // other failure of the lookup stays an unhandled rejection, as before.
++  function typesLookupFailed(err) {
++    if (err && ['CONNECTION_CLOSED', 'CONNECTION_DESTROYED', 'CONNECTION_ENDED', 'ECONNRESET', 'EPIPE'].includes(err.code))
++      return
++    throw err
++  }
++
+   function addArrayType(oid, typarray) {
+     if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
+     const parser = options.parsers[oid]
 diff --git a/cjs/src/index.js b/cjs/src/index.js
 index f09c61c7e998f411560b95c9a8e1ed6a97972c11..2605b6a8f2d800b0eb34ab03390ca069efaac64c 100644
 --- a/cjs/src/index.js
@@ -217,7 +275,7 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..2605b6a8f2d800b0eb34ab03390ca069
          c.queue === full
            ? queries.push(q)
 diff --git a/src/connection.js b/src/connection.js
-index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..be0fa086298f258ce454bf45b491f364ed6453cf 100644
+index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..03c0d4d3adee62fd6ba11e7f0e326b3c0bf8e074 100644
 --- a/src/connection.js
 +++ b/src/connection.js
 @@ -425,6 +425,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
@@ -255,6 +313,35 @@ index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..be0fa086298f258ce454bf45b491f364
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+@@ -561,7 +575,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+ 
+       if (needsTypes) {
+         initial.reserve && (initial = null)
+-        return fetchArrayTypes()
++        // mantle patch: nothing holds this promise, so a connection that dies
++        // during the lookup (a forced DROP DATABASE, a pg_terminate_backend)
++        // left an unhandled rejection. That death is already answered: the
++        // statement that opened the connection is rejected or retried by the
++        // close, and the next connect looks the types up again.
++        return fetchArrayTypes().catch(typesLookupFailed)
+       }
+ 
+       initial && !initial.reserve && execute(initial)
+@@ -778,6 +797,14 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     types.forEach(({ oid, typarray }) => addArrayType(oid, typarray))
+   }
+ 
++  // mantle patch: only a connection that is gone is answered here; any
++  // other failure of the lookup stays an unhandled rejection, as before.
++  function typesLookupFailed(err) {
++    if (err && ['CONNECTION_CLOSED', 'CONNECTION_DESTROYED', 'CONNECTION_ENDED', 'ECONNRESET', 'EPIPE'].includes(err.code))
++      return
++    throw err
++  }
++
+   function addArrayType(oid, typarray) {
+     if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
+     const parser = options.parsers[oid]
 diff --git a/src/index.js b/src/index.js
 index c7fba3dace20173f4cb13f3f138bb6d213b43683..fa7ccaa76475e0ad0d37999ed081e21391c82fe2 100644
 --- a/src/index.js

@@ -168,7 +168,10 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
       Number((await sql`select count(*) as n from item_grants where node_id = ${page}`)[0]!.n),
     ).toBe(0);
     expect(await runWorkspacesCheck()).toMatchObject({ itemsWithoutHome: 1, grantDrift: 0 });
-  });
+    // Longer than the suite's 15 s: this case migrates its own scratch
+    // database from empty, signs up the first owner and boots twice, and
+    // under a full CI run that alone has passed 15 s.
+  }, 60_000);
 
   it('fix round 2, L-a: an item made while the migration runs is left without a home, and counted', async () => {
     const { sql } = await brain();
