@@ -358,6 +358,70 @@ arise here).
 `eslint-rules/admin-counts.test.ts` now asserts that the three named
 role reads are gone (by the moved code, not by line number).
 
+### Tests changed with the answers (round 1)
+
+- `server/web/lib/access-keys.db.test.ts`: the keys area was stood in on
+  `requireArea`; it is now stood in on `adminFacts` (the real Admin
+  answer, the stand-in's areas only for an Admin user). Its "a member with
+  the keys area makes risky and long keys" became "a member never holds
+  it" (400, 90 days): the role=member-inside-Admin narrowing above.
+- `server/web/lib/pair-code.test.ts`: the login row carries `adminMember`;
+  a new case, "taken out of Admin" (role admin, no Admin membership), is
+  null.
+- `server/web/app/api/shell/shell-parts.test.ts`: the mocks answer
+  `anyLoginCaller`, `legacyLogin` and `adminFacts`; every answer as before.
+- `server/web/server/a4-guard-sweep.test.ts`: a reader with `logs` is
+  logged under that reader's entry and projection. The recorded files
+  (`server/web/server/__snapshots__/`) are unchanged byte for byte (no
+  `-u`; `git diff main` on them is empty), and the guard and role sweeps
+  pass on the branch.
+
+### Gates (round 1)
+
+Mac (DATABASE_URL unset), on 3c4c8c79d (the commits after it change
+`access-keys.db.test.ts`, which runs only with a database, and this file):
+
+| gate                                              | exit                              |
+| ------------------------------------------------- | --------------------------------- |
+| pnpm -r typecheck                                 | 0                                 |
+| pnpm lint                                         | 0                                 |
+| pnpm format:check                                 | 0                                 |
+| pnpm docs:check                                   | 0                                 |
+| pnpm arch:check                                   | 0                                 |
+| pnpm -C server/web build                          | 0                                 |
+| pnpm exec vitest run server packages eslint-rules | 0 (857 files passed, 270 skipped) |
+
+The first Mac run (on a8558adce) answered unit 1: the guard sweep's moved
+record named the new entry (`pipeline:loginItself`; the sweep now logs a
+`logs` reader under the named reader's entry), and the shell and pair-code
+unit tests mocked the old reads. All 0 on 3c4c8c79d.
+
+Workstation (own clone `s8c-c2-clone`, own `s8c-c2-pg`, pgvector pg18,
+max_connections=450, port 56201 checked free, the `postgres` role as CI;
+MANTLE_CHECK_FLOOR=keep; systemd-run --user; --maxWorkers=3; one at a
+time):
+
+| run                                   | head      | exit | result                                                                                                    |
+| ------------------------------------- | --------- | ---- | --------------------------------------------------------------------------------------------------------- |
+| the c1 and c2 admin-facts cells, warn | 3c4c8c79d | 0    | 2 files, 14 passed                                                                                        |
+| the cells, test:actor-on config       | 3c4c8c79d | 0    | 2 files, 14 passed                                                                                        |
+| the cells, test:edit-on config        | 3c4c8c79d | 0    | 2 files, 14 passed                                                                                        |
+| full vitest with DB                   | 3c4c8c79d | 1    | 1126 of 1127 files: `access-keys.db.test.ts` stood the keys area in on `requireArea` (fixed in 590cd67c1) |
+| test:actor-off                        | 3c4c8c79d | 0    | 128 files, 1177 passed, 1 skipped                                                                         |
+| test:actor-on                         | 3c4c8c79d | 0    | 31 files, 375 passed, 1 skipped                                                                           |
+| test:edit-on                          | 3c4c8c79d | 0    | 43 files, 545 passed                                                                                      |
+| test:matrix                           | 3c4c8c79d | 0    | 4 files, 8 passed                                                                                         |
+| test:runtime-role, full config        | 3c4c8c79d | 1    | 277 of 278 files: the same `access-keys.db.test.ts`                                                       |
+| access-keys.db.test.ts                | 590cd67c1 | 0    | 19 passed                                                                                                 |
+| full vitest with DB                   | 590cd67c1 | 0    | 1127 files, 13877 passed, 1 skipped                                                                       |
+| test:runtime-role, full config        | 590cd67c1 | 0    | 278 files, 2782 passed, 1 skipped                                                                         |
+
+The commit after 3c4c8c79d changes only `access-keys.db.test.ts`, which
+the actor-off, actor-on, edit-on and matrix configs do not run (they
+passed with its old text). An earlier run on a8558adce was stopped after
+the cells (all 0), once the Mac unit gate had failed. No flake, no rerun
+of a passing suite.
+
 ### Left for round 2
 
 - The owner rows that read `ownerCallerWithLogin()` and branch on its
