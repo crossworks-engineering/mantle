@@ -493,6 +493,26 @@ describe('the repo', () => {
     }
   });
 
+  it('tools, runtime, mcp-core and telegram: no login kind branch, and one role read, the peer naming its login (on the role until it follows membership)', () => {
+    const inParts = (o: Record<string, unknown>) =>
+      Object.keys(o).filter((p) => /^packages\/(tools|runtime|mcp-core|telegram)\//.test(p));
+    const d = detail as unknown as {
+      loginKindBranches: Record<string, number[]>;
+      loginRoleDecisionReads: Record<string, number[]>;
+    };
+    expect(inParts(d.loginKindBranches)).toEqual([]);
+    expect(inParts(d.loginRoleDecisionReads)).toEqual(['packages/mcp-core/src/login-surface.ts']);
+    const path = 'packages/mcp-core/src/login-surface.ts';
+    const lines = texts.find((t) => t.path === path)!.text.split('\n');
+    const at =
+      lines.findIndex((l) =>
+        l.includes("caller.via === 'peer' && caller.role === 'admin' && !caller.peerByOwner"),
+      ) + 1;
+    expect(at).toBeGreaterThan(0);
+    expect(d.loginRoleDecisionReads[path]).toEqual([at]);
+    expect(lines[at - 2]).toContain('export function peerNamesNoLogin(');
+  });
+
   it('finds no TypeScript area rule: SQL decides (plan v3.2: areasOf, areasFromLimits and requireArea`s list rule went)', () => {
     expect(detail.tsAreaRules).toEqual({});
   });
