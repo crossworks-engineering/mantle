@@ -125,7 +125,7 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
     const { recordSystemPoolSends, sentReadOnly } = await import('@mantle/db/test-support');
     const { runCorpusAudit } = await import('./audit');
     const rec = recordSystemPoolSends();
-    let checks = 0;
+    let checks: number;
     try {
       checks = (await runCorpusAudit(anchor)).checks.length;
     } finally {
