@@ -18,6 +18,7 @@ import {
   rawWriteKind,
   rawWriteSqlSites,
   rawWriteSwept,
+  sqlStatements,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './cleanup-counts.mjs';
 
@@ -70,14 +71,85 @@ describe('rawWriteSqlSites', () => {
       'const doc = `insert the coin`;',
       '// sql`insert into t`',
     ].join('\n');
+    // readSql counts as any call unless imported from @mantle/db, and
+    // execute of a name that holds no built SQL may run a string.
     expect(rawWriteSqlSites('x.ts', t)).toEqual([
       { line: 2, why: 'write' },
       { line: 3, why: 'write' },
       { line: 5, why: 'write' },
       { line: 6, why: 'non-literal' },
+      { line: 7, why: 'non-literal' },
       { line: 8, why: 'non-literal' },
       { line: 9, why: 'write' },
+      { line: 10, why: 'non-literal' },
     ]);
+  });
+
+  it('reads each statement of a text on its own, outside quotes and dollar quotes', () => {
+    expect(sqlStatements("select ';' as a; delete from t")).toEqual([
+      "select ';' as a",
+      ' delete from t',
+    ]);
+    expect(sqlStatements('select $q$ ; $q$; update t set a = 1')).toEqual([
+      'select $q$ ; $q$',
+      ' update t set a = 1',
+    ]);
+    expect(rawWriteKind('select 1; delete from t')).toBe('write');
+    expect(rawWriteKind(';delete from t')).toBe('write');
+    expect(rawWriteKind('select 1; with d as (select 1) insert into t select * from d')).toBe(
+      'write',
+    );
+    expect(rawWriteKind(`select 'a; delete from t'`)).toBeNull();
+    expect(rawWriteKind('select "a;delete from t" from x')).toBeNull();
+    expect(rawWriteKind('select $$; delete from t$$')).toBeNull();
+    const t = [
+      "await pg.unsafe('select 1; delete from t');",
+      'await db.execute(sql`;delete from t`);',
+      'await db.execute(sql`select ${a}; update t set a = ${b}`);',
+      "await pg.unsafe(`select ';'`);",
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 1, why: 'write' },
+      { line: 2, why: 'write' },
+      { line: 3, why: 'write' },
+    ]);
+  });
+
+  it('reads execute of anything but built SQL as text', () => {
+    const t = [
+      'const q = sql`select 1`;',
+      'await db.execute(q);',
+      'async function f(a: SQL, b: string, c: ReturnType<typeof sql>) {',
+      '  await db.execute(a);',
+      '  await db.execute(b);',
+      '  await db.execute(c);',
+      '}',
+      'const mk = (id: string) => sql`select ${id}`;',
+      'await db.execute(mk(x));',
+      'function g() { if (x) return sql`select 1`; return text; }',
+      'await db.execute(g());',
+      'await db.execute(x ? sql`select 1` : text);',
+      'await db.execute(sql.join([a, b]));',
+      'type D = { query: (o: string) => SQL };',
+      'await db.execute(d.query(o));',
+      'await db.execute(other.query(o));',
+    ].join('\n');
+    expect(rawWriteSqlSites('x.ts', t)).toEqual([
+      { line: 5, why: 'non-literal' },
+      { line: 11, why: 'non-literal' },
+      { line: 12, why: 'non-literal' },
+    ]);
+  });
+
+  it('takes readSql only from @mantle/db, and still reads a literal in it', () => {
+    const ok = "import { readSql as r } from '@mantle/db';\nawait pg.unsafe(r(text));";
+    expect(rawWriteSqlSites('x.ts', ok)).toEqual([]);
+    const local = "import { readSql } from './read-sql';\nawait pg.unsafe(readSql(text));";
+    expect(rawWriteSqlSites('x.ts', local)).toEqual([{ line: 2, why: 'non-literal' }]);
+    const lit = "import { readSql } from '@mantle/db';\nawait pg.unsafe(readSql('delete from t'));";
+    expect(rawWriteSqlSites('x.ts', lit)).toEqual([{ line: 2, why: 'write' }]);
+    const read = "import { readSql } from '@mantle/db';\nawait db.execute(readSql('select 1'));";
+    expect(rawWriteSqlSites('x.ts', read)).toEqual([]);
   });
 
   it('reads a tag under any name: an alias, a transaction handle, a parameter', () => {

@@ -74,6 +74,8 @@ import {
 // @ts-expect-error: plain-JS module, no types shipped.
 import { RAW_WRITE_ALLOWLIST, RAW_WRITE_ALLOWLIST_CAP } from './raw-write-allowlist.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
+import { HAND_RUN_HARNESSES, HAND_RUN_HARNESS_CAP } from './cleanup-counts.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
 import {
   DOCS_STORE_FILES,
   STORE_PINS,
@@ -277,12 +279,44 @@ describe('the architecture ratchets (pinned counts)', () => {
     // review decision of the F auditor.
     const counts = Object.fromEntries(Object.entries(allow).map(([f, v]) => [f, v.count]));
     expect(diff(counts, allowed)).toEqual([]);
-    expect(RAW_WRITE_ALLOWLIST_CAP).toBeLessThanOrEqual(5);
+    expect(RAW_WRITE_ALLOWLIST_CAP).toBeLessThanOrEqual(2);
     expect(Object.keys(allow).length).toBeLessThanOrEqual(RAW_WRITE_ALLOWLIST_CAP as number);
     for (const [f, v] of Object.entries(allow)) {
       expect(v.why.length, f).toBeGreaterThan(20);
       expect(Object.hasOwn(RAW_WRITE_PINS, f), f).toBe(false);
     }
+  });
+
+  it('no-raw-write-sql: the hand-run harnesses are capped, each with why, and no counted file imports one', () => {
+    const harnesses = HAND_RUN_HARNESSES as Record<string, string>;
+    expect(HAND_RUN_HARNESS_CAP).toBeLessThanOrEqual(3);
+    expect(Object.keys(harnesses).length).toBeLessThanOrEqual(HAND_RUN_HARNESS_CAP as number);
+    const files = countedFiles(ROOT) as string[];
+    for (const [f, why] of Object.entries(harnesses)) {
+      expect(why.length, f).toBeGreaterThan(20);
+      expect(readRepoFile(ROOT, f), f).not.toBeNull();
+      expect(rawWriteLinted(f), f).toBe(false);
+      expect(Object.hasOwn(RAW_WRITE_PINS, f) || Object.hasOwn(RAW_WRITE_ALLOWLIST, f), f).toBe(
+        false,
+      );
+    }
+    // A harness imported by product code would be product code.
+    const names = Object.keys(harnesses).map((f) =>
+      f.replace(/^.*\/src\//, '').replace(/\.ts$/, ''),
+    );
+    const importers = files.filter((f) => {
+      if (Object.hasOwn(harnesses, f)) return false;
+      const text = readRepoFile(ROOT, f);
+      return (
+        text !== null &&
+        names.some((n) =>
+          new RegExp(`from\\s+['"][^'"]*${n.replace(/[/.]/g, (c) => `\\${c}`)}(?:\\.ts)?['"]`).test(
+            text,
+          ),
+        )
+      );
+    });
+    expect(importers).toEqual([]);
   });
 
   it('store-brokers: the files that reach each disk store, store by store', () => {
@@ -1007,10 +1041,25 @@ describe('the editor rules', () => {
         },
         { code: 'await db.execute(sql`select "public"."mantle_x"(${x})`);', filename: file },
         { code: 'await db.update(t).set({ a: 1 }).where(eq(t.id, x));', filename: file },
-        { code: 'await pg.unsafe(readSql(text));', filename: file },
+        {
+          code: "import { readSql } from '@mantle/db';\nawait pg.unsafe(readSql(text));",
+          filename: file,
+        },
         { code: writes(entry.count), filename: `/r/${allowed}` },
-        // Tests and test support are not product code.
+        // Tests, test support and the hand-run harnesses are not product code.
         { code: writes(1), filename: '/r/packages/search/src/test-support/seed.ts' },
+        { code: writes(1), filename: '/r/server/api/src/crash-test.ts' },
+        // Built SQL to execute: a template, a name or a function that holds
+        // one, a ternary of two (typed parameters: cleanup-counts.test.ts).
+        { code: 'const q = sql`select 1`;\nawait db.execute(q);', filename: file },
+        { code: 'await db.execute(c ? sql`select 1` : sql`select 2`);', filename: file },
+        {
+          code: 'const mk = (id) => sql`select ${id}`;\nawait db.execute(mk(x));',
+          filename: file,
+        },
+        // A `;` inside a quoted string or a dollar quote splits nothing.
+        { code: `await pg.unsafe("select ';' as a; select 2");`, filename: file },
+        { code: "await pg.unsafe('select $$ ; delete from t $$');", filename: file },
       ],
       invalid: [
         { code: writes(1), filename: file, errors: [{ messageId: 'over' }] },
@@ -1025,6 +1074,60 @@ describe('the editor rules', () => {
           errors: [{ messageId: 'over' }],
         },
         { code: 'await pg.unsafe(text);', filename: file, errors: [{ messageId: 'over' }] },
+        // drizzle's execute runs a string as raw text.
+        { code: 'await db.execute(text);', filename: file, errors: [{ messageId: 'over' }] },
+        {
+          code: 'async function f(q) {\n  await db.execute(q);\n}',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'const q = sql`select 1`;\nasync function f(q) {\n  await db.execute(q);\n}',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        // Each statement on its own: a write after a read, after a `;`.
+        {
+          code: "await pg.unsafe('select 1; delete from t');",
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'await db.execute(sql`;delete from t`);',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: 'await db.execute(sql`select 1; update t set a = ${x}`);',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: "await pg.unsafe(';delete from t');",
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        // readSql only from @mantle/db, and a literal in it is still read.
+        {
+          code: 'await pg.unsafe(readSql(text));',
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: "import { readSql } from './read-sql';\nawait pg.unsafe(readSql(text));",
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: "import { readSql } from '@mantle/db';\nawait pg.unsafe(readSql('delete from t'));",
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
+        {
+          code: "import { readSql } from '@mantle/db';\nawait db.execute(readSql('select 1; delete from t'));",
+          filename: file,
+          errors: [{ messageId: 'over' }],
+        },
         {
           code: writes(entry.count + 1),
           filename: `/r/${allowed}`,

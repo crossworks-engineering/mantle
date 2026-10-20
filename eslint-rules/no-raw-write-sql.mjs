@@ -10,14 +10,22 @@
  *    DELETE, MERGE or TRUNCATE, after its comments are stripped and a
  *    leading WITH and its CTEs are walked;
  *  - text with a data-modifying CTE (`as ( insert|update|delete|merge`);
- *  - `.unsafe(x)` or `<tag>.raw(x)` whose text is no literal, unless it is
- *    wrapped in `readSql(...)`.
+ *  - each statement of the text on its own (split on `;` outside quotes
+ *    and dollar quotes), so `select 1; delete from t` and a leading `;`
+ *    are found;
+ *  - `.unsafe(x)` or `<tag>.raw(x)` whose text is no literal, and
+ *    `.execute(x)` where x is neither literal text nor SQL a tag built
+ *    (drizzle's execute runs a string as raw text), unless it is wrapped
+ *    in `readSql(...)` imported from @mantle/db (none exists yet, so
+ *    nothing passes that way today); a literal inside readSql is still
+ *    read.
  * Not findings: reads (FOR UPDATE included), definer calls
  * (`select "public"."mantle_x"(...)`), drizzle typed writes.
  *
  * Where: packages/<name>/src and server/, counted files only (no tests, no
- * migrations), test support left out. A file of the raw write allowlist
- * (raw-write-allowlist.mjs) is held to its own pin there.
+ * migrations), test support and the hand-run harnesses
+ * (cleanup-counts.mjs HAND_RUN_HARNESSES) left out. A file of the raw write
+ * allowlist (raw-write-allowlist.mjs) is held to its own pin there.
  *
  * Pinned-count mode, per file: the rule flags a file over its pin (an
  * unlisted file: 0); eslint-rules/arch-lints.test.ts fails on any other
@@ -26,12 +34,17 @@
  * rawWriteSqlScoped and rawSqlNonLiteral are the totals.
  */
 import { isCounted, pinnedRule, repoPathOf } from './arch-counts.mjs';
-import { isTestSupport, rawWriteSqlSites, rawWriteSwept } from './cleanup-counts.mjs';
+import {
+  isHandRunHarness,
+  isTestSupport,
+  rawWriteSqlSites,
+  rawWriteSwept,
+} from './cleanup-counts.mjs';
 import { RAW_WRITE_ALLOWLIST } from './raw-write-allowlist.mjs';
 
 /** Whether the rule reads `path` (repo-relative). */
 export function rawWriteLinted(path) {
-  return isCounted(path) && rawWriteSwept(path) && !isTestSupport(path);
+  return isCounted(path) && rawWriteSwept(path) && !isTestSupport(path) && !isHandRunHarness(path);
 }
 
 /** The raw write SQL sites of a file (literal writes and non-literal text). */
@@ -51,7 +64,8 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/extract-skip-backfill.ts': 1,
   'packages/db/src/gateway/actor-sql.ts': 9,
   'packages/db/src/gateway/check-mode.ts': 1,
-  'packages/db/src/gateway/handles.ts': 2,
+  // executeWrite passes its argument (a string or built SQL) to execute.
+  'packages/db/src/gateway/handles.ts': 4,
   'packages/db/src/gateway/pools.ts': 2,
   'packages/db/src/gateway/role-runner.ts': 3,
   'packages/db/src/gateway/role-tx.ts': 1,
@@ -69,6 +83,10 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/viewer-roles.ts': 3,
   'packages/db/src/workspace-live.ts': 1,
   'packages/db/src/workspaces-check.ts': 1,
+  // restampRacedCreate's home grant: the write role may INSERT only some
+  // columns of item_grants, and a drizzle insert names them all (42501).
+  // Raw until it becomes a definer call.
+  'packages/files/src/ops/files.ts': 1,
   'packages/search/src/entities.ts': 1,
   'packages/tools/src/builtins-eval.ts': 1,
   'server/api/src/agent/runtime.ts': 1,
@@ -89,7 +107,7 @@ export const RAW_WRITE_PINS = {
 export const rule = pinnedRule({
   description: 'No raw write SQL in scoped code (plan v3.2 section 3.2).',
   message:
-    'Raw write SQL: write through a typed drizzle write or a definer call. Text that only reads and is no literal goes in readSql(...). System work that must stay raw is an allowlist entry (raw-write-allowlist.mjs, review).',
+    'Raw write SQL: write through a typed drizzle write or a definer call. Text that only reads is a literal, or SQL a tag builds. System work that must stay raw is an allowlist entry (raw-write-allowlist.mjs, review).',
   pins: {
     ...RAW_WRITE_PINS,
     ...Object.fromEntries(Object.entries(RAW_WRITE_ALLOWLIST).map(([f, v]) => [f, v.count])),

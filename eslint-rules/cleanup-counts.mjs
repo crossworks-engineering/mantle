@@ -28,6 +28,28 @@ export function isTestSupport(path) {
   return /(^|\/)test-support(\/|\.ts$)/.test(path);
 }
 
+/** Hand-run harnesses: scripts a developer runs by hand on a scratch
+ *  database of their own, never imported by product code and never part of
+ *  a running brain. Like test support, the raw write rule does not read
+ *  them. Each with why; the list is capped at HAND_RUN_HARNESS_CAP and
+ *  eslint-rules/arch-lints.test.ts checks that no counted file imports one. */
+export const HAND_RUN_HARNESSES = Object.freeze({
+  'server/api/src/bench/haystack.ts':
+    'the memory benchmark (bench:memory) seeds its own scratch database, never a brain',
+  'server/api/src/bench/run.ts':
+    'the memory benchmark makes and drops its scratch databases on the admin URL',
+  'server/api/src/crash-test.ts':
+    'the crash-recovery harness of the durable runner, run by hand, writing its own temp table',
+});
+
+/** The most entries HAND_RUN_HARNESSES may hold (plan rule 6). */
+export const HAND_RUN_HARNESS_CAP = 3;
+
+/** Whether `path` is a hand-run harness (HAND_RUN_HARNESSES). */
+export function isHandRunHarness(path) {
+  return Object.hasOwn(HAND_RUN_HARNESSES, path);
+}
+
 // ── raw write SQL ───────────────────────────────────────────────────────────
 
 /** The SQL tags: `<tag>.raw(text)` is SQL text (a tagged template is read
@@ -79,10 +101,39 @@ function afterWith(sql) {
  *  leading placeholders (`${TAG} insert ...`, a tag comment before the
  *  statement) are skipped. */
 export function rawWriteKind(text) {
-  const sql = afterLeadingPlaceholders(text);
-  if (WRITE_START.test(afterWith(sql))) return 'write';
+  const sql = dropSqlComments(text);
+  for (const statement of sqlStatements(sql)) {
+    if (WRITE_START.test(afterWith(statement.replace(/^\s*(?:\$1\s*)+/, '')))) return 'write';
+  }
   if (WRITE_CTE.test(sql)) return 'write-cte';
   return null;
+}
+
+/** The statements of SQL `text`, split on each `;` outside a quoted string,
+ *  a quoted name and a dollar quote, so a write after a read (`select 1;
+ *  delete from t`) or after a leading `;` is read as its own statement. */
+export function sqlStatements(text) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "'" || ch === '"') {
+      const end = text.indexOf(ch, i + 1);
+      if (end < 0) break;
+      i = end;
+    } else if (ch === '$') {
+      const open = /^\$(?:[A-Za-z_][\w]*)?\$/.exec(text.slice(i));
+      if (!open) continue;
+      const end = text.indexOf(open[0], i + open[0].length);
+      if (end < 0) break;
+      i = end + open[0].length - 1;
+    } else if (ch === ';') {
+      out.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out;
 }
 
 /** The static text of a template (its literal parts, each `${}` a
@@ -264,34 +315,197 @@ function textCallNames(sf, tags) {
   return names;
 }
 
+/** A type annotation that holds built SQL: drizzle's SQL, SQLWrapper or
+ *  SQLChunk, or `ReturnType<typeof tag>` of a SQL tag. */
+function isSqlType(node, tags) {
+  if (!node) return false;
+  const t = node.getText().replace(/\s+/g, ' ').trim();
+  if (/^(?:SQL|SQLWrapper|SQLChunk)(?:<[\s\S]*>)?$/.test(t)) return true;
+  const m = /^ReturnType<typeof (\w+)>$/.exec(t);
+  return !!m && tags.has(m[1]);
+}
+
+/** The declarations of `sf` by name: variables, parameters and functions,
+ *  and apart the members a type declares (property and method signatures),
+ *  each with the node whose span is its scope. */
+function declarationsOf(sf) {
+  const names = new Map();
+  const members = new Map();
+  const add = (map, name, node, scope) => {
+    if (!map.has(name)) map.set(name, []);
+    map.get(name).push({ node, scope });
+  };
+  const scopeOf = (node) => {
+    let p = node.parent;
+    while (p && !ts.isBlock(p) && !ts.isSourceFile(p) && !ts.isFunctionLike(p)) p = p.parent;
+    return p ?? sf;
+  };
+  const visit = (node) => {
+    if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
+      add(names, node.name.text, node, node.parent);
+    } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      add(names, node.name.text, node, scopeOf(node));
+    } else if (ts.isFunctionDeclaration(node) && node.name) {
+      add(names, node.name.text, node, scopeOf(node));
+    } else if (
+      (ts.isPropertySignature(node) || ts.isMethodSignature(node)) &&
+      ts.isIdentifier(node.name)
+    ) {
+      add(members, node.name.text, node, sf);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { names, members };
+}
+
+/** The declarations of `name` that a use at `at` sees: those of the
+ *  innermost scope holding `at` (a nested name hides an outer one). */
+function visibleDeclarations(decls, name, at) {
+  const all = (decls.names.get(name) ?? []).filter(
+    (d) => d.scope.getStart() <= at.getStart() && at.getEnd() <= d.scope.getEnd(),
+  );
+  if (!all.length) return [];
+  const width = (d) => d.scope.getEnd() - d.scope.getStart();
+  const inner = Math.min(...all.map(width));
+  return all.filter((d) => width(d) === inner).map((d) => d.node);
+}
+
+/** The expressions a function answers: its expression body, or each
+ *  `return` of its own body (not of a function inside it). */
+function returnsOf(fn) {
+  if (!fn.body) return [];
+  if (!ts.isBlock(fn.body)) return [fn.body];
+  const out = [];
+  const visit = (node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node)) {
+      if (node.expression) out.push(node.expression);
+      else out.push(null);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(fn.body, visit);
+  return out;
+}
+
+/** Whether `e` is SQL a tag built (what drizzle's `.execute` takes as built
+ *  SQL, not as text): a tagged template, a SQL tag's helper (`sql.join`,
+ *  `sql.raw`: the text of `.raw` is read where it is called), a ternary of
+ *  two, a name declared with one or typed as built SQL in the file, or a
+ *  call of a function of the file that answers one or is typed so. Anything
+ *  else may be a string, which drizzle's execute runs as raw text. */
+function isSqlBuilder(e, ctx, depth = 0) {
+  if (!e || depth > 6) return false;
+  e = unwrapExpr(e);
+  if (ts.isSatisfiesExpression?.(e)) return isSqlBuilder(e.expression, ctx, depth + 1);
+  if (ts.isTaggedTemplateExpression(e)) return true;
+  if (ts.isConditionalExpression(e)) {
+    return isSqlBuilder(e.whenTrue, ctx, depth + 1) && isSqlBuilder(e.whenFalse, ctx, depth + 1);
+  }
+  if (ts.isCallExpression(e)) {
+    const callee = unwrapExpr(e.expression);
+    const member = memberOf(callee);
+    if (member) {
+      const o = unwrapExpr(member.object);
+      if (ts.isIdentifier(o) && ctx.tags.has(o.text)) return true;
+      // A member a type of the file declares as answering built SQL
+      // (`query: (id: string) => SQL`), every declaration of that name.
+      const sigs = ctx.decls.members.get(member.name) ?? [];
+      return (
+        sigs.length > 0 &&
+        sigs.every(({ node: d }) =>
+          ts.isMethodSignature(d)
+            ? isSqlType(d.type, ctx.tags)
+            : !!d.type && ts.isFunctionTypeNode(d.type) && isSqlType(d.type.type, ctx.tags),
+        )
+      );
+    }
+    if (!ts.isIdentifier(callee)) return false;
+    const decls = visibleDeclarations(ctx.decls, callee.text, callee);
+    if (!decls.length) return false;
+    return decls.every((d) => {
+      const fn = ts.isFunctionDeclaration(d)
+        ? d
+        : ts.isVariableDeclaration(d) &&
+            d.initializer &&
+            (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))
+          ? d.initializer
+          : null;
+      if (!fn) return false;
+      if (isSqlType(fn.type, ctx.tags)) return true;
+      const rets = returnsOf(fn);
+      return rets.length > 0 && rets.every((r) => r && isSqlBuilder(r, ctx, depth + 1));
+    });
+  }
+  if (ts.isIdentifier(e)) {
+    const decls = visibleDeclarations(ctx.decls, e.text, e);
+    if (!decls.length) return false;
+    return decls.every((d) => {
+      if (ts.isFunctionDeclaration(d)) return false;
+      if (isSqlType(d.type, ctx.tags)) return true;
+      return (
+        ts.isVariableDeclaration(d) &&
+        !!d.initializer &&
+        isSqlBuilder(d.initializer, ctx, depth + 1)
+      );
+    });
+  }
+  return false;
+}
+
+/** The local names of `readSql` imported from @mantle/db. The package
+ *  exports none yet, so no file can import one (typecheck refuses it) and
+ *  every `readSql(...)` is read as any other call until it does. */
+function readSqlNames(sf) {
+  const names = new Set();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    if (st.moduleSpecifier.text !== '@mantle/db') continue;
+    const bound = st.importClause?.namedBindings;
+    if (!bound || !ts.isNamedImports(bound)) continue;
+    for (const el of bound.elements) {
+      if ((el.propertyName ?? el.name).text === 'readSql') names.add(el.name.text);
+    }
+  }
+  return names;
+}
+
 /**
  * The raw write SQL of `text`: `[{ line, why }]`. Any tagged template whose
  * static text is a write (a tag's alias, a transaction handle or a
  * parameter that holds the tag reads the same text); `.unsafe(text)`,
  * `<tag>.raw(text)` and `.execute(text)` with literal text that is a
- * write; and `.unsafe(x)` or `<tag>.raw(x)` with text that is no literal
+ * write; `.unsafe(x)` or `<tag>.raw(x)` with text that is no literal
  * (`why: 'non-literal'`; a template whose static text does not start a
- * statement, such as `${stmt}` or `${a}; select 1`, is none), unless wrapped in `readSql(...)`. The text
- * methods read the same under a literal key (`pg['unsafe'](x)`) and under
- * another name (`const raw = sql.raw`, `const { unsafe } = pg`,
- * textCallNames). A tag is a SQL
- * tag (SQL_TAGS) or a name holding one (sqlTagNames). `.execute(x)` of a
- * built query is not text (drizzle's execute takes the SQL a tag built,
- * which is read where it is built). Not findings: reads, definer calls
+ * statement, such as `${stmt}` or `${a}; select 1`, is none); and
+ * `.execute(x)` where x is neither literal text nor SQL a tag built
+ * (isSqlBuilder): drizzle's execute runs a string as raw text, so such an
+ * argument is non-literal text too. Text is read statement by statement
+ * (sqlStatements), so a write after a read or a leading `;` is found.
+ * `readSql(x)` takes the place of non-literal text only when readSql is
+ * imported from @mantle/db, and a literal inside it is still read. The
+ * text methods read the same under a literal key (`pg['unsafe'](x)`) and
+ * under another name (`const raw = sql.raw`, `const { unsafe } = pg`,
+ * textCallNames). A tag is a SQL tag (SQL_TAGS) or a name holding one
+ * (sqlTagNames). Not findings: reads, definer calls
  * (`select "public"."mantle_x"(...)`), drizzle typed writes.
  */
 export function rawWriteSqlSites(path, text) {
-  if (!/\b(?:insert|update|delete|merge|truncate|unsafe|raw)\b/i.test(text)) return [];
+  if (!/\b(?:insert|update|delete|merge|truncate|unsafe|raw|execute)\b/i.test(text)) return [];
   const sf = parse(path, text);
   const tags = sqlTagNames(sf);
   const textNames = textCallNames(sf, tags);
+  const readSql = readSqlNames(sf);
+  const ctx = { tags, decls: declarationsOf(sf) };
   const out = [];
+  const site = (node, why) => out.push({ line: lineOf(sf, node.getStart(sf)), why });
   const visit = (node) => {
     if (ts.isTaggedTemplateExpression(node)) {
       // The tag's name never matters: write SQL text in a template is the
       // write, whichever name holds the tag.
       const why = rawWriteKind(templateText(node.template));
-      if (why) out.push({ line: lineOf(sf, node.getStart(sf)), why });
+      if (why) site(node, why);
     } else if (ts.isCallExpression(node)) {
       const callee = unwrapExpr(node.expression);
       const member = memberOf(callee);
@@ -301,16 +515,18 @@ export function rawWriteSqlSites(path, text) {
         ? isTextMethod(member, tags)
         : ts.isIdentifier(callee) && textNames.has(callee.text);
       if (arg && (textCall || m === 'execute')) {
-        const lit = literalText(arg);
+        const inner = unwrapExpr(arg);
         const wrapped =
-          ts.isCallExpression(arg) &&
-          ts.isIdentifier(arg.expression) &&
-          arg.expression.text === 'readSql';
+          ts.isCallExpression(inner) &&
+          ts.isIdentifier(inner.expression) &&
+          readSql.has(inner.expression.text);
+        const lit = literalText(wrapped ? (inner.arguments[0] ?? inner) : arg);
         if (lit !== null) {
           const why = rawWriteKind(lit);
-          if (why) out.push({ line: lineOf(sf, node.getStart(sf)), why });
-        } else if (textCall && !wrapped) {
-          out.push({ line: lineOf(sf, node.getStart(sf)), why: 'non-literal' });
+          if (why) site(node, why);
+        } else if (!wrapped && (textCall || !isSqlBuilder(arg, ctx))) {
+          // Composed text in readSql is checked where readSql runs.
+          site(node, 'non-literal');
         }
       }
     }
@@ -599,7 +815,7 @@ export function cleanupCounts(root, texts) {
   const history = {};
   for (const { path, text } of texts) {
     if (isTestSupport(path)) continue;
-    if (rawWriteSwept(path) && !allowed.has(path)) {
+    if (rawWriteSwept(path) && !allowed.has(path) && !isHandRunHarness(path)) {
       const sites = rawWriteSqlSites(path, text);
       if (sites.length) rawWrites[path] = sites.map((s) => `${s.line}:${s.why}`);
     }
