@@ -56,6 +56,11 @@ export const SESSION_GUARDS = Object.freeze([
  *  - `atRead`: the gate binds the answer and the handler's first read runs
  *    it, where the handler called its guard (route-policy.ts
  *    ANSWERED_AT_READ): such a read may follow code, and is awaited.
+ *  - `logs`: the reader whose projection the guard sweep logs for this
+ *    reader's rows, where this one reads the same answer in another shape
+ *    (anyLoginCaller: the Login itself, plan v3.2 section 2.2; the sweep
+ *    keeps logging the any-login answer's legacy shape, loginCaller's, so
+ *    the recorded files compare one answer byte for byte).
  */
 export const READER_ANSWERS = Object.freeze({
   ownerCaller: Object.freeze({ caller: 'owner', guard: 'getOwnerOr401', entry: 'pipeline:owner' }),
@@ -75,6 +80,12 @@ export const READER_ANSWERS = Object.freeze({
     entry: 'pipeline:member',
   }),
   loginCaller: Object.freeze({ caller: 'login', guard: 'getLoginOr401', entry: 'pipeline:login' }),
+  anyLoginCaller: Object.freeze({
+    caller: 'login',
+    guard: 'getLoginOr401',
+    entry: 'pipeline:loginItself',
+    logs: 'loginCaller',
+  }),
   chatLoginCaller: Object.freeze({
     caller: 'chat',
     guard: 'getChatLoginOr401',

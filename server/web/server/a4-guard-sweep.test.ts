@@ -319,7 +319,9 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     // nothing, as nothing was logged there.
     if (ENTRIES[reader]!.atRead || ENTRIES[reader]!.guard === null) return answer(row);
     const name = ENTRIES[reader]!.entry;
-    const project = real[reader] as () => unknown;
+    // The projection the sweep logs: the reader's own, or the one it names
+    // (session-guards.mjs `logs`: the same answer in its legacy shape).
+    const project = real[ENTRIES[reader]!.logs ?? reader] as () => unknown;
     let value: unknown;
     try {
       value = await answer(row);

@@ -179,7 +179,7 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
  * area rule, so none). The session itself (resolvedFor),
  * memberLoginActive and findMemberAsset still read the role.
  */
-function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
+export function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
   return row.role === 'admin' && row.adminMember === true;
 }
 
@@ -1355,6 +1355,21 @@ export function memberCaller(): MemberCaller {
  */
 export function loginCaller(): AnyLogin {
   return { ...legacyLogin(pipelineAnswer('loginCaller', 'login').login) };
+}
+
+/**
+ * The login the pipeline answered for this request on an any-login route,
+ * as the Login itself (plan v3.2 section 2.2): the very object
+ * getLoginOr401 answered, so adminFacts(login) asks its scope and
+ * legacyLogin(login) still finds its legacy shape. No lookup, no effect,
+ * and the same throw as loginCaller() where the pipeline answered no
+ * login. A handler that decides Admin reads this and asks adminFacts.
+ *
+ *     const login = anyLoginCaller();
+ *     const { admin } = await adminFacts(login);
+ */
+export function anyLoginCaller(): Login {
+  return pipelineAnswer('anyLoginCaller', 'login').login;
 }
 
 /**

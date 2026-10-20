@@ -3,6 +3,7 @@ import type { AuthWhoami } from '@mantle/client-types';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
+import { workspaceCaller } from '@/lib/workspaces';
 
 /**
  * GET /api/auth/whoami: who a credential belongs to, for any role
@@ -47,7 +48,7 @@ export async function GET() {
     displayName: displayName ?? null,
     ...ROUTES[login.kind],
     ...(await brainIdField()),
-    ...(await loginWorkspaces('whoami', login)),
+    ...(await loginWorkspaces('whoami', workspaceCaller(login), login.kind === 'admin')),
   };
   return NextResponse.json(body);
 }

@@ -34,7 +34,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { loginCaller, verifyPassword, type AnyLogin } from '@/lib/auth';
+import { anyLoginCaller, legacyLogin, verifyPassword } from '@/lib/auth';
+import { adminFacts, type Login } from '@/lib/auth/login';
 import {
   ACCESS_KEY_ACCESS,
   ACCESS_KEY_AREAS,
@@ -45,7 +46,6 @@ import {
   maxKeyDays,
   mintAccessKey,
 } from '@/lib/access-keys';
-import { requireArea } from '@/lib/workspaces';
 import { listAccessKeys } from '@/lib/access-keys-admin';
 import { notifyKeyMade } from '@/lib/access-keys-notify';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
@@ -79,26 +79,18 @@ const Body = z
   // rather than quietly ignored.
   .strict();
 
-/** Whether the login holds the Admin workspace with its keys area now (W8a:
- *  what a key may be decides on this, never on the role). */
-async function holdsKeysArea(login: AnyLogin): Promise<boolean> {
-  return requireArea(
-    {
-      loginId: login.loginId,
-      anchorId: login.kind === 'admin' ? login.user.id : login.member.anchorId,
-      user: login.kind === 'admin' ? login.user : null,
-    },
-    'keys',
-  );
-}
-
-async function handleGET(login: AnyLogin) {
-  const keys = await listAccessKeys(login.kind === 'admin' ? null : login.loginId);
-  const maxDays = maxKeyDays(await holdsKeysArea(login));
+async function handleGET(login: Login) {
+  // An Admin user sees every key; any other login its own (adminFacts: the
+  // scope's answer, plan v3.2 section 2.2). What a key may be decides on the
+  // keys area, never on the role (W8a).
+  const facts = await adminFacts(login);
+  const keys = await listAccessKeys(facts.admin ? null : login.loginId);
+  const maxDays = maxKeyDays(facts.areas.has('keys'));
   return NextResponse.json(
     {
       keys,
-      role: login.kind,
+      // The display role (the legacy shape's, until the role is derived).
+      role: legacyLogin(login).kind,
       areas: [...ACCESS_KEY_AREAS],
       defaultExpiryDays: Math.min(DEFAULT_ACCESS_KEY_EXPIRY_DAYS, maxDays ?? Infinity),
       maxExpiryDays: maxDays,
@@ -109,11 +101,14 @@ async function handleGET(login: AnyLogin) {
   );
 }
 
-async function handlePOST(login: AnyLogin, req: Request) {
+async function handlePOST(login: Login, req: Request) {
   const input = await readBody(req, Body, { empty: null });
   const body = input;
   const riskyTools = body.riskyTools ?? [];
-  const keysArea = await holdsKeysArea(login);
+  // The login holds the Admin workspace with its keys area now (adminFacts,
+  // asked unscoped here: the area rule about the login, with its Admin pair).
+  const keysArea = (await adminFacts(login)).areas.has('keys');
+  const role = legacyLogin(login).kind;
   if (riskyTools.length > 0 && !keysArea) {
     return NextResponse.json(
       {
@@ -182,9 +177,9 @@ async function handlePOST(login: AnyLogin, req: Request) {
   // stolen session must not make a key unseen. Not awaited: a slow push
   // relay must not hold the answer. Never the secret or the prefix.
   void notifyKeyMade({
-    ownerId: login.kind === 'admin' ? login.user.id : login.member.anchorId,
+    ownerId: login.brainId,
     loginId: login.loginId,
-    role: login.kind,
+    role,
     name: body.name,
     access: body.access,
     expiresAt,
@@ -201,7 +196,7 @@ async function handlePOST(login: AnyLogin, req: Request) {
       keyId: id,
       keyPrefix: `mtlk_${prefix}`,
       name: body.name,
-      role: login.kind,
+      role,
       access: body.access,
       areas: body.areas,
       riskyTools,
@@ -225,11 +220,11 @@ async function handlePOST(login: AnyLogin, req: Request) {
 // still leaves the scope by name: its password check reads the login's hash
 // and the new key's row is written on the system pool.
 export async function GET() {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   return handleGET(login);
 }
 
 export async function POST(req: Request) {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   return inRuleInQuery(() => handlePOST(login, req));
 }

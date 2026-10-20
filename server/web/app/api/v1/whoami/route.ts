@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
-import { loginCaller, type AnyLogin } from '@/lib/auth';
+import { anyLoginCaller, legacyLogin } from '@/lib/auth';
+import type { Login } from '@/lib/auth/login';
 import { getRequestContext } from '@/server/request-context';
 import type { ApiV1Whoami } from '@mantle/client-types';
 
@@ -8,12 +9,12 @@ import type { ApiV1Whoami } from '@mantle/client-types';
  * an API key, what the key may do. Every credential works here; any role.
  * About the login and the key only, never brain data.
  */
-async function handleGET(login: AnyLogin) {
-  const displayName =
-    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
+async function handleGET(login: Login) {
+  const { displayName } = login;
   const key = getRequestContext()?.accessKey;
   return NextResponse.json({
-    role: login.kind,
+    // The display role (the legacy shape's, until the role is derived).
+    role: legacyLogin(login).kind,
     loginId: login.loginId,
     email: login.email,
     displayName,
@@ -33,6 +34,6 @@ async function handleGET(login: AnyLogin) {
  *  the database: it runs where the request runs (A6b: it left the scope
  *  whole before, 'rule-in-query', for no read). */
 export async function GET() {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   return handleGET(login);
 }

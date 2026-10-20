@@ -1,6 +1,17 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { db, authUsers, mobileTokens, pairingCodes, and, eq, gt, isNull, lt } from '@mantle/db';
-import { WEB_TOKEN_TTL_SECONDS, buildMobileToken } from '@/lib/auth';
+import {
+  db,
+  authUsers,
+  mobileTokens,
+  pairingCodes,
+  and,
+  eq,
+  gt,
+  isNull,
+  lt,
+  sql,
+} from '@mantle/db';
+import { WEB_TOKEN_TTL_SECONDS, adminLogin, buildMobileToken } from '@/lib/auth';
 
 /**
  * "Sign in on your phone" — the pairing-code half of QR sign-in.
@@ -120,15 +131,23 @@ export async function claimPairCode(
   // The login is re-read, not trusted from the code: lockout drops unclaimed
   // codes, but a claim racing it (or a row that outlived it) must not mint a
   // bearer for a login that is gone, disabled or of a role this phone build
-  // cannot serve. An admin always; a member only from a build that serves
-  // every login (W7e). A client signs in with its emailed code instead.
+  // cannot serve. An Admin login always (adminLogin: role admin AND a user
+  // of Admin now, read with the row); a member only from a build that
+  // serves every login (W7e). A client signs in with its emailed code
+  // instead.
   const [user] = await db
-    .select({ email: authUsers.email, role: authUsers.role, disabledAt: authUsers.disabledAt })
+    .select({
+      email: authUsers.email,
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
+      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${won.userId}::uuid)`,
+    })
     .from(authUsers)
     .where(eq(authUsers.id, won.userId))
     .limit(1);
+  const admin = !!user && adminLogin({ role: user.role, adminMember: user.adminMember === true });
   const member = user?.role === 'member' && opts.nonAdmin === true;
-  if (!user || user.disabledAt || (user.role !== 'admin' && !member)) return null;
+  if (!user || user.disabledAt || (!admin && !member)) return null;
 
   const label = deviceName?.trim() || 'Mobile device (paired by QR)';
   const jti = randomUUID();

@@ -7,15 +7,16 @@
  * and answers no workspaces and no areas (shellPart).
  */
 import type { ShellWorkspace, WorkspaceArea } from '@mantle/client-types';
-import type { AnyLogin } from '@/lib/auth';
 import { shellPart } from '@/lib/shell-part';
-import { shellWorkspaces, workspaceCaller } from '@/lib/workspaces';
+import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
 
+/** `admin`: whether the login is an Admin user, as the route asked it (the
+ *  shell: adminFacts, plan v3.2 section 2.2). */
 export async function loginWorkspaces(
   route: string,
-  login: AnyLogin,
+  caller: WsCaller,
+  admin: boolean,
 ): Promise<{ workspaces: ShellWorkspace[]; areas: WorkspaceArea[]; isOwner: boolean }> {
-  const caller = workspaceCaller(login);
   const ws = await shellPart(route, 'workspaces', () => shellWorkspaces(caller), {
     workspaces: [],
     areas: [],
@@ -23,8 +24,8 @@ export async function loginWorkspaces(
   return {
     workspaces: ws.workspaces,
     // Admin areas are an admin's only.
-    areas: login.kind === 'admin' ? ws.areas : [],
+    areas: admin ? ws.areas : [],
     // The brain's anchor login (its id is the brain's).
-    isOwner: login.kind === 'admin' && caller.loginId === caller.anchorId,
+    isOwner: admin && caller.loginId === caller.anchorId,
   };
 }

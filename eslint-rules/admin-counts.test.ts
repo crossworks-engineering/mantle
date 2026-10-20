@@ -454,10 +454,25 @@ describe('the repo', () => {
     };
   };
 
-  it('names the three role reads the plan moves in S8c', () => {
+  it('the three role reads the plan names moved in S8c c2 (the Admin pair, or no role read)', () => {
     const reads = detail.loginRoleDecisionReads;
-    expect(reads['server/web/lib/mcp-auth.ts']).toEqual(expect.arrayContaining([263, 273]));
-    expect(reads['server/web/lib/pair-code.ts']).toEqual(expect.arrayContaining([131]));
+    const text = (path: string) => texts.find((t) => t.path === path)!.text;
+    const lineOf = (path: string, needle: string) =>
+      text(path)
+        .split('\n')
+        .findIndex((l) => l.includes(needle)) + 1;
+    // mcp-auth.ts: a peer's risky tools ask adminLogin; mcpLoginEnabled reads no role.
+    const risky = lineOf('server/web/lib/mcp-auth.ts', 'riskyAllowed: adminLogin(row)');
+    const enabled = lineOf('server/web/lib/mcp-auth.ts', 'export async function mcpLoginEnabled');
+    expect(risky).toBeGreaterThan(0);
+    expect(enabled).toBeGreaterThan(0);
+    expect(reads['server/web/lib/mcp-auth.ts']).not.toContain(risky);
+    for (const n of [enabled, enabled + 1, enabled + 2])
+      expect(reads['server/web/lib/mcp-auth.ts']).not.toContain(n);
+    // pair-code.ts: the claim's Admin bearer asks adminLogin.
+    const claim = lineOf('server/web/lib/pair-code.ts', '(!admin && !member)) return null');
+    expect(claim).toBeGreaterThan(0);
+    expect(reads['server/web/lib/pair-code.ts']).not.toContain(claim);
   });
 
   it('finds no TypeScript area rule: SQL decides (plan v3.2: areasOf, areasFromLimits and requireArea`s list rule went)', () => {

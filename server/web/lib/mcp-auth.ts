@@ -28,6 +28,8 @@ import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
 import { mcpToolPolicyOf, type McpCaller } from '@mantle/mcp-core';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { bearerFrom } from './auth/request';
+import { loadLoginRow } from './auth/login-row';
+import { adminLogin } from './auth/session';
 import {
   auditKeyRefusal,
   countFailedKey,
@@ -240,7 +242,9 @@ export async function auditMcpKeyCall(
 async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   const peer = await verifyInboundToken(token);
   if (!peer || !peer.actsAsLoginId) return null;
-  const row = await loadLogin(peer.actsAsLoginId);
+  // The login row with its Admin pair (loadLoginRow: membership of Admin
+  // read with the row), so what only an Admin login has asks adminLogin.
+  const row = await loadLoginRow(peer.actsAsLoginId);
   if (!row || row.disabledAt || !row.email) return null;
   // A role this code does not know is no login (fail closed).
   if (!isLoginRole(row.role)) return null;
@@ -258,19 +262,21 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     via: 'peer',
     peerId: peer.id,
     // The owner's own peer: bound to the anchor login and made by it.
-    peerByOwner: row.role === 'admin' && row.id === peer.ownerId && peer.createdBy === peer.ownerId,
+    peerByOwner: adminLogin(row) && row.id === peer.ownerId && peer.createdBy === peer.ownerId,
     write: peer.writeEnabled,
-    riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
+    riskyAllowed: adminLogin(row) ? (peer.allowedRiskyTools ?? []) : [],
   };
 }
 
 // ── The OAuth consent and the token check ───────────────────────────────────
 
-/** Whether this member login may connect an MCP client now (W7b: any
- *  usable member). */
+/** Whether this login may connect an MCP client now (W7b: any usable
+ *  member): usable, not disabled and with an email. The consent route asks
+ *  it for a member login only (the gate's answer), and mcpTargetLogin reads
+ *  the member row next, so no role is read twice here. */
 export async function mcpLoginEnabled(loginId: string): Promise<boolean> {
   const row = await loadLogin(loginId);
-  return !!row && row.role === 'member' && !row.disabledAt && !!row.email;
+  return !!row && !row.disabledAt && !!row.email;
 }
 
 /** A member login by id (the consent route checks it first). */

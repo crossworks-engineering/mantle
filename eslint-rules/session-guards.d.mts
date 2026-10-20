@@ -20,6 +20,7 @@ export declare const READER_ANSWERS: Readonly<
       guard: string | null;
       entry: string;
       atRead?: true;
+      logs?: string;
     }>
   >
 >;

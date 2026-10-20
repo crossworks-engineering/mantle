@@ -3,7 +3,8 @@ import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { Shell } from '@mantle/client-types';
-import { loginCaller, mintAssetToken, type AnyLogin } from '@/lib/auth';
+import { anyLoginCaller, legacyLogin, mintAssetToken } from '@/lib/auth';
+import { adminFacts, type Login } from '@/lib/auth/login';
 import { SHORT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
@@ -34,9 +35,12 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  * setup wizard. `isOnboarded` is idempotent (it self-stamps an established
  * install), so it's safe in a GET.
  */
-async function handleGET(login: AnyLogin) {
-  const caller = workspaceCaller(login);
-  const admin = login.kind === 'admin' ? login.user : null;
+async function handleGET(login: Login) {
+  const caller = workspaceCaller(legacyLogin(login));
+  // Whether the login is an Admin user, asked of its scope (adminFacts,
+  // plan v3.2 section 2.2): what only an Admin user has answers its empty
+  // value for every other login.
+  const admin = (await adminFacts(login)).admin;
   const anchorId = caller.anchorId;
   const loginId = caller.loginId;
 
@@ -45,12 +49,12 @@ async function handleGET(login: AnyLogin) {
   const prefs: Prefs = read ?? ({} as Prefs);
   const [onboarded, pendingApprovals, ws] = await Promise.all([
     admin && read
-      ? shellPart('shell', 'onboarding', () => isOnboarded(admin.id, read), true)
+      ? shellPart('shell', 'onboarding', () => isOnboarded(login.brainId, read), true)
       : true,
-    admin ? shellPart('shell', 'pending count', () => countPending(admin.id), 0) : 0,
+    admin ? shellPart('shell', 'pending count', () => countPending(login.brainId), 0) : 0,
     // The login's workspaces (the switcher) and its Admin areas (W5a), the
     // same builder GET /api/auth/whoami answers with (W7e).
-    loginWorkspaces('shell', login),
+    loginWorkspaces('shell', caller, admin),
   ]);
   // The FACE is per-login: seed, builder pins, the uploaded photo and the
   // starred screens come from the LOGIN's own row (loadPreferencesFor
@@ -86,15 +90,14 @@ async function handleGET(login: AnyLogin) {
         anchorId,
         loginId,
         login.sessionEpoch,
-        login.kind === 'admin' ? {} : { ttlSeconds: SHORT_ASSET_TOKEN_TTL_SECONDS },
+        admin ? {} : { ttlSeconds: SHORT_ASSET_TOKEN_TTL_SECONDS },
       ),
     undefined,
   );
-  const displayName =
-    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
-  const email = login.kind === 'admin' ? login.user.actor.email : login.member.email;
+  const { displayName, email } = login;
   const body: Shell = {
-    role: login.kind,
+    // The display role (the legacy shape's, until the role is derived).
+    role: legacyLogin(login).kind,
     loginId,
     // The brain's anchor login (its id is the brain's): the app delete
     // confirm says 30 days for it, "until the owner deletes it" for others.
@@ -155,6 +158,6 @@ async function handleGET(login: AnyLogin) {
  *  private workspace by their definers (0293), the asset token from the
  *  epoch the guard checked. */
 export async function GET() {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   return handleGET(login);
 }
