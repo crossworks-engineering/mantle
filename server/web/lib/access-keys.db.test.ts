@@ -40,15 +40,24 @@ import {
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /** The logins that hold the Admin workspace with its keys area, stood in
- *  (lib/workspaces.ts requireArea; the rule itself is proved in the
- *  workspaces tests): whether a key may be long-lived or name risky tools
- *  follows this, never the login's role (W8a). */
+ *  (adminFacts, lib/auth/login.ts: its areas count only for an Admin user;
+ *  the rule itself is proved in the workspaces and admin-facts tests):
+ *  whether a key may be long-lived or name risky tools follows this, never
+ *  the login's role (W8a). Admin is the real adminFacts' answer. */
 const keysArea = vi.hoisted(() => ({ holders: new Set<string>() }));
-vi.mock('./workspaces', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./workspaces')>()),
-  requireArea: async (caller: { loginId: string }, area: string) =>
-    area === 'keys' ? keysArea.holders.has(caller.loginId) : true,
-}));
+vi.mock('./auth/login', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./auth/login')>();
+  return {
+    ...real,
+    adminFacts: async (login: import('./auth/login').Login) => {
+      const { admin } = await real.adminFacts(login);
+      return {
+        admin,
+        areas: new Set(admin && keysArea.holders.has(login.loginId) ? ['keys'] : []),
+      };
+    },
+  };
+});
 
 type Row = Record<string, unknown>;
 type Json = Record<string, unknown>;
@@ -274,7 +283,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (await make({ name: 'x', access: 'read', areas: null, expiresInDays: 3650 })).status,
     ).toBe(201);
     // The area decides, not the role: an admin without it is held as a
-    // member is, and a member with it is not.
+    // member is. A member never holds it: adminFacts' areas count only for
+    // an Admin user (S8c c2; before, a member the area rule named held it).
     keysArea.holders.delete(admin2);
     keysArea.holders.add(member);
     try {
@@ -285,9 +295,9 @@ describe.skipIf(!URL)('inbound API keys', () => {
       ).toBe(400);
       const list = await json(await call('/api/access-keys', { cookie: cookieOf(admin2) }));
       expect(list).toMatchObject({ role: 'admin', maxExpiryDays: 90, defaultExpiryDays: 90 });
-      expect((await make(risky, member)).status).toBe(201);
+      expect((await make(risky, member)).status).toBe(400);
       const mine = await json(await call('/api/access-keys', { cookie: cookieOf(member) }));
-      expect(mine).toMatchObject({ role: 'member', maxExpiryDays: null, needsPassword: true });
+      expect(mine).toMatchObject({ role: 'member', maxExpiryDays: 90, needsPassword: true });
     } finally {
       keysArea.holders.add(admin2);
       keysArea.holders.delete(member);
