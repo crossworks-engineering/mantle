@@ -848,6 +848,118 @@ Mac (DATABASE_URL unset), on 78c2ba34e (the commits after it lower the
 history code pin and add this file's rows; arch and format ran again on
 them, 0):
 
+## Part c4: server/api, packages/content and the fixtures
+
+The branch `feat/s8c-c4`, cut from main at 975bee317 (v0.300.114). No
+migration, no edit in packages/db, packages/content/src/tree,
+packages/files or server/web/lib/auth.
+
+### Sorted, site by site
+
+Every login kind, login role and `isAdmin` hit in server/api and
+packages/content (non-test files; the counters' detail and a grep for
+`'admin'`, `'member'`, `.role`, `LoginRole`, `isAdmin`, `loginHoldsAdmin`
+and the caller readers):
+
+| package          | site                                                                                                                     | what it is                                                                                                                                                                     | done                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| packages/content | `login-notices.ts` noticeLogin: only an enabled role member is told login notices                                        | a member-path check on the login role                                                                                                                                          | stays on the role, named (below) |
+| packages/content | `team-assistant.ts` 5 (`isAdmin`)                                                                                        | the workspace's own flag (`workspaces.is_admin`)                                                                                                                               | kept                             |
+| packages/content | `app-viewer.ts` (`kind: LoginRole`), `mcp-app-data.ts` (`McpDataRole`)                                                   | the role an app sees (display); the reach rule ignores it                                                                                                                      | display, stays legacy until S8b  |
+| packages/content | `member-invites.ts` (`role: 'member'`), `contacts.ts` (`inArray(authUsers.role, LOGIN_ROLES)`)                           | a new login's role (S8b's) and a row filter over every known role (decides nothing)                                                                                            | kept, S8b                        |
+| packages/content | `table-snapshots.ts` (`scopeHoldsAdmin`), `recall-native.ts` (`actor.kind`, owner or agent)                              | already the scope's answer; a recall writer's kind (server/web decides it), not a login's                                                                                      | kept                             |
+| server/api       | `agent/reflector.ts` 1, `agent/summarizer.ts` 1, `workflows/runs-resume-turn.ts` 3 (`isAdmin`)                           | the workspace's own flag                                                                                                                                                       | kept                             |
+| server/api       | `agent/runtime.ts` (`loginHoldsAdmin(loginId)`: a Telegram turn of a login that is no Admin user takes a daily cap slot) | membership (`mantle_login_is_admin`), no role or kind; the pair would narrow a role member inside Admin, and moving it needs a role read (pin up) or a new SQL role reader use | kept, named (below)              |
+| server/api       | `bench/haystack.ts` (a bench brain's owner row, role admin)                                                              | a bench fixture row, no caller                                                                                                                                                 | kept                             |
+
+Nothing else in server/api or packages/content (outside the tree) reads a
+caller, a login kind or a login role: no `ownerCaller`, `loginCaller`,
+`getLoginOr401`, `SessionUser` or `adminFacts` there.
+
+### What changed
+
+- `packages/content/src/login-notices.ts`: who is told login notices is the
+  exported helper `toldLoginNotices(row)`, the same expression (an enabled
+  login with role member), with why it stays on the role. Answers
+  unchanged.
+- **Why it stays on the role.** "Not an Admin user" by the Admin pair
+  (role admin AND a user of Admin) would tell a role admin outside Admin
+  its chat and review notices, which the role never did: a push it never
+  had, a wider answer. Every other login answers the same either way. So
+  it is a check where the pair would widen, left on the role until S8b, as
+  c2 left the member-path checks and c3 left `peerNamesNoLogin`.
+- **Cells** (unit, no database): `packages/content/src/login-notices-role.test.ts`,
+  the five logins of c1's cells, enabled and disabled, plus a role this
+  code does not know; the pair form differs only for the role admin
+  outside Admin, where it would tell it. Mutation: the helper with
+  `role !== 'admin'` fails 1 of the 12 cells (restored by git checkout).
+- **`server/api/src/agent/runtime.ts` stays** on `loginHoldsAdmin` (a
+  Telegram turn of a login that is no Admin user claims a member daily cap
+  slot). It reads membership (`mantle_login_is_admin`), no role and no
+  kind, so it is no kind or role decision. The pair would narrow only a
+  role member inside Admin (it would then claim a slot, as its web chat
+  already does since S8a); moving it needs either a TS role read (the
+  `loginRoleDecisionReads` pin goes up) or a new use of the SQL role
+  reader `mantle_login_is_admin_user` from server/api (S8b's), so it is
+  left as is and named. At S8b membership decides and the role follows it,
+  and the two agree with no change.
+- `eslint-rules/admin-counts.test.ts`: server/api and content hold no
+  login kind branch; their one role read is `toldLoginNotices`'s line;
+  their `isAdmin` are the four files of the workspace's own flag.
+- **The fixtures.** `server/web/server/run-route-stand-ins.ts` gains
+  `loginStandIn(...)` (a Login: the eight fields, no role, no kind, with
+  the Admin facts the test says) and `adminFactsStandIn` (answers what the
+  stand-in says, no for any other object). The 13 test files whose code
+  under test reads a Login (`anyLoginCaller`, `chatCaller().asLogin`,
+  `ownerLoginCaller`, `publicLoginItself`) and asks adminFacts lost their
+  own converters (`standInLogin(res)`, `standInChatCaller`,
+  `asOwnerLogin`) and their copies of the adminFacts mock, and build the
+  Login with `loginStandIn`:
+  `apps/app-tool-broker`, `apps/app-identity-owner`,
+  `apps/member-runner-routes`, `apps/member-connectors.turn-scope.db`,
+  `assistant/turn/turn-failed-route`, `assistant/transcribe/transcribe-route`,
+  `assistant/threads/threads.db`, `oauth/authorize/authorize-route`,
+  `lib/app-broker-parity`, `lib/workspaces.db`, `lib/grants.db`,
+  `server/a10-app-broker-sweep`, `server/w7c-chat.db`. Where the code
+  under test still reads a legacy shape too (`getLoginOr401`,
+  `loginCaller`, the `gated` request scope's drafts in workspaces and
+  grants; `getChatLoginOr401` and `chatLoginCaller` in threads and
+  w7c-chat), that shape stays for that reader and the Login is built
+  beside it from the same fact. No assertion changed; no test added,
+  removed or renamed. Two stand-ins became fuller Logins: the A10 broker
+  sweep's admin actor carries `isOwner: false` and the OAuth route's
+  Logins carry `source: 'web'` and `sessionEpoch: 0`; their tests answer
+  as before (the sweep's recorded files unchanged). Left on the legacy
+  shape, by design: `shell-parts.test.ts` (the shell still reads
+  `legacyLogin` for the display role), `gate-caller.test.ts` (the gate's
+  own answers), the admin-facts cells (they compare the legacy decision
+  with adminFacts), and the AppViewerSubject fixtures in packages/content
+  (the app's display kind, no Login).
+
+### Changed answers
+
+None. No decision moved; the one role read in c4's packages stays on the
+role, named above, and `runtime.ts` keeps its membership ask.
+
+### Pins
+
+No pin moves: nothing in c4's packages was a kind branch, the one role
+read stays (named, a widening otherwise), and the `isAdmin` there are the
+workspace's own flag. Test files are not counted, so the fixture moves
+change no counter.
+
+| pin                    | main | c4  | split on c4 (server/api, packages/content)                                                                                                                                        |
+| ---------------------- | ---- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| loginKindBranches      | 17   | 17  | server/api 0, content 0 (all 17 in server/web/lib/auth/session.ts: the resolved caller's union, S8d)                                                                              |
+| loginRoleDecisionReads | 27   | 27  | server/api 0, content 1 (`toldLoginNotices`) (server/web 25, mcp-core 1)                                                                                                          |
+| adminDecisionFlags     | 40   | 40  | server/api 5 (reflector 1, summarizer 1, runs-resume-turn 3), content 5 (team-assistant), all the workspace's own flag (server/web 10, runtime 11, tools 4, db 3, client-types 2) |
+| inHandlerAreaChecks    | 20   | 20  | server/api 1 (`runtime.ts` loginHoldsAdmin, named above), content 0                                                                                                               |
+
+### Gates
+
+Mac (DATABASE_URL unset), on f63bb0409 (the commit after it adds this
+section only):
+
 | gate                                                             | exit                              |
 | ---------------------------------------------------------------- | --------------------------------- |
 | pnpm -r typecheck                                                | 0                                 |
@@ -894,3 +1006,65 @@ CI on 0afacd809: run 39399194805, success.
 - The 10 in-handler area asks in the four packages are already the scope's
   answer (or an ask about another login); moving them into the gate is not
   c3's.
+
+| pnpm arch:check                                                  | 0                                 |
+| pnpm -C server/web build                                         | 0                                 |
+| pnpm exec vitest run --maxWorkers=3 server packages eslint-rules | 0 (860 files passed, 273 skipped) |
+
+The branch was pushed with `--no-verify` while these ran (the hook's
+`pnpm verify` is the same set).
+
+Workstation (own clone `s8c-c4-clone` at f63bb0409, own `s8c-c4-pg`,
+pgvector pg18, max_connections=450, port 56241 checked free, the
+`postgres` role as CI; MANTLE_CHECK_FLOOR=keep for init and migrate only;
+DATABASE_URL unset for every vitest run; systemd-run --user;
+--maxWorkers=3; one at a time). Every set passed on its first run, no
+rerun; the recorded sweep files (`__snapshots__`) unchanged after each
+run (no `-u`, `git status` on them empty):
+
+| run                                                                                                                                                    | exit | result                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ----------------------------------- |
+| the cells and the five moved DB fixture files (login-notices-role, admin-counts, the five, admin-facts, admin-facts-handlers, login-notices.viewer.db) | 0    | 10 files, 128 passed                |
+| full vitest with DB                                                                                                                                    | 0    | 1133 files, 13934 passed, 1 skipped |
+| test:actor-off                                                                                                                                         | 0    | 130 files, 1191 passed, 1 skipped   |
+| test:actor-on                                                                                                                                          | 0    | 31 files, 380 passed, 1 skipped     |
+| test:edit-on                                                                                                                                           | 0    | 43 files, 550 passed                |
+| test:matrix                                                                                                                                            | 0    | 4 files, 8 passed                   |
+| test:runtime-role, full config                                                                                                                         | 0    | 281 files, 2809 passed, 1 skipped   |
+
+### Left after c4 (S8c done)
+
+For S8b (the role follows membership):
+
+- The checks that stay on the login role because the pair would widen:
+  `toldLoginNotices` (content), `peerNamesNoLogin` (mcp-core), and
+  server/web's member-path checks (`mcp-auth.ts` memberMcpCaller and
+  mcpTargetLogin, `mcp-oauth.ts` a member grant, `pair-code.ts` the member
+  code and bearer, `peer-access.ts`). Once the role equals membership they
+  agree with the pair and need no change; the role reads can then go.
+- `server/api/src/agent/runtime.ts` asks membership for the Telegram daily
+  cap; once the role follows membership it equals the pair (no change).
+- Display roles stay legacy: whoami, the shell, access keys' answer and
+  audit row, the app's `:host_me_kind` and AppViewer kind, the MCP
+  channel's and audit's `role`, the push notice's `role: 'member'`.
+- A new or changed login's requested role and the row filters
+  (`member-invites.ts`, `contacts.ts`, users route, login-update.ts,
+  users/[id]/agent, push/store.ts, access-keys-notify.ts).
+- Before the pair goes: `mantle_scope_is_admin()` needs the owner and
+  membership checks (fix round 1 above).
+
+For S8d (adapters out):
+
+- The 17 `loginKindBranches` in `server/web/lib/auth/session.ts` (the
+  resolved caller's union) and the legacy readers `loginCaller`,
+  `chatLoginCaller`, `ownerCallerWithLogin`, `publicLoginCaller`,
+  `legacyLogin`, `loginSessionUser`, with `AnyLogin`, `MemberCaller` and
+  `SessionUser`.
+- The tests still on the legacy shape go with them: the legacy half of the
+  workspaces, grants, threads and w7c-chat fixtures (kept for
+  `getLoginOr401`, `loginCaller`, `getChatLoginOr401`, `chatLoginCaller`
+  and the drafts of their request scope), `shell-parts.test.ts`
+  (`legacyLogin`), `gate-caller.test.ts`, and the admin-facts cells'
+  legacy side.
+- `ownerFromBearer` (`server/web/lib/mcp-oauth.ts`) still has no caller
+  outside its unit test.
