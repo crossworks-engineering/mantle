@@ -1511,3 +1511,14 @@ CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run
   without TEMP); migrate with main 0 (unchanged); the revert 0 (all four
   gone; TEMP stays taken); migrate with main 0; migrate with the branch 0
   (0312 applied again).
+
+#### Open items (fix round 1)
+
+1. Fold narrow-route sqlCode into sql-text after S10 r2b merges: the text
+   check's blanker (`gateway/narrow-sendable.ts` `sqlCode`) does the same job
+   as feat/s10-r2b's `packages/db/src/sql-text.ts` (not on main at this
+   head). Fixed here minimally (E'' only as its own token, no dollar quote
+   right after a name's character); one blanker after the fold, with its
+   flags (unterminated text, U& names).
+2. S7b: the narrow pool that logs in as the narrow role itself (MED-1's
+   class); LOW-5 of the a2 re-audit stays as noted above.
