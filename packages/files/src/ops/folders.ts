@@ -384,12 +384,15 @@ export async function listFolders(args: {
         sql`${nodes.path} ~ ${`${args.parentPath}.*{1}`}::lquery`,
       ),
     );
-  // Their counts, all of them in two grouped queries: the folders the login
-  // reads one level below each row (two below the parent), and the files it
-  // reads in each row. Each row's answer is what folderCounts gives it.
-  const below = await countsBelow(args.ownerId, args.parentPath);
+  if (!rows.length) return [];
+  // Their counts, all of them in one grouped query (folderCountsFor): what
+  // the login reads in each row, as folderCounts counts it for one folder.
+  const counts = await folderCountsFor(
+    args.ownerId,
+    rows.map((r) => r.path),
+  );
   const results = rows.map((row) => {
-    const c = below.get(row.path);
+    const c = counts.get(row.path);
     return folderRowFromNode(row, c?.childFolderCount ?? 0, c?.fileCount ?? 0);
   });
   results.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -398,29 +401,26 @@ export async function listFolders(args: {
 
 type Counts = { childFolderCount: number; fileCount: number };
 
-/** What the login reads in each folder one level below `parentPath` (an
- *  lquery prefix, as listFolders takes it), keyed by the folder's path: its
- *  subfolders and its files, as folderCounts counts them one folder at a
- *  time, in two grouped queries whatever the number of folders. */
-async function countsBelow(ownerId: string, parentPath: string): Promise<Map<string, Counts>> {
-  const folders = (await db.execute(sql`
-    select subpath(c.path, 0, nlevel(c.path) - 1)::text as path, count(*)::int as n from nodes c
-     where c.owner_id = ${ownerId} and c.type = 'branch'
-       and c.path ~ ${`${parentPath}.*{2}`}::lquery
-     group by 1`)) as unknown as { path: string; n: number }[];
-  const files = (await db.execute(sql`
-    select c.path::text as path, count(*)::int as n from nodes c
-     where c.owner_id = ${ownerId} and c.type = 'file'
-       and c.path ~ ${`${parentPath}.*{1}`}::lquery
-     group by 1`)) as unknown as { path: string; n: number }[];
+/** What the login reads in each folder, counted from rows already read:
+ *  `folders`, the paths of folders it reads (each adds one to its parent's
+ *  childFolderCount), and `files`, how many files it reads at each path.
+ *  No query. Exact for every folder whose subfolders are all among
+ *  `folders` and whose files are all in `files`. */
+function countsFromPaths(
+  folders: Iterable<string>,
+  files: readonly { path: string; n: number }[],
+): Map<string, Counts> {
   const out = new Map<string, Counts>();
   const at = (p: string) => {
     let c = out.get(p);
     if (!c) out.set(p, (c = { childFolderCount: 0, fileCount: 0 }));
     return c;
   };
-  for (const f of folders) at(f.path).childFolderCount += Number(f.n);
   for (const f of files) at(f.path).fileCount += Number(f.n);
+  for (const p of folders) {
+    const i = p.lastIndexOf('.');
+    if (i > 0) at(p.slice(0, i)).childFolderCount += 1;
+  }
   return out;
 }
 
@@ -430,9 +430,11 @@ async function countsBelow(ownerId: string, parentPath: string): Promise<Map<str
  *  subfolders are all among the folders read (they sit under the root too),
  *  so its childFolderCount is counted from them; both counts are what
  *  folderCounts gives the folder. */
-async function readRail(
-  ownerId: string,
-): Promise<{ rows: FolderRow[]; files: { path: string; n: number }[] }> {
+async function readRail(ownerId: string): Promise<{
+  rows: FolderRow[];
+  files: { path: string; n: number }[];
+  counts: Map<string, Counts>;
+}> {
   const branches = await db
     .select()
     .from(nodes)
@@ -450,21 +452,16 @@ async function readRail(
      where n.owner_id = ${ownerId} and n.type = 'file'
        and n.path <@ ${FILES_ROOT_LABEL}::ltree
      group by 1`)) as unknown as { path: string; n: number }[];
-  const fileCount = new Map<string, number>();
-  for (const f of files) fileCount.set(f.path, (fileCount.get(f.path) ?? 0) + Number(f.n));
-  const childCount = new Map<string, number>();
-  for (const b of branches) {
-    const i = b.path.lastIndexOf('.');
-    if (i > 0) {
-      const parent = b.path.slice(0, i);
-      childCount.set(parent, (childCount.get(parent) ?? 0) + 1);
-    }
-  }
-  const rows = branches.map((b) =>
-    folderRowFromNode(b, childCount.get(b.path) ?? 0, fileCount.get(b.path) ?? 0),
+  const counts = countsFromPaths(
+    branches.map((b) => b.path),
+    files,
   );
+  const rows = branches.map((b) => {
+    const c = counts.get(b.path);
+    return folderRowFromNode(b, c?.childFolderCount ?? 0, c?.fileCount ?? 0);
+  });
   rows.sort((a, b) => a.path.localeCompare(b.path));
-  return { rows, files };
+  return { rows, files, counts };
 }
 
 /** All descendant folders, used to build the tree rail: two queries, not two
@@ -479,8 +476,8 @@ export async function listAllFolders(ownerId: string): Promise<FolderRow[]> {
 async function folderCountsFor(
   ownerId: string,
   paths: readonly string[],
-): Promise<Map<string, { childFolderCount: number; fileCount: number }>> {
-  const out = new Map<string, { childFolderCount: number; fileCount: number }>();
+): Promise<Map<string, Counts>> {
+  const out = new Map<string, Counts>();
   if (!paths.length) return out;
   const rows = (await db.execute(sql`
     with t as materialized (select unnest(${textArraySql(paths)})::ltree as p)
@@ -507,7 +504,7 @@ async function withTrailRows(
   ownerId: string,
   rows: FolderRow[],
   trail: readonly TrailFolder[],
-  known?: Map<string, { childFolderCount: number; fileCount: number }>,
+  known?: Map<string, Counts>,
 ): Promise<FolderRow[]> {
   const seen = new Set(rows.map((r) => r.id));
   const add = trail.filter((t) => {
@@ -594,20 +591,9 @@ export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRo
   }
   if (!wanted.size) return rows;
   const trail = await folderTrail(ownerId, { paths: [...wanted] });
-  // What the login reads in each trail folder, from the two reads above (no
+  // What the login reads in each trail folder was counted with the rows (no
   // further query): the folders it reads directly below it, its files.
-  const counts = new Map<string, { childFolderCount: number; fileCount: number }>();
-  const at = (p: string) => {
-    let c = counts.get(p);
-    if (!c) counts.set(p, (c = { childFolderCount: 0, fileCount: 0 }));
-    return c;
-  };
-  for (const f of files) at(f.path).fileCount += Number(f.n);
-  for (const p of known) {
-    const i = p.lastIndexOf('.');
-    if (i > 0) at(p.slice(0, i)).childFolderCount += 1;
-  }
-  const out = await withTrailRows(ownerId, rows, trail, counts);
+  const out = await withTrailRows(ownerId, rows, trail, rail.counts);
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }
