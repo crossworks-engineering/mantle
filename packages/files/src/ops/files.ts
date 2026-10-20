@@ -1502,11 +1502,11 @@ export async function callerSeesNode(id: string): Promise<boolean | null> {
 /**
  * Whether a write over `filename` in `parentPath` lands on a file the
  * caller reads and may change, in a folder it does not read (upsertFile's
- * overwrite): the file is there (exactly that name, not a folded member
- * file), the caller reads it and may change it, and the folder is at or
- * above what the caller reads (mantle_folder_trail, 0311: yes or no here,
- * nothing of it is answered). Only then does a folder the caller does not
- * read let the write on; a new file there is refused.
+ * overwrite): the file is there (exactly that name; a folded one too, as
+ * the overwrite below takes it), the caller reads it and may change it,
+ * and the folder is at or above what the caller reads (mantle_folder_trail,
+ * 0311: yes or no here, nothing of it is answered). Only then does a folder
+ * the caller does not read let the write on; a new file there is refused.
  */
 async function overwritesEditableFile(
   ownerId: string,
@@ -1514,7 +1514,7 @@ async function overwritesEditableFile(
   filename: string,
 ): Promise<boolean> {
   const taken = await fileNameTaken(ownerId, parentPath, filename);
-  if (!taken || !taken.exact || taken.folded) return false;
+  if (!taken || !taken.exact) return false;
   if ((await callerSeesNode(taken.id)) !== true) return false;
   if ((await inCallerScope(() => mayEditNode(taken.id))) !== true) return false;
   const rows = (await db.execute(

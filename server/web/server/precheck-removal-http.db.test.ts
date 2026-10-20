@@ -309,10 +309,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     /** The row whose probe tells the write was made, when it is not the
      *  item (a copy: the folder it lands in). */
     probeOf?: (id: string) => string;
-    /** The write needs the item's folder too, which no login here reads
-     *  (see `file`): an allowed write is the handler's 400 (its folder not
-     *  found), before and after, never a write. */
-    parentHidden?: true;
     /** Make a fresh item for `who` placed at `p` (place it last). */
     make: (who: Who, p: Place) => Promise<string>;
     /** In warn, a write the database refuses in on is made (logged as a
@@ -1008,9 +1004,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       name: 'files and tree folders',
       removed: true,
       routes: [
-        fileRoute('content', 'edit', 'PATCH', () => ({ content: `# ${tag} ${n()}` }), file(), {
-          parentHidden: true,
-        }),
+        // Its folder is one no login here reads: a content edit of a file
+        // the login may change saves there all the same (a new file there
+        // is refused; s13-folder-trail-sweep.db.test.ts).
+        fileRoute('content', 'edit', 'PATCH', () => ({ content: `# ${tag} ${n()}` }), file()),
         fileRoute('rename', 'edit', 'PATCH', () => ({ rename: `${tag}-renamed-${n()}` }), file()),
         fileRoute('indexing', 'edit', 'PATCH', () => ({ indexing: 'metadata' }), file()),
         fileRoute(
@@ -1453,10 +1450,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   route.readAnswer?.(was.status, was.text);
                 } else if (ALLOWED[route.need].includes(p) && route.noWrite) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
-                  expect(now.changed, `${name} changed the item`).toBe(false);
-                } else if (ALLOWED[route.need].includes(p) && route.parentHidden) {
-                  expect(now.status, `${name}: ${now.text}`).toBe(400);
-                  expect(now.text, name).toContain('not found');
                   expect(now.changed, `${name} changed the item`).toBe(false);
                 } else if (ALLOWED[route.need].includes(p)) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
