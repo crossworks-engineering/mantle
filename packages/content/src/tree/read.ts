@@ -12,8 +12,7 @@ import {
   folderTrail,
   folderTrailSql,
   trailForCaller,
-  trailRowsSql,
-  type TrailFolder,
+  type TrailAsk,
   liveWorkspaceSql,
   nodeAliasReadBy,
   nodeAliasReadByAnyOf,
@@ -133,9 +132,9 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  Both item counts come from one scan (`count(*) filter`); with no other
  *  workspace (none, or only `ws`) there is no second count at all.
  *
- *  `trail` (a login's own session in a workspace scope only: the rows
- *  @mantle/db folderTrail answered for this page, read once by the caller;
- *  with none the statement is the one before): the trail rows matching
+ *  `trail` (a login's own session in a workspace scope only, @mantle/db
+ *  folderTrail, one definer call inside this statement; for any other caller
+ *  the statement is the one before): the trail rows matching
  *  `where` that the reader does not read come too, as structure (id, path
  *  and name; no look, rank or system mark), and a trail folder serves as
  *  the parent of the folders below it. Each folder's subfolder count then
@@ -147,10 +146,10 @@ export async function selectFolders(
   where: SQL,
   ws?: string,
   others?: readonly string[],
-  trail?: readonly TrailFolder[],
+  trail?: TrailAsk,
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
-  const tr = trail?.length ? trailRowsSql(trail) : null;
+  const tr = trail ? folderTrailSql(ownerId, trail) : null;
   // The folders the reader reads, then (with a trail) the trail rows matched
   // by the same `where` (on id, path, title or slug; a trail row has no
   // slug) and not already listed.
@@ -449,9 +448,10 @@ export async function loadTreeFolder(
       : undefined;
   if (opts.folderId && !folder && !hit?.path.startsWith(`${root}.`)) return null;
   const path = folder?.path ?? hit?.path ?? spec.root;
-  // One definer call for the page: the folder itself when it is on the way
-  // and not read, and the folders on the way one and two levels below it.
-  const trail = trailed ? await folderTrail(ownerId, { under: path, paths: [path] }) : [];
+  // What the page's statements ask the definer: the folder itself when it
+  // is on the way and not read, and the folders on the way one and two
+  // levels below it.
+  const trail: TrailAsk = { under: path, paths: [path] };
   if (hit) {
     folder =
       (

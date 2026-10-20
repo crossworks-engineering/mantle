@@ -69,6 +69,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
   type Ts = typeof import('./test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('./index');
+  let ts: Ts;
   const owner = randomUUID();
   const member = randomUUID();
   const other = randomUUID();
@@ -123,7 +124,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     rows.map((r) => (Object.entries(F).find(([, f]) => f.id === r.id)?.[0] ?? r.id) as string);
 
   beforeAll(async () => {
-    const ts: Ts = await import('./test-support');
+    ts = await import('./test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -259,6 +260,29 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
       select has_function_privilege('mantle_view_user', ${FN}, 'execute') as v,
              has_function_privilege('mantle_write_user', ${FN}, 'execute') as w`);
     expect(can).toEqual({ v: true, w: true });
+  });
+
+  it('a wide scope (over 5000 rows read below the folder): the same folders on the way one level down, each with a folder on the way below it', async () => {
+    // 5001 notes in v.d, read as v.d is (the workspace's).
+    await ts.superuserExec(
+      scratch!.url,
+      sql`insert into nodes (owner_id, type, title, path, read_ws)
+          select ${owner}, 'note', 'bulk ' || i, ${F.d.path}::ltree,
+                 (select read_ws from nodes where id = ${F.d.id})
+            from generate_series(1, 5001) i`,
+    );
+    const [read] = await m.withViewer(
+      { login: member },
+      async () =>
+        (await m.db.execute(
+          sql`select count(*)::int as n from nodes where path <@ ${tag}::ltree`,
+        )) as unknown as { n: number }[],
+    );
+    expect(read!.n).toBeGreaterThan(5000);
+    expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'b']);
+    expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'b', 'p', 'q']);
+    expect(await trailAs(member, owner, F.v.path)).toEqual([]);
+    expect(await trailAs(null, owner, F.r.path)).toEqual([]);
   });
 });
 

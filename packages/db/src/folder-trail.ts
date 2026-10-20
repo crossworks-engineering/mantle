@@ -52,16 +52,6 @@ export function textArraySql(values: readonly string[]): SQL {
   return sql`${`{${quoted.join(',')}}`}::text[]`;
 }
 
-/** Rows the definer answered, as a parenthesised FROM item (columns id,
- *  path as ltree, title; three array parameters), so one page's reads use
- *  one definer call however many statements they run. */
-export function trailRowsSql(rows: readonly TrailFolder[]): SQL {
-  return sql`(select t.id, t.path::ltree as path, t.title
-                from unnest(${textArraySql(rows.map((r) => r.id))}::uuid[],
-                            ${textArraySql(rows.map((r) => r.path))},
-                            ${textArraySql(rows.map((r) => r.title))}) as t(id, path, title))`;
-}
-
 /** The definer's rows as a parenthesised FROM item (columns id, path as
  *  ltree, title) for a read that folds them into its own statement and
  *  names its alias after it; null when the current caller gets no trail. */
