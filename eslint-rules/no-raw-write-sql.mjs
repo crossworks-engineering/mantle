@@ -66,6 +66,8 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/gateway/check-mode.ts': 1,
   // executeWrite passes its argument (a string or built SQL) to execute.
   'packages/db/src/gateway/handles.ts': 4,
+  // The narrow route sends the caller's statement as it is (as role-runner.ts).
+  'packages/db/src/gateway/narrow-route.ts': 3,
   'packages/db/src/gateway/pools.ts': 2,
   'packages/db/src/gateway/role-runner.ts': 3,
   'packages/db/src/gateway/role-tx.ts': 1,
