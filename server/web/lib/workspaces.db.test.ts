@@ -45,6 +45,38 @@ const h = vi.hoisted(() => ({
   audits: [] as Array<Record<string, unknown>>,
 }));
 
+/** The Login of a stand-in answer (an Admin user's or a member's legacy
+ *  shape), with the answer's kind for the adminFacts stand-in. */
+function standInLogin(res: unknown) {
+  const r = res as {
+    kind: string;
+    loginId: string;
+    email: string;
+    user?: { id: string; actor: Record<string, unknown> };
+    member?: { anchorId: string };
+  } | null;
+  if (!r) throw new Error('anyLoginCaller(): the pipeline answered no login');
+  return {
+    loginId: r.loginId,
+    brainId: r.user ? r.user.id : r.member!.anchorId,
+    email: r.email,
+    displayName: null,
+    contactId: null,
+    source: 'web',
+    sessionEpoch: 0,
+    actor: r.user
+      ? r.user.actor
+      : { id: r.loginId, email: r.email, displayName: null, isOwner: false },
+    standInAdmin: r.kind === 'admin',
+  };
+}
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.res),
@@ -52,6 +84,10 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // stand-in. The api.write row is the gate's any-login answer step's now
   // (pinned by the guard sweep's guard writes and gate-caller.test.ts).
   loginCaller: vi.fn(() => h.res),
+  // The Login the routes read (anyLoginCaller, plan v3.2 section 2.2),
+  // stood in from the same answer; adminFacts (mocked below) answers its
+  // kind.
+  anyLoginCaller: vi.fn(() => standInLogin(h.res)),
 }));
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: (row: Record<string, unknown>) => h.audits.push(row),
