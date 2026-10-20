@@ -294,4 +294,36 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
       ),
     ).toMatch(/'reembed' is not listed/);
   });
+  it('a call in packages/db is counted and must be listed; the definition is no call', () => {
+    const db = (text: string, path = 'packages/db/src/z.ts') =>
+      (fullRouteSpots(ROOT, [{ path, text }], allowed) as { problems: string[] }).problems.filter(
+        (p) => p.startsWith(path),
+      );
+    expect(db('export function onFullSystemRoute<T>(spot: S, fn: F) {}')).toEqual([]);
+    expect(db("onFullSystemRoute('secret-item', f);")).toEqual([
+      'packages/db/src/z.ts: calls onFullSystemRoute but is not in FULL_ROUTE_SPOT_FILES',
+    ]);
+  });
+  it('a wrapper of a spot is counted per call, and only its callers may call it', () => {
+    const wrappers = {
+      w: { spot: 'secret-item', from: 'server/web/lib/x.ts', callers: ['server/web/lib/x.ts'] },
+    };
+    const of = (text: string, path: string) =>
+      fullRouteSpots(ROOT, [{ path, text }], allowed, wrappers) as {
+        wrapperCalls: number;
+        problems: string[];
+      };
+    const home = of(
+      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('secret-item', fn); }\nw(a); w(b);",
+      'server/web/lib/x.ts',
+    );
+    expect(home.wrapperCalls).toBe(2);
+    expect(home.problems.filter((p) => p.startsWith('server/web/lib/x.ts'))).toEqual([]);
+    const other = of("import { w } from './x';\nw(c);", 'server/web/lib/y.ts');
+    expect(other.wrapperCalls).toBe(1);
+    expect(other.problems).toContain('server/web/lib/y.ts: calls w but is not its caller');
+    expect(
+      of("import { w as v } from './x';\nv(c);", 'server/web/lib/x.ts').problems.join('\n'),
+    ).toMatch(/imports w under another name/);
+  });
 });

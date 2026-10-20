@@ -214,7 +214,7 @@ a1 audit's LOW-1), so create the role first.
 - a2: the route (gateway/role-tx.ts, role-runner.ts), `AS_SYSTEM_ROUTE`,
   the request exits' pick, the flag, the archive path's write_mode.
 
-## Part a2: the narrow route (round 1, work in progress)
+## Part a2: the narrow route
 
 Branch feat/s7a-a2, from main at 0d8f745a2 (v0.300.109). Not ready to
 merge: round 1 built the route and measured it; the full DB suite with the

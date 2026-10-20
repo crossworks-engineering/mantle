@@ -90,7 +90,9 @@ const LABELS: Record<string, string> = {
     'request system exits on the narrow system role (REQUEST_SYSTEM_ROUTE; may grow)',
   fullRouteSpots:
     "spots where a narrow exit's own work writes a content table, on the full route (down only; S7b)",
-  fullRouteSpotCalls: 'onFullSystemRoute calls outside packages/db (down only; S7b)',
+  fullRouteSpotCalls: 'onFullSystemRoute calls outside tests (down only; S7b)',
+  fullRouteSpotWrapperCalls:
+    'calls of a helper wrapping one full-route spot (profileWrite; down only; S7b)',
   systemWholeTools:
     'tool policies whose area scope is systemWhole (equal to the registry: tool-policy-snapshot.test.ts)',
   adminActRoutes: "Admin acts: an Admin user's write on the system pool with no scope (ADMIN_ACT)",

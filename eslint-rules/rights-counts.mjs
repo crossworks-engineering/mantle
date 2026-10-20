@@ -629,6 +629,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
         .reduce((a, [, n]) => a + n, 0),
       fullRouteSpots: spots.entries,
       fullRouteSpotCalls: spots.calls,
+      fullRouteSpotWrapperCalls: spots.wrapperCalls,
       scopeHoldsAdminCalls: holdsAdmin,
       sqlAreaRules: fns.filter((f) => readsAreaLimits(f.body)).length + tsAreaSql,
       workspaceTableRawWrites: rawWrites,

@@ -160,13 +160,35 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
 });
 
 /**
- * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
- * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table)
- * and the onFullSystemRoute calls outside packages/db and tests. Both only
- * go down (S7b moves each to the write role or a definer). `problems`:
- * what FULL_ROUTE_SPOT_FILES refuses.
+ * The helpers that wrap one spot for many writes, each with its spot, the
+ * file that defines it and the files that may call it. Each call is counted
+ * (`wrapperCalls`, pinned down only): a call from a file not listed, or the
+ * helper imported under another name, is a problem. TODO(S7b): each write
+ * moves to the write role or a definer and the helper goes.
  */
-export function fullRouteSpots(root, texts, allowed = FULL_ROUTE_SPOT_FILES) {
+export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
+  profileWrite: {
+    spot: 'profile-row',
+    from: 'packages/content/src/profile-preferences.ts',
+    callers: ['packages/content/src/profile-preferences.ts', 'packages/content/src/backup.ts'],
+  },
+});
+
+/**
+ * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
+ * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table),
+ * the onFullSystemRoute calls outside tests (packages/db included, where
+ * the definition is not a call), and the calls of the wrappers
+ * (FULL_ROUTE_SPOT_WRAPPERS). All only go down (S7b moves each to the
+ * write role or a definer). `problems`: what FULL_ROUTE_SPOT_FILES and
+ * FULL_ROUTE_SPOT_WRAPPERS refuse.
+ */
+export function fullRouteSpots(
+  root,
+  texts,
+  allowed = FULL_ROUTE_SPOT_FILES,
+  wrappers = FULL_ROUTE_SPOT_WRAPPERS,
+) {
   const code = stripComments(readRepoFile(root, VIEWER) ?? '');
   const at = code.search(/\bconst\s+FULL_ROUTE_SPOTS\b/);
   const names =
@@ -180,9 +202,31 @@ export function fullRouteSpots(root, texts, allowed = FULL_ROUTE_SPOT_FILES) {
   const problems = [];
   let calls = 0;
   const seen = new Set();
+  let wrapperCalls = 0;
   for (const { path, text } of texts) {
-    if (path.startsWith('packages/db/src/') || /\.test\.tsx?$/.test(path)) continue;
+    if (/\.test\.tsx?$/.test(path)) continue;
     const body = stripComments(text);
+    for (const [name, w] of Object.entries(wrappers)) {
+      const named = new RegExp(`\\b${name}\\b`, 'g');
+      if (!named.test(body)) continue;
+      const called = [...body.matchAll(new RegExp(`(?<!function\\s+)\\b${name}\\s*\\(`, 'g'))];
+      wrapperCalls += called.length;
+      if (!w.callers.includes(path)) problems.push(`${path}: calls ${name} but is not its caller`);
+      if (new RegExp(`\\b${name}\\s+as\\b`).test(body)) {
+        problems.push(`${path}: imports ${name} under another name`);
+      }
+    }
+    if (path.startsWith('packages/db/src/')) {
+      // The definition and the export list are no call; a call here is
+      // counted and must be listed as anywhere else.
+      const dbCalls = [
+        ...body.matchAll(/(?<!function\s+)\bonFullSystemRoute\s*(?:<[^>()]*>)?\s*\(/g),
+      ];
+      if (dbCalls.length > 0 && !allowed[path]) {
+        problems.push(`${path}: calls onFullSystemRoute but is not in FULL_ROUTE_SPOT_FILES`);
+      }
+      if (!allowed[path]) continue;
+    }
     const mentions = [...body.matchAll(/\bonFullSystemRoute\b/g)].length;
     if (mentions === 0) continue;
     const spots = allowed[path];
@@ -222,5 +266,10 @@ export function fullRouteSpots(root, texts, allowed = FULL_ROUTE_SPOT_FILES) {
         problems.push(`${path}: listed for '${spot}' but holds no such call`);
     }
   }
-  return { entries: names.length, calls, problems };
+  for (const [name, w] of Object.entries(wrappers)) {
+    if (!(allowed[w.from] ?? []).includes(w.spot)) {
+      problems.push(`${w.from}: ${name} wraps '${w.spot}', not listed for it`);
+    }
+  }
+  return { entries: names.length, calls, wrapperCalls, problems };
 }
