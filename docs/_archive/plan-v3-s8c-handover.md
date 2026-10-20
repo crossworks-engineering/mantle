@@ -841,3 +841,56 @@ None. No answer moved; the one decision stays on the role, named above.
 | adminDecisionFlags     | 40   | 40       | tools 4, runtime 11, mcp-core 0, telegram 0, all the workspace's own flag (server/web 10, content 5, server/api 5, db 3, client-types 2) |
 | inHandlerAreaChecks    | 20   | 20       | tools 6, runtime 1, mcp-core 2, telegram 1: scope asks (and one ask about another login), not moved in c3                                |
 | historyCodeComments    | 2335 | **2334** | the peer naming comment lost its step code when it moved to `peerNamesNoLogin`                                                           |
+
+### Gates
+
+Mac (DATABASE_URL unset), on 78c2ba34e (the commits after it lower the
+history code pin and add this file's rows; arch and format ran again on
+them, 0):
+
+| gate                                                             | exit                              |
+| ---------------------------------------------------------------- | --------------------------------- |
+| pnpm -r typecheck                                                | 0                                 |
+| pnpm lint                                                        | 0                                 |
+| pnpm format:check                                                | 0                                 |
+| pnpm docs:check                                                  | 0                                 |
+| pnpm arch:check                                                  | 0 (historyCodeComments went down) |
+| pnpm -C server/web build                                         | 0                                 |
+| pnpm exec vitest run --maxWorkers=3 server packages eslint-rules | 0 (860 files passed, 271 skipped) |
+| pnpm arch:check, format:check on e0b338f39                       | 0, 0                              |
+| pre-push `pnpm verify` (0afacd809)                               | 0                                 |
+
+Workstation (own clone `s8c-c3-clone` at 0afacd809, own `s8c-c3-pg`,
+pgvector pg18, max_connections=450, port 56231 checked free, the
+`postgres` role as CI; MANTLE_CHECK_FLOOR=keep for init and migrate only;
+DATABASE_URL unset for every vitest run; systemd-run --user; --maxWorkers=3;
+one at a time). Every set passed on its first run, no rerun; the recorded
+sweep files (`__snapshots__`) unchanged after each run (no `-u`, `git
+status` on them empty):
+
+| run                                                                                                            | exit | result                              |
+| -------------------------------------------------------------------------------------------------------------- | ---- | ----------------------------------- |
+| the cells (login-surface-peer, admin-counts, mcp-auth-peer, admin-facts, admin-facts-handlers, w6b-fix3, warn) | 0    | 6 files, 72 passed                  |
+| full vitest with DB                                                                                            | 0    | 1131 files, 13916 passed, 1 skipped |
+| test:actor-off                                                                                                 | 0    | 129 files, 1180 passed, 1 skipped   |
+| test:actor-on                                                                                                  | 0    | 31 files, 380 passed, 1 skipped     |
+| test:edit-on                                                                                                   | 0    | 43 files, 550 passed                |
+| test:matrix                                                                                                    | 0    | 4 files, 8 passed                   |
+| test:runtime-role, full config                                                                                 | 0    | 279 files, 2790 passed, 1 skipped   |
+
+CI on 0afacd809: run 39399194805, success.
+
+### Left after c3
+
+- `peerNamesNoLogin` (mcp-core) stays on the peer's login role until S8b
+  makes the role follow membership; then the role and the pair agree and
+  it needs no change.
+- The display roles in the four packages (the MCP channel's and audit's
+  `role`, the app data `:host_me_kind`) stay the legacy role until S8b
+  (display only; the reach rule ignores the role). Since c2 the browser
+  broker sends a role admin outside Admin to the member runner, so its
+  browser and MCP views of the app may name it differently until then.
+- The 15 `isAdmin` in tools and runtime are the workspace's own flag: kept.
+- The 10 in-handler area asks in the four packages are already the scope's
+  answer (or an ask about another login); moving them into the gate is not
+  c3's.
