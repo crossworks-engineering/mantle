@@ -71,7 +71,10 @@ shapes, each the same rows:
 - `runs/engine.ts` cancelSubtreeItems: the WITH RECURSIVE moved from a
   leading CTE into the `id IN (...)` subquery; same snapshot, same rows.
 - Aliases dropped where drizzle cannot alias the target (`nodes n`,
-  `item_marks m`): the columns are qualified by the table name.
+  `item_marks m`): the columns are qualified by the table name. The
+  folder delete's landing path (tree/node-ops.ts) is built from the column
+  it is given: `n.path` for its read, `"nodes"."path"` for the typed delete
+  and move (the subquery's `nodes b` never shadows the target).
 - `item_marks` inserts: the columns the raw text left out are sent as
   `default` (drizzle), the same as leaving them out.
 - `runs/sweep.ts`: the uuid shape regex is a bound text parameter, not an
@@ -102,6 +105,9 @@ One telemetry label moves: the `item_marks` writes (tree/marks.ts,
 tree/apps-nav.ts, app-nav.ts) were counted by the fail-open sites as
 `raw-write` and now as `typed-write` (same table, same system pool). A box
 count read by site sees them under the new site from this release on.
+The same holds for the request-scope write label the W6a sweep pins: the
+app-nav repair in a GET (tree/apps-nav.ts) is noted as `update`, not
+`executeWrite` (server/web/server/w6a-route-sweep.db.test.ts, one line).
 
 ### Pins
 
@@ -118,12 +124,45 @@ took 10 literal and 2 non-literal sites.
 
 ### Gates
 
-GATES_PLACEHOLDER
+Code head d6e287183 (the fix commit; later commits are this file only).
+
+Mac, DATABASE_URL unset (on 843aec330, the lanes; the fix commit then
+re-ran typecheck of packages/content, eslint on its two files, and
+`vitest run packages/content`, 0): `pnpm -r typecheck` 0, `pnpm lint` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `vitest run server packages eslint-rules` 0
+(857 files passed, 11073 tests). After the handover commit:
+format:check 0, docs:check 0, arch:check 0, eslint eslint-rules 0,
+`vitest run eslint-rules` 0.
+
+Workstation (own clone ~/s10-r1-clone, own container s10-r1-pg on
+127.0.0.1:56510, pgvector pg18, max_connections=450, the `postgres` role
+as CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time):
+
+- Run 1 (843aec330): full vitest 1, 17 failed in 8 files. 16 were the
+  folder delete (the landing path named `n.path` after the alias was
+  dropped: tree-kinds, tree-carry, tree-grants-confirm, tree-bugs,
+  precheck-removal, precheck-removal-http, w7a's tree_folder_delete), 1
+  the W6a pinned label (`executeWrite` to `update`). Fixed in d6e287183;
+  the 8 files re-run: 0 (612 tests). The run was stopped during
+  actor-off and started again.
+- Run 2 (d6e287183): full vitest 0 (13855 passed), test:actor-off 0
+  (1168), test:actor-on 0 (361), test:edit-on 0 (531), test:matrix 0 (8),
+  test:runtime-role in full 0 (2764).
+
+CI: run 39346461324 on d6e287183 failed one test,
+packages/content/src/recall-native.db.test.ts M7 (the embed refill after
+a concurrent edit; recall.ts is untouched, the file's other refills run
+fire-and-forget). The same file on the workstation: 0 in run 2 and 0 in
+three more runs. The failed job was re-run once: success (attempt 2, all steps green).
+The docs-only head after it has its own run (in the report).
 
 ### Open items for r2
 
-- Lanes left (scoped, 16 literal sites): packages/tools,
-  packages/mcp-core (none today), server/web/lib (integrity/landed.ts 2,
+- Lanes left (scoped, 16 literal sites): packages/tools (no literal
+  write; builtins-eval.ts holds one non-literal), packages/mcp-core (none),
+  server/web/lib (integrity/landed.ts 2,
   maintenance/actor-misses-reap.ts 1, push/store.ts 1,
   auth/first-owner.ts 1 in the S8c lane), server/api/src/agent/runtime.ts
   1, packages/db (call-audit.ts 1, extract-skip-backfill.ts 1,
@@ -138,4 +177,16 @@ GATES_PLACEHOLDER
   does not exist yet as a helper: the lint accepts the wrapper by name.
   r2 or r3 adds it in packages/db for read text the code composes.
 - The Telegram moderated-chat definer (named for S10 by the S7a a1
-  builder): needs a migration, not done in r1. For r2.
+  builder): needs a migration, not done in r1. What r1 found:
+  `setChatPairing` (packages/telegram/src/pairing.ts) holds no raw SQL; its
+  one write is a typed `update(telegramChats)` that runs inside
+  `telegramLoginSystem` (systemWork `'login-telegram'`), after the rule in
+  TS (the chat's own login, or `loginModeratesBot`). The read side already
+  asks `mantle_tg_moderated_chats` (0293) from server/web/lib/agent-telegram.ts.
+  So the lint never sees it: the work is an exit removal, a new definer
+  that asks the rule in SQL (the users area or a Moderator of the bot's
+  assistant's workspace) and does the block or unpair, with write-role
+  `EXECUTE` in the access matrix, then `setChatPairing` calls it in the
+  login's scope and its `'login-telegram'` systemWork site goes (S7a's
+  narrow role and system-work-allowlist.mjs move with it). For r2, with the
+  round's one migration.
