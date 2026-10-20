@@ -70,8 +70,9 @@ const BELOW_ON_TOOL_CELLS: readonly string[] = [
  *  the missing folders of its path (makesFolders), so a free path is made
  *  and answered ok while the path of a folder the caller does not read
  *  answers "parent folder ... not found" (no row changes, but the folder's
- *  existence shows). The owner accepted it as a known limit, to revisit
- *  with S13 (2026-10-18). */
+ *  existence shows). The owner accepted it as a known limit (2026-10-18);
+ *  the folder trail (migration 0311) is for a login's own session and
+ *  leaves the tools as they were, so it stays. */
 const S11A_1 = 'S11a-1 a hidden folder path shows (file_create makes a free path)';
 const HIDDEN_PATH_SHOWS: readonly string[] = ['web-turn turn', 'mcp-oauth login'].flatMap((w) =>
   ['owner', 'admin'].map((r) => `tool:file_create ${w}/${r} create file @folder`),
