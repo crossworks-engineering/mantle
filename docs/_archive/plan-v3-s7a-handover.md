@@ -612,8 +612,13 @@ mantle_subtree_rewrite, mantle_recall_retarget and mantle_app_trash_act.
 The measurement: the narrow route counts, in tests, each `mantle_*`
 function its statements call by name (`fn:<name>` uses in
 MANTLE_NARROW_DUMP); the switch-on full run of this round writes them to
-full1.narrow.jsonl. Left (in the open items below): trim the rest of the
-97 granted functions to the measured set and pin the list.
+full1.narrow.jsonl. Measured (the switch-on full DB suite on efe332bde,
+no denial): narrow statements call by name only `mantle_brain_id` (21
+calls) and `mantle_ws_set_moderator` (1). Left (in the open items below):
+trim the rest of the granted functions to that set plus the functions the
+narrow-writable tables' column defaults and checks call (a default runs
+with the inserting role's rights, so it needs EXECUTE; read them from
+pg_attrdef and pg_constraint first), then pin the list as an allowlist.
 
 #### LOW items
 
@@ -667,3 +672,23 @@ only from here), rawSqlNonLiteral 74 (main) to 78, rawWriteSqlFiles 43 to
 std_errorIdiom_allowed 116 to 115. Unchanged: systemWholeOnFull 0,
 asSystemNarrow 21, asSystemFull 34, requestSystemExits_narrow 3, roleResets
 0, gapTables 0.
+
+#### Gates (fix round 1)
+
+Mac, Node 26, DATABASE_URL unset, on 0660bf5ee (the handover commit after the
+code): pnpm -r typecheck 0, pnpm lint 0, pnpm format:check 0, pnpm
+docs:check 0, pnpm arch:check 1 then 0 (the handover's round-trip heading
+named a step code; renamed), pnpm boot:smoke 0, pnpm -C server/web build 0,
+vitest run server packages eslint-rules 1 then 0 (the same heading check in
+eslint-rules; 857 files passed, 272 skipped, the one failure fixed and
+eslint-rules rerun: 0).
+
+Workstation, own clone ~/s7a-a2-r3/repo, own container s7a-a2r3-pg
+(pgvector pg18, 127.0.0.1:56373 checked free, max_connections=450, role
+postgres as CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
+narrow-route.db.test.ts + narrow-area-routes.db.test.ts 1 (3 cells: the
+denial noted twice through drizzle's wrapper, two sweep rows' setup) then 0
+(19 passed); the sweep on the round 2 sources 1 (9 of 9 rows failed: the
+proof); full DB vitest with MANTLE_NARROW_DUMP 0 (1130 files, 13907
+passed, 1 skipped, no narrow denial).
