@@ -15,6 +15,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { loginAdminPair, type Actor, type AuthSource } from './session';
 
 /** A signed-in login. `brainId` is the brain's anchor login (whose data);
@@ -86,8 +87,8 @@ export function adminFacts(login: Login): Promise<AdminFacts> {
   let p = asked.scopes.get(ws);
   if (!p) {
     p = scopeFacts().catch((err: unknown) => {
-      console.warn(
-        `[auth] adminFacts could not ask the scope of login ${login.loginId}, it answers no: ${errorMessage(err)}`,
+      log('auth').warn(
+        `adminFacts could not ask the scope of login ${login.loginId}, it answers no: ${errorMessage(err)}`,
       );
       return NONE;
     });
