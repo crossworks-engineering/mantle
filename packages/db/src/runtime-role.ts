@@ -210,6 +210,20 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_embed_host(uuid,public.node_type)':
     'the refold-embeds maintenance step: full system work',
   'public.mantle_role_drift()': 'the box count, run by hand as the superuser: no app route',
+  // The content writers among the definers: narrow work writes no content,
+  // so it calls none of them (the switch-on suite measures the calls, the
+  // dump's fn:<name> uses); a narrow exit's own content write runs at a
+  // full-route spot (viewer.ts FULL_ROUTE_SPOTS).
+  'public.mantle_grant_change(text,uuid,uuid,boolean,uuid)':
+    "an item's grant change (item_grants, nodes): a login's write, never a narrow reason",
+  'public.mantle_grant_move_home(uuid,uuid,boolean,uuid)':
+    "an item's home move (item_grants, nodes): a login's write, never a narrow reason",
+  'public.mantle_subtree_rewrite(uuid,ltree,ltree)':
+    "a folder's subtree rewrite (nodes): a login's move or rename, never a narrow reason",
+  'public.mantle_recall_retarget(uuid,text,text)':
+    "a recall card's retarget (recall_nodes): a login's write, never a narrow reason",
+  'public.mantle_app_trash_act(uuid,text)':
+    "an app's trash restore or purge (content tables): the app-trash reason, routed full",
 };
 
 /** Tables the runtime role holds no right on (the access matrix's

@@ -364,8 +364,10 @@ describe('the narrow system role rights', () => {
   });
 
   it('its EXECUTE list is the runtime allowlist less a reasoned list', () => {
+    // Each one the runtime role may run (from this list or a viewer role's
+    // grant): runtime-role.db.test.ts checks it on the live catalog.
     for (const [fn, why] of Object.entries(NARROW_DENIED_FUNCTIONS)) {
-      expect(Object.keys(RUNTIME_SYSTEM_FUNCTIONS), fn).toContain(fn);
+      expect(fn, fn).toMatch(/^public\.mantle_[a-z0-9_]+\(/);
       expect(Object.keys(RUNTIME_DENIED_FUNCTIONS), fn).not.toContain(fn);
       expect(why.length, fn).toBeGreaterThan(10);
     }

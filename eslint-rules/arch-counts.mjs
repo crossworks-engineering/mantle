@@ -63,7 +63,7 @@
  * of server/web/app/ is not one) or generated manifests.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CALLER_READERS, SESSION_GUARDS } from './session-guards.mjs';
 import {
@@ -910,6 +910,23 @@ export function roleResetCount(files) {
   return n;
 }
 
+/** The migrations' SQL (packages/db/migrations/*.sql), its comments
+ *  blanked (`--` to the line's end, `/* *\/`), for the role counters: a
+ *  function body that changes the role is what a text check of the
+ *  statements sent cannot see. */
+export function migrationSqlTexts(root) {
+  const dir = join(root, 'packages/db/migrations');
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => ({
+      path: `packages/db/migrations/${f}`,
+      text: readFileSync(join(dir, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/--[^\n]*/g, ''),
+    }));
+}
+
 /**
  * The fail-open branches that are counted, not refused (plan v3.2 S4a, the
  * `failOpenSites` pin): each call of noteFailOpen, noteUnscopedYes or
@@ -1248,8 +1265,9 @@ export function measure(root) {
       actorsHistoryRefs: docQuotes.actorsHistoryRefs,
       actorsStepRefs: docQuotes.actorsStepRefs,
       docQuotesDangling: docQuotes.docQuotesDangling,
-      gapTables: gapRerunCount(texts),
-      roleResets: roleResetCount(texts),
+      // The migrations' SQL too (function bodies a role may run).
+      gapTables: gapRerunCount([...texts, ...migrationSqlTexts(root)]),
+      roleResets: roleResetCount([...texts, ...migrationSqlTexts(root)]),
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
       ...gateway.numbers,
       failOpenSites: failOpenSiteCount(texts),
