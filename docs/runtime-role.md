@@ -262,7 +262,18 @@ pipelines are (a connection handed back after the pool's end began would
 keep it from ending). Each file's `systemDb` uses are marked `narrow`
 (reached in a scope) or `full` (only outside one) in
 `eslint-rules/system-db-allowlist.mjs` (`SYSTEM_DB_ROUTE`; pins
-`systemDbUses_narrow`, `systemDbUses_full`).
+`systemDbUses_narrow`, `systemDbUses_full`). The marks are declarations
+only: the scope decides the route at run time, and the switch-on suite, not
+the mark, proves a file holds on it.
+
+Inside a narrow transaction each statement is checked before it is sent
+(a role change, a session-level SET, RESET or `set_config(..., false)`,
+transaction control; literals and comments are not read as statements):
+refused with `NarrowRouteRefusedError`. A function that changes the role
+inside cannot be seen by text: the hold check before the COMMIT rolls such
+a transaction back (`NarrowRoleLeftError`), and the role may run no
+function it was not granted and create none. The narrow role runs no
+content-writing definer (`NARROW_DENIED_FUNCTIONS`).
 
 A right the narrow role does not hold, met on the route, is noted every
 time, a caught one too: a miss row (check `narrow-denied`) on a box, and in

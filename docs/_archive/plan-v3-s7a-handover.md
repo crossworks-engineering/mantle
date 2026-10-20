@@ -492,3 +492,178 @@ failures), a2a-round-trips with MANTLE_RT_REPORT switch on and off, the
 sweep file switch on and off (the unhandled rejections on only).
 
 CI: run 39359479088 on d0fac18d9 green.
+
+### Fix round 1
+
+Branch feat/s7a-a2 rebased onto main 2f5a75ad5 (v0.300.111: S8c c1, S10
+round 1). Conflicts only in scripts/arch-scoreboard.pins.json (resolved key
+by key; rawSqlNonLiteral 74 on main, raised here, see Pins); S10's converted
+raw writes in packages/content, files, runs, embeddings merged without a
+conflict and kept. No migration.
+
+#### HIGH-1: the Admin area routes that wrote content on the narrow route
+
+Each now reaches its content write at a named full-route spot (viewer.ts
+`FULL_ROUTE_SPOTS`, its why and the S7b TODO on the list); no content table
+was granted to the narrow role. Each is a row of
+server/web/server/narrow-area-routes.db.test.ts (new), driven through the
+real app (createApp, a signed session cookie) with the switch on: a row
+fails on a recorded narrow denial (vitest.setup.ts), a 500, a database
+error's text in the answer, or when the write it exists for did not happen.
+All nine rows fail on the round 2 sources (the same test file, the route
+files checked out at fa145826c: 9 of 9 failed) and pass now.
+
+| Route                                                | Fix kind                | File                                                    | Sweep row         |
+| ---------------------------------------------------- | ----------------------- | ------------------------------------------------------- | ----------------- |
+| POST /api/secrets, PATCH and DELETE /api/secrets/:id | spot secret-item        | server/web/lib/secrets.ts (secretWrite)                 | secrets           |
+| POST /api/backups, POST /api/backups/run             | spot profile-row        | packages/content/src/backup.ts (profileWrite, exported) | backups           |
+| POST /api/embedding/rebuild, /api/ai-workers/reembed | spot reembed            | packages/embeddings/src/reembed.ts (runReembed)         | embedding rebuild |
+| POST, PATCH /api/docs/collections, POST .../all      | spot docs-collection    | packages/files/src/docs.ts (reconcile, purge)           | docs collections  |
+| POST /api/email/discover/contacts                    | spot sender-contact     | packages/email/src/discover.ts                          | email discover    |
+| DELETE /api/calendar/:id                             | spot calendar-events    | packages/calendar/src/manage.ts                         | calendar          |
+| DELETE /api/agents/:id?conversation=delete           | spot agent-conversation | server/web/lib/agents.ts (deleteAgent, delete only)     | assistants        |
+| POST /api/dev-tools/execute-tool                     | spot console-tool       | the execute-tool route                                  | API console       |
+| PATCH /api/pending/:id approve (no login, no origin) | spot pending-call       | packages/tools/src/pending.ts (asActor)                 | pending           |
+
+The two "likely" routes were proven: the API console and the pending
+approval both failed with the switch on before the fix (a builtin note
+create, as system:http:admin-area).
+
+Raw database text in answers, a separate bug that main has too (the
+error sweep's recorded answers on main hold `Failed query: ...` for the
+docs collections): the three docs collections routes, the email discover
+contact (`addContactFromSender`) and the reembed answer (`reembedIndex`)
+now answer `publicErrorMessage`. The error sweep names the docs change
+`ok-false-public` (6 cells, a10-error-sweep-changes.txt).
+
+LOW-5: `FULL_ROUTE_SPOT_FILES` (eslint-rules/as-system-routes.mjs) lists
+each file outside packages/db that may name `onFullSystemRoute` and the
+spots it may run. An unlisted file, an aliased import, any other binding of
+the function, a non-literal spot, an unlisted spot, and a listed spot the
+file does not hold fail arch:check (as-system-exits.test.ts has the cases).
+
+#### MED-1: denials inside a narrow transaction
+
+`narrowBegin` (gateway/narrow-route.ts) wraps the transaction's client
+(`narrowTxClient`): each `unsafe` statement and each savepoint has its error
+seen and a denial noted where it is met (once per error through its
+wrappers). The hold check's failure throws NarrowRoleLeftError only when it
+is its own refusal (22012); otherwise the caller gets the first statement
+error of the transaction (the real 42501 when the work caught it without a
+savepoint). `narrowStatement` reads the code too. Cells
+(narrow-route.db.test.ts): "notes a denial a savepoint caught, and gives
+the real error when the work caught it". Limit: a tagged-template
+statement's result stays postgres.js's own (it may be a fragment), so its
+denial is seen only when it ends the transaction.
+
+#### MED-2: what a narrow transaction may send
+
+`narrowSendable` runs on every statement of a narrow transaction (the
+`unsafe` calls, tagged templates, a savepoint's handle) as well as on single
+statements, and refuses: transaction control, a role change in any form
+(SET [SESSION|LOCAL] ROLE, RESET ROLE, RESET ALL, SET SESSION
+AUTHORIZATION, set_config('role' | 'session_authorization', ...)), and a
+session-level setting (SET without LOCAL, RESET, set_config(..., false)).
+LOW-2: the text is read with literals, quoted identifiers, dollar-quoted
+bodies and comments blanked (`sqlCode`). Cells: "refuses a role change, a
+session setting and transaction control, by text, alone and in a
+transaction" covers P1 (role-changing multi-statement text), P2 (in a
+transaction, and in a savepoint), P6 (a session SET refused, nothing leaks
+to the pool's next statement), P11 (a refused COMMIT never ends the
+transaction: what follows runs as the narrow role), and literals not read
+as statements. P3 (a plpgsql function that changes the role) cannot be
+refused by text: a known limit for S7b. The hold check rolls such a
+transaction back (cell: `public.narrow_probe_leave()`, NarrowRoleLeftError,
+the probe row gone); the narrow role creates no function (no CREATE on any
+schema) and runs only the functions it is granted (MED-4). A function that
+leaves the role and takes it back before returning would pass the hold
+check: none exists today (the role counters, below, read 0 in the
+migrations), and a new one is a counted line.
+
+Counters: `roleResets` and `gapTables` now read the migrations' SQL too
+(arch-counts.mjs `migrationSqlTexts`): both 0 there.
+
+#### MED-3: the full-route spot marks itself (a2 part), and the a3 predicate
+
+`onFullSystemRoute` runs its work under `runOnFullRouteSpot` (actor.ts); the
+actor's SET then carries `set_config('mantle.route', 'full', ...)`
+(`setActorSql`'s fourth value, `fullRouteSpotNow`), and a session-level
+pipelined write resets it with the actor. The mark holds only while the
+spot's actor is the one bound.
+
+Recommendation for a3's trigger (report only): count a write to a content
+table as `narrow-content-write` when the actor is `system:<reason>` with
+the reason routed narrow (AS_SYSTEM_ROUTE or a request exit's
+REQUEST_SYSTEM_ROUTE), AND `current_user = session_user` (the full route:
+on the narrow route the write was refused, in a definer current_user is the
+owner), AND `coalesce(current_setting('mantle.route', true), '') <> 'full'`
+(not a declared spot). Count FK cascades apart, by a trigger on deletes of
+auth.users, spaces and agents by narrow-reason actors (the cascaded rows
+run as the table owner). Cells to write in a3, with the runtime role on: a
+narrow write at a spot is not counted; the same write outside a spot with
+the switch off is; a definer's write is not; a delete of a login by
+system:http:admin-area counts its cascade once.
+
+#### MED-4: the narrow role's EXECUTE
+
+`NARROW_DENIED_FUNCTIONS` (runtime-role.ts) 6 to 11: the content-writing
+definers mantle_grant_change, mantle_grant_move_home,
+mantle_subtree_rewrite, mantle_recall_retarget and mantle_app_trash_act.
+The measurement: the narrow route counts, in tests, each `mantle_*`
+function its statements call by name (`fn:<name>` uses in
+MANTLE_NARROW_DUMP); the switch-on full run of this round writes them to
+full1.narrow.jsonl. Left (in the open items below): trim the rest of the
+97 granted functions to the measured set and pin the list.
+
+#### LOW items
+
+- LOW-1: covered by MED-2.
+- LOW-3: compose unchanged; the switch goes on on the dev box by hand
+  after the merge.
+- LOW-4: the SYSTEM_DB_ROUTE marks are declarations only (the scope
+  decides the route at run time): said in the rule
+  (system-db-allowlist.mjs) and docs/runtime-role.md.
+
+#### Changed answers
+
+Switch off:
+
+- gateway/system-tx.ts writeScopeSettings (round 1 of a2): one more
+  `set_config('mantle.write_mode', ...)` in the SET of every systemPoolTx
+  (no new statement, no round trip). A read-only actor on a box with the
+  actor check off is now refused by mantle_ws_archive's read-only check,
+  where main let it through (the check never knew the mode on that path).
+- At a full-route spot inside a narrow exit the actor's SET carries
+  `mantle.route` (only when the check is on, so a SET is sent anyway):
+  the same statements, the same answers.
+- The docs collections, email discover contact and reembed answers: a
+  database error's text is gone (the public message instead); all else
+  equal.
+
+Switch on: none against main in the suites; the nine routes above answer as
+main does (before this round they answered 500 or `{ ok: false }` with the
+database's text).
+
+The viewer.ts onFullSystemRoute comment said the route is read only while
+the switch is on; corrected: systemRouteNow reads the exit's pick whatever
+the switch, and the pool (pools.ts) sends nothing on the narrow route while
+it is off.
+
+#### Round trips (for S7b)
+
+The narrow route adds a BEGIN, the SET, the hold check and a COMMIT to a
+single systemDb statement in a scope (chat turn start 104/144 to 148/166
+statements/round trips, round 2). The audit's recommendation for S7b:
+measure a dedicated narrow pool whose connections take the role at
+connection time (no per-statement BEGIN/SET/COMMIT; the hold check per
+transaction stays), or keep the turn-stream and tracing writes on the full
+route (named, with their why). Decide on the numbers with the switch on.
+
+#### Pins (fix round 1)
+
+fullRouteSpots 5 to 13, fullRouteSpotCalls 7 to 15 (both new in a2, down
+only from here), rawSqlNonLiteral 74 (main) to 78, rawWriteSqlFiles 43 to
+44 (narrow-route.ts, may grow), routeErrorTextAllowed 31 to 28,
+std_errorIdiom_allowed 116 to 115. Unchanged: systemWholeOnFull 0,
+asSystemNarrow 21, asSystemFull 34, requestSystemExits_narrow 3, roleResets
+0, gapTables 0.

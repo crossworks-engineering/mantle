@@ -74,6 +74,11 @@ export default { rules: { 'system-db-allowlist': rule } };
  * (measured with the switch on, the DB suites: no denial); 'full': only
  * reached outside every scope. Counted in arch-counts.mjs (systemDbUses_narrow,
  * systemDbUses_full); a file with uses and no mark fails arch:check.
+ *
+ * A mark is a declaration, not a switch: the route is decided at run time
+ * by the scope (gateway/handles.ts), never read from this list. A 'full'
+ * file reached in a scope still runs narrow; what holds it is the switch-on
+ * suite (a denial fails the test), not the mark.
  */
 export const SYSTEM_DB_ROUTE = Object.freeze({
   // Last use of a key in a turn, the vault reads of a tool.
