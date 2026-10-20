@@ -1,8 +1,11 @@
 /**
  * The one reader of hand-written SQL text's shape, shared by readSql
- * (./read-sql.ts, at the moment composed text runs) and the raw write lint
- * (eslint-rules/cleanup-counts.mjs, on the literal text in the code), so
- * the two read a statement the same way.
+ * (./read-sql.ts, at the moment composed text runs), the raw write lint
+ * (eslint-rules/cleanup-counts.mjs, on the literal text in the code), the
+ * narrow system route's text check (gateway/narrow-sendable.ts), the
+ * gateway's statement readers (gateway/actor-sql.ts statementBody,
+ * gateway/handles.ts isWriteSql) and the migrations' reader
+ * (eslint-rules/rights-counts.mjs), so each reads a statement the same way.
  *
  * No parser: the text is blanked (sqlCode) so that only its code is left,
  * then read for its statements, its leading WITH and its first words. The
@@ -27,6 +30,11 @@ export type SqlCode = {
    *  a `'` at each end and blanks between; a quoted name keeps its quotes
    *  with every character that is not a letter, a digit, `_` or `$` as `_`. */
   code: string;
+  /** The text with only its comments blanked (newlines kept): strings,
+   *  dollar quotes and quoted names as written, the same length. Where a
+   *  reader needs a literal's or a name's own text, it finds the place on
+   *  `code` and reads it here. */
+  uncommented: string;
   /** A comment, string, dollar quote or quoted name that never closes. */
   unterminated: boolean;
   /** Text PostgreSQL may read otherwise: a backslash before a quote in a
@@ -47,6 +55,7 @@ const blanks = (s: string): string => s.replace(/[^\n]/g, ' ');
  *  `text` (SqlCode). */
 export function sqlCode(text: string): SqlCode {
   let code = '';
+  let uncommented = '';
   let unterminated = false;
   let ambiguous = false;
   const n = text.length;
@@ -69,6 +78,7 @@ export function sqlCode(text: string): SqlCode {
       let stop = i + 2;
       while (stop < n && text[stop] !== '\n' && text[stop] !== '\r') stop += 1;
       code += blanks(text.slice(i, stop));
+      uncommented += blanks(text.slice(i, stop));
       i = stop;
     } else if (c === '/' && next === '*') {
       // Block comments nest in PostgreSQL.
@@ -85,6 +95,7 @@ export function sqlCode(text: string): SqlCode {
       }
       if (depth > 0) unterminated = true;
       code += blanks(text.slice(i, j));
+      uncommented += blanks(text.slice(i, j));
       i = j;
     } else if (c === "'") {
       // E'' (the E a word of its own) takes backslash escapes.
@@ -111,9 +122,11 @@ export function sqlCode(text: string): SqlCode {
       if (!closed) {
         unterminated = true;
         code += "'" + blanks(text.slice(i + 1));
+        uncommented += text.slice(i);
         i = n;
       } else {
         code += "'" + blanks(text.slice(i + 1, j)) + "'";
+        uncommented += text.slice(i, j + 1);
         i = j + 1;
       }
     } else if (c === '"') {
@@ -137,9 +150,11 @@ export function sqlCode(text: string): SqlCode {
       if (!closed) {
         unterminated = true;
         code += '"' + body;
+        uncommented += text.slice(i);
         i = n;
       } else {
         code += '"' + body + '"';
+        uncommented += text.slice(i, j + 1);
         i = j + 1;
       }
     } else if (c === '$' && !inName && DOLLAR_TAG.test(text.slice(i))) {
@@ -148,11 +163,13 @@ export function sqlCode(text: string): SqlCode {
       if (end < 0) {
         unterminated = true;
         code += "'" + blanks(text.slice(i + 1));
+        uncommented += text.slice(i);
         i = n;
       } else {
         const stop = end + tag.length;
         const inner = text.slice(i + 1, stop - 1);
         code += "'" + blanks(inner) + "'";
+        uncommented += text.slice(i, stop);
         i = stop;
       }
     } else {
@@ -161,12 +178,13 @@ export function sqlCode(text: string): SqlCode {
       if (!NAME_CHAR.test(c)) word = -1;
       else if (word < 0) word = i;
       code += c;
+      uncommented += c;
       i += 1;
       continue;
     }
     word = -1;
   }
-  return { code, unterminated, ambiguous };
+  return { code, uncommented, unterminated, ambiguous };
 }
 
 /** The statements of `text`: the text cut at each `;` of its code (never one

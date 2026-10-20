@@ -23,7 +23,8 @@ import {
 import { reserveLease } from '../reserved';
 import { NARROW_ROLE } from '../runtime-role';
 import { NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
-import { narrowSendable, sqlCode } from './narrow-sendable';
+import { sqlCode } from '../sql-text';
+import { narrowSendable } from './narrow-sendable';
 import {
   lazyQuery,
   sendIn,
@@ -132,8 +133,9 @@ const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
  *  function a trigger or a definer calls needs no EXECUTE of the role. */
 function noteNarrowFunctions(query: string): void {
   if (env('NODE_ENV') !== 'test') return;
-  // Quoted identifiers kept: the app names its definers "public"."mantle_x".
-  for (const m of sqlCode(query, true, false).matchAll(CALLED_FN)) {
+  // Read on the code, where a quoted name keeps its name characters: the
+  // app names its definers "public"."mantle_x".
+  for (const m of sqlCode(query).code.matchAll(CALLED_FN)) {
     noteTestNarrowUse(`fn:${m[1]!.toLowerCase()}`);
   }
 }

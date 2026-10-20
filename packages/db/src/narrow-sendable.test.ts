@@ -53,7 +53,7 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
 
   it('sends the settings the app sends', () => {
     for (const q of [
-      "select set_config('mantle.create_ws', $1, true)",
+      "select set_config('mantle.ingest_notify', $1, true)",
       "select set_config('mantle.keep_updated_at', 'on', true)",
       "select set_config('lock_timeout', $1, true)",
       "select current_setting('enable_sort') as v, set_config('enable_sort', 'off', true)",
@@ -165,8 +165,81 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
       expect(verdict(q), q).toBe('refused');
     }
     // An E'' string still reads its escapes: the quote it escapes is no end.
-    expect(verdict("select E'\\'; reset role; select '1'")).toBe('sent');
+    expect(verdict("select E'\\'; reset role; select '")).toBe('sent');
     expect(verdict("select (E'\\'; reset role; select ')")).toBe('sent');
+    // Text that never closes is refused (it was sent before the fold).
+    expect(verdict("select E'\\'; reset role; select '1'")).toBe('refused');
+  });
+
+  // The fold onto sql-text.ts: the three places the old blanker read SQL
+  // otherwise than Postgres's lexer, each a form it sent and Postgres runs.
+  it('reads nested block comments as Postgres does', () => {
+    for (const q of [
+      // Postgres: the comment is `/* /* */ ' */`, then a role change.
+      "select 1 /* /* */ ' */; reset role; select ' '",
+      // The leading comment (statementBody): `select */` is still comment.
+      '/* /* */ select */ reset role',
+      '/* /* */ select */ set local role none',
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    expect(verdict('select 1 /* a /* reset role */ b */')).toBe('sent');
+    expect(verdict('/* a /* b */ c */ select 1')).toBe('sent');
+  });
+
+  it('reads a dollar quote whose tag is not ASCII as Postgres does', () => {
+    for (const q of [
+      "select $é$'$é$; reset role; select '1'",
+      "select $tagé$'$tagé$; set local role none; select '1'",
+      "select $ü$'$ü$, set_config('role', 'none', true), '1'",
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    expect(verdict("select $é$reset role; set_config('role', 'none', false)$é$ as x")).toBe('sent');
+  });
+
+  it('reads a name with characters that are not ASCII as one name (no dollar quote or E string opens after it)', () => {
+    for (const q of [
+      // aé$q$ and b$q$ are names: no dollar quote hides the reset.
+      'select 1 as aé$q$; reset role; select 1 as b$q$',
+      // éE'\' is a name and a plain string (no E escapes): the string ends
+      // at the quote after the backslash, which is ambiguous text.
+      "select 1 as éE'\\'; reset role; select '1'",
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    expect(verdict('select 1 as aé$q$, 2 as b$q$')).toBe('sent');
+  });
+
+  it('refuses text that never closes, and text Postgres may read otherwise', () => {
+    for (const q of [
+      'select 1 /* reset role',
+      "select 'x",
+      'select "x',
+      'select $q$x',
+      // A backslash before a quote in a plain string: standard_conforming_strings decides.
+      "select 'a\\'",
+      'select U&"\\0072ole"',
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    expect(verdict("select 'a\\b', E'a\\'b'")).toBe('sent');
+  });
+
+  it('refuses a function that runs its text as SQL', () => {
+    for (const q of [
+      "select pgboss.job_table_run('select set_config(''role'', ''none'', true)')",
+      `select "pgboss"."job_table_run_async"('x', 1, 'select 1')`,
+      "select query_to_xml('select set_config(''role'', ''none'', true)', true, true, '')",
+      "select pg_catalog.query_to_xml_and_xmlschema('select 1', true, true, '')",
+      "select cursor_to_xml('c', 1, true, true, '')",
+      "select * from ts_stat('select to_tsvector(''x'')')",
+      "select ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery')",
+      "select dblink_exec('reset role')",
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    expect(verdict("select 'query_to_xml(' as x, count(*) from pgboss.job")).toBe('sent');
   });
 
   it('a tagged template: a placeholder never names a function or a setting; a fragment may start with any other word', () => {
@@ -200,6 +273,8 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
     const gatewayOwn = [
       "select set_config('mantle.ws', $1, true), set_config('mantle.mod_ws', $2, true), set_config('mantle.scope_login', $3, true), set_config('mantle.write_mode', $4, true)",
       "select set_config('mantle.ws', $1, true), set_config('mantle.mod_ws', $2, true), set_config('mantle.login_id', $3, true)",
+      // Where a create lands (system-tx.ts systemPoolTx's home settings).
+      "select set_config('mantle.create_ws', $1, true), set_config('mantle.private_ws', $2, true), set_config('mantle.ingest_notify', $3, true), set_config('mantle.create_stamp', $4, true)",
     ];
     for (const q of [
       ...gatewayOwn,
@@ -211,11 +286,16 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
       "set local mantle.route = 'full'",
       'set local "mantle"."actor_check" = off',
       "set local mantle.scope_login = ''",
+      "select set_config('mantle.create_ws', $1, true)",
+      "select set_config('mantle.private_ws', $1, true)",
+      "select set_config('mantle.create_stamp', $1, true)",
+      'set local "mantle.create_ws" = \'x\'',
+      'set local mantle . "create_stamp" to \'{}\'',
     ]) {
       expect(verdict(q), q).toBe('refused');
     }
     const inGateway = await gatewaySettings(async () => gatewayOwn.map((q) => verdict(q)));
-    expect(inGateway).toEqual(['sent', 'sent']);
+    expect(inGateway).toEqual(['sent', 'sent', 'sent']);
     // Only while the gateway's own SET is being sent.
     expect(verdict(gatewayOwn[0]!)).toBe('refused');
   });

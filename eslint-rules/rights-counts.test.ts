@@ -394,6 +394,38 @@ describe('migrationFunctions', () => {
   });
 });
 
+describe('migrationFunctions reads the SQL as Postgres does (sql-text.ts)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rights-counts-lexer-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'packages/db/migrations/meta'), { recursive: true });
+  writeFileSync(
+    join(dir, 'packages/db/migrations/meta/_journal.json'),
+    JSON.stringify({ entries: [{ tag: '0000_a' }] }),
+  );
+  writeFileSync(
+    join(dir, 'packages/db/migrations/0000_a.sql'),
+    [
+      // A `--` comment a carriage return ends: the function after it is code.
+      '-- a note\rCREATE FUNCTION after_cr() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+      // Block comments nest: the whole of this one is a comment.
+      '/* a /* b */ CREATE FUNCTION in_nested() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$; */',
+      // An E string's escaped quote is no end of it: the `--` is inside
+      // the string, and the function after it is code.
+      "SELECT E'\\' -- '; CREATE FUNCTION after_estring() RETURNS int LANGUAGE sql AS $$ SELECT 3 $$;",
+      'CREATE FUNCTION after_string() RETURNS int LANGUAGE sql SECURITY DEFINER AS $$ SELECT 2 $$;',
+    ].join('\n'),
+  );
+
+  it('finds the functions Postgres makes, and none in a comment', () => {
+    const fns = migrationFunctions(dir) as { name: string; definer: boolean }[];
+    expect(fns.map((f) => `${f.name} ${f.definer}`)).toEqual([
+      'after_cr false',
+      'after_estring false',
+      'after_string true',
+    ]);
+  });
+});
+
 describe('legacyPrecheckUndated', () => {
   it('counts a legacy entry with no owner or no end date', () => {
     expect(

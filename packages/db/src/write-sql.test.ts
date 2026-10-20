@@ -30,5 +30,19 @@ describe('isWriteSql', () => {
     'with r as (select id from nodes) select * from r',
     '-- update nodes set x\nselect 1',
     'select "update_count" from stats',
+    // Read as Postgres's lexer reads it (sql-text.ts): a nested comment
+    // hides its whole text, a write verb in a value is no write, and text
+    // that never closes runs nothing.
+    '/* a /* b */ insert into nodes (id) values ($1) */ select 1',
+    "select 'insert into nodes' as x",
+    'select $q$delete from nodes$q$ as x',
+    'select 1 /* update nodes set x = 1',
   ])('a read: %s', (q) => expect(isWriteSql(q)).toBe(false));
+
+  it.each([
+    // A `--` comment a carriage return ends: the delete after it is code.
+    'select 1 --x\r; delete from nodes where id = $1',
+    // A dollar quote whose tag is not ASCII ends where Postgres ends it.
+    'select $é$x$é$; update nodes set title = $1',
+  ])('a write after text the old reader misread: %s', (q) => expect(isWriteSql(q)).toBe(true));
 });

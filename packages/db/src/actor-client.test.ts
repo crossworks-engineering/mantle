@@ -16,6 +16,7 @@ import {
   setActorSql,
   writeRoleSettingsSql,
 } from './client';
+import { statementBody } from './gateway/actor-sql';
 
 type PgSql = Parameters<typeof actorInTransaction>[0];
 
@@ -82,6 +83,27 @@ describe('runsOutsideTransaction', () => {
     ]) {
       expect(runsOutsideTransaction(q), q).toBe(false);
     }
+  });
+
+  it('reads the leading comments and SETs as Postgres does (sql-text.ts)', () => {
+    // Block comments nest: the whole of the first is a comment.
+    expect(statementBody('/* a /* b */ select */ vacuum', false)).toBe('vacuum');
+    expect(runsOutsideTransaction('/* a /* b */ select */ vacuum')).toBe(true);
+    expect(runsOutsideTransaction('/* a /* b */ vacuum */ select 1')).toBe(false);
+    // A `--` comment a carriage return ends.
+    expect(statementBody('--x\rvacuum', false)).toBe('vacuum');
+    // A `;` in a string or a dollar quote (a tag of any name characters)
+    // ends no SET.
+    expect(statementBody("set my.x = 'a;b'; vacuum", true)).toBe('vacuum');
+    expect(statementBody('set my.x = $é$;$é$; vacuum', true)).toBe('vacuum');
+    expect(runsOutsideTransaction('set my.x = $é$;$é$; vacuum')).toBe(true);
+    expect(statementBody('set my.x = $é$; vacuum $é$; select 1', true)).toBe('select 1');
+    expect(runsOutsideTransaction('set my.x = $é$; vacuum $é$; select 1')).toBe(false);
+    // SET TRANSACTION and a SET with no end are kept.
+    expect(statementBody('set transaction read only; select 1', true)).toBe(
+      'set transaction read only; select 1',
+    );
+    expect(statementBody('set x = 1', true)).toBe('set x = 1');
   });
 });
 

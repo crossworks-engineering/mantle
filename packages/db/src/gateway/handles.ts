@@ -23,6 +23,7 @@ import {
   type WorkspaceScope,
 } from '../viewer';
 import { checkActorBound } from '../actor';
+import { sqlCode } from '../sql-text';
 import { withMigratorConnection } from '../migrator-connection';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { actorParams, setActorSql } from './actor-sql';
@@ -110,7 +111,12 @@ function systemPoolProp(scope: WorkspaceScope, prop: string | symbol): unknown {
  * not write.
  */
 export function isWriteSql(text: string): boolean {
-  const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+  // Read on the text's code (sql-text.ts): comments, strings and dollar
+  // quotes blanked as Postgres's lexer reads them, so a verb in a value is
+  // no write and a comment never hides one. Text that never closes is no
+  // statement Postgres runs: not a write (executeWrite refuses it).
+  const { code: body, unterminated } = sqlCode(text);
+  if (unterminated) return false;
   if (
     /^\s*\(?\s*(insert|update|delete|merge|truncate|lock|refresh|notify|call|do|create|alter|drop)\b/i.test(
       body,

@@ -25,6 +25,7 @@
  * live catalog after migrate.
  */
 import { balanced, readRepoFile, stripComments } from './arch-counts.mjs';
+import { sqlCode } from '../packages/db/src/sql-text.ts';
 import { adminCounts } from './admin-counts.mjs';
 import { asSystemExits } from './as-system-exits.mjs';
 import {
@@ -294,50 +295,11 @@ function qualified(a, b) {
 }
 
 /** SQL `text` with `--` and block comments blanked, outside quotes and
- *  dollar quotes (a function body keeps its own text). */
+ *  dollar quotes (a function body keeps its own text): sql-text.ts's
+ *  reading (nested block comments, a `--` comment a `\r` ends, E'' strings,
+ *  a `$` inside a name), the same length. */
 function stripSqlComments(text) {
-  let out = '';
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    const n = text[i + 1];
-    if (c === '-' && n === '-') {
-      const e = text.indexOf('\n', i);
-      const end = e < 0 ? text.length : e;
-      out += ' '.repeat(end - i);
-      i = end;
-      continue;
-    }
-    if (c === '/' && n === '*') {
-      const e = text.indexOf('*/', i + 2);
-      const end = e < 0 ? text.length : e + 2;
-      out += text.slice(i, end).replace(/[^\n]/g, ' ');
-      i = end;
-      continue;
-    }
-    if (c === "'") {
-      let j = i + 1;
-      while (j < text.length) {
-        if (text[j] === "'" && text[j + 1] === "'") j += 2;
-        else if (text[j] === "'") break;
-        else j += 1;
-      }
-      out += text.slice(i, j + 1);
-      i = j + 1;
-      continue;
-    }
-    const dq = c === '$' ? /^\$([A-Za-z_]\w*)?\$/.exec(text.slice(i, i + 64)) : null;
-    if (dq) {
-      const e = text.indexOf(dq[0], i + dq[0].length);
-      const end = e < 0 ? text.length : e + dq[0].length;
-      out += text.slice(i, end);
-      i = end;
-      continue;
-    }
-    out += c;
-    i += 1;
-  }
-  return out;
+  return sqlCode(text).uncommented;
 }
 
 /** The input argument types of a function's parameter list (`a uuid, b
@@ -521,10 +483,10 @@ export function isSetAssistantFn(name) {
   return /set_assistant/i.test(name);
 }
 
-/** SQL `body` with `--` and block comments dropped (a function body keeps
- *  its comments in the catalog). */
+/** SQL `body` with `--` and block comments blanked (a function body keeps
+ *  its comments in the catalog), read as stripSqlComments reads. */
 function dropSqlComments(body) {
-  return body.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  return stripSqlComments(body);
 }
 
 const SQL_WORDS = new Set(

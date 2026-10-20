@@ -36,6 +36,20 @@ export class NotReadSqlError extends Error {
   }
 }
 
+/** Functions that run a text argument as SQL: query_to_xml and its kin,
+ *  cursor_to_xml (a cursor's query), ts_stat and ts_rewrite (a query),
+ *  pg-boss's job_table_run (its command), dblink (a remote one). Here and
+ *  on the narrow system route's text check (gateway/narrow-sendable.ts),
+ *  which never reads inside a string either. */
+export const SQL_TEXT_RUNNERS: readonly string[] = Object.freeze([
+  'query_to_xml\\w*',
+  'cursor_to_xml\\w*',
+  'ts_stat',
+  'ts_rewrite',
+  'job_table_run\\w*',
+  'dblink\\w*',
+]);
+
 /** Functions a read never calls: each writes, takes a lock, changes the
  *  session or the server, or runs its text argument. The built-ins, those
  *  of the extensions the database runs (pg_trgm's set_limit), and the
@@ -44,6 +58,7 @@ export class NotReadSqlError extends Error {
  *  actor). Matched as a call (`name(`, quoted or schema-qualified too) on
  *  the text's code, so a value never matches. */
 export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
+  ...SQL_TEXT_RUNNERS,
   'set_config',
   'setseed',
   'pg_advisory_\\w+',
@@ -53,7 +68,6 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'pg_notify',
   'lo_\\w+',
   'lowrite',
-  'dblink\\w*',
   'pg_terminate_backend',
   'pg_cancel_backend',
   'pg_reload_conf',
@@ -75,14 +89,9 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'pg_import_system_collations',
   'pg_log_backend_memory_contexts',
   'binary_upgrade_\\w+',
-  'query_to_xml\\w*',
-  'cursor_to_xml\\w*',
-  'ts_stat',
-  'ts_rewrite',
   'set_limit',
   'pg_nextoid',
   'pg_stop_making_pinned_objects',
-  'job_table_run\\w*',
   'mantle_operator_actor',
 ]);
 

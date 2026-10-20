@@ -7,6 +7,7 @@
  */
 import type postgres from 'postgres';
 import { reserveLease, type Lease } from '../reserved';
+import { sqlCode } from '../sql-text';
 import {
   actorCheckMode,
   actorSetting,
@@ -115,18 +116,24 @@ const ACTOR_VALUE_RE = /^[a-z0-9:._/@-]{1,200}$/i;
 const NO_TX_SQL =
   /^(vacuum|cluster|checkpoint|discard\s+all|call|reindex\s+(\([^)]*\)\s*)?(database|schema|system)\b|reindex\b[^;]*\bconcurrently|(create|drop)\s+(unique\s+)?index\s+concurrently|(create|drop)\s+(database|tablespace)|alter\s+system)\b/i;
 
+/** A SET statement but SET TRANSACTION, at the start of a statement's code. */
+const LEADING_SET =
+  /^set(?![A-Za-z0-9_$\u0080-\uffff])(?!\s*transaction(?![A-Za-z0-9_$\u0080-\uffff]))/i;
+
 /** `query` without its leading comments and whitespace, and with
- *  `setsToo`, its leading SET statements. */
+ *  `setsToo`, its leading SET statements (each ended by a `;`). Read on the
+ *  text's code (sql-text.ts sqlCode, as Postgres's lexer reads it: nested
+ *  block comments, a `--` comment a `\r` ends, a `;` in a string or a
+ *  quoted name is no end), so what is cut is exactly what Postgres skips. */
 export function statementBody(query: string, setsToo: boolean): string {
-  let body = query;
+  const { code } = sqlCode(query);
+  let at = 0;
   for (;;) {
-    let next = body
-      .replace(/^\s+/, '')
-      .replace(/^--[^\n\r]*[\n\r]?/, '')
-      .replace(/^\/\*[\s\S]*?\*\//, '');
-    if (setsToo) next = next.replace(/^set\s+(?!transaction\b)[^;]*;/i, '');
-    if (next === body) return body;
-    body = next;
+    while (at < code.length && /\s/.test(code[at]!)) at += 1;
+    if (!setsToo || !LEADING_SET.test(code.slice(at))) return query.slice(at);
+    const end = code.indexOf(';', at);
+    if (end < 0) return query.slice(at);
+    at = end + 1;
   }
 }
 
