@@ -384,19 +384,56 @@ export async function listFolders(args: {
         sql`${nodes.path} ~ ${`${args.parentPath}.*{1}`}::lquery`,
       ),
     );
-  // Add counts per row.
-  const results: FolderRow[] = [];
-  for (const row of rows) {
-    const counts = await folderCounts(args.ownerId, row.path);
-    results.push(folderRowFromNode(row, counts.childFolderCount, counts.fileCount));
-  }
+  // Their counts, all of them in two grouped queries: the folders the login
+  // reads one level below each row (two below the parent), and the files it
+  // reads in each row. Each row's answer is what folderCounts gives it.
+  const below = await countsBelow(args.ownerId, args.parentPath);
+  const results = rows.map((row) => {
+    const c = below.get(row.path);
+    return folderRowFromNode(row, c?.childFolderCount ?? 0, c?.fileCount ?? 0);
+  });
   results.sort((a, b) => a.slug.localeCompare(b.slug));
   return results;
 }
 
-/** All descendant folders, used to build the tree rail in one query. */
-export async function listAllFolders(ownerId: string): Promise<FolderRow[]> {
-  const rows = await db
+type Counts = { childFolderCount: number; fileCount: number };
+
+/** What the login reads in each folder one level below `parentPath` (an
+ *  lquery prefix, as listFolders takes it), keyed by the folder's path: its
+ *  subfolders and its files, as folderCounts counts them one folder at a
+ *  time, in two grouped queries whatever the number of folders. */
+async function countsBelow(ownerId: string, parentPath: string): Promise<Map<string, Counts>> {
+  const folders = (await db.execute(sql`
+    select subpath(c.path, 0, nlevel(c.path) - 1)::text as path, count(*)::int as n from nodes c
+     where c.owner_id = ${ownerId} and c.type = 'branch'
+       and c.path ~ ${`${parentPath}.*{2}`}::lquery
+     group by 1`)) as unknown as { path: string; n: number }[];
+  const files = (await db.execute(sql`
+    select c.path::text as path, count(*)::int as n from nodes c
+     where c.owner_id = ${ownerId} and c.type = 'file'
+       and c.path ~ ${`${parentPath}.*{1}`}::lquery
+     group by 1`)) as unknown as { path: string; n: number }[];
+  const out = new Map<string, Counts>();
+  const at = (p: string) => {
+    let c = out.get(p);
+    if (!c) out.set(p, (c = { childFolderCount: 0, fileCount: 0 }));
+    return c;
+  };
+  for (const f of folders) at(f.path).childFolderCount += Number(f.n);
+  for (const f of files) at(f.path).fileCount += Number(f.n);
+  return out;
+}
+
+/** Every folder the login reads under the files root, with its counts, and
+ *  the files it reads there by folder path: one query for the folders, one
+ *  grouped query for the files, whatever the number of folders. A folder's
+ *  subfolders are all among the folders read (they sit under the root too),
+ *  so its childFolderCount is counted from them; both counts are what
+ *  folderCounts gives the folder. */
+async function readRail(
+  ownerId: string,
+): Promise<{ rows: FolderRow[]; files: { path: string; n: number }[] }> {
+  const branches = await db
     .select()
     .from(nodes)
     .where(
@@ -406,13 +443,34 @@ export async function listAllFolders(ownerId: string): Promise<FolderRow[]> {
         sql`${nodes.path} <@ ${FILES_ROOT_LABEL}::ltree`,
       ),
     );
-  const out: FolderRow[] = [];
-  for (const row of rows) {
-    const counts = await folderCounts(ownerId, row.path);
-    out.push(folderRowFromNode(row, counts.childFolderCount, counts.fileCount));
+  // The files the login reads under the root, by folder (the row rules; the
+  // file index, not the read_ws one, finds them).
+  const files = (await db.execute(sql`
+    select n.path::text as path, count(*)::int as n from nodes n
+     where n.owner_id = ${ownerId} and n.type = 'file'
+       and n.path <@ ${FILES_ROOT_LABEL}::ltree
+     group by 1`)) as unknown as { path: string; n: number }[];
+  const fileCount = new Map<string, number>();
+  for (const f of files) fileCount.set(f.path, (fileCount.get(f.path) ?? 0) + Number(f.n));
+  const childCount = new Map<string, number>();
+  for (const b of branches) {
+    const i = b.path.lastIndexOf('.');
+    if (i > 0) {
+      const parent = b.path.slice(0, i);
+      childCount.set(parent, (childCount.get(parent) ?? 0) + 1);
+    }
   }
-  out.sort((a, b) => a.path.localeCompare(b.path));
-  return out;
+  const rows = branches.map((b) =>
+    folderRowFromNode(b, childCount.get(b.path) ?? 0, fileCount.get(b.path) ?? 0),
+  );
+  rows.sort((a, b) => a.path.localeCompare(b.path));
+  return { rows, files };
+}
+
+/** All descendant folders, used to build the tree rail: two queries, not two
+ *  per folder. */
+export async function listAllFolders(ownerId: string): Promise<FolderRow[]> {
+  return (await readRail(ownerId)).rows;
 }
 
 /** What the login reads in each of the folders at `paths`, in one query
@@ -517,17 +575,14 @@ export async function listFoldersWithTrail(args: {
  * the folders on the way to each row it reads under the root, in one call).
  */
 export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRow[]> {
-  const rows = await listAllFolders(ownerId);
+  const rail = await readRail(ownerId);
+  const rows = rail.rows;
   if (!trailForCaller(ownerId)) return rows;
-  // The files the login reads under the root, by folder (the row rules; the
-  // file index, not the read_ws one, finds them), and the folders it reads:
-  // every folder above them it does not read is a candidate; the definer
-  // answers only those at or above a row the scope reads.
-  const files = (await db.execute(sql`
-    select n.path::text as path, count(*)::int as n from nodes n
-     where n.owner_id = ${ownerId} and n.type = 'file'
-       and n.path <@ ${FILES_ROOT_LABEL}::ltree and nlevel(n.path) > 1
-     group by 1`)) as unknown as { path: string; n: number }[];
+  // The files the login reads under the root, by folder (read with the
+  // rows, those below the root itself), and the folders it reads: every
+  // folder above them it does not read is a candidate; the definer answers
+  // only those at or above a row the scope reads.
+  const files = rail.files.filter((f) => f.path.includes('.'));
   const known = new Set(rows.map((r) => r.path));
   const wanted = new Set<string>();
   for (const path of [...files.map((f) => f.path), ...known]) {
