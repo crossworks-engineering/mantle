@@ -408,6 +408,7 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
     const agent = randomUUID();
     await su(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${agent}, ${owner}, ${`${tag}-w`}, 'W', 'fake/model', 'p', 'responder', ${W})`);
+    await sys(() => t.seedBuiltinTools(owner));
     const tool = await sys(() => t.resolveTool(owner, 'file_create'));
     const surface = { kind: 'web', loginId: member };
     const turn = await m.runAsActor(m.loginActor(member, 'rw'), () =>

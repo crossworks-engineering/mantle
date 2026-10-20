@@ -101,10 +101,14 @@ CREATE OR REPLACE FUNCTION "public"."mantle_folder_trail"(owner uuid, under text
       FROM s, named n
      WHERE (n."login_id" IS NULL OR n."login_id" = s.login)
        AND ((n."read_ws" && s.ws)
+            -- Down the path index from the named folder (the read test is
+            -- kept off the read_ws index: for a wide scope that index holds
+            -- most of the brain, and a probe per named folder would read it
+            -- each time).
             OR EXISTS (
               SELECT 1 FROM "public"."nodes" r
                WHERE r."owner_id" = "mantle_folder_trail"."owner" AND r."path" <@ n."path"
-                 AND r."read_ws" && s.ws
+                 AND (r."read_ws" && s.ws) IS TRUE
                  AND (r."login_id" IS NULL OR r."login_id" = s.login)))
   )
   SELECT b."id", b."path"::text, b."title" FROM below b WHERE nlevel(b."path") > 1
