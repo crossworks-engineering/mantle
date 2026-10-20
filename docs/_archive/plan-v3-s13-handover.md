@@ -152,11 +152,66 @@ with it in place). docs/update-prod.md, the rollback list, has the line.
 
 ## Gates
 
-GATES_PLACEHOLDER
+Head of the gates: c0bb5481f (the commits after it change only this file).
+
+Mac (DATABASE_URL unset): `pnpm -r typecheck` 0, `pnpm lint` 0 (one warning
+on main's contact-sharing-routes test, not this branch), `pnpm format:check`
+0, `pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules --maxWorkers=3` 0 (860
+files passed, 271 skipped).
+
+Workstation, own throwaway clone (~/s13-work/mantle) and own container
+(s13-pg, pgvector pg18, max_connections=450, port 56413 checked free, the
+database made as CI makes it: `init-scratch`, then `migrate` with
+`MANTLE_CHECK_FLOOR=keep`), systemd-run --user, one at a time,
+`--maxWorkers=3`:
+
+- full DB vitest: run 1 exit 1 with every test passing (1130 files, 13869
+  tests) and one unhandled `CONNECTION_CLOSED` from
+  w7e-member-scope.db.test.ts (the known teardown flake); run 2 exit 0
+  (1130 files passed, 13869 tests).
+- `pnpm test:actor-off` 0 (132 files, 1203 tests).
+- `pnpm test:actor-on` 0 (32 files, 392 tests; the S13 sweep and the 0311
+  definer test included).
+- `pnpm test:edit-on` 0 (44 files, 562 tests).
+- `pnpm test:matrix` 0 (4 files, 8 tests).
+- `pnpm test:runtime-role` 0 (280 files, 2802 tests).
+
+An earlier pass on a database migrated without `MANTLE_CHECK_FLOOR=keep`
+failed 38 files on "actor check: INSERT on nodes with no actor" (the floor
+raised the checks for every raw fixture write): the setup's fault, not the
+branch's; the container was made again as CI makes it. That pass also
+showed the one intended changed answer the pre-check removal cells pinned
+(the content edit's 400), updated in c0bb5481f.
+
+A8 oracles (`pnpm -C packages/db oracle:answers <name> --against` the
+answers recorded on main): a1, a1-folders, a3a, a3a-detail, a8 each 0 lines
+differ.
 
 ## Perf
 
-PERF_PLACEHOLDER
+A throwaway brain in the s13 container: 202,223 nodes (2,220 folders under
+`notes`, 20 top, 10 middle, 10 leaf each; 200,000 notes in the leaves), a
+member scope that reads 50 notes, all in one top folder. As the workspace
+role, `\timing`:
+
+- the children of the root (20 named, 19 above nothing the member reads):
+  about 95 ms; each hidden top folder's EXISTS probe scans its whole subtree
+  (about 10,000 rows) on the path index before it can say no.
+- the children of one top folder: 6 ms; a chain of three crumbs: 2 ms;
+  unscoped (the owner, no scope): under 1 ms (the gate answers at once).
+- the count shape of a page (the trail of each of the 20 root children,
+  lateral): about 130 ms.
+- the rail's scan of the paths the member reads under the root: 2 ms.
+
+So a member's root page on a brain this size pays about 225 ms more, a
+deeper page a few ms; an Admin user, whose scope reads the folders, pays
+the shortcut only (a folder the scope reads is answered without a probe).
+The cost is in the probe of a large hidden subtree. A cheaper shape, left
+for review: probe from the rows the scope reads (the read_ws GIN index)
+upwards when the scope is small, for example a lazily materialised set of
+the read paths under the named folders, used only when a named folder is
+not read itself.
 
 ## Jackdaw follow-up (the pair step)
 
@@ -177,6 +232,11 @@ PERF_PLACEHOLDER
   and tests.
 
 ## Open items
+
+- Perf (see Perf): about 95 ms per hidden top folder set on the root page
+  and about 130 ms for the counts, on a 200,000-row brain with a small
+  member scope. Not a break; worth the GIN-first shape before a large
+  brain's members use the trees heavily.
 
 - A trail folder shows the default look (no icon or colour) and no
   description: structure only, by the rule. If the owner wants the look
