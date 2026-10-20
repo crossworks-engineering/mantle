@@ -1,7 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
+import {
+  createFolder,
+  ensureFilesRootBranch,
+  listAllFoldersWithTrail,
+  listFoldersWithTrail,
+} from '@/lib/files';
+import { capped } from '@/lib/list-workspaces';
 import { firstIssue } from '@/lib/zod-issue';
 import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -11,6 +17,11 @@ const ListQuery = z.object({
   tree: z.coerce.boolean().optional(),
 });
 
+/** GET /api/files/folders?parent=|tree=: the Files folders the caller reads
+ *  and, for a login's own session, the folders above what it reads as
+ *  structure (id, path, name), each with the caller's caps (`mayEdit`,
+ *  `mayManage`; none on a folder it does not read, so a client offers no
+ *  write there, and every write still answers 404 for it). */
 export async function GET(req: Request) {
   const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
@@ -20,12 +31,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'invalid query' }, { status: 400 });
   }
   if (parsed.data.tree) {
-    const all = await listAllFolders(user.id);
-    return NextResponse.json({ folders: all });
+    const all = await listAllFoldersWithTrail(user.id);
+    return NextResponse.json({ folders: await capped(all) });
   }
   const parent = parsed.data.parent ?? 'files';
-  const folders = await listFolders({ ownerId: user.id, parentPath: parent });
-  return NextResponse.json({ folders });
+  const folders = await listFoldersWithTrail({ ownerId: user.id, parentPath: parent });
+  return NextResponse.json({ folders: await capped(folders) });
 }
 
 const CreateBody = z.object({

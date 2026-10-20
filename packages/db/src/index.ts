@@ -152,6 +152,13 @@ export {
 } from './viewer';
 export { systemStep, type StepItems, type SystemStep } from './system-step';
 export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
+export {
+  folderTrail,
+  folderTrailSql,
+  trailForCaller,
+  type TrailAsk,
+  type TrailFolder,
+} from './folder-trail';
 export { ensureViewerRoles } from './viewer-roles';
 export {
   assistantWorkspaceIds,

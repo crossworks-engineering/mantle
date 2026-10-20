@@ -9,6 +9,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import {
   db,
+  folderTrail,
+  folderTrailSql,
   liveWorkspaceSql,
   nodeAliasReadBy,
   nodeAliasReadByAnyOf,
@@ -126,15 +128,49 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  does not (`itemsElsewhere`), under the same read rule, so a client can
  *  open a folder whose items all live in another workspace and say so.
  *  Both item counts come from one scan (`count(*) filter`); with no other
- *  workspace (none, or only `ws`) there is no second count at all. */
+ *  workspace (none, or only `ws`) there is no second count at all.
+ *
+ *  `trailUnder` (a login's own session only, @mantle/db folderTrail): of
+ *  the direct children of the folder at that path, the ones matching `where`
+ *  that the login does not read but that hold something it reads come too,
+ *  as structure (id, path and name; no look, rank or system mark), and that
+ *  folder serves as their parent. Their counts are the reader's, as for any
+ *  folder: only what it reads in them. */
 export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
   where: SQL,
   ws?: string,
   others?: readonly string[],
+  trailUnder?: string,
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
+  const trail =
+    trailUnder === undefined
+      ? null
+      : folderTrailSql(ownerId, { under: trailUnder, paths: [trailUnder] }, 'tr');
+  // The folders the reader reads, then (with a trail) the trail's, matched
+  // by the same `where` (on id, path, title or slug; a trail row has no
+  // slug) and not already listed.
+  const folderRows = trail
+    ? sql`f0 as materialized (
+      select f.id, f.path, f.title, f.data from nodes f
+       where f.owner_id = ${ownerId} and f.type = 'branch' and ${where}),
+    tr as materialized (select tr.id, tr.path, tr.title from ${trail}),
+    f as materialized (
+      select f0.id, f0.path, f0.title, f0.data from f0
+      union all
+      select f.id, f.path, f.title, null::jsonb from (
+        select tr.id, tr.path, tr.title, null::text as slug from tr) f
+       where ${where} and f.id not in (select f0.id from f0))`
+    : sql`f as materialized (
+      select f.id, f.path, f.title, f.data from nodes f
+       where f.owner_id = ${ownerId} and f.type = 'branch' and ${where})`;
+  const trailParents = trail
+    ? sql`
+      union all
+      select tr.id, tr.path from tr`
+    : sql``;
   const elsewhere = ws ? elsewhereOf(ws, others ?? [], 'c') : null;
   // With `elsewhere`, one scan counts both: the items `ws` reads (`n`) and
   // those only the others read (`e`); a row neither reads is not scanned in.
@@ -148,14 +184,12 @@ export async function selectFolders(
       ? sql`and (${nodeAliasReadByWorkspace(ws, 'c')} or ${elsewhere})`
       : readBy(ws, 'c');
   const rows = (await db.execute(sql`
-    with f as materialized (
-      select f.id, f.path, f.title, f.data from nodes f
-       where f.owner_id = ${ownerId} and f.type = 'branch' and ${where}),
+    with ${folderRows},
     up as materialized (
       select p.id, p.path from nodes p
        where p.owner_id = ${ownerId} and p.type = 'branch' and ${nodeAliasScopeReads('p')}
          and p.path = any(array(
-           select subpath(path, 0, nlevel(path) - 1) from f where nlevel(path) > 2))),
+           select subpath(path, 0, nlevel(path) - 1) from f where nlevel(path) > 2))${trailParents}),
     fc as materialized (
       select subpath(c.path, 0, nlevel(c.path) - 1) as p, count(*)::int as n from nodes c
        where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
@@ -235,7 +269,10 @@ export async function treeFolderById(
 }
 
 /** The crumbs (top-down) for each of `paths`, keyed by path: the folders from
- *  the top level down to the path itself, root excluded. One query for all. */
+ *  the top level down to the path itself, root excluded. One query for all.
+ *  For a login's own session the folders above what it reads that it does
+ *  not read name their crumbs too (structure only, @mantle/db folderTrail),
+ *  so the chain has no gap. */
 export async function treeCrumbsFor(
   ownerId: string,
   paths: readonly string[],
@@ -246,13 +283,20 @@ export async function treeCrumbsFor(
     for (const p of paths) out.set(p, []);
     return out;
   }
+  const trail = folderTrailSql(ownerId, { paths: wanted }, 'tr');
   const rows = (await db.execute(sql`
     select id, path::text as path, title from nodes
      where owner_id = ${ownerId} and type = 'branch'
        and path::text in (${sql.join(
          wanted.map((w) => sql`${w}`),
          sql`, `,
-       )})`)) as unknown as Array<{
+       )})${
+         trail
+           ? sql`
+    union
+    select tr.id, tr.path::text as path, tr.title from ${trail}`
+           : sql``
+       }`)) as unknown as Array<{
     id: string;
     path: string;
     title: string;
@@ -347,6 +391,34 @@ export function treePageLimit(raw: number | undefined): number {
   return Math.max(1, Math.min(TREE_PAGE_MAX, Math.floor(raw)));
 }
 
+/** A folder of `kind` below the kind's root that the current login does
+ *  not read but sees as structure (@mantle/db folderTrail): it is at or
+ *  above something the login reads. Its counts are what the login reads in
+ *  it. Null for any other id, and for any caller but a login's own session.
+ *  Only the tree's page opens it this way: treeFolderById, and every write,
+ *  still finds no such folder. */
+async function trailFolderById(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+  ws?: string,
+  others?: readonly string[],
+): Promise<TreeFolder | null> {
+  if (!isUuid(folderId)) return null;
+  const root = TREE_KIND_SPECS[kind].root;
+  const [hit] = await folderTrail(ownerId, { folder: folderId });
+  if (!hit || !hit.path.startsWith(`${root}.`)) return null;
+  const [folder] = await selectFolders(
+    ownerId,
+    kind,
+    sql`f.id = ${folderId} and f.path <@ ${root}::ltree and nlevel(f.path) > 1`,
+    ws,
+    others,
+    treeParentPath(hit.path),
+  );
+  return folder ?? null;
+}
+
 /**
  * One folder's page: its direct subfolders (all of them, in order) and one
  * page of its items. `folderId` null is the kind's root. Null when the id is
@@ -355,6 +427,10 @@ export function treePageLimit(raw: number | undefined): number {
  * page and in the counts (the folders stay: they are the way to them).
  * `others` (with `ws`): the caller's other workspaces, for each folder's
  * `itemsElsewhere` (selectFolders) and the page's `elsewhere`.
+ * For a login's own session the folders it does not read but that lead to
+ * what it reads come too (selectFolders `trailUnder`), and such a folder
+ * opens (its readable items, its subfolders, its full crumbs); nothing
+ * else in it is shown.
  */
 export async function loadTreeFolder(
   ownerId: string,
@@ -371,14 +447,22 @@ export async function loadTreeFolder(
   const spec = TREE_KIND_SPECS[kind];
   const sort = opts.sort && spec.sorts.includes(opts.sort) ? opts.sort : spec.sorts[0]!;
   const folder = opts.folderId
-    ? await treeFolderById(ownerId, kind, opts.folderId, opts.ws, opts.others)
+    ? ((await treeFolderById(ownerId, kind, opts.folderId, opts.ws, opts.others)) ??
+      (await trailFolderById(ownerId, kind, opts.folderId, opts.ws, opts.others)))
     : null;
   if (opts.folderId && !folder) return null;
   const path = folder?.path ?? spec.root;
   const [folders, crumbs, page] = await Promise.all([
     opts.cursor
       ? Promise.resolve([] as TreeFolder[])
-      : selectFolders(ownerId, kind, sql`f.path ~ ${`${path}.*{1}`}::lquery`, opts.ws, opts.others),
+      : selectFolders(
+          ownerId,
+          kind,
+          sql`f.path ~ ${`${path}.*{1}`}::lquery`,
+          opts.ws,
+          opts.others,
+          path,
+        ),
     folder
       ? treeCrumbsFor(ownerId, [treeParentPath(folder.path)]).then(
           (m) => m.get(treeParentPath(folder.path)) ?? [],

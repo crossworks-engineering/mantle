@@ -36,6 +36,9 @@ import {
   withNodeInsertHeads,
   withNodeMoveHeads,
   refuseHiddenRows,
+  folderTrail,
+  trailForCaller,
+  type TrailFolder,
 } from '@mantle/db';
 import { folderCounts, folderRowFromNode, rowNow, type FolderRow } from './shared';
 import { folderById } from './queries';
@@ -407,6 +410,96 @@ export async function listAllFolders(ownerId: string): Promise<FolderRow[]> {
     const counts = await folderCounts(ownerId, row.path);
     out.push(folderRowFromNode(row, counts.childFolderCount, counts.fileCount));
   }
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
+}
+
+/** A folder the login does not read but sees as structure (@mantle/db
+ *  folderTrail): its id, path and name; the slug its path's last label
+ *  spells; no description, look, indexing switch or dates. Its counts are
+ *  what the login reads in it. */
+async function trailFolderRow(ownerId: string, t: TrailFolder): Promise<FolderRow> {
+  const counts = await folderCounts(ownerId, t.path);
+  const label = t.path.slice(t.path.lastIndexOf('.') + 1);
+  return {
+    id: t.id,
+    path: t.path,
+    title: t.title,
+    slug: label.replace(/_/g, '-'),
+    description: '',
+    indexing: null,
+    icon: null,
+    color: null,
+    childFolderCount: counts.childFolderCount,
+    fileCount: counts.fileCount,
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+
+/** `rows`, and the trail folders not among them. */
+async function withTrailRows(
+  ownerId: string,
+  rows: FolderRow[],
+  trail: readonly TrailFolder[],
+): Promise<FolderRow[]> {
+  const seen = new Set(rows.map((r) => r.id));
+  const out = [...rows];
+  for (const t of trail) {
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    out.push(await trailFolderRow(ownerId, t));
+  }
+  return out;
+}
+
+/**
+ * listFolders for a login's own session (the Files screen): the folders it
+ * reads under `parentPath`, and the ones it does not read but that hold
+ * something it reads, as structure (folderTrail; never for a key, a peer or
+ * a turn, which read listFolders as before). Nothing else of those folders,
+ * and no write path, changes: a folder the login does not read is still not
+ * found by every write.
+ */
+export async function listFoldersWithTrail(args: {
+  ownerId: string;
+  parentPath: string;
+}): Promise<FolderRow[]> {
+  const rows = await listFolders(args);
+  const trail = await folderTrail(args.ownerId, { under: args.parentPath });
+  const out = await withTrailRows(args.ownerId, rows, trail);
+  out.sort((a, b) => a.slug.localeCompare(b.slug));
+  return out;
+}
+
+/**
+ * listAllFolders for a login's own session (the Files tree rail): every
+ * folder it reads under the files root, and the folders above what it reads
+ * that it does not read, as structure (folderTrail, by the exact paths of
+ * the folders on the way to each row it reads under the root).
+ */
+export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRow[]> {
+  const rows = await listAllFolders(ownerId);
+  if (!trailForCaller()) return rows;
+  // The paths of the rows the login reads under the root (the row rules):
+  // every folder above them is a candidate; the definer answers only those
+  // at or above a row the scope reads.
+  const read = (await db.execute(sql`
+    select distinct n.path::text as path from nodes n
+     where n.owner_id = ${ownerId} and n.path <@ ${FILES_ROOT_LABEL}::ltree
+       and nlevel(n.path) > 1`)) as unknown as { path: string }[];
+  const known = new Set(rows.map((r) => r.path));
+  const wanted = new Set<string>();
+  for (const { path } of read) {
+    const labels = path.split('.');
+    for (let i = 2; i <= labels.length; i++) {
+      const p = labels.slice(0, i).join('.');
+      if (!known.has(p)) wanted.add(p);
+    }
+  }
+  if (!wanted.size) return rows;
+  const trail = await folderTrail(ownerId, { paths: [...wanted] });
+  const out = await withTrailRows(ownerId, rows, trail);
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }

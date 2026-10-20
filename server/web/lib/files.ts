@@ -14,6 +14,8 @@ export {
   deleteFolder,
   listFolders,
   listAllFolders,
+  listFoldersWithTrail,
+  listAllFoldersWithTrail,
   folderById,
   folderByPath,
   upsertFile,

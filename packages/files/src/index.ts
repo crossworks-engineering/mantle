@@ -164,6 +164,8 @@ export {
   folderDisplayName,
   listFolders,
   listAllFolders,
+  listFoldersWithTrail,
+  listAllFoldersWithTrail,
   folderById,
   folderByPath,
   upsertFile,

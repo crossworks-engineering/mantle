@@ -204,7 +204,14 @@ export async function upsertFile(args: {
                                                                   ${args.parentPath}) as id) r
              where r.id is not null`,
       )) as unknown as { id: string }[]);
-  if (!parent) {
+  // A content edit of a file the caller may change, in a folder it does not
+  // read: the folder is there (structure above what the caller reads), so the
+  // write over that one file goes on. A new file there is still refused: the
+  // caller cannot write into a folder it does not read.
+  if (
+    !parent &&
+    !(args.overwrite && (await overwritesEditableFile(args.ownerId, args.parentPath, filename)))
+  ) {
     throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
@@ -1490,6 +1497,31 @@ export async function callerSeesNode(id: string): Promise<boolean | null> {
     return rows.length > 0;
   });
   return seen ?? null;
+}
+
+/**
+ * Whether a write over `filename` in `parentPath` lands on a file the
+ * caller reads and may change, in a folder it does not read (upsertFile's
+ * overwrite): the file is there (exactly that name, not a folded member
+ * file), the caller reads it and may change it, and the folder is at or
+ * above what the caller reads (mantle_folder_trail, 0311: yes or no here,
+ * nothing of it is answered). Only then does a folder the caller does not
+ * read let the write on; a new file there is refused.
+ */
+async function overwritesEditableFile(
+  ownerId: string,
+  parentPath: string,
+  filename: string,
+): Promise<boolean> {
+  const taken = await fileNameTaken(ownerId, parentPath, filename);
+  if (!taken || !taken.exact || taken.folded) return false;
+  if ((await callerSeesNode(taken.id)) !== true) return false;
+  if ((await inCallerScope(() => mayEditNode(taken.id))) !== true) return false;
+  const rows = (await db.execute(
+    sql`select 1 as hit from "public"."mantle_folder_trail"(${ownerId}::uuid, null::text,
+                                                         array[${parentPath}]::text[], null::uuid)`,
+  )) as unknown as { hit: number }[];
+  return rows.length > 0;
 }
 
 /** Whether the caller may change the folder at `path` (mantle_may_edit, in
