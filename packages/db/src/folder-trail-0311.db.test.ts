@@ -78,20 +78,26 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
   // s = a hidden sibling under a (holds a hidden note), c = an empty hidden
   // folder, p = holds a row private to the other login, v = a folder the
   // workspace reads itself, and v.d under it (the grant on v passes on to
-  // it, so the workspace reads it too).
-  const F: Record<'r' | 'a' | 'b' | 's' | 'c' | 'p' | 'v' | 'd', { id: string; path: string }> = {
+  // it, so the workspace reads it too); q = a folder private to the other
+  // login that holds a note the workspace reads.
+  const F: Record<
+    'r' | 'a' | 'b' | 's' | 'c' | 'p' | 'q' | 'v' | 'd',
+    { id: string; path: string }
+  > = {
     r: { id: randomUUID(), path: tag },
     a: { id: randomUUID(), path: `${tag}.a` },
     b: { id: randomUUID(), path: `${tag}.a.b` },
     s: { id: randomUUID(), path: `${tag}.a.s` },
     c: { id: randomUUID(), path: `${tag}.c` },
     p: { id: randomUUID(), path: `${tag}.p` },
+    q: { id: randomUUID(), path: `${tag}.q` },
     v: { id: randomUUID(), path: `${tag}.v` },
     d: { id: randomUUID(), path: `${tag}.v.d` },
   };
   const item = randomUUID();
   const hidden = randomUUID();
   const privateRow = randomUUID();
+  const inPrivate = randomUUID();
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -140,15 +146,18 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${W}, ${member}, false), (${W}, ${other}, false)`);
     for (const [key, f] of Object.entries(F)) {
-      await x(sql`insert into nodes (id, owner_id, type, title, path)
-        values (${f.id}, ${owner}, 'branch', ${`${tag} ${key}`}, ${f.path}::ltree)`);
+      await x(sql`insert into nodes (id, owner_id, type, title, path, login_id)
+        values (${f.id}, ${owner}, 'branch', ${`${tag} ${key}`}, ${f.path}::ltree,
+                ${key === 'q' ? other : null})`);
     }
     await x(sql`insert into nodes (id, owner_id, type, title, path) values
       (${item}, ${owner}, 'note', ${`${tag} item`}, ${F.b.path}::ltree),
       (${hidden}, ${owner}, 'note', ${`${tag} hidden`}, ${F.s.path}::ltree)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path, login_id)
       values (${privateRow}, ${owner}, 'note', ${`${tag} private`}, ${F.p.path}::ltree, ${other})`);
-    for (const id of [item, privateRow, F.v.id]) {
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
+      (${inPrivate}, ${owner}, 'note', ${`${tag} in private`}, ${F.q.path}::ltree)`);
+    for (const id of [item, privateRow, inPrivate, F.v.id]) {
       await m.withHeads([id], 'update', async (tx) => {
         await tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${id}, ${W})`);
       });
@@ -160,7 +169,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     await scratch?.drop();
   });
 
-  it('the member reads its item and the folders v and v.d, and no other row here (the fixture)', async () => {
+  it('the member reads its item, the note in q and the folders v and v.d, and no other row here (the fixture)', async () => {
     const seen = await m.withViewer(
       { login: member },
       async () =>
@@ -168,11 +177,11 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
           sql`select id::text as id from nodes where path <@ ${tag}::ltree order by path, id`,
         )) as unknown as { id: string }[],
     );
-    expect(new Set(seen.map((r) => r.id))).toEqual(new Set([item, F.v.id, F.d.id]));
+    expect(new Set(seen.map((r) => r.id))).toEqual(new Set([item, inPrivate, F.v.id, F.d.id]));
   });
 
-  it('children: only the folders on the way to what the member reads', async () => {
-    expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'v']);
+  it('under a folder: only the folders one and two levels below it on the way to what the member reads', async () => {
+    expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'b', 'v', 'd']);
     expect(keys(await trailAs(member, owner, F.a.path))).toEqual(['b']);
     // A folder it reads is a folder at a row it reads.
     expect(keys(await trailAs(member, owner, F.v.path))).toEqual(['d']);
@@ -185,7 +194,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     const all = Object.values(F).map((f) => f.path);
     expect(keys(await trailAs(member, owner, null, all))).toEqual(['a', 'b', 'v', 'd']);
     expect(keys(await trailAs(member, owner, null, [], F.b.id))).toEqual(['b']);
-    for (const k of ['s', 'c', 'p', 'r'] as const) {
+    for (const k of ['s', 'c', 'p', 'q', 'r'] as const) {
       expect(await trailAs(member, owner, null, [], F[k].id)).toEqual([]);
     }
     expect(await trailAs(member, owner, null, [], item)).toEqual([]);
@@ -200,9 +209,16 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
   });
 
   it('per login: the other login sees the folder above its private row, the member does not', async () => {
-    expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'p', 'v']);
+    expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'b', 'p', 'q', 'v', 'd']);
     expect(keys(await trailAs(member, owner, F.r.path))).not.toContain('p');
     expect(await trailAs(member, owner, null, [F.p.path])).toEqual([]);
+  });
+
+  it("another login's own folder is never named, though it holds a row the member reads", async () => {
+    expect(keys(await trailAs(member, owner, F.r.path))).not.toContain('q');
+    expect(await trailAs(member, owner, null, [F.q.path])).toEqual([]);
+    expect(await trailAs(member, owner, null, [], F.q.id)).toEqual([]);
+    expect(keys(await trailAs(other, owner, null, [F.q.path], F.q.id))).toEqual(['q']);
   });
 
   it('nothing unscoped, in a scope with no login, or for another brain', async () => {

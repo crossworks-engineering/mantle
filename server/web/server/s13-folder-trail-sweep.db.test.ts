@@ -336,6 +336,119 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
     noMisses();
   });
 
+  it('the overwrite in a folder no login reads is for a login’s own session only: an API key, a turn and an OAuth MCP client are refused as before', async () => {
+    const before = (await row(file.id))!.data.content;
+    const upload = (headers: Record<string, string>) => {
+      const form = new FormData();
+      form.set('parentPath', fb.path);
+      form.set('replace', 'true');
+      form.set('file', new Blob(['by upload\n'], { type: 'text/markdown' }), 'shared.md');
+      return app.request('/api/v1/files', { method: 'POST', headers, body: form });
+    };
+    // An API key of the member (POST /api/v1/files, replace=true): 400.
+    const keys = await import('../lib/access-keys');
+    const minted = await keys.mintAccessKey({
+      name: `${tag} key`,
+      loginId: member,
+      access: 'read_write',
+      areas: null,
+      riskyTools: [],
+      expiresAt: null,
+      createdBy: member,
+      maxLive: 50,
+    });
+    const keyed = await upload({ authorization: `Bearer ${minted!.key}` });
+    expect(keyed.status, (await keyed.text()).slice(0, 200)).toBe(400);
+    expect((await row(file.id))!.data.content).toBe(before);
+
+    // An OAuth MCP client of the member (file_create, overwrite): refused.
+    const ls = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const server = new McpServer({ name: 'test', version: '0' });
+    ls.registerPreparedTools(
+      server,
+      await ls.prepareCallerTools({
+        role: 'member',
+        anchorId: owner,
+        loginId: member,
+        via: 'oauth',
+        write: true,
+        oauthClientId: 'c1',
+      }),
+    );
+    const [ta, tb] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: tag, version: '0' });
+    await Promise.all([server.connect(ta), c.connect(tb)]);
+    type Reply = { isError?: boolean; content?: { text?: string }[] };
+    let mcp: Reply;
+    try {
+      mcp = (await m.runAsActor(m.loginActor(member, 'rw'), () =>
+        c.callTool({
+          name: 'file_create',
+          arguments: {
+            parent_path: fb.path,
+            filename: 'shared.md',
+            content: 'by mcp\n',
+            overwrite: true,
+          },
+        }),
+      )) as Reply;
+    } finally {
+      await c.close();
+    }
+    expect(mcp.isError).toBe(true);
+    expect((mcp.content ?? []).map((y) => y.text ?? '').join('\n')).toMatch(/not found/);
+    expect((await row(file.id))!.data.content).toBe(before);
+
+    // A turn of the member with an assistant of W (file_create, overwrite):
+    // refused.
+    const t = await import('@mantle/tools');
+    const rt = await import('@mantle/runtime/agent');
+    const agent = randomUUID();
+    await su(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
+      values (${agent}, ${owner}, ${`${tag}-w`}, 'W', 'fake/model', 'p', 'responder', ${W})`);
+    const tool = await sys(() => t.resolveTool(owner, 'file_create'));
+    const surface = { kind: 'web', loginId: member };
+    const turn = await m.runAsActor(m.loginActor(member, 'rw'), () =>
+      rt.withAgentScope(
+        { id: agent, ownerId: owner, workspaceId: W, role: 'responder' },
+        () =>
+          t.dispatchTool(
+            tool!,
+            {
+              parent_path: fb.path,
+              filename: 'shared.md',
+              content: 'by turn\n',
+              overwrite: true,
+            },
+            { ownerId: owner, surface: surface as never, caller: t.turnCaller() },
+          ),
+        {
+          loginId: rt.surfaceLoginId(surface as never),
+          ownerLoginId: rt.ownerSurfaceLogin(surface as never),
+        },
+      ),
+    );
+    expect(turn.ok).toBe(false);
+    expect(String(turn.ok ? '' : turn.error)).toMatch(/not found/);
+    expect((await row(file.id))!.data.content).toBe(before);
+
+    // The member's own session (the same upload with its cookie): 200.
+    const own = await upload({ cookie: cookieOf(member) });
+    expect(own.status, (await own.text()).slice(0, 200)).toBe(200);
+    expect((await row(file.id))!.data.content).toBe('by upload\n');
+    m.takeActorMisses();
+  }, 120_000);
+
+  it('Files: a parent that is no ltree path answers as before (no trail asked, no error)', async () => {
+    for (const parent of ['*', 'files.*']) {
+      const r = await call(`/api/files/folders?parent=${encodeURIComponent(parent)}`, member);
+      expect(r.status, `${parent}: ${r.text.slice(0, 200)}`).toBe(200);
+      expect(JSON.stringify(r.json)).not.toContain(fa.id);
+    }
+  });
+
   it('the owner sees every folder as before', async () => {
     const root = await call('/api/tree/notes', owner);
     expect(root.status).toBe(200);
