@@ -15,10 +15,12 @@
 -- each as id, path and title, nothing else (no data, look, slug, counts or
 -- dates). Of those, only the ones the caller names:
 --  - `under`: the folders one and two levels below the folder at that path
---    (a page's folders and what each of them unfolds to). The rows the scope
---    reads below it are read first (the read_ws index), cut to those two
---    levels, and only the folders at those paths are answered, so the work
---    is the rows the scope reads there, never the size of a hidden subtree.
+--    (a page's folders and what each of them unfolds to) that the scope does
+--    not read itself (the ones it reads, it lists). When there is such a
+--    folder, the rows the scope reads below `under` are read first (the
+--    read_ws index), cut to those two levels, and only those folders on the
+--    way are answered, so the work is the rows the scope reads there, never
+--    the size of a hidden subtree; when there is none, no row is read.
 --  - `paths`: the folders at those exact paths (a chain of crumbs).
 --  - `folder`: the folder with that id.
 -- For an exact path or an id, one probe below each named folder (the path
@@ -55,22 +57,35 @@ CREATE OR REPLACE FUNCTION "public"."mantle_folder_trail"(owner uuid, under text
     SELECT "mantle_folder_trail"."under"::ltree AS p, nlevel("mantle_folder_trail"."under"::ltree) AS l
       FROM s WHERE "mantle_folder_trail"."under" IS NOT NULL
   ),
+  -- Below `under`: the folders one and two levels down that the scope does
+  -- not read itself (a per-login folder only for its own login). With none,
+  -- nothing more is read (the owner's and an Admin user's pages, and a
+  -- scope that reads the folders it holds).
+  cand AS MATERIALIZED (
+    SELECT f."id", f."path", f."title" FROM s, u, "public"."nodes" f
+     WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
+       AND f."path" ~ (u.p::text || '.*{1,2}')::lquery
+       AND (f."login_id" IS NULL OR f."login_id" = s.login)
+       AND NOT (f."read_ws" && s.ws)
+  ),
   -- The rows the scope reads below `under`, first: the prefix test is no
   -- path index term, so they are found by the read_ws index, never by a walk
-  -- of every row below `under`.
+  -- of every row below `under`; each cut to the two levels below it.
   reads AS MATERIALIZED (
     SELECT DISTINCT subpath(r."path", 0, least(nlevel(r."path"), u.l + 2)) AS p
       FROM s, u, "public"."nodes" r
-     WHERE r."owner_id" = "mantle_folder_trail"."owner"
+     WHERE EXISTS (SELECT 1 FROM cand)
+       AND r."owner_id" = "mantle_folder_trail"."owner"
        AND r."read_ws" && s.ws AND (r."login_id" IS NULL OR r."login_id" = s.login)
        AND nlevel(r."path") > u.l AND subpath(r."path", 0, u.l) = u.p
   ),
+  ways AS (
+    SELECT x.p FROM reads x
+    UNION
+    SELECT subpath(x.p, 0, u.l + 1) FROM reads x, u WHERE nlevel(x.p) > u.l + 1
+  ),
   below AS (
-    SELECT f."id", f."path", f."title"
-      FROM s CROSS JOIN reads x
-      JOIN "public"."nodes" f ON f."path" = x.p
-     WHERE f."owner_id" = "mantle_folder_trail"."owner" AND f."type" = 'branch'
-       AND (f."login_id" IS NULL OR f."login_id" = s.login)
+    SELECT c."id", c."path", c."title" FROM cand c WHERE c."path" IN (SELECT w.p FROM ways w)
   ),
   named AS (
     SELECT f."id", f."path", f."title", f."read_ws", f."login_id" FROM s, "public"."nodes" f

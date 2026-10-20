@@ -33,13 +33,16 @@ export type TrailAsk = {
 };
 
 /** Whether the current call is a login's own session in a workspace scope
- *  of that login, the one caller the trail is for. The brain's owner reads
- *  every folder and gets none (its statements are the ones they were). */
-export function trailForCaller(): boolean {
+ *  of that login, on the brain `ownerId`, the one caller the trail is for.
+ *  The brain's owner (the anchor login: it reads every folder) gets none,
+ *  so its statements are the ones they were. */
+export function trailForCaller(ownerId: string): boolean {
   const c = currentCaller();
   const actor = c?.actor;
   if (!(c?.via === 'cookie' || c?.via === 'bearer') || actor?.kind !== 'login') return false;
-  if (actor.mode === 'owner') return false;
+  if (actor.mode === 'owner' || actor.loginId.toLowerCase() === ownerId.toLowerCase()) {
+    return false;
+  }
   return Boolean(currentWorkspaceScope()?.loginId);
 }
 
@@ -53,7 +56,7 @@ export function textArraySql(values: readonly string[]): SQL {
  *  ltree, title) for a read that folds them into its own statement and
  *  names its alias after it; null when the current caller gets no trail. */
 export function folderTrailSql(ownerId: string, ask: TrailAsk): SQL | null {
-  if (!trailForCaller()) return null;
+  if (!trailForCaller(ownerId)) return null;
   return sql`(select r.id, r.path::ltree as path, r.title
                 from "public"."mantle_folder_trail"(${ownerId}::uuid, ${ask.under ?? null}::text,
                                                     ${textArraySql(ask.paths ?? [])},

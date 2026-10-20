@@ -180,11 +180,11 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     expect(new Set(seen.map((r) => r.id))).toEqual(new Set([item, inPrivate, F.v.id, F.d.id]));
   });
 
-  it('under a folder: only the folders one and two levels below it on the way to what the member reads', async () => {
-    expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'b', 'v', 'd']);
+  it('under a folder: only the folders one and two levels below it on the way to what the member reads, that it does not read itself', async () => {
+    expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'b']);
     expect(keys(await trailAs(member, owner, F.a.path))).toEqual(['b']);
-    // A folder it reads is a folder at a row it reads.
-    expect(keys(await trailAs(member, owner, F.v.path))).toEqual(['d']);
+    // A folder it reads it lists itself: none answered below v.
+    expect(await trailAs(member, owner, F.v.path)).toEqual([]);
     expect(await trailAs(member, owner, F.d.path)).toEqual([]);
     expect(await trailAs(member, owner, F.s.path)).toEqual([]);
     expect(await trailAs(member, owner, F.b.path)).toEqual([]);
@@ -209,7 +209,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
   });
 
   it('per login: the other login sees the folder above its private row, the member does not', async () => {
-    expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'b', 'p', 'q', 'v', 'd']);
+    expect(keys(await trailAs(other, owner, F.r.path))).toEqual(['a', 'b', 'p', 'q']);
     expect(keys(await trailAs(member, owner, F.r.path))).not.toContain('p');
     expect(await trailAs(member, owner, null, [F.p.path])).toEqual([]);
   });

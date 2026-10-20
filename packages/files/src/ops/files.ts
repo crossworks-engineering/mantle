@@ -216,7 +216,7 @@ export async function upsertFile(args: {
     !parent &&
     !(
       args.overwrite &&
-      trailForCaller() &&
+      trailForCaller(args.ownerId) &&
       (await overwritesEditableFile(args.ownerId, args.parentPath, filename))
     )
   ) {

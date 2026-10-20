@@ -39,12 +39,16 @@ describe('the trail is for a login’s own session only', () => {
     caller.scope = scope;
     for (const via of ['cookie', 'bearer']) {
       caller.value = { via, actor: login };
-      expect(trailForCaller()).toBe(true);
+      expect(trailForCaller(owner)).toBe(true);
       expect(folderTrailSql(owner, { under: 'notes' })).not.toBeNull();
     }
   });
 
   it('the owner, a session with no workspace scope, or a scope with no login: no, and no definer is asked', async () => {
+    caller.scope = scope;
+    caller.value = { via: 'cookie', actor: { ...login, loginId: owner } };
+    expect(trailForCaller(owner)).toBe(false);
+    expect(trailForCaller(owner.toUpperCase())).toBe(false);
     for (const [s, mode] of [
       [scope, 'owner'],
       [null, 'owner'],
@@ -54,7 +58,7 @@ describe('the trail is for a login’s own session only', () => {
       caller.scope = s;
       for (const via of ['cookie', 'bearer']) {
         caller.value = { via, actor: { ...login, mode } };
-        expect(trailForCaller()).toBe(false);
+        expect(trailForCaller(owner)).toBe(false);
         expect(folderTrailSql(owner, { under: 'notes' })).toBeNull();
         expect(await folderTrail(owner, { paths: ['notes.a'] })).toEqual([]);
       }
@@ -66,16 +70,16 @@ describe('the trail is for a login’s own session only', () => {
     const others = ['oauth', 'key', 'peer', 'link', 'contact', 'turn', 'app', 'process', 'stdio'];
     for (const via of others) {
       caller.value = { via, actor: login };
-      expect(trailForCaller(), via).toBe(false);
+      expect(trailForCaller(owner), via).toBe(false);
       expect(folderTrailSql(owner, { under: 'notes' })).toBeNull();
       expect(await folderTrail(owner, { paths: ['notes.a'] })).toEqual([]);
     }
     for (const actor of [{ kind: 'assistant', agentId: null }, { kind: 'link' }, null]) {
       caller.value = { via: 'cookie', actor };
-      expect(trailForCaller()).toBe(false);
+      expect(trailForCaller(owner)).toBe(false);
     }
     caller.value = null;
-    expect(trailForCaller()).toBe(false);
+    expect(trailForCaller(owner)).toBe(false);
     expect(await folderTrail(owner, { folder: owner })).toEqual([]);
   });
 });

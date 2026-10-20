@@ -496,7 +496,7 @@ export async function listFoldersWithTrail(args: {
   parentPath: string;
 }): Promise<FolderRow[]> {
   const rows = await listFolders(args);
-  if (!trailForCaller()) return rows;
+  if (!trailForCaller(args.ownerId)) return rows;
   const depth = args.parentPath.split('.').length + 1;
   const trail = (await folderTrail(args.ownerId, { under: args.parentPath })).filter(
     (t) => t.path.split('.').length === depth,
@@ -515,7 +515,7 @@ export async function listFoldersWithTrail(args: {
  */
 export async function listAllFoldersWithTrail(ownerId: string): Promise<FolderRow[]> {
   const rows = await listAllFolders(ownerId);
-  if (!trailForCaller()) return rows;
+  if (!trailForCaller(ownerId)) return rows;
   // The paths of the rows the login reads under the root (the row rules):
   // every folder above them is a candidate; the definer answers only those
   // at or above a row the scope reads.
