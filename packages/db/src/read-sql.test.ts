@@ -129,6 +129,42 @@ describe('readSql', () => {
       'a SEARCH clause',
       'with recursive t(n) as (select 1) search depth first by n set o select * from t',
     ],
+    // A `--` comment ends at a carriage return as at a newline (the lexer's
+    // non_newline is [^\n\r]): Postgres runs the delete after it.
+    ['a statement after a comment a \\r ends', 'select 1 --x\r; delete from t where a = 1'],
+    ['a write after a comment a \\r ends', 'select 1 --x\rfrom t; update t set a = 1'],
+    [
+      'a write CTE after a comment a \\r ends',
+      'select 1 --x\r, (with d as (delete from t) select 1)',
+    ],
+    ['a CTE head with no space before its parenthesis', 'with x as(select 1) delete from t'],
+    [
+      'a second CTE head with no space',
+      'with a as (select 1), b as(select 2) insert into t select 1',
+    ],
+    [
+      'a SEARCH clause before a delete',
+      'with recursive t(n) as (select 1) search depth first by n set o delete from x',
+    ],
+    [
+      'a CYCLE clause before an update',
+      'with recursive t(n) as (select 1) cycle n set c using p update x set a = 1',
+    ],
+    ['ts_rewrite (runs its text argument)', "select ts_rewrite('a'::tsquery, 'select 1')"],
+    ['pg_clear_relation_stats', "select pg_clear_relation_stats('public', 't')"],
+    ['pg_restore_relation_stats', "select pg_restore_relation_stats('schemaname', 'public')"],
+    ['pg_clear_attribute_stats', "select pg_clear_attribute_stats('public', 't', 'a', false)"],
+    ['pg_restore_attribute_stats', "select pg_restore_attribute_stats('schemaname', 'public')"],
+    ['brin_summarize_new_values', "select brin_summarize_new_values('i'::regclass)"],
+    ['brin_summarize_range', "select brin_summarize_range('i'::regclass, 0)"],
+    ['brin_desummarize_range', "select brin_desummarize_range('i'::regclass, 0)"],
+    ['gin_clean_pending_list', "select gin_clean_pending_list('i'::regclass)"],
+    ['pg_stat_statements_reset', 'select pg_stat_statements_reset()'],
+    ['pg_stat_reset_shared', "select pg_stat_reset_shared('io')"],
+    ['pg_log_standby_snapshot', 'select pg_log_standby_snapshot()'],
+    ['pg_backup_start', "select pg_backup_start('x')"],
+    ['pg_backup_stop', 'select pg_backup_stop()'],
+    ['a schema-qualified ts_rewrite', "select pg_catalog.ts_rewrite('a'::tsquery, 'select 1')"],
   ];
 
   it.each(REFUSED)('refuses %s', (_name, text) => {
@@ -144,6 +180,12 @@ describe('readSql', () => {
       'pg_advisory_lock',
       'lo_import',
       'dblink_exec',
+      'ts_rewrite',
+      'pg_restore_relation_stats',
+      'brin_summarize_range',
+      'gin_clean_pending_list',
+      'pg_stat_statements_reset',
+      'pg_backup_start',
     ]) {
       expect(notReadSqlReason(`select ${name}(1)`), name).toBe('a call of a function that writes');
       expect(notReadSqlReason(`select '${name}(1)'`), name).toBeNull();
@@ -168,6 +210,33 @@ describe('the shared SQL reader (sql-text.ts)', () => {
       "select ';' -- ;\n",
       ' select 2',
     ]);
+  });
+
+  it('ends a -- comment at a newline or a carriage return', () => {
+    for (const end of ['\n', '\r', '\r\n']) {
+      const text = `select 1 -- c ;${end}; select 2`;
+      const { code } = sqlCode(text);
+      expect(code.length).toBe(text.length);
+      expect(sqlStatements(text), JSON.stringify(end)).toHaveLength(2);
+    }
+    // Code after the carriage return is read as code: a read passes.
+    expect(readSql('select a --x\rfrom t')).toBe('select a --x\rfrom t');
+  });
+
+  it('walks a CTE head with no space before its parenthesis', () => {
+    expect(withParts('with x as(select 1), y as materialized(select 2) delete from t')).toEqual({
+      ctes: ['select 1', 'select 2'],
+      rest: 'delete from t',
+      walked: true,
+    });
+  });
+
+  it('does not walk a SEARCH or CYCLE clause', () => {
+    for (const clause of ['search depth first by n set o', 'cycle n set c using p']) {
+      const parts = withParts(`with recursive t(n) as (select 1) ${clause} delete from x`);
+      expect(parts.walked, clause).toBe(false);
+      expect(parts.rest).toContain('delete from x');
+    }
   });
 
   it('walks a WITH', () => {

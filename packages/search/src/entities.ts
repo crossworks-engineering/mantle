@@ -364,8 +364,8 @@ export function graphPathSql(opts: GraphPathOptions): string {
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200);
   const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
 
-  // This runs via postgres.js's SIMPLE query protocol (db.$client.unsafe().
-  // simple()), NOT drizzle's db.execute — which uses the extended protocol
+  // This runs via postgres.js's SIMPLE query protocol (simpleReadOnly:
+  // db.$client's unsafe().simple()), NOT drizzle's db.execute — which uses the extended protocol
   // (Parse/Bind/Execute). Under the extended protocol, a recursive-CTE array
   // column's type isn't pinned at parse time, so the cycle guard
   // `= any(path_ids)` fails with "op ANY/ALL requires array on right side";
@@ -419,16 +419,37 @@ export function graphPathSql(opts: GraphPathOptions): string {
   return queryText;
 }
 
-export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
-  const queryText = graphPathSql(opts);
+/** The postgres.js client graphPath reads with (db.$client: the turn
+ *  scope's client in a turn, else the system pool's). */
+type SimpleClient = {
+  unsafe: (q: string) => PromiseLike<unknown> & { simple: () => Promise<unknown[]> };
+};
 
-  // Simple protocol (see note above) — the raw postgres.js client, no params.
+/**
+ * Run `text` (readSql checks it) on postgres.js's simple protocol inside a
+ * READ ONLY transaction: SET TRANSACTION READ ONLY goes first, sent with
+ * the read in one write, so Postgres refuses a write a function the text
+ * calls would make (see @mantle/db read-only-tx.ts for what that stops and
+ * what it does not). Exported for graph-path-read-only.db.test.ts.
+ */
+export async function simpleReadOnly(text: string): Promise<unknown[]> {
   const client = (
     db as unknown as {
-      $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
+      $client: { begin: <T>(fn: (t: SimpleClient) => Promise<T>) => Promise<T> };
     }
   ).$client;
-  const rows = await client.unsafe(readSql(queryText)).simple();
+  return client.begin(async (t) => {
+    const [, rows] = await Promise.all([
+      t.unsafe('set transaction read only'),
+      t.unsafe(readSql(text)).simple(),
+    ]);
+    return rows;
+  });
+}
+
+export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
+  // Simple protocol (see note above), no params, read only.
+  const rows = await simpleReadOnly(graphPathSql(opts));
 
   const raw = rows as unknown as Array<{
     node_id: string;

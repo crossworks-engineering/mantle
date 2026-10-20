@@ -7,8 +7,9 @@
  * No parser: the text is blanked (sqlCode) so that only its code is left,
  * then read for its statements, its leading WITH and its first words. The
  * blanking follows the lexer of PostgreSQL where a mistake could hide code:
- * nested block comments, a `--` inside a string (no comment), a `$` inside
- * a name (no dollar quote), E'' strings and their backslashes. It assumes
+ * nested block comments, a `--` comment that a `\r` ends as a `\n` does, a
+ * `--` inside a string (no comment), a `$` inside a name (no dollar quote),
+ * E'' strings and their backslashes. It assumes
  * standard_conforming_strings on (the default); a plain string whose
  * backslash stands before a quote, and a U&"" name (an escaped name may
  * spell anything), are flagged `ambiguous` instead.
@@ -50,8 +51,10 @@ export function sqlCode(text: string): SqlCode {
     const next = text[i + 1];
     const before = i > 0 ? text[i - 1]! : '';
     if (c === '-' && next === '-') {
-      const end = text.indexOf('\n', i);
-      const stop = end < 0 ? n : end;
+      // A `--` comment ends at the first newline or carriage return (the
+      // lexer's non_newline is [^\n\r]): after a lone `\r` is code.
+      let stop = i + 2;
+      while (stop < n && text[stop] !== '\n' && text[stop] !== '\r') stop += 1;
       code += blanks(text.slice(i, stop));
       i = stop;
     } else if (c === '/' && next === '*') {
@@ -174,12 +177,13 @@ export function sqlStatements(text: string): string[] {
  *  text inside its parentheses) and the statement after them (`rest`).
  *  `walked` is false when the WITH does not read as `name [(cols)] AS
  *  [[NOT] MATERIALIZED] (...)` items, a comma between (a SEARCH or CYCLE
- *  clause, say); `rest` is then what is left after the last CTE read. No
- *  WITH: no CTEs, `rest` the code itself. */
+ *  clause after a CTE, say, or parentheses that never close); `rest` is
+ *  then what is left from the first item not read, the statement in it.
+ *  No WITH: no CTEs, `rest` the code itself. */
 export type WithParts = { ctes: string[]; rest: string; walked: boolean };
 
 const CTE_HEAD =
-  /^(?:"[^"]*"|[A-Za-z_\u0080-￿][\w$\u0080-￿]*)\s*(?:\([^()]*\)\s*)?as\s+(?:(?:not\s+)?materialized\s+)?\(/i;
+  /^(?:"[^"]*"|[A-Za-z_\u0080-￿][\w$\u0080-￿]*)\s*(?:\([^()]*\)\s*)?as\s*(?:(?:not\s+)?materialized\s*)?\(/i;
 
 export function withParts(code: string): WithParts {
   let t = code.trim();
@@ -199,11 +203,11 @@ export function withParts(code: string): WithParts {
         if (depth === 0) break;
       }
     }
-    if (depth !== 0) return { ctes, rest: '', walked: false };
+    if (depth !== 0) return { ctes, rest: t, walked: false };
     ctes.push(t.slice(head[0].length, i));
     t = t.slice(i + 1).trim();
     if (t.startsWith(',')) t = t.slice(1).trim();
-    else return { ctes, rest: t, walked: true };
+    else return { ctes, rest: t, walked: !/^(?:search|cycle)\b/i.test(t) };
   }
 }
 

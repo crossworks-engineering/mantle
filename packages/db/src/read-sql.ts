@@ -57,7 +57,12 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'pg_switch_wal',
   'pg_promote',
   'pg_create_restore_point',
-  'pg_stat_reset\\w*',
+  'pg_stat_\\w*reset\\w*',
+  'pg_(?:clear|restore|set)_\\w+_stats',
+  'pg_log_standby_snapshot',
+  'pg_backup_\\w+',
+  'brin_\\w+',
+  'gin_clean_pending_list',
   'pg_\\w*replication_slot\\w*',
   'pg_replication_origin_\\w+',
   'pg_logical_\\w+',
@@ -69,6 +74,7 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'query_to_xml\\w*',
   'cursor_to_xml\\w*',
   'ts_stat',
+  'ts_rewrite',
 ]);
 
 const WRITE_FUNCTION_CALL = new RegExp(

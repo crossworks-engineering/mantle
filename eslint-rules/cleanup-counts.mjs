@@ -64,8 +64,10 @@ export function rawWriteSwept(path) {
 }
 
 const WRITE_START = /^(insert|update|delete|merge|truncate)\b/i;
-const WRITE_CTE = /\bas\s*(?:not\s+)?(?:materialized\s+)?\(\s*(insert|update|delete|merge)\b/i;
+const WRITE_CTE = /\bas\s*(?:not\s+)?(?:materialized\s*)?\(\s*(insert|update|delete|merge)\b/i;
 const WRITE_CTE_BODY = /^[\s(]*(insert|update|delete|merge)\b/i;
+const WRITE_WORD = /\b(insert|update|delete|merge|truncate)\b/i;
+const ROW_LOCK_UPDATE = /\bfor\s+(?:no\s+key\s+)?update\b/gi;
 
 /** Why the static SQL `text` is a raw write ('write' or 'write-cte'), or
  *  null for a read (FOR UPDATE included) or a definer call. Read on the
@@ -80,6 +82,10 @@ export function rawWriteKind(text) {
   for (const statement of sqlStatements(code)) {
     const parts = withParts(statement.replace(/^\s*(?:\$1\s*)+/, ''));
     if (WRITE_START.test(parts.rest)) return 'write';
+    // A WITH the reader cannot walk (readSql refuses it): a write verb
+    // anywhere in what is left counts (a row lock's UPDATE aside), rather
+    // than no finding.
+    if (!parts.walked && WRITE_WORD.test(parts.rest.replace(ROW_LOCK_UPDATE, ''))) return 'write';
     if (parts.ctes.some((body) => WRITE_CTE_BODY.test(body))) cte = true;
   }
   return cte ? 'write-cte' : null;

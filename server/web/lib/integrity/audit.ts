@@ -21,6 +21,7 @@ import {
   extractParkedSql,
   GRANT_DRIFT_SQL,
   MIGRATION_TAGS,
+  readOnlyTransaction,
   readSql,
   sharedReadsAliasSql,
 } from '@mantle/db';
@@ -496,17 +497,31 @@ const CHECKS: CheckDef[] = [
   },
 ];
 
+/**
+ * Every check in one READ ONLY transaction (readOnlyTransaction): five of
+ * them run shared catalog text through readSql, and the database refuses a
+ * write any of them, or a function one calls, would make.
+ */
 export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
+  const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId));
+  return {
+    generatedAt: new Date().toISOString(),
+    checks,
+    totalViolations: checks.reduce((s, c) => s + c.count, 0),
+  };
+}
+
+async function runChecks(tx: Pick<typeof db, 'execute'>, ownerId: string): Promise<AuditCheck[]> {
   const checks: AuditCheck[] = [];
   for (const def of CHECKS) {
-    const rows = rowsOf<Row>(await db.execute<Row>(def.query(ownerId)));
+    const rows = rowsOf<Row>(await tx.execute<Row>(def.query(ownerId)));
     const capped = rows.length >= CAP;
     // Resolve the true age span only when there's something to date — an
     // uncapped aggregate, so the range is accurate even when `count` is floored.
     let oldestAt: string | null = null;
     let newestAt: string | null = null;
     if (rows.length > 0 && def.spanQuery) {
-      const span = rowsOf<SpanRow>(await db.execute<SpanRow>(def.spanQuery(ownerId)))[0];
+      const span = rowsOf<SpanRow>(await tx.execute<SpanRow>(def.spanQuery(ownerId)))[0];
       oldestAt = span?.oldest ?? null;
       newestAt = span?.newest ?? null;
     }
@@ -523,9 +538,5 @@ export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
       newestAt,
     });
   }
-  return {
-    generatedAt: new Date().toISOString(),
-    checks,
-    totalViolations: checks.reduce((s, c) => s + c.count, 0),
-  };
+  return checks;
 }

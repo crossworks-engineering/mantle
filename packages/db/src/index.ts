@@ -90,6 +90,7 @@ export {
 } from './client';
 export { CHECK_FLOOR_SQL, checkFloorWarning, type CheckFloorRow } from './check-floor';
 export { readSql, NotReadSqlError } from './read-sql';
+export { readOnlyTransaction } from './read-only-tx';
 export {
   currentScope,
   isSystemScope,

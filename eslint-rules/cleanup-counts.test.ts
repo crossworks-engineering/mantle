@@ -69,6 +69,17 @@ describe('rawWriteKind and readSql share one reader', () => {
     "select 1 /* /* */ ' */; delete from t; -- '",
     "select 'a;b'; delete from t",
     'select 1 as x$q$, 2; delete from t; select $q$$q$',
+    // A `--` comment ends at a carriage return too (Postgres runs these).
+    'select 1 --x\r; delete from t where a = 1',
+    'select 1 --x\r; with d as (delete from t returning 1) select 1',
+    // CTE heads with no space before the parenthesis, a SEARCH or CYCLE
+    // clause: each writes on pg18.
+    'with x as(select 1) delete from t',
+    'with a as (select 1), b as(select 2) insert into t select 1',
+    'with x as materialized(select 1) update t set a = 1',
+    'with recursive t(n) as (select 1) search depth first by n set o delete from x',
+    'with recursive t(n) as (select 1) cycle n set c using p update x set a = 1',
+    'with recursive t(n) as (select 1) search breadth first by n set o insert into x select 1',
   ];
 
   it('finds each write the reader shows', () => {
@@ -84,10 +95,26 @@ describe('rawWriteKind and readSql share one reader', () => {
       'select 1 -- ; delete from t\n',
       'select $q$ ; update t set a = 1 $q$',
       'select "update" from t',
+      'select 1 -- ; delete from t\r\n',
     ]) {
       expect(rawWriteKind(text), text).toBeNull();
       expect(notReadSqlReason(text), text).toBeNull();
     }
+  });
+
+  it('counts a write in a WITH it cannot walk, not a read or a row lock there', () => {
+    expect(rawWriteKind('with x as(select 1) delete from t')).toBe('write');
+    expect(
+      rawWriteKind('with recursive t(n) as (select 1) search depth first by n set o delete from x'),
+    ).toBe('write');
+    expect(
+      rawWriteKind('with recursive t(n) as (select 1) search depth first by n set o select 1'),
+    ).toBeNull();
+    expect(
+      rawWriteKind(
+        'with recursive t(n) as (select 1) cycle n set c using p select * from x for update',
+      ),
+    ).toBeNull();
   });
 });
 
