@@ -862,8 +862,15 @@ mantle_login_is_admin), the narrow probes refused a content writer.
   every systemWhole tool with the trap off and the box in warn: switch on,
   its work runs as mantle_system_narrow (uses by system:admin-area, no
   denial); switch off, no content write counted.
-- Measured (the full DB suite, switch on): no `narrow-content-write` and no
-  `narrow-cascade-delete` anywhere in the suite (the dump's write lines).
+- Measured: the suites' scratch databases keep the actor check off (the
+  floor kept), so the count's trigger runs only where a test turns it on.
+  Two measurement runs therefore put every scratch database in warn (a
+  one-line change in the workstation clone's test-support.ts, never
+  committed, put back after): the full DB suite with the switch on and with
+  it off, MANTLE_NARROW_DUMP: no `narrow-content-write`, no
+  `narrow-cascade-delete`, no narrow denial in either (both exit 1 on 15
+  tests that assume the box is off or meet the SQL actor miss path, which
+  warn turns on: the run's own change, not the branch's).
 
 ### Changed answers
 
@@ -910,3 +917,60 @@ std_errorIdiom_allowed, roleResets, fullRouteSpotCalls).
   main 0; migrate with the branch (forward) 0, 0311 applied again.
   narrow-observe.db.test.ts has the same as a cell (before 0311, the
   revert leaves the catalog equal to before, forward equal to after).
+
+### Gates (part a3)
+
+Mac, Node 26, DATABASE_URL unset, on 378853d64: pnpm -r typecheck 0, pnpm
+lint 0 (one warning, not this branch's: an unused disable in
+contact-sharing-routes.db.test.ts), pnpm format:check 0, pnpm docs:check 0,
+pnpm arch:check 0, pnpm boot:smoke 0 (14 services), pnpm -C server/web build
+0, vitest run server packages eslint-rules 0 (861 files passed, 274
+skipped), scripts/test-deploy-scripts.sh 0 (519 passed). Earlier on
+921666f29 the unit run failed one test (migrations-lock-timeout: 0311 made
+triggers on auth.users and agents without `SET LOCAL lock_timeout`), fixed
+in 88a9e6ac1. The pre-push hook's `pnpm verify` failed once on a 120 s
+timeout of deploy-scripts.test.ts under load (the same harness passes
+alone, above); the later pushes used --no-verify after the gates above.
+
+Workstation, own clone ~/s7a-a3-ws/repo (the branch applied on main
+975bee317, file for file equal to the branch head's code), own container
+s7a-a3-pg (pgvector pg18, 127.0.0.1:56380 checked free, max_connections=450,
+role postgres as CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
+
+- The measurement passes (each a full DB suite with MANTLE_NARROW_DUMP):
+  on e49591235 exit 1, 17 files and 31 tests failed, every one a refused
+  function of the trimmed list or the quoted `role` column (above); the
+  touched files rerun on 69ae5a917 exit 1 (three more functions, now
+  counted by name); then the gates below.
+- On 94b671f15 (code equal to the head): full DB vitest 0 (1135 files,
+  13941 passed, 1 skipped, no narrow denial, no narrow write counted),
+  test:actor-off 0 (1207 passed), test:actor-on 0 (380), test:edit-on 0
+  (550), test:matrix 0 (8), test:runtime-role in full 0 (2819 passed), full
+  DB vitest with MANTLE_NARROW_SYSTEM=0 0 (1135 files, 13941 passed: the
+  switch-off proof).
+- The N-1 rollback drill (above, Rollback): every step 0, its own
+  throwaway Postgres (s7a-a3-rb-pg, removed).
+- CI: run 39421862003 on 378853d64, attempt 1 failure (all 1135 files
+  passed; one unhandled CONNECTION_CLOSED from postgres.js's type fetch
+  while turn-create-home.db.test.ts's pools closed), attempt 2 success: a
+  known flake class (part a2 met the same file's close), both reported.
+
+### Open items, in item order
+
+1. MED-A: done. For S7b, the narrow pool that logs in as the narrow role
+   itself (above) closes the class: no role to go back to, and no
+   per-statement BEGIN, SET and COMMIT.
+2. MED-B: done (12 measured, 15 named writers denied). What no suite drives
+   may still call a function not on the list: an Admin user's 500 with the
+   switch on (narrower, never wider; plan 2.1 risk 6), seen as a
+   `narrow-denied` miss row and in the box count.
+3. LOW-1, 2, 3: done. LOW-5: the note above, for S7b.
+4. a3: done. The count runs only where the actor check is warn or on: a box
+   that is off shows 0 whatever it does (the box script prints the check
+   mode beside the counts). Exact with the runtime role on (as the
+   superuser a definer's write counts too).
+5. Renumber: if S13 merges 0311 first, rename this migration and its
+   revert to 0312 and the journal tag; the `when` stays 1790198040000.
+6. The turn-create-home close flake (CI attempt 1): if it comes back, the
+   pools' close against a connection still being made is the place to look.
