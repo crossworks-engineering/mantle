@@ -430,3 +430,40 @@ passes.
 
 The actor-misses-reap unit test's database double builds the typed delete
 with `drizzle.mock()` and checks its text.
+
+### Gates
+
+Code head d5e8a7c4d (the conversions). The commit after it changes a
+comment of dedupe-edges.ts and this file only.
+
+Mac, DATABASE_URL unset, on d5e8a7c4d: `pnpm -r typecheck` 0, `pnpm lint` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `vitest run server packages eslint-rules` 0
+(858 files passed, 11085 tests). After the comment and handover commit:
+format:check 0, docs:check 0, arch:check 0, eslint on dedupe-edges.ts 0,
+server/web tsc 0.
+
+Workstation (own clone ~/s10-r2a/clone, own container s10-r2a-pg on
+127.0.0.1:56530, pgvector pg18, max_connections=450, the `postgres` role as
+CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run
+--user, --maxWorkers=3, one at a time), on d5e8a7c4d: full vitest 0 (13884
+passed, 1 skipped), test:actor-off 0 (1180), test:actor-on 0 (371),
+test:edit-on 0 (541), test:runtime-role in full 0 (2781), test:matrix 0
+(8). No flake, no rerun. Cleaned up: the container (with its volume), the
+folder and the unit, by name.
+
+### Open items for r2b
+
+- Literal write sites left (9): packages/db call-audit.ts 1,
+  extract-skip-backfill.ts 1, space-carry.ts 4, store-broker.ts 1 (the S7a
+  lane); server/web/lib/auth/first-owner.ts 1 (the S8c lane);
+  packages/files/src/ops/files.ts 1 (the restamp's home grant, raw on
+  purpose until a definer).
+- Non-literal sites left (71): packages/db (the gateway's own statements,
+  access-matrix.ts, runtime-role.ts and the rest, the S7a lane);
+  server/web/lib/integrity/audit.ts 5, maintenance/ocr-rescan.ts 1, three
+  server/web scripts (backfill-conversation 2, extract-backfill 1,
+  extract-images-backfill 2), packages/search/src/entities.ts 1 and
+  packages/tools/src/builtins-eval.ts 1 (a read). `readSql` does not exist
+  yet.
+- The Telegram moderated-chat definer (a migration), as round 1 found.
