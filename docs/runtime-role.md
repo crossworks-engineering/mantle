@@ -180,7 +180,7 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
   (`packages/db/src/runtime-role.ts`), measured with the switch on: what
   narrow statements call by name (`mantle_brain_id`,
-  `mantle_ws_set_moderator`) and what the column defaults and checks of the
+  `mantle_mail_backfill_accounts`, `mantle_ws_set_moderator`) and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime
   role's. `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies

@@ -369,6 +369,7 @@ describe('the narrow system role rights', () => {
     // name, measured with the switch on. Only goes down, or a reviewed line.
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
       'public.mantle_brain_id()',
+      'public.mantle_mail_backfill_accounts(uuid)',
       'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)',
     ]);
     for (const [fn, why] of Object.entries(NARROW_SYSTEM_FUNCTIONS)) {

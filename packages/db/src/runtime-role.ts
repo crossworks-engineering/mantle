@@ -190,8 +190,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
 /**
  * The functions taken from PUBLIC that the narrow system role may EXECUTE:
  * an allowlist, each with the narrow work that calls it. Measured with the
- * switch on (the full DB suite, MANTLE_NARROW_DUMP's `fn:<name>` uses: a
- * narrow statement names only these two), plus what the column defaults
+ * switch on (the full DB suite and the area routes' sweep,
+ * narrow-area-routes.db.test.ts: what a narrow statement names), plus what the column defaults
  * and checks of the tables it writes call (none today:
  * runtime-role.db.test.ts reads them from the catalog and fails on one not
  * listed here). Each must also be the runtime role's (narrowFunctionAllowlist
@@ -205,6 +205,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
 export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_brain_id()':
     "the brain's anchor, read by narrow statements (resolve-owner.ts, the tree's kind roots, workspace-ticks.ts)",
+  'public.mantle_mail_backfill_accounts(uuid)':
+    "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
     "the workspaces area's Moderator tick (workspaces.ts setModerator) on an Admin area exit: the definer checks the acting login",
 };
