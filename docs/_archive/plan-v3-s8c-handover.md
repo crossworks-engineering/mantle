@@ -774,3 +774,69 @@ three files 157a62f91 changes. CI on 157a62f91: run 39375599914, success.
   its unit test: a candidate to delete.
 - adminDecisionFlags in server/web (40): mostly the workspace's own flag,
   not sorted in this round.
+
+## Part c3: packages/tools, runtime, mcp-core, telegram
+
+The branch `feat/s8c-c3`, cut from main at 6e0597610 (v0.300.113). No
+migration, no edit in packages/db, server/web/lib/auth,
+packages/content/src/tree or packages/files/src/ops.
+
+### Sorted, site by site
+
+Every login kind, login role and `isAdmin` hit in the four packages
+(non-test files; the counters' detail and a grep for `'admin'`, `'member'`,
+`.role`, `LoginRole` and `isAdmin`):
+
+| package           | site                                                                                                                                   | what it is                                                                             | done                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- |
+| packages/mcp-core | `login-surface.ts` registerPreparedTools: a peer bound to a role admin login the owner did not register names no login to the builtins | a login Admin decision on the role                                                     | stays on the role, named (below) |
+| packages/mcp-core | `login-surface.ts` mcpChannel, logConnectorCall; `gate-policy.ts` mcpGateCaller (`role: caller.role`)                                  | the role carried for display and audit; the gate reads no `role`                       | display, stays legacy until S8b  |
+| packages/tools    | `builtins-app-data.ts` (`who.role`: `:host_me_kind`, the statement queue key, the log row)                                             | the role an app sees (display); the reach rule ignores it                              | display, stays legacy until S8b  |
+| packages/tools    | `builtins-nodes.ts` 1, `builtins-workspaces.ts` 2, `tool-results.ts` 1 (`isAdmin`)                                                     | the workspace's own flag (`workspaces.is_admin`)                                       | kept                             |
+| packages/runtime  | `agent/agent-viewer.ts` 10, `assistant/run-team-turn.ts` 1 (`isAdmin`)                                                                 | the workspace's own flag                                                               | kept                             |
+| packages/runtime  | `run-team-turn.ts` hasUnknownRole (`authUsers.role`)                                                                                   | refuses a role this code does not name (no login); no Admin answer                     | kept                             |
+| packages/runtime  | `heartbeats/fire.ts` (`kind === 'admin'`)                                                                                              | the agent's workspace kind (NOT_LOGIN_KIND)                                            | kept                             |
+| packages/telegram | `chat-login.ts` (`w.is_admin` in SQL; `loginHasArea(loginId, 'users')`)                                                                | the Admin workspace in SQL; an ask about another login (the plan's `mantle_area_rule`) | kept                             |
+
+Nothing else in the four packages branches on a login's kind or role:
+every other Admin answer there is already the scope's (`scopeHoldsAdmin`,
+`scopeHasArea`, the gate's `admin` view) or the caller's surface. `adminFacts`
+lives in server/web and no package imports it.
+
+### What changed
+
+- `packages/mcp-core/src/login-surface.ts`: the peer's naming decision is
+  the exported helper `peerNamesNoLogin(caller)`, the same expression
+  (`via === 'peer' && role === 'admin' && !peerByOwner`), with why it stays
+  on the role. Answers unchanged.
+- **Why it stays on the role.** The Admin pair (`adminLogin`) would answer
+  "names its login" for a role admin outside Admin. A named login is what
+  app_delete (purged after 30 days when the login is the anchor), app_create
+  (the author), and the share, Telegram, replay, runs, pending and
+  delegation builtins act for: for the anchor taken out of Admin its peer's
+  app_delete would be purged, a wider answer for a peer. Every other login
+  answers the same either way. So it is a check where the pair would widen,
+  left on the role until S8b, as c2 left the member-path checks.
+- **Cells** (unit, no database): `packages/mcp-core/src/login-surface-peer.test.ts`,
+  the five logins of c1's cells, each with a peer bound to the anchor (made
+  by the anchor, made by another login) and to another login, the caller
+  built as `server/web/lib/mcp-auth.ts` builds a peer's; the pair form
+  differs only for the role admin outside Admin, where it would name the
+  login; an OAuth or key connection always names its login. Mutation: the
+  helper without its role read fails 7 of the 17 cells (restored by git
+  checkout).
+- `eslint-rules/admin-counts.test.ts`: the four packages hold no login kind
+  branch, and their one role read is `peerNamesNoLogin`'s line.
+
+### Changed answers
+
+None. No answer moved; the one decision stays on the role, named above.
+
+### Pins
+
+| pin                    | main | c3  | split on c3 (the four packages)                                                                                                          |
+| ---------------------- | ---- | --- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| loginKindBranches      | 17   | 17  | tools 0, runtime 0, mcp-core 0, telegram 0 (server/web 17)                                                                               |
+| loginRoleDecisionReads | 27   | 27  | tools 0, runtime 0, mcp-core 1 (peerNamesNoLogin), telegram 0 (server/web 25, content 1)                                                 |
+| adminDecisionFlags     | 40   | 40  | tools 4, runtime 11, mcp-core 0, telegram 0, all the workspace's own flag (server/web 10, content 5, server/api 5, db 3, client-types 2) |
+| inHandlerAreaChecks    | 20   | 20  | tools 6, runtime 1, mcp-core 2, telegram 1: scope asks (and one ask about another login), not moved in c3                                |
