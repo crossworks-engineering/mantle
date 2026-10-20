@@ -36,7 +36,7 @@ import {
 } from './role-tx';
 import { joinedBegin, writeRoleBegin } from './role-runner';
 import { checkedUuidOrEmpty, onLoginWritePool, uuidArrayLiteral } from './write-route';
-import { gatewaySettings } from './narrow-route';
+import { gatewaySettings } from './narrow-sendable';
 
 type PgSql = ReturnType<typeof postgres>;
 

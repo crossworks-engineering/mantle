@@ -325,5 +325,25 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
     expect(
       of("import { w as v } from './x';\nv(c);", 'server/web/lib/x.ts').problems.join('\n'),
     ).toMatch(/imports w under another name/);
+    // An alias or a reference passed on: calls the count would miss.
+    const aliased = /names w other than by its definition, its import and a call/;
+    expect(
+      of("import { w } from './x';\nconst v = w;\nv(c);", 'server/web/lib/x.ts').problems.join(
+        '\n',
+      ),
+    ).toMatch(aliased);
+    expect(
+      of("import { w } from './x';\nfns.map(w);", 'server/web/lib/x.ts').problems.join('\n'),
+    ).toMatch(aliased);
+    expect(of("export { w } from './x';", 'server/web/lib/x.ts').problems.join('\n')).toMatch(
+      aliased,
+    );
+    // A generic call is a call (the home file's own: its other checks hold).
+    const generic = of(
+      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('secret-item', fn); }\nw<number>(c);",
+      'server/web/lib/x.ts',
+    );
+    expect(generic.wrapperCalls).toBe(1);
+    expect(generic.problems.filter((p) => p.startsWith('server/web/lib/x.ts'))).toEqual([]);
   });
 });

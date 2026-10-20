@@ -25,6 +25,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
   let v: typeof import('./viewer');
   let rr: typeof import('./runtime-role');
   let nr: typeof import('./gateway/narrow-route');
+  let ns: typeof import('./gateway/narrow-sendable');
   let actor: typeof import('./actor');
   let su: ReturnType<typeof postgres>;
   let pool = '';
@@ -78,6 +79,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     v = await import('./viewer');
     rr = await import('./runtime-role');
     nr = await import('./gateway/narrow-route');
+    ns = await import('./gateway/narrow-sendable');
     actor = await import('./actor');
     await reopen(true);
     pool = (await who()).u;
@@ -222,7 +224,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       expect(
         await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
         stmt,
-      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
@@ -250,13 +252,13 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       expect(
         await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
         stmt,
-      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
       expect(
         await failure(
           v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
         ),
         `${stmt} (in a transaction)`,
-      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
     // In a savepoint's statements too.
     expect(
@@ -266,7 +268,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
           'admin-area',
         ),
       ),
-    ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+    ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     // A refused COMMIT never ends the transaction: what follows still runs
     // as the narrow role (before, it ran as the pool login and committed).
     const after = await v.asSystem(
@@ -311,7 +313,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       // set_config with bound parameters: the name never shows in the text.
       ['bound', sql`select set_config(${'role'}, ${'none'}, true)`],
       ['bound name', sql`select set_config(${'role'}, 'none', true)`],
-      ['bound local', sql`select set_config('mantle.ws', 'x', ${true})`],
+      ['bound local', sql`select set_config('mantle.create_ws', 'x', ${true})`],
       // A DO block that leaves the role, writes as the pool login and takes
       // the role back before the hold check (which alone would pass it).
       [
@@ -337,11 +339,11 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       expect(
         await failure(v.asSystem(() => m.db.execute(stmt), 'admin-area')),
         name,
-      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
       expect(
         await failure(v.asSystem(() => m.db.transaction((tx) => tx.execute(stmt)), 'admin-area')),
         `${name} (in a transaction)`,
-      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
     const left = await su<{ n: number }[]>`
       select count(*)::int as n from public.narrow_probe where x = ${marker}`;
@@ -349,14 +351,124 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     // Sent: a literal mantle.* name with a bound value, a named local
     // setting, set_config inside an expression.
     for (const stmt of [
-      sql`select set_config('mantle.ws', ${'x'}, true)`,
+      sql`select set_config('mantle.create_ws', ${'x'}, true)`,
       sql`select set_config('lock_timeout', ${'5s'}, true)`,
-      sql.raw("select (set_config('mantle.scope_login', 'x', true))::text as v"),
+      sql.raw("select (set_config('mantle.keep_updated_at', 'on', true))::text as v"),
       sql.raw("select 'set_config(''role'', ''none'', true)' as x"),
       sql.raw('select 1 as "do"'),
     ]) {
       await v.asSystem(() => m.db.transaction((tx) => tx.execute(stmt)), 'admin-area');
     }
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it("refuses the a3 audit's forms, each of which leaves the role on Postgres when sent unguarded", async () => {
+    const pools = await import('./gateway/pools');
+    /** Sent with no guard, as the narrow role on a superuser's session: who
+     *  the transaction is afterwards (the form works when it is not the
+     *  narrow role). Rolled back. */
+    const unguarded = (send: (t: postgres.TransactionSql) => Promise<unknown>) =>
+      su
+        .begin(async (t) => {
+          await t.unsafe(`select set_config('role', '${NARROW}', true)`);
+          await send(t);
+          const [r] = await t.unsafe<{ u: string }[]>('select current_user as u');
+          throw Object.assign(new Error('rollback'), { u: r!.u });
+        })
+        .catch((err: { u?: string }) => err.u ?? String(err));
+    const forms: [string, string, boolean][] = [
+      // (a) No space before a quoted setting name after SET or LOCAL.
+      ['no space', 'set local"role" none', false],
+      ['no space, set', 'set"role" to none', false],
+      // (b) A U& identifier spells the name.
+      ['U&', 'set local U&"r\\006Fle" to none', false],
+      // (d) A quote after a letter that is no token of its own is a plain
+      // string: the backslash ends nothing (simple protocol, more than one
+      // statement).
+      ['typed literal', "select text'\\'; reset role; select '1'", true],
+    ];
+    for (const [name, stmt, simple] of forms) {
+      expect(
+        await unguarded((t) => (simple ? t.unsafe(stmt).simple() : t.unsafe(stmt))),
+        `${name}: unguarded`,
+      ).toBe('postgres');
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
+        name,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        `${name} (in a transaction)`,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    // (e) An identifier helper in a tagged template where a function or a
+    // setting is named.
+    const tagged: [string, (t: postgres.Sql) => unknown][] = [
+      ['helper as function', (t) => t`select ${t('pg_catalog.set_config')}('role', 'none', true)`],
+      ['helper as setting', (t) => t`set local ${t('role')} to none`],
+    ];
+    for (const [name, send] of tagged) {
+      expect(
+        await unguarded(async (t) => send(t as unknown as postgres.Sql)),
+        `${name}: unguarded`,
+      ).toBe('postgres');
+      expect(
+        await failure(
+          v.asSystem(
+            () => pools.adminSql().begin(async (t) => send(t as unknown as postgres.Sql)),
+            'admin-area',
+          ),
+        ),
+        name,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    // (c) A function made in pg_temp and called: no role the app runs as
+    // may make a temporary object (TEMPORARY taken from PUBLIC), and the
+    // route refuses any statement but a read or a row write.
+    const [temp] = await su<{ narrow: boolean; runtime: boolean; pub: boolean }[]>`
+      select has_database_privilege(${NARROW}, current_database(), 'TEMP') as narrow,
+             has_database_privilege('mantle_runtime', current_database(), 'TEMP') as runtime,
+             has_database_privilege('public', current_database(), 'TEMP') as pub`;
+    expect(temp).toEqual({ narrow: false, runtime: false, pub: false });
+    const makeTemp =
+      'create function pg_temp.narrow_probe_temp() returns text language sql as $$ select current_user::text $$';
+    expect(await unguarded((t) => t.unsafe(makeTemp))).toMatch(
+      /permission denied to create temporary tables/,
+    );
+    expect(
+      await failure(
+        v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(makeTemp))), 'admin-area'),
+      ),
+    ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    // The gateway's own settings: a narrow statement never names them; the
+    // gateway's scope SET still does (the archive path's write scope).
+    for (const stmt of [
+      "select set_config('mantle.route', 'full', true)",
+      "select set_config('mantle.actor', 'system:test', true)",
+      "select set_config('mantle.actor_check', 'off', true)",
+      "select set_config('mantle.scope_login', '00000000-0000-0000-0000-000000000000', true)",
+      "set local mantle.write_mode = 'rw'",
+    ]) {
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        stmt,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    const scoped = await v.asSystem(
+      () =>
+        m.systemPoolTxInScope({ loginId: null, ws: [], modWs: [] }, async (tx) => {
+          const rows = (await tx.execute(
+            sql`select current_user as u, current_setting('mantle.ws', true) as ws`,
+          )) as unknown as { u: string; ws: string }[];
+          return rows[0]!;
+        }),
+      'admin-area',
+    );
+    expect(scoped).toEqual({ u: NARROW, ws: '' });
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 

@@ -172,11 +172,14 @@ SQL
 )
 # The narrow system role's counts (plan v3.2 S7a; report only): the
 # distinct check, actor and table rows of its miss rows in the same window
-# as the fail-open rows. narrow-content-write and narrow-cascade-delete:
-# migration 0312's count of a content write, or a delete that cascades into
-# content, by a narrow reason off the narrow role (what the role would
-# refuse once it is on, S7b); narrow-denied: a right the role does not hold,
-# met on the narrow route. Numbers only.
+# as the fail-open rows. narrow-content-write: migration 0312's count of a
+# content write by a narrow reason off the narrow role (what the role would
+# refuse once it is on, S7b). narrow-cascade-delete: a delete by a narrow
+# reason of a row whose foreign keys cascade into content, counted on
+# either route; a sign of content going away under narrow work, not a
+# refusal to come: the cascade runs as the table's owner, so the role's
+# rights never stop it. narrow-denied: a right the role does not hold, met
+# on the narrow route. Numbers only.
 narrow=$(q <<SQL || true
 select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')

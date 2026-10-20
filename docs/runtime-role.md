@@ -236,7 +236,23 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   (a statement set the role back): the transaction rolls back whole
   (`NarrowRoleLeftError`). A statement Postgres refuses inside a
   transaction, and one that opens or ends a transaction, is refused
-  (`NarrowRouteRefusedError`).
+  (`NarrowRouteRefusedError`);
+- the text check (`gateway/narrow-sendable.ts`): a narrow statement starts
+  with a read or a row write (`select`, `insert`, `update`, `delete`,
+  `merge`, `with`, `values`, `table`, `show`), or is `SET LOCAL` of an
+  allowed setting (a `mantle.*` one, `NARROW_LOCAL_SETTINGS`) or `SET
+TRANSACTION`; no role change in any spelling, no DO block, no `U&` name,
+  no tagged-template placeholder where a function or a setting is named.
+  The gateway's own settings (the actor, its write mode, the check mode, the
+  route, the scope) are set only by the gateway's SET. It guards against
+  mistakes, not deliberate code: a statement written to leave the role can
+  get past any text check. The fix for that is a narrow pool that logs in as
+  the narrow role itself (S7b), so the session holds no other role to go
+  back to;
+- no role the app runs as may make a temporary object: `TEMPORARY` on the
+  database is taken from PUBLIC at every migrate (`applyRuntimeGrants`) and
+  granted to none (a function made in `pg_temp` is code the text check
+  never reads).
 
 Who picks it (`packages/db/src/viewer.ts`): `AS_SYSTEM_ROUTE`, a
 `Record<AsSystemReason, 'narrow' | 'full'>`, so a new reason must pick, and
@@ -326,7 +342,9 @@ misses (at most one per check, actor and table an hour).
 - `narrow-cascade-delete`: a delete from `auth.users`, `spaces` or `agents`
   by a narrow reason's actor, not at a spot, on either route, once per
   statement (their foreign keys cascade or set null into content tables as
-  the owner, past the role's own rights).
+  the owner, past the role's own rights). A sign of content going away
+  under narrow work, not a refusal to come: turning the role on does not
+  stop it, since the cascade runs as the table's owner.
 - Not counted: a write whose actor a narrow exit rebound (a login, an
   assistant, a full reason, system work), a definer's write, a cascade from
   any other table.

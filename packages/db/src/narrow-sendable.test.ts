@@ -1,12 +1,16 @@
 /**
- * What the narrow system route refuses by text (gateway/narrow-route.ts
+ * What the narrow system route refuses by text (gateway/narrow-sendable.ts
  * narrowSendable), no database: a role change whatever builds its name, a
  * DO block, pg_settings, a session setting, and any set_config but a
  * transaction-local one of a literal mantle.* setting (or a named local
  * setting). The same probes run on Postgres in narrow-route.db.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { NarrowRouteRefusedError, gatewaySettings, narrowSendable } from './gateway/narrow-route';
+import {
+  NarrowRouteRefusedError,
+  gatewaySettings,
+  narrowSendable,
+} from './gateway/narrow-sendable';
 
 const verdict = (q: string, tagged = false): string => {
   try {

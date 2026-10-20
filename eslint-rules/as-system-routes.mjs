@@ -162,8 +162,10 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
 /**
  * The helpers that wrap one spot for many writes, each with its spot, the
  * file that defines it and the files that may call it. Each call is counted
- * (`wrapperCalls`, pinned down only): a call from a file not listed, or the
- * helper imported under another name, is a problem. TODO(S7b): each write
+ * (`wrapperCalls`, pinned down only): a call from a file not listed, the
+ * helper imported under another name, or named any other way than by its
+ * definition, its import and a call (an alias, a reference passed on), is
+ * a problem. TODO(S7b): each write
  * moves to the write role or a definer and the helper goes.
  */
 export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
@@ -209,11 +211,32 @@ export function fullRouteSpots(
     for (const [name, w] of Object.entries(wrappers)) {
       const named = new RegExp(`\\b${name}\\b`, 'g');
       if (!named.test(body)) continue;
-      const called = [...body.matchAll(new RegExp(`(?<!function\\s+)\\b${name}\\s*\\(`, 'g'))];
+      const called = [
+        ...body.matchAll(new RegExp(`(?<!function\\s+)\\b${name}\\s*(?:<[^>()]*>)?\\s*\\(`, 'g')),
+      ];
       wrapperCalls += called.length;
       if (!w.callers.includes(path)) problems.push(`${path}: calls ${name} but is not its caller`);
       if (new RegExp(`\\b${name}\\s+as\\b`).test(body)) {
         problems.push(`${path}: imports ${name} under another name`);
+      }
+      // Every mention is its definition (in its own file), its bare import
+      // or a call: an alias (const v = w), a reference passed on
+      // (.map(w)) or a re-export would be calls the count never sees.
+      const mentions = body.match(named)?.length ?? 0;
+      const defined =
+        path === w.from
+          ? (body.match(new RegExp(`\\bfunction\\s+${name}\\b`, 'g'))?.length ?? 0)
+          : 0;
+      let imported = 0;
+      for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']+'/g)) {
+        for (const part of m[1].split(',')) {
+          if (new RegExp(`^\\s*(?:type\\s+)?${name}\\s*$`).test(part)) imported += 1;
+        }
+      }
+      if (mentions !== defined + imported + called.length) {
+        problems.push(
+          `${path}: names ${name} other than by its definition, its import and a call (an alias or a passed reference the count misses)`,
+        );
       }
     }
     if (path.startsWith('packages/db/src/')) {

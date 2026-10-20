@@ -229,6 +229,20 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The SECURITY DEFINER functions open to PUBLIC (so to the narrow role too)
+ * that are not on NARROW_SYSTEM_FUNCTIONS, each with why it is harmless: a
+ * definer runs with its owner's rights, not the narrow role's.
+ * runtime-role.db.test.ts fails on any definer the narrow role may run,
+ * through PUBLIC or any grant, listed in neither. A function that runs as
+ * its caller (no SECURITY DEFINER) runs with the narrow role's own rights
+ * and needs no entry.
+ */
+export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
+  'public.mantle_actor_check_mode()':
+    "the box's actor check mode, read by the count's triggers and the pool: reads one setting row, writes nothing",
+};
+
+/**
  * Functions of the runtime role's allowlist the narrow system role may
  * never EXECUTE, each with why: NARROW_SYSTEM_FUNCTIONS may not name one
  * (runtime-role.test.ts), and narrowFunctionAllowlist leaves them out

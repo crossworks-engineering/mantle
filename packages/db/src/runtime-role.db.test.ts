@@ -32,6 +32,7 @@ import {
   APP_SCHEMAS,
   DB_ROLE_SQL,
   NARROW_DENIED_FUNCTIONS,
+  NARROW_PUBLIC_DEFINERS,
   NARROW_SYSTEM_FUNCTIONS,
   NARROW_ROLE,
   OWNER_ROLE,
@@ -482,6 +483,24 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
               or has_table_privilege(${NARROW_ROLE}, c.oid, 'UPDATE'))
        order by 1, 2`;
     for (const { fn, tbl } of needed) expect(allowed, `${tbl}: ${fn}`).toContain(fn);
+    // Any SECURITY DEFINER function the narrow role may run, through PUBLIC
+    // or any grant, in any schema: on NARROW_SYSTEM_FUNCTIONS or
+    // NARROW_PUBLIC_DEFINERS, nothing else (a definer runs with its owner's
+    // rights). One that runs as its caller runs with the role's own rights.
+    const definers = (
+      await admin<{ fn: string }[]>`
+        select p.oid::regprocedure::text as fn
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where p.prosecdef
+           and n.nspname not in ('pg_catalog', 'information_schema')
+           and has_function_privilege(${NARROW_ROLE}, p.oid, 'EXECUTE')
+         order by 1`
+    ).map((r) => r.fn);
+    const publicDefiners = await named(Object.keys(NARROW_PUBLIC_DEFINERS));
+    expect(publicDefiners.every((f) => f !== null)).toBe(true);
+    const listed = [...allowed, ...publicDefiners];
+    for (const f of definers) expect(listed, f).toContain(f);
+    for (const f of publicDefiners) expect(definers, f!).toContain(f);
   });
 
   it('as the narrow role (from the runtime role and from the superuser): reads past the rules, writes only where the matrix says', async () => {
