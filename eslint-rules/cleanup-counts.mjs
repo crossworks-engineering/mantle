@@ -69,7 +69,7 @@ const WRITE_CTE_BODY = /^[\s(]*(insert|update|delete|merge)\b/i;
 const WRITE_WORD = /\b(insert|update|delete|merge|truncate)\b/i;
 const ROW_LOCK_UPDATE = /\bfor\s+(?:no\s+key\s+)?update\b/gi;
 /** EXPLAIN's head: its option list, or the old ANALYZE and VERBOSE words. */
-const EXPLAIN_HEAD = /^explain\s+(?:\(([^()]*)\)\s*|((?:(?:analy[sz]e|verbose)\s+)+))/i;
+const EXPLAIN_HEAD = /^explain(?:\s*\(([^()]*)\)\s*|\s+((?:(?:analy[sz]e|verbose)\s+)+))/i;
 /** ANALYZE in an option list, unless set false (it then only plans). */
 const ANALYZE_ON = /\banaly[sz]e\b(?!\s+(?:false|off|0)\b)/i;
 /** PREPARE's head, up to the statement it prepares. */

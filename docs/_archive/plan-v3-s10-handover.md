@@ -1054,8 +1054,10 @@ what READ ONLY was measured not to stop.
 #### A dollar quote after a number, a parameter or a quote (LOW)
 
 PostgreSQL opens a dollar quote at a `$` that does not continue a name:
-after a number (`1$q$`, `1.5`, `1e5`, `1_000`), a `$n` parameter, or a
-closed dollar quote. sqlCode (packages/db/src/sql-text.ts) decided from
+after a numeric constant the lexer ends cleanly (`1e+5`, `.5`), a `$n`
+parameter, or a closed dollar quote (measured on pg18 in the round 3
+re-audit; `1$q$`, `1_000$q$`, `1e5$q$`, `0x1F$q$` are trailing-junk
+errors there, so the whole text fails to parse). sqlCode (packages/db/src/sql-text.ts) decided from
 the character before (any name character, digits and `$` among them,
 opened nothing). It now tracks where the current run of name characters
 starts and opens a quote unless that run starts with a letter, `_` or a
@@ -1138,3 +1140,33 @@ systemd-run --user, --maxWorkers=3, one at a time):
   and DO (above).
 - From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
   rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
+
+### Re-audit of fix round 3 (at 1db72cbc6): merge
+
+No HIGH or MED in this lane. READ ONLY was measured in force for every
+readSql text on every route reached (no scope, every asSystem turn
+reason, systemWork, read and Admin turns, the system pool in a write
+scope), with the narrow switch on and off and the runtime role on.
+
+Fixed before the merge:
+
+- The lint read `explain(analyze) delete ...` (no space before the
+  option list) as no write. EXPLAIN_HEAD now takes `explain\s*` before
+  an option list; cells for both spellings and for `explainanalyze`.
+- The dollar-quote section above now says which texts after a number
+  pg18 actually reads as a quote.
+
+Left open, with a lane:
+
+- MED, narrow-route lane: the narrow route does not see a role change
+  inside a string that a PUBLIC-executable function runs as SQL
+  (pgboss.job_table_run, security invoker; mantle_runtime and the
+  narrow role have USAGE on pgboss), and ROLE_SET_CONFIG only reads a
+  literal 'role'. Revoke EXECUTE on pgboss routines from PUBLIC in the
+  runtime grants (pg-boss runs as the migrator), and refuse a
+  set_config whose name is not a literal on the narrow route.
+- LOW: simpleReadOnly throws inside withScope and withSystemTx
+  (db.$client is undefined on a drizzle transaction). Fails closed,
+  as before; graph_path does not run there.
+- LOW: @mantle/db/test-support has no lint fence against product
+  imports, unlike @mantle/content/test-support.
