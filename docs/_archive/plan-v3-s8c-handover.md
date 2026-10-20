@@ -834,9 +834,10 @@ None. No answer moved; the one decision stays on the role, named above.
 
 ### Pins
 
-| pin                    | main | c3  | split on c3 (the four packages)                                                                                                          |
-| ---------------------- | ---- | --- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| loginKindBranches      | 17   | 17  | tools 0, runtime 0, mcp-core 0, telegram 0 (server/web 17)                                                                               |
-| loginRoleDecisionReads | 27   | 27  | tools 0, runtime 0, mcp-core 1 (peerNamesNoLogin), telegram 0 (server/web 25, content 1)                                                 |
-| adminDecisionFlags     | 40   | 40  | tools 4, runtime 11, mcp-core 0, telegram 0, all the workspace's own flag (server/web 10, content 5, server/api 5, db 3, client-types 2) |
-| inHandlerAreaChecks    | 20   | 20  | tools 6, runtime 1, mcp-core 2, telegram 1: scope asks (and one ask about another login), not moved in c3                                |
+| pin                    | main | c3       | split on c3 (the four packages)                                                                                                          |
+| ---------------------- | ---- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| loginKindBranches      | 17   | 17       | tools 0, runtime 0, mcp-core 0, telegram 0 (server/web 17)                                                                               |
+| loginRoleDecisionReads | 27   | 27       | tools 0, runtime 0, mcp-core 1 (peerNamesNoLogin), telegram 0 (server/web 25, content 1)                                                 |
+| adminDecisionFlags     | 40   | 40       | tools 4, runtime 11, mcp-core 0, telegram 0, all the workspace's own flag (server/web 10, content 5, server/api 5, db 3, client-types 2) |
+| inHandlerAreaChecks    | 20   | 20       | tools 6, runtime 1, mcp-core 2, telegram 1: scope asks (and one ask about another login), not moved in c3                                |
+| historyCodeComments    | 2335 | **2334** | the peer naming comment lost its step code when it moved to `peerNamesNoLogin`                                                           |
