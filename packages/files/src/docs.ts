@@ -37,6 +37,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   runReadPathWrite,
+  onFullSystemRoute,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
@@ -399,7 +400,20 @@ export type ReconcileResult = {
  * prod (immutable docs) the ONLY indexing path. Skips deletion on an empty
  * walk (the safety guard).
  */
-export async function reconcileCollection(
+/** A collection's index writes on the docs area's system exit: on the full
+ *  route (viewer.ts FULL_ROUTE_SPOTS 'docs-collection'). */
+function docsWrite<T>(fn: () => Promise<T>): Promise<T> {
+  return onFullSystemRoute('docs-collection', fn);
+}
+
+export function reconcileCollection(
+  ownerId: string,
+  collection: DocCollection,
+): Promise<ReconcileResult> {
+  return docsWrite(() => reconcileCollectionNow(ownerId, collection));
+}
+
+async function reconcileCollectionNow(
   ownerId: string,
   collection: DocCollection,
 ): Promise<ReconcileResult> {
@@ -473,7 +487,11 @@ export async function reconcileEnabledCollections(ownerId: string): Promise<void
 
 /** Hard-delete every documentation node in a collection (chunks cascade). Run
  *  when a collection is disabled. */
-export async function purgeCollection(ownerId: string, collectionKey: string): Promise<number> {
+export function purgeCollection(ownerId: string, collectionKey: string): Promise<number> {
+  return docsWrite(() => purgeCollectionNow(ownerId, collectionKey));
+}
+
+async function purgeCollectionNow(ownerId: string, collectionKey: string): Promise<number> {
   const where = and(
     eq(nodes.ownerId, ownerId),
     eq(nodes.type, 'documentation'),

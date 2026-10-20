@@ -7,7 +7,13 @@
  */
 import type postgres from 'postgres';
 import { reserveLease, type Lease } from '../reserved';
-import { actorCheckMode, actorSetting, currentActor, writeModeOf } from '../actor';
+import {
+  actorCheckMode,
+  actorSetting,
+  currentActor,
+  fullRouteSpotNow,
+  writeModeOf,
+} from '../actor';
 import { isWorkspaceSystemActor } from '../viewer';
 import { firstModeReadNow } from './check-mode';
 
@@ -64,10 +70,7 @@ const actorPipelines = new Set<Promise<unknown>>();
  *  (A2b, defence in depth for the inlined literals): actor.ts builds them,
  *  so a refusal here is a bug, never a caller's input. Exported for
  *  actor-client.test.ts only (not in index.ts). */
-export function setActorSql(
-  [actor, writeMode, mode]: [string, string, string],
-  local = true,
-): string {
+export function setActorSql([actor, writeMode, mode, route]: ActorParams, local = true): string {
   if (!ACTOR_VALUE_RE.test(actor)) throw new Error('actor setting: not an actor');
   if (writeMode !== 'rw' && writeMode !== 'ro') throw new Error('actor setting: write mode');
   if (mode !== 'off' && mode !== 'warn' && mode !== 'on') {
@@ -80,18 +83,27 @@ export function setActorSql(
     if (v.includes('\0')) throw new Error('actor setting: NUL');
     return `'${v.replace(/'/g, "''")}'`;
   };
+  if (route !== undefined && route !== 'full') throw new Error('actor setting: route');
   return (
     `select set_config('mantle.actor', ${lit(actor)}, ${local}), ` +
     `set_config('mantle.write_mode', ${lit(writeMode)}, ${local}), ` +
-    `set_config('mantle.actor_check', ${lit(mode)}, ${local})`
+    `set_config('mantle.actor_check', ${lit(mode)}, ${local})` +
+    (route ? `, set_config('mantle.route', 'full', ${local})` : '')
   );
 }
+
+/** The actor's settings (setActorSql): its value, write mode, the box's
+ *  check mode, and 'full' at a declared full-route spot (fullRouteSpotNow). */
+export type ActorParams = readonly [string, string, string, ('full' | undefined)?];
 
 /** Takes back a session-level setActorSql(…, false): a real RESET, so each
  *  setting is the database's default again (the box mode for
  *  mantle.actor_check). Sent with the simple protocol (three statements). */
 export const RESET_ACTOR_SQL =
   '/* mantle:actor */ reset mantle.actor; reset mantle.write_mode; reset mantle.actor_check';
+
+/** RESET_ACTOR_SQL for a SET that carried the full-route spot's setting. */
+const RESET_ACTOR_ROUTE_SQL = `${RESET_ACTOR_SQL}; reset mantle.route`;
 
 /** The shape of a mantle.actor value (actorSetting's output): no quote, no
  *  space, no NUL. Wider than mantle_set_actor's own pattern on purpose:
@@ -161,7 +173,7 @@ function wrapsStatement(query: string): boolean {
 
 /** The mantle_set_actor parameters for the current actor, or null: no actor
  *  bound, or the check is off (then nothing changes). */
-export function actorParams(): [string, string, string] | null {
+export function actorParams(): ActorParams | null {
   const mode = actorCheckMode();
   const actor = currentActor();
   if (!actor) return null;
@@ -170,7 +182,8 @@ export function actorParams(): [string, string, string] | null {
   // (mantle_ws_system_work, 0307), whatever the check's mode. Its mode goes
   // as 'off', the box's own, so no check reads it.
   if (mode === 'off' && !isWorkspaceSystemActor(actor)) return null;
-  return [actorSetting(actor), writeModeOf(actor), mode];
+  const params = [actorSetting(actor), writeModeOf(actor), mode] as const;
+  return fullRouteSpotNow() ? [...params, 'full'] : params;
 }
 
 /** SET TRANSACTION (drizzle's transaction config): Postgres takes it only
@@ -191,7 +204,7 @@ const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
  * statement's follow-on "current transaction is aborted". Exported for
  * actor-client.test.ts only (not in index.ts).
  */
-export function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
+export function actorInTransaction(t: PgSql, params: ActorParams): PgSql {
   return settingsFirst(t, () => setActorSql(params));
 }
 
@@ -307,7 +320,7 @@ export function actorClient(base: PgSql): PgSql {
    * (reserved.ts, hotfix after v0.300.13).
    */
   const pipelined = (
-    params: [string, string, string],
+    params: ActorParams,
     query: string,
     args: unknown[] | undefined,
     mode: 'rows' | 'values' | 'simple',
@@ -346,7 +359,7 @@ export function actorClient(base: PgSql): PgSql {
         sent = true;
         const q = conn.unsafe(query, (args ?? []) as never[]);
         const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-        const reset = conn.unsafe(RESET_ACTOR_SQL).simple();
+        const reset = conn.unsafe(params[3] ? RESET_ACTOR_ROUTE_SQL : RESET_ACTOR_SQL).simple();
         answer(
           Promise.allSettled([lease.watch(set), lease.watch(main)]).then(([s, m]) => {
             // The write's own result. A SET that failed is reported when the

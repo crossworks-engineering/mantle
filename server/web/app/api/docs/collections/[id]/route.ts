@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { setCollectionEnabled } from '@mantle/files';
 import { ownerCaller } from '@/lib/auth';
-import { errorMessage } from '@mantle/std';
+import { publicErrorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ enabled: z.boolean() });
@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   } catch (err) {
     return NextResponse.json({
       ok: false,
-      message: errorMessage(err),
+      message: publicErrorMessage(err, 'docs collection'),
     });
   }
 }

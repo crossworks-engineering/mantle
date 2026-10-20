@@ -33,6 +33,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   type Node,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 import { dedupeTags } from '@mantle/content/tags';
@@ -204,7 +205,17 @@ export type CreateSecretInput = {
   fields: SecretField[];
 };
 
-export async function createSecret(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
+/** A secret's write on the keys area's system exit: on the full route
+ *  (viewer.ts FULL_ROUTE_SPOTS 'secret-item'). */
+function secretWrite<T>(fn: () => Promise<T>): Promise<T> {
+  return onFullSystemRoute('secret-item', fn);
+}
+
+export function createSecret(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
+  return secretWrite(() => createSecretNow(ownerId, input));
+}
+
+async function createSecretNow(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
   await ensureSecretsRoot(ownerId);
   const sanitisedFields = sanitiseFields(input.fields);
   const payload: SecretPayload = {
@@ -252,7 +263,15 @@ export async function createSecret(ownerId: string, input: CreateSecretInput): P
 
 export type UpdateSecretInput = Partial<CreateSecretInput>;
 
-export async function updateSecret(
+export function updateSecret(
+  ownerId: string,
+  id: string,
+  input: UpdateSecretInput,
+): Promise<SecretRow | null> {
+  return secretWrite(() => updateSecretNow(ownerId, id, input));
+}
+
+async function updateSecretNow(
   ownerId: string,
   id: string,
   input: UpdateSecretInput,
@@ -334,7 +353,11 @@ export async function updateSecret(
   return nodeToRow(updated);
 }
 
-export async function deleteSecret(ownerId: string, id: string): Promise<boolean> {
+export function deleteSecret(ownerId: string, id: string): Promise<boolean> {
+  return secretWrite(() => deleteSecretNow(ownerId, id));
+}
+
+async function deleteSecretNow(ownerId: string, id: string): Promise<boolean> {
   const [node] = await db
     .select({ id: nodes.id })
     .from(nodes)

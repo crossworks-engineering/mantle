@@ -17,6 +17,7 @@ import {
   elevatedPendingCall,
   pendingCallToDecide,
   rejectElevatedPendingCall,
+  onFullSystemRoute,
 } from '@mantle/db';
 import {
   applyBudgetDecision,
@@ -568,7 +569,11 @@ export async function approvePendingCall(
       : claimed.loginId
         ? await loginActorNow(claimed.loginId, 'pending:approve')
         : null;
-  const asActor = <T>(fn: () => Promise<T>) => (callActor ? runAsActor(callActor, fn) : fn());
+  // A row with no login and no origin runs as the approving exit's system
+  // actor: on the full route from a narrow exit (viewer.ts FULL_ROUTE_SPOTS
+  // 'pending-call').
+  const asActor = <T>(fn: () => Promise<T>) =>
+    callActor ? runAsActor(callActor, fn) : onFullSystemRoute('pending-call', fn);
   const asCallLogin = <T>(fn: () => Promise<T>) =>
     origin ? withOriginScope(origin.run, () => asActor(fn)) : asActor(fn);
 

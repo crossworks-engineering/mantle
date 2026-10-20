@@ -134,23 +134,93 @@ export function requestSystemRouteMap(root) {
 }
 
 /**
+ * Where onFullSystemRoute may be named outside packages/db and tests, and
+ * the spots each file may run (reviewed: each a place where a narrow exit's
+ * own work writes a content table; viewer.ts FULL_ROUTE_SPOTS has the why).
+ * Alias-proof: a file not listed that names the function, an aliased import
+ * or any other binding of it, a call whose spot is not a literal, and a
+ * listed spot the file does not hold are problems that fail arch:check.
+ * The list only shrinks (S7b moves each spot to the write role or a
+ * definer).
+ */
+export const FULL_ROUTE_SPOT_FILES = Object.freeze({
+  'packages/calendar/src/manage.ts': ['calendar-events'],
+  'packages/content/src/peers/registry.ts': ['peer-item'],
+  'packages/content/src/profile-preferences.ts': ['profile-row'],
+  'packages/email/src/discover.ts': ['sender-contact'],
+  'packages/embeddings/src/reembed.ts': ['reembed'],
+  'packages/files/src/docs.ts': ['docs-collection'],
+  'packages/tools/src/builtins-secrets.ts': ['secrets-root'],
+  'packages/tools/src/pending.ts': ['pending-call'],
+  'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
+  'server/web/lib/agents.ts': ['agent-conversation'],
+  'server/web/lib/integrity/landed.ts': ['integrity-delete'],
+  'server/web/lib/login-update.ts': ['promotion-space'],
+  'server/web/lib/secrets.ts': ['secret-item'],
+});
+
+/**
  * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
  * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table)
  * and the onFullSystemRoute calls outside packages/db and tests. Both only
- * go down (S7b moves each to the write role or a definer).
+ * go down (S7b moves each to the write role or a definer). `problems`:
+ * what FULL_ROUTE_SPOT_FILES refuses.
  */
-export function fullRouteSpots(root, texts) {
+export function fullRouteSpots(root, texts, allowed = FULL_ROUTE_SPOT_FILES) {
   const code = stripComments(readRepoFile(root, VIEWER) ?? '');
   const at = code.search(/\bconst\s+FULL_ROUTE_SPOTS\b/);
-  const entries =
+  const names =
     at < 0
-      ? 0
-      : [...balanced(code, code.indexOf('{', code.indexOf('=', at))).matchAll(/'[^'\n]+'\s*:/g)]
-          .length;
+      ? []
+      : [
+          ...balanced(code, code.indexOf('{', code.indexOf('=', at))).matchAll(
+            /^\s*(?:'([^'\n]+)'|([A-Za-z_$][\w$]*))\s*:/gm,
+          ),
+        ].map((m) => m[1] ?? m[2]);
+  const problems = [];
   let calls = 0;
+  const seen = new Set();
   for (const { path, text } of texts) {
     if (path.startsWith('packages/db/src/') || /\.test\.tsx?$/.test(path)) continue;
-    calls += [...stripComments(text).matchAll(/\bonFullSystemRoute\s*\(/g)].length;
+    const body = stripComments(text);
+    const mentions = [...body.matchAll(/\bonFullSystemRoute\b/g)].length;
+    if (mentions === 0) continue;
+    const spots = allowed[path];
+    if (!spots) {
+      problems.push(`${path}: names onFullSystemRoute but is not in FULL_ROUTE_SPOT_FILES`);
+      continue;
+    }
+    // The bare name in an import from @mantle/db (never `as`), and calls
+    // with a literal spot; any other mention is a binding the count misses.
+    let imported = 0;
+    for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@mantle\/db'/g)) {
+      for (const part of m[1].split(',')) {
+        if (!/\bonFullSystemRoute\b/.test(part)) continue;
+        if (/^\s*(?:type\s+)?onFullSystemRoute\s*$/.test(part)) imported += 1;
+        else problems.push(`${path}: imports onFullSystemRoute under another name`);
+      }
+    }
+    const fileCalls = [
+      ...body.matchAll(/\bonFullSystemRoute\s*\(\s*(?:'([^'\n]*)'|"([^"\n]*)")?/g),
+    ];
+    calls += fileCalls.length;
+    for (const m of fileCalls) {
+      const spot = m[1] ?? m[2];
+      if (spot === undefined)
+        problems.push(`${path}: an onFullSystemRoute call whose spot is no literal`);
+      else if (!spots.includes(spot)) problems.push(`${path}: spot '${spot}' is not listed for it`);
+      else seen.add(`${path}|${spot}`);
+    }
+    if (imported + fileCalls.length !== mentions) {
+      problems.push(`${path}: onFullSystemRoute named other than by its import and a call`);
+    }
   }
-  return { entries, calls };
+  for (const [path, spots] of Object.entries(allowed)) {
+    for (const spot of spots) {
+      if (!names.includes(spot)) problems.push(`${path}: '${spot}' is no FULL_ROUTE_SPOTS entry`);
+      else if (!seen.has(`${path}|${spot}`))
+        problems.push(`${path}: listed for '${spot}' but holds no such call`);
+    }
+  }
+  return { entries: names.length, calls, problems };
 }

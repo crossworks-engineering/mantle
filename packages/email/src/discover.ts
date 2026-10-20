@@ -4,14 +4,14 @@
  * provider on demand across every enabled account; persists nothing. Lifted
  * from the `server/web` settings/discover action so it's reachable over HTTP.
  */
-import type { EmailAccount } from '@mantle/db';
+import { onFullSystemRoute, type EmailAccount } from '@mantle/db';
 import { createContact, loadContactGate } from '@mantle/content';
 import { listAccounts } from './accounts';
 import { enqueueBackfills } from './backfill-queue';
 import { peekRecentSenders, type RecentSender } from './peek';
 import { imap } from './providers/imap';
 import type { EmailProvider } from './types';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, publicErrorMessage } from '@mantle/std';
 
 export type UnknownSender = {
   fromAddr: string;
@@ -116,15 +116,19 @@ export async function addContactFromSender(
   const [firstName, ...rest] = (name || addr.split('@')[0] || addr).split(/\s+/);
 
   try {
-    const { contact, addedEmails } = await createContact(userId, {
-      firstName: firstName || undefined,
-      lastName: rest.join(' ') || undefined,
-      emails: [addr],
-      description: '',
-    });
+    // On the full route from the email area's narrow exit (viewer.ts
+    // FULL_ROUTE_SPOTS 'sender-contact').
+    const { contact, addedEmails } = await onFullSystemRoute('sender-contact', () =>
+      createContact(userId, {
+        firstName: firstName || undefined,
+        lastName: rest.join(' ') || undefined,
+        emails: [addr],
+        description: '',
+      }),
+    );
     await enqueueBackfills(userId, addedEmails);
     return { ok: true, id: contact.id };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not add contact' };
+    return { ok: false, error: publicErrorMessage(err, 'add contact from sender') };
   }
 }

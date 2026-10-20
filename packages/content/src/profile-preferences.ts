@@ -71,7 +71,7 @@ import {
 
 /** A write of a profile row: on the full route when it runs on a narrow
  *  system exit (plan v3.2 S7a, viewer.ts FULL_ROUTE_SPOTS 'profile-row'). */
-function profileWrite<T>(fn: () => Promise<T>): Promise<T> {
+export function profileWrite<T>(fn: () => Promise<T>): Promise<T> {
   return onFullSystemRoute('profile-row', fn);
 }
 

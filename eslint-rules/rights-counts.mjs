@@ -652,7 +652,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
     detail: {
       sqlRoleReaderFns: roleReaders.map((f) => f.name),
       asSystemRoutes: { source: routeMap.source, byReason: routes.byReason },
-      asSystemRouteProblems: routes.problems,
+      asSystemRouteProblems: [...routes.problems, ...spots.problems],
       ...admin.detail,
       adminCountProblems: admin.problems,
       requestSystemExits: exits,

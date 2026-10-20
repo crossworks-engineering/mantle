@@ -27,7 +27,7 @@ import {
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
 import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
 import { getAiWorker } from '@/lib/ai-workers';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, publicErrorMessage } from '@mantle/std';
 
 export type DiscoverKind = 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding';
 
@@ -41,7 +41,7 @@ export async function reembedIndex(
     const result = await runReembed(userId, { model });
     return { ok: true, model, result };
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    return { ok: false, error: publicErrorMessage(err, 'reembed') };
   }
 }
 

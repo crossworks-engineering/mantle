@@ -5,7 +5,7 @@ import { collectionRoot, createDocCollection, listDocCollections } from '@mantle
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
 import { ownerCaller } from '@/lib/auth';
-import { errorMessage } from '@mantle/std';
+import { publicErrorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -113,13 +113,14 @@ export async function POST(req: Request) {
         : `Created ${collection.label}.`,
     });
   } catch (err) {
-    const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json({
         ok: false,
         message: 'A collection with that key already exists.',
       });
     }
-    return NextResponse.json({ ok: false, message: msg });
+    // Never a database error's own text (it carries the SQL): the public
+    // message, the error in the log.
+    return NextResponse.json({ ok: false, message: publicErrorMessage(err, 'docs collection') });
   }
 }

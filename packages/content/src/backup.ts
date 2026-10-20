@@ -37,7 +37,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
-import { loadProfilePreferences } from './profile-preferences';
+import { loadProfilePreferences, profileWrite } from './profile-preferences';
 import { snapshotAllTableDatabases } from './table-storage';
 import { snapshotAllAppDatabases } from './app-broker';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
@@ -238,10 +238,12 @@ export function normalizeBackupConfig(raw: unknown): BackupConfig {
 
 export async function saveBackupConfig(userId: string, cfg: BackupConfig): Promise<void> {
   const merge = JSON.stringify({ backup: cfg });
-  await db
-    .update(profiles)
-    .set({ preferences: sql`${profiles.preferences} || ${merge}::jsonb`, updatedAt: new Date() })
-    .where(eq(profiles.userId, userId));
+  await profileWrite(() =>
+    db
+      .update(profiles)
+      .set({ preferences: sql`${profiles.preferences} || ${merge}::jsonb`, updatedAt: new Date() })
+      .where(eq(profiles.userId, userId)),
+  );
 }
 
 export async function loadBackupStatus(userId: string): Promise<BackupStatus | null> {
@@ -257,10 +259,12 @@ export async function loadBackupStatus(userId: string): Promise<BackupStatus | n
 
 async function writeBackupStatus(userId: string, status: BackupStatus): Promise<void> {
   const merge = JSON.stringify({ backupStatus: status });
-  await db
-    .update(profiles)
-    .set({ preferences: sql`${profiles.preferences} || ${merge}::jsonb`, updatedAt: new Date() })
-    .where(eq(profiles.userId, userId));
+  await profileWrite(() =>
+    db
+      .update(profiles)
+      .set({ preferences: sql`${profiles.preferences} || ${merge}::jsonb`, updatedAt: new Date() })
+      .where(eq(profiles.userId, userId)),
+  );
 }
 
 /** Locate a pg_dump binary: MANTLE_PG_DUMP env wins outright; otherwise the

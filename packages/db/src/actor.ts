@@ -193,6 +193,27 @@ export function runWithoutActor<T>(fn: () => T): T {
   return actorStore.exit(() => actorSlots.exit(fn));
 }
 
+/** The system reason whose work runs at a declared full-route spot now
+ *  (viewer.ts onFullSystemRoute). */
+const fullRouteSpots = new AsyncLocalStorage<string>();
+
+/** Run `fn` at a declared full-route spot of the system reason `reason`
+ *  (viewer.ts onFullSystemRoute only): the actor's SET then carries
+ *  `mantle.route` = 'full' (fullRouteSpotNow). */
+export function runOnFullRouteSpot<T>(reason: string, fn: () => T): T {
+  return fullRouteSpots.run(reason, fn);
+}
+
+/** Whether the current work runs at a declared full-route spot: only while
+ *  the actor the spot kept is still the one bound (code that binds another
+ *  actor inside it is that actor's own work). */
+export function fullRouteSpotNow(): boolean {
+  const reason = fullRouteSpots.getStore();
+  if (reason === undefined) return false;
+  const actor = currentActor();
+  return actor?.kind === 'system' && actor.reason === reason;
+}
+
 /** The actor the current code runs as: the nearest binding, else the
  *  entry's slot (an HTTP request: the gate, the session guard and
  *  the share gate name it), else an operator script's own, else none. */

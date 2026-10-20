@@ -1,7 +1,7 @@
 /** Owner-scoped CRUD for subscribed calendars (the settings UI calls these). */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { calendarAccounts, db, type CalendarAccount } from '@mantle/db';
+import { calendarAccounts, db, onFullSystemRoute, type CalendarAccount } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { deleteAllExternalEvents } from '@mantle/content';
 
@@ -59,7 +59,9 @@ export async function deleteCalendarAccount(ownerId: string, id: string): Promis
     .where(and(eq(calendarAccounts.id, id), eq(calendarAccounts.ownerId, ownerId)))
     .limit(1);
   if (!row) return false;
-  await deleteAllExternalEvents(ownerId, id);
+  // The synced events are items: on the full route from the calendar area's
+  // narrow exit (viewer.ts FULL_ROUTE_SPOTS 'calendar-events').
+  await onFullSystemRoute('calendar-events', () => deleteAllExternalEvents(ownerId, id));
   await db.delete(calendarAccounts).where(eq(calendarAccounts.id, id));
   return true;
 }

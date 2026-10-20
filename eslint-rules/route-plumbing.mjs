@@ -104,9 +104,6 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
     "PUBLIC: the push relay's answer when the instance token could not be rolled (relay_unreachable)",
   'server/web/app/api/assistant/turn/route.ts':
     "NOT_YET: a failed chat turn's text is the chat's error line (the provider's answer); the move needs the chat (jackdaw) to word a failed turn itself",
-  'server/web/app/api/docs/collections/route.ts': OK_FALSE,
-  'server/web/app/api/docs/collections/[id]/route.ts': OK_FALSE,
-  'server/web/app/api/docs/collections/all/route.ts': OK_FALSE,
   'server/web/app/api/embedding/route.ts': OK_FALSE,
   'server/web/app/api/embedding/rebuild/route.ts': OK_FALSE,
 });

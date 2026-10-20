@@ -82,7 +82,6 @@ export const ERROR_IDIOM_ALLOWED = {
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/email/src/backfill-rfc-message-id.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
-  'packages/email/src/discover.ts': 'the fallback is a fixed text, not String(err)',
   'packages/embeddings/src/index.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/embeddings/src/provider-outage.ts':

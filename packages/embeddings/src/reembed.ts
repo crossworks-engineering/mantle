@@ -38,6 +38,7 @@ import {
   type Entity,
   type Fact,
   type Node,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { embedBatch } from './index';
 
@@ -221,9 +222,13 @@ export async function runReembed(ownerId: string, opts: ReembedOpts): Promise<Re
   const cacheKey = `${ownerId}:${opts.model}:${opts.dryRun ? 'dry' : 'live'}`;
   const existing = _inflight.get(cacheKey);
   if (existing) return existing;
-  const promise = _runReembedInner(ownerId, opts).finally(() => {
-    _inflight.delete(cacheKey);
-  });
+  // On the full route from a narrow exit (the rebuild routes): it writes
+  // every stored vector (viewer.ts FULL_ROUTE_SPOTS 'reembed').
+  const promise = onFullSystemRoute('reembed', () => _runReembedInner(ownerId, opts)).finally(
+    () => {
+      _inflight.delete(cacheKey);
+    },
+  );
   _inflight.set(cacheKey, promise);
   return promise;
 }

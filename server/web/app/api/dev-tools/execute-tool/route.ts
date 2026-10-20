@@ -16,6 +16,7 @@ import { dispatchTool, ownerWebCaller, resolveTool } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { onFullSystemRoute } from '@mantle/db';
 
 const Body = z.object({
   slug: z
@@ -41,14 +42,18 @@ export async function POST(req: Request) {
     );
   }
   const t0 = performance.now();
-  const result = await dispatchTool(tool, parsed.data.input, {
-    ownerId: user.id,
-    // The signed-in login (A0 fix round 2, L-6): a tool that checks the
-    // caller (a link) sees it.
-    surface: { kind: 'web', loginId: user.actor.id },
-    // Through the one gate as the owner's own web call (A5 step 3b).
-    caller: ownerWebCaller(),
-  });
+  // The tool runs as the area's system actor: on the full route from the
+  // narrow exit (viewer.ts FULL_ROUTE_SPOTS 'console-tool').
+  const result = await onFullSystemRoute('console-tool', () =>
+    dispatchTool(tool, parsed.data.input, {
+      ownerId: user.id,
+      // The signed-in login (A0 fix round 2, L-6): a tool that checks the
+      // caller (a link) sees it.
+      surface: { kind: 'web', loginId: user.actor.id },
+      // Through the one gate as the owner's own web call (A5 step 3b).
+      caller: ownerWebCaller(),
+    }),
+  );
   const durationMs = Math.round(performance.now() - t0);
   if (result.ok) {
     // Artifacts (audio/image bytes) are trimmed to metadata — the console

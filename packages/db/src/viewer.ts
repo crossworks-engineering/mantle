@@ -36,6 +36,7 @@ import {
   runInActorSlot,
   setSlotActor,
   slotActor,
+  runOnFullRouteSpot,
   type Actor,
 } from './actor';
 import { hkdfSync } from 'node:crypto';
@@ -1046,7 +1047,7 @@ export function systemRouteNow(): SystemRoute | null {
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
-    "profiles is a content table (the write role's own-login rule): the login-self routes write the login's own row and the settings area the brain's, on a system exit with no scope to carry to the write role",
+    "profiles is a content table (the write role's own-login rule): the login-self routes write the login's own row and the settings and backups areas the brain's, on a system exit with no scope to carry to the write role",
   'peer-item':
     'the peers area makes and re-keys a peer, an item (nodes) with its peer row, on the system pool',
   'secrets-root':
@@ -1055,6 +1056,22 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "the integrity screen's landed delete removes an item (nodes) and its traces on the system pool",
   'promotion-space':
     "a login's promotion turns its personal space's shared and submitted items (space_items) back into private drafts, in the role change's transaction",
+  'secret-item':
+    "the keys area's secret routes make, edit and delete a secret item (nodes) with its sealed row, and the Secrets root, on the system pool",
+  reembed:
+    'the embedding rebuild (the AI workers and embedding areas) writes every stored vector of the brain (nodes, facts, entities, chunks, windows, recall nodes) on the system pool',
+  'docs-collection':
+    "the docs area's collection create, switch and resync index a collection's markdown as documentation items (nodes) and remove them, on the system pool",
+  'sender-contact':
+    'the email area promotes a discovered sender to a contact item (nodes), and makes the Contacts root, on the system pool',
+  'calendar-events':
+    "the calendar area's unsubscribe removes the events the calendar synced (nodes) on the system pool",
+  'agent-conversation':
+    "the assistants area's delete with its conversation removes the assistant's messages (assistant_messages) and digests (nodes) on the system pool",
+  'console-tool':
+    "the API console runs a tools-table tool through the agent dispatcher as the area's system actor: the tool writes what it writes (content tables)",
+  'pending-call':
+    "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */
@@ -1062,9 +1079,15 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
 
 /**
  * Run `fn` on the full route when the system pool's statements would take
- * the narrow one now (systemRouteNow), keeping the actor; anywhere else
- * (a login's scope, system work, the switch off) `fn` runs as it is. With
- * the switch off nothing changes: the route is read only while it is on.
+ * the narrow one now (systemRouteNow, which reads the exit's pick, not the
+ * switch), keeping the actor; anywhere else (a login's scope, system work)
+ * `fn` runs as it is. The actor's SET at the spot also carries
+ * `mantle.route` = 'full' (runOnFullRouteSpot, actor.ts), so the database
+ * tells a declared spot from a narrow reason's other writes on the full
+ * route. With the switch off the pool sends nothing on the narrow route
+ * (pools.ts), so the spot changes only that one setting in the SET the
+ * actor client sends anyway (none with the check off): the same statements
+ * and answers.
  */
 export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
   const actor = currentActor();
@@ -1073,9 +1096,8 @@ export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<
   }
   // Awaited inside: a drizzle query runs when it is awaited, so it must be
   // awaited where the route is set.
-  return systemRoutes.run(
-    Object.freeze({ route: 'full' as const, reason: actor.reason }),
-    async () => await fn(),
+  return systemRoutes.run(Object.freeze({ route: 'full' as const, reason: actor.reason }), () =>
+    runOnFullRouteSpot(actor.reason, async () => await fn()),
   );
 }
 

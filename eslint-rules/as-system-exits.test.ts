@@ -11,6 +11,7 @@ import {
   asSystemReasons,
   asSystemRouteCounts,
   asSystemRouteMap,
+  fullRouteSpots,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './as-system-routes.mjs';
 import { join } from 'node:path';
@@ -252,5 +253,45 @@ describe('the exits by route', () => {
     expect(map.source).toBe('packages/db/src/viewer.ts');
     expect(Object.keys(map.routes).sort()).toEqual([...reasonsNow].sort());
     expect(map.routes['admin-area']).toBe('narrow');
+  });
+});
+
+describe('the full-route spots are allowlisted by file and spot (alias-proof)', () => {
+  const allowed = { 'server/web/lib/x.ts': ['secret-item'] };
+  const run = (text: string, path = 'server/web/lib/x.ts') =>
+    (fullRouteSpots(ROOT, [{ path, text }], allowed) as { problems: string[] }).problems.filter(
+      (p) => p.startsWith(path),
+    );
+  it('a listed file with its listed spot passes', () => {
+    expect(
+      run(
+        "import { db, onFullSystemRoute } from '@mantle/db';\nonFullSystemRoute('secret-item', f);",
+      ),
+    ).toEqual([]);
+  });
+  it('an unlisted file, an alias, a re-binding, a non-literal or unlisted spot fail', () => {
+    expect(run("import { onFullSystemRoute } from '@mantle/db';", 'server/web/lib/y.ts')).toEqual([
+      'server/web/lib/y.ts: names onFullSystemRoute but is not in FULL_ROUTE_SPOT_FILES',
+    ]);
+    expect(
+      run(
+        "import { onFullSystemRoute as full } from '@mantle/db';\nfull('secret-item', f);onFullSystemRoute('secret-item', f);",
+      ).join('\n'),
+    ).toMatch(/under another name/);
+    expect(
+      run(
+        "import { onFullSystemRoute } from '@mantle/db';\nconst g = onFullSystemRoute;\nonFullSystemRoute('secret-item', f);",
+      ).join('\n'),
+    ).toMatch(/other than by its import and a call/);
+    expect(
+      run("import { onFullSystemRoute } from '@mantle/db';\nonFullSystemRoute(spot, f);").join(
+        '\n',
+      ),
+    ).toMatch(/no literal/);
+    expect(
+      run("import { onFullSystemRoute } from '@mantle/db';\nonFullSystemRoute('reembed', f);").join(
+        '\n',
+      ),
+    ).toMatch(/'reembed' is not listed/);
   });
 });
