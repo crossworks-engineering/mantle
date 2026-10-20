@@ -111,12 +111,15 @@ app-nav repair in a GET (tree/apps-nav.ts) is noted as `update`, not
 
 ### Pins
 
-| Pin               | Before | After |
-| ----------------- | ------ | ----- |
-| rawWriteSqlScoped | 62     | 16    |
-| rawSqlNonLiteral  | 75     | 72    |
-| rawWriteSqlFiles  | 59     | 42    |
-| rawWriteAllowlist | 0      | 5     |
+| Pin               | Before           | After |
+| ----------------- | ---------------- | ----- |
+| rawWriteSqlScoped | 62               | 16    |
+| rawSqlNonLiteral  | 75               | 72    |
+| rawWriteSqlFiles  | 59 (67 measured) | 42    |
+| rawWriteAllowlist | 0                | 5     |
+
+The base's rawWriteSqlFiles pin was 59 while the counter measured 67 on
+it (the key may grow, so arch:check let it pass); the drop is 67 to 42.
 
 Per package (literal writes plus non-literal text): content 23+1 to 0,
 files 6 to 0, runs 4 to 0, embeddings 3 to 0, email 0 to 0. The allowlist
@@ -190,3 +193,113 @@ The docs-only head after it has its own run (in the report).
   login's scope and its `'login-telegram'` systemWork site goes (S7a's
   narrow role and system-work-allowlist.mjs move with it). For r2, with the
   round's one migration.
+
+## Fix round 1 (feat/s10-r1, rebased on main 7b9b1c424, v0.300.110)
+
+The audit at c3c4bc788 (8/10, fix first) and what each finding became.
+
+### Fixes
+
+1. The restamp's home grant (packages/files/src/ops/files.ts
+   restampRacedCreate). A drizzle insert names every column of its table,
+   sending the ones left out as `default`; Postgres needs INSERT on each
+   named column, and the write role holds INSERT on five columns of
+   item_grants only (access-matrix.ts writeColumnsFor). So the converted
+   insert was refused (42501) on the write role where the raw text passed.
+   The insert is raw text again, naming the four columns it writes, with
+   the reason above it; the file is pinned at 1 in RAW_WRITE_PINS with the
+   reason. The update and the delete stay typed (an update names only its
+   SET columns; a delete names none). Today the stamp path runs only
+   inside systemWork (snapshot-copies.ts), so no box ran the refused text;
+   the cells prove what the write role does with it.
+   - Guard: packages/db/src/write-role-inserts.test.ts (no DB). It derives
+     from the access matrix and the drizzle schema the tables where the
+     write role's INSERT column list leaves out a column of the table
+     (today item_grants only: via_folder_id, bridge, granted_by,
+     granted_at; pages, draws and tables have lists that cover every
+     column), and fails on any `.insert(<that table>)` in scoped code (bare,
+     a renamed import, `schema.<name>`). Every converted insert of round 1
+     was checked by it: none left (chunk-windows and share_access_log
+     inserts name tables the role does not insert by column).
+   - Cells: packages/files/src/restamp-write-role.db.test.ts runs
+     restampRacedCreate itself on a drizzle transaction logged in as
+     mantle_write_user (session_user checked) in an Admin user's scope.
+     With no create home it stamps the row (the typed update and select
+     pass). With a create home its raw insert passes the column rights and
+     reaches the row rule, which refuses it (42501, "row-level security
+     policy for table item_grants", never "permission denied"); the drizzle
+     insert of the same grant is refused by the column rights ("permission
+     denied for table item_grants").
+   - Finding for the CEO: with a create home the restamp cannot run on the
+     write role whatever its insert text. It deletes every grant of the
+     row first, so the row's read_ws empties and the item_grants insert
+     rule (the node must be visible to the scope) refuses the new home.
+     Today it runs only in systemWork (snapshot-copies.ts, the system
+     pool), so nothing breaks; r3 sends scoped statements to the write role
+     and systemWork stays on the system pool, so it still holds. If the
+     stamp path ever runs in a scope, it needs a definer (or an update of
+     the home row in place) in the round that adds a migration.
+2. `.execute(x)` with a string. drizzle's execute runs a string as raw
+   text, so `.execute(x)` now counts as non-literal when x is neither
+   literal text nor SQL a tag built (cleanup-counts.mjs isSqlBuilder): a
+   tagged template, a SQL tag's helper (`sql.join`, `sql.raw`, whose text
+   is read where it is called), a ternary of two, a name declared with one
+   or typed SQL, SQLWrapper, SQLChunk or `ReturnType<typeof sql>` (the
+   innermost declaration in scope), a call of a function of the file that
+   answers one or is typed so, or a member a type of the file declares as
+   answering one. Measured: packages/db/src/gateway/handles.ts 2 to 4
+   (executeWrite passes its `string | SQLWrapper` argument to execute,
+   twice: a true pass-through of text); nothing else on the repo. Cells:
+   cleanup-counts.test.ts "reads execute of anything but built SQL as
+   text", arch-lints.test.ts RuleTester (execute of a name, of an untyped
+   parameter, of a parameter that shadows a built name).
+3. Several statements in one text. rawWriteKind reads each statement on
+   its own (sqlStatements: split on `;` outside quoted strings, quoted
+   names and dollar quotes), so `pg.unsafe('select 1; delete from t')`,
+   sql`;delete from t` and sql`select ${a}; update t ...` are writes. No
+   new site on the repo. Cells: cleanup-counts.test.ts "reads each
+   statement of a text on its own" (quotes and dollar quotes split
+   nothing), RuleTester cells for each shape.
+4. readSql. `readSql(...)` takes the place of non-literal text only when
+   readSql is imported from `@mantle/db` (a renamed import too), and a
+   literal inside it is still read. @mantle/db exports no readSql yet, so
+   no file can pass that way today (typecheck refuses the import); until
+   it exists every `readSql(...)` counts as non-literal text. Cells: no
+   import, an import from elsewhere, a write literal and a multi-statement
+   literal inside it are findings; a composed text through the
+   @mantle/db import is not. When readSql lands in packages/db, its own
+   files import it by a relative path: widen readSqlNames then.
+5. The hand-run harnesses. server/api/src/bench/haystack.ts,
+   bench/run.ts and crash-test.ts are classified by path:
+   cleanup-counts.mjs HAND_RUN_HARNESSES (exact paths, each with why,
+   capped at 3), left out by the lint and the scoreboard as test support
+   is. arch-lints.test.ts checks the cap, each why, that each file exists,
+   is not linted and is in no pin list, and that no counted file imports
+   one. The allowlist keeps migrate-runner.ts and snapshot-copies.ts; its
+   cap is 2.
+6. docs/fail-open.md: the `item_marks` line says what is, with no step
+   name.
+7. This file: the round 1 table gives rawWriteSqlFiles' base as pinned 59,
+   measured 67.
+
+### Pins
+
+| Pin               | Round 1 | Fix round 1 | Why                                           |
+| ----------------- | ------- | ----------- | --------------------------------------------- |
+| rawWriteSqlScoped | 16      | 17          | files.ts restamp insert raw again             |
+| rawSqlNonLiteral  | 72      | 74          | execute of a string (handles.ts executeWrite) |
+| rawWriteSqlFiles  | 42      | 43          | files.ts                                      |
+| rawWriteAllowlist | 5       | 2           | the three harnesses are classified by path    |
+
+Per file: packages/files/src/ops/files.ts 0 to 1,
+packages/db/src/gateway/handles.ts 2 to 4. historyCodeComments unchanged.
+
+### Note for F: outside the plan's verb list
+
+The lint reads the verbs the plan names (INSERT, UPDATE, DELETE, MERGE,
+TRUNCATE, a data-modifying CTE). These write and are not read by it: a DO
+block, COPY FROM, SELECT INTO, a select of a writing function that is not
+a definer, and a text method reached by a computed key (`pg[m](x)`). None
+is in scoped code today. After r3 every scoped statement runs on the write
+role, which fails closed on any table it has no right on, so these are
+caught at run time there, not by the lint.
