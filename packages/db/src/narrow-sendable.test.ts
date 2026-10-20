@@ -91,6 +91,7 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
   it('refuses a quoted setting name with no space before it (set"role", set local"role")', () => {
     for (const q of [
       'set local"role" none',
+      'set local"role" to none',
       'set"role" to none',
       'set session"role" none',
       'set local"session_authorization" default',

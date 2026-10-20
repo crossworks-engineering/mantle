@@ -378,7 +378,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         .catch((err: { u?: string }) => err.u ?? String(err));
     const forms: [string, string, boolean][] = [
       // (a) No space before a quoted setting name after SET or LOCAL.
-      ['no space', 'set local"role" none', false],
+      ['no space', 'set local"role" to none', false],
       ['no space, set', 'set"role" to none', false],
       // (b) A U& identifier spells the name.
       ['U&', 'set local U&"r\\006Fle" to none', false],
