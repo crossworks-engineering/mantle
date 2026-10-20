@@ -303,3 +303,32 @@ a definer, and a text method reached by a computed key (`pg[m](x)`). None
 is in scoped code today. After r3 every scoped statement runs on the write
 role, which fails closed on any table it has no right on, so these are
 caught at run time there, not by the lint.
+
+### Gates
+
+Rebased on main 7b9b1c424 (v0.300.110): one conflict, in
+scripts/arch-scoreboard.pins.json (main's loginTypeKindOrRole 0 and its
+note kept, this branch's raw write keys taken).
+
+Mac, DATABASE_URL unset, on 892fe5141 (the fixes): `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`vitest run server packages eslint-rules` 0. After the cell commit:
+typecheck of packages/files 0, eslint on the two new test files 0,
+`vitest run packages/files packages/db/src/write-role-inserts.test.ts
+eslint-rules` 0, format:check 0, docs:check 0, arch:check 0.
+
+Workstation (own clone ~/s10-fr1/clone, own container s10-fr1-pg on
+127.0.0.1:56520, pgvector pg18, max_connections=450, the `postgres` role
+as CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time), on 0dc7fb965: full
+vitest 0 (13884 passed, 1 skipped), test:actor-off 0 (1180),
+test:actor-on 0 (371), test:edit-on 0 (541), test:matrix 0 (8),
+test:runtime-role in full 0 (2781; the restamp cells ran in it and in
+the full run). The cell file took three tries before the full run (its
+create workspace had to be a private one, then the row rule finding
+above); no flake. Cleaned up: container (with its volume) and the
+folder, by name.
+
+CI: run 39360799210 on 0dc7fb965: success. The handover commit after it
+has its own run (in the report).
