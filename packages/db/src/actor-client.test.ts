@@ -184,6 +184,63 @@ describe('needsActorWrap (owner decision: writes and unknown verbs only)', () =>
   });
 });
 
+describe('a transaction client sends in the order its statements are awaited', () => {
+  /** fakeTx with tagged templates too (sent, like the rest, on `then`). */
+  function taggedFake() {
+    const f = fakeTx();
+    const unsafe = (f.t as unknown as { unsafe: (q: string) => unknown }).unsafe;
+    const t = Object.assign((strings: TemplateStringsArray) => unsafe(strings.join('$1')), {
+      unsafe,
+    }) as unknown as PgSql;
+    return { ...f, t };
+  }
+
+  it('builds without sending: values(), simple() and a tagged template send on their first then', async () => {
+    const f = taggedFake();
+    const tx = actorInTransaction(f.t, PARAMS) as unknown as PgSql & {
+      unsafe: (q: string) => { values: () => unknown; simple: () => unknown };
+    };
+    const a = tx.unsafe('select 1').simple();
+    const b = tx.unsafe('select 2').values();
+    const c = tx`select 3`;
+    await tick();
+    expect(f.sent).toEqual([]);
+    const all = Promise.all([c, b, a]);
+    await tick();
+    expect(f.sent.slice(1)).toEqual(['select 3', 'select 2', 'select 1']);
+    expect(f.sent[0]).toMatch(/set_config\('mantle\.actor'/);
+    f.release();
+    await tick();
+    f.release();
+    await all;
+  });
+
+  it('a SET TRANSACTION awaited first goes out first, then the SET, then the rest in order', async () => {
+    const f = taggedFake();
+    const tx = actorInTransaction(f.t, PARAMS) as unknown as PgSql & {
+      unsafe: (
+        q: string,
+      ) => PromiseLike<unknown> & { simple: () => unknown; values: () => unknown };
+    };
+    const all = Promise.all([
+      tx.unsafe('set transaction read only'),
+      tx.unsafe('select 1').simple(),
+      tx.unsafe('select 2').values(),
+      tx`select 3`,
+      tx.unsafe('select 4'),
+    ]);
+    await tick();
+    expect(f.sent[0]).toBe('set transaction read only');
+    expect(f.sent[1]).toMatch(/set_config\('mantle\.actor'/);
+    expect(f.sent.slice(2)).toEqual(['select 1', 'select 2', 'select 3', 'select 4']);
+    for (let i = 0; i < 3; i++) {
+      f.release();
+      await tick();
+    }
+    await all;
+  });
+});
+
 describe('the actor SET in a transaction (fix round 2: pipelined)', () => {
   it('sends the SET and the first statement before either is answered: one round trip', async () => {
     const f = fakeTx();

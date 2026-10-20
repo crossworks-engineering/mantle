@@ -12,6 +12,8 @@
  *
  * Running ONE `start()` here, after migrations and before the workers, creates
  * the schema deterministically. Idempotent: a no-op once the schema exists.
+ * Then EXECUTE on pg-boss's routines is taken from PUBLIC (@mantle/db
+ * PGBOSS_ROUTINES_REVOKE_SQL; migrate does the same on every run).
  * Wired into `scripts/up.sh` (dev) and the production migrate gate.
  *
  * Usage:  pnpm -C server/web pgboss:init   (reads DATABASE_URL from .env.local)
@@ -19,6 +21,7 @@
 
 import { PgBoss } from 'pg-boss';
 import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
+import { PGBOSS_ROUTINES_REVOKE_SQL } from '@mantle/db';
 
 // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
 if (isBootSmoke()) await bootSmokeExit('pgboss-init');
@@ -34,6 +37,10 @@ boss.on('error', (e) => console.error('[pgboss-init] pg-boss error:', e.message)
 
 try {
   await boss.start(); // creates pgboss.* on a fresh DB; no-op if already present
+  // pg-boss makes its routines with PUBLIC's default EXECUTE, after this
+  // box's migrate on a fresh database or an upgrade: take it back now
+  // (job_table_run runs its text as SQL). As the migrator, their owner.
+  await boss.getDb().executeSql(PGBOSS_ROUTINES_REVOKE_SQL);
   await boss.stop({ graceful: false });
   console.log('[pgboss-init] pgboss schema ready.');
   process.exit(0);

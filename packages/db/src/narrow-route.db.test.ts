@@ -54,6 +54,28 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     }
     throw new Error('expected a failure');
   };
+  /** A row the pool's own login may write (and the narrow role may not
+   *  matter here): a miss row carrying `marker`. */
+  const probeInsert = (marker: string) =>
+    `insert into public.actor_check_misses (source, check_name, detail) values ('test', 'narrow-probe', '${marker}')`;
+  const probeRows = async (marker: string) =>
+    (
+      await su<{ n: number }[]>`
+        select count(*)::int as n from public.actor_check_misses
+         where check_name = 'narrow-probe' and detail = ${marker}`
+    )[0]!.n;
+  /** Sent with no guard, as the narrow role on a superuser's session: who
+   *  the transaction is afterwards (the form works when it is not the
+   *  narrow role). Rolled back. */
+  const unguarded = (send: (t: postgres.TransactionSql) => Promise<unknown>) =>
+    su
+      .begin(async (t) => {
+        await t.unsafe(`select set_config('role', '${NARROW}', true)`);
+        await send(t);
+        const [r] = await t.unsafe<{ u: string }[]>('select current_user as u');
+        throw Object.assign(new Error('rollback'), { u: r!.u });
+      })
+      .catch((err: { u?: string }) => err.u ?? String(err));
   /** The pool reads the switch once, when it opens. */
   const reopen = async (on: boolean) => {
     await m.closeDb();
@@ -64,10 +86,9 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
     su = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
-    // A probe table every role may write (this scratch database only): a
-    // row written after the role was left must not survive.
-    await su.unsafe('create table public.narrow_probe (x text)');
-    await su.unsafe('grant select, insert on public.narrow_probe to public');
+    // No table of its own (one made and dropped races another file's GRANT
+    // ... ON ALL TABLES): a row written after the role was left is a miss
+    // row with the cell's marker (probeInsert), which must not survive.
     // A function that changes the role inside: no text check can see it, the
     // hold check must.
     await su.unsafe(`create function public.narrow_probe_leave() returns void
@@ -211,15 +232,13 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
             m.db.transaction(async (tx) => {
               await tx.execute(sql`select public.narrow_probe_leave()`);
               // As the session's own login now: the hold check must undo this.
-              await tx.execute(sql`insert into public.narrow_probe (x) values (${marker})`);
+              await tx.execute(sql.raw(probeInsert(marker)));
             }),
           'admin-area',
         ),
       ),
     ).toBeInstanceOf(nr.NarrowRoleLeftError);
-    const left = await su<{ n: number }[]>`
-      select count(*)::int as n from public.narrow_probe where x = ${marker}`;
-    expect(left[0]!.n).toBe(0);
+    expect(await probeRows(marker)).toBe(0);
     for (const stmt of ['vacuum', 'commit', 'select 1; commit', 'select 1; set role none']) {
       expect(
         await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
@@ -320,7 +339,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         'do leave and return',
         sql.raw(`do $$ begin
           perform set_config('role', 'none', true);
-          insert into public.narrow_probe (x) values ('${marker}');
+          ${probeInsert(marker)};
           perform set_config('role', '${NARROW}', true);
         end $$`),
       ],
@@ -345,13 +364,11 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         `${name} (in a transaction)`,
       ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
-    const left = await su<{ n: number }[]>`
-      select count(*)::int as n from public.narrow_probe where x = ${marker}`;
-    expect(left[0]!.n).toBe(0);
+    expect(await probeRows(marker)).toBe(0);
     // Sent: a literal mantle.* name with a bound value, a named local
     // setting, set_config inside an expression.
     for (const stmt of [
-      sql`select set_config('mantle.create_ws', ${'x'}, true)`,
+      sql`select set_config('mantle.ingest_notify', ${'x'}, true)`,
       sql`select set_config('lock_timeout', ${'5s'}, true)`,
       sql.raw("select (set_config('mantle.keep_updated_at', 'on', true))::text as v"),
       sql.raw("select 'set_config(''role'', ''none'', true)' as x"),
@@ -364,18 +381,6 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
 
   it("refuses the a3 audit's forms, each of which leaves the role on Postgres when sent unguarded", async () => {
     const pools = await import('./gateway/pools');
-    /** Sent with no guard, as the narrow role on a superuser's session: who
-     *  the transaction is afterwards (the form works when it is not the
-     *  narrow role). Rolled back. */
-    const unguarded = (send: (t: postgres.TransactionSql) => Promise<unknown>) =>
-      su
-        .begin(async (t) => {
-          await t.unsafe(`select set_config('role', '${NARROW}', true)`);
-          await send(t);
-          const [r] = await t.unsafe<{ u: string }[]>('select current_user as u');
-          throw Object.assign(new Error('rollback'), { u: r!.u });
-        })
-        .catch((err: { u?: string }) => err.u ?? String(err));
     const forms: [string, string, boolean][] = [
       // (a) No space before a quoted setting name after SET or LOCAL.
       ['no space', 'set local"role" to none', false],
@@ -472,6 +477,124 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       'admin-area',
     );
     expect(scoped).toEqual({ u: NARROW, ws: '{}' });
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it('reads the text as Postgres does (one reader, sql-text.ts): each form leaves the role unguarded, and is refused', async () => {
+    const forms: [string, string, boolean][] = [
+      // Block comments nest: `/* /* */ ' */` is one comment.
+      ['nested comment', "select 1 /* /* */ ' */; reset role; select ' '", true],
+      // The same at the start (statementBody): `select */` is comment.
+      ['nested leading comment', '/* /* */ select */ reset role', false],
+      // A dollar quote's tag may hold characters that are not ASCII.
+      ['tag not ASCII', "select $é$'$é$; reset role; select '1'", true],
+      // A name may too: aé$q$ and b$q$ are names, no dollar quote between.
+      ['name not ASCII', 'select 1 as aé$q$; reset role; select 1 as b$q$', true],
+    ];
+    for (const [name, stmt, simple] of forms) {
+      expect(
+        await unguarded((t) => (simple ? t.unsafe(stmt).simple() : t.unsafe(stmt))),
+        `${name}: unguarded`,
+      ).toBe('postgres');
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
+        name,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        `${name} (in a transaction)`,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    // A function that runs its text as SQL: the text is a string the check
+    // never reads. query_to_xml leaves the role unguarded; refused routed.
+    const runner =
+      "select query_to_xml('select set_config(''role'', ''none'', true)', true, true, '')";
+    expect(await unguarded((t) => t.unsafe(runner)), 'query_to_xml: unguarded').toBe('postgres');
+    for (const stmt of [
+      runner,
+      "select pgboss.job_table_run('select set_config(''role'', ''none'', true)')",
+    ]) {
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        stmt,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    // Text that never closes, or that Postgres may read otherwise.
+    for (const stmt of ['select 1 /* x', "select 'a\\'"]) {
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
+        stmt,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it("sends a transaction's statements in the order they are awaited, on every route", async () => {
+    const pools = await import('./gateway/pools');
+    type Tx = postgres.TransactionSql & {
+      unsafe: (q: string) => PromiseLike<unknown> & {
+        simple: () => PromiseLike<unknown>;
+        values: () => PromiseLike<unknown>;
+      };
+    };
+    /** Pipelined, awaited together: SET TRANSACTION READ ONLY first, then
+     *  five statements in every form a caller sends (plain, simple, values,
+     *  a tagged template), each appending its letter to a setting and
+     *  answering what it found: the order they ran in. */
+    const pipelined = () =>
+      pools.adminSql().begin(async (raw) => {
+        const t = raw as unknown as Tx;
+        const step = (c: string) =>
+          `select current_setting('transaction_read_only') as ro, current_user as u, ` +
+          `set_config('mantle.order_probe', coalesce(current_setting('mantle.order_probe', true), '') || '${c}', true) as seen`;
+        const answers = (await Promise.all([
+          t.unsafe('set transaction read only'),
+          t.unsafe(step('a')),
+          t.unsafe(step('b')).simple(),
+          t.unsafe(step('c')).values(),
+          t`select current_setting('transaction_read_only') as ro, current_user as u, set_config('mantle.order_probe', current_setting('mantle.order_probe', true) || 'd', true) as seen`,
+          t.unsafe(step('e')),
+        ])) as unknown[];
+        const row = (r: unknown): string[] => {
+          const first = (r as unknown[])[0] as Record<string, string> | string[];
+          return Array.isArray(first) ? first : [first.ro!, first.u!, first.seen!];
+        };
+        return answers.slice(1).map(row);
+      });
+    const expected = (u: string) => [
+      ['on', u, 'a'],
+      ['on', u, 'ab'],
+      ['on', u, 'abc'],
+      ['on', u, 'abcd'],
+      ['on', u, 'abcde'],
+    ];
+    // The narrow route (an Admin area exit), a full reason, and no exit.
+    expect(await v.asSystem(pipelined, 'admin-area')).toEqual(expected(NARROW));
+    const full = (Object.keys(v.AS_SYSTEM_ROUTE) as (keyof typeof v.AS_SYSTEM_ROUTE)[]).find(
+      (r) => v.AS_SYSTEM_ROUTE[r] === 'full',
+    )!;
+    expect(await v.asSystem(pipelined, full)).toEqual(expected(pool));
+    expect(await pipelined()).toEqual(expected(pool));
+    // The same through drizzle: a SET TRANSACTION as its first statement
+    // makes the transaction read only before the read.
+    const ro = await v.asSystem(
+      () =>
+        m.db.transaction(
+          async (tx) =>
+            (
+              (await tx.execute(
+                sql`select current_setting('transaction_read_only') as ro, current_user as u`,
+              )) as unknown as { ro: string; u: string }[]
+            )[0]!,
+          { accessMode: 'read only' },
+        ),
+      'admin-area',
+    );
+    expect(ro).toEqual({ ro: 'on', u: NARROW });
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 

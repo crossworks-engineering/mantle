@@ -213,21 +213,38 @@ type QueryLike = PromiseLike<unknown> & {
   simple?: () => PromiseLike<unknown>;
 };
 
+/**
+ * `q` with its error seen by `onError`, sent exactly when postgres.js would
+ * send it: on the first `then` (or `catch`, `finally`), whose call reaches
+ * the query's own `then` at once (no promise in between that would start
+ * it a microtask late), and never on `.values()` or `.simple()` alone. So
+ * the order a narrow transaction's statements are awaited in is the order
+ * they go out, on this route as on every other (a SET TRANSACTION awaited
+ * first is the transaction's first statement).
+ */
 function watchedQuery(q: QueryLike, onError: (err: unknown) => void) {
-  const run = (p: PromiseLike<unknown>) =>
-    Promise.resolve(p).then(undefined, (err: unknown) => {
-      onError(err);
-      throw err;
-    });
-  let started: Promise<unknown> | null = null;
-  const once = () => (started ??= run(q));
-  return {
-    then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
-    catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
-    finally: (f?: () => void) => once().finally(f),
-    values: () => run(q.values ? q.values() : q),
-    simple: () => run(q.simple ? q.simple() : q),
+  const watched = (start: () => PromiseLike<unknown>) => {
+    let started: Promise<unknown> | null = null;
+    const once = () =>
+      (started ??= new Promise<unknown>((resolve, reject) => {
+        start().then(resolve, (err: unknown) => {
+          onError(err);
+          reject(err);
+        });
+      }));
+    return {
+      then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
+      catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+      finally: (f?: () => void) => once().finally(f),
+    };
   };
+  return Object.assign(
+    watched(() => q),
+    {
+      values: () => watched(() => (q.values ? q.values() : q)),
+      simple: () => watched(() => (q.simple ? q.simple() : q)),
+    },
+  );
 }
 
 /**

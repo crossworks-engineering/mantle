@@ -68,6 +68,25 @@ export const RUNTIME_ROLE = 'mantle_runtime';
 export const SYSTEM_ROLE = 'mantle_system';
 export const NARROW_ROLE = 'mantle_system_narrow';
 
+/**
+ * pg-boss's routines taken from PUBLIC (pg-boss makes them with PUBLIC's
+ * default EXECUTE): job_table_run runs its text argument as SQL, as its
+ * caller, and the app's roles hold USAGE on the schema for the queue counts.
+ * pg-boss runs as the migrator (DATABASE_URL), which owns them; no role the
+ * app runs as calls one (it reads pgboss.job and pgboss.version only). Run
+ * at every migrate (applyRuntimeGrants) and by pgboss:init right after
+ * pg-boss installs or upgrades its schema (a fresh box's routines come after
+ * migrate). Per-schema default privileges cannot take a global default
+ * (PUBLIC's EXECUTE) away, so there is none for this (measured on pg18).
+ */
+export const PGBOSS_ROUTINES_REVOKE_SQL =
+  'REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA pgboss FROM PUBLIC';
+
+/** A database (or any) name as a quoted identifier: its `"` doubled. */
+export function quotedIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 /** The schemas the app's tables live in. pgboss (pg-boss's own, it makes
  *  partitions at run time) and drizzle (the ledger) stay the migrator's. */
 export const APP_SCHEMAS = ['public', 'auth'] as const;
@@ -436,7 +455,8 @@ export const DB_ROLE_SQL = `
  * skipped 0290 shows here), and no role but mantle_runtime (and a
  * superuser, a member of every role) a member of mantle_owner, directly or
  * through another role: mantle_owner_role() says yes to every such member.
- * afterMigrations logs every row as a warning.
+ * And no pg-boss routine the runtime or the narrow role may run
+ * (PGBOSS_ROUTINES_REVOKE_SQL). afterMigrations logs every row as a warning.
  */
 export const RUNTIME_LOCK_SQL = `
   SELECT '${RUNTIME_ROLE}' AS id, 'lock broken' AS kind, x.detail AS detail
@@ -454,6 +474,13 @@ export const RUNTIME_LOCK_SQL = `
                          WHERE p.proowner = r.oid AND n.nspname IN (${APP_SCHEMAS_SQL}))
            THEN 'owns functions' END,
       CASE WHEN has_schema_privilege(r.oid, 'public', 'CREATE') THEN 'may create in public' END,
+      (SELECT 'may run pg-boss routines: ' || string_agg(DISTINCT p.proname, ', ' ORDER BY p.proname)
+         FROM pg_catalog.pg_proc p
+         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'pgboss'
+          AND (has_function_privilege(r.oid, p.oid, 'EXECUTE')
+               OR (to_regrole('${NARROW_ROLE}') IS NOT NULL
+                   AND has_function_privilege(to_regrole('${NARROW_ROLE}'), p.oid, 'EXECUTE')))),
       CASE WHEN EXISTS (SELECT 1 FROM unnest(ARRAY['${OWNER_ROLE}', '${SYSTEM_ROLE}', '${NARROW_ROLE}']) o(name)
                          WHERE to_regrole(o.name) IS NOT NULL
                            AND pg_has_role(r.oid, to_regrole(o.name), 'USAGE'))
@@ -708,8 +735,8 @@ export async function takeBackMemberships(
       if (!before.some((b) => membershipKey(b) === membershipKey(h))) continue;
       await withRoleRetry(() =>
         sql.unsafe(
-          `REVOKE "${h.role.replace(/"/g, '""')}" FROM "${h.member.replace(/"/g, '""')}" ` +
-            `GRANTED BY "${h.grantor.replace(/"/g, '""')}" CASCADE`,
+          `REVOKE ${quotedIdent(h.role)} FROM ${quotedIdent(h.member)} ` +
+            `GRANTED BY ${quotedIdent(h.grantor)} CASCADE`,
         ),
       );
       const after = new Set((await readMemberships(sql, h.role)).map(membershipKey));
@@ -999,7 +1026,10 @@ export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
  * privileges so a table a later migration makes is the runtime role's at
  * once. CREATE on public is taken from PUBLIC: the runtime role may make
  * nothing there. TEMPORARY on the database is taken from PUBLIC too and
- * granted to none: no role the app runs as makes a temporary object.
+ * granted to none: no role the app runs as makes a temporary object; a
+ * narrow role that still holds it afterwards (a migrator that does not own
+ * the database only gets a warning from the REVOKE) fails the run. EXECUTE
+ * on pg-boss's routines is taken from PUBLIC (PGBOSS_ROUTINES_REVOKE_SQL).
  *
  * And mantle_owner's: USAGE on the schemas, every right on the tables and
  * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
@@ -1027,8 +1057,17 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // superuser. Here and not in a migration: the database's name is the
       // box's own, and a restore into a fresh database (no --create) starts
       // with PUBLIC's default again, which the next migrate takes back.
-      await tx.unsafe(`REVOKE TEMPORARY ON DATABASE "${db!.name}" FROM PUBLIC`);
-      await tx.unsafe(`GRANT CONNECT ON DATABASE "${db!.name}" TO ${rt}`);
+      const dbName = quotedIdent(db!.name);
+      await tx.unsafe(`REVOKE TEMPORARY ON DATABASE ${dbName} FROM PUBLIC, "${NARROW_ROLE}"`);
+      const [temp] = await tx<{ held: boolean }[]>`
+        select has_database_privilege(${NARROW_ROLE}, current_database(), 'TEMP') as held`;
+      if (temp!.held) {
+        throw new Error(
+          `${NARROW_ROLE} still holds TEMPORARY on database ${dbName} after the REVOKE: ` +
+            'run migrate as the database owner or a superuser',
+        );
+      }
+      await tx.unsafe(`GRANT CONNECT ON DATABASE ${dbName} TO ${rt}`);
       const ow = `"${OWNER_ROLE}"`;
       await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${ow}`);
       await tx.unsafe(`GRANT ALL ON ALL TABLES IN SCHEMA ${schemas} TO ${ow}`);
@@ -1067,6 +1106,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // EXISTS, then its version table), so the default privileges cover the
       // tables pgboss:init makes after this migrate on a fresh box.
       await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS pgboss`);
+      await tx.unsafe(PGBOSS_ROUTINES_REVOKE_SQL);
       await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(

@@ -271,7 +271,9 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
           args,
         ) as PromiseLike<unknown>;
       if (setOk || !Array.isArray(first) || !('raw' in first)) return call();
-      return afterSet(call);
+      // Sent when awaited, as postgres.js sends its own (never when built):
+      // the order statements are awaited in is the order on the wire.
+      return lazy(call);
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
@@ -281,9 +283,13 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
             return target.unsafe(query, args as never[], opts as never);
           }
           const q = () => target.unsafe(query, args as never[], opts as never);
+          // `.values()` and `.simple()` pick a mode and send nothing, as
+          // postgres.js's own: a statement goes out when it is awaited, so
+          // the order statements are awaited in is the order on the wire
+          // (a SET TRANSACTION awaited first stays first).
           return Object.assign(lazy(q), {
-            values: () => afterSet(() => q().values()),
-            simple: () => afterSet(() => q().simple()),
+            values: () => lazy(() => q().values()),
+            simple: () => lazy(() => q().simple()),
           });
         };
       }

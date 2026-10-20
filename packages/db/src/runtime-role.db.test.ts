@@ -38,6 +38,7 @@ import {
   OWNER_ROLE,
   OWNER_ROLE_FUNCTION,
   RUNTIME_DENIED_FUNCTIONS,
+  PGBOSS_ROUTINES_REVOKE_SQL,
   RUNTIME_LOCK_SQL,
   RUNTIME_ROLE,
   RUNTIME_SYSTEM_FUNCTIONS,
@@ -45,6 +46,8 @@ import {
   dbRoleMode,
   ensureRuntimeRoles,
   ownTables,
+  applyRuntimeGrants,
+  quotedIdent,
   runtimeDatabaseUrl,
   runtimeDeniedTables,
   runtimeRolePassword,
@@ -692,6 +695,99 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(t).toEqual({ ok: false, ws: false, ni: false, nd: false });
     expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
     expect((await ownTables(admin)).owned).toEqual([]);
+  });
+
+  it('TEMPORARY is taken from PUBLIC and the narrow role at every run; a run that leaves the narrow role holding it fails', async () => {
+    const quiet = { info: () => {}, warn: () => {} };
+    const [{ d }] = (await admin`select current_database() as d`) as unknown as [{ d: string }];
+    const temp = async () =>
+      (
+        await admin<{ n: boolean; p: boolean }[]>`
+          select has_database_privilege(${NARROW_ROLE}, current_database(), 'TEMP') as n,
+                 has_database_privilege('public', current_database(), 'TEMP') as p`
+      )[0];
+    expect(quotedIdent('a"b')).toBe('"a""b"');
+    // A hand grant to the narrow role, and PUBLIC's default back: the next
+    // run takes both.
+    await admin.unsafe(`GRANT TEMPORARY ON DATABASE ${quotedIdent(d)} TO PUBLIC, ${NARROW_ROLE}`);
+    expect(await temp()).toEqual({ n: true, p: true });
+    await afterMigrations(admin, 'ok', quiet);
+    expect(await temp()).toEqual({ n: false, p: false });
+    // A migrator that neither owns the database nor is a superuser: its
+    // REVOKE only warns, and the run fails instead of going on.
+    const name = `s7a3g_nonowner_${randomBytes(4).toString('hex')}`;
+    const pw = randomBytes(12).toString('hex');
+    await admin.unsafe(`CREATE ROLE ${name} LOGIN PASSWORD '${pw}'`);
+    await admin.unsafe(`GRANT CONNECT ON DATABASE ${quotedIdent(d)} TO ${name}`);
+    await admin.unsafe(`GRANT TEMPORARY ON DATABASE ${quotedIdent(d)} TO PUBLIC`);
+    const u = new globalThis.URL(scratch.url);
+    u.username = name;
+    u.password = pw;
+    const other = postgres(u.toString(), { max: 1, onnotice: () => {} });
+    try {
+      await expect(applyRuntimeGrants(other as never)).rejects.toThrow(
+        /still holds TEMPORARY on database/,
+      );
+    } finally {
+      await other.end();
+      await admin.unsafe(`REVOKE ALL ON DATABASE ${quotedIdent(d)} FROM ${name}`);
+      await admin.unsafe(`DROP ROLE ${name}`);
+    }
+    await afterMigrations(admin, 'ok', quiet);
+    expect(await temp()).toEqual({ n: false, p: false });
+  });
+
+  it("pg-boss's routines: EXECUTE taken from PUBLIC at every run, and the integrity row names one the runtime or the narrow role may run", async () => {
+    const quiet = { info: () => {}, warn: () => {} };
+    const can = async (fn: string) =>
+      (
+        await admin<{ r: boolean; n: boolean; p: boolean }[]>`
+          select has_function_privilege(${RUNTIME_ROLE}, ${fn}, 'EXECUTE') as r,
+                 has_function_privilege(${NARROW_ROLE}, ${fn}, 'EXECUTE') as n,
+                 has_function_privilege('public', ${fn}, 'EXECUTE') as p`
+      )[0];
+    // A routine like pg-boss's job_table_run (made by its owner with
+    // PUBLIC's default EXECUTE, runs its text).
+    await admin.unsafe(
+      `CREATE FUNCTION pgboss.s7a3g_probe_run(t text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN EXECUTE t; END $$`,
+    );
+    try {
+      expect(await can('pgboss.s7a3g_probe_run(text)')).toEqual({ r: true, n: true, p: true });
+      const broken = (await admin.unsafe(RUNTIME_LOCK_SQL)) as unknown as { detail: string }[];
+      expect(broken[0]?.detail).toMatch(/may run pg-boss routines: s7a3g_probe_run/);
+      // As the narrow role it leaves the role: the text is never read.
+      const left = await admin
+        .begin(async (t) => {
+          await t.unsafe(`select set_config('role', '${NARROW_ROLE}', true)`);
+          await t.unsafe(
+            `select pgboss.s7a3g_probe_run('select set_config(''role'', ''none'', true)')`,
+          );
+          const [r] = await t.unsafe<{ u: string }[]>('select current_user as u');
+          throw Object.assign(new Error('rollback'), { u: r!.u });
+        })
+        .catch((err: { u?: string }) => err.u ?? String(err));
+      expect(left).not.toBe(NARROW_ROLE);
+      await afterMigrations(admin, 'ok', quiet);
+      expect(await can('pgboss.s7a3g_probe_run(text)')).toEqual({ r: false, n: false, p: false });
+      expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
+      // pgboss:init's own statement, after a later install: the same.
+      await admin.unsafe(`GRANT EXECUTE ON FUNCTION pgboss.s7a3g_probe_run(text) TO PUBLIC`);
+      await admin.unsafe(PGBOSS_ROUTINES_REVOKE_SQL);
+      expect(await can('pgboss.s7a3g_probe_run(text)')).toEqual({ r: false, n: false, p: false });
+      // Why pgboss:init revokes after the install: a per-schema default
+      // privilege cannot take PUBLIC's global default EXECUTE away.
+      await admin.unsafe(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA pgboss REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`,
+      );
+      await admin.unsafe(
+        `CREATE FUNCTION pgboss.s7a3g_probe_two() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$`,
+      );
+      expect((await can('pgboss.s7a3g_probe_two()'))!.p).toBe(true);
+    } finally {
+      await admin.unsafe(`DROP FUNCTION IF EXISTS pgboss.s7a3g_probe_run(text)`);
+      await admin.unsafe(`DROP FUNCTION IF EXISTS pgboss.s7a3g_probe_two()`);
+    }
+    expect(await admin.unsafe(RUNTIME_LOCK_SQL)).toEqual([]);
   });
 
   it('a busy table never holds up the ownership change: it is left for the next run', async () => {

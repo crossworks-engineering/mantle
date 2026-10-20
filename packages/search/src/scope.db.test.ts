@@ -338,67 +338,68 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
 
   it('ensureConcurrentIndexes builds a missing index and rebuilds an INVALID one', async () => {
     // The migrator's step, as the superuser: the app's pool may be the
-    // runtime role (arch A9), which makes no table and no index.
-    const { superuserClient } = await import('@mantle/db/test-support');
+    // runtime role (arch A9), which makes no table and no index. On an empty
+    // database of its own: a table made and dropped in the shared test
+    // database races another file's GRANT ... ON ALL TABLES there ("cache
+    // lookup failed for relation").
+    const { createEmptyScratchDatabase, superuserClient } = await import('@mantle/db/test-support');
+    const scratch = await createEmptyScratchDatabase(URL!);
+    onTestFinished(() => scratch.drop());
     // Three connections: the test holds one while the step takes another.
-    const admin = superuserClient(URL!, 3) as unknown as Admin;
+    const admin = superuserClient(scratch.url, 3) as unknown as Admin;
     onTestFinished(() => (admin as unknown as { end: () => Promise<void> }).end());
     const t = `${tag}_cix`;
     await admin.unsafe(`create table public.${t} (a int)`);
+    const list = [
+      {
+        name: `${t}_a`,
+        create: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "${t}_a" ON public.${t} (a)`,
+      },
+    ];
+    expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'built' });
+    expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'present' });
+    await admin.unsafe(
+      `update pg_index set indisvalid = false where indexrelid = '"${t}_a"'::regclass`,
+    );
+    expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'rebuilt' });
+    const [r] = await admin<{ v: boolean }[]>`
+      select indisvalid as v from pg_index where indexrelid = ${`"${t}_a"`}::regclass`;
+    expect(r!.v).toBe(true);
+    // A build that waits on a lock gives up at the lock limit, reports it,
+    // and leaves no index behind (the runner warns and boots on).
+    await admin.unsafe(`drop index "${t}_a"`);
+    const holder = await admin.reserve();
     try {
-      const list = [
-        {
-          name: `${t}_a`,
-          create: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "${t}_a" ON public.${t} (a)`,
-        },
-      ];
-      expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'built' });
-      expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'present' });
-      await admin.unsafe(
-        `update pg_index set indisvalid = false where indexrelid = '"${t}_a"'::regclass`,
-      );
-      expect(await m.ensureConcurrentIndexes(admin, list)).toEqual({ [`${t}_a`]: 'rebuilt' });
-      const [r] = await admin<{ v: boolean }[]>`
-        select indisvalid as v from pg_index where indexrelid = ${`"${t}_a"`}::regclass`;
-      expect(r!.v).toBe(true);
-      // A build that waits on a lock gives up at the lock limit, reports it,
-      // and leaves no index behind (the runner warns and boots on).
-      await admin.unsafe(`drop index "${t}_a"`);
-      const holder = await admin.reserve();
-      try {
-        await holder`begin`;
-        await holder.unsafe(`lock table public.${t} in access exclusive mode`);
-        const errs: string[] = [];
-        const t0 = Date.now();
-        expect(
-          await m.ensureConcurrentIndexes(admin, list, {
-            lockTimeoutMs: 200,
-            onError: (name) => errs.push(name),
-          }),
-        ).toEqual({ [`${t}_a`]: 'failed' });
-        expect(errs).toEqual([`${t}_a`]);
-        expect(Date.now() - t0).toBeLessThan(10_000);
-        await holder`rollback`;
-      } finally {
-        holder.release();
-      }
-      const [gone] = await admin<{ n: number }[]>`
-        select count(*)::int as n from pg_class where relname = ${`${t}_a`}`;
-      expect(gone!.n).toBe(0);
-      // Without onError the failure is thrown.
-      const holder2 = await admin.reserve();
-      try {
-        await holder2`begin`;
-        await holder2.unsafe(`lock table public.${t} in access exclusive mode`);
-        await expect(
-          m.ensureConcurrentIndexes(admin, list, { lockTimeoutMs: 200 }),
-        ).rejects.toThrow();
-        await holder2`rollback`;
-      } finally {
-        holder2.release();
-      }
+      await holder`begin`;
+      await holder.unsafe(`lock table public.${t} in access exclusive mode`);
+      const errs: string[] = [];
+      const t0 = Date.now();
+      expect(
+        await m.ensureConcurrentIndexes(admin, list, {
+          lockTimeoutMs: 200,
+          onError: (name) => errs.push(name),
+        }),
+      ).toEqual({ [`${t}_a`]: 'failed' });
+      expect(errs).toEqual([`${t}_a`]);
+      expect(Date.now() - t0).toBeLessThan(10_000);
+      await holder`rollback`;
     } finally {
-      await admin.unsafe(`drop table if exists public.${t}`);
+      holder.release();
+    }
+    const [gone] = await admin<{ n: number }[]>`
+      select count(*)::int as n from pg_class where relname = ${`${t}_a`}`;
+    expect(gone!.n).toBe(0);
+    // Without onError the failure is thrown.
+    const holder2 = await admin.reserve();
+    try {
+      await holder2`begin`;
+      await holder2.unsafe(`lock table public.${t} in access exclusive mode`);
+      await expect(
+        m.ensureConcurrentIndexes(admin, list, { lockTimeoutMs: 200 }),
+      ).rejects.toThrow();
+      await holder2`rollback`;
+    } finally {
+      holder2.release();
     }
   });
 });
