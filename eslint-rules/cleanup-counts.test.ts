@@ -21,6 +21,7 @@ import {
   sqlStatements,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './cleanup-counts.mjs';
+import { notReadSqlReason } from '../packages/db/src/read-sql';
 
 const ROOT = join(__dirname, '..');
 
@@ -51,6 +52,42 @@ describe('rawWriteKind', () => {
     expect(rawWriteKind('select "public"."mantle_ws_add_user"($1, $2)')).toBeNull();
     expect(rawWriteKind('with a as (select 1) select * from a')).toBeNull();
     expect(rawWriteKind(', updated_at = now()')).toBeNull();
+  });
+});
+
+describe('rawWriteKind and readSql share one reader', () => {
+  // The lint reads literal text, readSql composed text, both with
+  // packages/db/src/sql-text.ts: a text the lint calls a write, readSql
+  // refuses (readSql refuses more: locks, session calls, INTO).
+  const WRITES = [
+    "with a as (select '--'), b as (delete from t returning 1) select 1",
+    "with a as (select '/*'), b as (delete from t returning 1) select 1",
+    'with x as (update nodes n set title = n.title returning 1) select * from x',
+    'with x as (update only nodes set title = 1 returning 1) select 1',
+    'update only nodes set title = 1',
+    'with m as (merge into t using s on true when matched then delete returning 1) select 1',
+    "select 1 /* /* */ ' */; delete from t; -- '",
+    "select 'a;b'; delete from t",
+    'select 1 as x$q$, 2; delete from t; select $q$$q$',
+  ];
+
+  it('finds each write the reader shows', () => {
+    for (const text of WRITES) {
+      expect(rawWriteKind(text), text).not.toBeNull();
+      expect(notReadSqlReason(text), text).not.toBeNull();
+    }
+  });
+
+  it('reads a value as a value', () => {
+    for (const text of [
+      "select 'delete from t' as a",
+      'select 1 -- ; delete from t\n',
+      'select $q$ ; update t set a = 1 $q$',
+      'select "update" from t',
+    ]) {
+      expect(rawWriteKind(text), text).toBeNull();
+      expect(notReadSqlReason(text), text).toBeNull();
+    }
   });
 });
 

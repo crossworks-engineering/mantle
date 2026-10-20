@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { readRepoFile } from './arch-counts.mjs';
 import { parse } from './as-system-exits.mjs';
+import { sqlCode, sqlStatements, withParts } from '../packages/db/src/sql-text.ts';
 
 const lineOf = (sf, pos) => sf.getLineAndCharacterOfPosition(pos).line + 1;
 
@@ -62,79 +63,33 @@ export function rawWriteSwept(path) {
   return /^packages\/[^/]+\/src\//.test(path) || path.startsWith('server/');
 }
 
-/** SQL `text` with `--` and block comments blanked. */
-function dropSqlComments(text) {
-  return text.replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ');
-}
-
 const WRITE_START = /^(insert|update|delete|merge|truncate)\b/i;
 const WRITE_CTE = /\bas\s*(?:not\s+)?(?:materialized\s+)?\(\s*(insert|update|delete|merge)\b/i;
-
-/** The statement after a leading WITH and its CTEs, or the text itself. */
-function afterWith(sql) {
-  let t = sql.trim();
-  const w = /^with\s+(?:recursive\s+)?/i.exec(t);
-  if (!w) return t;
-  t = t.slice(w[0].length);
-  for (let guard = 0; guard < 64; guard += 1) {
-    const head =
-      /^"?[A-Za-z_][\w$]*"?\s*(?:\([^)]*\)\s*)?as\s+(?:(?:not\s+)?materialized\s+)?\(/i.exec(t);
-    if (!head) return t;
-    let depth = 0;
-    let i = head[0].length - 1;
-    for (; i < t.length; i += 1) {
-      if (t[i] === '(') depth += 1;
-      else if (t[i] === ')') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    t = t.slice(i + 1).trim();
-    if (t.startsWith(',')) t = t.slice(1).trim();
-    else return t;
-  }
-  return t;
-}
+const WRITE_CTE_BODY = /^[\s(]*(insert|update|delete|merge)\b/i;
 
 /** Why the static SQL `text` is a raw write ('write' or 'write-cte'), or
- *  null for a read (FOR UPDATE included) or a definer call. A template's
- *  leading placeholders (`${TAG} insert ...`, a tag comment before the
- *  statement) are skipped. */
+ *  null for a read (FOR UPDATE included) or a definer call. Read on the
+ *  text's code by the reader readSql uses (packages/db/src/sql-text.ts:
+ *  comments, strings, dollar quotes and quoted names blanked, so a `--` or
+ *  a `;` in a value hides nothing), statement by statement, each after its
+ *  leading WITH. A template's leading placeholders (`${TAG} insert ...`, a
+ *  tag comment before the statement) are skipped. */
 export function rawWriteKind(text) {
-  const sql = dropSqlComments(text);
-  for (const statement of sqlStatements(sql)) {
-    if (WRITE_START.test(afterWith(statement.replace(/^\s*(?:\$1\s*)+/, '')))) return 'write';
+  const { code } = sqlCode(text);
+  let cte = WRITE_CTE.test(code);
+  for (const statement of sqlStatements(code)) {
+    const parts = withParts(statement.replace(/^\s*(?:\$1\s*)+/, ''));
+    if (WRITE_START.test(parts.rest)) return 'write';
+    if (parts.ctes.some((body) => WRITE_CTE_BODY.test(body))) cte = true;
   }
-  if (WRITE_CTE.test(sql)) return 'write-cte';
-  return null;
+  return cte ? 'write-cte' : null;
 }
 
-/** The statements of SQL `text`, split on each `;` outside a quoted string,
- *  a quoted name and a dollar quote, so a write after a read (`select 1;
- *  delete from t`) or after a leading `;` is read as its own statement. */
-export function sqlStatements(text) {
-  const out = [];
-  let start = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (ch === "'" || ch === '"') {
-      const end = text.indexOf(ch, i + 1);
-      if (end < 0) break;
-      i = end;
-    } else if (ch === '$') {
-      const open = /^\$(?:[A-Za-z_][\w]*)?\$/.exec(text.slice(i));
-      if (!open) continue;
-      const end = text.indexOf(open[0], i + open[0].length);
-      if (end < 0) break;
-      i = end + open[0].length - 1;
-    } else if (ch === ';') {
-      out.push(text.slice(start, i));
-      start = i + 1;
-    }
-  }
-  out.push(text.slice(start));
-  return out;
-}
+/** The statements of SQL `text`, cut at each `;` outside a comment, a
+ *  quoted string, a quoted name and a dollar quote (the shared reader), so
+ *  a write after a read (`select 1; delete from t`) or after a leading `;`
+ *  is read as its own statement. */
+export { sqlStatements };
 
 /** The static text of a template (its literal parts, each `${}` a
  *  placeholder). */
@@ -153,7 +108,7 @@ const STATEMENT_START =
 
 /** The static text of a template after its leading placeholders. */
 function afterLeadingPlaceholders(text) {
-  return dropSqlComments(text).replace(/^\s*(?:\$1\s*)+/, '');
+  return sqlCode(text).code.replace(/^\s*(?:\$1\s*)+/, '');
 }
 
 /** Whether `e` is SQL text the code holds as a literal (a string, or a
@@ -454,9 +409,8 @@ function isSqlBuilder(e, ctx, depth = 0) {
   return false;
 }
 
-/** The local names of `readSql` imported from @mantle/db. The package
- *  exports none yet, so no file can import one (typecheck refuses it) and
- *  every `readSql(...)` is read as any other call until it does. */
+/** The local names of `readSql` imported from @mantle/db (by name or
+ *  renamed). A readSql from anywhere else is read as any other call. */
 function readSqlNames(sf) {
   const names = new Set();
   for (const st of sf.statements) {
@@ -536,8 +490,8 @@ export function rawWriteSqlSites(path, text) {
   return out;
 }
 
-/** The files of the raw write allowlist (eslint-rules/raw-write-allowlist.mjs,
- *  made with the lint; none until then). */
+/** The files of the raw write allowlist (eslint-rules/raw-write-allowlist.mjs);
+ *  none when the file is missing. */
 function rawWriteAllowed(root) {
   const text = readRepoFile(root, 'eslint-rules/raw-write-allowlist.mjs');
   if (text === null) return new Set();

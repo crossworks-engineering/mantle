@@ -7,18 +7,19 @@
  *  - a tagged template (`sql`, `sqlTag`, a name or transaction handle that
  *    holds one), or `.unsafe(text)`, `<tag>.raw(text)` or `.execute(text)`
  *    with literal text, whose static text starts with INSERT, UPDATE,
- *    DELETE, MERGE or TRUNCATE, after its comments are stripped and a
- *    leading WITH and its CTEs are walked;
+ *    DELETE, MERGE or TRUNCATE, read on its code (comments, strings,
+ *    dollar quotes and quoted names blanked by the reader readSql uses,
+ *    packages/db/src/sql-text.ts) after a leading WITH and its CTEs;
  *  - text with a data-modifying CTE (`as ( insert|update|delete|merge`);
- *  - each statement of the text on its own (split on `;` outside quotes
- *    and dollar quotes), so `select 1; delete from t` and a leading `;`
- *    are found;
+ *  - each statement of the text on its own (split on `;` outside quotes,
+ *    comments and dollar quotes), so `select 1; delete from t` and a
+ *    leading `;` are found;
  *  - `.unsafe(x)` or `<tag>.raw(x)` whose text is no literal, and
  *    `.execute(x)` where x is neither literal text nor SQL a tag built
  *    (drizzle's execute runs a string as raw text), unless it is wrapped
- *    in `readSql(...)` imported from @mantle/db (none exists yet, so
- *    nothing passes that way today); a literal inside readSql is still
- *    read.
+ *    in `readSql(...)` imported from @mantle/db (packages/db/src/read-sql.ts,
+ *    which throws at run time for text that is not one statement that
+ *    reads); a literal inside readSql is still read.
  * Not findings: reads (FOR UPDATE included), definer calls
  * (`select "public"."mantle_x"(...)`), drizzle typed writes.
  *

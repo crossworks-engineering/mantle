@@ -28,7 +28,7 @@
  * the stdio MCP server. Unit tests that run tool calls write nothing.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { runAsActor, systemActor, type Actor } from './actor';
 import { afterOuterCommit, systemDb } from './client';
 import { auditLog } from './schema/audit-log';
@@ -307,6 +307,22 @@ function writeRow(call: AuditedCall, parts: AuditRowParts): void {
   });
 }
 
+/**
+ * The select of the audit row's insert. A typed insert-select names every
+ * column of audit_log in the table's order, so this select gives each a
+ * value in that order (id and created_at their column defaults'
+ * expressions); call-audit-select.test.ts holds the two to the same count
+ * and order.
+ */
+export function auditRowSelect(row: CallAuditRow): SQL {
+  const login = row.loginId && UUID_RE.test(row.loginId) ? row.loginId : null;
+  return sql`select gen_random_uuid(), u.id, coalesce(u.email, ${row.actorLabel}), 'api.write',
+                 ${row.method}, ${row.path}, ${row.meta?.ip ?? null}, ${row.meta?.userAgent ?? null},
+                 ${JSON.stringify(row.detail)}::jsonb, now()
+            from (select ${login}::uuid as id) l
+            left join auth.users u on u.id = l.id`;
+}
+
 function startRow(w: NonNullable<typeof writing>, row: CallAuditRow): void {
   if (w.sink) {
     w.sink(row);
@@ -315,17 +331,8 @@ function startRow(w: NonNullable<typeof writing>, row: CallAuditRow): void {
   // One statement: the login's email (the trail survives the login's
   // deletion). As the system, whatever the call ran as (a read-only actor
   // never writes here, an actor-less call is not refused for its row).
-  const login = row.loginId && UUID_RE.test(row.loginId) ? row.loginId : null;
   const write = runAsActor(AUDIT_ACTOR, () =>
-    // A typed insert-select names every column of the table: id and
-    // created_at take their column defaults' expressions.
-    systemDb.insert(auditLog).select(
-      sql`select gen_random_uuid(), u.id, coalesce(u.email, ${row.actorLabel}), 'api.write',
-                 ${row.method}, ${row.path}, ${row.meta?.ip ?? null}, ${row.meta?.userAgent ?? null},
-                 ${JSON.stringify(row.detail)}::jsonb, now()
-            from (select ${login}::uuid as id) l
-            left join auth.users u on u.id = l.id`,
-    ),
+    systemDb.insert(auditLog).select(auditRowSelect(row)),
   ).then(
     () => undefined,
     (err: unknown) => {

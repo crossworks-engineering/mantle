@@ -21,7 +21,7 @@
  * terminal wizard stops with the reason.
  */
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { authUsers, db, isUniqueViolation } from '@mantle/db';
 import { migrateWorkspacesQuietly, unmigratedBrainReason } from '../workspaces-migrate';
 import { hashLoginPassword } from './session';
@@ -32,6 +32,21 @@ export type FirstOwnerResult =
   /** The owner was made, but the brain is not on workspaces: `why` is
    *  mantle_ws_skip_reason's answer. Never served (see the top). */
   | { ok: false; reason: 'not-switched'; id: string; email: string; why: string };
+
+/**
+ * The select of the first owner's insert: one row while auth.users is
+ * empty, none after. The role is named: the column has no default (0190),
+ * and the anchor is always an admin (CHECK). A typed insert-select names
+ * every column of the table in its order, so this select gives each a
+ * value in that order: the ones the owner leaves out take their column
+ * defaults' values (created_at now(), session_epoch 0, the rest null).
+ * first-owner-select.test.ts holds the two to the same count and order.
+ */
+export function firstOwnerSelect(id: string, email: string, passwordHash: string): SQL {
+  return sql`SELECT ${id}::uuid, ${email}, ${passwordHash}, now(), true, null, null, 'admin',
+                   null, null, 0
+             WHERE NOT EXISTS (SELECT 1 FROM auth.users)`;
+}
 
 export async function createFirstOwner(
   rawEmail: string,
@@ -44,17 +59,9 @@ export async function createFirstOwner(
   try {
     // is_owner: the first-run account is the ANCHOR, the identity all brain
     // content is keyed to. Later co-admin logins (Settings, Logins) are not.
-    // The role is named: the column has no default (0190), and the anchor is
-    // always an admin (CHECK). A typed insert-select names every column of
-    // the table: the ones the owner leaves out take their column defaults'
-    // values (created_at now(), session_epoch 0, the rest null).
     const inserted = await db
       .insert(authUsers)
-      .select(
-        sql`SELECT ${id}::uuid, ${email}, ${passwordHash}, now(), true, null, null, 'admin',
-                   null, null, 0
-             WHERE NOT EXISTS (SELECT 1 FROM auth.users)`,
-      )
+      .select(firstOwnerSelect(id, email, passwordHash))
       .returning({ id: authUsers.id });
     if (inserted.length === 0) return { ok: false, reason: 'exists' };
   } catch (err) {

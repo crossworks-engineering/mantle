@@ -353,7 +353,13 @@ function assertUuid(v: string, field: string): string {
   return v;
 }
 
-export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
+/**
+ * The walk's text for graphPath, every value inlined (see the note in
+ * graphPath): run through readSql, which answers it unchanged. A relation
+ * verb sits in a string literal, so no verb (`nextval`, `delete`) reads as
+ * code there.
+ */
+export function graphPathSql(opts: GraphPathOptions): string {
   const maxDepth = Math.min(Math.max(1, Math.floor(opts.maxDepth ?? 3)), 6);
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200);
   const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
@@ -410,6 +416,11 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
     where depth > 0 ${toId ? `and node_id = '${toId}'::uuid` : ''}
     order by node_id, depth asc
     limit ${limit}`;
+  return queryText;
+}
+
+export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
+  const queryText = graphPathSql(opts);
 
   // Simple protocol (see note above) — the raw postgres.js client, no params.
   const client = (

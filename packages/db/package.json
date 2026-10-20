@@ -11,6 +11,7 @@
     "./client": "./src/client.ts",
     "./viewer": "./src/viewer.ts",
     "./store-broker": "./src/store-broker.ts",
+    "./sql-text": "./src/sql-text.ts",
     "./test-support": "./src/test-support.ts",
     "./matrix/oracle": "./src/matrix/oracle.ts",
     "./matrix/guide-oracle": "./src/matrix/guide-oracle.ts",
