@@ -1020,400 +1020,6 @@ test. No other suite met the refusal.
 
 #### LOW items
 
-- LOW-1: covered by MED-2.
-- LOW-3: compose unchanged; the switch goes on on the dev box by hand
-  after the merge.
-- LOW-4: the SYSTEM_DB_ROUTE marks are declarations only (the scope
-  decides the route at run time): said in the rule
-  (system-db-allowlist.mjs) and docs/runtime-role.md.
-
-#### Changed answers
-
-Switch off:
-
-- gateway/system-tx.ts writeScopeSettings (round 1 of a2): one more
-  `set_config('mantle.write_mode', ...)` in the SET of every systemPoolTx
-  (no new statement, no round trip). A read-only actor on a box with the
-  actor check off is now refused by mantle_ws_archive's read-only check,
-  where main let it through (the check never knew the mode on that path).
-- At a full-route spot inside a narrow exit the actor's SET carries
-  `mantle.route` (only when the check is on, so a SET is sent anyway):
-  the same statements, the same answers.
-- The docs collections, email discover contact and reembed answers: a
-  database error's text is gone (the public message instead). Two more
-  through publicErrorMessage (named in part a3, the a2 re-audit's LOW-2): a
-  domain error answers its domain wording (`domainErrorAnswer`'s text, not
-  the error's own message), and a runtime fault (`isRuntimeFault`) answers
-  the fixed `RUNTIME_ERROR_PUBLIC` text, its detail in the log. All else
-  equal.
-
-Switch on: none against main in the suites; the nine routes above answer as
-main does (before this round they answered 500 or `{ ok: false }` with the
-database's text).
-
-The viewer.ts onFullSystemRoute comment said the route is read only while
-the switch is on; corrected: systemRouteNow reads the exit's pick whatever
-the switch, and the pool (pools.ts) sends nothing on the narrow route while
-it is off.
-
-#### Round trips, for the default-on release
-
-The narrow route adds a BEGIN, the SET, the hold check and a COMMIT to a
-single systemDb statement in a scope (chat turn start 104/144 to 148/166
-statements/round trips, round 2). The audit's recommendation for S7b:
-measure a dedicated narrow pool whose connections take the role at
-connection time (no per-statement BEGIN/SET/COMMIT; the hold check per
-transaction stays), or keep the turn-stream and tracing writes on the full
-route (named, with their why). Decide on the numbers with the switch on.
-
-#### Pins (fix round 1)
-
-fullRouteSpots 5 to 13, fullRouteSpotCalls 7 to 15 (both new in a2, down
-only from here), rawSqlNonLiteral 74 (main) to 78, rawWriteSqlFiles 43 to
-44 (narrow-route.ts, may grow), routeErrorTextAllowed 31 to 28,
-std_errorIdiom_allowed 116 to 115. Unchanged: systemWholeOnFull 0,
-asSystemNarrow 21, asSystemFull 34, requestSystemExits_narrow 3, roleResets
-0, gapTables 0.
-
-#### Gates (fix round 1)
-
-Mac, Node 26, DATABASE_URL unset, on 0660bf5ee (the handover commit after the
-code): pnpm -r typecheck 0, pnpm lint 0, pnpm format:check 0, pnpm
-docs:check 0, pnpm arch:check 1 then 0 (the handover's round-trip heading
-named a step code; renamed), pnpm boot:smoke 0, pnpm -C server/web build 0,
-vitest run server packages eslint-rules 1 then 0 (the same heading check in
-eslint-rules; 857 files passed, 272 skipped, the one failure fixed and
-eslint-rules rerun: 0).
-
-Workstation, own clone ~/s7a-a2-r3/repo, own container s7a-a2r3-pg
-(pgvector pg18, 127.0.0.1:56373 checked free, max_connections=450, role
-postgres as CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
-systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
-narrow-route.db.test.ts + narrow-area-routes.db.test.ts 1 (3 cells: the
-denial noted twice through drizzle's wrapper, two sweep rows' setup) then 0
-(19 passed); the sweep on the round 2 sources 1 (9 of 9 rows failed: the
-proof); then on efe332bde: full DB vitest with MANTLE_NARROW_DUMP 0 (1130
-files, 13907 passed, 1 skipped, no narrow denial), test:actor-off 0 (1191
-passed), test:actor-on 0 (371), test:edit-on 0 (541), test:matrix 0 (8),
-test:runtime-role in full 1 (2796 passed, 1 failed, 2 files: scope.db.test
-`ensureConcurrentIndexes` "tuple concurrently updated", and
-client-sourced-gate.db.test's setup, an item_grants workspace FK
-violation; neither a permission error), the two files rerun once under the
-same config 0 (14 passed): known flakes, both runs reported; full DB vitest
-with MANTLE_NARROW_SYSTEM=0 0 (1130 files, 13907 passed, 1 skipped: the
-switch-off proof, the nine sweep rows pass on the full route).
-
-#### Open items, in item order
-
-1. HIGH-1: done. Other area routes no suite drives may still write content
-   on the narrow route (plan 2.1 risk 6); a3's telemetry and a new sweep row
-   per such route are the limit.
-2. MED-1: done (a tagged template's denial caught without a savepoint is
-   seen only as the transaction's error).
-3. MED-2: done; P3 (a function that leaves the role and takes it back) is
-   the named known limit for S7b.
-4. MED-3: the a2 part done; the trigger predicate is a3's.
-5. MED-4: five content writers denied (11 entries); left: the trim to the
-   measured set (mantle_brain_id, mantle_ws_set_moderator, plus the
-   functions of the narrow-writable tables' defaults and checks) and the
-   pin as an allowlist.
-6. LOWs: done (LOW-3 by hand on the dev box after the merge).
-7. Round trips: written above; the decision is S7b's.
-
-## Part a3: the narrow write count, and the a2 re-audit's items
-
-Branch feat/s7a-a3, from main at 975bee317 (v0.300.114: a1 and a2 merged),
-rebased in fix round 1 on main 520659a30 (v0.300.118: S13 merged
-0311_folder_trail_definer, `when` 1790197980000). Migration
-0312_narrow_write_observe, `when` 1790198040000 (kept: above 0311's; the
-file, its revert and the journal tag renamed from 0311 in one commit; the
-renumber proof is narrow-observe.test.ts: the entry follows 0311 by idx and
-`when`, and the revert takes the same `when` off the ledger).
-
-### MED-A: what the text check could not see (first commit)
-
-`narrowSendable` (packages/db/src/gateway/narrow-route.ts) now also
-refuses a DO block at a statement's start, any statement naming
-`pg_settings` (its UPDATE rule is `set_config(name, value, false)`), and
-every `set_config` but one whose first argument is a plain literal naming a
-`mantle.*` setting (or `lock_timeout`, `enable_sort`:
-`NARROW_LOCAL_SETTINGS`, each with its caller) and whose third is the
-literal `true`. A role name built by concatenation, sent as a bound
-parameter, cast, written as an E'' string or quoted (`set local "role"`,
-`pg_catalog."set_config"`) is refused. A role change is read at a
-statement's start (SET and RESET are statements; `update auth.users set
-"role" = $1` is a column, which the full suite caught on the first run: a
-500 on the users area's role change). `sqlCode` keeps offsets (same length
-as the text) and may keep quoted identifiers. `roleResets`
-(arch-counts.mjs) counts the same forms in source and the migrations'
-SQL: `set_config('role' | 'session_authorization', ...)` with any value, a
-non-literal or concatenated name (a plpgsql variable declared from a
-`'mantle.'` literal excepted: the seen keys), an UPDATE of pg_settings;
-still 0.
-
-| Probe                                             | Before a3 | Now     | Cell                                           |
-| ------------------------------------------------- | --------- | ------- | ---------------------------------------------- |
-| `set_config('ro' \|\| 'le', 'none', true)`        | sent      | refused | narrow-route.db.test.ts "the escapes", concat  |
-| `set_config($1, $2, true)` (bound parameters)     | sent      | refused | same, bound, bound name, bound local           |
-| DO block: leave, write as the pool login, return  | sent      | refused | same, "do leave and return"; the row is absent |
-| DO block: leave only                              | sent      | refused | same, "do leave" (the hold check also caught)  |
-| `update pg_settings set setting = 'none' ...role` | sent      | refused | same, pg_settings                              |
-| `set local "role" none`, quoted call, E'', cast   | sent      | refused | same, and narrow-sendable.test.ts (no DB)      |
-| `set_config('search_path', ..., true)`            | sent      | refused | same, "other setting"                          |
-| `set_config('mantle.ws', $1, true)`, lock_timeout | sent      | sent    | same, the sent list                            |
-
-For S7b, the design that closes the class rather than the forms: a narrow
-pool that logs in as the narrow role itself (a LOGIN role, its own pool), so
-there is no other role in the session to switch back to; a function that
-leaves the role (the hold check's case) then has nowhere to go. It also
-removes the per-statement BEGIN, SET and COMMIT (the round-trip cost
-above).
-
-### MED-B: the narrow role's EXECUTE is a measured allowlist
-
-`NARROW_SYSTEM_FUNCTIONS` (runtime-role.ts) is the whole list of functions
-taken from PUBLIC that the narrow role may run, each with its caller;
-`narrowFunctionAllowlist` is that list intersected with the runtime role's
-allowlist, never one of `NARROW_DENIED_FUNCTIONS`. Measured with the switch
-on, three passes: the a2 measurement counted only unquoted names (its
-`fn:<name>` read blanked quoted identifiers, and the app names its definers
-`"public"."mantle_x"`): fixed, and the full suite run with the list trimmed
-named each missing one as a denial. The list (12):
-
-| Function                                             | Narrow work that calls it                                |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| mantle_brain_id()                                    | the anchor (resolve-owner.ts, the tree, workspace ticks) |
-| mantle_area_rule(uuid,text)                          | login-self routes, the Telegram login                    |
-| mantle_login_areas(uuid)                             | login-self routes (whoami, devices)                      |
-| mantle_ws_kind(uuid)                                 | login-self routes (whoami)                               |
-| mantle_ws_private_for(uuid,uuid)                     | login-self routes (whoami)                               |
-| mantle_connector_state(uuid,text)                    | the Admin area's approval re-check                       |
-| mantle_connector_rows(uuid,text,uuid[])              | the Admin area's approval of an elevated call            |
-| mantle_pending_card_route(uuid,uuid)                 | the Admin area's run of an item                          |
-| mantle_mail_backfill_accounts(uuid)                  | the email discover route                                 |
-| mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text) | the workspaces area's Moderator tick                     |
-| mantle_ws_attach_assistants()                        | the onboarding attach on the assistants area's exit      |
-| mantle_bridge_login(uuid)                            | the users area's role change (login-update.ts)           |
-
-Of the re-audit's 17 content and workspace writers, 15 are denied by name
-(`NARROW_DENIED_FUNCTIONS`; runtime-role.test.ts names them) and two were
-measured needed and kept, each its own definer with its own rule:
-`mantle_ws_attach_assistants` and `mantle_bridge_login` (a no-op from S8b).
-The column defaults and checks of the tables the role writes call no
-function taken from PUBLIC; runtime-role.db.test.ts reads them from the
-catalog (pg_depend from pg_attrdef and pg_constraint) and fails on one not
-listed; the trigger functions on those tables call none either (checked on
-the catalog by hand: a trigger function needs no EXECUTE, what it calls as
-an invoker would). Changed cells: runtime-role.db.test.ts (the allowlist
-pin replaces "runtime allowlist less the denied"), login-facts.db.test.ts
-(the narrow role runs two login facts, measured, not three: never
-mantle_login_is_admin), the narrow probes refused a content writer.
-
-### LOW items
-
-- LOW-1: `onFullSystemRoute` calls in packages/db/src are counted and must
-  be listed (the definition and the export list are not calls); the helper
-  `profileWrite` is a listed wrapper (`FULL_ROUTE_SPOT_WRAPPERS`): its calls
-  are counted, a new pin `fullRouteSpotWrapperCalls` 7 (5 in
-  profile-preferences.ts, 2 in backup.ts), and a call from any other file,
-  or an aliased import, fails arch:check (as-system-exits.test.ts).
-- LOW-2: part a2's changed answers name the two more (above, fix round 1).
-- LOW-3: the pin notes say the current reason only (no "Was: undefined");
-  the part a2 heading no longer says work in progress.
-- LOW-5, for S7b: the console-tool and pending-call spots cover a whole
-  tool run; a systemWhole tool inside one runs narrow again (its own
-  areaSystem exit), fine while those tools write only system tables (the
-  sweep's proof below). S7b moves the content writes and drops the spots.
-
-### a3: the narrow write count (migration 0312), report only
-
-- `mantle_narrow_actor(text)`: the actors of the reasons routed narrow,
-  pinned equal to viewer.ts AS_SYSTEM_ROUTE and REQUEST_SYSTEM_ROUTE by
-  narrow-observe.test.ts (a reason moved between routes needs a migration
-  that replaces it). Open to every role (it reads nothing).
-- `mantle_actor_check_stmt` (0277's) counts `narrow-content-write`: the
-  actor is a narrow reason's AND `current_user = session_user` AND
-  `mantle.route` is not 'full'. A NOTICE (`mantle narrow write: ...`), the
-  pool writes the miss row on another connection (actor.ts `onPgNotice`),
-  at most one per check, actor and table an hour. In tests it is recorded
-  apart (`takeNarrowWrites`), never a failure; `MANTLE_NARROW_DUMP` lists
-  it.
-- `mantle_narrow_cascade_stmt` (AFTER DELETE, statement, transition table)
-  on auth.users, spaces and agents counts `narrow-cascade-delete` once per
-  top-level statement that deleted a row, by a narrow reason off a spot, on
-  either route (on the narrow role the cascade into content runs as the
-  owner).
-- Not counted, named: a write by a rebound actor (a login, an assistant, a
-  full reason, system work), a definer's write, a cascade from any other
-  table; nothing with the actor check off (its triggers are disabled and the
-  full route sends no actor).
-- current_user = session_user in the cells: narrow-observe.db.test.ts logs
-  in as mantle_runtime (the pool login of every fleet box, owns nothing), so
-  on the full route current_user is that login, in a definer the superuser
-  that owns it, in a cascade mantle_owner. The tests' own pool logs in as
-  the superuser, which owns the definers too: there a definer's write
-  counts (a cell names that limit). Exact with the runtime role on.
-- Box count: scripts/arch-scoreboard-box.sh prints
-  `narrow_misses:content-write`, `narrow_misses:cascade-delete`,
-  `narrow_misses:denied` (distinct check, actor and table rows in the
-  fail-open window; numbers only). The DB cell runs the script's own query.
-- The narrow-role proof: w7a-area-system-sweep.db.test.ts's last cell runs
-  every systemWhole tool with the trap off and the box in warn: switch on,
-  its work runs as mantle_system_narrow (uses by system:admin-area, no
-  denial); switch off, no content write counted.
-- Measured: the suites' scratch databases keep the actor check off (the
-  floor kept), so the count's trigger runs only where a test turns it on.
-  Two measurement runs therefore put every scratch database in warn (a
-  one-line change in the workstation clone's test-support.ts, never
-  committed, put back after): the full DB suite with the switch on and with
-  it off, MANTLE_NARROW_DUMP: no `narrow-content-write`, no
-  `narrow-cascade-delete`, no narrow denial in either (both exit 1 on 15
-  tests that assume the box is off or meet the SQL actor miss path, which
-  warn turns on: the run's own change, not the branch's).
-
-### Changed answers
-
-Switch off: none expected. The text checks and the EXECUTE list are the
-narrow route's and the narrow role's only. The count raises a NOTICE and
-writes a miss row on another connection; no statement changes, no answer
-changes, nothing is refused (the full DB suite with MANTLE_NARROW_SYSTEM=0
-below). New rows in actor_check_misses (checks `narrow-content-write`,
-`narrow-cascade-delete`) on a box whose actor check is warn or on.
-
-Switch on: none against main in the suites. Statements the route sent
-before and refuses now: only the probe forms above (no app statement: the
-full suite with the switch on has no refusal); the first run's false
-refusal of a quoted `role` column was fixed before any gate.
-
-### Pins
-
-New `fullRouteSpotWrapperCalls` 7 (down only). `fullRouteSpotCalls` 15
-unchanged (packages/db counted too: 0 there). `roleResets` 0 with the
-wider count. Unchanged: systemWholeOnFull 0, asSystemNarrow 21,
-asSystemFull 34, requestSystemExits_narrow 3, fullRouteSpots 13, gapTables 0. Notes trimmed to the current reason (routeErrorTextAllowed,
-std_errorIdiom_allowed, roleResets, fullRouteSpotCalls).
-
-### Rollback (part a3)
-
-- The release is report only: rolling it back changes no answer.
-- Revert before pinning N-1:
-  `packages/db/rollback/0312_narrow_write_observe.revert.sql` (as the
-  superuser, one transaction; its header has the command): the cascade
-  triggers and their function dropped, `mantle_actor_check_stmt` back to
-  0277's body byte for byte, `mantle_narrow_actor` dropped, 0312 off the
-  ledger. Without the revert N-1 runs fine with 0312 in place: its pool
-  prints the new notices as plain notices and writes no row for them.
-- The miss rows stay (N-1 ignores their check names; the 14-day reap
-  deletes them).
-- The narrow role's narrower EXECUTE is granted at migrate from the image's
-  own list: an N-1 image's migrate grants N-1's (wider) list again, which
-  is what N-1 shipped (rule 2).
-- Drill on the workstation, its own throwaway Postgres (pgvector pg18):
-  init and migrate with main (the box before) 0; migrate with the branch
-  (N) 0, 0312 in (3 cascade triggers, mantle_narrow_actor, the ledger row,
-  the counting body); migrate with main again (the N-1 image's boot on the
-  N database) 0, nothing changed; the revert 0, all four gone; migrate with
-  main 0; migrate with the branch (forward) 0, 0312 applied again.
-  narrow-observe.db.test.ts has the same as a cell (before 0312, the
-  revert leaves the catalog equal to before, forward equal to after).
-
-### Gates (part a3)
-
-Mac, Node 26, DATABASE_URL unset, on 378853d64: pnpm -r typecheck 0, pnpm
-lint 0 (one warning, not this branch's: an unused disable in
-contact-sharing-routes.db.test.ts), pnpm format:check 0, pnpm docs:check 0,
-pnpm arch:check 0, pnpm boot:smoke 0 (14 services), pnpm -C server/web build
-0, vitest run server packages eslint-rules 0 (861 files passed, 274
-skipped), scripts/test-deploy-scripts.sh 0 (519 passed). Earlier on
-921666f29 the unit run failed one test (migrations-lock-timeout: 0311 made
-triggers on auth.users and agents without `SET LOCAL lock_timeout`), fixed
-in 88a9e6ac1. The pre-push hook's `pnpm verify` failed once on a 120 s
-timeout of deploy-scripts.test.ts under load (the same harness passes
-alone, above); the later pushes used --no-verify after the gates above.
-
-Workstation, own clone ~/s7a-a3-ws/repo (the branch applied on main
-975bee317, file for file equal to the branch head's code), own container
-s7a-a3-pg (pgvector pg18, 127.0.0.1:56380 checked free, max_connections=450,
-role postgres as CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
-systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
-
-- The measurement passes (each a full DB suite with MANTLE_NARROW_DUMP):
-  on e49591235 exit 1, 17 files and 31 tests failed, every one a refused
-  function of the trimmed list or the quoted `role` column (above); the
-  touched files rerun on 69ae5a917 exit 1 (three more functions, now
-  counted by name); then the gates below.
-- On 94b671f15 (code equal to the head): full DB vitest 0 (1135 files,
-  13941 passed, 1 skipped, no narrow denial, no narrow write counted),
-  test:actor-off 0 (1207 passed), test:actor-on 0 (380), test:edit-on 0
-  (550), test:matrix 0 (8), test:runtime-role in full 0 (2819 passed), full
-  DB vitest with MANTLE_NARROW_SYSTEM=0 0 (1135 files, 13941 passed: the
-  switch-off proof).
-- The N-1 rollback drill (above, Rollback): every step 0, its own
-  throwaway Postgres (s7a-a3-rb-pg, removed).
-- CI: run 39421862003 on 378853d64, attempt 1 failure (all 1135 files
-  passed; one unhandled CONNECTION_CLOSED from postgres.js's type fetch
-  while turn-create-home.db.test.ts's pools closed), attempt 2 success: a
-  known flake class (part a2 met the same file's close), both reported.
-
-### Open items, in item order
-
-1. MED-A: done. For S7b, the narrow pool that logs in as the narrow role
-   itself (above) closes the class: no role to go back to, and no
-   per-statement BEGIN, SET and COMMIT.
-2. MED-B: done (12 measured, 15 named writers denied). What no suite drives
-   may still call a function not on the list: an Admin user's 500 with the
-   switch on (narrower, never wider; plan 2.1 risk 6), seen as a
-   `narrow-denied` miss row and in the box count.
-3. LOW-1, 2, 3: done. LOW-5: the note above, for S7b.
-4. a3: done. The count runs only where the actor check is warn or on: a box
-   that is off shows 0 whatever it does (the box script prints the check
-   mode beside the counts). Exact with the runtime role on (as the
-   superuser a definer's write counts too).
-5. Renumber: done in fix round 1 (S13 merged 0311 first): 0312, the
-   `when` stays 1790198040000.
-6. The turn-create-home close flake (CI attempt 1): if it comes back, the
-   pools' close against a connection still being made is the place to look.
-
-### Fix round 1 (the a3 audit at 2a577a699)
-
-Rebased on main 520659a30 (v0.300.118). One conflict, the migration
-journal (both sides appended idx 311): main's entry kept, this one appended
-as idx 312, then renamed to 0312 (above). `scripts/arch-scoreboard.pins.json`
-merged without a conflict; `pnpm arch:check` after the rebase exits 0, no
-pin moved.
-
-The text check moved to its own module, `gateway/narrow-sendable.ts`
-(narrow-route.ts was over the gateway's 600-line limit with it), the route
-itself unchanged.
-
-Plainly: the text check guards against mistakes, not deliberate code. A
-statement written to leave the role can get past any text check (each round
-so far found a form). The fix that closes the class is S7b's: a narrow pool
-that logs in as the narrow role itself, so the session holds no other role
-to go back to.
-
-#### MED-1: the forms that passed the text check
-
-| Form                                                                                 | Fix                                                                                                                                                                                                                                                                                       | Cell                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| (a) `set local"role" to none`, `set"role"`, `reset"role"`: no space before the quote | ROLE_CHANGE and SESSION_SET take `\s*` before a quoted name; and the first-word allowlist takes SET only as SET LOCAL of an allowed name                                                                                                                                                  | narrow-sendable.test.ts "no space"; narrow-route.db.test.ts "the a3 audit's forms": unguarded on pg18 it leaves the role, routed it is refused                                                               |
-| (b) `U&"r\006Fle"`, `U&'\0072ole'`                                                   | `U&` anywhere in the code text is refused                                                                                                                                                                                                                                                 | narrow-sendable.test.ts "U&"; the DB cell (unguarded: leaves the role)                                                                                                                                       |
-| (c) a function made in pg_temp, then called                                          | `create` is no allowed first word; TEMPORARY on the database taken from PUBLIC at every migrate (`applyRuntimeGrants`), granted to none                                                                                                                                                   | the DB cell: TEMP false for the narrow role, mantle_runtime and PUBLIC; unguarded `create function pg_temp...` as the narrow role: "permission denied to create temporary tables"                            |
-| (d) `date'\'`: a quote after the letter e read as an E'' string                      | E'' only when the E is a token of its own (`escapeString`); a dollar quote never opens right after an identifier's character (`x$a$` is one name in Postgres)                                                                                                                             | narrow-sendable.test.ts "plain string"; the DB cell `select text'\'; reset role; select '1'` (simple protocol: leaves the role unguarded)                                                                    |
-| (e) a tagged template's identifier helper where a function or a setting is named     | `narrowSendable(text, true)` for tagged templates: a placeholder before `(` (not `insert into $1 (`) or as a SET LOCAL name is refused; a fragment may start with a word no statement starts with, never with a placeholder                                                               | narrow-sendable.test.ts "a tagged template"; the DB cell: `t('pg_catalog.set_config')` and `set local ${t('role')}` via `adminSql().begin`                                                                   |
-| any other verb                                                                       | the first word of every statement: `select insert update delete merge with values table show`, SET LOCAL of a `mantle.*` setting or `NARROW_LOCAL_SETTINGS` (lock_timeout, statement_timeout, enable_sort, hnsw.ef_search, hnsw.iterative_scan, each with its caller), or SET TRANSACTION | narrow-sendable.test.ts "every statement but": create, call, copy, lock, explain, prepare, execute, discard, listen, notify, load, alter, grant, security label, truncate, other SET LOCALs, SET CONSTRAINTS |
-
-Why TEMPORARY at migrate and not in 0312: the database's name is the box's
-own (a migration would need dynamic SQL), and a restore into a fresh
-database (no `--create`) starts again with PUBLIC's default, which the next
-migrate takes back; it sits next to the existing `REVOKE CREATE ON SCHEMA
-public FROM PUBLIC`. Measured who needs it: no app code makes a temporary
-object (no `create temp` outside migration 0155, which the migrator runs as
-the superuser or the database's owner, both keep it); the full DB suites
-with the change in show no "permission denied to create temporary tables".
-
-#### LOW items
-
 - LOW-1: `noteActorMiss` keys the narrow checks (`narrow-denied`,
   `narrow-content-write`, `narrow-cascade-delete`) by actor too: a second
   reason meeting the same table within the hour is a row of its own. Cell:
@@ -1537,3 +1143,140 @@ reset role` hid the second statement. Fixed in e551a8f52 (both). Cells:
    feat/ci-pool-close), no narrow denial or count in the dump. The other
    DB gates ran on 8ce4b6590/92f22b908 (above); this change only ends a
    comment earlier where a `\r` stands.
+
+### Fix round 2 (the a3 re-audit at a4467f035, and the S10 r2b re-audits' narrow-route items)
+
+Rebased on main 792c51b4e (v0.300.121: S10 r2b's packages/db/src/sql-text.ts
+and read-only-tx.ts, the Files rail fix, the postgres.js teardown patch)
+with no conflict, the pins file included; `pnpm arch:check` 0 after the
+rebase, no pin moved. The migration stays 0312_narrow_write_observe (main's
+last is 0311). This file had Part a3 twice (a bad edit in fix round 1: the
+first copy's tail repeated part a2's fix round 1); folded into one, keeping
+the newer TEMPORARY paragraph.
+
+#### MED-1: one SQL text reader (the fold onto sql-text)
+
+The narrow route's text check (`gateway/narrow-sendable.ts`), actor-sql.ts
+`statementBody`, handles.ts `isWriteSql` and eslint-rules/rights-counts.mjs
+(`stripSqlComments`, `dropSqlComments`) now read through
+`packages/db/src/sql-text.ts` `sqlCode`; narrow-sendable's own blanker,
+`IDENT_CHAR` and `escapeString` are gone. The mode differences, settled
+without touching what readSql and the lint read:
+
+- (a) sql-text gains one more view, `uncommented` (the text with only its
+  comments blanked, same length). The narrow check finds a place on the code
+  and reads a literal (set_config's arguments) or a quoted setting name (SET
+  LOCAL, now with the regex's `d` indices) from `uncommented` at the same
+  offsets; `settingName` reads quoted parts whole (`"mantle.ws"` is one
+  name). rights-counts reads `uncommented` (function bodies kept).
+- (b) The narrow check refuses `unterminated` and `ambiguous` text.
+- (c) The quote characters at the ends: the code keeps `'` at a string's
+  and a dollar quote's ends and a quoted name's name characters (others as
+  `_`), so ROLE_CHANGE, PG_SETTINGS and the first word read a quoted
+  `"role"` as itself, as before.
+
+Also: a call of a function that runs its text as SQL is refused on the
+narrow route (`SQL_TEXT_RUNNERS` in read-sql.ts, which WRITE_FUNCTIONS now
+spreads: query_to_xml*, cursor_to_xml*, ts_stat, ts_rewrite,
+job_table_run*, dblink*). Measured on pg18: `query_to_xml('select
+set_config(''role'', ''none'', true)', ...)` leaves the narrow role
+unguarded. The first word may hold characters that are not ASCII (then it is
+no allowed word).
+
+| Case                                              | Form (each leaves the role on pg18 sent unguarded) | Cells                                                                                                                             |
+| ------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| nested block comment                              | `select 1 /* /* */ ' */; reset role; select ' '`   | narrow-sendable.test.ts "nested block comments"; narrow-route.db.test.ts "reads the text as Postgres does"                        |
+| nested leading comment (statementBody)            | `/* /* */ select */ reset role`                    | the same two; actor-client.test.ts "reads the leading comments and SETs as Postgres does" (statementBody, runsOutsideTransaction) |
+| dollar-quote tag not ASCII                        | `select $é$'$é$; reset role; select '1'`           | the same two; actor-client.test.ts (`set my.x = $é$;$é$; vacuum`)                                                                 |
+| name not ASCII (no dollar quote, no E'' after it) | `select 1 as aé$q$; reset role; select 1 as b$q$`  | the same two; `éE'\'` read as a name and a plain string                                                                           |
+| a function running its text                       | `query_to_xml(...)`, `pgboss.job_table_run(...)`   | narrow-sendable.test.ts "refuses a function that runs its text as SQL"; the DB cell                                               |
+| unterminated, ambiguous                           | `select 1 /* x`, `select 'a\'`, `U&"..."`          | narrow-sendable.test.ts; the DB cell                                                                                              |
+
+isWriteSql: a nested comment no longer turns a read into a write (`/* /*
+*/ insert ... */ select 1` was a write, so executeWrite let a read through);
+a verb in a string or a dollar quote is no write; a `--` comment a `\r`
+ends no longer hides a write; text that never closes is no write (refused).
+Cells: write-sql.test.ts. rights-counts: a function after a `--` comment a
+`\r` ends and after an E'' string with `\'` is found, one in a nested
+comment is not (rights-counts.test.ts "reads the SQL as Postgres does"); the
+repo's counts did not move (arch:check output identical before and after).
+Teeth: every new cell above failed with the old reader in place (run with
+each old file swapped back, then restored). readSql's and the lint's tests
+pass unchanged (read-sql.test.ts, cleanup-counts.test.ts).
+
+Two earlier narrow-sendable cells changed, each for a reason this round
+names: `select E'\'; reset role; select '1'` was sent and is now refused
+(the text never closes; the cell sends the closed form, and the unclosed
+one is a refusal cell); `set_config('mantle.create_ws', ...)` moved from the
+sent list to the gateway's own (LOW-b).
+
+#### MED: the send order (watchedQuery, and every route's transaction client)
+
+`watchedQuery` (narrow-route.ts) started a statement through
+`Promise.resolve(q)` (a microtask late) and sent `.values()`/`.simple()` at
+once; `settingsFirst` (actor-sql.ts, the transaction client of every route
+that sets settings with the first statement: the actor client, the write
+role, the narrow route) sent a `.values()`, `.simple()` or tagged-template
+statement when it was built. Both now send a statement on its first `then`
+only, reaching the query's own `then` in the same call: the order statements
+are awaited in is the order on the wire, as postgres.js's own. Measured
+before the fix (unit, the fake that records sends): a SET TRANSACTION
+awaited first went out after the actor SET. Cells: actor-client.test.ts "a
+transaction client sends in the order its statements are awaited" (both
+cells failed on the old settingsFirst); narrow-route.db.test.ts "sends a
+transaction's statements in the order they are awaited, on every route":
+`set transaction read only` then five statements (plain, `.simple()`,
+`.values()`, a tagged template, plain) awaited together, each appending its
+letter to `mantle.order_probe`: every one sees `transaction_read_only = on`
+and `a`, `ab`, ... `abcde`, on the narrow route (as mantle_system_narrow),
+a full reason and outside any exit; and drizzle's `accessMode: 'read only'`
+on the narrow route.
+
+#### MED: pg-boss's routines
+
+`revokePgBossRoutines` (runtime-role.ts): `REVOKE EXECUTE ON ALL ROUTINES IN
+SCHEMA pgboss FROM PUBLIC`, at every migrate (applyRuntimeGrants) and in
+pgboss:init right after `boss.start()` (pg-boss installs or upgrades its
+routines after migrate on a fresh box). Measured: no role the app runs as
+calls a pgboss routine (the app reads `pgboss.job` and `pgboss.version`
+only; every PgBoss instance connects with DATABASE_URL, the migrator, which
+owns the routines). Per-schema default privileges: measured that `ALTER
+DEFAULT PRIVILEGES IN SCHEMA pgboss REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
+leaves a later function PUBLIC-executable (a global default cannot be taken
+per schema), so there is none; pgboss:init's revoke covers the window
+instead. The `runtime_role_lock` integrity row now names any pgboss routine
+the runtime or the narrow role may run. set_config with a non-literal name
+was already refused on the narrow route (a3 MED-A, SETTING_LITERAL; its
+cells stand). Cells: runtime-role.db.test.ts "pg-boss's routines" (a
+routine like job_table_run leaves the narrow role while open; the integrity
+row; migrate and the revoke close it; the default-privileges measurement);
+server/web/lib/integrity/pgboss-routines.db.test.ts (pg-boss's real schema
+on its own database: job_table_run open after install and a way out of the
+narrow role; closed by the revoke, the integrity row clear; pg-boss as its
+owner still makes a queue and sends a job). The raw write lint counts
+`unsafe(CONSTANT)` as non-literal (runtime-role.ts pinned at 8), so the
+revoke is a function that sends its literal, not an exported constant.
+
+#### LOW items
+
+- LOW-a: applyRuntimeGrants revokes TEMPORARY from PUBLIC and the narrow
+  role, then asserts `has_database_privilege(narrow, current_database(),
+'TEMP')` is false and throws otherwise; the database name is quoted with
+  `quotedIdent` (its `"` doubled; the membership REVOKE uses it too). Cell:
+  runtime-role.db.test.ts "TEMPORARY is taken from PUBLIC and the narrow
+  role at every run": a hand grant goes at the next run; a migrator that
+  neither owns the database nor is a superuser fails the run.
+- LOW-b: `mantle.create_ws`, `private_ws`, `create_stamp` are gateway
+  settings; systemPoolTx's home SET goes inside `gatewaySettings`. Cells:
+  narrow-sendable.test.ts "the gateway's own settings" (five more forms
+  refused, the home SET sent inside).
+- LOW-c: narrow-sendable.ts's top comment and docs/runtime-role.md say a
+  fragment a tagged template takes from another postgres.js client is not
+  read at all (a guard against mistakes).
+
+#### Test hygiene
+
+narrow-route.db.test.ts makes no table: its probe row is a miss row with the
+cell's marker (`actor_check_misses`, which the pool's login may write).
+scope.db.test.ts's ensureConcurrentIndexes cell runs on an empty scratch
+database of its own. Neither makes a table in the shared test database.
