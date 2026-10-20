@@ -25,10 +25,15 @@ and the same predicates, so each reader's row rules apply as before:
   counted from the folder rows already read. Two statements in all.
 - `listAllFoldersWithTrail` takes its files list from `readRail` (the rows
   below the root), so the trail no longer reads the files a second time.
-- `listFolders` uses `countsBelow`: one grouped query for the folders two
-  levels below the parent (by their parent's path) and one for the files
-  one level below it (by path). Three statements in all, for any parent,
-  `*` and `files.*` included.
+- `listFolders` reads its rows, then counts them all through
+  `folderCountsFor` (the counter the trail rows already used: one
+  statement for the rows' subfolders and files, by the rows' exact
+  paths). Two statements in all, for any parent, `*` and `files.*`
+  included; one when the parent has no subfolders (it returns before
+  counting).
+- The rail and its trail count from rows already read through one helper
+  (`countsFromPaths`); the trail reuses the rail's counts rather than
+  counting them again.
 
 `folderCounts` stays for the single-folder reads (a folder by id or path,
 create, rename, delete).
@@ -43,10 +48,46 @@ files nobody granted). Cell file:
 `packages/files/src/folder-counts-grouped.db.test.ts` (5 cells: the
 fixture, `listAllFolders` and `listFolders` against the old loop kept
 verbatim in the test, the member's rail with the trail definer, and the
-statement count: two for the rail and three for a list, the same after 40
-more folders, while the old loop sends 80 more).
+statement count: two for the rail, two for a list and one for a list with
+no folders in it, the same after 40 more folders, while the old loop sends
+80 more).
+
+## Fix round 1
+
+The audit at a3c3ce111 (verdict merge) found three lows.
+
+- LOW-1, the cells did not catch an unscoped subfolder count in
+  `listFolders`: the member read no folder that held a subfolder it could
+  not read. The fixture now has `files.a.q`, a subfolder private to the
+  other login under the granted `files.a`; the owner reads `files.a` as
+  3 subfolders and 3 files, the member as 2 and 2. Run on the workstation
+  with `NODE_ENV=production`: with the old `countsBelow` subfolder query
+  moved onto `systemDb`, the `listFolders` cell fails (childFolderCount
+  expected 2, received 3); with the new `folderCountsFor` query moved onto
+  `systemDb`, the same cell fails the same way. Both mutations were made
+  on a throwaway clone only, reverted there, never committed.
+- LOW-2, three counters doing one job: `countsBelow` is gone and
+  `listFolders` uses `folderCountsFor`. The three copies of "count
+  children from known paths" (in `countsBelow`, `readRail` and
+  `listAllFoldersWithTrail`) are now `countsFromPaths`, called once, in
+  `readRail`. `folderCounts` stays for the single-folder reads (a folder
+  by id or path, create, rename, delete): it compares the path as text, so
+  a path that is not an ltree counts nothing, where `folderCountsFor`
+  casts it and would throw.
+- LOW-3, statements for an empty list: `listFolders` returns before
+  counting when the parent has no subfolders (one statement).
+
+`folderCountsFor`'s subfolder half matches by `subpath(...)`, which the
+path index cannot serve, where `countsBelow` used an lquery. On a copy of
+the migrated database with 2,221 folders and 200,000 files (as the
+superuser), counting the 20 rows of `files` took 1.5 ms and the 10 rows of
+`files.t1` 1.2 ms (`countsBelow`: 0.5 ms and 1.1 ms for its two
+statements). An extra `path ? lquery[]` predicate did not change the plan,
+so the query is unchanged.
 
 ## Perf
+
+The table below is from the first round (`countsBelow` for a list).
 
 A scratch brain on the workstation: 202,221 nodes, 2,221 folders under
 `files` (20 top, 10 mid each, 10 leaf each), 100 files in each leaf

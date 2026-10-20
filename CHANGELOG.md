@@ -9,8 +9,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Fix:** the Files tree rail (and the `folder_list` tool's whole tree)
   counted each folder's subfolders and files with two queries per folder,
   so an owner with about 2,000 folders waited many seconds. Every folder is
-  now counted in one grouped query (the rail) or two (one folder's list),
-  whatever the number of folders. The answers do not change: the same
+  now counted in one grouped query, for the rail and for one folder's list
+  alike, whatever the number of folders. The answers do not change: the same
   folders, counts and order, and nothing a reader cannot read is counted.
 
 ## Unreleased: folders above what a login reads show as structure
