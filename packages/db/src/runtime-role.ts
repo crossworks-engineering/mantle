@@ -205,6 +205,17 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
 export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_brain_id()':
     "the brain's anchor, read by narrow statements (resolve-owner.ts, the tree's kind roots, workspace-ticks.ts)",
+  'public.mantle_area_rule(uuid,text)':
+    'the area rule about a login (the login-self routes, the Telegram login): a read definer (0304)',
+  'public.mantle_login_areas(uuid)':
+    "a login's areas (the login-self routes' whoami and devices): a read definer (0304)",
+  'public.mantle_connector_state(uuid,text)':
+    "a connector's state (the Admin area's approval recheck): a read definer",
+  'public.mantle_ws_kind(uuid)': "a workspace's kind (the login-self routes): a read definer",
+  'public.mantle_pending_card_route(uuid,uuid)':
+    "a pending approval card's route (the Admin area's run of an item): a read definer",
+  'public.mantle_ws_attach_assistants()':
+    "the default assistants attached at onboarding (the assistants area's exit): the definer's own rule, workspace_resources only",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
@@ -254,7 +265,6 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_ws_remove_user(uuid,uuid,uuid)': 'workspace_users: never a narrow statement',
   'public.mantle_ws_create(uuid,uuid,text,text)': 'workspaces: never a narrow statement',
   'public.mantle_ws_archive(uuid,uuid)': 'workspaces and the held items: never a narrow statement',
-  'public.mantle_ws_attach_assistants()': 'workspace_resources: system work at boot, never narrow',
   'public.mantle_ws_resource_add(uuid,uuid,text,text,boolean)':
     'workspace_resources: never a narrow statement',
   'public.mantle_ws_resource_remove(uuid,uuid,text,text)':

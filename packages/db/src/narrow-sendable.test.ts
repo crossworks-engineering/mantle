@@ -40,6 +40,8 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
       'set "session_authorization" = default',
       'set local session authorization default',
       'reset "role"',
+      'select 1; set role none',
+      'select 1;\n  reset all',
     ]) {
       expect(verdict(q), q).toBe('refused');
     }
@@ -61,6 +63,9 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
       "select 'do $$ begin end $$; update pg_settings' as x",
       "select 1 -- set_config('role', 'none', true)",
       "select current_setting('role')",
+      // A column named role in an UPDATE is no role change.
+      'update "auth"."users" set "role" = $1 where "auth"."users"."id" = $2',
+      "update auth.users set role = 'member' where id = $1",
     ]) {
       expect(verdict(q), q).toBe('sent');
     }

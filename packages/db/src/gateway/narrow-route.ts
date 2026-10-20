@@ -75,12 +75,14 @@ export class NarrowRouteRefusedError extends RuntimeFaultError {
 const TX_CONTROL =
   /(?:^|;)\s*(?:begin|commit|rollback|abort|end|start\s+transaction|prepare\s+transaction|savepoint|release)\b/i;
 
-/** A role change in any form, anywhere in the text: SET [SESSION | LOCAL]
- *  ROLE or SESSION AUTHORIZATION (the name bare or quoted), RESET ROLE,
- *  RESET SESSION AUTHORIZATION, RESET ALL. Read on the text with its
- *  strings blanked and its quoted identifiers kept (sqlCode). */
+/** A role change in any form, at the start of any statement (SET and RESET
+ *  are statements of their own; the same words inside an UPDATE are a
+ *  column): SET [SESSION | LOCAL] ROLE or SESSION AUTHORIZATION (the name
+ *  bare or quoted), RESET ROLE, RESET SESSION AUTHORIZATION, RESET ALL.
+ *  Read on the text with its strings blanked and its quoted identifiers
+ *  kept (sqlCode). */
 const ROLE_CHANGE =
-  /\b(?:set\s+(?:session\s+|local\s+)?(?:"?(?:role|session_authorization)"?(?![\w$])|session\s+authorization\b)|reset\s+(?:"?(?:role|session_authorization)"?(?![\w$])|all\b|session\s+authorization\b))/i;
+  /(?:^|;)\s*(?:set\s+(?:session\s+|local\s+)?(?:"?(?:role|session_authorization)"?(?![\w$])|session\s+authorization\b)|reset\s+(?:"?(?:role|session_authorization)"?(?![\w$])|all\b|session\s+authorization\b))/i;
 
 /** A session-level SET or RESET at the start of any statement (outlives
  *  the transaction): SET without LOCAL (SET TRANSACTION and SET
@@ -341,7 +343,8 @@ const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
  *  function a trigger or a definer calls needs no EXECUTE of the role. */
 function noteNarrowFunctions(query: string): void {
   if (env('NODE_ENV') !== 'test') return;
-  for (const m of sqlCode(query).matchAll(CALLED_FN)) {
+  // Quoted identifiers kept: the app names its definers "public"."mantle_x".
+  for (const m of sqlCode(query, true, false).matchAll(CALLED_FN)) {
     noteTestNarrowUse(`fn:${m[1]!.toLowerCase()}`);
   }
 }
