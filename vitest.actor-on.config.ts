@@ -30,6 +30,9 @@ export default defineConfig({
       'server/web/lib/auth/admin-facts.db.test.ts',
       // The handlers that ask adminFacts of the Login, beside the legacy kind.
       'server/web/lib/auth/admin-facts-handlers.db.test.ts',
+      // The folders above what a login reads, as structure (0311), off, warn and on.
+      'server/web/server/s13-folder-trail-sweep.db.test.ts',
+      'packages/db/src/folder-trail-0311.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },
   },

@@ -229,6 +229,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'whether a folder path, a Recall map slug or a formula spec id is taken in the brain: yes or no',
   'mantle_snapshot_bytes(uuid,boolean,boolean,uuid)':
     'the bytes the brain’s history copies take, for the snapshot budget: a number',
+  // 0311: the folders above what a login reads, as structure (id, path,
+  // name), for the tree's reads of a login's own session.
+  'mantle_folder_trail(uuid,text,text[],uuid)':
+    'the folders at or above a row the scope reads, by id, path and name only, among the ones the caller names; nothing with no login',
   'mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)':
     WRITE_ROLE_FUNCTIONS[
       'public.mantle_read_cursor_mark(uuid,uuid,uuid,timestamp with time zone)'
