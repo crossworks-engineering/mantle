@@ -332,3 +332,101 @@ folder, by name.
 
 CI: run 39360799210 on 0dc7fb965: success. The handover commit after it
 has its own run (in the report).
+
+## Round 2a (feat/s10-r2a, from main 2f5a75ad5, v0.300.111)
+
+The CEO split round 2: r2a takes the sites outside the other lanes
+(packages/db, server/web/lib/auth, lib/workspaces.ts, assistant-chat.ts,
+workspace-turn.ts and the app routes are not in it). No migration, no
+definer: each raw write is a typed drizzle write.
+
+### Sites
+
+| File:line (on main)                                | Kind                    | Became                                                  |
+| -------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| server/web/lib/integrity/landed.ts:221             | write (executeWrite)    | `db.delete(traces)`                                     |
+| server/web/lib/integrity/landed.ts:244             | write (tx.execute)      | `tx.delete(nodes)`, the same heads transaction          |
+| server/web/lib/maintenance/actor-misses-reap.ts:36 | write (db.execute)      | `db.delete(actorCheckMisses)` with the same id subquery |
+| server/web/lib/push/store.ts:265                   | write (tx.execute)      | `tx.delete(pushSubscriptions)`, the same transaction    |
+| server/api/src/agent/runtime.ts:506                | write (db.execute)      | `db.update(telegramMessages)`                           |
+| server/web/scripts/dedupe-edges.ts:66, 98          | non-literal (`unsafe`)  | the partition list written into both statements         |
+| server/web/scripts/dedupe-edges.ts:92              | write (postgres.js tag) | `drizzle(sql).delete(entityEdges)`, the same client     |
+| server/web/scripts/relations-backfill.ts:92        | non-literal (`unsafe`)  | one tagged template with optional fragments (a read)    |
+| server/web/scripts/relations-backfill.ts:118       | write (postgres.js tag) | `drizzle(sql).update(nodes)`, the same client           |
+| server/web/scripts/traces-reap.ts:63               | write (postgres.js tag) | `drizzle(sql).update(traces)`, the same client          |
+
+packages/tools/src/builtins-eval.ts:95 (its one non-literal site) is a
+read: `sql.raw` of a tag array literal inside a select. Not a write, so not
+in r2a.
+
+### Same rows, actor and scope
+
+Each statement keeps its WHERE text; the SQL drizzle renders was checked
+with `drizzle.mock()`:
+
+- The id-subquery deletes (actor_check_misses, push_subscriptions,
+  entity_edges): the subquery reads the unaliased table inside its own
+  parentheses; the qualified `"<table>"."id"` stands outside them and names
+  the target. `returning` names the same column.
+- The Telegram heal: the alias `m` is gone; the subquery's
+  `telegram_messages r` hides the table's name inside it, so
+  `"telegram_messages"."id"` there names the row being updated (as `m.id`
+  did). `processed` is a bound `true`, `processed_at` the same coalesce.
+- traces-reap: `status` and `error` bound, `finished_at = now()`,
+  `duration_ms = null`, the same WHERE text.
+- relations-backfill's read: the same conditions in the same order; the
+  optional clauses are postgres.js fragments (an empty fragment when
+  absent), the array and the date bound as before.
+- No table here has a drizzle `$onUpdate` a typed update would add (none in
+  packages/db/src/schema). No insert: the column-grant guard
+  (packages/db/src/write-role-inserts.test.ts) has nothing to read.
+- The scripts build `drizzle(sql)` on their own postgres.js client after
+  their reads: drizzle sets that client's date parsers and serializers to
+  pass text through, which would change a read that returns a timestamp
+  (traces-reap's `started_at`) or binds a Date (relations-backfill's
+  `--since`). The writes bind no date.
+
+### Routes
+
+No write changed its pool:
+
+- landed.ts traces delete: `executeWrite` in the owner's POST request went
+  to `systemWriteDb()`, whose `loginWriteClient` sent `public.traces` (not
+  a write-role table) to the system pool; `db.delete(traces)` goes to
+  `typedWrite`, which sends a table outside the write role's set to the
+  system pool. With no login write pool open both are the system pool.
+- landed.ts nodes delete, push/store.ts: `tx.execute` to `tx.<verb>`, the
+  same transaction.
+- actor-misses-reap.ts (the maintenance worker and its script) and
+  runtime.ts drainPending (the agent's start, no request): no request
+  scope, so `db.execute` and `db.<verb>` are both `getDb()`.
+- The three scripts: the same postgres.js client (`DATABASE_URL`), the same
+  connection count.
+
+Labels that change, both for the landed.ts traces delete only:
+
+- the request-scope write label (`noteRequestSystemWrite`): `executeWrite`
+  to `delete`. Only GET routes are pinned in
+  server/web/server/w6a-route-sweep.db.test.ts; this is a POST.
+- the fail-open site (`noteScopedSystemWrite`) for `public.traces`:
+  `raw-write` to `typed-write`. scripts/arch-scoreboard-box.sh counts both
+  sites apart, so a box that ran the integrity delete sees its count under
+  `typed-write` from this release on. docs/fail-open.md says so in one
+  line under its table.
+
+### Pins
+
+| Pin               | Before | After |
+| ----------------- | ------ | ----- |
+| rawWriteSqlScoped | 17     | 9     |
+| rawSqlNonLiteral  | 74     | 71    |
+| rawWriteSqlFiles  | 43     | 36    |
+
+RAW_WRITE_PINS lost seven entries: landed.ts 2, actor-misses-reap.ts 1,
+push/store.ts 1, runtime.ts 1, dedupe-edges.ts 3, relations-backfill.ts 2,
+traces-reap.ts 1. historyCodeComments measures 2337 (pinned 2338: one
+comment in landed.ts lost its step code); left for D2's key, arch:check
+passes.
+
+The actor-misses-reap unit test's database double builds the typed delete
+with `drizzle.mock()` and checks its text.

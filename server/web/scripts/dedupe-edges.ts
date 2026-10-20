@@ -42,8 +42,8 @@ const relation = relationArg ? relationArg.slice('--relation='.length) : 'mentio
 // The grouping that defines "the same edge" is the `partition by` list of
 // both statements below (owner_id, source_id, source_kind, target_id,
 // target_kind, relation). valid_from / valid_to are deliberately excluded so
-// re-extract artifacts (which differ only by valid_from) collapse — see the
-// temporal caveat in the header. Keep the two lists the same.
+// re-extract artifacts (which differ only by valid_from) collapse (see the
+// temporal caveat in the header). Keep the two lists the same.
 
 async function main() {
   const sql = postgres(DATABASE_URL!, { max: 1 });
