@@ -4,6 +4,7 @@
 # domain-by-table: 523 cells
 # opaque-500: 56 cells
 # opaque-500 (an earlier fault): 20 cells
+# ok-false-public: 6 cells
 GET /api/agents tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}
@@ -508,6 +509,24 @@ GET /api/docs/collections tree-gone [domain-by-table]
 GET /api/docs/collections tree-visibility [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    409 application/json {"error":"visibility","changes":[{"workspaceId":"11111111-1111-4111-8111-111111111111","gained":1,"lost":0}],"total":1}
+POST /api/docs/collections db [ok-false-public]
+  before 200 application/json {"ok":false,"message":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    200 application/json {"ok":false,"message":"the database could not run this request (the details are in the server log)"}
+POST /api/docs/collections scope [ok-false-public]
+  before 200 application/json {"ok":false,"message":"not allowed to change this item"}
+  now    200 application/json {"ok":false,"message":"You cannot change this item in your workspaces."}
+PATCH /api/docs/collections/:id db [ok-false-public]
+  before 200 application/json {"ok":false,"message":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    200 application/json {"ok":false,"message":"the database could not run this request (the details are in the server log)"}
+PATCH /api/docs/collections/:id scope [ok-false-public]
+  before 200 application/json {"ok":false,"message":"not allowed to change this item"}
+  now    200 application/json {"ok":false,"message":"You cannot change this item in your workspaces."}
+POST /api/docs/collections/all db [ok-false-public]
+  before 200 application/json {"ok":false,"message":"Failed query: select \"secret\" from \"nodes\" where \"id\" = $1\nparams: sweep"}
+  now    200 application/json {"ok":false,"message":"the database could not run this request (the details are in the server log)"}
+POST /api/docs/collections/all scope [ok-false-public]
+  before 200 application/json {"ok":false,"message":"not allowed to change this item"}
+  now    200 application/json {"ok":false,"message":"You cannot change this item in your workspaces."}
 GET /api/embedding tree-not-found [domain-by-table]
   before 500 application/json {"error":"internal error"}
   now    404 application/json {"error":"sweep: folder not found"}

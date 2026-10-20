@@ -109,6 +109,7 @@ vi.mock('@mantle/db', async () => ({
     h.actors.push(actor);
     return fn();
   },
+  onFullSystemRoute: <T>(_spot: string, fn: () => PromiseLike<T>) => Promise.resolve(fn()),
   // The row an approval judges, on the system pool (pending-elevated.ts):
   // the fake's first queued row, as the claim would see it.
   pendingCallToDecide: async () => {

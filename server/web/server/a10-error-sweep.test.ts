@@ -543,7 +543,11 @@ const TABLE_ANSWER: Readonly<Partial<Record<string, [string, string]>>> = {
  *    reply answers the opaque 500;
  *  - input-400 (an earlier refusal): on such a route, a refusal the caller
  *    fixes (an InputError now) that a hand catch said as a 500 answers 400
- *    with the same body.
+ *    with the same body;
+ *  - ok-false-public: a route that answers 200 `{ ok: false, message }`
+ *    (the docs collections) says the public message (publicErrorMessage):
+ *    a database error's fixed text instead of its SQL, a domain error's
+ *    own text; the status and the shape are as before.
  */
 function changeKindOf(cell: string, before: string, now: string, steady: boolean): string | null {
   const fault = cell.slice(cell.lastIndexOf(' ') + 1);
@@ -554,6 +558,10 @@ function changeKindOf(cell: string, before: string, now: string, steady: boolean
   }
   if (steady && before.startsWith('500 ') && now === `400${before.slice(3)}`) {
     return 'input-400 (an earlier refusal)';
+  }
+  const okFalse = /^200 application\/json \{"ok":false,"message":"/;
+  if (okFalse.test(before) && okFalse.test(now) && !/sweep|secret|Failed query/.test(now)) {
+    return 'ok-false-public';
   }
   if (table) return null;
   if (fault !== 'plain' && fault !== 'db') return null;
