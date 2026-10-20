@@ -23,7 +23,10 @@
  * The agent (server/api) must be running — it's the LISTENer that extracts.
  */
 import postgres from 'postgres';
+import { eq, sql as drizzleSql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { env } from '@mantle/config';
+import { nodes } from '@mantle/db';
 
 const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
@@ -70,26 +73,15 @@ async function main() {
   // Candidates: nodes with at least one `mentioned_in` edge (so the extractor
   // found entities) but no edge stamped with their source_node_id (no relation
   // pass has run on them).
-  const conds: string[] = [
-    `n.id in (select target_id from entity_edges where target_kind='node' and relation='mentioned_in')`,
-    `n.id not in (select (data->>'source_node_id')::uuid from entity_edges where data ? 'source_node_id')`,
-  ];
-  const params: Array<string | string[] | Date | number> = [];
-  if (args.types && args.types.length > 0) {
-    conds.push(`n.type::text = any($${params.length + 1})`);
-    params.push(args.types);
-  }
-  if (args.since) {
-    conds.push(`n.created_at >= $${params.length + 1}`);
-    params.push(args.since);
-  }
-  let q = `select n.id, n.type, n.title from nodes n where ${conds.join(' and ')} order by n.created_at desc`;
-  if (args.limit) {
-    q += ` limit $${params.length + 1}`;
-    params.push(args.limit);
-  }
-
-  const rows = (await sql.unsafe(q, params)) as Array<{ id: string; type: string; title: string }>;
+  // --types, --since and --limit each add their clause only when given.
+  const rows = await sql<Array<{ id: string; type: string; title: string }>>`
+    select n.id, n.type, n.title from nodes n
+     where n.id in (select target_id from entity_edges where target_kind='node' and relation='mentioned_in')
+       and n.id not in (select (data->>'source_node_id')::uuid from entity_edges where data ? 'source_node_id')
+       ${args.types && args.types.length > 0 ? sql`and n.type::text = any(${args.types})` : sql``}
+       ${args.since ? sql`and n.created_at >= ${args.since}` : sql``}
+     order by n.created_at desc
+     ${args.limit ? sql`limit ${args.limit}` : sql``}`;
   console.log(
     `[relations-backfill] ${rows.length} candidate node(s)` +
       `${args.types ? ` (types: ${args.types.join(',')})` : ''}` +
@@ -111,11 +103,17 @@ async function main() {
   console.log(
     `[relations-backfill] firing at ${args.rateSec}s intervals — each is a full re-extract.`,
   );
+  // A typed write on the same connection. drizzle sets the client's date
+  // parsers to pass text through, so it is made after the read above.
+  const db = drizzle(sql);
   let i = 0;
   for (const row of rows) {
     i++;
     // Clear summary so the extractor's already-extracted guard lets it re-run.
-    await sql`update nodes set data = data - 'summary' where id = ${row.id}`;
+    await db
+      .update(nodes)
+      .set({ data: drizzleSql`${nodes.data} - 'summary'` })
+      .where(eq(nodes.id, row.id));
     await sql`select pg_notify('node_ingested', ${row.id}::text)`;
     if (i % 25 === 0 || i === rows.length) {
       console.log(`[relations-backfill] (${i}/${rows.length}) fired`);

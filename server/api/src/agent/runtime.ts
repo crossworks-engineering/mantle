@@ -503,22 +503,25 @@ async function drainPending(
   // never marked processed (typically because a previous run crashed or
   // was hot-reloaded between sending Telegram and the final DB UPDATE).
   // Flip them to processed instead of generating a duplicate reply.
-  const healed = await db.execute(sql`
-    update telegram_messages m
-       set processed = true,
-           processed_at = coalesce(processed_at, now())
-     where m.processed = false
-       and m.direction = 'inbound'
+  // The subquery's `telegram_messages r` hides the table's own name, so
+  // the qualified columns name the row being updated.
+  const healed = await db
+    .update(telegramMessages)
+    .set({
+      processed: true,
+      processedAt: sql`coalesce(${telegramMessages.processedAt}, now())`,
+    })
+    .where(
+      sql`${telegramMessages.processed} = false
+       and ${telegramMessages.direction} = 'inbound'
        and exists (
          select 1 from telegram_messages r
-          where r.reply_to_id = m.id
+          where r.reply_to_id = ${telegramMessages.id}
             and r.direction = 'outbound'
-       )
-     returning m.id
-  `);
-  const healedCount = Array.isArray(healed)
-    ? healed.length
-    : ((healed as { count?: number }).count ?? 0);
+       )`,
+    )
+    .returning({ id: telegramMessages.id });
+  const healedCount = healed.length;
   if (healedCount > 0) {
     logger.info(`drain: healed ${healedCount} previously-replied message(s)`);
   }

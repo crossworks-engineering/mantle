@@ -14,7 +14,8 @@
  * cascade + reaper path the rest of the app uses. There are no fixtures and
  * nothing to clean up, so leaving the screen mid-anything is harmless.
  */
-import { db, sql, withDeadlockRetry, withNodeDeleteHeads, executeWrite } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { db, nodes, sql, traces, withDeadlockRetry, withNodeDeleteHeads } from '@mantle/db';
 import { deleteFileById } from '@mantle/files';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 
@@ -207,8 +208,8 @@ export async function deleteLandedNode(
   ownerId: string,
   nodeId: string,
 ): Promise<DeleteLandedResult> {
-  // A read through db, the raw delete through executeWrite (W6a fix round
-  // 2: executeWrite refuses a read, so the route always answered 500).
+  // A read through db; the deletes are typed writes, which leave the
+  // request scope's read pool as every write does.
   const row = rowsOf<{ type: string }>(
     await db.execute(
       sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`,
@@ -217,9 +218,7 @@ export async function deleteLandedNode(
   if (!row) return { ok: false, error: 'node not found' };
 
   // Traces first (no FK to nodes; trace_steps cascade from traces).
-  await executeWrite(
-    sql`DELETE FROM traces WHERE subject_id = ${nodeId} AND owner_id = ${ownerId}`,
-  );
+  await db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId)));
 
   if (row.type === 'file') {
     const res = await deleteFileById({ ownerId, fileId: nodeId });
@@ -241,7 +240,7 @@ export async function deleteLandedNode(
   // Heads first (workspaces plan V4).
   await withDeadlockRetry(() =>
     withNodeDeleteHeads([nodeId], async (tx) => {
-      await tx.execute(sql`DELETE FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId}`);
+      await tx.delete(nodes).where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
     }),
   );
   return { ok: true, type: row.type };

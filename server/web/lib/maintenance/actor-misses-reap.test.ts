@@ -12,15 +12,35 @@ const h = vi.hoisted(() => ({
   results: [] as unknown[][],
 }));
 
-vi.mock('@mantle/db', () => ({
-  db: {
-    execute: async (q: SQL) => {
-      const { sql, params } = new PgDialect().sqlToQuery(q);
-      h.statements.push({ sql: sql.replace(/\s+/g, ' ').trim(), params });
-      return h.results.shift() ?? [];
+function record(sql: string, params: unknown[]): unknown[] {
+  h.statements.push({ sql: sql.replace(/\s+/g, ' ').trim(), params });
+  return h.results.shift() ?? [];
+}
+
+vi.mock('@mantle/db', async () => {
+  const { actorCheckMisses } =
+    await vi.importActual<typeof import('@mantle/db/schema')>('@mantle/db/schema');
+  const { drizzle } = await import('drizzle-orm/postgres-js');
+  // The typed delete is built by drizzle itself and its text recorded.
+  const builder = drizzle.mock();
+  return {
+    actorCheckMisses,
+    db: {
+      execute: async (q: SQL) => {
+        const { sql, params } = new PgDialect().sqlToQuery(q);
+        return record(sql, params);
+      },
+      delete: (table: typeof actorCheckMisses) => ({
+        where: (cond: SQL) => ({
+          returning: async (cols: { id: typeof actorCheckMisses.id }) => {
+            const { sql, params } = builder.delete(table).where(cond).returning(cols).toSQL();
+            return record(sql, params);
+          },
+        }),
+      }),
     },
-  },
-}));
+  };
+});
 
 import {
   ACTOR_MISSES_RETENTION_DAYS,
@@ -46,8 +66,9 @@ describe('actor-misses-reap', () => {
     expect(await reapActorMisses({ now: NOW })).toEqual({ deleted: 10_002 });
     expect(h.statements).toHaveLength(2);
     for (const s of h.statements) {
-      expect(s.sql).toMatch(/^delete from actor_check_misses where id in \(/);
-      expect(s.sql).toContain('where at < $1::timestamptz limit $2');
+      expect(s.sql).toMatch(
+        /^delete from "actor_check_misses" where "actor_check_misses"\."id" in \( select id from actor_check_misses where at < \$1::timestamptz limit \$2\) returning "id"$/,
+      );
       expect(s.params).toEqual([CUTOFF, 10_000]);
     }
   });

@@ -91,7 +91,9 @@ Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
 (`pending_tool_calls`), `w7c-chat` and `a5-mcp-writes-smoke`
 (`assistant_messages`), all under `server/web/server/`. No other table.
 The `item_marks` writes are typed writes, so their hits count as
-`typed-write`.
+`typed-write`. So is the integrity screen's delete of a node's
+`public.traces` rows (`server/web/lib/integrity/landed.ts`): a box counts
+its hits, if any, as `typed-write`.
 
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two

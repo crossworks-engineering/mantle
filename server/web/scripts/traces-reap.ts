@@ -21,7 +21,10 @@
  */
 
 import postgres from 'postgres';
+import { sql as drizzleSql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { env, envNum } from '@mantle/config';
+import { traces } from '@mantle/db';
 
 const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
@@ -60,15 +63,24 @@ async function main() {
       console.log('[traces-reap] DRY RUN — pass --apply to close them');
       return;
     }
-    const closed = await sql`
-      UPDATE traces
-      SET status = 'error',
-          error = ${'abandoned — no completion after ' + ABANDON_AFTER_MIN + ' min (the process likely restarted or crashed mid-run; swept by maintenance)'},
-          finished_at = now(),
-          duration_ms = NULL
-      WHERE status = 'running' AND started_at < now() - make_interval(mins => ${ABANDON_AFTER_MIN})
-      RETURNING id
-    `;
+    // A typed write on the same connection. drizzle sets the client's date
+    // parsers to pass text through, so it is made after the read above.
+    const db = drizzle(sql);
+    const closed = await db
+      .update(traces)
+      .set({
+        status: 'error',
+        error:
+          'abandoned — no completion after ' +
+          ABANDON_AFTER_MIN +
+          ' min (the process likely restarted or crashed mid-run; swept by maintenance)',
+        finishedAt: drizzleSql`now()`,
+        durationMs: null,
+      })
+      .where(
+        drizzleSql`${traces.status} = 'running' AND ${traces.startedAt} < now() - make_interval(mins => ${ABANDON_AFTER_MIN})`,
+      )
+      .returning({ id: traces.id });
     console.log(`[traces-reap] closed ${closed.length} trace(s)`);
   } finally {
     await sql.end();

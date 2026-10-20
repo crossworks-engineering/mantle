@@ -10,7 +10,7 @@
  * definition of the rule.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { actorCheckMisses, db } from '@mantle/db';
 
 export const ACTOR_MISSES_RETENTION_DAYS = 14;
 
@@ -33,10 +33,13 @@ export async function reapActorMisses(
   }
   let deleted = 0;
   for (;;) {
-    const gone = (await db.execute(sql`
-      delete from actor_check_misses where id in (
-        select id from actor_check_misses where at < ${cutoff}::timestamptz limit ${BATCH})
-      returning id`)) as unknown as unknown[];
+    const gone = await db
+      .delete(actorCheckMisses)
+      .where(
+        sql`${actorCheckMisses.id} in (
+        select id from actor_check_misses where at < ${cutoff}::timestamptz limit ${BATCH})`,
+      )
+      .returning({ id: actorCheckMisses.id });
     deleted += gone.length;
     if (gone.length < BATCH) return { deleted };
   }

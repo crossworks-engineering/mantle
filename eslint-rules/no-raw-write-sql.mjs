@@ -89,19 +89,12 @@ export const RAW_WRITE_PINS = {
   'packages/files/src/ops/files.ts': 1,
   'packages/search/src/entities.ts': 1,
   'packages/tools/src/builtins-eval.ts': 1,
-  'server/api/src/agent/runtime.ts': 1,
   'server/web/lib/auth/first-owner.ts': 1,
   'server/web/lib/integrity/audit.ts': 5,
-  'server/web/lib/integrity/landed.ts': 2,
-  'server/web/lib/maintenance/actor-misses-reap.ts': 1,
   'server/web/lib/maintenance/ocr-rescan.ts': 1,
-  'server/web/lib/push/store.ts': 1,
   'server/web/scripts/backfill-conversation.ts': 2,
-  'server/web/scripts/dedupe-edges.ts': 3,
   'server/web/scripts/extract-backfill.ts': 1,
   'server/web/scripts/extract-images-backfill.ts': 2,
-  'server/web/scripts/relations-backfill.ts': 2,
-  'server/web/scripts/traces-reap.ts': 1,
 };
 
 export const rule = pinnedRule({

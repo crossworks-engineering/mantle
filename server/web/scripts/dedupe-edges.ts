@@ -23,7 +23,10 @@
  */
 
 import postgres from 'postgres';
+import { sql as drizzleSql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { env } from '@mantle/config';
+import { entityEdges } from '@mantle/db';
 
 const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
@@ -36,10 +39,11 @@ const apply = argv.includes('--apply');
 const relationArg = argv.find((a) => a.startsWith('--relation='));
 const relation = relationArg ? relationArg.slice('--relation='.length) : 'mentioned_in';
 
-// The grouping that defines "the same edge". valid_from / valid_to are
-// deliberately excluded so re-extract artifacts (which differ only by
-// valid_from) collapse — see the temporal caveat in the header.
-const PARTITION = 'owner_id, source_id, source_kind, target_id, target_kind, relation';
+// The grouping that defines "the same edge" is the `partition by` list of
+// both statements below (owner_id, source_id, source_kind, target_id,
+// target_kind, relation). valid_from / valid_to are deliberately excluded so
+// re-extract artifacts (which differ only by valid_from) collapse — see the
+// temporal caveat in the header. Keep the two lists the same.
 
 async function main() {
   const sql = postgres(DATABASE_URL!, { max: 1 });
@@ -63,7 +67,7 @@ async function main() {
     from (
       select id,
              row_number() over (
-               partition by ${sql.unsafe(PARTITION)}
+               partition by owner_id, source_id, source_kind, target_id, target_kind, relation
                order by created_at asc, id asc
              ) as rn
       from entity_edges
@@ -89,22 +93,27 @@ async function main() {
     return;
   }
 
-  const deleted = await sql`
-    delete from entity_edges
-    where id in (
+  // The delete is a typed write on the same connection. drizzle sets the
+  // client's date parsers to pass text through, so it is made after the
+  // reads.
+  const db = drizzle(sql);
+  const deleted = await db
+    .delete(entityEdges)
+    .where(
+      drizzleSql`${entityEdges.id} in (
       select id from (
         select id,
                row_number() over (
-                 partition by ${sql.unsafe(PARTITION)}
+                 partition by owner_id, source_id, source_kind, target_id, target_kind, relation
                  order by created_at asc, id asc
                ) as rn
         from entity_edges
         where relation = ${relation}
       ) ranked
       where rn > 1
+    )`,
     )
-    returning id
-  `;
+    .returning({ id: entityEdges.id });
   console.log(`[dedupe] deleted ${deleted.length} duplicate edge(s); kept the earliest of each.`);
   await sql.end();
 }

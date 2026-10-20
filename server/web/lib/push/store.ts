@@ -262,15 +262,17 @@ export async function insertSubscription(args: {
       })
       .returning({ id: pushSubscriptions.id });
     // The cap: the login's oldest devices beyond it go.
-    const over = (await tx.execute(sql`
-      delete from push_subscriptions
-       where id in (
+    const over = await tx
+      .delete(pushSubscriptions)
+      .where(
+        sql`${pushSubscriptions.id} in (
          select id from push_subscriptions
           where login_id = ${args.loginId}
           order by created_at desc, id desc
-          offset ${MAX_DEVICES_PER_LOGIN})
-      returning routing_token`)) as unknown as Array<{ routing_token: string }>;
-    return { id: row!.id, dropped: over.map((r) => r.routing_token) };
+          offset ${MAX_DEVICES_PER_LOGIN})`,
+      )
+      .returning({ routingToken: pushSubscriptions.routingToken });
+    return { id: row!.id, dropped: over.map((r) => r.routingToken) };
   });
 }
 
