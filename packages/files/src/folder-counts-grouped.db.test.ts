@@ -96,6 +96,9 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
   ];
 
   const x = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  /** A node insert with its folder's head held first, as the writers hold it. */
+  const ins = (type: 'branch' | 'file', p: string, q: ReturnType<typeof sqlTag>) =>
+    m.withNodeInsertHeads(owner, [{ type, path: p }], (tx) => tx.execute(q));
   const asMember = <T>(fn: () => Promise<T>) => m.withViewer({ login: member }, fn);
 
   /** The old listAllFolders, verbatim: folderCounts once per folder. */
@@ -174,16 +177,24 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
       values (${W}, ${member}, false), (${W}, ${other}, false)`);
     for (const k of ['files', ...folders]) {
       const slug = k.slice(k.lastIndexOf('.') + 1);
-      await x(sqlTag`insert into nodes (id, owner_id, type, title, slug, path, data)
+      await ins(
+        'branch',
+        fp(k),
+        sqlTag`insert into nodes (id, owner_id, type, title, slug, path, data)
         values (${id[k]}, ${owner}, 'branch', ${`${tag} ${k}`}, ${slug}, ${fp(k)}::ltree,
-                ${JSON.stringify({ slug })}::jsonb)`);
+                ${JSON.stringify({ slug })}::jsonb)`,
+      );
     }
     const grants: string[] = [id.a!];
     for (const [k, name, priv, granted] of files) {
       const fid = randomUUID();
-      await x(sqlTag`insert into nodes (id, owner_id, type, title, slug, path, login_id, data)
+      await ins(
+        'file',
+        fp(k),
+        sqlTag`insert into nodes (id, owner_id, type, title, slug, path, login_id, data)
         values (${fid}, ${owner}, 'file', ${name}, ${name}, ${fp(k)}::ltree,
-                ${priv ? other : null}, ${JSON.stringify({ filename: name })}::jsonb)`);
+                ${priv ? other : null}, ${JSON.stringify({ filename: name })}::jsonb)`,
+      );
       if (granted) grants.push(fid);
     }
     for (const g of grants) {
@@ -296,10 +307,18 @@ describe.skipIf(!URL)('folder counts in grouped queries (the Files rail and list
     // Forty more folders, and a file in each.
     for (let i = 0; i < 40; i++) {
       const p = `files.more${i}`;
-      await x(sqlTag`insert into nodes (owner_id, type, title, slug, path)
-        values (${owner}, 'branch', ${`more${i}`}, ${`more${i}`}, ${p}::ltree)`);
-      await x(sqlTag`insert into nodes (owner_id, type, title, slug, path)
-        values (${owner}, 'file', ${`m${i}.txt`}, ${`m${i}.txt`}, ${p}::ltree)`);
+      await ins(
+        'branch',
+        p,
+        sqlTag`insert into nodes (owner_id, type, title, slug, path)
+        values (${owner}, 'branch', ${`more${i}`}, ${`more${i}`}, ${p}::ltree)`,
+      );
+      await ins(
+        'file',
+        p,
+        sqlTag`insert into nodes (owner_id, type, title, slug, path)
+        values (${owner}, 'file', ${`m${i}.txt`}, ${`m${i}.txt`}, ${p}::ltree)`,
+      );
     }
     expect(await count(rail)).toBe(before.rail);
     expect(await count(list)).toBe(before.list);
