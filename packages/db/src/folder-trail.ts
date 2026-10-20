@@ -37,12 +37,11 @@ export function trailForCaller(): boolean {
   return (c?.via === 'cookie' || c?.via === 'bearer') && c.actor?.kind === 'login';
 }
 
-/** The definer's rows as a FROM item aliased `alias` (columns id, path as
- *  ltree, title), for a read that folds them into its own statement; null
- *  when the current caller gets no trail. */
-export function folderTrailSql(ownerId: string, ask: TrailAsk, alias = 't'): SQL | null {
+/** The definer's rows as a parenthesised FROM item (columns id, path as
+ *  ltree, title) for a read that folds them into its own statement and
+ *  names its alias after it; null when the current caller gets no trail. */
+export function folderTrailSql(ownerId: string, ask: TrailAsk): SQL | null {
   if (!trailForCaller()) return null;
-  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
   const paths = ask.paths ?? [];
   const list = paths.length
     ? sql`array[${sql.join(
@@ -52,7 +51,7 @@ export function folderTrailSql(ownerId: string, ask: TrailAsk, alias = 't'): SQL
     : sql`'{}'::text[]`;
   return sql`(select r.id, r.path::ltree as path, r.title
                 from "public"."mantle_folder_trail"(${ownerId}::uuid, ${ask.under ?? null}::text,
-                                                    ${list}, ${ask.folder ?? null}::uuid) r) ${sql.raw(alias)}`;
+                                                    ${list}, ${ask.folder ?? null}::uuid) r)`;
 }
 
 /** The folders named by `ask` that the current login sees as structure
@@ -61,7 +60,7 @@ export async function folderTrail(ownerId: string, ask: TrailAsk): Promise<Trail
   const from = folderTrailSql(ownerId, ask);
   if (!from) return [];
   const rows = (await db.execute(
-    sql`select t.id::text as id, t.path::text as path, t.title from ${from}`,
+    sql`select t.id::text as id, t.path::text as path, t.title from ${from} t`,
   )) as unknown as TrailFolder[];
   return rows;
 }

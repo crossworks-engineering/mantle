@@ -148,7 +148,7 @@ export async function selectFolders(
   const trail =
     trailUnder === undefined
       ? null
-      : folderTrailSql(ownerId, { under: trailUnder, paths: [trailUnder] }, 'tr');
+      : folderTrailSql(ownerId, { under: trailUnder, paths: [trailUnder] });
   // The folders the reader reads, then (with a trail) the trail's, matched
   // by the same `where` (on id, path, title or slug; a trail row has no
   // slug) and not already listed.
@@ -156,7 +156,7 @@ export async function selectFolders(
     ? sql`f0 as materialized (
       select f.id, f.path, f.title, f.data from nodes f
        where f.owner_id = ${ownerId} and f.type = 'branch' and ${where}),
-    tr as materialized (select tr.id, tr.path, tr.title from ${trail}),
+    tr as materialized (select tr.id, tr.path, tr.title from ${trail} tr),
     f as materialized (
       select f0.id, f0.path, f0.title, f0.data from f0
       union all
@@ -283,7 +283,7 @@ export async function treeCrumbsFor(
     for (const p of paths) out.set(p, []);
     return out;
   }
-  const trail = folderTrailSql(ownerId, { paths: wanted }, 'tr');
+  const trail = folderTrailSql(ownerId, { paths: wanted });
   const rows = (await db.execute(sql`
     select id, path::text as path, title from nodes
      where owner_id = ${ownerId} and type = 'branch'
@@ -294,7 +294,7 @@ export async function treeCrumbsFor(
          trail
            ? sql`
     union
-    select tr.id, tr.path::text as path, tr.title from ${trail}`
+    select tr.id, tr.path::text as path, tr.title from ${trail} tr`
            : sql``
        }`)) as unknown as Array<{
     id: string;
