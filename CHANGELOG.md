@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: folders above what a login reads show as structure
+
+- A login that reads an item now sees its folder and every folder above it
+  in the trees (notes, pages, files and the other kinds), in the crumbs and
+  in the Files folder list, by name only: no look, no description, no
+  other item in it, and no write of any kind on it without the right on the
+  folder (every write still answers 404). Migration 0311 adds one read
+  function (`mantle_folder_trail`) for a login's own session; an API key, a
+  linked brain, a public link and an assistant see the folders they read,
+  as before. The Files folder list now carries each folder's caps
+  (`mayEdit`, `mayManage`).
+- **Fix:** a content edit of a file a login may change, in a folder it
+  cannot read, answered 400 "parent folder not found". It saves now; a new
+  file in such a folder is still refused.
+
 ## Unreleased: the tools' item pre-checks go (A5 step 6b, part 1)
 
 - **Deploy note:** roll this release only on a box whose actor check and

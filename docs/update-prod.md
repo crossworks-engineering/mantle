@@ -1317,5 +1317,15 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   0309's five functions and takes it off the ledger (the S2b handover in
   docs/_archive/).
 
+- **Below the folder trail (plan v3.2 S13, migration 0311):** the older
+  image works with 0311 in place (0311 only adds one read function), so the
+  revert is optional. To leave the catalog as the older image shipped it,
+  while the newer image is still up, as the superuser, in one transaction:
+  `docker exec mantle_web cat /app/packages/db/rollback/0311_folder_trail_definer.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`.
+  Then pin the older tag straight away (or stop mantle_web first): until the
+  pin the newer image's tree and Files folder reads fail for a member, and a
+  restart in between applies 0311 again. The revert drops the function and
+  takes 0311 off the ledger (the S13 handover in docs/_archive/).
+
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

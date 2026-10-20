@@ -247,6 +247,7 @@ change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
 (`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307), its row, contact, landing app and archive (0309).
+The folder trail (`mantle_folder_trail`, 0311): the folders at or above a row a login's scope reads, by id, path and name only, for the tree reads of a login's own session; no write path asks it, so such a folder still answers 404 to every write.
 With no acting login the 0307 and 0309 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
 no TS writes the four workspace tables; named: login bridge, bridge connector, the switch, guards.
 

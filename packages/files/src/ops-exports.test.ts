@@ -52,6 +52,8 @@ const PUBLIC = [
   'deleteFolder',
   'listFolders',
   'listAllFolders',
+  'listFoldersWithTrail',
+  'listAllFoldersWithTrail',
   'renamedFolderPath',
   'renameFolderById',
   'FOLDER_NAME_MAX',
