@@ -402,6 +402,71 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
     }
     expect(hits.length).toBe(1);
   });
+
+  // Plan v3.2 S7a part a3: the narrow-role proof. Every listed tool, the trap
+  // off (its statements reach Postgres), the box's actor check in warn (the
+  // write count's trigger is on): with the switch on its system-pool work
+  // runs as mantle_system_narrow (uses by system:admin-area, no denial:
+  // vitest.setup.ts fails the test on one); with the switch off, as on a
+  // box today, none of its writes is a content write the count would
+  // report (migration 0311 narrow-content-write, narrow-cascade-delete), so
+  // the flip refuses nothing these tools do. Last in the file: it reopens
+  // the pools without the trap.
+  it('the narrow-role proof: on the narrow role with the switch on, no content write counted with it off', async () => {
+    const actor = await import('../../../packages/db/src/actor');
+    const roles = await import('../../../packages/db/src/runtime-role');
+    const postgres = (await import('postgres')).default;
+    const su = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
+    const whole = t.listBuiltins().filter((d) => t.policySystemWhole(d.policy));
+    const runAll = async () => {
+      for (const slug of whole.map((d) => d.slug)) {
+        await rt.withAgentScope(
+          { id: agent.id, workspaceId: adminWs },
+          () =>
+            t.dispatchTool(
+              {
+                slug,
+                handler: { kind: 'builtin', ref: slug },
+                inputSchema: {},
+              } as unknown as import('@mantle/db').Tool,
+              argsFor(slug),
+              {
+                ownerId: owner,
+                surface: { kind: 'web', loginId: owner },
+                agent: { slug: agent.slug, depth: 1, delegateTo: [] },
+              },
+            ),
+          { ownerLoginId: owner },
+        );
+      }
+    };
+    const reopen = async (on: boolean) => {
+      await m.closeDb();
+      const g = globalThis as unknown as { __mantleSql?: unknown; __mantleDb?: unknown };
+      g.__mantleSql = undefined;
+      g.__mantleDb = undefined;
+      roles.setNarrowSystemForTests(on);
+    };
+    const [box] = await su<{ mode: string }[]>`select mantle_actor_check_box_mode() as mode`;
+    try {
+      await su`select mantle_set_actor_check('warn', 50, 'test')`;
+      expect(whole.length).toBeGreaterThan(30);
+      await reopen(true);
+      actor.takeNarrowUses();
+      await runAll();
+      expect(actor.takeNarrowUses()['system:admin-area'] ?? 0).toBeGreaterThan(whole.length);
+      expect(actor.takeNarrowWrites()).toEqual([]);
+      await reopen(false);
+      await runAll();
+      expect(actor.takeNarrowUses()).toEqual({});
+      expect(actor.takeNarrowWrites()).toEqual([]);
+    } finally {
+      await m.closeDb();
+      roles.setNarrowSystemForTests(null);
+      await su`select mantle_set_actor_check(${box!.mode}, 50, 'test')`;
+      await su.end();
+    }
+  }, 300_000);
 });
 
 /** The tools module with each dispatchTool call named an assistant turn's

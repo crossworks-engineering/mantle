@@ -33,6 +33,10 @@
 #     also the count of mantle_login_area's yes with no Admin workspace and
 #     of areasOf's "migration skipped" path (server/web/lib/workspaces.ts):
 #     a brain reaches either only with no Admin workspace;
+#   - the narrow system role's counts (plan v3.2 S7a, report only): the
+#     distinct check, actor and table rows checked narrow-content-write,
+#     narrow-cascade-delete (migration 0311) and narrow-denied, in the
+#     fail-open rows' window;
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -166,6 +170,24 @@ select count(*) || ' ' || count(*) filter (where check_name = 'fail-open:scope-h
                                     now() - interval '1 hour'))) m;
 SQL
 )
+# The narrow system role's counts (plan v3.2 S7a; report only): the
+# distinct check, actor and table rows of its miss rows in the same window
+# as the fail-open rows. narrow-content-write and narrow-cascade-delete:
+# migration 0311's count of a content write, or a delete that cascades into
+# content, by a narrow reason off the narrow role (what the role would
+# refuse once it is on, S7b); narrow-denied: a right the role does not hold,
+# met on the narrow route. Numbers only.
+narrow=$(q <<SQL || true
+select count(*) filter (where check_name = 'narrow-content-write')
+    || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
+    || ' ' || count(*) filter (where check_name = 'narrow-denied')
+  from (select distinct check_name, actor, detail from public.actor_check_misses
+         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied')
+           and at >= greatest(now() - interval '24 hours',
+                              least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
+                                    now() - interval '1 hour'))) m;
+SQL
+)
 # Whether the stack's .env has the runtime role's line at all (S4a: the
 # updater and roll.sh write one when it has none).
 env_stack="$stack"
@@ -224,6 +246,11 @@ printf '  %-34s %s\n' env_has_runtime_role_line "$env_line"
 set -- $fail_open
 for site in all scope-holds-admin scope-has-area typed-write raw-write turn-exit system-db; do
   printf '  %-34s %s\n' "fail_open_misses:$site" "$(num "${1:-}")"
+  shift || true
+done
+set -- $narrow
+for check in content-write cascade-delete denied; do
+  printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
   shift || true
 done
 REMOTE

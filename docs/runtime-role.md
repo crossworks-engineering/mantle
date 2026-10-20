@@ -301,6 +301,41 @@ refused and noted; the hold check's rollback; the refused statements; off
 changes nothing; the system-pool write scope carries the actor's write mode
 (a definer's read-only refusal, `mantle_ws_archive`, reads it).
 
+### The narrow write count
+
+Report only (migration 0311): what the role would refuse once it is on by
+default is counted one release before, on every box, whatever the switch.
+Nothing is refused and no model work starts; the triggers raise a notice
+and the pool writes a miss row on another connection, as the actor check's
+misses (at most one per check, actor and table an hour).
+
+- `narrow-content-write`: the actor check trigger on a content table counts
+  a write whose actor is a narrow reason's (`mantle_narrow_actor`: the
+  `AS_SYSTEM_ROUTE` and `REQUEST_SYSTEM_ROUTE` reasons routed narrow, pinned
+  equal by `narrow-observe.test.ts`) AND `current_user = session_user` (the
+  full route: the narrow role was refused before any trigger, a definer runs
+  as its owner, a cascade as the table's owner) AND `mantle.route` is not
+  `full` (not a declared spot). Counted where the actor check runs (warn or
+  on); with it off the trigger is disabled and no actor is sent on the full
+  route. Exact with the runtime role on: as the superuser, a definer a
+  migration made runs as that superuser, and its writes count too.
+- `narrow-cascade-delete`: a delete from `auth.users`, `spaces` or `agents`
+  by a narrow reason's actor, not at a spot, on either route, once per
+  statement (their foreign keys cascade or set null into content tables as
+  the owner, past the role's own rights).
+- Not counted: a write whose actor a narrow exit rebound (a login, an
+  assistant, a full reason, system work), a definer's write, a cascade from
+  any other table.
+
+`scripts/arch-scoreboard-box.sh` prints `narrow_misses:content-write`,
+`narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
+actor and table rows in the fail-open rows' window; numbers only).
+`narrow-observe.db.test.ts` holds the cells (as the runtime role, so
+`current_user = session_user` is the pool login's), the box query and the
+revert (`packages/db/rollback/0311_narrow_write_observe.revert.sql`);
+`w7a-area-system-sweep.db.test.ts` runs every `systemWhole` tool with the
+switch on (narrow, no denial) and off (no content write counted).
+
 ## What runs as what
 
 | Connection                                                                                                         | Role                                                                                                                            |

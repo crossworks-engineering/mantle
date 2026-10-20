@@ -327,6 +327,9 @@ check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.en
 check "box: the fail-open window's floor is at most an hour old" sh -c "
   sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | tr -s ' \n' ' ' |
     grep -q \"greatest(now() - interval '24 hours', least(coalesce(nullif('\\\$started', '')::timestamptz, '-infinity'), now() - interval '1 hour'))\""
+check "box: the narrow counts read the fail-open window" sh -c "
+  sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | tr -s ' \n' ' ' |
+    grep -q \"greatest(now() - interval '24 hours', least(coalesce(nullif('\\\$started', '')::timestamptz, '-infinity'), now() - interval '1 hour'))\""
 check "box: an unreadable .env reads n/a, not 0" sh -c "
   grep -q '\[ -r \"\$env_stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&
   grep -q '\[ -r \"\$stack/.env\" \]' '$ROOT/scripts/arch-scoreboard-box.sh' &&
