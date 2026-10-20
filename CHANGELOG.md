@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the Files tree rail opens in milliseconds on a large brain
+
+- **Fix:** the Files tree rail (and the `folder_list` tool's whole tree)
+  counted each folder's subfolders and files with two queries per folder,
+  so an owner with about 2,000 folders waited many seconds. Every folder is
+  now counted in one grouped query (the rail) or two (one folder's list),
+  whatever the number of folders. The answers do not change: the same
+  folders, counts and order, and nothing a reader cannot read is counted.
+
 ## Unreleased: folders above what a login reads show as structure
 
 - A login that reads an item now sees its folder and every folder above it
