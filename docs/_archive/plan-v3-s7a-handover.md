@@ -213,3 +213,133 @@ a1 audit's LOW-1), so create the role first.
   inside packages/db.
 - a2: the route (gateway/role-tx.ts, role-runner.ts), `AS_SYSTEM_ROUTE`,
   the request exits' pick, the flag, the archive path's write_mode.
+
+## Part a2: the narrow route (round 1, work in progress)
+
+Branch feat/s7a-a2, from main at 0d8f745a2 (v0.300.109). Not ready to
+merge: round 1 built the route and measured it; the full DB suite with the
+switch on still fails 30 tests in 23 files (below), each a measurement
+result for round 2. No migration.
+
+### What changed
+
+- First commit (5f0dd70b7), the a1 audit's MED-1 and LOW-1:
+  `narrowFor` compares a hand value with the derived value (a content table
+  may not be reopened to narrow writes), runtime-role.test.ts expects the
+  throw; the a1 rollback says to create the role first.
+- packages/db/src/viewer.ts: `SystemRoute`, `AS_SYSTEM_ROUTE`
+  (`Record<AsSystemReason, 'narrow' | 'full'>`, each full reason with its
+  why), `REQUEST_SYSTEM_ROUTE` (`area`, `login-self`: narrow),
+  `systemRouteNow()`. `asSystem` runs its work under the reason's route,
+  `systemWork` under 'full', `noteRequestSystem` records the exit's route
+  in the request slot. The pick holds only while the actor the exit bound
+  is the one bound.
+- packages/db/src/gateway/narrow-route.ts (new; it sits below pools.ts, so
+  role-runner.ts, which imports role-tx.ts and so pools.ts, would make an
+  import cycle, pinned 0): `narrowStatement` (BEGIN, the one SET with
+  `set_config('role', 'mantle_system_narrow', true)` and the actor, write
+  mode and check mode, the statement, the hold check, COMMIT, pipelined on
+  one reserved connection), `narrowBegin` (the SET with the first
+  statement, the hold check before COMMIT), `narrowRouteClient`,
+  `NarrowRoleLeftError`, `NarrowRouteRefusedError`; denials noted (miss row
+  `narrow-denied`; in tests recorded, and vitest.setup.ts fails the test).
+  `lazyQuery`, `sendIn`, `QueryMode` moved from role-tx.ts to actor-sql.ts
+  (role-tx.ts re-exports them).
+- gateway/pools.ts: the system pool's client is `narrowRouteClient` over
+  the actor client; `getNarrowDb()`; the switch read once at pool open and
+  logged in production with the pool's login line. gateway/handles.ts:
+  `systemDb` inside a turn or request scope runs on the narrow route.
+- packages/db/src/runtime-role.ts: `narrowSystemOn()` (feature
+  `narrowSystem`, `MANTLE_NARROW_SYSTEM`, default on outside production),
+  `setNarrowSystemForTests`. packages/config: the feature and env name;
+  docker-compose.yml passes it; .env.example, docs/configuration.md.
+- gateway/system-tx.ts: the system-pool write scope sets
+  `mantle.write_mode` from the actor in every check mode (the archive
+  path's read-only refusal, S2b LOW-3 / S2c L5). Cell:
+  narrow-route.db.test.ts, the last case.
+- access-matrix.ts: `NARROW_CREDENTIAL_TABLES` (every credential and
+  rights table with its narrow value and why) and `CREDENTIAL_NAME`; nine
+  rows narrowed: `contact_share_codes`, `private_workspaces`,
+  `former_user_workspaces`, `space_item_homes` to 'read';
+  `archive_mcp_login_tokens`, `archive_client_signin_codes`,
+  `archive_client_signin_code_skips`, `archive_client_signin_sender_folders`,
+  `archive_peer_roles` to 'none'. The others stay 'all', each with the
+  narrow writer named (mostly the area routes: users, keys, connectors,
+  assistants, settings; login-self for password, pairing, push, OAuth
+  authorize). `spaces` and `auth.users` stay 'all': the users area adds a
+  login (its space by trigger) and removes one (the FK cascades into
+  content tables run as the owner: a3 counts them).
+- Counters: arch-counts.mjs `gapRerunCount` treats the narrow role as the
+  route's own role; `roleResetCount` (new pin `roleResets`, 0).
+  heads-writers.mjs reviews narrow-route.ts for dynamic SQL.
+- Tests: packages/db/src/narrow-route.db.test.ts (new, 7 cases, green on
+  the workstation); runtime-role.test.ts (the credential list, the counts
+  `{ all: 97, read: 36, none: 8 }`); runtime-role.db.test.ts pins schema
+  USAGE (public, auth, pgboss; CREATE none) and pg-boss SELECT only;
+  admin-counts.test.ts and as-system-exits.test.ts read the map from
+  viewer.ts; actor-binders.mjs viewer.ts 9 to 7.
+- Docs: docs/runtime-role.md "The narrow route".
+
+### The routes, and the measurement (full DB suite, switch on)
+
+Uses on the narrow route by actor (MANTLE_NARROW_DUMP, one run):
+agent-workspace 7166, http:admin-area 740, admin-area 487, http:login-self
+181, login-telegram 168, connector-binding 81, audit-log 6, connector-call
+2, heartbeat-own-row 2, pending-approval 2; systemDb in scopes (login and
+assistant actors) about 9000 with no denial.
+
+Denials (each fails its test):
+
+| Actor                  | Table                  | Tests                                                                   |
+| ---------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| system:http:login-self | profiles (10)          | a2b2b-write-gateway, w7-int-fix2, w7-int-fix3                           |
+| system:http:admin-area | profiles (9)           | mcp-oauth-grants, w7e-member-scope, ws-onboarding-attach                |
+| system:http:admin-area | nodes (7)              | w6a-fix-sweep, w6b-fix3, w6b-fix4, w6b-fix5                             |
+| system:admin-area      | profiles (7)           | execute-item, w7a-area-system-sweep, w7a-fix2, w7a-fix4, w7a-tool-sweep |
+| system:admin-area      | nodes (4)              | w7a-fix2, w7a-tool-sweep                                                |
+| system:http:admin-area | space_items (3)        | access-keys, device-tokens, session-epoch                               |
+| assistant:none         | schema viewer_test (1) | viewer.db.test (a test's own schema via systemDb in a scope)            |
+
+Failing without a denial (not yet read): a2a-round-trips (likely the
+round trips the narrow route adds to systemDb in a scope),
+w6b-member-writes, w7a-fix3, turn-create-home.
+
+### Left for round 2
+
+1. Each denial: profiles is a `content` table (the write role's
+   own-login rule), so a hand 'all' throws (MED-1). Find the writers (the
+   login's own preferences on login-self; the settings area and the
+   systemWhole tools writing the brain's preferences; the area routes and
+   tools that write nodes, likely the Secrets root and folder roots made on
+   the system pool, and space_items on a session end) and either move the
+   write into the caller's scope or a definer, or route the exit full with
+   its why. Re-measure; never widen for a member, client, key, peer or
+   link. If admin-area must go full, systemWholeOnFull goes back up: say so.
+2. The four failures without a denial; viewer.db.test's own schema.
+3. systemDbUses per file marked narrow or full (not done): today systemDb
+   runs narrow inside any scope, full outside.
+4. Gates: full DB vitest green, then test:actor-off, test:actor-on,
+   test:edit-on, test:matrix, test:runtime-role (full), all with the switch
+   on (the default in tests); CI green.
+5. Rollback section: off by default in production, so the release is
+   byte-equal there; N-1 has no route.
+
+### Gates (round 1)
+
+Mac, Node 26, DATABASE_URL unset, on 9f05ef055 unless said: pnpm -r
+typecheck 0 (on 5f0dd70b7+wip), pnpm lint 0 (a1e9ca957), pnpm format:check
+0, pnpm docs:check 0, pnpm arch:check 0, pnpm boot:smoke 0, pnpm -C
+server/web build 0, vitest run server packages eslint-rules 0 (857 files
+passed, 269 skipped). A first unit run on a1e9ca957 failed 6 tests (the
+count tests still expected the seed, the binder pin, the docs table row,
+and realtime.needs-you, whose mock of @mantle/config met runtime-role.ts
+loaded by vitest.setup.ts: the collectors moved to actor.ts).
+
+Workstation, own clone ~/s7a-a2-ws, own container s7a-a2-pg on
+127.0.0.1:56372 (checked free, max_connections=450), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, --maxWorkers=3:
+narrow-route.db.test.ts + runtime-role.db.test.ts + runtime-role.test.ts
+exit 1 then (after the cells unwrap drizzle's error) narrow-route green;
+full DB vitest on 9f05ef055 exit 1 (23 files, 30 tests failed, 13841
+passed): the table above. Not run yet: test:actor-off, test:actor-on,
+test:edit-on, test:matrix, test:runtime-role.
