@@ -6,7 +6,7 @@ toolGroups: [toolsmith]
 ## Tools
 
 This is the list of every action an agent can take: reading a note, querying a
-table, sending mail, calling an outside API. A tool here is granted to nobody.
+table, sending mail, calling an outside API. Listing a tool here grants it to nobody.
 Agents get tools only through [tool groups](tool-groups.md).
 
 Two switches matter on each tool:

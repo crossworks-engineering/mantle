@@ -21,9 +21,9 @@ On its screen you can change its colour and icon, and pick its landing page. An 
 1. Open the workspace in **Settings > Workspaces**.
 2. Under **Add a user**, search by name or email and click **Add**.
 
-They read every item shared with the workspace at once. Only people who already have a login show up: invite someone new first ([Add users](../05-admin/07-logins.md)).
+They can read every item shared with the workspace straight away. Only people who already have a login show up: invite someone new first ([Add users](../05-admin/07-logins.md)).
 
-A **Moderator** adds people, edits the workspace and changes the items whose home it is. Only an admin turns the **Moderator** switch on or off.
+A **Moderator** adds people, edits the workspace and changes the items whose home is that workspace. Only an admin turns the **Moderator** switch on or off.
 
 ## Share an item
 
@@ -33,7 +33,7 @@ A **Moderator** adds people, edits the workspace and changes the items whose hom
 
 To stop sharing, click **Revoke** on that row. To move the item to another home, pick **Home** on that row; you can keep it readable in the old home.
 
-A folder shares what is in it: open **Access…** from the folder's menu in the tree. The dialog says how many items gain the workspace before you confirm. If a page embeds items that are not shared the same way, the panel offers **Grant these too**.
+A folder shares what is in it: open **Access…** from the folder's menu in the tree. Before you confirm, the dialog says how many items it will share. If a page embeds items that are not shared the same way, the panel offers **Grant these too**.
 
 ## Pick the landing page
 
@@ -41,7 +41,7 @@ Each workspace has a landing page: what its people see at **Home**. A Moderator 
 
 ## Take access away
 
-- **Remove a person**: click remove on their row. They lose the workspace's items at once, unless another of their workspaces has them. To leave a workspace, remove yourself.
+- **Remove a person**: click the remove button on their row. They lose the workspace's items at once, unless another of their workspaces has them. To leave a workspace, remove yourself.
 - **Archive a workspace**: **Archive workspace** at the top of its screen. It takes the workspace's shares off every item. It is refused while items still have their home there: move them first.
 - **End a login**: switch on **Disabled** in **Settings > Users**.
 

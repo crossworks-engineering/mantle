@@ -15,7 +15,7 @@ Write the skill first. A heartbeat's skill describes the job for one firing. See
 1. Open **Settings > Heartbeats** and click **New heartbeat**.
 2. Fill in **Name**, then pick the **Agent** and the **Skill**.
 3. Under **Schedule**, choose:
-   - **interval**: every so many minutes, with optional jitter.
+   - **interval**: every so many minutes, with optional jitter (a small random shift in timing).
    - **once**: one firing at a set time.
    - **manual**: only when you click **Fire now**.
 4. Under **Surface**, choose **telegram** or **web**.

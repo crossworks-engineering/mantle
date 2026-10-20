@@ -18,7 +18,7 @@ It is searchable straight away. Switching it off removes its docs from the brain
 1. Open **Docs** and click **New collection**.
 2. Fill in:
    - **Label**: the name people see, for example `Work handbook`.
-   - **Key**: a short unique slug, for example `handbook`.
+   - **Key**: a short unique ID, for example `handbook`.
    - **Root path**: the folder to index. A relative path (for example `guide`) reads from the docs shipped with MantleOS. An absolute path reads that folder.
    - **Brain depth**: see below.
 3. Click **Create collection**.

@@ -10,7 +10,7 @@ A heartbeat makes the assistant act without being asked. It is a standing job wi
 2. Pick the **Agent** (whose voice) and the **Skill** (what to do).
 3. Set the schedule: every so many minutes, once at a set time, or manual only.
 4. Choose the surface, where the reply goes: Telegram or the web.
-5. Set the gates, when it may fire. New heartbeats start with sensible defaults: **Min idle** 15 minutes, quiet hours 22:00 to 07:00, **Cooldown** 30 minutes.
+5. Set the gates, when it may fire. New heartbeats start with these defaults: **Min idle** 15 minutes, quiet hours 22:00 to 07:00, **Cooldown** 30 minutes.
 6. Save.
 
 Use **Fire** to run it now, **Pause** or **Resume** to stop and start it, and the fire history link to see each attempt.

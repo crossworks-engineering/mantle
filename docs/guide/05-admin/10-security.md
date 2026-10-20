@@ -1,10 +1,10 @@
 # Keep a box secure
 
-A MantleOS box exposes one front door, and its secrets live in `.env`. This page lists what is exposed, what leaves the box and what to keep safe.
+A MantleOS box has one way in from the network, and its secrets live in `.env`. This page lists what is exposed, what leaves the box and what to keep safe.
 
 ## What is exposed
 
-- Only the front door (Caddy) listens on the network, on ports 80 and 443.
+- Only the front door (Caddy, the built-in web server) listens on the network, on ports 80 and 443.
 - The debug port (3000) listens on `127.0.0.1` only.
 - Docker's published ports bypass the host firewall. To keep a brain off the network, install with `--localhost`, which sets `MANTLE_BIND_ADDR=127.0.0.1`. A firewall rule alone does not do it.
 - Use a domain with HTTPS for any box reachable from the internet. See [Add a domain and HTTPS](../01-install/05-domain-https.md).

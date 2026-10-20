@@ -1,6 +1,6 @@
 # Get a server
 
-Rent a small Linux server, add your SSH key and connect to it. Most of it is copy and paste, and it is easier than it looks.
+Rent a small Linux server, add your SSH key and connect to it. Most of it is copy and paste.
 
 A VPS (virtual private server) is a Linux machine you rent by the month from a hosting company. It is always on and has its own public IP address, so you can reach your brain from anywhere.
 

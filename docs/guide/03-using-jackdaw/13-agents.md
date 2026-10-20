@@ -6,7 +6,7 @@ For what agents, skills and tools are, see [Agents, skills and tools](../04-conc
 
 ## Agents
 
-An agent is something that holds a conversation. You talk to the **Assistant**. The others are specialists it hands work to, for example **Researcher** (web search), **Pages** (documents), **Ledger** (tables), **Appsmith** (apps) and **Toolsmith** (new tools). The **Team Responder** answers your members.
+An agent is something that holds a conversation. You talk to the **Assistant**. The others are specialists it hands work to, for example **Researcher** (web search), **Pages** (documents), **Ledger** (tables), **Appsmith** (apps) and **Toolsmith** (new tools). The **Team Responder** is a ready-made assistant to give a team's workspace.
 
 ### Edit an agent
 

@@ -39,4 +39,4 @@ Open **Apps** in the app and pick the app. The preview shows the draft build. Af
 
 - The full reference Claude reads: [App authoring guide](../../app-authoring-guide.md).
 - [Apps](../03-using-jackdaw/10-apps.md): edit, publish and share in the app.
-- [Member home apps](07-member-home-apps.md)
+- [Workspace home apps](07-member-home-apps.md)

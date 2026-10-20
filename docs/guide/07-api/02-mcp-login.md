@@ -41,7 +41,7 @@ Who reaches the app is the same as in the browser, and the app must be published
 
 Copying or exporting an app with its data needs an edit right on the app, unless its **MCP access** is on.
 
-Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. These snapshots keep a day of hours (24) on their own, so they never push out the app's other snapshots. Each MCP read and write shows in the app's Activity, and a write keeps its SQL. The SQL can hold what the member typed, personal data included: only admins see the Activity tab.
+Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. These snapshots have their own limit of 24, one day's worth, so they never push out the app's other snapshots. Each MCP read and write shows in the app's Activity, and a write keeps its SQL. The SQL can hold what the member typed, personal data included: only admins see the Activity tab.
 
 ## Open an outside data source (a connector)
 
@@ -49,7 +49,7 @@ An MCP connector (Settings > MCP connectors) is a resource of a workspace. Every
 
 A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data. Every call is logged with the login.
 
-Removing the mark never closes a tool: it makes it a tool that changes data. To close one, take the connector out of the workspace or switch the tool off. If a connector's tool changes (its description or its inputs), the connector moves to another server, or it signs in another way (a new key, header, OAuth app, scope, or a sign-in as another account), its mark stops counting until you mark it again. A routine OAuth reconnect as the same account keeps the marks.
+Removing the mark never closes a tool: it makes it a tool that changes data. To close one, take the connector out of the workspace or switch the tool off. A mark stops counting until you mark the tool again when any of these change: the tool's description or inputs, the connector's server, or the way it signs in (a new key, header, OAuth app, scope, or a sign-in as another account). A routine OAuth reconnect as the same account keeps the marks.
 
 ## When their MCP client cannot sign in
 
@@ -91,4 +91,4 @@ In the person's client, the MantleOS tool list holds the tools their workspaces 
 ## Next
 
 - [Sharing and federation](../04-concepts/06-sharing-and-federation.md)
-- [Team and members](../03-using-jackdaw/12-team.md)
+- [Workspaces and people](../03-using-jackdaw/12-team.md)

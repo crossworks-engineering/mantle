@@ -13,7 +13,7 @@ kinds of item land here:
 - **Questions.** A background run stopped to ask you something, or ran out of
   budget and needs a decision. These show as a short form to fill in.
 
-Read the arguments, not just the tool name, on anything that sends, deletes or
+Read the arguments, not only the tool name, on anything that sends, deletes or
 spends. Each card links to the trace of the turn that asked for it.
 
 If a card says **Previous decision bounced**, your earlier decision was

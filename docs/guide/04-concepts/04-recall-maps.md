@@ -19,7 +19,7 @@ An agent may add and edit cards, and every change is logged under **Revisions**,
 - **Confirm a prompt.** An agent can ask for a card to be a prompt, but it never matches until you confirm it.
 - **Delete** a map.
 
-If an agent changes the words of a confirmed prompt, it waits for your confirm again.
+If an agent changes the words of a confirmed prompt, it waits for you to confirm it again.
 
 ## Example
 

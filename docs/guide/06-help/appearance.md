@@ -12,7 +12,7 @@ Appearance sets how MantleOS looks. Most choices apply as you click.
 - **Avatar style**: the look of every generated avatar. **Logo**: upload your own logo.
 - **Backgrounds**: a generated backdrop for the Menu, Brand, Chat and Activity areas. Each can be Off. Only the menu has one at first.
 
-Pick a theme by contrast as well as colour. The status colours (success, warning, error) need to stand apart so a failed job is easy to spot.
+Pick a theme by contrast as well as colour. The status colours (success, warning, error) need to stand apart so you spot a failed job at a glance.
 
 ## Assistant
 

@@ -35,7 +35,7 @@ Pick a view from the **View** menu in the app header:
 
 After the first commit, click **Access**:
 
-- **Share with** a workspace: its users run the app, signed in with their own logins. With **Write** on they also write its data. An app shared beyond Admin reads only what every workspace that holds it reads. See [Who can use a brain](../04-concepts/05-access-tiers.md).
+- **Share with** a workspace: its users run the app, signed in with their own logins. With **Writable** on they also write its data. An app shared beyond Admin reads only what every workspace that holds it reads. See [Who can use a brain](../04-concepts/05-access-tiers.md).
 - **Open link**: anyone with the link sees it full screen, read-only, with no access to your brain's tools.
 
 Treat a public link as a secret. Close it in the same panel.

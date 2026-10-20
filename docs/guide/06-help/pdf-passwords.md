@@ -11,7 +11,7 @@ month, such as the last digits of an ID or account number.
 1. Enter a **Label** (optional), for example "Bank statements".
 2. Enter the **Password** and press **Add**.
 
-When a locked PDF comes in, the extractor tries each saved password until one
+When a locked PDF comes in, MantleOS tries each saved password until one
 opens it. The list shows when each password last unlocked a file. Keep the list
 short: every password is tried on every locked PDF.
 

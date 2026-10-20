@@ -11,7 +11,7 @@ Turn on scheduled backups in **Settings > Backups**, copy them off the box, and 
 | Attachments (the object store) | `data/rustfs/` |
 | `.env` | the stack directory |
 
-`data/` is `MANTLE_DATA_DIR`, next to `docker-compose.yml` unless you moved it. Each backup run also saves the app databases, the table workbooks and the files folded from members' old personal spaces beside the dump.
+`data/` is `MANTLE_DATA_DIR`, next to `docker-compose.yml` unless you moved it. Beside each dump, a backup run also saves the app databases, the table workbooks and the files that came over from members' old personal spaces.
 
 `.env` holds `MANTLE_MASTER_KEY`. Without it, the API keys, mail passwords and secrets in a backup cannot be read. Keep a copy of `.env` somewhere other than the backup folder.
 
@@ -60,7 +60,7 @@ Restore into a fresh database on a stopped stack. The script refuses a database 
    docker compose up -d postgres --wait
    ```
 
-5. Restore the dump. It also puts the files folded from members' old personal spaces back from the archive beside it:
+5. Restore the dump. It also restores the files that came over from members' old personal spaces, from the archive beside the dump:
 
    ```bash
    bash scripts/db-restore.sh backups/mantle-<time>.dump

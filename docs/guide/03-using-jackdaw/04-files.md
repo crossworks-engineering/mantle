@@ -17,10 +17,10 @@ The web uploader takes files up to 512 MB by default. Files you attach in chat a
 | File | How it is read |
 |---|---|
 | Text, markdown, JSON | Read directly. |
-| PDF | Text layer read. Scanned pages are run through OCR. |
+| PDF | Text layer read. Scanned pages go through text recognition (OCR). |
 | Word | Converted to text. |
 | Excel, CSV | Read, and also turned into a typed table. |
-| Images | Described and OCR'd by the vision worker. |
+| Images | Described, and any text in them read, by the vision worker. |
 
 A password-protected PDF opens if its password is saved in **Settings > PDF passwords**.
 

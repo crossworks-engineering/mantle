@@ -32,7 +32,7 @@ From any screen you can also ask: "Write this up as a page called Site Handover.
 
 Click **Access** in the page header. Under **Who can see this**, the panel lists the page's home workspace and every workspace it is shared with.
 
-- **Share with** a workspace to let its users read the page. Turn its **Write** switch on to let them edit it too.
+- **Share with** a workspace to let its users read the page. Turn its **Writable** switch on to let them edit it too.
 - **Open link** makes a link anyone can open without a login.
 
 See [Who can use a brain](../04-concepts/05-access-tiers.md).

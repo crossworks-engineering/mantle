@@ -18,13 +18,13 @@ These are the `.env` settings an operator sets or changes. The installer writes 
 
 | Variable | What it does |
 |---|---|
-| `MANTLE_SITE_ADDRESS` | The hostname the front door serves, for example `brain.example.com`. A hostname gets HTTPS automatically. |
+| `MANTLE_SITE_ADDRESS` | The hostname the brain answers on, for example `brain.example.com`. A hostname gets HTTPS automatically. |
 | `MANTLE_PUBLIC_URL` | The full public address, for example `https://brain.example.com`. Used in share and email links. |
 | `MANTLE_SERVER_ORIGIN` | The address the web app uses to reach the API. Usually the same as `MANTLE_PUBLIC_URL`. |
 | `MANTLE_BIND_ADDR` | Network interface for ports 80 and 443. `127.0.0.1` keeps the brain off the network. Default `0.0.0.0`. |
-| `MANTLE_HTTP_PORT`, `MANTLE_HTTPS_PORT` | Host ports for the front door. Default 80 and 443. HTTPS certificates need the real 80 and 443. |
+| `MANTLE_HTTP_PORT`, `MANTLE_HTTPS_PORT` | Host ports for the built-in web server. Default 80 and 443. HTTPS certificates need the real 80 and 443. |
 | `MANTLE_WEB_DEBUG_PORT` | Loopback-only debug port. Default 3000. Change it if something else holds 3000. |
-| `MANTLE_TRUSTED_PROXIES` | Proxy hops in front of MantleOS, for correct client addresses. Default 1. Raise it if you add a proxy before Caddy. |
+| `MANTLE_TRUSTED_PROXIES` | Proxy hops in front of MantleOS, for correct client addresses. Default 1. Raise it if you add a proxy in front of Caddy, the built-in web server. |
 | `MANTLE_API_CORS_ORIGINS` | Extra origins allowed to call the API, comma separated. Empty means same origin only. |
 
 To change the domain, run `scripts/install.sh --domain <host>` instead of editing these by hand. See [Add a domain and HTTPS](../01-install/05-domain-https.md).

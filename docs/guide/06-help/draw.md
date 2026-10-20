@@ -19,7 +19,6 @@ Share a drawing or export it from the header.
 
 - "Find my sketch about the ingest pipeline."
 - "What did I plan on the architecture whiteboard?"
-
 - "Look at the onboarding flow drawing and tell me which steps are ticked."
 
 The assistant reads a drawing's text first: frame names, shape labels and labelled arrows. Label your shapes and name your frames so it can find them. When positions, colours, ticks or layout matter, it can also look at the drawing as a picture. That needs a model that can see images; a text-only model gets the text. The picture is the last commit, the same image a share link shows. The assistant cannot draw or edit.

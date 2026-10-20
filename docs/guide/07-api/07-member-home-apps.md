@@ -15,7 +15,7 @@ Every workspace has a landing page: what its users see at **Home** while it is t
 
 Only apps the workspace holds, with a working published build, are in the list. Picking changes no grant. Users always get the published build. If the build breaks, the landing page shows the **Built-in home** until the build works again. If the app is deleted or no longer shared with the workspace, the pick is cleared: sharing it again does not bring it back, so pick it again. Pick **Built-in home** to go back by hand.
 
-Each workspace has its own landing page. A user in two workspaces sees the other one after a switch. **All my workspaces** in the switcher always shows the Built-in home.
+Each workspace has its own landing page. A user in two workspaces sees the other workspace's landing page after they switch. **All my workspaces** in the switcher always shows the Built-in home.
 
 ## Read the workspace's data
 

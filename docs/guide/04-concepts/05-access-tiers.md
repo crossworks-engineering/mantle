@@ -11,7 +11,7 @@ So the rules are the same everywhere: a person gets the same answer in the app, 
 ## The model
 
 - A **workspace** is a group of people: a team, a site, a project or a client. It has users, at most one assistant, and connectors.
-- Every item has one **home** workspace. It is shared with another workspace by a **grant**, and each grant has its own **Write** switch.
+- Every item has one **home** workspace. It is shared with another workspace by a **grant**, and each grant has its own Write switch (**Writable** in the panel).
 - People read every item shared with their workspaces. They change an item when its grant has Write on, or when they are a **Moderator** of its home.
 - An item you may not read looks like it does not exist.
 - A workspace with one user is private.

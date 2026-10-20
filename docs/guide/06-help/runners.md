@@ -4,7 +4,7 @@ title: Runners
 
 ## Runners
 
-This is the console for the durable workflow engine: every workflow that is
+This is the console for the engine that runs background work: every workflow that is
 queued, running or finished, with its status, name and timing. Use it when
 background work has stopped: a run stuck on one step, or a job that never
 finished.

@@ -4,7 +4,7 @@ MantleOS is self-hosted: it runs on a machine you own. Pick the line that fits y
 
 ## A server with a domain
 
-The usual choice. One command installs MantleOS on a Linux server, and your domain gets HTTPS by itself. Reachable from anywhere, always on.
+The usual choice. One command installs MantleOS on a Linux server, and your domain gets HTTPS by itself. It is always on and reachable from anywhere.
 
 No server yet? [Get a server](02-get-a-server.md) first. Then [install on a server](03-server.md), or [let an AI assistant do it](04-ai-assistant.md), and [add a domain and HTTPS](05-domain-https.md).
 
@@ -16,7 +16,7 @@ The same one command, without a domain. MantleOS answers on plain HTTP at the se
 
 ## A small server
 
-The core shape fits a 2 vCPU / 4 GB server. It keeps memory, file ingest, the API and MCP, and drops the email and Telegram workers.
+The core shape is a smaller install that fits a 2 vCPU / 4 GB server. It keeps memory, file ingest, the API and MCP, and drops the email and Telegram workers.
 
 [Install on a small server](06-small-server.md).
 

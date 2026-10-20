@@ -70,6 +70,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - It reaches its expiry.
 - The login changes its password, or uses **Sign out everywhere**.
 - An admin ends the login's sessions, disables it, or changes its role.
+
 A plain sign-out does not end a key. When the login leaves a workspace, its keys lose that workspace's items at once.
 
 Each time a key is made on your login, you get a notice that names the key. If it was not you, revoke the key and change your password.

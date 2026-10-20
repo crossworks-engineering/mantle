@@ -29,7 +29,7 @@ Open **Settings > Workspaces > Admin** and add the user. An admin manages the br
 - **Settings > Users**: select the login and switch on **Disabled**. Every session and API key it holds ends at once.
 - **Sign out everywhere** on the same screen ends all sessions and API keys but keeps the login.
 
-Client logins and emailed sign-in codes are gone, and a former client login stays disabled. To work with people outside your company, make a workspace for them and add their logins.
+MantleOS no longer has client logins or emailed sign-in codes, and a former client login stays disabled. To work with people outside your company, make a workspace for them and add their logins.
 
 ## Check it worked
 

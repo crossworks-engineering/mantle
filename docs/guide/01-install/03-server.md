@@ -13,7 +13,7 @@ One command installs MantleOS on a Linux server and starts it.
 :::note[What OpenRouter is for]
 OpenRouter is one account and one key that reach many AI models. MantleOS uses it by default for the agents' chat, the background work that summarises new items and pulls out facts, reading images and PDFs, web research, speech and image generation.
 
-Search embeddings use an online model on your OpenRouter or OpenAI key, picked in the setup wizard. You can move them to the bundled local embedder, and point any agent or worker at a model on your own machine. See [Use local models](../05-admin/06-local-models.md).
+Search embeddings, which let MantleOS search by meaning, use an online model on your OpenRouter or OpenAI key, picked in the setup wizard. You can move them to the bundled local embedder, and point any agent or worker at a model on your own machine. See [Use local models](../05-admin/06-local-models.md).
 
 Set a credit limit on the key at [openrouter.ai/keys](https://openrouter.ai/keys). Spend then stops at that amount.
 :::

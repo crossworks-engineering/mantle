@@ -33,7 +33,7 @@ A paired chat belongs to the user who paired it. Whatever it sends, the bot's as
 - **Moderators and Admin users block or unpair, never pair.** A Moderator of the bot's workspace, or an Admin user with the users area, can block or unpair any chat of that bot. Unpairing sends the chat back to pending, so its person can pair again with a new code.
 - **Approvals come to your own chat only.** A tool call waiting for approval sends its card to a chat of the user it waits for, and only when that user may decide approvals.
 
-An assistant of a workspace other than Admin takes typed messages only on Telegram, as in the app, and a user who is not an Admin user has the same daily message limit there as in the app.
+As in the app, an assistant of a workspace other than Admin accepts only typed messages on Telegram, and a user who is not an Admin user has the same daily message limit there as in the app.
 
 ## If it fails
 

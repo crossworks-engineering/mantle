@@ -15,7 +15,7 @@ lists, callouts and diagrams.
 - **Revert** throws the whole draft away and goes back to the last commit.
 - **Access** lists the page's home workspace and every workspace it is
   shared with. Share it with a workspace to let its users read it, with
-  **Write** on to let them edit it. An open link gives a read-only link
+  **Writable** on to let them edit it. An open link gives a read-only link
   anyone can open.
 
 ## Assistant
