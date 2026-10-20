@@ -203,7 +203,7 @@ no where the old memo answered the first Login's Admin.
 - `loginRoleDecisionReads` is pinned at its measure (34) and only goes
   down; the brief's "1" was wrong.
 
-#### For S8b: what `mantle_scope_is_admin()` trusts
+#### Before the pair goes: what `mantle_scope_is_admin()` trusts
 
 `mantle_scope_is_admin()` trusts only `mantle.ws` (the scope holds the
 live Admin workspace): it checks no brain id, no membership of the
