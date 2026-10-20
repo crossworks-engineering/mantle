@@ -11,7 +11,15 @@ import type postgres from 'postgres';
 import { env } from '@mantle/config';
 import { RuntimeFaultError } from '@mantle/std';
 import { permissionGapOf } from '../pg-error';
-import { actorCheckMode, actorSetting, currentActor, noteActorMiss, writeModeOf } from '../actor';
+import {
+  actorCheckMode,
+  actorSetting,
+  currentActor,
+  noteActorMiss,
+  noteTestNarrowDenial,
+  noteTestNarrowUse,
+  writeModeOf,
+} from '../actor';
 import { reserveLease } from '../reserved';
 import { NARROW_ROLE } from '../runtime-role';
 import { ACTOR_SQL_TAG, firstModeReadNow } from './check-mode';
@@ -90,10 +98,6 @@ async function narrowSettingsSql(): Promise<string> {
   return `${ACTOR_SQL_TAG} ${setActorSql([actorSetting(actor), writeModeOf(actor), actorCheckMode()])}, ${role}`;
 }
 
-/** Tests only: the narrow route's denials and uses since the last take. */
-const testDenials: { actor: string; what: string }[] = [];
-const testUses = new Map<string, number>();
-
 /**
  * A right the narrow role does not hold, met on the narrow route: noted
  * every time, a caught one too (the measurement: route the reason full with
@@ -107,7 +111,7 @@ function noteNarrowDenial(err: unknown): void {
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';
   if (env('NODE_ENV') === 'test') {
-    testDenials.push({ actor: who, what: what.slice(0, 200) });
+    noteTestNarrowDenial(who, what.slice(0, 200));
     return;
   }
   noteActorMiss({ source: 'ts', check: 'narrow-denied', actor: who, detail: what.slice(0, 200) });
@@ -118,22 +122,7 @@ function noteNarrowDenial(err: unknown): void {
 function noteNarrowUse(): void {
   if (env('NODE_ENV') !== 'test') return;
   const actor = currentActor();
-  const who = actor ? actorSetting(actor) : 'none';
-  testUses.set(who, (testUses.get(who) ?? 0) + 1);
-}
-
-/** Tests only (not in index.ts): the narrow route's denials since the last
- *  take, and clears them. */
-export function takeNarrowDenials(): { actor: string; what: string }[] {
-  return testDenials.splice(0);
-}
-
-/** Tests only (not in index.ts): the narrow route's uses by actor since
- *  the last take, and clears them. */
-export function takeNarrowUses(): Record<string, number> {
-  const out = Object.fromEntries(testUses);
-  testUses.clear();
-  return out;
+  noteTestNarrowUse(actor ? actorSetting(actor) : 'none');
 }
 
 /**

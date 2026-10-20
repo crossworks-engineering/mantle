@@ -44,6 +44,15 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       )) as unknown as Who[];
       return rows[0]!;
     });
+  /** The error a statement failed with: drizzle wraps the driver's. */
+  const failure = async (p: Promise<unknown>): Promise<unknown> => {
+    try {
+      await p;
+    } catch (err) {
+      return (err as { cause?: unknown }).cause ?? err;
+    }
+    throw new Error('expected a failure');
+  };
   /** The pool reads the switch once, when it opens. */
   const reopen = async (on: boolean) => {
     await m.closeDb();
@@ -124,42 +133,46 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         'admin-area',
       ),
     ).rejects.toMatchObject({ code: '42501' });
-    const denied = nr.takeNarrowDenials();
+    const denied = actor.takeNarrowDenials();
     expect(denied).toHaveLength(1);
     expect(denied[0]!.actor).toBe('system:admin-area');
     await v.asSystem(
       () => m.db.execute(sql`delete from public.audit_log where false`),
       'admin-area',
     );
-    expect(nr.takeNarrowDenials()).toEqual([]);
+    expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
   it('rolls back a statement or a transaction that left the role, and refuses transaction control', async () => {
-    await expect(
-      v.asSystem(() => m.db.execute(sql`select set_config('role', 'none', true)`), 'admin-area'),
-    ).rejects.toBeInstanceOf(nr.NarrowRoleLeftError);
-    const marker = `narrow-left-${randomUUID()}`;
-    await expect(
-      v.asSystem(
-        () =>
-          m.db.transaction(async (tx) => {
-            await tx.execute(sql`select set_config('role', 'none', true)`);
-            // As the session's own login now: the hold check must undo this.
-            await tx.execute(sql`insert into public.narrow_probe (x) values (${marker})`);
-          }),
-        'admin-area',
+    expect(
+      await failure(
+        v.asSystem(() => m.db.execute(sql`select set_config('role', 'none', true)`), 'admin-area'),
       ),
-    ).rejects.toBeInstanceOf(nr.NarrowRoleLeftError);
+    ).toBeInstanceOf(nr.NarrowRoleLeftError);
+    const marker = `narrow-left-${randomUUID()}`;
+    expect(
+      await failure(
+        v.asSystem(
+          () =>
+            m.db.transaction(async (tx) => {
+              await tx.execute(sql`select set_config('role', 'none', true)`);
+              // As the session's own login now: the hold check must undo this.
+              await tx.execute(sql`insert into public.narrow_probe (x) values (${marker})`);
+            }),
+          'admin-area',
+        ),
+      ),
+    ).toBeInstanceOf(nr.NarrowRoleLeftError);
     const left = await su<{ n: number }[]>`
       select count(*)::int as n from public.narrow_probe where x = ${marker}`;
     expect(left[0]!.n).toBe(0);
     for (const stmt of ['vacuum', 'commit', 'select 1; commit']) {
-      await expect(
-        v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area'),
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
         stmt,
-      ).rejects.toBeInstanceOf(nr.NarrowRouteRefusedError);
+      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
     }
-    expect(nr.takeNarrowDenials()).toEqual([]);
+    expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
   it('off: every reason runs as the pool login', async () => {
@@ -172,7 +185,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         return who();
       });
       expect(got.u).toBe(pool);
-      expect(nr.takeNarrowUses()).toEqual({});
+      expect(actor.takeNarrowUses()).toEqual({});
     } finally {
       await reopen(true);
     }

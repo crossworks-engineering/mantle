@@ -14,9 +14,14 @@
  */
 import { appendFileSync } from 'node:fs';
 import { afterEach, beforeAll, beforeEach, expect } from 'vitest';
-import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/db/src/actor';
+import {
+  enterTestActor,
+  takeActorMisses,
+  takeNarrowDenials,
+  takeNarrowUses,
+  takeWriteRoleGaps,
+} from './packages/db/src/actor';
 import { takeFailOpenHits } from './packages/db/src/fail-open';
-import { takeNarrowDenials, takeNarrowUses } from './packages/db/src/gateway/narrow-route';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so

@@ -243,12 +243,14 @@ describe('the exits by route', () => {
     expect(viewer.problems).toEqual([]);
   });
 
-  it('the repo: the seed routes every reason AsSystemReason admits, all full', () => {
+  it('the repo: viewer.ts routes every reason AsSystemReason admits; the seed stays all full', () => {
     const reasonsNow = asSystemReasons(ROOT) as string[];
     expect(reasonsNow.length).toBeGreaterThan(10);
     expect(Object.keys(AS_SYSTEM_ROUTE_SEED).sort()).toEqual([...reasonsNow].sort());
     expect(new Set(Object.values(AS_SYSTEM_ROUTE_SEED))).toEqual(new Set(['full']));
     const map = asSystemRouteMap(ROOT) as { source: string; routes: Record<string, string> };
-    expect(map.source).toBe('seed');
+    expect(map.source).toBe('packages/db/src/viewer.ts');
+    expect(Object.keys(map.routes).sort()).toEqual([...reasonsNow].sort());
+    expect(map.routes['admin-area']).toBe('narrow');
   });
 });

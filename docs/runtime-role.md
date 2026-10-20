@@ -164,9 +164,7 @@ runtime role is its member with `SET` only (`wantedMemberships`), so the
 runtime role holds none of its rights and may take it; the superuser may take
 it as any role. Migrate makes it and its membership on every run
 (`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
-the others'. Nothing runs on it yet: the route that takes it per transaction
-(`set_config('role', ..., true)` in the pipelined transaction, never a
-session `SET`) and the reasons that pick it come next.
+the others'. The narrow route takes it per transaction (below).
 
 Its rights, made equal to the access matrix at every migrate inside
 `applyRuntimeGrants` (`applyNarrowGrants`), from `narrow` in each row of
@@ -204,6 +202,60 @@ grants table by table against `narrowFor`, the function list against the
 runtime role's, and the writes it is refused, taken from the runtime role and
 from the superuser. `runtime-role.test.ts` pins the derivation and the counts
 of `'all'`, `'read'` and `'none'` tables.
+
+### The narrow route
+
+`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default in tests and
+development, off by default in production; read once per process when the
+system pool opens, and a production process logs it with the pool's login.
+Off, every statement runs as before. On, a statement the system pool sends
+for an exit routed `'narrow'` runs as `mantle_system_narrow`
+(`packages/db/src/gateway/narrow-route.ts`):
+
+- one statement outside a transaction: `BEGIN`, one `SET`
+  (`set_config('role', 'mantle_system_narrow', true)` with the actor, its
+  write mode and the box's check mode, all transaction-local, never a
+  session `SET`), the statement, the hold check, `COMMIT`, pipelined on one
+  reserved connection (one round trip);
+- a transaction: the same `SET` with its first statement, the hold check
+  before its `COMMIT`;
+- the hold check fails when the transaction is no longer the narrow role's
+  (a statement set the role back): the transaction rolls back whole
+  (`NarrowRoleLeftError`). A statement Postgres refuses inside a
+  transaction, and one that opens or ends a transaction, is refused
+  (`NarrowRouteRefusedError`).
+
+Who picks it (`packages/db/src/viewer.ts`): `AS_SYSTEM_ROUTE`, a
+`Record<AsSystemReason, 'narrow' | 'full'>`, so a new reason must pick, and
+`REQUEST_SYSTEM_ROUTE` for the guard's request exits (`area`,
+`login-self`). The nearest `asSystem` decides; `systemWork` always runs
+full (workers, boot steps; `WorkspaceSystemReason` too). The pick holds only
+while the actor the exit bound is still bound: code inside it that binds
+another actor (a named repair, the miss log) runs full, as itself.
+`systemDb` inside a turn or request scope runs narrow (its traces, spills,
+counters and logs); outside every scope it is system work and runs full.
+
+Narrow: `admin-area` (the `systemWhole` tools and `areaSystem`),
+`agent-workspace`, `connector-binding`, `connector-call`,
+`heartbeat-own-row`, `login-telegram`, `audit-log`, `pending-approval`, and
+the request exits `area` and `login-self`. Full, each with its why in
+`AS_SYSTEM_ROUTE`'s comment: `app-data`, `rule-in-query`,
+`keyword-candidates`, `app-trash`, `page-refold`, `brain-bookkeeping`, and
+the system-work and test reasons.
+
+A right the narrow role does not hold, met on the route, is noted every
+time, a caught one too: a miss row (check `narrow-denied`) on a box, and in
+tests a failure (`vitest.setup.ts`). `MANTLE_NARROW_DUMP=<file>` lists the
+route's uses by actor and its denials per test file: how each reason was
+measured. A denial is a measurement result: the reason routes full with its
+why, or the table is granted narrowly with a reason, never widened for a
+member, client, key, peer or public link.
+
+`narrow-route.db.test.ts` pins the route: each reason's role, a statement
+and a transaction; the request exits; the actor carried; a content write
+refused and noted; the hold check's rollback; the refused statements; off
+changes nothing; the system-pool write scope carries the actor's write mode
+(a definer's read-only refusal, `mantle_ws_archive`, reads it).
 
 ## What runs as what
 

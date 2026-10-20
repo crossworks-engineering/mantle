@@ -515,11 +515,13 @@ describe('the repo', () => {
     );
   });
 
-  it('routes every asSystem reason, all full, and the systemWhole tools ride admin-area', () => {
+  it('routes every asSystem reason (viewer.ts AS_SYSTEM_ROUTE); admin-area narrow, so no systemWhole tool runs full', () => {
     expect(detail.asSystemRouteProblems).toEqual([]);
-    expect(numbers.asSystemNarrow).toBe(0);
+    expect(detail.asSystemRoutes.source).toBe('packages/db/src/viewer.ts');
+    expect(numbers.asSystemNarrow).toBeGreaterThan(0);
     expect(numbers.asSystemFull).toBeGreaterThan(0);
-    expect(numbers.systemWholeOnFull).toBe(numbers.systemWholeTools);
+    expect(numbers.systemWholeTools).toBeGreaterThan(0);
+    expect(numbers.systemWholeOnFull).toBe(0);
   });
 
   it('counts no Admin act: the item gate three went (S6 c2), ADMIN_ACT_WRITES (S6 c3)', () => {

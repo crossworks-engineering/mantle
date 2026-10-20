@@ -377,6 +377,34 @@ export function takeWriteRoleGaps(): string[] {
   return writeRoleGaps.splice(0, writeRoleGaps.length);
 }
 
+/** Tests only (gateway/narrow-route.ts): the narrow route's denials and
+ *  its uses by actor (plan v3.2 S7a), kept here, beside the write-role
+ *  gaps, so the test setup reads them without loading the gateway. */
+const narrowDenials: { actor: string; what: string }[] = [];
+const narrowUses = new Map<string, number>();
+
+/** Tests only (gateway/narrow-route.ts): note a narrow route denial. */
+export function noteTestNarrowDenial(actor: string, what: string): void {
+  narrowDenials.push({ actor, what });
+}
+
+/** Tests only (gateway/narrow-route.ts): count a narrow route use. */
+export function noteTestNarrowUse(actor: string): void {
+  narrowUses.set(actor, (narrowUses.get(actor) ?? 0) + 1);
+}
+
+/** Tests: the narrow route's denials since the last call, cleared. */
+export function takeNarrowDenials(): { actor: string; what: string }[] {
+  return narrowDenials.splice(0, narrowDenials.length);
+}
+
+/** Tests: the narrow route's uses by actor since the last call, cleared. */
+export function takeNarrowUses(): Record<string, number> {
+  const out = Object.fromEntries(narrowUses);
+  narrowUses.clear();
+  return out;
+}
+
 /** Tests: the misses noted since the last call, cleared. */
 export function takeActorMisses(): ActorMiss[] {
   return recorded.splice(0, recorded.length);
