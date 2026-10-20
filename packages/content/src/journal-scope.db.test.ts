@@ -3,19 +3,28 @@
  * operator precedence and NULLs are exactly what a pure test cannot see (the
  * first version hid rows through a NULL `source.via`). Runs on a TEMP table
  * named `nodes`, which shadows the real one for this connection only, so it
- * needs no migrated schema and leaves nothing behind.
+ * needs no migrated schema and leaves nothing behind. On the test's own
+ * connection as the URL's login, never the app's pool: no role the app runs
+ * as may make a temporary object (TEMPORARY is taken from PUBLIC).
  *
  * Gated on MANTLE_TEST_DATABASE_URL (any Postgres):
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/journal-scope.db.test.ts
  */
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { superuserClient } from '@mantle/db/test-support';
 import { describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+/** The test's own connection (the URL's login) and its close. */
+function ownDb() {
+  const client = superuserClient(URL!);
+  return { db: drizzle(client), closeDb: () => client.end() };
+}
+
 describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
   it('scopes learned rules to their agent; user facts, gaps and unowned rules stay brain-wide', async () => {
-    process.env.DATABASE_URL = URL;
-    const { db, closeDb } = await import('@mantle/db');
+    const { db, closeDb } = ownDb();
     const { sql } = await import('drizzle-orm');
     const { journalVisibleSql } = await import('./identity-context');
     try {
@@ -61,8 +70,7 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
   });
 
   it('rule reconcile only ever sees live rules THIS agent learned', async () => {
-    process.env.DATABASE_URL = URL;
-    const { db, closeDb } = await import('@mantle/db');
+    const { db, closeDb } = ownDb();
     const { sql } = await import('drizzle-orm');
     const { learnedRuleOfAgentSql } = await import('./rule-reconcile');
     try {
