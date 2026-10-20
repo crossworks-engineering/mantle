@@ -44,11 +44,16 @@ describe('the trail is for a login’s own session only', () => {
     }
   });
 
-  it('the owner (a login session with no workspace scope), or a scope with no login: no, and no definer is asked', async () => {
-    for (const s of [null, { ...scope, loginId: null }]) {
+  it('the owner, a session with no workspace scope, or a scope with no login: no, and no definer is asked', async () => {
+    for (const [s, mode] of [
+      [scope, 'owner'],
+      [null, 'owner'],
+      [null, 'rw'],
+      [{ ...scope, loginId: null }, 'rw'],
+    ] as const) {
       caller.scope = s;
       for (const via of ['cookie', 'bearer']) {
-        caller.value = { via, actor: { ...login, mode: 'owner' } };
+        caller.value = { via, actor: { ...login, mode } };
         expect(trailForCaller()).toBe(false);
         expect(folderTrailSql(owner, { under: 'notes' })).toBeNull();
         expect(await folderTrail(owner, { paths: ['notes.a'] })).toEqual([]);

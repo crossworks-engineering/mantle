@@ -11,8 +11,8 @@
  * Only a login's own session asks (a browser cookie, the phone's bearer
  * token), and only in a workspace scope with that login: an API key, a
  * linked brain, a public link and an assistant's turn read the folders they
- * read, as before. The brain's owner (no workspace scope: it reads every
- * folder) asks nothing, so its reads are the statements they were.
+ * read, as before. The brain's owner (it reads every folder) asks nothing,
+ * so its reads are the statements they were.
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from './client';
@@ -33,11 +33,13 @@ export type TrailAsk = {
 };
 
 /** Whether the current call is a login's own session in a workspace scope
- *  of that login, the one caller the trail is for. The owner (no workspace
- *  scope) reads every folder and gets none. */
+ *  of that login, the one caller the trail is for. The brain's owner reads
+ *  every folder and gets none (its statements are the ones they were). */
 export function trailForCaller(): boolean {
   const c = currentCaller();
-  if (!((c?.via === 'cookie' || c?.via === 'bearer') && c.actor?.kind === 'login')) return false;
+  const actor = c?.actor;
+  if (!(c?.via === 'cookie' || c?.via === 'bearer') || actor?.kind !== 'login') return false;
+  if (actor.mode === 'owner') return false;
   return Boolean(currentWorkspaceScope()?.loginId);
 }
 
