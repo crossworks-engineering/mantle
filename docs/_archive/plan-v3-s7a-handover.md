@@ -327,7 +327,7 @@ w6b-member-writes, w7a-fix3, turn-create-home.
 ### Gates (round 1)
 
 Mac, Node 26, DATABASE_URL unset, on 9f05ef055 unless said: pnpm -r
-typecheck 0 (on 5f0dd70b7+wip), pnpm lint 0 (a1e9ca957), pnpm format:check
+typecheck 0 and pnpm lint 0 (both on e5f892645), pnpm format:check
 0, pnpm docs:check 0, pnpm arch:check 0, pnpm boot:smoke 0, pnpm -C
 server/web build 0, vitest run server packages eslint-rules 0 (857 files
 passed, 269 skipped). A first unit run on a1e9ca957 failed 6 tests (the
