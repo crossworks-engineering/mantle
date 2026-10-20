@@ -99,7 +99,7 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
  */
 const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
   'admin GET /api/activity update server/web/lib/journey.ts',
-  'admin GET /api/app-nav executeWrite packages/content/src/tree/apps-nav.ts',
+  'admin GET /api/app-nav update packages/content/src/tree/apps-nav.ts',
   'admin GET /api/app-nav withSystemTx packages/content/src/tree/node-ops.ts',
   'admin GET /api/docs/reader insert packages/files/src/docs.ts',
   'admin GET /api/files/files withSystemTx packages/files/src/ops/shared.ts',

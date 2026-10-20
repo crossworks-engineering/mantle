@@ -8,7 +8,7 @@
  * (path label) is derived from the name, names are unique per parent by
  * slug, and nothing nests deeper than TREE_MAX_DEPTH folders.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import {
   assertItemRight,
   carrySpaceRows,
@@ -388,8 +388,12 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
   const folder = await branchById(ownerId, folderId);
   const p = folder.path;
   const q = treeParentPath(p);
-  const landing = sql`(case when n.path = ${p}::ltree then ${q}::ltree
-                            else ${q}::ltree || subpath(n.path, nlevel(${p}::ltree)) end)`;
+  // Where a row at `path` lands: the read names it `n.path`, the typed
+  // writes `"nodes"."path"` (the target, which the subquery's `b` never
+  // shadows).
+  const landingOf = (path: SQL) => sql`(case when ${path} = ${p}::ltree then ${q}::ltree
+                            else ${q}::ltree || subpath(${path}, nlevel(${p}::ltree)) end)`;
+  const landing = landingOf(sql`n.path`);
   // Heads first (plan V3, V4): the folder and everything below it, its
   // parent (where the rest lands) and the folders outside it that subfolders
   // merge into (what they held lands there). Read again on a retry.
@@ -422,7 +426,7 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
          and ${nodes.path} <@ ${p}::ltree and ${nodes.id} <> ${folderId}
          and exists (select 1 from nodes b
                       where b.owner_id = ${ownerId} and b.type = 'branch'
-                        and b.path = ${landing} and not (b.path <@ ${p}::ltree))`,
+                        and b.path = ${landingOf(sql`${nodes.path}`)} and not (b.path <@ ${p}::ltree))`,
       );
       // 2. The folder itself (a shared one refreshes what sat below: 0207).
       await tx.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
@@ -436,7 +440,7 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
       for (let level = folderDepth(p) + 1; level <= Number(deepest?.n ?? 0); level++) {
         await tx
           .update(nodes)
-          .set({ path: sql`${landing}` })
+          .set({ path: landingOf(sql`${nodes.path}`) })
           .where(
             sql`${nodes.ownerId} = ${ownerId} and ${nodes.path} <@ ${p}::ltree and nlevel(${nodes.path}) = ${level}`,
           );
