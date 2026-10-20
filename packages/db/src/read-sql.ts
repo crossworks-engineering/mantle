@@ -36,9 +36,13 @@ export class NotReadSqlError extends Error {
   }
 }
 
-/** Built-in functions a read never calls: each writes, takes a lock, or
- *  changes the session or the server. Matched as a call (`name(`, quoted
- *  or schema-qualified too) on the text's code, so a value never matches. */
+/** Functions a read never calls: each writes, takes a lock, changes the
+ *  session or the server, or runs its text argument. The built-ins, those
+ *  of the extensions the database runs (pg_trgm's set_limit), and the
+ *  database's own of that kind that READ ONLY does not stop (pg-boss's
+ *  job_table_run runs its text, mantle_operator_actor sets the session's
+ *  actor). Matched as a call (`name(`, quoted or schema-qualified too) on
+ *  the text's code, so a value never matches. */
 export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'set_config',
   'setseed',
@@ -75,6 +79,11 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'cursor_to_xml\\w*',
   'ts_stat',
   'ts_rewrite',
+  'set_limit',
+  'pg_nextoid',
+  'pg_stop_making_pinned_objects',
+  'job_table_run\\w*',
+  'mantle_operator_actor',
 ]);
 
 const WRITE_FUNCTION_CALL = new RegExp(

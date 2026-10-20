@@ -165,6 +165,17 @@ describe('readSql', () => {
     ['pg_backup_start', "select pg_backup_start('x')"],
     ['pg_backup_stop', 'select pg_backup_stop()'],
     ['a schema-qualified ts_rewrite', "select pg_catalog.ts_rewrite('a'::tsquery, 'select 1')"],
+    ['set_limit (pg_trgm, session wide)', 'select set_limit(0.9)'],
+    ['a schema-qualified set_limit', 'select public.set_limit(0.9)'],
+    ['pg_nextoid', "select pg_nextoid('pg_class', 'oid', 'pg_class_oid_index')"],
+    ['pg_stop_making_pinned_objects', 'select pg_stop_making_pinned_objects()'],
+    [
+      "pg-boss's job_table_run (runs its text argument)",
+      "select pgboss.job_table_run('set work_mem = ''77MB''')",
+    ],
+    ["pg-boss's job_table_run_async", "select pgboss.job_table_run_async('x', 1, 'select 1')"],
+    ['mantle_operator_actor (sets the session actor)', "select mantle_operator_actor('x')"],
+    ['a quoted mantle_operator_actor', `select "public"."mantle_operator_actor"('x')`],
   ];
 
   it.each(REFUSED)('refuses %s', (_name, text) => {
@@ -186,6 +197,10 @@ describe('readSql', () => {
       'gin_clean_pending_list',
       'pg_stat_statements_reset',
       'pg_backup_start',
+      'set_limit',
+      'pg_nextoid',
+      'job_table_run',
+      'mantle_operator_actor',
     ]) {
       expect(notReadSqlReason(`select ${name}(1)`), name).toBe('a call of a function that writes');
       expect(notReadSqlReason(`select '${name}(1)'`), name).toBeNull();
@@ -221,6 +236,48 @@ describe('the shared SQL reader (sql-text.ts)', () => {
     }
     // Code after the carriage return is read as code: a read passes.
     expect(readSql('select a --x\rfrom t')).toBe('select a --x\rfrom t');
+  });
+
+  it('opens a dollar quote after a number, a $n parameter or a closed dollar quote', () => {
+    // The lexer ends a number or a parameter at the `$` (no name starts
+    // with one), so `$q$` opens a quote there: the `;` inside is no cut.
+    for (const text of [
+      'select 1$q$; delete from t$q$',
+      'select 1.5$q$; delete from t$q$',
+      'select 1e5$q$; delete from t$q$',
+      'select 1_000$q$; delete from t$q$',
+      'select $1$q$; delete from t$q$',
+      'select $a$x$a$$q$; delete from t$q$',
+      'select $a$x$a$$$; delete from t$$',
+      'select "n"$q$; delete from t$q$',
+    ]) {
+      const { code, unterminated } = sqlCode(text);
+      expect(code.length, text).toBe(text.length);
+      expect(unterminated, text).toBe(false);
+      expect(code, text).not.toMatch(/delete/);
+      expect(sqlStatements(text), text).toHaveLength(1);
+    }
+    // Inside a name (it starts with a letter, `_` or a high character) a
+    // `$` is part of it: no quote opens.
+    for (const text of [
+      'select a$q$ from t; select 1',
+      'select a1$q$ from t; select 1',
+      'select _9$q$ from t; select 1',
+      'select é1$q$ from t; select 1',
+    ]) {
+      expect(sqlCode(text).code, text).toBe(text);
+      expect(sqlStatements(text), text).toHaveLength(2);
+    }
+  });
+
+  it("reads E'' as its own word only", () => {
+    // After a closed dollar quote, `e` starts a word: an E'' string, whose
+    // backslash quote does not close it.
+    const after = "select $a$x$a$e'\\'' from t";
+    expect(sqlCode(after).ambiguous).toBe(false);
+    expect(sqlCode(after).unterminated).toBe(false);
+    // In a longer word it is a plain string, whose backslash is ambiguous.
+    expect(sqlCode("select ae'\\'' from t").ambiguous).toBe(true);
   });
 
   it('walks a CTE head with no space before its parenthesis', () => {

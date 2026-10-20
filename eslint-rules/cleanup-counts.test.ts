@@ -102,6 +102,34 @@ describe('rawWriteKind and readSql share one reader', () => {
     }
   });
 
+  it('counts the write an EXPLAIN ANALYZE or a PREPARE runs, not a plain EXPLAIN', () => {
+    for (const text of [
+      'explain analyze delete from t',
+      'explain analyse verbose update t set a = 1',
+      'explain (analyze, buffers) insert into t values (1)',
+      'explain (format json, analyze true) merge into t using s on true when matched then delete',
+      'explain analyze with d as (delete from t returning 1) select * from d',
+      'prepare p as delete from t where a = $1',
+      'prepare "p" (int, text) as insert into t values ($1, $2)',
+      'prepare p as with x as (select 1) update t set a = 1',
+      'select 1; explain analyze truncate t',
+    ]) {
+      expect(rawWriteKind(text), text).not.toBeNull();
+      expect(notReadSqlReason(text), text).not.toBeNull();
+    }
+    for (const text of [
+      'explain delete from t',
+      'explain verbose update t set a = 1',
+      'explain (analyze false) delete from t',
+      'explain (costs off) insert into t values (1)',
+      'explain analyze select * from t',
+      'prepare p as select 1',
+      "prepare p as select 'delete from t'",
+    ]) {
+      expect(rawWriteKind(text), text).toBeNull();
+    }
+  });
+
   it('counts a write in a WITH it cannot walk, not a read or a row lock there', () => {
     expect(rawWriteKind('with x as(select 1) delete from t')).toBe('write');
     expect(

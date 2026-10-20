@@ -427,10 +427,10 @@ type SimpleClient = {
 
 /**
  * Run `text` (readSql checks it) on postgres.js's simple protocol inside a
- * READ ONLY transaction: SET TRANSACTION READ ONLY goes first, sent with
- * the read in one write, so Postgres refuses a write a function the text
- * calls would make (see @mantle/db read-only-tx.ts for what that stops and
- * what it does not). Exported for graph-path-read-only.db.test.ts.
+ * READ ONLY transaction: SET TRANSACTION READ ONLY is awaited before the
+ * read is sent, so Postgres refuses a write a function the text calls
+ * would make (see @mantle/db read-only-tx.ts for what that stops and what
+ * it does not). Exported for graph-path-read-only.db.test.ts.
  */
 export async function simpleReadOnly(text: string): Promise<unknown[]> {
   const client = (
@@ -439,12 +439,12 @@ export async function simpleReadOnly(text: string): Promise<unknown[]> {
     }
   ).$client;
   return client.begin(async (t) => {
-    // Started (`.then`) before the read is built: postgres.js sends in the
-    // order queries start, and the system pool's client starts the read
-    // (behind its actor SET) as soon as it is built.
-    const readOnly = t.unsafe('set transaction read only').then(() => undefined);
-    const [, rows] = await Promise.all([readOnly, t.unsafe(readSql(text)).simple()]);
-    return rows;
+    // Awaited, never pipelined with the read: the transaction's client may
+    // wrap a statement (the actor's SET, the narrow route's role SET) and
+    // start it a microtask late, so a send order here is no order on the
+    // wire (the narrow route once sent the read first). One round trip more.
+    await t.unsafe('set transaction read only');
+    return t.unsafe(readSql(text)).simple();
   });
 }
 

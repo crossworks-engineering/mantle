@@ -68,19 +68,46 @@ const WRITE_CTE = /\bas\s*(?:not\s+)?(?:materialized\s*)?\(\s*(insert|update|del
 const WRITE_CTE_BODY = /^[\s(]*(insert|update|delete|merge)\b/i;
 const WRITE_WORD = /\b(insert|update|delete|merge|truncate)\b/i;
 const ROW_LOCK_UPDATE = /\bfor\s+(?:no\s+key\s+)?update\b/gi;
+/** EXPLAIN's head: its option list, or the old ANALYZE and VERBOSE words. */
+const EXPLAIN_HEAD = /^explain\s+(?:\(([^()]*)\)\s*|((?:(?:analy[sz]e|verbose)\s+)+))/i;
+/** ANALYZE in an option list, unless set false (it then only plans). */
+const ANALYZE_ON = /\banaly[sz]e\b(?!\s+(?:false|off|0)\b)/i;
+/** PREPARE's head, up to the statement it prepares. */
+const PREPARE_HEAD =
+  /^prepare\s+(?:"[^"]*"|[A-Za-z_\u0080-\uffff][\w$\u0080-\uffff]*)\s*(?:\([^()]*\)\s*)?as\s+/i;
+
+/** The statement `statement` runs: after EXPLAIN ANALYZE (it runs what it
+ *  explains) or PREPARE ... AS (a statement prepared to run), the inner
+ *  one; a plain EXPLAIN only plans, so it runs none (null). */
+function runStatement(statement) {
+  const t = statement.trimStart();
+  const explain = EXPLAIN_HEAD.exec(t);
+  if (explain) {
+    const runs =
+      explain[1] !== undefined ? ANALYZE_ON.test(explain[1]) : /analy[sz]e/i.test(explain[2]);
+    return runs ? runStatement(t.slice(explain[0].length)) : null;
+  }
+  const prepare = PREPARE_HEAD.exec(t);
+  return prepare ? runStatement(t.slice(prepare[0].length)) : t;
+}
 
 /** Why the static SQL `text` is a raw write ('write' or 'write-cte'), or
  *  null for a read (FOR UPDATE included) or a definer call. Read on the
  *  text's code by the reader readSql uses (packages/db/src/sql-text.ts:
  *  comments, strings, dollar quotes and quoted names blanked, so a `--` or
  *  a `;` in a value hides nothing), statement by statement, each after its
- *  leading WITH. A template's leading placeholders (`${TAG} insert ...`, a
- *  tag comment before the statement) are skipped. */
+ *  leading WITH, and after an EXPLAIN ANALYZE or a PREPARE ... AS (each
+ *  runs its statement). A template's leading placeholders (`${TAG} insert
+ *  ...`, a tag comment before the statement) are skipped. Not counted
+ *  here (readSql refuses each, and the roles bound them): SELECT INTO,
+ *  CREATE TABLE AS, COPY FROM, CALL and DO. */
 export function rawWriteKind(text) {
   const { code } = sqlCode(text);
   let cte = WRITE_CTE.test(code);
-  for (const statement of sqlStatements(code)) {
-    const parts = withParts(statement.replace(/^\s*(?:\$1\s*)+/, ''));
+  for (const each of sqlStatements(code)) {
+    const statement = runStatement(each.replace(/^\s*(?:\$1\s*)+/, ''));
+    if (statement === null) continue;
+    const parts = withParts(statement);
     if (WRITE_START.test(parts.rest)) return 'write';
     // A WITH the reader cannot walk (readSql refuses it): a write verb
     // anywhere in what is left counts (a row lock's UPDATE aside), rather

@@ -8,7 +8,8 @@
  * then read for its statements, its leading WITH and its first words. The
  * blanking follows the lexer of PostgreSQL where a mistake could hide code:
  * nested block comments, a `--` comment that a `\r` ends as a `\n` does, a
- * `--` inside a string (no comment), a `$` inside a name (no dollar quote),
+ * `--` inside a string (no comment), a `$` inside a name (no dollar quote;
+ * after a number, a `$n` parameter or another dollar quote one opens),
  * E'' strings and their backslashes. It assumes
  * standard_conforming_strings on (the default); a plain string whose
  * backslash stands before a quote, and a U&"" name (an escaped name may
@@ -34,6 +35,10 @@ export type SqlCode = {
 };
 
 const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
+/** What a name starts with (the lexer's ident_start): a word of name
+ *  characters that starts with anything else is a number or a `$n`
+ *  parameter, and a `$` after it can open a dollar quote. */
+const IDENT_START = /[A-Za-z_\u0080-￿]/;
 const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
 const blanks = (s: string): string => s.replace(/[^\n]/g, ' ');
@@ -46,10 +51,18 @@ export function sqlCode(text: string): SqlCode {
   let ambiguous = false;
   const n = text.length;
   let i = 0;
+  /** Where the run of name characters just before `i` starts (a name, a
+   *  number or a `$n` parameter), or -1 when `i` follows anything else: a
+   *  space, an operator, or a comment, string, dollar quote or quoted name
+   *  that ended there. */
+  let word = -1;
   while (i < n) {
     const c = text[i]!;
     const next = text[i + 1];
     const before = i > 0 ? text[i - 1]! : '';
+    // A `$` inside a name is part of it; after a number, a `$n` or a
+    // closed quote it can open a dollar quote.
+    const inName = word >= 0 && IDENT_START.test(text[word]!);
     if (c === '-' && next === '-') {
       // A `--` comment ends at the first newline or carriage return (the
       // lexer's non_newline is [^\n\r]): after a lone `\r` is code.
@@ -74,8 +87,8 @@ export function sqlCode(text: string): SqlCode {
       code += blanks(text.slice(i, j));
       i = j;
     } else if (c === "'") {
-      // E'' (the E its own token) takes backslash escapes.
-      const escaped = /[eE]/.test(before) && !NAME_CHAR.test(i > 1 ? text[i - 2]! : '');
+      // E'' (the E a word of its own) takes backslash escapes.
+      const escaped = /[eE]/.test(before) && word === i - 1;
       let j = i + 1;
       let closed = false;
       while (j < n) {
@@ -129,29 +142,29 @@ export function sqlCode(text: string): SqlCode {
         code += '"' + body + '"';
         i = j + 1;
       }
-    } else if (c === '$' && !NAME_CHAR.test(before)) {
-      // A `$` inside a name or after one ($1, a$b$) opens nothing.
-      const tag = DOLLAR_TAG.exec(text.slice(i));
-      if (!tag) {
-        code += c;
-        i += 1;
-        continue;
-      }
-      const end = text.indexOf(tag[0], i + tag[0].length);
+    } else if (c === '$' && !inName && DOLLAR_TAG.test(text.slice(i))) {
+      const tag = DOLLAR_TAG.exec(text.slice(i))![0];
+      const end = text.indexOf(tag, i + tag.length);
       if (end < 0) {
         unterminated = true;
         code += "'" + blanks(text.slice(i + 1));
         i = n;
       } else {
-        const stop = end + tag[0].length;
+        const stop = end + tag.length;
         const inner = text.slice(i + 1, stop - 1);
         code += "'" + blanks(inner) + "'";
         i = stop;
       }
     } else {
+      // Code: a name character (a `$` in a name or a `$n` among them)
+      // starts or goes on with a word; anything else ends it.
+      if (!NAME_CHAR.test(c)) word = -1;
+      else if (word < 0) word = i;
       code += c;
       i += 1;
+      continue;
     }
+    word = -1;
   }
   return { code, unterminated, ambiguous };
 }
