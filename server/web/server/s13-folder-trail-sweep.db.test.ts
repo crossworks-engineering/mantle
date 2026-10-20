@@ -21,7 +21,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/s13-folder-trail-sweep.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -320,8 +320,7 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
   it('Files: a content edit of the member’s file in a folder it does not read answers 200; a new file there is refused', async () => {
     const edit = await call(`/api/files/files/${file.id}`, member, 'PATCH', { content: 'after\n' });
     expect(edit.status, edit.text.slice(0, 200)).toBe(200);
-    const onDisk = path.join(dir, 'files', ...fb.path.split('.').slice(1), file.filename);
-    expect(await readFile(onDisk, 'utf8')).toBe('after\n');
+    expect((await row(file.id))!.data.content).toBe('after\n');
 
     const made = await call('/api/files/files', member, 'POST', {
       parentPath: fb.path,

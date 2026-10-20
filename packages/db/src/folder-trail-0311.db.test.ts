@@ -77,7 +77,8 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
   // The folders, by key: a = the way to the member's item (a.b holds it),
   // s = a hidden sibling under a (holds a hidden note), c = an empty hidden
   // folder, p = holds a row private to the other login, v = a folder the
-  // workspace reads itself, v.d = an empty hidden folder under it.
+  // workspace reads itself, and v.d under it (the grant on v passes on to
+  // it, so the workspace reads it too).
   const F: Record<'r' | 'a' | 'b' | 's' | 'c' | 'p' | 'v' | 'd', { id: string; path: string }> = {
     r: { id: randomUUID(), path: tag },
     a: { id: randomUUID(), path: `${tag}.a` },
@@ -159,7 +160,7 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
     await scratch?.drop();
   });
 
-  it('the member reads its item and the folder v, and no other row here (the fixture)', async () => {
+  it('the member reads its item and the folders v and v.d, and no other row here (the fixture)', async () => {
     const seen = await m.withViewer(
       { login: member },
       async () =>
@@ -167,23 +168,24 @@ describe.skipIf(!URL)('0311: the folders above what a login reads (mantle_folder
           sql`select id::text as id from nodes where path <@ ${tag}::ltree order by path, id`,
         )) as unknown as { id: string }[],
     );
-    expect(new Set(seen.map((r) => r.id))).toEqual(new Set([item, F.v.id]));
+    expect(new Set(seen.map((r) => r.id))).toEqual(new Set([item, F.v.id, F.d.id]));
   });
 
   it('children: only the folders on the way to what the member reads', async () => {
     expect(keys(await trailAs(member, owner, F.r.path))).toEqual(['a', 'v']);
     expect(keys(await trailAs(member, owner, F.a.path))).toEqual(['b']);
-    // Under the folder it reads, nothing it reads lies deeper.
-    expect(await trailAs(member, owner, F.v.path)).toEqual([]);
+    // A folder it reads is a folder at a row it reads.
+    expect(keys(await trailAs(member, owner, F.v.path))).toEqual(['d']);
+    expect(await trailAs(member, owner, F.d.path)).toEqual([]);
     expect(await trailAs(member, owner, F.s.path)).toEqual([]);
     expect(await trailAs(member, owner, F.b.path)).toEqual([]);
   });
 
   it('exact paths and ids: only folders at or above a row the member reads; the root never', async () => {
     const all = Object.values(F).map((f) => f.path);
-    expect(keys(await trailAs(member, owner, null, all))).toEqual(['a', 'b', 'v']);
+    expect(keys(await trailAs(member, owner, null, all))).toEqual(['a', 'b', 'v', 'd']);
     expect(keys(await trailAs(member, owner, null, [], F.b.id))).toEqual(['b']);
-    for (const k of ['s', 'c', 'p', 'd', 'r'] as const) {
+    for (const k of ['s', 'c', 'p', 'r'] as const) {
       expect(await trailAs(member, owner, null, [], F[k].id)).toEqual([]);
     }
     expect(await trailAs(member, owner, null, [], item)).toEqual([]);
