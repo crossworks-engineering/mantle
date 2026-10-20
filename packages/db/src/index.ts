@@ -155,6 +155,7 @@ export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
 export {
   folderTrail,
   folderTrailSql,
+  textArraySql,
   trailForCaller,
   type TrailAsk,
   type TrailFolder,

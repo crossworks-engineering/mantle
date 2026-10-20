@@ -66,6 +66,8 @@ import {
   itemWriteVerdicts,
   scopeHoldsAdmin,
   systemStep,
+  textArraySql,
+  trailForCaller,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
@@ -206,11 +208,17 @@ export async function upsertFile(args: {
       )) as unknown as { id: string }[]);
   // A content edit of a file the caller may change, in a folder it does not
   // read: the folder is there (structure above what the caller reads), so the
-  // write over that one file goes on. A new file there is still refused: the
-  // caller cannot write into a folder it does not read.
+  // write over that one file goes on. Only for a login's own session (the
+  // one caller that sees such folders: never a key, a peer, a turn or an
+  // OAuth or stdio client). A new file there is still refused: the caller
+  // cannot write into a folder it does not read.
   if (
     !parent &&
-    !(args.overwrite && (await overwritesEditableFile(args.ownerId, args.parentPath, filename)))
+    !(
+      args.overwrite &&
+      trailForCaller() &&
+      (await overwritesEditableFile(args.ownerId, args.parentPath, filename))
+    )
   ) {
     throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
@@ -248,6 +256,14 @@ export async function upsertFile(args: {
         }
       }
     }
+  }
+
+  // A new file never lands in a folder the caller does not read: the
+  // overwrite above went on for a file that was there, and one gone since
+  // (deleted between the checks) leaves nothing to write over.
+  if (!parent && !existing) {
+    if (args.spooled) await discardSpooled(args.spooled);
+    throw new InputError(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
   // The bytes are staged beside their final name, under a name the watcher
@@ -1519,7 +1535,7 @@ async function overwritesEditableFile(
   if ((await inCallerScope(() => mayEditNode(taken.id))) !== true) return false;
   const rows = (await db.execute(
     sql`select 1 as hit from "public"."mantle_folder_trail"(${ownerId}::uuid, null::text,
-                                                         array[${parentPath}]::text[], null::uuid)`,
+                                                         ${textArraySql([parentPath])}, null::uuid)`,
   )) as unknown as { hit: number }[];
   return rows.length > 0;
 }

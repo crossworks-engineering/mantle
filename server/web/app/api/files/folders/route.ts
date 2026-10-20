@@ -5,6 +5,7 @@ import {
   createFolder,
   ensureFilesRootBranch,
   listAllFoldersWithTrail,
+  listFolders,
   listFoldersWithTrail,
 } from '@/lib/files';
 import { capped } from '@/lib/list-workspaces';
@@ -16,6 +17,11 @@ const ListQuery = z.object({
   parent: z.string().optional(),
   tree: z.coerce.boolean().optional(),
 });
+
+/** A folder path as ltree spells it (labels of letters, digits, `_` and
+ *  `-`, joined by dots): only such a parent is asked for the folders on
+ *  the way; any other is listed as before (the folders matching it). */
+const LTREE_PATH = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/;
 
 /** GET /api/files/folders?parent=|tree=: the Files folders the caller reads
  *  and, for a login's own session, the folders above what it reads as
@@ -35,7 +41,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ folders: await capped(all) });
   }
   const parent = parsed.data.parent ?? 'files';
-  const folders = await listFoldersWithTrail({ ownerId: user.id, parentPath: parent });
+  const folders = LTREE_PATH.test(parent)
+    ? await listFoldersWithTrail({ ownerId: user.id, parentPath: parent })
+    : await listFolders({ ownerId: user.id, parentPath: parent });
   return NextResponse.json({ folders: await capped(folders) });
 }
 

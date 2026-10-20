@@ -130,13 +130,14 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  Both item counts come from one scan (`count(*) filter`); with no other
  *  workspace (none, or only `ws`) there is no second count at all.
  *
- *  `trailUnder` (a login's own session only, @mantle/db folderTrail): of
- *  the direct children of the folder at that path, the ones matching `where`
- *  that the login does not read but that hold something it reads come too,
- *  as structure (id, path and name; no look, rank or system mark), and that
+ *  `trailUnder` (a login's own session in a workspace scope only, @mantle/db
+ *  folderTrail; the owner gets the statement it had): of the direct
+ *  children of the folder at that path, the ones matching `where` that the
+ *  login does not read but that hold something it reads come too, as
+ *  structure (id, path and name; no look, rank or system mark), and that
  *  folder serves as their parent. Each folder's subfolder count then counts
  *  the subfolders on the way too (what opening it shows); the item counts
- *  stay what the reader reads. */
+ *  stay what the reader reads. One definer call per page. */
 export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
@@ -150,9 +151,11 @@ export async function selectFolders(
     trailUnder === undefined
       ? null
       : folderTrailSql(ownerId, { under: trailUnder, paths: [trailUnder] });
-  // The folders the reader reads, then (with a trail) the trail's, matched
-  // by the same `where` (on id, path, title or slug; a trail row has no
-  // slug) and not already listed.
+  // The folders the reader reads, then (with a trail) the trail's one level
+  // below `trailUnder`, matched by the same `where` (on id, path, title or
+  // slug; a trail row has no slug) and not already listed. One definer call
+  // for the page: it answers the folder at `trailUnder` (a parent) and the
+  // folders one and two levels below it on the way to what the reader reads.
   const folderRows = trail
     ? sql`f0 as materialized (
       select f.id, f.path, f.title, f.data from nodes f
@@ -162,7 +165,8 @@ export async function selectFolders(
       select f0.id, f0.path, f0.title, f0.data from f0
       union all
       select f.id, f.path, f.title, null::jsonb from (
-        select tr.id, tr.path, tr.title, null::text as slug from tr) f
+        select tr.id, tr.path, tr.title, null::text as slug from tr
+         where nlevel(tr.path) = nlevel(${trailUnder}::ltree) + 1) f
        where ${where} and f.id not in (select f0.id from f0))`
     : sql`f as materialized (
       select f.id, f.path, f.title, f.data from nodes f
@@ -173,20 +177,20 @@ export async function selectFolders(
       select tr.id, tr.path from tr`
     : sql``;
   // The subfolders each folder shows when opened: the ones the reader reads
-  // and, with a trail, the ones on the way to what it reads (the trail of
-  // each listed folder, so a folder whose only way down is such a folder
-  // still unfolds).
-  const readChildren = sql`select subpath(c.path, 0, nlevel(c.path) - 1) as p, c.id from nodes c
-       where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
-         and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
-         and ${nodeAliasScopeReads('c')}`;
-  const trailChildren = trail ? folderTrailSql(ownerId, { under: sql`f.path` }) : null;
-  const folderCounts = trailChildren
+  // and, with a trail, the ones on the way to what it reads (the trail's
+  // second level, so a folder whose only way down is such a folder still
+  // unfolds).
+  const folderCounts = trail
     ? sql`
       select x.p, count(distinct x.id)::int as n from (
-        ${readChildren}
+        select subpath(c.path, 0, nlevel(c.path) - 1) as p, c.id from nodes c
+         where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
+           and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
+           and ${nodeAliasScopeReads('c')}
         union all
-        select f.path, k.id from f cross join lateral ${trailChildren} k) x
+        select subpath(tr.path, 0, nlevel(tr.path) - 1), tr.id from tr
+         where nlevel(tr.path) > 2
+           and subpath(tr.path, 0, nlevel(tr.path) - 1) = any(array(select path from f))) x
        group by 1`
     : sql`
       select subpath(c.path, 0, nlevel(c.path) - 1) as p, count(*)::int as n from nodes c
