@@ -188,15 +188,36 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Functions of the runtime role's allowlist the narrow system role may not
- * EXECUTE: what narrow work never calls, each with why. The rest of the
- * allowlist is the narrow role's (narrowFunctionAllowlist);
- * runtime-role.db.test.ts pins both sets. The four `_rows` bodies run for an
- * owner with no Admin check: only full system work reaches them (the
- * entities sweep and its CLI) and tests, never a narrow reason. An Admin
- * user's act is the definer that checks first (mantle_entity_merge,
- * mantle_contact_sharing_set, mantle_contact_shares_revoke_all,
- * mantle_share_with_contacts), which the narrow role keeps.
+ * The functions taken from PUBLIC that the narrow system role may EXECUTE:
+ * an allowlist, each with the narrow work that calls it. Measured with the
+ * switch on (the full DB suite, MANTLE_NARROW_DUMP's `fn:<name>` uses: a
+ * narrow statement names only these two), plus what the column defaults
+ * and checks of the tables it writes call (none today:
+ * runtime-role.db.test.ts reads them from the catalog and fails on one not
+ * listed here). Each must also be the runtime role's (narrowFunctionAllowlist
+ * intersects the two) and never in NARROW_DENIED_FUNCTIONS. A trigger
+ * function needs no entry (EXECUTE is checked when the trigger is made),
+ * nor what a definer calls (it runs as its owner). Everything else the
+ * runtime role may run, the content-writing definers among it, is refused
+ * to the narrow role: a narrow exit's own content write runs at a full-route
+ * spot (viewer.ts FULL_ROUTE_SPOTS).
+ */
+export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_brain_id()':
+    "the brain's anchor, read by narrow statements (resolve-owner.ts, the tree's kind roots, workspace-ticks.ts)",
+  'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
+    "the workspaces area's Moderator tick (workspaces.ts setModerator) on an Admin area exit: the definer checks the acting login",
+};
+
+/**
+ * Functions of the runtime role's allowlist the narrow system role may
+ * never EXECUTE, each with why: NARROW_SYSTEM_FUNCTIONS may not name one
+ * (runtime-role.test.ts), and narrowFunctionAllowlist leaves them out
+ * whatever it names. The four `_rows` bodies run for an owner with no Admin
+ * check: only full system work reaches them (the entities sweep and its
+ * CLI) and tests, never a narrow reason. The content and workspace writers
+ * among the definers: narrow work calls none of them (measured), and its
+ * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
@@ -224,6 +245,31 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "a recall card's retarget (recall_nodes): a login's write, never a narrow reason",
   'public.mantle_app_trash_act(uuid,text)':
     "an app's trash restore or purge (content tables): the app-trash reason, routed full",
+  // The workspace and share writers: a login's act in its own scope, or
+  // system work, never a narrow statement (measured; the one measured,
+  // mantle_ws_set_moderator, is in NARROW_SYSTEM_FUNCTIONS).
+  'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)': 'workspace_users: never a narrow statement',
+  'public.mantle_ws_remove_user(uuid,uuid,uuid)': 'workspace_users: never a narrow statement',
+  'public.mantle_ws_create(uuid,uuid,text,text)': 'workspaces: never a narrow statement',
+  'public.mantle_ws_archive(uuid,uuid)': 'workspaces and the held items: never a narrow statement',
+  'public.mantle_ws_attach_assistants()': 'workspace_resources: system work at boot, never narrow',
+  'public.mantle_ws_resource_add(uuid,uuid,text,text,boolean)':
+    'workspace_resources: never a narrow statement',
+  'public.mantle_ws_resource_remove(uuid,uuid,text,text)':
+    'workspace_resources: never a narrow statement',
+  'public.mantle_ws_resource_set_write(uuid,uuid,text,text,boolean)':
+    'workspace_resources: never a narrow statement',
+  'public.mantle_ws_set_assistant(uuid,uuid,uuid)': 'workspaces: never a narrow statement',
+  'public.mantle_ws_set_contact(uuid,uuid,uuid)': 'workspaces: never a narrow statement',
+  'public.mantle_ws_set_landing(uuid,uuid,uuid)': 'workspaces: never a narrow statement',
+  'public.mantle_ws_update_about(uuid,uuid,jsonb)': 'workspaces: never a narrow statement',
+  'public.mantle_bridge_login(uuid)': "a login into its workspaces: the login's create or update",
+  'public.mantle_workspace_event(uuid,uuid,text,jsonb)':
+    'workspace_events: written by the workspace definers, never a narrow statement',
+  'public.mantle_lock_heads(uuid[],text)': "an item write's heads: never a narrow statement",
+  'public.mantle_share_close_admin(uuid)': 'shares (content): never a narrow statement',
+  'public.mantle_share_contact_write_set(uuid,boolean)':
+    'shares (content): never a narrow statement',
 };
 
 /** Tables the runtime role holds no right on (the access matrix's
@@ -897,10 +943,17 @@ export async function runtimeFunctionAllowlist(
   return rows.map((r) => r.fn);
 }
 
-/** The functions the narrow system role is granted EXECUTE on: the runtime
- *  role's allowlist less NARROW_DENIED_FUNCTIONS. */
-export function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
-  return runtimeFunctionAllowlist(sql, Object.keys(NARROW_DENIED_FUNCTIONS));
+/** The functions the narrow system role is granted EXECUTE on:
+ *  NARROW_SYSTEM_FUNCTIONS that are on the runtime role's allowlist, never
+ *  one of NARROW_DENIED_FUNCTIONS. */
+export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
+  const runtime = await runtimeFunctionAllowlist(sql, Object.keys(NARROW_DENIED_FUNCTIONS));
+  const want = await sql<{ fn: string }[]>`
+    select to_regprocedure(x)::text as fn
+      from unnest(${Object.keys(NARROW_SYSTEM_FUNCTIONS)}::text[]) x
+     where to_regprocedure(x) is not null`;
+  const named = new Set(want.map((r) => r.fn));
+  return runtime.filter((f) => named.has(f));
 }
 
 /**

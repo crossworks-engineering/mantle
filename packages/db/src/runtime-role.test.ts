@@ -13,6 +13,7 @@ import {
 } from './access-matrix';
 import {
   NARROW_DENIED_FUNCTIONS,
+  NARROW_SYSTEM_FUNCTIONS,
   NARROW_ROLE,
   OWNER_ROLE,
   RUNTIME_DENIED_FUNCTIONS,
@@ -363,7 +364,50 @@ describe('the narrow system role rights', () => {
     }).toEqual(NARROW_COUNTS);
   });
 
-  it('its EXECUTE list is the runtime allowlist less a reasoned list', () => {
+  it('its EXECUTE list is a measured allowlist, never a content or workspace writer', () => {
+    // The allowlist (plan v3.2 S7a part a3): what narrow statements call, by
+    // name, measured with the switch on. Only goes down, or a reviewed line.
+    expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
+      'public.mantle_brain_id()',
+      'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)',
+    ]);
+    for (const [fn, why] of Object.entries(NARROW_SYSTEM_FUNCTIONS)) {
+      expect(fn, fn).toMatch(/^public\.mantle_[a-z0-9_]+\(/);
+      expect(Object.keys(NARROW_DENIED_FUNCTIONS), fn).not.toContain(fn);
+      expect(Object.keys(RUNTIME_DENIED_FUNCTIONS), fn).not.toContain(fn);
+      expect(why.length, fn).toBeGreaterThan(10);
+    }
+    // The content and workspace writers among the definers (the a2
+    // re-audit's 17), each denied by name.
+    const writers = [
+      'mantle_ws_add_user',
+      'mantle_ws_remove_user',
+      'mantle_ws_create',
+      'mantle_ws_archive',
+      'mantle_ws_attach_assistants',
+      'mantle_ws_resource_add',
+      'mantle_ws_resource_remove',
+      'mantle_ws_resource_set_write',
+      'mantle_ws_set_assistant',
+      'mantle_ws_set_contact',
+      'mantle_ws_set_landing',
+      'mantle_ws_update_about',
+      'mantle_bridge_login',
+      'mantle_workspace_event',
+      'mantle_lock_heads',
+      'mantle_share_close_admin',
+      'mantle_share_contact_write_set',
+    ];
+    expect(writers).toHaveLength(17);
+    for (const body of writers) {
+      expect(
+        Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),
+        body,
+      ).toBe(true);
+    }
+  });
+
+  it('its denied list is reasoned', () => {
     // Each one the runtime role may run (from this list or a viewer role's
     // grant): runtime-role.db.test.ts checks it on the live catalog.
     for (const [fn, why] of Object.entries(NARROW_DENIED_FUNCTIONS)) {

@@ -32,6 +32,7 @@ import {
   APP_SCHEMAS,
   DB_ROLE_SQL,
   NARROW_DENIED_FUNCTIONS,
+  NARROW_SYSTEM_FUNCTIONS,
   NARROW_ROLE,
   OWNER_ROLE,
   OWNER_ROLE_FUNCTION,
@@ -437,7 +438,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     for (const b of boss) expect(b.privs, b.t).toEqual(['SELECT']);
   });
 
-  it('the narrow role runs the runtime allowlist less NARROW_DENIED_FUNCTIONS', async () => {
+  it("the narrow role runs exactly NARROW_SYSTEM_FUNCTIONS, each the runtime role's, and what its tables' defaults and checks call", async () => {
     const may = async (role: string) =>
       (
         await admin<{ fn: string }[]>`
@@ -448,16 +449,39 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
              and has_function_privilege(${role}, p.oid, 'EXECUTE')
            order by 1`
       ).map((r) => r.fn);
-    const denied = (
-      await admin<{ fn: string }[]>`
-        select to_regprocedure(x)::text as fn
-          from unnest(${Object.keys(NARROW_DENIED_FUNCTIONS)}::text[]) x`
-    ).map((r) => r.fn);
+    const named = async (list: readonly string[]) =>
+      (
+        await admin<{ fn: string | null }[]>`
+          select to_regprocedure(x)::text as fn from unnest(${[...list]}::text[]) x`
+      ).map((r) => r.fn);
+    const allowed = await named(Object.keys(NARROW_SYSTEM_FUNCTIONS));
+    const denied = await named(Object.keys(NARROW_DENIED_FUNCTIONS));
     // Every entry names a function this database has.
+    expect(allowed.every((f) => f !== null)).toBe(true);
     expect(denied.every((f) => f !== null)).toBe(true);
     const runtime = await may(RUNTIME_ROLE);
-    expect(await may(NARROW_ROLE)).toEqual(runtime.filter((f) => !denied.includes(f)));
-    for (const f of denied) expect(runtime, f).toContain(f);
+    // The allowlist pin: exactly these, nothing the runtime role may run
+    // besides.
+    expect(await may(NARROW_ROLE)).toEqual([...(allowed as string[])].sort());
+    for (const f of allowed) expect(runtime, f!).toContain(f);
+    for (const f of denied) expect(runtime, f!).toContain(f);
+    // A column default or a check of a table the narrow role writes runs
+    // with its rights: every function taken from PUBLIC they call is on the
+    // list (none today), so a new one fails here before it fails a write.
+    const needed = await admin<{ fn: string; tbl: string }[]>`
+      select distinct p.oid::regprocedure::text as fn, c.oid::regclass::text as tbl
+        from pg_depend d
+        join pg_proc p on d.refclassid = 'pg_proc'::regclass and d.refobjid = p.oid
+        join pg_namespace pn on pn.oid = p.pronamespace
+        left join pg_attrdef ad on d.classid = 'pg_attrdef'::regclass and ad.oid = d.objid
+        left join pg_constraint co on d.classid = 'pg_constraint'::regclass and co.oid = d.objid
+        join pg_class c on c.oid = coalesce(ad.adrelid, co.conrelid)
+       where pn.nspname = any(${[...APP_SCHEMAS]}::text[])
+         and not has_function_privilege('public', p.oid, 'EXECUTE')
+         and (has_table_privilege(${NARROW_ROLE}, c.oid, 'INSERT')
+              or has_table_privilege(${NARROW_ROLE}, c.oid, 'UPDATE'))
+       order by 1, 2`;
+    for (const { fn, tbl } of needed) expect(allowed, `${tbl}: ${fn}`).toContain(fn);
   });
 
   it('as the narrow role (from the runtime role and from the superuser): reads past the rules, writes only where the matrix says', async () => {
@@ -505,6 +529,10 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
         // A body with no Admin check, and the box count.
         `select mantle_entity_merge_rows('${randomUUID()}', '${randomUUID()}', '${randomUUID()}')`,
         'select mantle_role_drift()',
+        // The content and workspace writers (NARROW_DENIED_FUNCTIONS).
+        `select mantle_ws_create('${randomUUID()}', '${randomUUID()}', 'probe', 'team')`,
+        `select mantle_lock_heads(array['${randomUUID()}']::uuid[], 'probe')`,
+        `select mantle_share_close_admin('${randomUUID()}')`,
       ]) {
         await expect(asNarrow(conn, stmt), `${who}: ${stmt}`).rejects.toMatchObject({
           code: DENIED,

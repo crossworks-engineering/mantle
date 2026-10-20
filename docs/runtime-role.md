@@ -177,13 +177,21 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   throws);
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);
-- `EXECUTE` on the runtime role's allowlist less `NARROW_DENIED_FUNCTIONS`
-  (`packages/db/src/runtime-role.ts`): the owner bodies with no Admin check
-  (`mantle_contact_sharing_rows`, `mantle_contact_shares_revoke_rows`,
-  `mantle_share_with_contacts_rows`, `mantle_entity_merge_rows`: only full
-  system work and tests reach them; an Admin user's act is the definer that
-  checks first, which it keeps), `mantle_embed_host` (the refold step) and
-  `mantle_role_drift` (the box count);
+- `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
+  (`packages/db/src/runtime-role.ts`), measured with the switch on: what
+  narrow statements call by name (`mantle_brain_id`,
+  `mantle_ws_set_moderator`) and what the column defaults and checks of the
+  tables it writes call (none today; runtime-role.db.test.ts reads them from
+  the catalog and fails on one not listed). Each is also the runtime
+  role's. `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies
+  with no Admin check (`mantle_contact_sharing_rows`,
+  `mantle_contact_shares_revoke_rows`, `mantle_share_with_contacts_rows`,
+  `mantle_entity_merge_rows`), the content and workspace writers among the
+  definers (the `mantle_ws_*` writers, `mantle_bridge_login`,
+  `mantle_workspace_event`, `mantle_lock_heads`, `mantle_share_close_admin`,
+  `mantle_share_contact_write_set`, the grant, subtree, recall and app trash
+  writers), `mantle_embed_host` (the refold step) and `mantle_role_drift`
+  (the box count);
 - `USAGE` on `public`, `auth` and `pgboss`, `SELECT` on pg-boss's tables;
 - no default privileges: a table a migration makes is closed to it until the
   migrate's grants, and a table the matrix does not list never opens. A new
@@ -267,13 +275,17 @@ only: the scope decides the route at run time, and the switch-on suite, not
 the mark, proves a file holds on it.
 
 Inside a narrow transaction each statement is checked before it is sent
-(a role change, a session-level SET, RESET or `set_config(..., false)`,
-transaction control; literals and comments are not read as statements):
+(a role change, the name bare or quoted; a session-level SET or RESET;
+transaction control; a DO block; any statement naming `pg_settings`; and
+any `set_config` but one whose first argument is a plain literal naming a
+`mantle.*` setting, or `lock_timeout` or `enable_sort`, and whose third is
+the literal `true`, so a name built by concatenation or sent as a bound
+parameter is refused; literals and comments are not read as statements):
 refused with `NarrowRouteRefusedError`. A function that changes the role
 inside cannot be seen by text: the hold check before the COMMIT rolls such
 a transaction back (`NarrowRoleLeftError`), and the role may run no
 function it was not granted and create none. The narrow role runs no
-content-writing definer (`NARROW_DENIED_FUNCTIONS`).
+content-writing definer (`NARROW_SYSTEM_FUNCTIONS` is its whole list).
 
 A right the narrow role does not hold, met on the route, is noted every
 time, a caught one too: a miss row (check `narrow-denied`) on a box, and in
