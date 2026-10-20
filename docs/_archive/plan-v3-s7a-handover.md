@@ -1522,3 +1522,18 @@ CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run
    flags (unterminated text, U& names).
 2. S7b: the narrow pool that logs in as the narrow role itself (MED-1's
    class); LOW-5 of the a2 re-audit stays as noted above.
+3. Late item (the S10 r2b re-audit's HIGH, same blanker): Postgres ends a
+   `--` comment at `\n` or `\r`; the text check's `sqlCode` and
+   actor-sql.ts `statementBody` ended it at `\n` only, so `select 1 --x\r;
+reset role` hid the second statement. Fixed in e551a8f52 (both). Cells:
+   narrow-sendable.test.ts "ends a line comment at a carriage return too";
+   narrow-route.db.test.ts "comment to CR" (unguarded on pg18 it leaves the
+   role, routed it is refused). Gates on e551a8f52: the Mac gates all 0
+   (unit 865 files, 11149 passed; deploy scripts 519); workstation, a fresh
+   own container and clone: narrow-route.db + narrow-sendable 0 (21
+   passed), full DB vitest with the switch on: 1140 files and 14010 tests
+   passed, exit 1 on one unhandled CONNECTION_CLOSED from postgres.js's
+   type fetch at a pool's close (the known flake class, being fixed on
+   feat/ci-pool-close), no narrow denial or count in the dump. The other
+   DB gates ran on 8ce4b6590/92f22b908 (above); this change only ends a
+   comment earlier where a `\r` stands.
