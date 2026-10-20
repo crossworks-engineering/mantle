@@ -67,6 +67,11 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     // row written after the role was left must not survive.
     await su.unsafe('create table public.narrow_probe (x text)');
     await su.unsafe('grant select, insert on public.narrow_probe to public');
+    // A function that changes the role inside: no text check can see it, the
+    // hold check must.
+    await su.unsafe(`create function public.narrow_probe_leave() returns void
+      language plpgsql as $$ begin perform set_config('role', 'none', true); end $$`);
+    await su.unsafe('grant execute on function public.narrow_probe_leave() to public');
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
@@ -189,9 +194,11 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
   });
 
   it('rolls back a statement or a transaction that left the role, and refuses transaction control', async () => {
+    // A function that changes the role (the text cannot show it): the hold
+    // check rolls the work back.
     expect(
       await failure(
-        v.asSystem(() => m.db.execute(sql`select set_config('role', 'none', true)`), 'admin-area'),
+        v.asSystem(() => m.db.execute(sql`select public.narrow_probe_leave()`), 'admin-area'),
       ),
     ).toBeInstanceOf(nr.NarrowRoleLeftError);
     const marker = `narrow-left-${randomUUID()}`;
@@ -200,7 +207,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         v.asSystem(
           () =>
             m.db.transaction(async (tx) => {
-              await tx.execute(sql`select set_config('role', 'none', true)`);
+              await tx.execute(sql`select public.narrow_probe_leave()`);
               // As the session's own login now: the hold check must undo this.
               await tx.execute(sql`insert into public.narrow_probe (x) values (${marker})`);
             }),
@@ -211,13 +218,121 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     const left = await su<{ n: number }[]>`
       select count(*)::int as n from public.narrow_probe where x = ${marker}`;
     expect(left[0]!.n).toBe(0);
-    for (const stmt of ['vacuum', 'commit', 'select 1; commit']) {
+    for (const stmt of ['vacuum', 'commit', 'select 1; commit', 'select 1; set role none']) {
       expect(
         await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
         stmt,
       ).toBeInstanceOf(nr.NarrowRouteRefusedError);
     }
     expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it('refuses a role change, a session setting and transaction control, by text, alone and in a transaction', async () => {
+    const refused = [
+      // A role change in any form, alone or after another statement.
+      'set role none',
+      'select 1; set role none',
+      'reset role',
+      'set local role none',
+      'set session authorization default',
+      "select set_config('role', 'none', false)",
+      "select set_config('role', 'none', true)",
+      // A session setting outlives the transaction.
+      'set statement_timeout = 1234',
+      'select 1; reset statement_timeout',
+      "select set_config('statement_timeout', '1234', false)",
+      // Transaction control.
+      'commit',
+      'select 1; commit',
+      'savepoint s1',
+    ];
+    for (const stmt of refused) {
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
+        stmt,
+      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        `${stmt} (in a transaction)`,
+      ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+    }
+    // In a savepoint's statements too.
+    expect(
+      await failure(
+        v.asSystem(
+          () => m.db.transaction((tx) => tx.transaction((sp) => sp.execute(sql.raw('commit')))),
+          'admin-area',
+        ),
+      ),
+    ).toBeInstanceOf(nr.NarrowRouteRefusedError);
+    // A refused COMMIT never ends the transaction: what follows still runs
+    // as the narrow role (before, it ran as the pool login and committed).
+    const after = await v.asSystem(
+      () =>
+        m.db.transaction(async (tx) => {
+          await tx.execute(sql.raw('commit')).catch(() => null);
+          const r = (await tx.execute(sql`select current_user as u`)) as unknown as { u: string }[];
+          return r[0]!.u;
+        }),
+      'admin-area',
+    );
+    expect(after).toBe(NARROW);
+    // A transaction-local setting is the transaction's own: sent.
+    await v.asSystem(
+      () => m.db.transaction((tx) => tx.execute(sql.raw('set local statement_timeout = 12345'))),
+      'admin-area',
+    );
+    // A verb inside a literal or a comment is no statement of its own.
+    for (const stmt of [
+      "select 'commit; set role none' as x",
+      'select $$reset role$$ as x',
+      "select E'a\\'; commit' as x",
+      'select 1 /* ; commit */',
+      "select 'set_config' as x -- ; set role none",
+    ]) {
+      await v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area');
+    }
+    // No session setting leaked to the pool's next statement.
+    const timeout = await v.asSystem(
+      () => m.db.execute(sql`select current_setting('statement_timeout') as t`),
+      'admin-area',
+    );
+    expect((timeout as unknown as { t: string }[])[0]!.t).not.toBe('1234ms');
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it('notes a denial a savepoint caught, and gives the real error when the work caught it', async () => {
+    // Caught in a savepoint: the transaction goes on, the denial is noted.
+    await v.asSystem(
+      () =>
+        m.db.transaction(async (tx) => {
+          await tx
+            .transaction((sp) => sp.execute(sql`update public.nodes set title = title where false`))
+            .catch(() => null);
+          await tx.execute(sql`select 1`);
+        }),
+      'admin-area',
+    );
+    expect(actor.takeNarrowDenials()).toHaveLength(1);
+    // Caught by the work without a savepoint: the transaction is aborted;
+    // the caller gets the refusal itself (42501), noted once, never
+    // NarrowRoleLeftError.
+    const err = await failure(
+      v.asSystem(
+        () =>
+          m.db.transaction(async (tx) => {
+            await tx
+              .execute(sql`update public.nodes set title = title where false`)
+              .catch(() => null);
+          }),
+        'admin-area',
+      ),
+    );
+    expect(err).not.toBeInstanceOf(nr.NarrowRoleLeftError);
+    expect(err).toMatchObject({ code: '42501' });
+    expect(actor.takeNarrowDenials()).toHaveLength(1);
   });
 
   it('off: every reason runs as the pool login', async () => {

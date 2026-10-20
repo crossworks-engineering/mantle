@@ -10,7 +10,7 @@
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
 import { RuntimeFaultError } from '@mantle/std';
-import { permissionGapOf } from '../pg-error';
+import { permissionGapOf, pgErrorCode } from '../pg-error';
 import {
   actorCheckMode,
   actorSetting,
@@ -70,17 +70,100 @@ export class NarrowRouteRefusedError extends RuntimeFaultError {
   }
 }
 
-/** A transaction-control verb anywhere in the statement's text. */
+/** A transaction-control verb at the start of any statement of the text
+ *  (read with its literals and comments blanked, sqlCode). */
 const TX_CONTROL =
   /(?:^|;)\s*(?:begin|commit|rollback|abort|end|start\s+transaction|prepare\s+transaction|savepoint|release)\b/i;
 
-/** Refuse what the narrow route never sends (NarrowRouteRefusedError). */
-function narrowSendable(query: string): void {
+/** A role change in any form, anywhere in the text: SET [SESSION | LOCAL]
+ *  ROLE, RESET ROLE, SET SESSION AUTHORIZATION, RESET ALL. */
+const ROLE_CHANGE =
+  /\b(?:set\s+(?:session\s+|local\s+)?role|reset\s+(?:role|all|session\s+authorization)|set\s+(?:session\s+)?session\s+authorization)\b/i;
+
+/** A session-level SET or RESET at the start of any statement (outlives
+ *  the transaction): SET without LOCAL (SET TRANSACTION and SET
+ *  CONSTRAINTS are the transaction's own), and any RESET. */
+const SESSION_SET = /(?:^|;)\s*(?:set\s+(?!local\b|transaction\b|constraints\b)|reset\b)/i;
+
+/** set_config with is_local false (a session setting), read on the text
+ *  with literals blanked: its third argument is the literal `false`. */
+const SESSION_SET_CONFIG = /\bset_config\s*\((?:[^();]|\([^();]*\))*,\s*false\s*\)/i;
+
+/** set_config of the role or the session's authorization, read on the text
+ *  with comments blanked and literals kept. */
+const ROLE_SET_CONFIG = /\bset_config\s*\(\s*'(?:role|session_authorization)'/i;
+
+/**
+ * The text with its comments blanked (`--`, `/* *\/`) and, with
+ * `literals`, its string literals, quoted identifiers and dollar-quoted
+ * bodies blanked too, so a verb inside a value is never read as one.
+ */
+export function sqlCode(query: string, literals = true): string {
+  let out = '';
+  let i = 0;
+  const n = query.length;
+  while (i < n) {
+    const c = query[i]!;
+    const next = query[i + 1];
+    if (c === '-' && next === '-') {
+      const end = query.indexOf('\n', i);
+      i = end < 0 ? n : end;
+      out += ' ';
+    } else if (c === '/' && next === '*') {
+      const end = query.indexOf('*/', i + 2);
+      i = end < 0 ? n : end + 2;
+      out += ' ';
+    } else if (literals && (c === "'" || c === '"')) {
+      let j = i + 1;
+      for (; j < n; j++) {
+        if (query[j] === c) {
+          if (query[j + 1] === c) j++;
+          else break;
+        }
+        // An E'' string: a backslash escapes the next character.
+        else if (c === "'" && query[j] === '\\' && /[eE]/.test(query[i - 1] ?? '')) j++;
+      }
+      i = j + 1;
+      out += c === "'" ? "''" : '""';
+    } else if (literals && c === '$') {
+      const tag = /^\$([A-Za-z_][\w]*)?\$/.exec(query.slice(i));
+      if (tag) {
+        const end = query.indexOf(tag[0], i + tag[0].length);
+        i = end < 0 ? n : end + tag[0].length;
+        out += "''";
+      } else {
+        out += c;
+        i++;
+      }
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Refuse what the narrow route never sends (NarrowRouteRefusedError), on a
+ * single statement and on every statement of a narrow transaction: one
+ * Postgres runs only outside a transaction block; a transaction-control
+ * statement (it would end the transaction its role is local to, and later
+ * statements would run as the pool's own login); a role change; a
+ * session-level SET, RESET or set_config (it outlives the transaction).
+ */
+export function narrowSendable(query: string): void {
   if (runsOutsideTransaction(query)) {
     throw new NarrowRouteRefusedError('a statement outside a transaction');
   }
-  if (TX_CONTROL.test(statementBody(query, false))) {
+  const code = sqlCode(statementBody(query, false));
+  if (TX_CONTROL.test(code)) {
     throw new NarrowRouteRefusedError('a transaction-control statement');
+  }
+  if (ROLE_CHANGE.test(code) || ROLE_SET_CONFIG.test(sqlCode(query, false))) {
+    throw new NarrowRouteRefusedError('a role change');
+  }
+  if (SESSION_SET.test(code) || SESSION_SET_CONFIG.test(code)) {
+    throw new NarrowRouteRefusedError('a session-level setting');
   }
 }
 
@@ -109,6 +192,12 @@ async function narrowSettingsSql(): Promise<string> {
 function noteNarrowDenial(err: unknown): void {
   const what = permissionGapOf(err);
   if (!what) return;
+  // Once per error: a statement's denial is noted where it is met, and
+  // again as the transaction's error when nothing caught it.
+  if (typeof err === 'object' && err !== null) {
+    if (notedDenials.has(err)) return;
+    notedDenials.add(err);
+  }
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';
   if (env('NODE_ENV') === 'test') {
@@ -119,6 +208,9 @@ function noteNarrowDenial(err: unknown): void {
   }
   noteActorMiss({ source: 'ts', check: 'narrow-denied', actor: who, detail: what.slice(0, 200) });
 }
+
+/** The denials already noted (noteNarrowDenial). */
+const notedDenials = new WeakSet<object>();
 
 /** Tests only: the start of the refused statement's text, from the
  *  driver's error or the one it is the cause of. */
@@ -184,8 +276,10 @@ export async function narrowStatement(
     const out = await Promise.allSettled(sent);
     const failed = out.findIndex((r) => r.status === 'rejected');
     if (failed >= 0) {
-      if (failed === 3) throw new NarrowRoleLeftError();
       const err = (out[failed] as PromiseRejectedResult).reason;
+      // Only the hold check's own refusal (division by zero) means the role
+      // was left; any other error is the caller's, as it is.
+      if (failed === 3 && pgErrorCode(err) === HOLD_FAILED) throw new NarrowRoleLeftError();
       noteNarrowDenial(err);
       throw err;
     }
@@ -195,26 +289,106 @@ export async function narrowStatement(
   }
 }
 
+/** The hold check's refusal: division by zero (narrowHeld). */
+const HOLD_FAILED = '22012';
+
+/** One statement's query object, kept lazy (a postgres.js query runs when
+ *  it is awaited, in the mode `.values()` or `.simple()` picked), with its
+ *  error seen by `onError` first. */
+type QueryLike = PromiseLike<unknown> & {
+  values?: () => PromiseLike<unknown>;
+  simple?: () => PromiseLike<unknown>;
+};
+
+function watchedQuery(q: QueryLike, onError: (err: unknown) => void) {
+  const run = (p: PromiseLike<unknown>) =>
+    Promise.resolve(p).then(undefined, (err: unknown) => {
+      onError(err);
+      throw err;
+    });
+  let started: Promise<unknown> | null = null;
+  const once = () => (started ??= run(q));
+  return {
+    then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
+    catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+    finally: (f?: () => void) => once().finally(f),
+    values: () => run(q.values ? q.values() : q),
+    simple: () => run(q.simple ? q.simple() : q),
+  };
+}
+
+/**
+ * A narrow transaction's client: every statement it sends (drizzle's
+ * `unsafe`, a tagged template, and those of a savepoint's handle) is
+ * refused first when the narrow route never sends it (narrowSendable), and
+ * the error of each `unsafe` statement and savepoint is seen by `onError`
+ * (a denial a savepoint caught is still noted). A tagged template's result
+ * stays postgres.js's own (it may be a fragment of another statement), so
+ * its error is seen only when it ends the transaction.
+ */
+function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
+  return new Proxy(t, {
+    apply(target, thisArg, args: unknown[]) {
+      const first = args[0] as { raw?: unknown } | undefined;
+      if (Array.isArray(first) && 'raw' in first) narrowSendable((first as string[]).join('$1'));
+      return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
+    },
+    get(target, prop, receiver) {
+      if (prop === 'unsafe') {
+        return (query: string, args?: unknown[], opts?: unknown) => {
+          narrowSendable(query);
+          return watchedQuery(target.unsafe(query, args as never[], opts as never), onError);
+        };
+      }
+      if (prop === 'savepoint') {
+        return (...a: unknown[]) => {
+          const last = a.length - 1;
+          const fn = a[last] as (s: PgSql) => unknown;
+          if (typeof fn === 'function') a[last] = (s: PgSql) => fn(narrowTxClient(s, onError));
+          const sp = (
+            target as unknown as { savepoint: (...x: unknown[]) => PromiseLike<unknown> }
+          ).savepoint(...a);
+          return Promise.resolve(sp).then(undefined, (err: unknown) => {
+            onError(err);
+            throw err;
+          });
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
 /**
  * A transaction on the narrow route (begin's arguments, the last one its
- * work): its SET goes with its first statement (settingsFirst), and the
- * hold check runs before the COMMIT, so a transaction that left the role
- * rolls back (NarrowRoleLeftError).
+ * work): its SET goes with its first statement (settingsFirst), each of
+ * its statements is checked (narrowTxClient), and the hold check runs
+ * before the COMMIT, so a transaction that left the role rolls back
+ * (NarrowRoleLeftError). A denial is noted where it is met, a caught one
+ * too. When the hold check fails for another reason (the transaction was
+ * aborted by a statement whose error the work caught without a savepoint),
+ * the caller gets that statement's error, never NarrowRoleLeftError.
  */
 export async function narrowBegin(base: PgSql, args: unknown[]): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
   noteNarrowUse();
   const setSql = await narrowSettingsSql();
+  let firstError: { err: unknown } | null = null;
+  const seen = (err: unknown) => {
+    firstError ??= { err };
+    noteNarrowDenial(err);
+  };
   try {
     return await (base.begin as (...a: unknown[]) => Promise<unknown>)(
       ...args.slice(0, -1),
       async (t: PgSql) => {
-        const client = settingsFirst(t, () => setSql);
-        const value = await work(client);
+        const set = settingsFirst(t, () => setSql);
+        const value = await work(narrowTxClient(set, seen));
         try {
-          await narrowHeld(client);
-        } catch {
-          throw new NarrowRoleLeftError();
+          await narrowHeld(set);
+        } catch (err) {
+          if (pgErrorCode(err) === HOLD_FAILED) throw new NarrowRoleLeftError();
+          throw firstError ? firstError.err : err;
         }
         return value;
       },
