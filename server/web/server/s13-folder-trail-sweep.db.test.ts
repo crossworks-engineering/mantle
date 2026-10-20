@@ -210,7 +210,8 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
       color: null,
       system: false,
       itemCount: 0,
-      folderCount: 0,
+      // Beta on the way, not the hidden Secret: what opening it shows.
+      folderCount: 1,
       workspaces: [],
       hasLink: false,
       mayEdit: false,
@@ -226,6 +227,7 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
     const a = await call(`/api/tree/notes?folder=${N.a}`, member);
     expect(a.status, a.text.slice(0, 200)).toBe(200);
     expect(ids(a.json.folders)).toEqual([N.b]);
+    expect((a.json.folders as Folder[])[0]).toMatchObject({ folderCount: 0, itemCount: 1 });
     expect(a.json.items).toEqual([]);
     expect(a.json.crumbs).toEqual([]);
     expect((a.json.folder as Folder).id).toBe(N.a);

@@ -22,10 +22,11 @@ import { currentCaller } from './gate';
 export type TrailFolder = { id: string; path: string; title: string };
 
 /** Which folders to name (each answered only when it is at or above a row
- *  the scope reads): the direct children of the folder at `under`, the
- *  folders at the exact `paths`, the folder with id `folder`. */
+ *  the scope reads): the direct children of the folder at `under` (a path,
+ *  or a column of the caller's statement, as SQL), the folders at the exact
+ *  `paths`, the folder with id `folder`. */
 export type TrailAsk = {
-  under?: string | null;
+  under?: string | SQL | null;
   paths?: readonly string[];
   folder?: string | null;
 };
@@ -49,8 +50,14 @@ export function folderTrailSql(ownerId: string, ask: TrailAsk): SQL | null {
         sql`, `,
       )}]::text[]`
     : sql`'{}'::text[]`;
+  const under =
+    ask.under == null
+      ? sql`null::text`
+      : typeof ask.under === 'string'
+        ? sql`${ask.under}::text`
+        : sql`(${ask.under})::text`;
   return sql`(select r.id, r.path::ltree as path, r.title
-                from "public"."mantle_folder_trail"(${ownerId}::uuid, ${ask.under ?? null}::text,
+                from "public"."mantle_folder_trail"(${ownerId}::uuid, ${under},
                                                     ${list}, ${ask.folder ?? null}::uuid) r)`;
 }
 

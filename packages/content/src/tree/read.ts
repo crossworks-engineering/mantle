@@ -134,8 +134,9 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  the direct children of the folder at that path, the ones matching `where`
  *  that the login does not read but that hold something it reads come too,
  *  as structure (id, path and name; no look, rank or system mark), and that
- *  folder serves as their parent. Their counts are the reader's, as for any
- *  folder: only what it reads in them. */
+ *  folder serves as their parent. Each folder's subfolder count then counts
+ *  the subfolders on the way too (what opening it shows); the item counts
+ *  stay what the reader reads. */
 export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
@@ -171,6 +172,28 @@ export async function selectFolders(
       union all
       select tr.id, tr.path from tr`
     : sql``;
+  // The subfolders each folder shows when opened: the ones the reader reads
+  // and, with a trail, the ones on the way to what it reads (the trail of
+  // each listed folder, so a folder whose only way down is such a folder
+  // still unfolds).
+  const readChildren = sql`select subpath(c.path, 0, nlevel(c.path) - 1) as p, c.id from nodes c
+       where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
+         and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
+         and ${nodeAliasScopeReads('c')}`;
+  const trailChildren = trail ? folderTrailSql(ownerId, { under: sql`f.path` }) : null;
+  const folderCounts = trailChildren
+    ? sql`
+      select x.p, count(distinct x.id)::int as n from (
+        ${readChildren}
+        union all
+        select f.path, k.id from f cross join lateral ${trailChildren} k) x
+       group by 1`
+    : sql`
+      select subpath(c.path, 0, nlevel(c.path) - 1) as p, count(*)::int as n from nodes c
+       where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
+         and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
+         and ${nodeAliasScopeReads('c')}
+       group by 1`;
   const elsewhere = ws ? elsewhereOf(ws, others ?? [], 'c') : null;
   // With `elsewhere`, one scan counts both: the items `ws` reads (`n`) and
   // those only the others read (`e`); a row neither reads is not scanned in.
@@ -190,12 +213,7 @@ export async function selectFolders(
        where p.owner_id = ${ownerId} and p.type = 'branch' and ${nodeAliasScopeReads('p')}
          and p.path = any(array(
            select subpath(path, 0, nlevel(path) - 1) from f where nlevel(path) > 2))${trailParents}),
-    fc as materialized (
-      select subpath(c.path, 0, nlevel(c.path) - 1) as p, count(*)::int as n from nodes c
-       where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
-         and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
-         and ${nodeAliasScopeReads('c')}
-       group by 1),
+    fc as materialized (${folderCounts}),
     ic as materialized (
       select c.path as p, ${counted} from nodes c
        where c.owner_id = ${ownerId} and c.type = ${itemType}
