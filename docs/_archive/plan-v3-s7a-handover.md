@@ -649,7 +649,7 @@ the switch is on; corrected: systemRouteNow reads the exit's pick whatever
 the switch, and the pool (pools.ts) sends nothing on the narrow route while
 it is off.
 
-#### Round trips (for S7b)
+#### Round trips, for the default-on release
 
 The narrow route adds a BEGIN, the SET, the hold check and a COMMIT to a
 single systemDb statement in a scope (chat turn start 104/144 to 148/166
