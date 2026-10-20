@@ -642,7 +642,11 @@ Switch off:
   `mantle.route` (only when the check is on, so a SET is sent anyway):
   the same statements, the same answers.
 - The docs collections, email discover contact and reembed answers: a
-  database error's text is gone (the public message instead); all else
+  database error's text is gone (the public message instead). Two more
+  through publicErrorMessage (named in part a3, the a2 re-audit's LOW-2): a
+  domain error answers its domain wording (`domainErrorAnswer`'s text, not
+  the error's own message), and a runtime fault (`isRuntimeFault`) answers
+  the fixed `RUNTIME_ERROR_PUBLIC` text, its detail in the log. All else
   equal.
 
 Switch on: none against main in the suites; the nine routes above answer as
