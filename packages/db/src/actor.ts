@@ -303,6 +303,12 @@ export function longStack(): string {
 }
 
 const recorded: ActorMiss[] = [];
+/** The narrow role's miss checks (plan v3.2 S7a): deduped by actor too. */
+const NARROW_CHECKS: ReadonlySet<string> = new Set([
+  'narrow-denied',
+  'narrow-content-write',
+  'narrow-cascade-delete',
+]);
 const loggedKeys = new Map<string, number>();
 let missLogger: ((m: ActorMiss) => void) | null = null;
 
@@ -322,7 +328,11 @@ export function noteActorMiss(miss: ActorMiss): void {
     recorded.push(miss);
     return;
   }
-  const key = `${miss.source}:${miss.check}:${miss.detail}`;
+  // The narrow checks name the reason in the actor: one row per reason, so
+  // a second reason meeting the same table within the hour is not hidden.
+  const key = NARROW_CHECKS.has(miss.check)
+    ? `${miss.source}:${miss.check}:${miss.actor}:${miss.detail}`
+    : `${miss.source}:${miss.check}:${miss.detail}`;
   const now = Date.now();
   const last = loggedKeys.get(key);
   if (last !== undefined && now - last < 3_600_000) return;
