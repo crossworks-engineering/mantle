@@ -216,7 +216,8 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   (`set_config('role', 'mantle_system_narrow', true)` with the actor, its
   write mode and the box's check mode, all transaction-local, never a
   session `SET`), the statement, the hold check, `COMMIT`, pipelined on one
-  reserved connection (one round trip);
+  reserved connection (measured with the check off: page save 20 to 22
+  round trips, a chat turn's start 144 to 166; a2a-round-trips.db.test.ts);
 - a transaction: the same `SET` with its first statement, the hold check
   before its `COMMIT`;
 - the hold check fails when the transaction is no longer the narrow role's
@@ -242,6 +243,26 @@ the request exits `area` and `login-self`. Full, each with its why in
 `AS_SYSTEM_ROUTE`'s comment: `app-data`, `rule-in-query`,
 `keyword-candidates`, `app-trash`, `page-refold`, `brain-bookkeeping`, and
 the system-work and test reasons.
+
+Where a narrow exit's own work writes a content table (measured), that
+work runs on the full route, keeping its actor, at a spot named in
+`FULL_ROUTE_SPOTS` (`viewer.ts`, `onFullSystemRoute`), each with its why;
+the rest of the exit stays narrow: `profile-row` (the login-self routes and
+the settings area write `profiles`, the write role's own-login table, with
+no scope to carry), `peer-item` (a peer is an item), `secrets-root`
+(`secret_create`'s Secrets root), `integrity-delete` (the landed delete),
+`promotion-space` (a promotion's personal-space settle). The list only
+shrinks: S7b moves each to the write role in the caller's scope or to a
+definer. Outside a narrow exit a spot changes nothing.
+
+The route's own statements carry `/* mantle:narrow */` (never the actor's
+tag): the round-trip test counts them as the path's in every mode. Its
+statements in flight are waited for by `closeDb`, as the actor client's
+pipelines are (a connection handed back after the pool's end began would
+keep it from ending). Each file's `systemDb` uses are marked `narrow`
+(reached in a scope) or `full` (only outside one) in
+`eslint-rules/system-db-allowlist.mjs` (`SYSTEM_DB_ROUTE`; pins
+`systemDbUses_narrow`, `systemDbUses_full`).
 
 A right the narrow role does not hold, met on the route, is noted every
 time, a caught one too: a miss row (check `narrow-denied`) on a box, and in
