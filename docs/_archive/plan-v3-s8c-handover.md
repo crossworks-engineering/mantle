@@ -708,6 +708,8 @@ closed, matches the no-raw-error rule):
 | -------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
 | POST /api/assistant/turn, POST /api/assistant/transcribe | an Admin user, when adminFacts' one statement fails (a database fault) | the provider's error detail | the fixed error sentence | none (a database fault): adminFacts' catch answers no (`server/web/lib/auth/login.ts`) |
 
+The fault case is a class, not one row (audit of rounds 2 and 3, CEO ruling: accepted, fails closed, never wider): if adminFacts' one statement fails, an Admin user is answered as a non-Admin for that whole request at every moved site. On a turn that is 404 no-chat-agent on the owner engine and member limits; transcribe and summarize claim a member daily-cap slot; PATCH /api/apps/:id answers 403, the brokers use the member runner, consent takes the member path, a role change answers 403. The A10 error sweep exempts this statement from its forced faults, so no cell records it.
+
 ### Pins (round 3)
 
 | pin                    | round 2 | round 3                                                                    |
