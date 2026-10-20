@@ -439,10 +439,11 @@ export async function simpleReadOnly(text: string): Promise<unknown[]> {
     }
   ).$client;
   return client.begin(async (t) => {
-    const [, rows] = await Promise.all([
-      t.unsafe('set transaction read only'),
-      t.unsafe(readSql(text)).simple(),
-    ]);
+    // Started (`.then`) before the read is built: postgres.js sends in the
+    // order queries start, and the system pool's client starts the read
+    // (behind its actor SET) as soon as it is built.
+    const readOnly = t.unsafe('set transaction read only').then(() => undefined);
+    const [, rows] = await Promise.all([readOnly, t.unsafe(readSql(text)).simple()]);
     return rows;
   });
 }

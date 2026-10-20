@@ -44,6 +44,11 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
     sql = (m.systemDb as unknown as { $client: import('postgres').Sql }).$client;
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
     anchor = await ensureTestAnchor(sql);
+    // A real pg-boss schema: the queue checks read pgboss.job.
+    const { PgBoss } = await import('pg-boss');
+    const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
+    await boss.start();
+    await boss.stop({ graceful: false, timeout: 5_000 });
     await su(`create table public.${table} (n int)`);
     await su(`grant all on public.${table} to public`);
     await su(`create sequence public.${seq}`);
