@@ -676,6 +676,18 @@ note appended to main's.
   refresh for a login taken out of Admin is invalid_grant); their Admin
   stand-in rows carry `adminMember: true`. `eslint-rules/admin-counts.test.ts`
   asserts the three moved reads are gone (by the moved code).
+- **Three DB test files whose role=admin logins were in no Admin
+  workspace** (the full DB run on 43cc40805 answered 1, 5 tests in 3
+  files, each the narrowing above, for a fixture that meant an Admin user):
+  `server/web/lib/mcp-revived-credentials.db.test.ts` makes its three
+  role=admin logins users of the brain's Admin workspace after the
+  migrations ran (so what 0268 did is as before) and checks
+  `mantle_login_is_admin` answers yes for them;
+  `server/web/lib/mcp-oauth-lock.db.test.ts` and
+  `server/web/lib/auth/auth-races.db.test.ts` move to a brain of their own
+  (`createMigratedScratchDatabase`, as `mcp-oauth-grants.db.test.ts` did
+  for the same reason) and make their OAuth actor an Admin user
+  (`ensureAdminUsers`, as the superuser). No assertion changed.
 
 ### Changed answers (round 3)
 
@@ -705,3 +717,58 @@ closed, matches the no-raw-error rule):
 | adminDecisionFlags     | 40      | 40                                                                         |
 | historyCodeComments    | 2336    | 2336                                                                       |
 | inHandlerAreaChecks    | 20      | 20                                                                         |
+
+### Gates (round 3)
+
+Mac (DATABASE_URL unset), on 43cc40805:
+
+| gate                                                             | exit                              |
+| ---------------------------------------------------------------- | --------------------------------- |
+| pnpm -r typecheck                                                | 0                                 |
+| pnpm lint                                                        | 0                                 |
+| pnpm format:check                                                | 0                                 |
+| pnpm docs:check                                                  | 0                                 |
+| pnpm arch:check                                                  | 0                                 |
+| pnpm -C server/web build                                         | 0                                 |
+| pnpm exec vitest run --maxWorkers=3 server packages eslint-rules | 0 (859 files passed, 271 skipped) |
+
+157a62f91 changes only three `.db.test.ts` files (skipped without a
+database; eslint, prettier and the server/web typecheck run on them, 0),
+and CI ran every Mac gate on it. The recorded sweep files
+(`__snapshots__`) are byte-equal to main (`git diff origin/main` on them
+is empty, no `-u`); the guard, role and A10 sweeps pass in the unit run.
+
+Workstation (own clone `s8c-c2r3-clone`, own `s8c-c2r3-pg`, pgvector pg18,
+max_connections=450, port 56221 checked free, the `postgres` role as CI;
+MANTLE_CHECK_FLOOR=keep for init and migrate only; DATABASE_URL unset for
+every vitest run; systemd-run --user; --maxWorkers=3; one at a time):
+
+| run                             | head      | exit | result                                                                                                                |
+| ------------------------------- | --------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
+| the four stand-in files         | 5e51b18cb | 0    | 4 files, 53 passed                                                                                                    |
+| the admin-facts cells (warn)    | 5e51b18cb | 0    | 2 files, 18 passed                                                                                                    |
+| full vitest with DB             | 5e51b18cb | 0    | 1130 files, 13894 passed, 1 skipped                                                                                   |
+| the admin-facts cells (warn)    | 43cc40805 | 0    | 2 files, 19 passed                                                                                                    |
+| the four stand-in files         | 43cc40805 | 0    | 4 files, 53 passed                                                                                                    |
+| full vitest with DB             | 43cc40805 | 1    | 3 files, 5 tests: the role=admin fixtures outside Admin (fixed in 157a62f91)                                          |
+| test:actor-off                  | 43cc40805 | 0    | 129 files, 1180 passed, 1 skipped                                                                                     |
+| test:actor-on                   | 43cc40805 | 0    | 31 files, 380 passed, 1 skipped                                                                                       |
+| test:edit-on                    | 43cc40805 | 0    | 43 files, 550 passed                                                                                                  |
+| test:matrix                     | 43cc40805 | 0    | 4 files, 8 passed                                                                                                     |
+| the three fixture files         | 157a62f91 | 0    | 16, 3 and 5 passed                                                                                                    |
+| full vitest with DB             | 157a62f91 | 1    | 1130 files passed, 13898 tests; one unhandled CONNECTION_CLOSED at a teardown, from w7e-member-scope.db (not touched) |
+| full vitest with DB, rerun once | 157a62f91 | 0    | 1130 files, 13898 passed, 1 skipped                                                                                   |
+| test:runtime-role, full config  | 157a62f91 | 0    | 279 files, 2790 passed, 1 skipped                                                                                     |
+
+The actor-off, actor-on, edit-on and matrix configs include none of the
+three files 157a62f91 changes. CI on 157a62f91: run 39375599914, success.
+
+### Left after round 3
+
+- The 27 role reads above, each named with its owner (S8b, c3, c4) or
+  why it stays (a member-path check the pair would widen; an audit; a
+  dead export).
+- `ownerFromBearer` (`server/web/lib/mcp-oauth.ts`) has no caller outside
+  its unit test: a candidate to delete.
+- adminDecisionFlags in server/web (40): mostly the workspace's own flag,
+  not sorted in this round.
