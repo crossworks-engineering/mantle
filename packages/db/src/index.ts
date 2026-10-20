@@ -89,6 +89,7 @@ export {
   type Db,
 } from './client';
 export { CHECK_FLOOR_SQL, checkFloorWarning, type CheckFloorRow } from './check-floor';
+export { readSql, NotReadSqlError } from './read-sql';
 export {
   currentScope,
   isSystemScope,

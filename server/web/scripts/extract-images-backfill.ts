@@ -158,15 +158,16 @@ async function main() {
     const upExt = args.upgradeExt;
     // The upgrade cohort: CAD files whose extracted images exist but none of
     // them came from the sidecar render tier.
-    const rows = (await sql.unsafe(
-      `select n.id, n.title,
+    // The pattern and the limit are bound.
+    const rows = await sql<Array<{ id: string; title: string; children: number }>>`
+      select n.id, n.title,
               (select count(*) from nodes c
                  where c.owner_id = n.owner_id and c.type = 'file'
                    and c.data->>'sourceFileId' = n.id::text
                    and 'extracted-image' = any(c.tags)) as children
          from nodes n
         where n.type = 'file'
-          and lower(coalesce(n.data->>'filename', n.title)) ~ '\\.${upExt}$'
+          and lower(coalesce(n.data->>'filename', n.title)) ~ ${`\\.${upExt}$`}
           and n.data->>'sourceFileId' is null
           and exists (
             select 1 from nodes c
@@ -178,9 +179,8 @@ async function main() {
              where c.owner_id = n.owner_id and c.type = 'file'
                and c.data->>'sourceFileId' = n.id::text
                and c.data->>'provenance' = 'sidecar_render')
-        order by n.created_at desc` + (args.limit ? ` limit ${args.limit}` : ''),
-      [],
-    )) as Array<{ id: string; title: string; children: number }>;
+        order by n.created_at desc
+        ${args.limit ? sql`limit ${args.limit}` : sql``}`;
 
     console.log(`[images-backfill] ${rows.length} ${upExt.toUpperCase()}(s) lack a sidecar render`);
     for (const r of rows) {
@@ -241,12 +241,11 @@ async function main() {
   }
 
   const extPattern = `\\.(${args.exts.join('|')})$`;
-  const params: Array<string | number> = [extPattern];
-  let q = `
+  const rows = await sql<Array<{ id: string; title: string; filename: string }>>`
     select n.id, n.title, coalesce(n.data->>'filename', n.title) as filename
     from nodes n
     where n.type = 'file'
-      and lower(coalesce(n.data->>'filename', n.title)) ~ $1
+      and lower(coalesce(n.data->>'filename', n.title)) ~ ${extPattern}
       -- never re-open an image we ourselves extracted
       and n.data->>'sourceFileId' is null
       -- and skip anything that already yielded pictures
@@ -256,17 +255,8 @@ async function main() {
           and c.type = 'file'
           and c.data->>'sourceFileId' = n.id::text
       )
-    order by n.created_at desc`;
-  if (args.limit) {
-    q += ` limit $2`;
-    params.push(args.limit);
-  }
-
-  const rows = (await sql.unsafe(q, params)) as Array<{
-    id: string;
-    title: string;
-    filename: string;
-  }>;
+    order by n.created_at desc
+    ${args.limit ? sql`limit ${args.limit}` : sql``}`;
 
   const byExt = new Map<string, number>();
   for (const r of rows) {

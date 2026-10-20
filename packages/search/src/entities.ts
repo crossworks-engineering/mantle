@@ -20,7 +20,16 @@
  */
 
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import { db, entities, entityEdges, facts, nodes, type Entity, type Fact } from '@mantle/db';
+import {
+  db,
+  entities,
+  entityEdges,
+  facts,
+  nodes,
+  readSql,
+  type Entity,
+  type Fact,
+} from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { pgArrayLiteral } from './pg';
 
@@ -408,7 +417,7 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
       $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
     }
   ).$client;
-  const rows = await client.unsafe(queryText).simple();
+  const rows = await client.unsafe(readSql(queryText)).simple();
 
   const raw = rows as unknown as Array<{
     node_id: string;

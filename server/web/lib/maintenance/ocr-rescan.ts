@@ -229,7 +229,10 @@ export async function clearForRescan(id: string): Promise<void> {
       const [file] = await tx
         .update(nodes)
         .set({
-          data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${sql.raw(`array[${keys.map((k) => `'${k}'`).join(',')}]::text[]`)}`,
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb) - array[${sql.join(
+            keys.map((k) => sql`${k}`),
+            sql`, `,
+          )}]::text[]`,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, id), eq(nodes.type, 'file')))

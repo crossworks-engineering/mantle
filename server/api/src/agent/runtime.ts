@@ -496,13 +496,14 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   }
 }
 
-async function drainPending(
-  enqueueTelegramTurn: (messageId: string) => Promise<unknown>,
-): Promise<void> {
-  // Self-heal: inbound rows that already have an outbound reply but were
-  // never marked processed (typically because a previous run crashed or
-  // was hot-reloaded between sending Telegram and the final DB UPDATE).
-  // Flip them to processed instead of generating a duplicate reply.
+/**
+ * Self-heal: inbound rows that already have an outbound reply but were
+ * never marked processed (typically because a previous run crashed or was
+ * hot-reloaded between sending Telegram and the final DB UPDATE). Flips
+ * them to processed instead of generating a duplicate reply; answers how
+ * many. Exported for its cells (telegram-heal.db.test.ts).
+ */
+export async function healRepliedTelegramMessages(): Promise<number> {
   // The subquery's `telegram_messages r` hides the table's own name, so
   // the qualified columns name the row being updated.
   const healed = await db
@@ -521,7 +522,13 @@ async function drainPending(
        )`,
     )
     .returning({ id: telegramMessages.id });
-  const healedCount = healed.length;
+  return healed.length;
+}
+
+async function drainPending(
+  enqueueTelegramTurn: (messageId: string) => Promise<unknown>,
+): Promise<void> {
+  const healedCount = await healRepliedTelegramMessages();
   if (healedCount > 0) {
     logger.info(`drain: healed ${healedCount} previously-replied message(s)`);
   }

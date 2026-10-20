@@ -93,10 +93,11 @@ async function main() {
     return;
   }
 
-  // The delete is a typed write on the same connection. drizzle sets the
-  // client's date parsers to pass text through, so it is made after the
-  // reads.
-  const db = drizzle(sql);
+  // The delete is a typed write on a client of its own: drizzle sets its
+  // client's date parsers to pass text through, which would change a read
+  // on the script's client.
+  const writer = postgres(DATABASE_URL!, { max: 1 });
+  const db = drizzle(writer);
   const deleted = await db
     .delete(entityEdges)
     .where(
@@ -115,6 +116,7 @@ async function main() {
     )
     .returning({ id: entityEdges.id });
   console.log(`[dedupe] deleted ${deleted.length} duplicate edge(s); kept the earliest of each.`);
+  await writer.end();
   await sql.end();
 }
 

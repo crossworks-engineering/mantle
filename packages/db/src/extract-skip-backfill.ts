@@ -82,10 +82,12 @@ export async function backfillTerminalSkips(opts: {
         ids.map((id) => sql`${id}::uuid`),
         sql`, `,
       );
-      await systemDb.execute(sql`
-        update ${nodes}
-           set data = coalesce(${nodes.data}, '{}'::jsonb) || ${extractSkippedStamp(disposition)}
-         where ${nodes.id} in (${idList})`);
+      await systemDb
+        .update(nodes)
+        .set({
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${extractSkippedStamp(disposition)}`,
+        })
+        .where(sql`${nodes.id} in (${idList})`);
     }
   }
   return { stamped: rows.length, byKind, sampleIds: rows.slice(0, 10).map((r) => r.id) };

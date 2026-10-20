@@ -84,6 +84,7 @@ cannot see (below):
 | `public.item_marks`         | `typed-write` | a login's own open counts and pins, keyed by its login (`packages/content/src/tree/marks.ts`, `packages/content/src/tree/apps-nav.ts`, `packages/content/src/app-nav.ts`) | `'own-marks'`                         |
 | `public.pending_tool_calls` | `typed-write` | an elevated tool call queued for approval, and its status (`packages/tools/src/pending-queue.ts`, `packages/tools/src/pending.ts`)                                        | `'approval-queue'`                    |
 | `public.assistant_messages` | `typed-write` | the rows of a login's chat turn in the one conversation store (`packages/runtime/src/agent/conversation.ts`)                                                              | `'conversation-store'`                |
+| `public.traces`             | `typed-write` | the integrity screen's delete of a node's trace rows, in an Admin user's scope (`server/web/lib/integrity/landed.ts`; no vitest hit)                                      | `'integrity-repair'`                  |
 
 Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
 `precheck-removal-http`, `w6a-route-sweep`, `w6b-fix1` (`item_marks`),
@@ -92,8 +93,9 @@ Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
 (`assistant_messages`), all under `server/web/server/`. No other table.
 The `item_marks` writes are typed writes, so their hits count as
 `typed-write`. So is the integrity screen's delete of a node's
-`public.traces` rows (`server/web/lib/integrity/landed.ts`): a box counts
-its hits, if any, as `typed-write`.
+`public.traces` rows (the `public.traces` row above, read from the code: no
+test reaches it with a login's scope): a box counts its hits, if any, as
+`typed-write`.
 
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two

@@ -69,31 +69,15 @@ async function main() {
 
   // Find candidates. "Missing index" means either data.summary is absent OR
   // embedding is NULL. Exclude branch + secret (HARD_SKIP in the extractor).
-  const conds: string[] = [
-    `type <> 'branch'`,
-    `type <> 'secret'`,
-    `(data->>'summary' is null or embedding is null)`,
-  ];
-  const params: Array<string | string[] | Date | number> = [];
-  if (args.types && args.types.length > 0) {
-    conds.push(`type::text = any($${params.length + 1})`);
-    params.push(args.types);
-  }
-  if (args.since) {
-    conds.push(`created_at >= $${params.length + 1}`);
-    params.push(args.since);
-  }
-  let q = `select id, type, title from nodes where ${conds.join(' and ')} order by created_at desc`;
-  if (args.limit) {
-    q += ` limit $${params.length + 1}`;
-    params.push(args.limit);
-  }
-
-  const rows = (await sql.unsafe(q, params)) as Array<{
-    id: string;
-    type: string;
-    title: string;
-  }>;
+  // --types, --since and --limit each add their clause only when given.
+  const rows = await sql<Array<{ id: string; type: string; title: string }>>`
+    select id, type, title from nodes
+     where type <> 'branch' and type <> 'secret'
+       and (data->>'summary' is null or embedding is null)
+       ${args.types && args.types.length > 0 ? sql`and type::text = any(${args.types})` : sql``}
+       ${args.since ? sql`and created_at >= ${args.since}` : sql``}
+     order by created_at desc
+     ${args.limit ? sql`limit ${args.limit}` : sql``}`;
   console.log(`[backfill] found ${rows.length} candidate nodes`);
 
   if (rows.length === 0) {

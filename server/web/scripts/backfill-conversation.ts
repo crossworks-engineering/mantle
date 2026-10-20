@@ -298,7 +298,7 @@ async function main() {
   try {
     if (toInsert.length > 0) {
       await executeAsMigrator(
-        sql`alter table assistant_messages disable trigger ${sql.raw(SUMMARIZE_TRIGGER)}`,
+        sql`alter table assistant_messages disable trigger ${sql.identifier(SUMMARIZE_TRIGGER)}`,
       );
       disabled = true;
       const BATCH = 500;
@@ -320,7 +320,7 @@ async function main() {
   } finally {
     if (disabled) {
       await executeAsMigrator(
-        sql`alter table assistant_messages enable trigger ${sql.raw(SUMMARIZE_TRIGGER)}`,
+        sql`alter table assistant_messages enable trigger ${sql.identifier(SUMMARIZE_TRIGGER)}`,
       );
       console.log('✓ re-enabled summarize trigger');
     }

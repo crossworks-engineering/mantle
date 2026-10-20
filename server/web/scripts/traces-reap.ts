@@ -63,10 +63,11 @@ async function main() {
       console.log('[traces-reap] DRY RUN — pass --apply to close them');
       return;
     }
-    // A typed write on the same connection. drizzle sets the client's date
-    // parsers to pass text through, so it is made after the read above.
-    const db = drizzle(sql);
-    const closed = await db
+    // A typed write on a client of its own: drizzle sets its client's date
+    // parsers to pass text through, which would change a read on the
+    // script's client (the started_at it prints).
+    const writer = postgres(DATABASE_URL!, { max: 1 });
+    const closed = await drizzle(writer)
       .update(traces)
       .set({
         status: 'error',
@@ -80,7 +81,8 @@ async function main() {
       .where(
         drizzleSql`${traces.status} = 'running' AND ${traces.startedAt} < now() - make_interval(mins => ${ABANDON_AFTER_MIN})`,
       )
-      .returning({ id: traces.id });
+      .returning({ id: traces.id })
+      .finally(() => writer.end());
     console.log(`[traces-reap] closed ${closed.length} trace(s)`);
   } finally {
     await sql.end();

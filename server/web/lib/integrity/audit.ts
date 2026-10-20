@@ -21,6 +21,7 @@ import {
   extractParkedSql,
   GRANT_DRIFT_SQL,
   MIGRATION_TAGS,
+  readSql,
   sharedReadsAliasSql,
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
@@ -247,7 +248,7 @@ const CHECKS: CheckDef[] = [
     query: () => sql`
       SELECT 'mantle_actor_check' AS id, 'mode ' || d.mode AS kind,
              d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
-      FROM (${sql.raw(ACTOR_CHECK_DRIFT_SQL)}) d`,
+      FROM (${sql.raw(readSql(ACTOR_CHECK_DRIFT_SQL))}) d`,
   },
   {
     key: 'edit_check_drift',
@@ -257,7 +258,7 @@ const CHECKS: CheckDef[] = [
     query: () => sql`
       SELECT 'mantle_edit_check' AS id, 'mode ' || d.mode AS kind,
              d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
-      FROM (${sql.raw(EDIT_CHECK_DRIFT_SQL)}) d`,
+      FROM (${sql.raw(readSql(EDIT_CHECK_DRIFT_SQL))}) d`,
   },
   {
     key: 'check_floor',
@@ -267,7 +268,7 @@ const CHECKS: CheckDef[] = [
     query: () => sql`
       SELECT 'actor ' || f.actor || ', edit ' || f.edit AS id, 'below on' AS kind,
              coalesce(nullif(f.lowered, ''), 'no reason recorded') AS detail
-      FROM (${sql.raw(CHECK_FLOOR_SQL)}) f
+      FROM (${sql.raw(readSql(CHECK_FLOOR_SQL))}) f
       WHERE f.actor <> 'on' OR f.edit <> 'on'`,
   },
   {
@@ -275,7 +276,7 @@ const CHECKS: CheckDef[] = [
     label: 'Runtime role holds no owner power',
     severity: 'high',
     note: "whether mantle_runtime, the role the app's pools log in as with MANTLE_DB_RUNTIME_ROLE=1 (workspaces arch A9, docs/runtime-role.md), is still the lock it was made as: not a superuser, no CREATEROLE or CREATEDB, owning no table or function of public or auth, no CREATE on public, neither the rights of mantle_owner or mantle_system nor a way to become mantle_owner, mantle_acl_internal() (the marker every write guard reads) present and mantle_owner's, mantle_owner_role() the MEMBER version of migration 0290 (a skipped 0290 refuses the runtime role at every write guard), and no role but mantle_runtime a member of mantle_owner (mantle_owner_role() says yes to every member). A row names what broke: a hand GRANT, ALTER ROLE or ALTER FUNCTION, or a skipped migration. migrate puts the role back on its next run; until then the app's pools can alter tables, disable triggers or change the check modes. No row when the role does not exist (a box before its roll).",
-    query: () => sql`${sql.raw(RUNTIME_LOCK_SQL)}`,
+    query: () => sql`${sql.raw(readSql(RUNTIME_LOCK_SQL))}`,
   },
   {
     key: 'keyword_index_rls',
@@ -304,7 +305,7 @@ const CHECKS: CheckDef[] = [
     note: 'items whose derived read, write or home columns differ from what their workspace grants give (the grants are the only truth since migration 0261; triggers keep the columns equal). Any count here is a writer that went around the derivation: the item reads by its stale columns. The same count is the first line of pnpm -C server/web workspaces:check, which also counts orphan grants, items without a home, workspaces without a Moderator, assistants not in exactly one workspace and open links with no served key.',
     query: () => sql`
       SELECT 'grants' AS id, 'drift' AS kind, d.n::text || ' item(s)' AS detail
-      FROM (${sql.raw(GRANT_DRIFT_SQL)}) d WHERE d.n > 0`,
+      FROM (${sql.raw(readSql(GRANT_DRIFT_SQL))}) d WHERE d.n > 0`,
   },
   {
     key: 'workspaces_fk_pending_validation',

@@ -56,12 +56,10 @@ export function rawWriteSiteCount(text, path) {
  *  allowlist (scoped code). */
 export const RAW_WRITE_PINS = {
   'packages/db/src/access-matrix.ts': 5,
-  'packages/db/src/call-audit.ts': 1,
   'packages/db/src/check-floor.ts': 1,
   'packages/db/src/concurrent-indexes.ts': 1,
   'packages/db/src/content-changed.ts': 1,
   'packages/db/src/email-attachment.ts': 2,
-  'packages/db/src/extract-skip-backfill.ts': 1,
   'packages/db/src/gateway/actor-sql.ts': 9,
   'packages/db/src/gateway/check-mode.ts': 1,
   // executeWrite passes its argument (a string or built SQL) to execute.
@@ -81,8 +79,6 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/item-acl.ts': 2,
   'packages/db/src/runtime-role.ts': 8,
   'packages/db/src/scope-readable.ts': 5,
-  'packages/db/src/space-carry.ts': 4,
-  'packages/db/src/store-broker.ts': 1,
   'packages/db/src/viewer-roles.ts': 3,
   'packages/db/src/workspace-live.ts': 1,
   'packages/db/src/workspaces-check.ts': 1,
@@ -90,14 +86,7 @@ export const RAW_WRITE_PINS = {
   // columns of item_grants, and a drizzle insert names them all (42501).
   // Raw until it becomes a definer call.
   'packages/files/src/ops/files.ts': 1,
-  'packages/search/src/entities.ts': 1,
   'packages/tools/src/builtins-eval.ts': 1,
-  'server/web/lib/auth/first-owner.ts': 1,
-  'server/web/lib/integrity/audit.ts': 5,
-  'server/web/lib/maintenance/ocr-rescan.ts': 1,
-  'server/web/scripts/backfill-conversation.ts': 2,
-  'server/web/scripts/extract-backfill.ts': 1,
-  'server/web/scripts/extract-images-backfill.ts': 2,
 };
 
 export const rule = pinnedRule({

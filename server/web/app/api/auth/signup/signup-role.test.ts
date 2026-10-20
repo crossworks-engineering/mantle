@@ -5,8 +5,8 @@
  * a signup that forgot the role would lock a fresh install out with a
  * misleading message. The insert is read back from the stood-in database.
  */
-import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -15,15 +15,25 @@ const h = vi.hoisted(() => ({
   why: null as string | null,
 }));
 
-vi.mock('@mantle/db', () => ({
-  countUsers: async () => 0,
-  db: {
-    execute: async (q: unknown) => {
-      h.queries.push(q);
-      return [{ id: 'x' }];
+vi.mock('@mantle/db', async (importOriginal) => {
+  const { authUsers } = await importOriginal<typeof import('@mantle/db')>();
+  // The insert as drizzle builds it, read back with its SQL text.
+  const built = drizzle.mock();
+  return {
+    countUsers: async () => 0,
+    authUsers,
+    db: {
+      insert: (table: typeof authUsers) => ({
+        select: (q: SQL) => ({
+          returning: async (cols: { id: typeof authUsers.id }) => {
+            h.queries.push(built.insert(table).select(q).returning(cols).toSQL());
+            return [{ id: 'x' }];
+          },
+        }),
+      }),
     },
-  },
-}));
+  };
+});
 // The workspaces migration after the first owner (W5b1 audit M1) runs on
 // its own; workspaces-migrate.db.test drives it on a real database.
 vi.mock('@/lib/workspaces-migrate', () => ({
@@ -50,13 +60,27 @@ describe('POST /api/auth/signup', () => {
     expect(res.status).toBe(200);
     expect(h.queries).toHaveLength(1);
     expect(h.migrated).toEqual(['first owner']);
-    const { sql, params } = new PgDialect().sqlToQuery(h.queries[0] as SQL);
-    const cols = /INSERT INTO auth\.users \(([^)]*)\)/
+    const { sql, params } = h.queries[0] as { sql: string; params: unknown[] };
+    const cols = /insert into "auth"\."users" \(([^)]*)\)/
       .exec(sql)?.[1]
       ?.split(',')
-      .map((c) => c.trim());
-    expect(cols).toEqual(['id', 'email', 'password_hash', 'is_owner', 'role']);
-    expect(sql).toMatch(/true, 'admin'/);
+      .map((c) => c.trim().replace(/"/g, ''));
+    // A typed insert-select names every column; the select gives each its
+    // value in that order: is_owner true, role 'admin'.
+    expect(cols).toEqual([
+      'id',
+      'email',
+      'password_hash',
+      'created_at',
+      'is_owner',
+      'display_name',
+      'last_login_at',
+      'role',
+      'contact_id',
+      'disabled_at',
+      'session_epoch',
+    ]);
+    expect(sql).toMatch(/now\(\), true, null, null, 'admin',\s+null, null, 0\s+WHERE NOT EXISTS/);
     expect(params).toContain('first@example.invalid');
   });
 

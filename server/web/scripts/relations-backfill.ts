@@ -103,9 +103,11 @@ async function main() {
   console.log(
     `[relations-backfill] firing at ${args.rateSec}s intervals — each is a full re-extract.`,
   );
-  // A typed write on the same connection. drizzle sets the client's date
-  // parsers to pass text through, so it is made after the read above.
-  const db = drizzle(sql);
+  // A typed write on a client of its own: drizzle sets its client's date
+  // parsers to pass text through, which would change a read on the
+  // script's client (the --since date it binds).
+  const writer = postgres(DATABASE_URL!, { max: 1 });
+  const db = drizzle(writer);
   let i = 0;
   for (const row of rows) {
     i++;
@@ -123,6 +125,7 @@ async function main() {
   console.log(
     `[relations-backfill] done. ${rows.length} fired. Watch the agent logs / /debug/journey.`,
   );
+  await writer.end();
   await sql.end();
 }
 

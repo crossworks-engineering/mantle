@@ -22,7 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { db, isUniqueViolation } from '@mantle/db';
+import { authUsers, db, isUniqueViolation } from '@mantle/db';
 import { migrateWorkspacesQuietly, unmigratedBrainReason } from '../workspaces-migrate';
 import { hashLoginPassword } from './session';
 
@@ -45,13 +45,17 @@ export async function createFirstOwner(
     // is_owner: the first-run account is the ANCHOR, the identity all brain
     // content is keyed to. Later co-admin logins (Settings, Logins) are not.
     // The role is named: the column has no default (0190), and the anchor is
-    // always an admin (CHECK).
-    const inserted = await db.execute(sql`
-      INSERT INTO auth.users (id, email, password_hash, is_owner, role)
-      SELECT ${id}, ${email}, ${passwordHash}, true, 'admin'
-      WHERE NOT EXISTS (SELECT 1 FROM auth.users)
-      RETURNING id
-    `);
+    // always an admin (CHECK). A typed insert-select names every column of
+    // the table: the ones the owner leaves out take their column defaults'
+    // values (created_at now(), session_epoch 0, the rest null).
+    const inserted = await db
+      .insert(authUsers)
+      .select(
+        sql`SELECT ${id}::uuid, ${email}, ${passwordHash}, now(), true, null, null, 'admin',
+                   null, null, 0
+             WHERE NOT EXISTS (SELECT 1 FROM auth.users)`,
+      )
+      .returning({ id: authUsers.id });
     if (inserted.length === 0) return { ok: false, reason: 'exists' };
   } catch (err) {
     // Only a unique violation means "someone else got there first" (two

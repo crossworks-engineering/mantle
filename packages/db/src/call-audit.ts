@@ -31,6 +31,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { runAsActor, systemActor, type Actor } from './actor';
 import { afterOuterCommit, systemDb } from './client';
+import { auditLog } from './schema/audit-log';
 import { UUID_RE } from '@mantle/std';
 
 /** One finished call, as the gate saw it (the caller bound, its ref and
@@ -316,11 +317,12 @@ function startRow(w: NonNullable<typeof writing>, row: CallAuditRow): void {
   // never writes here, an actor-less call is not refused for its row).
   const login = row.loginId && UUID_RE.test(row.loginId) ? row.loginId : null;
   const write = runAsActor(AUDIT_ACTOR, () =>
-    systemDb.execute(
-      sql`insert into audit_log (actor_id, actor_email, action, method, path, ip, user_agent, detail)
-          select u.id, coalesce(u.email, ${row.actorLabel}), 'api.write', ${row.method},
-                 ${row.path}, ${row.meta?.ip ?? null}, ${row.meta?.userAgent ?? null},
-                 ${JSON.stringify(row.detail)}::jsonb
+    // A typed insert-select names every column of the table: id and
+    // created_at take their column defaults' expressions.
+    systemDb.insert(auditLog).select(
+      sql`select gen_random_uuid(), u.id, coalesce(u.email, ${row.actorLabel}), 'api.write',
+                 ${row.method}, ${row.path}, ${row.meta?.ip ?? null}, ${row.meta?.userAgent ?? null},
+                 ${JSON.stringify(row.detail)}::jsonb, now()
             from (select ${login}::uuid as id) l
             left join auth.users u on u.id = l.id`,
     ),

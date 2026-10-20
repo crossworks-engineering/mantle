@@ -23,11 +23,15 @@ vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   countUsers: async () => h.users,
   db: {
-    execute: async () => {
-      if (h.insertError) throw h.insertError;
-      h.inserts += 1;
-      return [{ id: 'x' }];
-    },
+    insert: () => ({
+      select: () => ({
+        returning: async () => {
+          if (h.insertError) throw h.insertError;
+          h.inserts += 1;
+          return [{ id: 'x' }];
+        },
+      }),
+    }),
   },
   isUniqueViolation: (e: unknown) => (e as { code?: string })?.code === '23505',
 }));

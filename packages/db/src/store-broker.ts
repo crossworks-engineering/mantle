@@ -375,10 +375,14 @@ export async function forgetTombstones(
   paths: readonly string[],
 ): Promise<void> {
   if (!paths.length) return;
-  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
-  await db.execute(
-    sql`delete from store_tombstones where store = ${store}
-          and path in (${sql.join(
+  const [{ db }, { sql }, { storeTombstones: tombstones }] = await Promise.all([
+    import('./client'),
+    import('drizzle-orm'),
+    import('./schema/store-tombstones'),
+  ]);
+  await db.delete(tombstones).where(
+    sql`${tombstones.store} = ${store}
+          and ${tombstones.path} in (${sql.join(
             paths.map((p) => sql`${p}`),
             sql`, `,
           )})`,
