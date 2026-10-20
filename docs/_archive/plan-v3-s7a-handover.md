@@ -363,16 +363,16 @@ systemWholeOnFull stays 0 and requestSystemExits area and login-self stay
 narrow. Outside a narrow exit (and with the switch off) a spot runs its work
 as it is.
 
-| Actor                  | Table       | Writer                                                        | Kind | Spot / file                                                     |
-| ---------------------- | ----------- | ------------------------------------------------------------- | ---- | --------------------------------------------------------------- |
-| system:http:login-self | profiles    | the login's own preferences (upsert, the default row)          | c    | profile-row: packages/content/src/profile-preferences.ts        |
-| system:http:admin-area | profiles    | the settings area's brain row, onboarding, the box switch      | c    | profile-row: the same six writes (`profileWrite`)               |
-| system:admin-area      | profiles    | a tool's preferences read making the default row               | c    | profile-row: `loadProfilePreferences`                           |
-| system:http:admin-area | nodes       | a peer's item (create; delete found by reading)                | c    | peer-item: packages/content/src/peers/registry.ts               |
-| system:admin-area      | nodes       | secret_create's Secrets root                                   | c    | secrets-root: packages/tools/src/builtins-secrets.ts            |
-| system:http:admin-area | nodes       | the integrity screen's landed delete (and its file delete)     | c    | integrity-delete: server/web/lib/integrity/landed.ts            |
-| system:http:admin-area | space_items | a promotion's personal-space settle (SELECT ... FOR UPDATE)    | c    | promotion-space: server/web/lib/login-update.ts (that tx only)  |
-| assistant:none         | viewer_test | the test's own schema through systemDb in a scope              | test | viewer.db.test.ts grants its schema to the narrow role          |
+| Actor                  | Table       | Writer                                                      | Kind | Spot / file                                                    |
+| ---------------------- | ----------- | ----------------------------------------------------------- | ---- | -------------------------------------------------------------- |
+| system:http:login-self | profiles    | the login's own preferences (upsert, the default row)       | c    | profile-row: packages/content/src/profile-preferences.ts       |
+| system:http:admin-area | profiles    | the settings area's brain row, onboarding, the box switch   | c    | profile-row: the same six writes (`profileWrite`)              |
+| system:admin-area      | profiles    | a tool's preferences read making the default row            | c    | profile-row: `loadProfilePreferences`                          |
+| system:http:admin-area | nodes       | a peer's item (create; delete found by reading)             | c    | peer-item: packages/content/src/peers/registry.ts              |
+| system:admin-area      | nodes       | secret_create's Secrets root                                | c    | secrets-root: packages/tools/src/builtins-secrets.ts           |
+| system:http:admin-area | nodes       | the integrity screen's landed delete (and its file delete)  | c    | integrity-delete: server/web/lib/integrity/landed.ts           |
+| system:http:admin-area | space_items | a promotion's personal-space settle (SELECT ... FOR UPDATE) | c    | promotion-space: server/web/lib/login-update.ts (that tx only) |
+| assistant:none         | viewer_test | the test's own schema through systemDb in a scope           | test | viewer.db.test.ts grants its schema to the narrow role         |
 
 The refused statements were found by noting the statement's text with each
 denial in tests (narrow-route.ts `refusedQueryOf`).
@@ -460,6 +460,35 @@ the route's own (above).
   made and granted at migrate by part a1 (ensureRuntimeRoles) and unused.
   No migration in a2, so nothing to revert in SQL. An N-1 restore of an N
   dump needs the role first (part a1's note: `CREATE ROLE
-  mantle_system_narrow NOLOGIN`).
+mantle_system_narrow NOLOGIN`).
 - Miss rows with check `narrow-denied` written on a box with the switch on
   stay in actor_check_misses; N-1 ignores the check name.
+
+#### Gates (round 2)
+
+Mac, Node 26, DATABASE_URL unset, on d0fac18d9: pnpm -r typecheck 0, pnpm
+lint 0, pnpm format:check 0, pnpm docs:check 0, pnpm arch:check 0, pnpm
+boot:smoke 0 (14 services), pnpm -C server/web build 0, vitest run server
+packages eslint-rules 0 (857 files passed, 269 skipped). A first unit run
+on 7d13319b7 failed two mocks of @mantle/db that lacked onFullSystemRoute,
+and format:check one file: fixed in d0fac18d9.
+
+Workstation, own clone ~/s7a-a2-ws/repo reset to d0fac18d9, own container
+s7a-a2-pg (pgvector pg18, 127.0.0.1:56372 checked free, max_connections=450,
+role postgres as CI), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time, switch on (the tests'
+default) unless said: full DB vitest 0 (1126 files, 13872 passed, 1
+skipped, no unhandled error, no narrow denial), test:actor-off 0 (1186
+passed), test:actor-on 0 (361), test:edit-on 0 (531), test:matrix 0 (8),
+test:runtime-role in full 0 (277 files, 2776 passed); full DB vitest with
+MANTLE_NARROW_SYSTEM=0 exit 1: one cell, narrow-route.db.test.ts "is on by
+default", asserted the default while the run set the switch off (13871
+passed, nothing else changed: the switch-off proof). That cell now asserts
+the default only when the run leaves the switch unset (6fceb43fe), and the
+file passes with the switch off and on (8 and 8).
+
+Earlier in the round: the 23 failing files alone after each fix (30, 9, 0
+failures), a2a-round-trips with MANTLE_RT_REPORT switch on and off, the
+sweep file switch on and off (the unhandled rejections on only).
+
+CI: run 39359479088 on d0fac18d9 green.
