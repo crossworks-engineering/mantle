@@ -955,3 +955,186 @@ were cancelled by the next push.
   functions): a new built-in of that kind needs a line there.
 - From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
   rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
+
+### Fix round 3 (the re-audit at d55e3c67e)
+
+Rebased on main 6421c4e5a (v0.300.120) with no conflict: main touched no
+file of the branch, the pins file included. Measured on the rebased head
+and on the code head: rawWriteSqlScoped 1, rawSqlNonLiteral 63,
+rawWriteSqlFiles 26, historyCodeComments 2334, each its pin. No pin moved.
+
+#### Read only before the read on the narrow route (MED)
+
+Under asSystem with a reason the narrow system route takes ('admin-area',
+'audit-log') and MANTLE_NARROW_SYSTEM on, simpleReadOnly
+(packages/search/src/entities.ts) ran its read with transaction_read_only
+off: the narrow route's client starts each statement a microtask late
+(its watchedQuery, gateway/narrow-route.ts), so the SET TRANSACTION READ
+ONLY, started first, reached the wire after the role SET and the read,
+and Postgres let the transaction turn read only after the read had run.
+simpleReadOnly now awaits `set transaction read only` and then sends the
+read: no client wrapper's send order decides it. Cost: one round trip
+more per graph walk. readOnlyTransaction (packages/db/src/read-only-tx.ts)
+already awaited its SET (drizzle's `tx.execute`) and passed the same cells
+before and after; its comment now says why it is awaited. narrow-route.ts
+is not touched (the S7a lane owns the reorder).
+
+Cells, both on a real pg18, for each of the two reasons:
+graph-path-read-only.db.test.ts reads `current_setting('transaction_read_only')`
+as `on` and `current_user` as mantle_system_narrow (when the switch is not
+set off) inside simpleReadOnly's read, and a definer that inserts (owned
+by the superuser, so the narrow role's rights are no bound) is refused
+with 25006 and leaves no row; audit-read-only.db.test.ts does the same
+inside readOnlyTransaction. On the code before the fix (9abf325b7, the
+cells alone) the two simpleReadOnly cells failed: `expected 'off' to be
+'on'`; the readOnlyTransaction ones passed.
+
+#### The callers' wiring (LOW)
+
+test-support gains recordSystemPoolSends (postgres.js calls its `debug`
+option as it writes each statement to the wire, with the connection's
+id; the hook is set on the system pool's options and taken off after) and
+sentReadOnly (on that statement's connection, a `set transaction read
+only` was sent before it with no BEGIN, COMMIT or ROLLBACK between). Cells:
+graphPath's walk is sent read only, and the entity names it reads after
+are not (the record tells the two apart); every statement runCorpusAudit
+sends, apart from BEGIN, COMMIT and the tagged actor and narrow-route
+statements, is sent read only, and there are at least as many as checks.
+Teeth, measured on the workstation: with graphPath sending its walk on
+`db.$client.unsafe(...).simple()` and runCorpusAudit calling
+`runChecks(db, ...)`, exactly those two cells failed; restored, they pass.
+
+#### Setters READ ONLY does not stop (LOW)
+
+Probed on pg18 (the throwaway container, as the superuser, the worst
+case for a system pool on a box with MANTLE_DB_RUNTIME_ROLE off): each
+call inside `begin; set transaction read only; ...; commit`, then its
+effect read in the same session. Every volatile function of pg_catalog,
+the five extensions infra/postgres/init/01-extensions.sql creates
+(uuid-ossp, ltree, pg_trgm, pgcrypto, vector), pg-boss's schema and the
+migrations' own was listed and read; these were run:
+
+- not stopped, and lasting past the COMMIT, so added to WRITE_FUNCTIONS:
+  `set_limit` (pg_trgm: show_limit 0.9 after the COMMIT, the session's
+  threshold), `pg_nextoid` (advances the cluster's OID counter),
+  `pg_stop_making_pinned_objects` (the OID counter again; refused here
+  only because the counter is past it), `job_table_run` and
+  `job_table_run_async` (pg-boss, `job_table_run\w*`: job_table_run
+  EXECUTEs its text argument, which readSql blanks as a string; `set
+work_mem = '77MB'` and a set_config with is_local false through it
+  outlived the COMMIT; mantle_runtime and mantle_system_narrow hold
+  EXECUTE on it and USAGE on the pgboss schema; the async one inserts and
+  READ ONLY refused it, 25006, listed with it by the pattern),
+  `mantle_operator_actor` (the migrations' own: sets mantle.actor and
+  mantle.write_mode for the session, outliving the COMMIT; no mantle role
+  may execute it, so only a superuser pool could).
+- not stopped and already listed: pg_import_system_collations (810
+  collations written to pg_collation inside READ ONLY),
+  pg_replication_origin_create, pg_create_physical_replication_slot,
+  pg_logical_emit_message (WAL written). The probe's slot, origin and
+  collations were dropped after.
+- stopped or with nothing that lasts, not listed: pgboss.create_queue
+  (25006 in READ ONLY), mantle_set_actor (transaction-local settings,
+  gone at the COMMIT), pg_export_snapshot (ends with the transaction),
+  pg_stat_force_next_flush and pg_stat_clear_snapshot (the backend's own
+  stats snapshot), pg_extension_config_dump (refused outside CREATE
+  EXTENSION), loread (needs a descriptor lo_open gives, listed),
+  plpgsql_validator (checks a function's body).
+- pg_current_xact_id assigns a transaction id inside READ ONLY (1233
+  here); no write follows from it. A note, no fix (read-only-tx.ts).
+
+The extensions have no other setter: pgcrypto's, uuid-ossp's and
+pgvector's functions compute, ltree's are immutable. read-sql.test.ts
+refuses each new name (set_limit also schema-qualified,
+mantle_operator_actor also quoted), and the as-a-call cell reads
+set_limit, pg_nextoid, job_table_run and mantle_operator_actor as a call,
+never as a value or a longer name. read-only-tx.ts's top comment lists
+what READ ONLY was measured not to stop.
+
+#### A dollar quote after a number, a parameter or a quote (LOW)
+
+PostgreSQL opens a dollar quote at a `$` that does not continue a name:
+after a number (`1$q$`, `1.5`, `1e5`, `1_000`), a `$n` parameter, or a
+closed dollar quote. sqlCode (packages/db/src/sql-text.ts) decided from
+the character before (any name character, digits and `$` among them,
+opened nothing). It now tracks where the current run of name characters
+starts and opens a quote unless that run starts with a letter, `_` or a
+high character (the lexer's ident_start). The same word decides E'':
+the `e` must be a word of its own (after a closed dollar quote it now
+is). The texts this changes are not valid SQL (a string constant cannot
+follow a number, a parameter or another dollar quote), so the reader was
+never let through by them on a real server; it now reads them as the
+lexer does. The lint reads with the same sqlCode; its findings on the
+repo did not move. Cells (read-sql.test.ts): after `1`, `1.5`, `1e5`,
+`1_000`, `$1`, `$a$x$a$`, `$$` and a quoted name, `$q$; delete from
+t$q$` is one statement with the delete blanked; inside `a$q$`, `a1$q$`,
+`_9$q$` and `é1$q$` no quote opens (two statements); `$a$x$a$e'\''` is
+an E'' string, `ae'\''` a plain one (ambiguous). Both cells failed on the
+reader before.
+
+#### The lint's writes that run (LOW)
+
+rawWriteKind (eslint-rules/cleanup-counts.mjs) reads past an EXPLAIN
+whose option list or old words hold ANALYZE (not `analyze false`, `off`
+or `0`) and past `PREPARE name [(types)] AS`, and reads the statement
+there as any other (a WITH walked, a write CTE counted). A plain EXPLAIN,
+EXPLAIN VERBOSE and `EXPLAIN (ANALYZE FALSE)` only plan and count
+nothing. Cells (cleanup-counts.test.ts): nine writes behind EXPLAIN
+ANALYZE (both spellings, option lists, a write CTE, after a read) or
+PREPARE (quoted name, types, a WITH) are found and readSql refuses each;
+seven plain EXPLAINs, a read under ANALYZE and prepared reads are none.
+Still not counted by the lint, where readSql refuses each and the roles
+bound them: SELECT INTO and CREATE TABLE AS (they make a table), COPY
+FROM, CALL and DO (what a procedure or a block does is not in the text).
+The repo's findings did not move.
+
+#### The savepoint comment (LOW)
+
+read-only-tx.ts said the rest of a scope's transaction stays read only
+after readOnlyTransaction's savepoint. Postgres restores the access mode
+when the savepoint is released (xact.c, prevXactReadOnly), so it does
+not; the comment now says that.
+
+#### Gates
+
+Code head 21a757444 (rebased on main 6421c4e5a, v0.300.120). The commits
+after it change this file only.
+
+Mac, DATABASE_URL unset, on 21a757444: `pnpm -r typecheck` 0, `pnpm lint`
+0 (the one warning main has), `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0 (the four pins as above), `pnpm -C server/web build`
+0, `vitest run server packages eslint-rules` 0 (867 files passed, 11242
+tests). On 1101242bc the same were 0 but lint 1 (no-useless-assignment in
+the audit wiring cell's count, fixed in 21a757444).
+
+Workstation (own clone ~/s10r2d/clone, own container s10r2d-pg on
+127.0.0.1:56581, pgvector pg18, max_connections=450, the `postgres` role
+as CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, --maxWorkers=3, one at a time):
+
+- on 9abf325b7 (the new cells, no fix): the two cell files 1, the two
+  simpleReadOnly narrow-route cells failing (`expected 'off' to be
+'on'`), the other 12 passing.
+- on 1101242bc: the two cell files 0 (14); with graphPath and
+  runCorpusAudit unwired by hand, the two wiring cells failed and only
+  they (restored after); full vitest, switch on, 0 (1145 files, 14076
+  passed, 39 skipped).
+- on 21a757444: full vitest with MANTLE_NARROW_SYSTEM=0, 0 (1145 files,
+  14076 passed, 39 skipped); test:actor-off 0 (135 files, 1325);
+  test:runtime-role 0 (288 files, 2856); the two cell files, switch on,
+  0 (14).
+- The pg18 probe of the setters (above), in the same container.
+
+#### Open items
+
+- narrow-route.ts: its client starts a statement a microtask late
+  (watchedQuery), so a caller that pipelines a SET TRANSACTION with its
+  first statement loses the order. Both read-only callers now await
+  theirs; the S7a lane fixes the reorder in the gateway.
+- WRITE_FUNCTIONS stays a deny list for what READ ONLY does not stop; a
+  new function of that kind (a built-in, an extension's, pg-boss's or
+  the migrations' own) needs a line there.
+- The lint does not count SELECT INTO, CREATE TABLE AS, COPY FROM, CALL
+  and DO (above).
+- From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
+  rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
