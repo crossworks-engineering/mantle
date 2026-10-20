@@ -448,10 +448,13 @@ export async function loadTreeFolder(
       : undefined;
   if (opts.folderId && !folder && !hit?.path.startsWith(`${root}.`)) return null;
   const path = folder?.path ?? hit?.path ?? spec.root;
-  // What the page's statements ask the definer: the folder itself when it
-  // is on the way and not read, and the folders on the way one and two
-  // levels below it.
-  const trail: TrailAsk = { under: path, paths: [path] };
+  // What the page's statements ask the definer: the folder itself and its
+  // parent when they are on the way and not read (the folder's row and its
+  // parent id), and the folders on the way one and two levels below it.
+  const trail: TrailAsk = {
+    under: path,
+    paths: path.split('.').length > 2 ? [treeParentPath(path), path] : [path],
+  };
   if (hit) {
     folder =
       (
