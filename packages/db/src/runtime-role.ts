@@ -212,6 +212,12 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_connector_state(uuid,text)':
     "a connector's state (the Admin area's approval recheck): a read definer",
   'public.mantle_ws_kind(uuid)': "a workspace's kind (the login-self routes): a read definer",
+  'public.mantle_ws_private_for(uuid,uuid)':
+    "whether a workspace is a login's private one (the login-self routes' whoami): a read definer",
+  'public.mantle_connector_rows(uuid,text,uuid[])':
+    "a connector's rows (the Admin area's approval of an elevated call): a read definer",
+  'public.mantle_bridge_login(uuid)':
+    "a login into its workspaces (the users area's role change, login-update.ts; a no-op from S8b)",
   'public.mantle_pending_card_route(uuid,uuid)':
     "a pending approval card's route (the Admin area's run of an item): a read definer",
   'public.mantle_ws_attach_assistants()':
@@ -275,7 +281,6 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_ws_set_contact(uuid,uuid,uuid)': 'workspaces: never a narrow statement',
   'public.mantle_ws_set_landing(uuid,uuid,uuid)': 'workspaces: never a narrow statement',
   'public.mantle_ws_update_about(uuid,uuid,jsonb)': 'workspaces: never a narrow statement',
-  'public.mantle_bridge_login(uuid)': "a login into its workspaces: the login's create or update",
   'public.mantle_workspace_event(uuid,uuid,text,jsonb)':
     'workspace_events: written by the workspace definers, never a narrow statement',
   'public.mantle_lock_heads(uuid[],text)': "an item write's heads: never a narrow statement",

@@ -178,17 +178,21 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
-  (`packages/db/src/runtime-role.ts`), measured with the switch on: what
-  narrow statements call by name (`mantle_brain_id`,
-  `mantle_mail_backfill_accounts`, `mantle_ws_set_moderator`) and what the column defaults and checks of the
+  (`packages/db/src/runtime-role.ts`), measured with the switch on (the full
+  DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
+  what narrow statements call by name, twelve today (the read definers of
+  the login-self routes, the Admin area's approvals and the email discover;
+  `mantle_brain_id`; three writers on an area exit, each its own rule:
+  `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
+  `mantle_bridge_login`), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
-  the catalog and fails on one not listed). Each is also the runtime
-  role's. `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies
-  with no Admin check (`mantle_contact_sharing_rows`,
+  the catalog and fails on one not listed). Each is also the runtime role's.
+  `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies with no
+  Admin check (`mantle_contact_sharing_rows`,
   `mantle_contact_shares_revoke_rows`, `mantle_share_with_contacts_rows`,
-  `mantle_entity_merge_rows`), the content and workspace writers among the
-  definers (the `mantle_ws_*` writers, `mantle_bridge_login`,
-  `mantle_workspace_event`, `mantle_lock_heads`, `mantle_share_close_admin`,
+  `mantle_entity_merge_rows`), the other content and workspace writers among
+  the definers (the other `mantle_ws_*` writers, `mantle_workspace_event`,
+  `mantle_lock_heads`, `mantle_share_close_admin`,
   `mantle_share_contact_write_set`, the grant, subtree, recall and app trash
   writers), `mantle_embed_host` (the refold step) and `mantle_role_drift`
   (the box count);
