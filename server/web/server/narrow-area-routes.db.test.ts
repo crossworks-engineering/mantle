@@ -83,14 +83,17 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     dir = mkdtempSync(join(tmpdir(), 'narrow-area-'));
     process.env.MANTLE_DOCS_ROOT = join(dir, 'docs');
     process.env.MANTLE_BACKUP_DIR = join(dir, 'backups');
-    mkdirSync(join(dir, 'docs', 'guide'), { recursive: true });
-    writeFileSync(join(dir, 'docs', 'guide', 'a.md'), `# ${tag} guide\n\nSome text.\n`);
+    // Not a folder a built-in collection names (guide, _changelog, ...).
+    mkdirSync(join(dir, 'docs', `${tag}-col`), { recursive: true });
+    writeFileSync(join(dir, 'docs', `${tag}-col`, 'a.md'), `# ${tag} guide\n\nSome text.\n`);
     m = await import('@mantle/db');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.test`}, 'x', true, 'admin', 'Olive Owner')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await ts.runWorkspacesSwitch();
+    // The brain's profile row (the backups routes update it).
+    await x(sql`insert into profiles (user_id) values (${owner}) on conflict do nothing`);
     const tokens = await import('../lib/auth/tokens');
     cookie = `mantle_session=${tokens.buildSessionCookie(owner).value}`;
     const { createApp } = await import('./app');
@@ -162,23 +165,24 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     const made = await call('/api/docs/collections', 'POST', {
       label: `${tag} Guide`,
       key: `${tag}-guide`,
-      rootPath: join(dir, 'docs', 'guide'),
+      rootPath: join(dir, 'docs', `${tag}-col`),
       brainDepth: 'retrieval',
     });
     clean(made);
-    expect(JSON.parse(made.text)).toMatchObject({ ok: true });
-    const docs = sql`select 1 from nodes where owner_id = ${owner} and type = 'documentation'`;
+    expect(JSON.parse(made.text), made.text).toMatchObject({ ok: true });
+    const docs = sql`select 1 from nodes where owner_id = ${owner} and type = 'documentation'
+                       and data::text like ${`%${tag}-guide%`}`;
     expect((await x(docs)).length).toBeGreaterThan(0);
     const [c] = await x<{ id: string }>(
       sql`select id::text as id from doc_collections where key = ${`${tag}-guide`}`,
     );
     const off = await call(`/api/docs/collections/${c!.id}`, 'PATCH', { enabled: false });
     clean(off);
-    expect(JSON.parse(off.text)).toMatchObject({ ok: true });
+    expect(JSON.parse(off.text), off.text).toMatchObject({ ok: true });
     expect(await x(docs)).toHaveLength(0);
     const all = await call('/api/docs/collections/all', 'POST', { enabled: true });
     clean(all);
-    expect(JSON.parse(all.text)).toMatchObject({ ok: true });
+    expect(JSON.parse(all.text), all.text).toMatchObject({ ok: true });
     expect((await x(docs)).length).toBeGreaterThan(0);
   });
 

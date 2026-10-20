@@ -192,12 +192,16 @@ async function narrowSettingsSql(): Promise<string> {
 function noteNarrowDenial(err: unknown): void {
   const what = permissionGapOf(err);
   if (!what) return;
-  // Once per error: a statement's denial is noted where it is met, and
-  // again as the transaction's error when nothing caught it.
-  if (typeof err === 'object' && err !== null) {
-    if (notedDenials.has(err)) return;
-    notedDenials.add(err);
+  // Once per error: a statement's denial is noted where it is met, not
+  // again as the savepoint's or the transaction's error (the same error, or
+  // a wrapper whose cause it is).
+  const chain: object[] = [];
+  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
+    if (notedDenials.has(e)) return;
+    chain.push(e);
+    e = (e as { cause?: unknown }).cause;
   }
+  for (const e of chain) notedDenials.add(e);
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';
   if (env('NODE_ENV') === 'test') {
@@ -228,6 +232,19 @@ function refusedQueryOf(err: unknown): string {
   return '?';
 }
 
+/** A call of a function by name in a statement's text (literals blanked). */
+const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
+
+/** Tests only: count the mantle_* functions a narrow statement calls by
+ *  name, as uses `fn:<name>` (the measurement of the role's EXECUTE). A
+ *  function a trigger or a definer calls needs no EXECUTE of the role. */
+function noteNarrowFunctions(query: string): void {
+  if (env('NODE_ENV') !== 'test') return;
+  for (const m of sqlCode(query).matchAll(CALLED_FN)) {
+    noteTestNarrowUse(`fn:${m[1]!.toLowerCase()}`);
+  }
+}
+
 /** Tests only: count a statement or transaction sent on the narrow route,
  *  by actor (the measurement's per-reason use). */
 function noteNarrowUse(): void {
@@ -251,6 +268,7 @@ export async function narrowStatement(
 ): Promise<unknown> {
   narrowSendable(query);
   noteNarrowUse();
+  noteNarrowFunctions(query);
   const setSql = await narrowSettingsSql();
   const lease = await reserveLease(base);
   try {
@@ -330,13 +348,18 @@ function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
   return new Proxy(t, {
     apply(target, thisArg, args: unknown[]) {
       const first = args[0] as { raw?: unknown } | undefined;
-      if (Array.isArray(first) && 'raw' in first) narrowSendable((first as string[]).join('$1'));
+      if (Array.isArray(first) && 'raw' in first) {
+        const text = (first as string[]).join('$1');
+        narrowSendable(text);
+        noteNarrowFunctions(text);
+      }
       return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
           narrowSendable(query);
+          noteNarrowFunctions(query);
           return watchedQuery(target.unsafe(query, args as never[], opts as never), onError);
         };
       }
