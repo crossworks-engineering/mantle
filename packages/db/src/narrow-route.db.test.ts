@@ -386,6 +386,9 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       // string: the backslash ends nothing (simple protocol, more than one
       // statement).
       ['typed literal', "select text'\\'; reset role; select '1'", true],
+      // A line comment ends at a carriage return too: what follows it is a
+      // statement of its own.
+      ['comment to CR', 'select 1 --x\r; reset role', true],
     ];
     for (const [name, stmt, simple] of forms) {
       expect(

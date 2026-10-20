@@ -142,6 +142,20 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
     }
   });
 
+  it('ends a line comment at a carriage return too, as Postgres does', () => {
+    for (const q of [
+      'select 1 --x\r; set role postgres',
+      'select 1 --x\r; reset all',
+      'select 1 --x\r; create table t (a int)',
+      '--x\rset role postgres',
+      '--x\r; reset role',
+      "select 1 --x\r; select set_config('role', 'none', true)",
+    ]) {
+      expect(verdict(q), JSON.stringify(q)).toBe('refused');
+    }
+    expect(verdict('select 1 --x\r\n, 2')).toBe('sent');
+  });
+
   it('reads a quote after a letter that is not its own token as a plain string (no backslash escapes)', () => {
     for (const q of [
       "select date'\\'; reset role; select '1'",

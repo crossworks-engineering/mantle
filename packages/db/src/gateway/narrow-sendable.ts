@@ -179,7 +179,10 @@ export function sqlCode(query: string, literals = true, identifiers = literals):
     const c = query[i]!;
     const next = query[i + 1];
     if (c === '-' && next === '-') {
-      const end = query.indexOf('\n', i);
+      // Postgres ends a line comment at a newline or a carriage return.
+      const nl = query.indexOf('\n', i);
+      const cr = query.indexOf('\r', i);
+      const end = nl < 0 ? cr : cr < 0 ? nl : Math.min(nl, cr);
       const to = end < 0 ? n : end;
       out += ' '.repeat(to - i);
       i = to;

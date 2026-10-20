@@ -122,7 +122,7 @@ export function statementBody(query: string, setsToo: boolean): string {
   for (;;) {
     let next = body
       .replace(/^\s+/, '')
-      .replace(/^--[^\n]*\n?/, '')
+      .replace(/^--[^\n\r]*[\n\r]?/, '')
       .replace(/^\/\*[\s\S]*?\*\//, '');
     if (setsToo) next = next.replace(/^set\s+(?!transaction\b)[^;]*;/i, '');
     if (next === body) return body;
