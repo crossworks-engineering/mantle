@@ -115,17 +115,33 @@ function clip(s: string, max: number): string {
   return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
 }
 
-/** The login, when it is an active member or client (else null: an admin,
- *  a disabled login and a role this code does not know are told nothing). */
+/**
+ * Whether a login row is told login notices: an enabled login with role
+ * member (a member or a client). An admin, a disabled login and a role this
+ * code does not know are told nothing.
+ *
+ * It reads the login's role, not the Admin pair (role admin AND a user of
+ * Admin), until the role follows membership. "Not an Admin user" by the
+ * pair would tell a role admin outside Admin its notices, which the role
+ * never did: a push it never had, a wider answer. Every other login answers
+ * the same either way (the cells in login-notices-role.test.ts).
+ */
+export function toldLoginNotices(row: {
+  role: string | null | undefined;
+  disabledAt: Date | null;
+}): boolean {
+  return !row.disabledAt && row.role === 'member';
+}
+
+/** The login, when it is told login notices (toldLoginNotices), else null. */
 async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNoticeRole } | null> {
   const [row] = await db
     .select({ id: authUsers.id, role: authUsers.role, disabledAt: authUsers.disabledAt })
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  const role: string | undefined = row?.role;
-  if (!row || row.disabledAt || role !== 'member') return null;
-  return { id: row.id, role };
+  if (!row || !toldLoginNotices(row)) return null;
+  return { id: row.id, role: 'member' };
 }
 
 /** How much of a reply a teaser reads (markdownPreview reads no more). */

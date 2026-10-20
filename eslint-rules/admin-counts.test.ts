@@ -517,6 +517,34 @@ describe('the repo', () => {
     expect(detail.tsAreaRules).toEqual({});
   });
 
+  it('server/api and content: no login kind branch, and one role read, who is told login notices (on the role until it follows membership)', () => {
+    const inParts = (o: Record<string, unknown>) =>
+      Object.keys(o).filter((p) => /^(server\/api|packages\/content)\//.test(p));
+    const d = detail as unknown as {
+      loginKindBranches: Record<string, number[]>;
+      loginRoleDecisionReads: Record<string, number[]>;
+      adminDecisionFlags: Record<string, number>;
+    };
+    expect(inParts(d.loginKindBranches)).toEqual([]);
+    expect(inParts(d.loginRoleDecisionReads)).toEqual(['packages/content/src/login-notices.ts']);
+    const path = 'packages/content/src/login-notices.ts';
+    const lines = texts.find((t) => t.path === path)!.text.split('\n');
+    const at =
+      lines.findIndex((l) => l.includes("return !row.disabledAt && row.role === 'member';")) + 1;
+    expect(at).toBeGreaterThan(0);
+    expect(d.loginRoleDecisionReads[path]).toEqual([at]);
+    expect(lines.slice(at - 6, at - 1).join('\n')).toContain('export function toldLoginNotices(');
+    // Their isAdmin are the workspace's own flag (workspaces.is_admin).
+    expect(
+      Object.fromEntries(inParts(d.adminDecisionFlags).map((p) => [p, d.adminDecisionFlags[p]])),
+    ).toEqual({
+      'packages/content/src/team-assistant.ts': 5,
+      'server/api/src/agent/reflector.ts': 1,
+      'server/api/src/agent/summarizer.ts': 1,
+      'server/api/src/workflows/runs-resume-turn.ts': 3,
+    });
+  });
+
   it('classes the two Telegram asks as membership, not area rules', () => {
     const tg = texts.find((t) => t.path === 'packages/telegram/src/chat-login.ts')!;
     expect(tsAdminSqlKinds(tg.text)).toEqual({ rules: 0, membership: 2 });
