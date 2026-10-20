@@ -650,3 +650,132 @@ CI: run 39407726636 on 8b2c48c54: success.
   lint does not count them. A read that needs one stays literal text.
 - The Telegram moderated-chat definer (a migration), as round 1 found.
 - r3 (when the scoped pin is 0): rawWriteTarget and its test go.
+
+### Fix round 1 (the round 2b audit at e4c188952)
+
+Rebased on main 178662f6a (v0.300.116). The pins conflict kept main's
+historyCodeComments (2334, its note as main has it) and the branch's three
+S10 pins; measured on the rebased head: rawWriteSqlScoped 1,
+rawSqlNonLiteral 63, rawWriteSqlFiles 26, historyCodeComments 2334.
+
+#### readSql (the blocker)
+
+One reader for the shape of SQL text, packages/db/src/sql-text.ts (no
+imports, erasable syntax only), used by readSql and by the lint
+(eslint-rules/cleanup-counts.mjs imports the .ts file; Node 26 runs it as
+it is). sqlCode blanks comments, string and dollar-quote bodies and quoted
+names to the same length, as the PostgreSQL lexer reads them where a
+mistake could hide code: nested block comments, a `--` inside a string, a
+`$` inside a name (`a$q$` opens no dollar quote), E'' backslashes. It flags
+an unterminated comment, string or quote, and `ambiguous` text (a backslash
+before a quote in a plain string, which standard_conforming_strings
+decides; a U&"" name). sqlStatements cuts at the code's `;`, withParts walks
+a leading WITH, firstWord reads a statement's verb.
+
+readSql (packages/db/src/read-sql.ts) answers the text unchanged only when
+its code is exactly one statement that starts with SELECT, WITH, VALUES or
+TABLE, whose every CTE body starts with SELECT, VALUES, WITH or TABLE (a
+nested WITH read the same way), with no INSERT, UPDATE, DELETE or MERGE
+where a statement may start (the start or after `(`), no INTO, no row lock,
+and no call of a function on WRITE_FUNCTIONS (set_config, setseed, the
+advisory locks, nextval, setval, pg_notify, lo_*, lowrite, dblink*, the
+backend, WAL, replication, stat reset and file functions, query_to_xml*,
+cursor_to_xml*, ts_stat), matched as a call (quoted or schema-qualified
+too) so a value or a longer name never matches. Everything else throws:
+a second statement, COPY, GRANT, REVOKE, SET, RESET, EXPLAIN, CALL, DO,
+LOCK, NOTIFY, DDL, unterminated or ambiguous text, a WITH it cannot walk
+(SEARCH or CYCLE). Its top comment now says what it guarantees (the text's
+shape) and what not (what a function the text calls does; the role is the
+bound there).
+
+The lint's literal check (rawWriteKind) reads with the same sqlCode,
+sqlStatements and withParts: a write CTE after a `'--'` string is now found
+there too. Its findings on the repo did not move (the four pins above).
+
+Tests (packages/db/src/read-sql.test.ts, 68): each refused shape throws,
+among them every shape the audit named: `with x as (update nodes n set
+...)`, `update only`, the `'--'` string before a delete CTE, SELECT INTO,
+a MERGE CTE, COPY FROM, GRANT, REVOKE, SET ROLE, set_config, the advisory
+locks (lock, try, xact, unlock), nextval, setval, pg_notify, lo_import,
+lo_unlink, dblink, dblink_exec, query_to_xml, EXPLAIN ANALYZE MERGE, and
+next to them a `$` name hiding a statement, a nested comment hiding one, a
+backslash before a quote, a U&"" name, unterminated text, no statement.
+Each passes unchanged: the five shared catalog texts, reads with quotes,
+comments, nested comments, WITH (materialized, nested), VALUES, TABLE, a
+parenthesised union, E'' strings, definer and catalog calls (currval,
+pg_has_role). eslint-rules/cleanup-counts.test.ts: the lint finds each
+write the reader shows (the audit's shapes) and readSql refuses the same
+texts; a value that spells a write is neither.
+
+#### The lows
+
+- Stale comments: eslint-rules/no-raw-write-sql.mjs (readSql exists, what
+  it does at run time) and eslint-rules/cleanup-counts.mjs readSqlNames
+  and rawWriteAllowed.
+- Positional insert-selects: auditRowSelect (packages/db/src/call-audit.ts)
+  and firstOwnerSelect (server/web/lib/auth/first-owner.ts) are exported
+  builders now; call-audit-select.test.ts and first-owner-select.test.ts
+  render the typed insert with drizzle.mock (no database) and hold each
+  column to its value by insertSelectPairs (sql-text.ts, exported as
+  @mantle/db/sql-text): the count equals the table's columns and each pair
+  is pinned, so a column added, dropped or moved fails the test.
+- The graph walk's verbs: a verb sits in a string literal, which sqlCode
+  blanks, so no verb is read as code. graphPathSql (packages/search/src/
+  entities.ts) builds the text; graph-path-sql.test.ts runs readSql on it
+  with every option and each verb, the extractor's and ones that spell
+  nextval, setval, pg_notify, set_config, delete, into and the rest.
+
+No route, label or written row changed: the conversions are as round 2b
+left them; the builders are the same text moved into functions.
+
+#### Gates
+
+Code head f473f3c49 (rebased on main 0d24af602, v0.300.117; main's new
+commits touch no file of the branch). The first pass ran on 563f6fc7a, the
+same code on v0.300.116.
+
+Mac, DATABASE_URL unset, on f473f3c49: `pnpm -r typecheck` 0, `pnpm lint`
+0 (the one warning main has), `pnpm format:check` 0, `pnpm docs:check` 0,
+`pnpm arch:check` 0, `pnpm -C server/web build` 0, `vitest run server
+packages eslint-rules` 0 (865 files passed, 11199 tests). The same seven
+were 0 on 563f6fc7a.
+
+Workstation (own clone ~/s10-r2bf/clone, own container s10-r2bf-pg on
+127.0.0.1:56561, pgvector pg18, max_connections=450, the `postgres` role as
+CI's, init-scratch and migrate with MANTLE_CHECK_FLOOR=keep, systemd-run
+--user, --maxWorkers=3, one at a time):
+
+- on 563f6fc7a: full vitest 1, then 1 on its one rerun (both 1139 files
+  and 14015 tests passed; each exit an unhandled CONNECTION_CLOSED from a
+  pool closing at teardown, of w7e-member-scope.db.test.ts and then
+  turn-create-home.db.test.ts, files this round does not touch);
+  test:actor-off 0 (1260); test:runtime-role 0 (2811).
+- on f473f3c49: full vitest 0 (1140 files, 14028 tests); test:actor-off 0
+  (1260); test:runtime-role 1 (2811 tests passed; the afterAll of
+  role-readers-catalog.db.test.ts, a scratch database drop, timed out at
+  10 s), then 0 on its one rerun (283 files, 2811 tests).
+
+CI: run 39424146598 on 563f6fc7a: attempt 1 failure (all 14015 tests
+passed; the same teardown CONNECTION_CLOSED, from
+turn-create-home.db.test.ts, which another lane's run hit the same day),
+its rerun cancelled by the push of f473f3c49. Run 39431352786 on
+f473f3c49: attempt 1 failure (all 14028 tests passed; the same
+CONNECTION_CLOSED from turn-create-home.db.test.ts), attempt 2 (the failed job rerun once) success.
+
+Then rebased on main 520659a30 (v0.300.118; no conflict: main touched
+cleanup-counts.mjs and packages/db/src/index.ts on other lines), code head
+cdc84b5bd. Mac, DATABASE_URL unset, on cdc84b5bd: typecheck 0, lint 0,
+format:check 0, docs:check 0, arch:check 0 (the four pins as above),
+server/web build 0, vitest 0 (867 files passed, 11205 tests). The
+workstation suites were not run again on this base.
+
+#### Open items
+
+- sqlCode in packages/db/src/gateway/narrow-route.ts does the same job as
+  sql-text.ts sqlCode (blank comments and literals) without nested
+  comments or a `$` inside a name; the gateway is outside this lane. One
+  reader for the narrow route's checks is a later step.
+- readSql reads shape, not functions: a function the database defines may
+  write (see its top comment). The roles stay the bound.
+- From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
+  rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
