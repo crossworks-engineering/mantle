@@ -39,7 +39,7 @@ export type LoginWriteRoute = {
   scope: WorkspaceScope;
 };
 
-import { lazyQuery, sendIn, type QueryLike, type QueryMode } from './actor-sql';
+import { lazyQuery, sendIn, type QueryLike } from './actor-sql';
 export { lazyQuery, sendIn, type QueryMode } from './actor-sql';
 
 // ── Write-role denials (A2b2b fix round 1, H1) ──────────────────────────────

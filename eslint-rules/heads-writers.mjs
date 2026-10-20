@@ -110,6 +110,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
     "the write role's runner sends the caller's statement as it is, on the write role",
   ],
   [
+    'packages/db/src/gateway/narrow-route.ts',
+    "the narrow system route sends the caller's statement as it is, on the narrow role, with its one SET",
+  ],
+  [
     'packages/db/src/gateway/system-tx.ts',
     "brokerLockTx runs the store broker's one statement as it is, on the raw system pool",
   ],
