@@ -85,6 +85,7 @@ vi.mock('@mantle/db', () => {
     gt: (...a: unknown[]) => ({ __gt: a }),
     lt: (...a: unknown[]) => ({ __lt: a }),
     isNull: (x: unknown) => ({ __isNull: x }),
+    sql: (...a: unknown[]) => ({ __sql: a }),
   };
 });
 
@@ -145,10 +146,20 @@ describe('issuePairCode', () => {
   });
 });
 
-const ADMIN_ROW = { email: 'owner@example.com', role: 'admin', disabledAt: null };
+const ADMIN_ROW = {
+  email: 'owner@example.com',
+  role: 'admin',
+  disabledAt: null,
+  adminMember: true,
+};
 /** The read before the claim (W7e): the code's login role, while unclaimed. */
 const PEEK_ADMIN = [{ role: 'admin' }];
-const MEMBER_ROW = { email: 'member@example.com', role: 'member', disabledAt: null };
+const MEMBER_ROW = {
+  email: 'member@example.com',
+  role: 'member',
+  disabledAt: null,
+  adminMember: false,
+};
 
 describe('claimPairCode', () => {
   it('a losing conditional UPDATE (unknown, expired or used) is null and mints nothing', async () => {
@@ -194,6 +205,8 @@ describe('claimPairCode', () => {
     ['deleted', []],
     ['disabled', [{ ...ADMIN_ROW, disabledAt: new Date('2026-09-20T00:00:00Z') }]],
     ['demoted to member', [{ ...ADMIN_ROW, role: 'member' }]],
+    // The Admin pair (S8c c2): role admin but no longer a user of Admin.
+    ['taken out of Admin', [{ ...ADMIN_ROW, adminMember: false }]],
   ])('a code whose login was %s is null and mints nothing', async (_what, row) => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
     dbState.selectResults = [PEEK_ADMIN, row];

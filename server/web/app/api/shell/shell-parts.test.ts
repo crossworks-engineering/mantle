@@ -59,6 +59,37 @@ vi.mock('@/lib/auth', async () => {
       if (h.gate === 'refuse') throw new Error('loginCaller(): the pipeline answered no login');
       return login();
     },
+    // The Login reader GET /api/shell calls (plan v3.2 section 2.2), and the
+    // legacy shape of that Login (the display role and the workspace caller).
+    anyLoginCaller: () => {
+      if (h.gate === 'refuse') throw new Error('anyLoginCaller(): the pipeline answered no login');
+      const l = login();
+      return l.kind === 'admin'
+        ? {
+            loginId: l.loginId,
+            brainId: admin.id,
+            email: admin.actor.email,
+            displayName: admin.actor.displayName,
+            contactId: null,
+            ...base,
+            actor: admin.actor,
+          }
+        : {
+            loginId: l.loginId,
+            brainId: ANCHOR,
+            email: member.email,
+            displayName: member.displayName,
+            contactId: null,
+            ...base,
+            actor: {
+              id: LOGIN,
+              email: member.email,
+              displayName: member.displayName,
+              isOwner: false,
+            },
+          };
+    },
+    legacyLogin: () => login(),
     getOwnerOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'admin' ? admin : wrongRole(),
     getMemberOr401: async () =>
@@ -83,6 +114,11 @@ vi.mock('@/lib/auth', async () => {
     },
   };
 });
+
+// adminFacts as the scope answers it: an Admin user for the admin login.
+vi.mock('@/lib/auth/login', () => ({
+  adminFacts: async () => ({ admin: h.role === 'admin', areas: new Set() }),
+}));
 
 vi.mock('@mantle/content', () => ({
   loadPreferencesFor: async (id: string) => {
