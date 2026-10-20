@@ -11,10 +11,19 @@ const PROVIDER_TEXT = 'provider says: quota exceeded for key sk-hidden';
 
 const h = vi.hoisted(() => ({ kind: 'admin' as 'admin' | 'member' }));
 
+// Whether the login is an Admin user is adminFacts' answer (plan v3.2
+// section 2.2), stood in from the stand-in Login.
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  chatLoginCaller: () => ({
-    kind: h.kind,
+  chatCaller: () => ({
+    asLogin: { standInAdmin: h.kind === 'admin' },
     ownerId: 'owner-id',
     loginId: `${h.kind}-id`,
     source: 'cookie',

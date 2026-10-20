@@ -387,6 +387,13 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     if (spec.guard === null) continue;
     if (spec.atRead) {
       const take = real[name] as (...a: unknown[]) => Promise<unknown>;
+      // A reader that reads another's answer in a new shape logs as that
+      // one (session-guards.mjs `logs`): its entry, and its reader's read
+      // of the same answer (taken once, so the second read is that answer).
+      const entry = ENTRIES[spec.logs ?? name]!.entry;
+      const shown = spec.logs
+        ? (real[spec.logs] as (...a: unknown[]) => Promise<unknown>)
+        : async () => undefined;
       const Refusal = real.RouteRefusal as new (...a: unknown[]) => { response: Response };
       const unauthorized = real.unauthorizedRefusal as () => Response;
       wrapped[name] = async (...args: unknown[]) => {
@@ -397,24 +404,25 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
           if (err instanceof Refusal) {
             const body = await err.response.clone().text();
             sweepState.log.push(
-              `${spec.entry} R${err.response.status} ${body.slice(0, 300)} ${after()}`,
+              `${entry} R${err.response.status} ${body.slice(0, 300)} ${after()}`,
             );
             throw err;
           }
           const e = err as { name?: string; location?: string; message?: string };
           sweepState.log.push(
-            `${spec.entry} threw ${e.name ?? '?'} ${e.location ?? (e.message ?? '').split('\n')[0]!.slice(0, 80)} ${after()}`,
+            `${entry} threw ${e.name ?? '?'} ${e.location ?? (e.message ?? '').split('\n')[0]!.slice(0, 80)} ${after()}`,
           );
           throw err;
         }
         if (value === null) {
           const refusal = unauthorized();
           sweepState.log.push(
-            `${spec.entry} R${refusal.status} ${(await refusal.text()).slice(0, 300)} ${after()}`,
+            `${entry} R${refusal.status} ${(await refusal.text()).slice(0, 300)} ${after()}`,
           );
           return value;
         }
-        sweepState.log.push(`${spec.entry} ok ${summarize(value)} ${after()}`);
+        const logged = spec.logs ? await shown(...args) : value;
+        sweepState.log.push(`${entry} ok ${summarize(logged)} ${after()}`);
         throw new SweepStop();
       };
       continue;

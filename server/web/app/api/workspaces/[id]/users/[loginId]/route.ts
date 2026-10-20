@@ -1,4 +1,4 @@
-import { loginCaller } from '@/lib/auth';
+import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { removeUser, setModerator, wsBody, wsRoute } from '@/lib/workspaces';
 
@@ -8,7 +8,7 @@ const PatchBody = z.object({ moderator: z.boolean() });
 
 /** The Moderator tick. Never the last Moderator's. */
 export async function PATCH(req: Request, ctx: Ctx) {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   const { id, loginId } = await ctx.params;
   return wsRoute(login, async (caller) =>
     setModerator(caller, id, loginId, (await wsBody(req, PatchBody)).moderator),
@@ -17,7 +17,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
 /** Remove a user, or leave (your own id). Never the last Moderator. */
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   const { id, loginId } = await ctx.params;
   return wsRoute(login, (caller) => removeUser(caller, id, loginId));
 }

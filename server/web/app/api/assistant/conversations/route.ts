@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { assistantConversations } from '@/lib/assistant-inbox';
 import { chatAgentIds } from '@/lib/assistant-chat';
 
@@ -10,7 +10,7 @@ import { chatAgentIds } from '@/lib/assistant-chat';
  * threads; a member or a client lists the assistants of its workspaces.
  */
 export async function GET() {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const conversations = await assistantConversations(
     login.ownerId,
     login.loginId,

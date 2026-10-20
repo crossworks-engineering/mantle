@@ -44,6 +44,45 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
+ *  in from the owner answer the test describes; adminFacts (mocked below)
+ *  answers its kind. */
+function asOwnerLogin(owner: () => unknown): () => unknown {
+  return () => {
+    const o = owner() as {
+      kind: string;
+      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
+      member: {
+        loginId: string;
+        anchorId: string;
+        email: string;
+        displayName: string | null;
+      } | null;
+    };
+    const m = o.member;
+    return {
+      loginId: m ? m.loginId : o.user.actor.id,
+      brainId: m ? m.anchorId : o.user.id,
+      email: m ? m.email : o.user.email,
+      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
+      contactId: null,
+      source: 'web',
+      sessionEpoch: 0,
+      actor: m
+        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
+        : o.user.actor,
+      standInAdmin: o.kind === 'admin',
+    };
+  };
+}
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
+
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const ADMIN_LOGIN = '55555555-5555-4555-8555-555555555555';
 const MEMBER_LOGIN = '22222222-2222-4222-8222-222222222222';
@@ -95,31 +134,33 @@ vi.mock('@mantle/db', async (importOriginal) => {
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  ownerCallerWithLogin: vi.fn(() =>
-    h.login === 'admin'
-      ? {
-          kind: 'admin',
-          user: {
-            id: ANCHOR,
-            email: 'jo@example.invalid',
-            actor: { id: ADMIN_LOGIN, email: 'jo@example.invalid', displayName: 'Jo' },
+  ownerLoginCaller: asOwnerLogin(
+    vi.fn(() =>
+      h.login === 'admin'
+        ? {
+            kind: 'admin',
+            user: {
+              id: ANCHOR,
+              email: 'jo@example.invalid',
+              actor: { id: ADMIN_LOGIN, email: 'jo@example.invalid', displayName: 'Jo' },
+            },
+            source: 'web',
+            member: null,
+          }
+        : {
+            kind: 'member',
+            user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: MEMBER_LOGIN } },
+            source: 'web',
+            member: {
+              role: 'member',
+              loginId: MEMBER_LOGIN,
+              anchorId: ANCHOR,
+              email: 'pat@example.invalid',
+              displayName: 'Pat',
+              contactId: null,
+            },
           },
-          source: 'web',
-          member: null,
-        }
-      : {
-          kind: 'member',
-          user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: MEMBER_LOGIN } },
-          source: 'web',
-          member: {
-            role: 'member',
-            loginId: MEMBER_LOGIN,
-            anchorId: ANCHOR,
-            email: 'pat@example.invalid',
-            displayName: 'Pat',
-            contactId: null,
-          },
-        },
+    ),
   ),
 }));
 

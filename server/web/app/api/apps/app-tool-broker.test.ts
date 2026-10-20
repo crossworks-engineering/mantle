@@ -9,6 +9,45 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
+ *  in from the owner answer the test describes; adminFacts (mocked below)
+ *  answers its kind. */
+function asOwnerLogin(owner: () => unknown): () => unknown {
+  return () => {
+    const o = owner() as {
+      kind: string;
+      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
+      member: {
+        loginId: string;
+        anchorId: string;
+        email: string;
+        displayName: string | null;
+      } | null;
+    };
+    const m = o.member;
+    return {
+      loginId: m ? m.loginId : o.user.actor.id,
+      brainId: m ? m.anchorId : o.user.id,
+      email: m ? m.email : o.user.email,
+      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
+      contactId: null,
+      source: 'web',
+      sessionEpoch: 0,
+      actor: m
+        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
+        : o.user.actor,
+      standInAdmin: o.kind === 'admin',
+    };
+  };
+}
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
+
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const ACTOR = '55555555-5555-4555-8555-555555555555';
 const APP = '77777777-7777-4777-8777-777777777777';
@@ -53,16 +92,18 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   })),
   // The owner runner routes take every login since W7e: here an Admin user.
   // The broker reads the caller the pipeline answers (A4 step 3b part 3).
-  ownerCallerWithLogin: vi.fn(() => ({
-    kind: 'admin',
-    user: {
-      id: ANCHOR,
-      email: 'jo@example.invalid',
-      actor: { id: ACTOR, email: 'jo@example.invalid', displayName: 'Jo', isOwner: true },
-    },
-    source: 'web',
-    member: null,
-  })),
+  ownerLoginCaller: asOwnerLogin(
+    vi.fn(() => ({
+      kind: 'admin',
+      user: {
+        id: ANCHOR,
+        email: 'jo@example.invalid',
+        actor: { id: ACTOR, email: 'jo@example.invalid', displayName: 'Jo', isOwner: true },
+      },
+      source: 'web',
+      member: null,
+    })),
+  ),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

@@ -13,7 +13,8 @@
  * not run brain apps, and it must never reach the owner ticket below.
  */
 import { NextResponse } from '@/server/http-compat';
-import { buildAppFrameTicket, ownerCallerWithLogin } from '@/lib/auth';
+import { buildAppFrameTicket, ownerLoginCaller } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { getAppRuntime } from '@mantle/content';
 import { memberFrameTicket } from '@/lib/app-runner';
 import type { RouteParams } from '@/lib/route-params';
@@ -24,10 +25,11 @@ import type { RouteParams } from '@/lib/route-params';
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = ownerCallerWithLogin();
+  const login = ownerLoginCaller();
   const { id } = await ctx.params;
-  if (got.kind === 'member') return memberFrameTicket(got.member, id);
-  const user = got.user;
+  // A login that is not an Admin user (adminFacts) runs the published build.
+  if (!(await adminFacts(login)).admin) return memberFrameTicket(login, id);
+  const user = { id: login.brainId, actor: login.actor };
   const app = await getAppRuntime(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });
 

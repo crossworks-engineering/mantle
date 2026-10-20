@@ -25,8 +25,8 @@ import {
 } from '@mantle/runtime/assistant';
 import { claimMemberTurn, recordTeamAccess, releaseMemberTurn } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
-import type { ChatLogin } from './auth';
-import type { ChatAgent } from './assistant-chat';
+import type { ChatCaller } from './auth';
+import { chatAdmin, type ChatAgent } from './assistant-chat';
 import { getDbosClient } from './dbos-client';
 import {
   MEMBER_DAILY_CAP,
@@ -41,12 +41,12 @@ export type WorkspaceTurnResult = { status: number; body: unknown; headers?: Hea
 
 /** How the assistant sees the user: their name, else the part of their email
  *  before the @. */
-function userName(login: ChatLogin): string {
+function userName(login: ChatCaller): string {
   return login.displayName?.trim() || login.email.split('@')[0] || 'user';
 }
 
 export async function queueWorkspaceTurn(o: {
-  login: ChatLogin;
+  login: ChatCaller;
   agent: ChatAgent;
   text: string;
   idempotencyKey: string | null;
@@ -55,7 +55,7 @@ export async function queueWorkspaceTurn(o: {
 }): Promise<WorkspaceTurnResult> {
   const { login, agent, text } = o;
   const { ownerId, loginId } = login;
-  const limited = login.kind !== 'admin';
+  const limited = !(await chatAdmin(login));
   if (limited) {
     const gate = rateLimit(`member-turn:${loginId}`, { max: 6, windowMs: 60_000 });
     // The one 429 (lib/route-limits.ts), kept by the turn route for a
@@ -164,10 +164,10 @@ export async function queueWorkspaceTurn(o: {
  * limited. Null when admitted, else the 429 answer.
  */
 export async function claimMemberChatWork(
-  login: ChatLogin,
+  login: ChatCaller,
   what: 'summary' | 'transcribe',
 ): Promise<NextResponse | null> {
-  if (login.kind === 'admin') return null;
+  if (await chatAdmin(login)) return null;
   const claim = await claimMemberTurn({
     ownerId: login.ownerId,
     loginId: login.loginId,

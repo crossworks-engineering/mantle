@@ -4,7 +4,8 @@
  * `?ws=<id>` keeps the apps that workspace holds (lib/list-workspaces.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { ownerCaller, ownerCallerWithLogin } from '@/lib/auth';
+import { ownerCaller, ownerLoginCaller } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
@@ -49,15 +50,14 @@ const CreateBody = AppMetaFields.extend({
 });
 
 export async function POST(req: Request) {
-  // The owner and whether the login is an Admin user: the gate's answer for
-  // this request (it read the login's row; A6b: read again on the system
-  // pool before).
-  const caller = ownerCallerWithLogin();
-  const user = caller.user;
+  // The login the gate answered for this request, and whether it is an
+  // Admin user (adminFacts, asked of its scope).
+  const login = ownerLoginCaller();
+  const user = { id: login.brainId, actor: login.actor };
   const body = await readBody(req, CreateBody);
   // A member's or a client's app (W6b fix round 1, M2): at team rules (the
   // author ceiling) and its author named, as the member app tools make it.
-  const admin = caller.kind === 'admin';
+  const admin = (await adminFacts(login)).admin;
   const app = await createApp(user.id, {
     title: body.name,
     ...body,

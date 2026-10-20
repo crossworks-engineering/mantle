@@ -132,6 +132,14 @@ export type Actor = {
  */
 export type SessionUser = { id: string; email: string; actor: Actor };
 
+/** The SessionUser shape of a Login (a transition adapter, as SessionUser
+ *  is): the brain's anchor id, the login's email and its actor, for the
+ *  helpers that still take the session user (a role change's
+ *  applyLoginChange and its audit row). Decides nothing. */
+export function loginSessionUser(login: Login): SessionUser {
+  return { id: login.brainId, email: login.email, actor: { ...login.actor } };
+}
+
 /** How a request authenticated: a session cookie is the web browser; a mobile
  *  bearer token is the phone app (any role) or the split web client. Maps 1:1 onto the inbound
  *  ConversationChannel for web/mobile turns, so a reply/reminder can follow the
@@ -1066,7 +1074,7 @@ type PipelineAnswer =
   | Readonly<{ caller: 'frame'; ticket: AppFrameTicket | null }>
   | Readonly<{
       caller: 'publicLogin';
-      atRead: AtRead<AnyLogin | NextResponse | RouteRefusal, { audit: boolean }>;
+      atRead: AtRead<Login | NextResponse | RouteRefusal, { audit: boolean }>;
     }>
   | Readonly<{ caller: 'cookieUpgrade'; atRead: AtRead<CookieUpgradeLogin | NextResponse, null> }>
   | Readonly<{ caller: 'ownerAtRead'; atRead: AtRead<SessionUser | NextResponse, null> }>;
@@ -1264,8 +1272,8 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
         atRead: new AtRead(async (opts) => {
           const got = await getLoginOr401(opts);
           if (got instanceof NextResponse) return got;
+          if (!row.rateLimit.length) return got;
           const login = legacyLogin(got);
-          if (!row.rateLimit.length) return login;
           const req = getRequestContext()?.req;
           if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
           const over = takeRouteLimits(row.rateLimit, {
@@ -1273,7 +1281,7 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
             login: { loginId: login.loginId, member: login.kind === 'member' },
             scopes: LOGIN_SCOPE,
           });
-          return over ? new RouteRefusal(over) : login;
+          return over ? new RouteRefusal(over) : got;
         }),
       };
     case 'cookieUpgrade':
@@ -1333,6 +1341,29 @@ export function ownerCallerWithLogin(): OwnerRouteLogin {
 }
 
 /**
+ * The login of an owner row as the Login itself (plan v3.2 section 2.2):
+ * the Admin user's or the member's, the very object the owner guard
+ * answered with, so adminFacts(login) asks its scope. No lookup, no
+ * effect, and the same throw as ownerCaller() where the pipeline answered
+ * no owner. A handler that decides Admin reads this and asks adminFacts in
+ * place of the owner answer's `kind`.
+ *
+ *     const login = ownerLoginCaller();
+ *     const { admin } = await adminFacts(login);
+ */
+export function ownerLoginCaller(): Login {
+  const login = ownerAnswerLogin(pipelineAnswer('ownerLoginCaller', 'owner').owner);
+  if (!login) throw new Error('ownerLoginCaller(): the owner answer carries no login');
+  return login;
+}
+
+/** The Login of an owner answer getOwnerOr401WithLogin gave (the very
+ *  object), else null: what ownerLoginCaller() reads. */
+export function ownerAnswerLogin(owner: OwnerRouteLogin): Login | null {
+  return ownerLogins.get(owner) ?? null;
+}
+
+/**
  * The member the pipeline answered for this request (A4 step 3b part 5):
  * what getMemberOr401 answers, on a member route (the member list), read
  * from the pipeline's answer as ownerCaller() reads the owner: no lookup,
@@ -1383,6 +1414,35 @@ export function anyLoginCaller(): Login {
  */
 export function chatLoginCaller(): ChatLogin {
   return { ...pipelineAnswer('chatLoginCaller', 'chat').chat };
+}
+
+/**
+ * The chat login the pipeline answered for this request, without its legacy
+ * kind and with its Login (`asLogin`): what the chat helpers take, asking
+ * adminFacts(caller.asLogin) whether it is an Admin user. No lookup, no
+ * effect, and the same throw as chatLoginCaller() where the pipeline
+ * answered no chat login.
+ *
+ *     const login = chatCaller();
+ */
+export function chatCaller(): ChatCaller {
+  return chatCallerOf(pipelineAnswer('chatCaller', 'chat').chat);
+}
+
+/** The chat caller of a chat answer getChatLoginOr401 gave (the very
+ *  object): what chatCaller() reads. Throws for any other object. */
+export function chatCallerOf(chat: ChatLogin): ChatCaller {
+  const asLogin = chatLogins.get(chat);
+  if (!asLogin) throw new Error('chatCaller(): the chat answer carries no login');
+  return Object.freeze({
+    ownerId: chat.ownerId,
+    loginId: chat.loginId,
+    source: chat.source,
+    user: chat.user,
+    displayName: chat.displayName,
+    email: chat.email,
+    asLogin,
+  });
 }
 
 /**
@@ -1446,12 +1506,30 @@ export function frameTicketCaller(): AppFrameTicket | null {
  *     if (!login) return unauthorizedRefusal();
  */
 export async function publicLoginCaller(opts: { audit?: boolean } = {}): Promise<AnyLogin | null> {
-  const atRead = pipelineAnswer('publicLoginCaller', 'publicLogin').atRead;
+  const login = await publicLoginAt('publicLoginCaller', opts);
+  return login ? { ...legacyLogin(login) } : null;
+}
+
+/**
+ * The login a public row reads as the Login itself (plan v3.2 section
+ * 2.2): the same answer publicLoginCaller() reads, taken at this read the
+ * same way, so adminFacts(login) asks about it (a public row enters no
+ * scope: the row's answer). Null where there is no login.
+ *
+ *     const login = await publicLoginItself();
+ *     if (!login) return unauthorizedRefusal();
+ */
+export async function publicLoginItself(opts: { audit?: boolean } = {}): Promise<Login | null> {
+  return publicLoginAt('publicLoginItself', opts);
+}
+
+async function publicLoginAt(reader: string, opts: { audit?: boolean }): Promise<Login | null> {
+  const atRead = pipelineAnswer(reader, 'publicLogin').atRead;
   const got = await atRead.take({ audit: opts.audit === true });
   // Over the row's login limit (A10 #8): the one 429, answered by the app
   // as the handler's 429 was returned.
   if (got instanceof RouteRefusal) throw got;
-  return got instanceof NextResponse ? null : { ...got };
+  return got instanceof NextResponse ? null : got;
 }
 
 /** What getCookieUpgradeLoginOr401 answers when it lets a login through. */
@@ -1655,6 +1733,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
       },
     };
     const who: OwnerRouteLogin = { kind: 'member', user, source: res.source, member: res.member };
+    ownerLogins.set(who, answeredLogin(res).login);
     if (memberOpenRead(route)) {
       await enterLoginScope(login.loginId, requestMode(true));
       return who;
@@ -1668,8 +1747,16 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
   const refused = await adminRouteGate(res.user.actor.id);
   if (refused) return refused;
   await auditMutation(res.user);
-  return { kind: 'admin', user: res.user, source: res.source, member: null };
+  const who: OwnerRouteLogin = { kind: 'admin', user: res.user, source: res.source, member: null };
+  ownerLogins.set(who, answeredLogin(res).login);
+  return who;
 }
+
+/** The Login of each owner answer getOwnerOr401WithLogin gave (keyed on the
+ *  very answer, which the pipeline keeps): what ownerLoginCaller() reads,
+ *  so a handler asks adminFacts(login) in place of the answer's `kind`.
+ *  The answer itself keeps its legacy shape (a transition adapter). */
+const ownerLogins = new WeakMap<OwnerRouteLogin, Login>();
 
 // ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
 
@@ -1726,7 +1813,7 @@ async function loginHoldsArea(
   const anchorId = await getAnchorId();
   if (!anchorId) return false;
   const { requireArea } = await import('../workspaces');
-  return requireArea({ loginId, anchorId, user: null }, area);
+  return requireArea({ loginId, anchorId }, area);
 }
 
 /**
@@ -2162,10 +2249,21 @@ export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<Log
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   const refused = await anyLoginScope(res);
   if (refused) return refused;
-  const { login, any } = loginOf(res);
-  loginLegacy.set(login, Object.freeze({ loginId: login.loginId, any, adminPair: res.adminPair }));
+  const { login, any } = answeredLogin(res);
   if (opts.audit) await auditLoginMutation(any);
   return login;
+}
+
+/** The Login of a resolved caller, with what getLoginOr401 (and the owner
+ *  and chat guards) know of it beyond the Login: its legacy shape and the
+ *  row's Admin pair (legacyLogin, loginAdminPair, adminFacts). */
+function answeredLogin(res: Resolved): { login: Login; any: AnyLogin } {
+  const got = loginOf(res);
+  loginLegacy.set(
+    got.login,
+    Object.freeze({ loginId: got.login.loginId, any: got.any, adminPair: res.adminPair }),
+  );
+  return got;
 }
 
 /**
@@ -2202,9 +2300,10 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   const refused = await anyLoginScope(res);
   if (refused) return refused;
+  const { login: asLogin } = answeredLogin(res);
   if (res.kind === 'admin') {
     await auditMutation(res.user);
-    return {
+    return chatAnswer(asLogin, {
       kind: 'admin',
       ownerId: res.user.id,
       loginId: res.user.actor.id,
@@ -2212,7 +2311,7 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
       user: res.user,
       displayName: res.user.actor.displayName ?? null,
       email: res.user.actor.email,
-    };
+    });
   }
   const login = res.member;
   const user: SessionUser = {
@@ -2226,7 +2325,7 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
     },
   };
   if (res.source === 'api') await auditMutation(user);
-  return {
+  return chatAnswer(asLogin, {
     kind: res.kind,
     ownerId: login.anchorId,
     loginId: login.loginId,
@@ -2234,8 +2333,24 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
     user,
     displayName: login.displayName,
     email: login.email,
-  };
+  });
 }
+
+/** The Login of each chat answer getChatLoginOr401 gave (keyed on the very
+ *  answer, which the pipeline keeps): what chatCaller() carries. */
+const chatLogins = new WeakMap<ChatLogin, Login>();
+
+function chatAnswer(asLogin: Login, chat: ChatLogin): ChatLogin {
+  chatLogins.set(chat, asLogin);
+  return chat;
+}
+
+/**
+ * The chat caller without the legacy kind (plan v3.2 section 2.2): the chat
+ * answer's fields and `asLogin`, the very Login the chat guard answered, so
+ * a chat helper asks adminFacts(caller.asLogin) whether it is an Admin user.
+ */
+export type ChatCaller = Readonly<Omit<ChatLogin, 'kind'> & { asLogin: Login }>;
 
 /**
  * The request scope of getLoginOr401 (W6a). On an any-login route

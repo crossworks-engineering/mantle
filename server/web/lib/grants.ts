@@ -74,7 +74,7 @@ import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { defineDomainError, publicErrorMessage, UUID_RE } from '@mantle/std';
-import type { AnyLogin } from '@/lib/auth';
+import type { Login } from '@/lib/auth/login';
 import { areasFor, workspaceCaller, type WsCaller } from '@/lib/workspaces';
 
 // ── Errors and the route wrapper ─────────────────────────────────────────────
@@ -123,7 +123,7 @@ export const FOLDER_GRANT_LIMIT = { max: 50_000 };
  *  item embeds (mantle_item_embeds), the workspaces an Admin user names
  *  (mantle_ws_seen). The page refold after a change is the one exit. */
 export async function grantsRoute(
-  login: AnyLogin,
+  login: Login,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {

@@ -444,3 +444,107 @@ of a passing suite.
   changed login, or filter rows by role (S8b's), and are sorted first.
 - adminDecisionFlags in server/web (assistant/thread 4, assistant-chat 5,
   grants 2, reconcile 1, workspaces 2): mostly the workspace's own flag.
+
+## Part c2, round 2
+
+Same branch, from 9b3d06f9e. No migration, no edit in packages/db,
+content, files, runs or embeddings. Items 1 to 4 and 6 of the round 1
+"left" list are done in server/web; item 5 (the other role reads) is
+sorted below and left.
+
+### What changed (round 2)
+
+- **Three readers that answer the Login** (`server/web/lib/auth/session.ts`),
+  each registered in `eslint-rules/session-guards.mjs` with `logs` naming
+  the legacy reader, so the guard sweep logs the same answer byte for byte
+  (the sweep now follows `logs` for an answer taken at the read too):
+  - `ownerLoginCaller()`: the owner guard's Login (`ownerAnswerLogin`
+    keyed on the very owner answer; the answer keeps its legacy shape);
+  - `chatCaller()`: the chat answer without `kind`, with `asLogin`, the
+    chat guard's Login (`ChatCaller`, `chatCallerOf`);
+  - `publicLoginItself()`: a public row's Login, taken at the read from
+    the same answer as `publicLoginCaller()` (which now projects
+    `legacyLogin` of it).
+    `answeredLogin(res)` registers a Login's legacy shape and Admin pair for
+    all three guards and getLoginOr401.
+- **Owner rows** ask `adminFacts(ownerLoginCaller())`: the app db broker,
+  tool broker and frame ticket (a non-Admin run goes to the member runner,
+  which now takes an `AppRunLogin`, a Pick of the Login), PATCH
+  `/api/apps/:id` (the three Admin switches), POST `/api/apps` (the author
+  ceiling).
+- **Chat rows** read `chatCaller()`; `lib/assistant-chat.ts` and
+  `lib/workspace-turn.ts` take `ChatCaller` and ask `chatAdmin(login)`
+  (adminFacts of `asLogin`): which assistants, the limits, the image
+  rewrite, the owner engine, the error detail (turn, transcribe), the
+  thread's Admin parts (its `isAdmin` local renamed `admin`).
+- **Public rows**: `/api/auth/whoami` and `/api/oauth/authorize` read
+  `publicLoginItself()`; whoami's areas and the consent path ask adminFacts
+  (no scope there: the row's answer). whoami's display role and client
+  routes stay the session's role until S8b.
+- **`lib/workspaces.ts`**: `WsCaller` is `{ loginId, anchorId, login? }`;
+  `workspaceCaller(login: Login)`; `wsRoute` and `grantsRoute` take the
+  Login, and every workspace and grants route reads `anyLoginCaller()`.
+  The role change's "Admin only" is `adminFacts(caller.login)`, asked in
+  the caller's scope before the work leaves it (a caller with no Login is
+  refused); `loginSessionUser(login)` (a transition adapter) feeds
+  applyLoginChange and its audit row.
+- **Cells** (`server/web/lib/auth/admin-facts-handlers.db.test.ts`, four
+  more): the owner rows, the chat rows, the public rows and the role
+  change, each in its guard's real request scope, legacy decision beside
+  adminFacts for the five logins of c1's cells.
+
+### Changed answers (round 2)
+
+Narrower only, and only for the role=admin login outside Admin (drift).
+Admin users (keys area on or off), the role=member login inside Admin and
+members are byte-equal (the cells; the guard sweep, the app broker parity
+and the A10 broker sweep snapshots unchanged, no `-u`).
+
+| site                                                      | role admin outside Admin: main                         | now                                                         | cell                                  |
+| --------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------- |
+| POST /api/apps/:id/db-broker, tool-broker                 | the Admin run (Admin data rules)                       | the member runner (published build, team rules, rows only)  | "Admin on the owner rows"             |
+| POST /api/apps/:id/frame-ticket                           | an admin ticket (its frame refused by S8a)             | a member ticket (its frame refused: memberLoginActive)      | "Admin on the owner rows"             |
+| PATCH /api/apps/:id (trustTools, mcpAccess, dataReadOnly) | allowed                                                | 403 admin-only                                              | "Admin on the owner rows" (the scope) |
+| POST /api/apps                                            | author ceiling admin                                   | team, author named                                          | "Admin on the owner rows"             |
+| the chat rows                                             | the owner surface's agents, no limits, provider detail | its workspaces' assistants, member limits, fixed error text | "Admin on the chat rows"              |
+| GET /api/auth/whoami                                      | its areas from the workspaces read                     | no areas                                                    | "Admin on the public rows"            |
+| GET and POST /api/oauth/authorize                         | an Admin consent (the brain)                           | the member path (refused unless a member MCP login)         | "Admin on the public rows"            |
+| a role change in Admin (POST/DELETE users)                | past the TS check (the definer decides)                | 403 admin_only                                              | "a role change's Admin only"          |
+
+### Pins (round 2)
+
+| pin                    | round 1 | round 2                                                                |
+| ---------------------- | ------- | ---------------------------------------------------------------------- |
+| loginKindBranches      | 38      | **17** (all in lib/auth/session.ts; none left elsewhere in server/web) |
+| adminDecisionFlags     | 44      | **40** (the thread route's four)                                       |
+| historyCodeComments    | 2338    | **2336**                                                               |
+| loginRoleDecisionReads | 30      | 30 (item 5 left)                                                       |
+| inHandlerAreaChecks    | 20      | 20                                                                     |
+
+### Tests changed with the readers (round 2)
+
+The broker tests (`app-tool-broker`, `member-runner-routes`,
+`app-identity-owner`, `member-connectors.turn-scope.db`,
+`a10-app-broker-sweep`, `app-broker-parity`) stand in `ownerLoginCaller`
+from their owner answer and adminFacts from its kind; the chat route
+tests stand in `chatCaller`; the OAuth route test `publicLoginItself`;
+`shell-parts`, `workspace-turn`, `gate-caller` and the WsCaller literals
+take the Login; `owner-caller-imports.test.ts` lists the new at-read
+reader. Every expected answer is unchanged.
+
+### Left for round 3
+
+- Item 5, the role reads in server/web outside lib/auth (30 with lib/auth's
+  5), sorted, none moved:
+  - a requested or target role (S8b's): `users/route.ts:115`,
+    `login-update.ts:121, 245`, `users/[id]/agent/route.ts:62, 66`;
+  - row filters (S8b's): `push/store.ts` (3), `access-keys-notify.ts:55`;
+  - display: `access-keys-admin.ts:126`, `oauth/authorize:380` (the
+    consent page's text, now from the decided path);
+  - the member-path loaders and session-side checks, to move to the Admin
+    pair or adminFacts: `mcp-auth.ts:81, 166, 287`, `mcp-oauth.ts:265, 266`,
+    `owner-sso.ts:95`, `pair-code.ts:115, 149`, `token-login.ts:100, 101`,
+    `peer-access.ts:79`.
+- `ownerCallerWithLogin`, `chatLoginCaller` (the Telegram chat routes) and
+  `publicLoginCaller` (logout, change password, pairing) stay as legacy
+  readers; nothing in them decides Admin.

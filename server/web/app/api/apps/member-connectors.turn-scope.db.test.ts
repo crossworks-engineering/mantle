@@ -24,6 +24,45 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
+ *  in from the owner answer the test describes; adminFacts (mocked below)
+ *  answers its kind. */
+function asOwnerLogin(owner: () => unknown): () => unknown {
+  return () => {
+    const o = owner() as {
+      kind: string;
+      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
+      member: {
+        loginId: string;
+        anchorId: string;
+        email: string;
+        displayName: string | null;
+      } | null;
+    };
+    const m = o.member;
+    return {
+      loginId: m ? m.loginId : o.user.actor.id,
+      brainId: m ? m.anchorId : o.user.id,
+      email: m ? m.email : o.user.email,
+      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
+      contactId: null,
+      source: 'web',
+      sessionEpoch: 0,
+      actor: m
+        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
+        : o.user.actor,
+      standInAdmin: o.kind === 'admin',
+    };
+  };
+}
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
+
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 const h = vi.hoisted(() => ({
@@ -46,22 +85,24 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   getOwnerOr401: vi.fn(async () => ownerSession()),
   // The runner routes take every login since W7e: the owner or a member.
   // They read the caller the pipeline answers (A4 step 3b part 3).
-  ownerCallerWithLogin: vi.fn(() =>
-    h.as === 'admin'
-      ? { kind: 'admin', user: ownerSession(), source: 'web', member: null }
-      : {
-          kind: 'member',
-          user: ownerSession(),
-          source: 'web',
-          member: {
-            role: 'member',
-            loginId: h.login,
-            anchorId: h.owner,
-            email: 'm@example.invalid',
-            displayName: 'M',
-            contactId: null,
+  ownerLoginCaller: asOwnerLogin(
+    vi.fn(() =>
+      h.as === 'admin'
+        ? { kind: 'admin', user: ownerSession(), source: 'web', member: null }
+        : {
+            kind: 'member',
+            user: ownerSession(),
+            source: 'web',
+            member: {
+              role: 'member',
+              loginId: h.login,
+              anchorId: h.owner,
+              email: 'm@example.invalid',
+              displayName: 'M',
+              contactId: null,
+            },
           },
-        },
+    ),
   ),
 }));
 // An app the Team holds (APP below, a real node): team rules for a member.

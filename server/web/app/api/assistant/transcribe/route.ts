@@ -20,7 +20,8 @@
  */
 
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
+import { chatAdmin } from '@/lib/assistant-chat';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
@@ -30,7 +31,7 @@ import { errorMessage } from '@mantle/std';
 export async function POST(req: Request) {
   // A member's clips: the gate took the row's limit (lib/route-limits.ts
   // chatTranscribe; an Admin user is not limited).
-  const login = chatLoginCaller();
+  const login = chatCaller();
 
   // Multipart only — base64 in JSON would be wasteful for >100KB
   // audio blobs, and the FormData API handles streaming uploads.
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
     // who set the provider up; a member or a client hears a fixed
     // sentence and the detail stays in the log (fix round 1, L6).
     return NextResponse.json(
-      { error: login.kind === 'admin' ? msg : VOICE_FAILED_MESSAGE },
+      { error: (await chatAdmin(login)) ? msg : VOICE_FAILED_MESSAGE },
       { status: 422 },
     );
   }

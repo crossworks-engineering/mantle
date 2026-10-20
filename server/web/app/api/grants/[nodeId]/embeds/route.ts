@@ -1,4 +1,4 @@
-import { loginCaller } from '@/lib/auth';
+import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { grantEmbeds, grantsRoute } from '@/lib/grants';
 import { wsBody } from '@/lib/workspaces';
@@ -10,7 +10,7 @@ const Body = z.object({
 
 /** "Grant these too": the item's embeds, granted to its workspaces. */
 export async function POST(req: Request, ctx: { params: Promise<{ nodeId: string }> }) {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   const { nodeId } = await ctx.params;
   return grantsRoute(login, async (caller) => grantEmbeds(caller, nodeId, await wsBody(req, Body)));
 }

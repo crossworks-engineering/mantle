@@ -17,7 +17,8 @@
  * memberToolBroker (the team rules, the same broker). A client login is
  * refused (403 client-login) by the gate.
  */
-import { ownerCallerWithLogin } from '@/lib/auth';
+import { ownerLoginCaller } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { memberToolBroker } from '@/lib/app-runner';
 import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
@@ -29,11 +30,12 @@ import type { RouteParams } from '@/lib/route-params';
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = ownerCallerWithLogin();
+  const login = ownerLoginCaller();
   const { id } = await ctx.params;
-  // A member's run (W7e): the team rules, never a confirmation.
-  if (got.kind === 'member') return memberToolBroker(req, got.member, id);
-  const user = got.user;
+  // A run by a login that is not an Admin user (adminFacts, asked of its
+  // scope): the team rules, never a confirmation.
+  if (!(await adminFacts(login)).admin) return memberToolBroker(req, login, id);
+  const user = { id: login.brainId, actor: login.actor };
   return runAppToolBroker(req, {
     via: 'owner',
     ownerId: user.id,

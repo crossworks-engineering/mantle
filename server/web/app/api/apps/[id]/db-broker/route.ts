@@ -21,7 +21,8 @@
  * client-login), never the admin path below.
  */
 import { NextResponse } from '@/server/http-compat';
-import { ownerCallerWithLogin } from '@/lib/auth';
+import { ownerLoginCaller } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { appDataSystem, memberDbBroker } from '@/lib/app-runner';
 import { getAppRuntime } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
@@ -36,11 +37,12 @@ import type { RouteParams } from '@/lib/route-params';
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = ownerCallerWithLogin();
+  const login = ownerLoginCaller();
   const { id } = await ctx.params;
-  // A member's run (W7e): the app's holders decide, its data rules apply.
-  if (got.kind === 'member') return memberDbBroker(req, got.member, id);
-  const user = got.user;
+  // A run by a login that is not an Admin user (adminFacts, asked of its
+  // scope): the app's holders decide, its data rules apply.
+  if (!(await adminFacts(login)).admin) return memberDbBroker(req, login, id);
+  const user = { id: login.brainId, actor: login.actor };
   const parsed = AppDbBody.safeParse(await readJson(req));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });

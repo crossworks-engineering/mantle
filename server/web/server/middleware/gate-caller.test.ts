@@ -938,11 +938,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       app.use('*', gate());
       const handle = async () => {
         counts.handled += 1;
-        if (reads) return Response.json(seen(workspaceCaller(session.loginCaller())));
+        if (reads) return Response.json(seen(workspaceCaller(session.anyLoginCaller())));
         const login = await session.getLoginOr401({ audit: true });
-        return login instanceof Response
-          ? login
-          : Response.json(seen(workspaceCaller(session.legacyLogin(login))));
+        return login instanceof Response ? login : Response.json(seen(workspaceCaller(login)));
       };
       registerRoutes(
         app,

@@ -37,8 +37,18 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The login the pipeline answers at the read (A4 hand batch B): no
   // login (the guard's refusal) is null.
-  publicLoginCaller: vi.fn(async () => (h.login instanceof Response ? null : h.login)),
+  publicLoginItself: vi.fn(async () => (h.login instanceof Response ? null : h.login)),
   verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
+}));
+
+// Whether the login is an Admin user is adminFacts' answer (plan v3.2
+// section 2.2), stood in from the stand-in Login.
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({
@@ -67,20 +77,22 @@ const QUERY = new URLSearchParams({
 });
 
 const admin = {
-  kind: 'admin',
   loginId: 'admin-1',
+  brainId: 'anchor-1',
   email: 'admin@example.invalid',
-  user: {
-    id: 'anchor-1',
-    email: 'admin@example.invalid',
-    actor: { id: 'admin-1', email: 'admin@example.invalid', displayName: null, isOwner: true },
-  },
+  displayName: null,
+  contactId: null,
+  actor: { id: 'admin-1', email: 'admin@example.invalid', displayName: null, isOwner: true },
+  standInAdmin: true,
 };
 const member = {
-  kind: 'member',
   loginId: 'member-1',
+  brainId: 'anchor-1',
   email: 'm@example.invalid',
-  member: { anchorId: 'anchor-1' },
+  displayName: null,
+  contactId: null,
+  actor: { id: 'member-1', email: 'm@example.invalid', displayName: null, isOwner: false },
+  standInAdmin: false,
 };
 
 const get = async () => {

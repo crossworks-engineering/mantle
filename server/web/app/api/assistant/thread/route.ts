@@ -1,7 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller, type ChatLogin } from '@/lib/auth';
+import { chatCaller, type ChatCaller } from '@/lib/auth';
 import { recentAssistantMessages } from '@/lib/assistant';
-import { listChatAgents, messagesForReader, resolveChatAgent } from '@/lib/assistant-chat';
+import {
+  chatAdmin,
+  listChatAgents,
+  messagesForReader,
+  resolveChatAgent,
+} from '@/lib/assistant-chat';
 import { openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
@@ -19,7 +24,7 @@ import { getAgentExperience } from '@/lib/agent-experience';
  * not chat with answers as none (`agent: null`).
  */
 export async function GET(req: Request) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const params = new URL(req.url).searchParams;
   const slug = params.get('agent') ?? undefined;
   // Opt-OUT, so an absent/garbled param keeps the full bundle every existing
@@ -27,14 +32,15 @@ export async function GET(req: Request) {
   const withMessages = !['0', 'false', 'no'].includes(
     (params.get('withMessages') ?? '').trim().toLowerCase(),
   );
-  const isAdmin = login.kind === 'admin';
+  // Whether the login is an Admin user (adminFacts, asked of its scope).
+  const admin = await chatAdmin(login);
 
   const [agents, agent, assigned] = await Promise.all([
     listChatAgents(login),
     resolveChatAgent(login, slug),
     // The login's own assigned assistant: agents of its workspaces (or none),
     // read in its scope (A6b: on the system pool before, 'rule-in-query').
-    isAdmin ? getAssignedAgentSummary(login.ownerId, login.loginId) : null,
+    admin ? getAssignedAgentSummary(login.ownerId, login.loginId) : null,
   ]);
   const open = agent ? await openChatThread(login.ownerId, agent.id, login.loginId) : null;
   const [messages, experience, thread] = await Promise.all([
@@ -44,7 +50,7 @@ export async function GET(req: Request) {
     // The header shows the active agent's level badge (an Admin user's view).
     // Counted over every login's turns by its definer, in the scope
     // (mantle_agent_experience, 0293; A6b: on the system pool before).
-    agent && isAdmin ? getAgentExperience(login.ownerId, agent.id) : null,
+    agent && admin ? getAgentExperience(login.ownerId, agent.id) : null,
     open ? chatThreadRow(login.ownerId, open) : null,
   ]);
   const agentOut = agent
@@ -54,7 +60,7 @@ export async function GET(req: Request) {
         name: agent.name,
         role: agent.role,
         model: agent.model,
-        ...(isAdmin ? notesForLogin(login, stripTurnEngine(agent)) : {}),
+        ...(admin ? notesForLogin(login, stripTurnEngine(agent)) : {}),
         experience,
       }
     : null;
@@ -71,7 +77,7 @@ export async function GET(req: Request) {
 /** An Admin user's bundle keeps the full agent row it always had. */
 /** Persona notes are learned from the anchor's own thread: the anchor
  *  login's only, any other login gets none (W7 integration fix). */
-function notesForLogin<T extends { personaNotes?: unknown }>(login: ChatLogin, a: T): T {
+function notesForLogin<T extends { personaNotes?: unknown }>(login: ChatCaller, a: T): T {
   return login.loginId === login.ownerId ? a : { ...a, personaNotes: [] };
 }
 

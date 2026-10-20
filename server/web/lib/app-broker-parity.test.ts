@@ -331,7 +331,7 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     ownerCaller: () => user,
-    ownerCallerWithLogin: () =>
+    ownerLoginCaller: asOwnerLogin(() =>
       h.login === 'admin'
         ? { kind: 'admin', user, source: 'web', member: null }
         : {
@@ -347,6 +347,7 @@ vi.mock('@/lib/auth', async (importOriginal) => {
               contactId: null,
             },
           },
+    ),
   };
 });
 vi.mock('@/lib/rate-limit', () => ({
@@ -402,6 +403,45 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 import type { Actor, Tool } from '@mantle/db';
 import { loginActor, runAsActor } from '@mantle/db';
 import { externalAccessToolSig } from '@mantle/tools';
+
+/** The owner row's Login (ownerLoginCaller, plan v3.2 section 2.2), stood
+ *  in from the owner answer the test describes; adminFacts (mocked below)
+ *  answers its kind. */
+function asOwnerLogin(owner: () => unknown): () => unknown {
+  return () => {
+    const o = owner() as {
+      kind: string;
+      user: { id: string; email: string; actor: { id: string; displayName?: string | null } };
+      member: {
+        loginId: string;
+        anchorId: string;
+        email: string;
+        displayName: string | null;
+      } | null;
+    };
+    const m = o.member;
+    return {
+      loginId: m ? m.loginId : o.user.actor.id,
+      brainId: m ? m.anchorId : o.user.id,
+      email: m ? m.email : o.user.email,
+      displayName: m ? m.displayName : (o.user.actor.displayName ?? null),
+      contactId: null,
+      source: 'web',
+      sessionEpoch: 0,
+      actor: m
+        ? { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false }
+        : o.user.actor,
+      standInAdmin: o.kind === 'admin',
+    };
+  };
+}
+vi.mock('@/lib/auth/login', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  adminFacts: vi.fn(async (l: { standInAdmin?: boolean }) => ({
+    admin: l.standInAdmin === true,
+    areas: new Set(),
+  })),
+}));
 
 function builtinRow(slug: string): Tool {
   return {

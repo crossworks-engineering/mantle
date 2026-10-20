@@ -25,7 +25,8 @@ import { eq } from 'drizzle-orm';
 import { agents, db, workspaces, type Agent } from '@mantle/db';
 import { chatTextsForReader, workspaceAssistants, type WorkspaceAssistant } from '@mantle/content';
 import type { AssistantAgentOption } from '@mantle/client-types';
-import type { ChatLogin } from './auth';
+import type { ChatCaller } from './auth';
+import { adminFacts } from './auth/login';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
 
 export type ChatAgent = Agent & { turnEngine: 'owner' | 'workspace' };
@@ -47,10 +48,16 @@ async function inOtherWorkspace(agent: Agent): Promise<boolean> {
   return ws ? !ws.isAdmin : false;
 }
 
+/** Whether the chat login is an Admin user: adminFacts, asked of the
+ *  request's scope (one ask per request, memoized on the Login). */
+export async function chatAdmin(login: ChatCaller): Promise<boolean> {
+  return (await adminFacts(login.asLogin)).admin;
+}
+
 /** The assistants a non-Admin login may chat with: those of its workspaces
  *  other than Admin, its oldest workspace's first (the order of
  *  workspaceAssistants; the first is defaultWorkspaceAssistant's pick). */
-async function memberAssistants(login: ChatLogin): Promise<WorkspaceAssistant[]> {
+async function memberAssistants(login: ChatCaller): Promise<WorkspaceAssistant[]> {
   return (await workspaceAssistants(login.ownerId, login.loginId)).filter((a) => !a.isAdmin);
 }
 
@@ -60,10 +67,10 @@ async function memberAssistants(login: ChatLogin): Promise<WorkspaceAssistant[]>
  * workspace's assistant for a login that is not a user there.
  */
 export async function resolveChatAgent(
-  login: ChatLogin,
+  login: ChatCaller,
   slug?: string | null,
 ): Promise<ChatAgent | null> {
-  if (login.kind === 'admin') {
+  if (await chatAdmin(login)) {
     const agent = await resolveAgentForActor(login.user, slug ?? undefined);
     if (!agent) return null;
     if (!(await inOtherWorkspace(agent))) return { ...agent, turnEngine: 'owner' };
@@ -93,7 +100,7 @@ export async function resolveChatAgent(
  * too (narrower: the write names an agent it cannot reach).
  */
 export async function resolveChatAgentToWrite(
-  login: ChatLogin,
+  login: ChatCaller,
   slug?: string | null,
 ): Promise<ChatAgent | null> {
   const agent = await resolveChatAgent(login, slug);
@@ -104,12 +111,12 @@ export async function resolveChatAgentToWrite(
 /** An agent by id, when this login may chat with it (an archived thread's
  *  agent, for instance), else null. */
 export async function resolveChatAgentById(
-  login: ChatLogin,
+  login: ChatCaller,
   agentId: string,
 ): Promise<ChatAgent | null> {
   const agent = await agentById(login.ownerId, agentId);
   if (!agent) return null;
-  if (login.kind === 'admin') {
+  if (await chatAdmin(login)) {
     if (!(await inOtherWorkspace(agent))) return { ...agent, turnEngine: 'owner' };
     const mine = await workspaceAssistants(login.ownerId, login.loginId);
     return mine.some((a) => a.id === agent.id) ? { ...agent, turnEngine: 'workspace' } : null;
@@ -119,8 +126,8 @@ export async function resolveChatAgentById(
 }
 
 /** The agents this login may chat with, for the /assistant selector. */
-export async function listChatAgents(login: ChatLogin): Promise<AssistantAgentOption[]> {
-  if (login.kind === 'admin') {
+export async function listChatAgents(login: ChatCaller): Promise<AssistantAgentOption[]> {
+  if (await chatAdmin(login)) {
     const [all, mine, others] = await Promise.all([
       listAssistantAgents(login.ownerId),
       workspaceAssistants(login.ownerId, login.loginId),
@@ -141,7 +148,7 @@ export async function listChatAgents(login: ChatLogin): Promise<AssistantAgentOp
 }
 
 /** The ids of the agents this login may chat with (the inbox's rows). */
-export async function chatAgentIds(login: ChatLogin): Promise<string[] | undefined> {
+export async function chatAgentIds(login: ChatCaller): Promise<string[] | undefined> {
   // An Admin user's inbox lists every chattable agent it may reach.
   return (await listChatAgents(login)).map((a) => a.id);
 }
@@ -157,10 +164,10 @@ export async function chatAgentIds(login: ChatLogin): Promise<string[] | undefin
  * 'rule-in-query' only to enter the same one again).
  */
 export async function messagesForReader<T extends { text: string }>(
-  login: ChatLogin,
+  login: ChatCaller,
   messages: T[],
 ): Promise<T[]> {
-  if (login.kind === 'admin' || messages.length === 0) return messages;
+  if (messages.length === 0 || (await chatAdmin(login))) return messages;
   const texts = await chatTextsForReader(
     login.ownerId,
     'team',

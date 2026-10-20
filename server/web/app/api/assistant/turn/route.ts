@@ -29,8 +29,8 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { chatLoginCaller, type ChatLogin } from '@/lib/auth';
-import { resolveChatAgentToWrite, type ChatAgent } from '@/lib/assistant-chat';
+import { chatCaller, type ChatCaller } from '@/lib/auth';
+import { chatAdmin, resolveChatAgentToWrite, type ChatAgent } from '@/lib/assistant-chat';
 import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
@@ -236,7 +236,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // failure surfaces as a clean 401 (not a swallowed 500, and not an HTML
   // login redirect: a programmatic client needs a status). `source` tags
   // the turn 'web' (browser) vs 'mobile' (companion).
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const toResponse = (r: TurnResult) =>
     NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
   const key = req.headers.get('idempotency-key');
@@ -269,10 +269,13 @@ function ownerTurnWorkflowId(loginId: string, key: string): string {
 
 async function runTurn(
   req: Request,
-  login: ChatLogin,
+  login: ChatCaller,
   idempotencyKey: string | null,
 ): Promise<TurnResult> {
   const { user, source } = login;
+  // Whether the login is an Admin user (adminFacts, asked of its scope),
+  // asked once here, before the turn enters any scope of its own.
+  const admin = await chatAdmin(login);
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText: string;
@@ -374,7 +377,7 @@ async function runTurn(
     // An assistant of a workspace other than Admin: the workspace engine.
     if (chatAgent.turnEngine === 'workspace') {
       const streamable =
-        login.kind === 'admin' &&
+        admin &&
         !!idempotencyKey &&
         feature('turnStreaming') &&
         feature('streamThoughts', { prefs: await loadProfilePreferences(login.ownerId) });
@@ -388,7 +391,7 @@ async function runTurn(
     }
     // The owner engine: an Admin user only (resolveChatAgent never hands a
     // member or a client an owner agent; this is the route's own check).
-    if (login.kind !== 'admin') return noAgent;
+    if (!admin) return noAgent;
 
     // Hand the turn the attachment's extracted text (+ the raw image for a
     // vision-capable responder). The runtime is transcript-default: it folds
@@ -512,7 +515,7 @@ async function runTurn(
     // The failed turn's text is mostly the provider's answer: an Admin user
     // reads it (it set the provider up), a member or a client gets a fixed
     // sentence and the detail stays in the log (fix round 1, L6).
-    return { status: 500, body: { error: login.kind === 'admin' ? msg : TURN_FAILED_MESSAGE } };
+    return { status: 500, body: { error: admin ? msg : TURN_FAILED_MESSAGE } };
   }
 }
 

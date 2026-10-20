@@ -731,7 +731,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const shell = await shellWorkspaces({
       loginId: mem,
       anchorId: owner,
-      user: null,
     });
     expect(shell.workspaces.find((w) => w.id === team)).toMatchObject({
       kind: 'other',
@@ -1125,7 +1124,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const ownerShell = await shellWorkspaces({
       loginId: owner,
       anchorId: owner,
-      user: null,
     });
     expect(ownerShell.areas).toEqual(['settings', 'users', 'assistants', 'connectors', 'keys']);
     expect(ownerShell.workspaces.slice(0, 1)).toEqual([
@@ -1142,7 +1140,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const memShell = await shellWorkspaces({
       loginId: mem,
       anchorId: owner,
-      user: null,
     });
     expect(memShell.areas).toEqual([]);
     expect(memShell.workspaces.map((w) => w.name)).toContain('Team');

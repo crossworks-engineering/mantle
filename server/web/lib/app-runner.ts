@@ -34,12 +34,8 @@ import { asSystem } from '@mantle/db';
 import { memberMayWriteAppData, recordAppAccess } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
 import { appDbWrite } from '@mantle/content/app-db-write';
-import {
-  buildAppFrameTicket,
-  memberLoginActive,
-  type AppFrameTicket,
-  type MemberCaller,
-} from '@/lib/auth';
+import { buildAppFrameTicket, memberLoginActive, type AppFrameTicket } from '@/lib/auth';
+import type { Login } from '@/lib/auth/login';
 import {
   AppDbBody,
   appDbBodyError,
@@ -65,15 +61,19 @@ export function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'app-data');
 }
 
+/** Who runs an app below Admin: a login that is not an Admin user (the
+ *  route's adminFacts answer), its brain and its name. */
+export type AppRunLogin = Pick<Login, 'loginId' | 'brainId' | 'email' | 'displayName'>;
+
 /**
  * The seconds-lived frame ticket for a member's run (POST frame-ticket). It
  * names the login (`mem`), so the frame serves the published build and
  * re-checks the login; the owner frame's draft path refuses it.
  */
-export async function memberFrameTicket(member: MemberCaller, id: string): Promise<Response> {
+export async function memberFrameTicket(member: AppRunLogin, id: string): Promise<Response> {
   // One ticket per frame load; a burst beyond this is a token-mint loop:
   // the gate took the row's limit (lib/route-limits.ts memberFrameTicket).
-  const app = await memberAppOr404(member.anchorId, id, member.loginId);
+  const app = await memberAppOr404(member.brainId, id, member.loginId);
   if (app instanceof Response) return app;
   recordAppAccess({
     ownerId: app.ownerId,
@@ -84,7 +84,7 @@ export async function memberFrameTicket(member: MemberCaller, id: string): Promi
   });
   return NextResponse.json({
     ticket: buildAppFrameTicket({
-      ownerId: member.anchorId,
+      ownerId: member.brainId,
       appId: app.id,
       loginId: member.loginId,
     }),
@@ -138,7 +138,7 @@ export async function memberFrame(
  */
 export async function memberDbBroker(
   req: Request,
-  member: MemberCaller,
+  member: AppRunLogin,
   id: string,
 ): Promise<Response> {
   // Generous (a running app is query-chatty) but bounded: the gate took
@@ -149,7 +149,7 @@ export async function memberDbBroker(
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   }
-  const app = await memberAppOr404(member.anchorId, id, member.loginId);
+  const app = await memberAppOr404(member.brainId, id, member.loginId);
   if (app instanceof Response) return app;
 
   const { op, sql, params } = parsed.data;
@@ -211,16 +211,16 @@ export async function memberDbBroker(
  */
 export async function memberToolBroker(
   req: Request,
-  member: MemberCaller,
+  member: AppRunLogin,
   id: string,
 ): Promise<Response> {
   // The gate took the row's limit (lib/route-limits.ts memberToolBroker).
   return runAppToolBroker(req, {
     via: 'member',
-    ownerId: member.anchorId,
+    ownerId: member.brainId,
     runner: { loginId: member.loginId, name: memberName(member) },
     maxBytes: JSON_BODY_CEILING_BYTES,
-    app: () => memberAppOr404(member.anchorId, id, member.loginId),
+    app: () => memberAppOr404(member.brainId, id, member.loginId),
     // The verdict reads the tool registry, and the run enters the app's
     // scope from outside the login's: system bookkeeping, by the named door.
     system: (fn) => appDataSystem(fn),

@@ -1,4 +1,4 @@
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 
@@ -19,7 +19,7 @@ import { CACHE_CONTROL } from '@/lib/cache-control';
  */
 
 export async function GET(req: Request): Promise<Response> {
-  const login = chatLoginCaller();
+  const login = chatCaller();
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;

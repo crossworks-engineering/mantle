@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { resolveChatAgentToWrite } from '@/lib/assistant-chat';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 import { readJson } from '@/lib/read-body';
@@ -18,7 +18,7 @@ const Body = z.object({
  * Owner-gated → works with a mobile bearer token.
  */
 export async function POST(req: Request) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
 
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {

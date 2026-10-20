@@ -10,7 +10,8 @@ import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { ownerCaller, ownerCallerWithLogin } from '@/lib/auth';
+import { ownerCaller, ownerLoginCaller } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -63,10 +64,10 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // The owner and the login's kind: the gate's answer for this request (A6b:
-  // the login's row was read again on the system pool before).
-  const caller = ownerCallerWithLogin();
-  const user = caller.user;
+  // The login the gate answered for this request; whether it is an Admin
+  // user is adminFacts, asked of its scope.
+  const login = ownerLoginCaller();
+  const user = { id: login.brainId };
   const { id } = await ctx.params;
   const body = await readBody(req, PatchBody);
   const { name, trustTools, ...rest } = body;
@@ -75,7 +76,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // author ceiling, its MCP access or the informational flag.
   if (
     (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&
-    caller.kind !== 'admin'
+    !(await adminFacts(login)).admin
   ) {
     return NextResponse.json(
       {

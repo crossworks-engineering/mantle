@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import type { AuthWhoami } from '@mantle/client-types';
-import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
+import { legacyLogin, publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
+import { adminFacts } from '@/lib/auth/login';
 import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
@@ -37,18 +38,20 @@ const ROUTES = {
 } as const;
 
 export async function GET() {
-  const login = await publicLoginCaller();
+  const login = await publicLoginItself();
   if (!login) return unauthorizedRefusal();
-  const displayName =
-    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
+  // The display role (and its client routes) stays the session's until the
+  // role is derived from Admin membership (plan v3.2 S8b); whether the login
+  // is an Admin user is adminFacts (no scope here: the row's answer).
+  const role = legacyLogin(login).kind;
   const body: AuthWhoami = {
-    role: login.kind,
+    role,
     loginId: login.loginId,
     email: login.email,
-    displayName: displayName ?? null,
-    ...ROUTES[login.kind],
+    displayName: login.displayName ?? null,
+    ...ROUTES[role],
     ...(await brainIdField()),
-    ...(await loginWorkspaces('whoami', workspaceCaller(login), login.kind === 'admin')),
+    ...(await loginWorkspaces('whoami', workspaceCaller(login), (await adminFacts(login)).admin)),
   };
   return NextResponse.json(body);
 }

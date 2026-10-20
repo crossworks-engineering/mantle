@@ -36,6 +36,6 @@ export async function memberAppOr404(
 }
 
 /** Who a member is on the team surface and in the access log. */
-export function memberName(member: MemberCaller): string {
+export function memberName(member: Pick<MemberCaller, 'displayName' | 'email'>): string {
   return member.displayName?.trim() || member.email.split('@')[0] || 'member';
 }

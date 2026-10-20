@@ -21,6 +21,16 @@
  *  - a pairing code's claim and a peer's risky tools: the Admin pair, so
  *    the role=admin login outside Admin claims nothing and its peer names
  *    no risky tool.
+ * Round 2, the same narrowing of the role=admin login outside Admin:
+ *  - the owner rows that branched on the owner answer's kind (an app's
+ *    brokers, its frame ticket, a new app's author ceiling, the Admin
+ *    switches of PATCH /api/apps/:id), in the owner guard's scope;
+ *  - the chat rows (which assistants, the limits, the error detail), in
+ *    the chat guard's scope;
+ *  - the public rows (whoami's areas, OAuth consent), with no scope (the
+ *    row's answer);
+ *  - a role change in the Admin workspace (WsCaller's Admin only), in the
+ *    any-login scope.
  *
  * The cells run with the box modes warn (the full run) and on.
  *
@@ -83,6 +93,29 @@ describe.skipIf(!URL)('the c2 handlers on the Login and adminFacts', () => {
         if (login instanceof Response) throw new Error(`no login for ${id}: ${login.status}`);
         expect(m.currentScope().kind).toBe('user');
         return fn(login);
+      }),
+    );
+  };
+
+  /** A guard's answer for `id` in the real request scope of the row `key`
+   *  (its `:id` a fresh uuid). */
+  const inGuardRow = async <T>(
+    key: string,
+    id: string,
+    guard: () => Promise<unknown>,
+    fn: (answer: never) => Promise<T>,
+  ): Promise<T> => {
+    const { buildRoutePolicy } = await import('./route-policy');
+    const { routeManifest } = await import('../../server/route-manifest.gen');
+    const row = [...buildRoutePolicy(routeManifest).values()].find((r) => r.key === key);
+    if (!row) throw new Error(`no row ${key}`);
+    const path = row.pattern.replace(/:\w+/g, randomUUID());
+    const ctx = { ...ctxFor(id, path), method: row.method, route: row };
+    return rc.runWithRequestContext(ctx, () =>
+      m.runInRequestSlot(async () => {
+        const got = await guard();
+        if (got instanceof Response) throw new Error(`${key}: no answer for ${id}: ${got.status}`);
+        return fn(got as never);
       }),
     );
   };
@@ -159,7 +192,7 @@ describe.skipIf(!URL)('the c2 handlers on the Login and adminFacts', () => {
   it('the keys area, in the scope (GET) and unscoped (POST): the drift member narrows only', async () => {
     const scoped = await table((id) =>
       inRow('GET /api/access-keys', id, async (login) => [
-        await ws.requireArea(ws.workspaceCaller(session.legacyLogin(login)), 'keys'),
+        await ws.requireArea(ws.workspaceCaller(login), 'keys'),
         (await facts.adminFacts(login)).areas.has('keys'),
       ]),
     );
@@ -168,7 +201,7 @@ describe.skipIf(!URL)('the c2 handlers on the Login and adminFacts', () => {
         riq.inRuleInQuery(async () => {
           expect(m.currentScope().kind).toBe('system');
           return [
-            await ws.requireArea(ws.workspaceCaller(session.legacyLogin(login)), 'keys'),
+            await ws.requireArea(ws.workspaceCaller(login), 'keys'),
             (await facts.adminFacts(login)).areas.has('keys'),
           ] as [unknown, unknown];
         }),
@@ -202,6 +235,103 @@ describe.skipIf(!URL)('the c2 handlers on the Login and adminFacts', () => {
       memIn: ['update-app', 'token'],
       mem: ['update-app', 'token'],
     });
+  });
+
+  const NARROWS_OUT = {
+    adm: [true, true],
+    lim: [true, true],
+    out: [true, false], // narrower: role admin outside Admin is no Admin user
+    memIn: [false, false],
+    mem: [false, false],
+  };
+
+  it('Admin on the owner rows (app brokers, frame ticket, new app): the drift admin narrows only', async () => {
+    for (const key of [
+      'GET /api/apps',
+      'POST /api/apps',
+      'POST /api/apps/:id/frame-ticket',
+      'POST /api/apps/:id/db-broker',
+      'POST /api/apps/:id/tool-broker',
+    ]) {
+      const got = await table((id) =>
+        inGuardRow(
+          key,
+          id,
+          () => session.getOwnerOr401WithLogin(),
+          async (owner: import('./session').OwnerRouteLogin) => {
+            expect(m.currentScope().kind).toBe('user');
+            const login = session.ownerAnswerLogin(owner);
+            if (!login) throw new Error('the owner answer carries no login');
+            return [owner.kind === 'admin', (await facts.adminFacts(login)).admin];
+          },
+        ),
+      );
+      expect(got, key).toEqual(NARROWS_OUT);
+    }
+  });
+
+  it('Admin on the chat rows (assistants, limits, error detail): the drift admin narrows only', async () => {
+    const { chatAdmin } = await import('../assistant-chat');
+    for (const key of [
+      'POST /api/assistant/turn',
+      'GET /api/assistant/thread',
+      'POST /api/assistant/transcribe',
+    ]) {
+      const got = await table((id) =>
+        inGuardRow(
+          key,
+          id,
+          () => session.getChatLoginOr401(),
+          async (chat: import('./session').ChatLogin) => {
+            expect(m.currentScope().kind).toBe('user');
+            return [chat.kind === 'admin', await chatAdmin(session.chatCallerOf(chat))];
+          },
+        ),
+      );
+      expect(got, key).toEqual(NARROWS_OUT);
+    }
+  });
+
+  it('Admin on the public rows (whoami, OAuth consent), with no scope: the drift admin narrows only', async () => {
+    for (const key of [
+      'GET /api/auth/whoami',
+      'GET /api/oauth/authorize',
+      'POST /api/oauth/authorize',
+    ]) {
+      const got = await table((id) =>
+        inGuardRow(
+          key,
+          id,
+          () => session.getLoginOr401(),
+          async (login: import('./login').Login) => {
+            expect(m.currentScope().kind).toBe('system');
+            return [
+              session.legacyLogin(login).kind === 'admin',
+              (await facts.adminFacts(login)).admin,
+            ];
+          },
+        ),
+      );
+      expect(got, key).toEqual(NARROWS_OUT);
+    }
+  });
+
+  it("a role change's Admin only (WsCaller): the drift admin narrows only", async () => {
+    for (const key of [
+      'POST /api/workspaces/:id/users',
+      'DELETE /api/workspaces/:id/users/:loginId',
+    ]) {
+      const got = await table((id) =>
+        inRow(key, id, async (login) => {
+          const caller = ws.workspaceCaller(login);
+          return [
+            session.legacyLogin(login).kind === 'admin',
+            (await facts.adminFacts(caller.login!)).admin,
+          ];
+        }),
+      );
+      expect(got, key).toEqual(NARROWS_OUT);
+    }
   });
 
   it("a peer's Admin facts (risky tools, the owner's own peer): the Admin pair, not the role", async () => {

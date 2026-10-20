@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { resolveChatAgent, resolveChatAgentToWrite } from '@/lib/assistant-chat';
 import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
@@ -16,7 +16,7 @@ import { readJson } from '@/lib/read-body';
  * reads and archives only those.
  */
 export async function GET(req: Request) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const slug = new URL(req.url).searchParams.get('agent') ?? undefined;
   const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ threads: [] });
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const body = (await readJson(req, { empty: null })) as { agent?: unknown } | null;
   const slug = typeof body?.agent === 'string' && body.agent ? body.agent : undefined;
   const agent = await resolveChatAgentToWrite(login, slug);

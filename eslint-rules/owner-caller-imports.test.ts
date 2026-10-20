@@ -164,6 +164,7 @@ describe('owner-caller-imports', () => {
       'cookieUpgradeCaller',
       'ownerCallerAtRead',
       'publicLoginCaller',
+      'publicLoginItself',
     ]);
     const pub = '/r/server/web/app/api/auth/logout/route.ts';
     const page = '/r/server/web/app/api/pages/[id]/route.ts';

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
@@ -18,7 +18,7 @@ import { inRuleInQuery } from '@/lib/auth/rule-in-query';
  * click only), or the new chat would start with nothing to continue from.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   // The login's own thread (W7c): another login's thread is not found, nor

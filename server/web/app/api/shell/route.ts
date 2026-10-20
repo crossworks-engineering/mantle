@@ -36,7 +36,7 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  * install), so it's safe in a GET.
  */
 async function handleGET(login: Login) {
-  const caller = workspaceCaller(legacyLogin(login));
+  const caller = workspaceCaller(login);
   // Whether the login is an Admin user, asked of its scope (adminFacts,
   // plan v3.2 section 2.2): what only an Admin user has answers its empty
   // value for every other login.

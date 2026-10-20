@@ -43,10 +43,19 @@ vi.mock('./dbos-client', () => ({
   }),
 }));
 
+// Whether the chat login is an Admin user is adminFacts' answer (plan v3.2
+// section 2.2), stood in here from the stand-in Login.
+vi.mock('./auth/login', () => ({
+  adminFacts: vi.fn(async (l: { admin?: boolean }) => ({
+    admin: l.admin === true,
+    areas: new Set(),
+  })),
+}));
+
 const OWNER = '33333333-3333-4333-8333-333333333333';
 const login = (kind: 'admin' | 'member', loginId: string) =>
   ({
-    kind,
+    asLogin: { loginId, admin: kind === 'admin' } as never,
     ownerId: OWNER,
     loginId,
     source: 'web',

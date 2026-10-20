@@ -74,7 +74,8 @@ import type {
   WorkspaceLandingApp,
 } from '@mantle/client-types';
 import type { LoginRole } from '@mantle/client-types/role-names';
-import type { AnyLogin, SessionUser } from '@/lib/auth';
+import { loginSessionUser } from '@/lib/auth';
+import { adminFacts, type Login } from '@/lib/auth/login';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
@@ -104,12 +105,14 @@ defineDomainError(WsError, {
 
 const NOT_FOUND = () => new WsError(404, 'not_found', 'Workspace not found.');
 
-/** Who calls: any login. `user` is the admin session (anchor id + actor),
- *  needed for a role change; null for a member. */
+/** Who calls: any login, with its Login (whether it is an Admin user is
+ *  adminFacts(caller.login), as a role change asks). A caller built with
+ *  no Login (an area ask about a login, loginHoldsArea) is no Admin user:
+ *  a role change refuses it. */
 export type WsCaller = {
   loginId: string;
   anchorId: string;
-  user: SessionUser | null;
+  login?: Login;
 };
 
 /**
@@ -119,10 +122,8 @@ export type WsCaller = {
  * gate's any-login answer step resolved the login, entered its scope and
  * wrote the api.write row.
  */
-export function workspaceCaller(login: AnyLogin): WsCaller {
-  return login.kind === 'admin'
-    ? { loginId: login.loginId, anchorId: login.user.id, user: login.user }
-    : { loginId: login.loginId, anchorId: login.member.anchorId, user: null };
+export function workspaceCaller(login: Login): WsCaller {
+  return { loginId: login.loginId, anchorId: login.brainId, login };
 }
 
 /** Run a workspace route for the login the handler read (loginCaller()):
@@ -146,7 +147,7 @@ export function workspaceCaller(login: AnyLogin): WsCaller {
  *  mantle_ws_set_assistant, mantle_ws_set_landing, mantle_ws_archive;
  *  0309, S2b). No TypeScript writes the workspace tables. */
 export async function wsRoute(
-  login: AnyLogin,
+  login: Login,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
@@ -997,7 +998,13 @@ function mayChangeAdminUsers(seen: Seen): void {
  *  system pool with the caller's write scope set on the transaction: the
  *  write role holds no right on the login's rows, and the
  *  definer acts for the scope's login. */
-function adminRoleChange(...args: Parameters<typeof roleChangeOnSystemPool>): Promise<void> {
+async function adminRoleChange(...args: Parameters<typeof roleChangeOnSystemPool>): Promise<void> {
+  // An Admin user's only: asked of the caller's own scope (adminFacts),
+  // before the work leaves it for the system pool.
+  const login = args[0].login;
+  if (!login || !(await adminFacts(login)).admin) {
+    throw new WsError(403, 'admin_only', 'Only an Admin user can change who is an Admin user.');
+  }
   return withSystemPoolInWriteScope(() => roleChangeOnSystemPool(...args));
 }
 
@@ -1008,10 +1015,8 @@ async function roleChangeOnSystemPool(
   path: { method: 'POST' | 'DELETE'; path: string },
   change: (tx: Exec) => Promise<void>,
 ): Promise<void> {
-  const actor = caller.user;
-  if (!actor) {
-    throw new WsError(403, 'admin_only', 'Only an Admin user can change who is an Admin user.');
-  }
+  // adminRoleChange asked adminFacts of this very Login.
+  const actor = loginSessionUser(caller.login!);
   const target = UUID_RE.test(loginId) ? await loadLoginTarget(loginId) : null;
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   if (target.role === role) {
