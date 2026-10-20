@@ -226,3 +226,51 @@ When a handler moves from the legacy `kind` to `adminFacts(login)`:
    has legacy `kind` 'admin' but adminFacts answers no. A handler that
    decided on `kind` for such a login narrows: a cell per site, or it
    stays on the legacy shape until S8b.
+
+#### Gates (fix round 1)
+
+Mac (DATABASE_URL unset), on 942a45d78 (the last code commit; the commit
+after it adds this table only):
+
+| gate | exit |
+|---|---|
+| pnpm -r typecheck | 0 |
+| pnpm lint | 0 |
+| pnpm format:check | 0 |
+| pnpm docs:check | 0 |
+| pnpm arch:check | 0 |
+| pnpm -C server/web build | 0 |
+| pnpm exec vitest run server packages eslint-rules | 0 (857 files passed, 269 skipped) |
+
+The first Mac run (on 808bbb844) answered arch 1 and unit 1: a heading
+named a step code (renamed, 2b46a42df), and the warning was a console
+call over the consoleCalls pin (moved to `log('auth').warn`,
+942a45d78). The same unit run had one failure in
+`server/web/lib/deploy-scripts.test.ts` (the deploy harness, untouched
+here); rerun alone it passed (exit 0), and the full run on 942a45d78
+passed. A known flake, both runs reported.
+
+Workstation (own clone `s8c-fr1-clone`, own `s8c-fr1-pg`, pgvector pg18,
+max_connections=450, port 56191 checked free, the `postgres` role as CI;
+MANTLE_CHECK_FLOOR=keep; systemd-run --user; --maxWorkers=3; one at a
+time). The suites ran on ba3bab884 (the memo fix and its cells); the
+commits after it change the warning's logger and docs only, and the cells
+and the touched files ran again on 942a45d78:
+
+| run | head | exit | result |
+|---|---|---|---|
+| admin-facts cells, warn | ba3bab884, 942a45d78 | 0, 0 | 10 passed |
+| admin-facts cells, test:actor-on config | ba3bab884, 942a45d78 | 0, 0 | 10 passed |
+| admin-facts cells, test:edit-on config | ba3bab884, 942a45d78 | 0, 0 | 10 passed |
+| the touched files (lib/auth, workspaces, grants, middleware, access keys, shell) | ba3bab884, 942a45d78 | 0, 0 | 28 files, 299 passed |
+| full vitest with DB | ba3bab884 | 0 | 1126 files, 13863 passed, 1 skipped |
+| test:actor-off | ba3bab884 | 0 | 128 files, 1168 passed, 1 skipped |
+| test:actor-on | ba3bab884 | 0 | 30 files, 371 passed, 1 skipped |
+| test:edit-on | ba3bab884 | 0 | 42 files, 541 passed |
+| test:matrix | ba3bab884 | 0 | 4 files, 8 passed |
+| test:runtime-role, full config | ba3bab884 | 0 | 277 files, 2774 passed, 1 skipped |
+
+Mutation check: c1's `login.ts` (the old memo, at ece66b9ab) with the new
+cells answered exit 1, three cells failing (copy after real; demote,
+forget, find again; two scopes), the other seven passing; restored by git
+checkout. The cells catch the MED item.
