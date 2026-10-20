@@ -470,3 +470,142 @@ their own run (in the report).
   packages/tools/src/builtins-eval.ts 1 (a read). `readSql` does not exist
   yet.
 - The Telegram moderated-chat definer (a migration), as round 1 found.
+
+## Round 2b (feat/s10-r2b, from main 975bee317, v0.300.114)
+
+The rest of round 2 outside the other lanes. No migration, no definer.
+
+### Sites
+
+| File:line (on main)                               | Kind                     | Became                                                                  |
+| ------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
+| packages/db/src/call-audit.ts:320                 | write (systemDb.execute) | `systemDb.insert(auditLog).select(...)`                                 |
+| packages/db/src/extract-skip-backfill.ts:85       | write (systemDb.execute) | `systemDb.update(nodes)`                                                |
+| packages/db/src/space-carry.ts:98                 | write (q.execute)        | `q.delete(nodes)`, the same transaction                                 |
+| packages/db/src/space-carry.ts:116                | write (WITH ... UPDATE)  | `q.update(nodes).from(<the ranked rows as a subquery>)`                 |
+| packages/db/src/space-carry.ts:143, 148           | write (q.execute)        | `q.update(nodes)`, the same transaction                                 |
+| packages/db/src/store-broker.ts:380               | write (db.execute)       | `db.delete(storeTombstones)`                                            |
+| server/web/lib/auth/first-owner.ts:49             | write (db.execute)       | `db.insert(authUsers).select(...)`, the same WHERE NOT EXISTS           |
+| server/web/lib/integrity/audit.ts:250-307 (5)     | non-literal (read)       | `sql.raw(readSql(<the shared catalog text>))`                           |
+| server/web/lib/maintenance/ocr-rescan.ts:232      | non-literal (in a SET)   | the key array bound: `array[$1, ...]::text[]`                           |
+| server/web/scripts/backfill-conversation.ts:301   | non-literal (DDL)        | `sql.identifier(SUMMARIZE_TRIGGER)`                                     |
+| server/web/scripts/backfill-conversation.ts:323   | non-literal (DDL)        | the same                                                                |
+| server/web/scripts/extract-backfill.ts:92         | non-literal (read)       | one tagged template with optional fragments                             |
+| server/web/scripts/extract-images-backfill.ts:161 | non-literal (read)       | a tagged template; the pattern and the limit bound                      |
+| server/web/scripts/extract-images-backfill.ts:265 | non-literal (read)       | a tagged template with an optional limit                                |
+| packages/search/src/entities.ts:411               | non-literal (read)       | `client.unsafe(readSql(queryText)).simple()` (the simple protocol kept) |
+
+`readSql` is new: packages/db/src/read-sql.ts, exported from @mantle/db. It
+answers the text itself when it is one statement that reads and throws
+`NotReadSqlError` otherwise (isWriteSql: a write verb, DDL, a write clause
+anywhere, a row lock, a sequence or advisory lock call; or a `;` with more
+after it outside quotes, comments and dollar quotes). Strict on purpose: a
+read that needs FOR UPDATE stays literal text. read-sql.test.ts: each of
+the five shared catalog texts passes unchanged, writes and two statements
+throw. The entities read keeps its inlined values (the simple protocol
+takes no parameters; each value is checked before, as it was).
+
+The packages/db sites sit outside packages/db/src/gateway and narrow-route,
+as asked. Nothing needed packages/files, packages/content/src/tree or the
+Telegram moderated-chat definer: carrySpaceRows keeps its signature
+(`Pick<Db, 'execute'>`, the type packages/content tree/node-ops.ts gives its
+transaction) and checks at run time that it was handed a drizzle
+transaction before its first write.
+
+### Same rows, actor and scope
+
+- The insert-selects (audit_log, auth.users): drizzle names every column of
+  the table, so the select gives each a value in the table's order. The
+  columns the raw text left out take their column defaults' values:
+  audit_log `id` gen_random_uuid(), `created_at` now(); auth.users
+  `created_at` now(), `display_name`, `last_login_at`, `contact_id`,
+  `disabled_at` null, `session_epoch` 0. The column-grant guard
+  (write-role-inserts.test.ts) has nothing to read: neither table is one
+  the write role inserts by column (audit_log is the system pool's, and the
+  narrow role's grants are table-wide).
+- space-carry: the target cannot take an alias, so each fragment takes the
+  row it reads (`"nodes"."path"` for the target, `n.path` in the subquery
+  that reads nodes as n); the `nodes b` subqueries hide the table's name,
+  so `"nodes"."owner_id"` there is the row the delete reads, as `n.owner_id`
+  was. The file rename's leading WITH moved into the update's FROM as a
+  subquery: the same snapshot, the same ranked rows.
+- extract-skip-backfill, store-broker: the same SET and WHERE fragments.
+- ocr-rescan: the keys were inlined literals, now bound text; the same array.
+- The scripts' reads: the same conditions in the same order; the pattern,
+  the dates and the limits bound where they were inlined (the regex is the
+  same string).
+
+Probe (workstation, a fresh migrated scratch database per run): one script
+ran the converted functions themselves from main's clone and from the
+branch's, with the same seed, and printed the rows they left (ids replaced
+by titles): createFirstOwner (the row's columns, a second call answering
+`exists`); carrySpaceRows as a lift (merge of a member folder, a file name
+clash renamed `a-2.txt` and `b-2`), a rename that clamps deeper folders, and
+a Files move (the `space_files` mirror); backfillTerminalSkips dry and
+applied (the stamp's reason, the telegram rule); forgetTombstones. The two
+outputs are byte-equal (`diff` exit 0). call-audit's insert: the
+a5-call-audit cells read the row's columns and pass on the branch.
+
+### Routes and labels
+
+No write changed its route:
+
+- call-audit, extract-skip-backfill: `systemDb.execute` and `systemDb.insert`
+  / `update` take the same handle (the narrow route in a turn or request
+  scope while its switch is on, else the system pool).
+- space-carry, ocr-rescan: `tx.execute` to `tx.<verb>`, the same transaction.
+- store-broker forgetTombstones: its one caller is the store sweep (the cron
+  worker and the CLI), outside any request scope: `db.execute` and
+  `db.delete` are both `getDb()`.
+- first-owner: the signup row binds a system actor and opens no request
+  scope, and scripts/onboard.ts runs outside one: `db.execute` and
+  `db.insert` are both `getDb()`. Inside a request scope (no caller does
+  it) the typed insert would go to the system pool by typedWrite and note
+  `typed-write` for auth.users, where the raw text ran in the scope.
+- The three round 2a scripts (dedupe-edges, relations-backfill, traces-reap)
+  now give drizzle a client of its own (a second connection to the same
+  DATABASE_URL, closed after the write): drizzle sets its client's date
+  parsers to pass text through, so a read on the shared client after it
+  (relations-backfill's pg_notify loop; none returned or bound a date
+  there, so nothing changed before either) can no longer be touched. Each
+  write is one autocommit statement as before.
+
+Labels: none changes. No converted write passes typedWrite or
+loginWriteClient on a path a caller reaches, so the fail-open sites
+(scripts/arch-scoreboard-box.sh) and the request-scope write label count
+the same. A narrow-route denial's detail quotes the statement's text, which
+for the audit row is now drizzle's (`insert into "audit_log" ("id", ...`).
+
+### Round 2a audit lows
+
+- historyCodeComments: measured 2335 on main and on the branch; the pin was
+  already 2335 (main lowered it with round 2a); its note now leads with the
+  measure.
+- Cells: server/api/src/agent/telegram-heal.db.test.ts (the heal is now
+  `healRepliedTelegramMessages`, which drainPending calls; a scratch
+  database, as the heal reads every row): replied rows flip, a set
+  processed_at is kept, an unreplied, an already processed and an
+  inbound-answered row stay; the raw text, run first and rolled back, picks
+  the same rows. server/web/lib/push/device-cap.db.test.ts: twelve devices
+  plus a new one drop the three oldest (two share a created_at at the cap's
+  edge, so the id decides), the raw text picks the same, another login's
+  device stays.
+- The scripts' drizzle client: above.
+- docs/fail-open.md: `public.traces` is a row of the S4b table (the
+  integrity screen's delete in an Admin user's scope, proposed reason
+  `'integrity-repair'`).
+
+### Pins
+
+| Pin                 | Before | After |
+| ------------------- | ------ | ----- |
+| rawWriteSqlScoped   | 9      | 1     |
+| rawSqlNonLiteral    | 75     | 63    |
+| rawWriteSqlFiles    | 36     | 26    |
+| historyCodeComments | 2335   | 2335  |
+
+RAW_WRITE_PINS lost eleven entries (call-audit 1, extract-skip-backfill 1,
+space-carry 4, store-broker 1, first-owner 1, integrity/audit 5,
+ocr-rescan 1, backfill-conversation 2, extract-backfill 1,
+extract-images-backfill 2, entities 1). The one literal write left is the
+restamp's home grant (packages/files/src/ops/files.ts, raw on purpose).
