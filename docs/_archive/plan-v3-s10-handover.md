@@ -609,3 +609,44 @@ space-carry 4, store-broker 1, first-owner 1, integrity/audit 5,
 ocr-rescan 1, backfill-conversation 2, extract-backfill 1,
 extract-images-backfill 2, entities 1). The one literal write left is the
 restamp's home grant (packages/files/src/ops/files.ts, raw on purpose).
+
+### Gates
+
+Code head 8b2c48c54 (the conversions and cells). The commits after it
+change this file only.
+
+Mac, DATABASE_URL unset, on 8b2c48c54: `pnpm -r typecheck` 0, `pnpm lint` 0
+(one warning, an unused disable in contact-sharing-routes.db.test.ts, on
+main too), `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `vitest run server packages eslint-rules` 0
+(860 files passed, 11098 tests). After the handover commit: format:check
+0, docs:check 0, arch:check 0.
+
+Workstation (own clones ~/s10-r2b/clone and ~/s10-r2b/main for the probe,
+own container s10-r2b-pg on 127.0.0.1:56546, pgvector pg18,
+max_connections=450, the `postgres` role as CI's, init-scratch and migrate
+with MANTLE_CHECK_FLOOR=keep, systemd-run --user, --maxWorkers=3, one at a
+time), on 8b2c48c54: full vitest 0 (13927 passed, 1 skipped),
+test:actor-off 0 (1195), test:actor-on 0 (380), test:edit-on 0 (550),
+test:matrix 0 (8), test:runtime-role in full 1 then 0 on its one rerun
+(2811 passed both times; the first run's exit was an unhandled
+CONNECTION_CLOSED from a pool closing at the teardown of
+w7e-member-scope.db.test.ts, a file this round does not touch). The probe
+(above) diff exit 0.
+
+CI: run 39407726636 on 8b2c48c54: success.
+
+### Open items for r3
+
+- rawWriteSqlScoped 1: the restamp's home grant
+  (packages/files/src/ops/files.ts, the S13 lane), raw until a definer.
+- rawSqlNonLiteral 63: packages/db's gateway and narrow route (their own
+  pass-through statements, pinned), access-matrix.ts, runtime-role.ts,
+  scope-readable.ts and the other packages/db files (the S7a lane), and
+  packages/tools/src/builtins-eval.ts (a read). Each can take readSql where
+  its text only reads; inside packages/db that needs readSqlNames widened
+  to a relative import of ./read-sql.
+- readSql refuses FOR UPDATE and advisory locks as isWriteSql does; the
+  lint does not count them. A read that needs one stays literal text.
+- The Telegram moderated-chat definer (a migration), as round 1 found.
+- r3 (when the scoped pin is 0): rawWriteTarget and its test go.
