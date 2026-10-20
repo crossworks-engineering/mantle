@@ -147,6 +147,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
           if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_kind_root_id')) {
             throw new Error('DATABASE_URL must be set');
           }
+          // adminFacts' one statement in the login's scope (asked only for
+          // a login whose row holds the Admin pair): the scope holds
+          // Admin, as an Admin user's does; no area is stood in.
+          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_is_admin')) {
+            return [{ admin: true, areas: [] }];
+          }
           return [
             {
               id: '11111111-1111-4111-8111-111111111111',

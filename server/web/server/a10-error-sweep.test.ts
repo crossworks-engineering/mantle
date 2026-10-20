@@ -154,22 +154,34 @@ vi.mock('@mantle/db', async (importOriginal) => {
   });
   const db = new Proxy(real.db, {
     get: (t, k) => {
-      // In the handler, a forced failure: every use of the database throws it.
+      // adminFacts' one statement in the login's scope (asked only for a
+      // login whose row holds the Admin pair, at the top of the handler):
+      // the scope holds Admin, as an Admin user's does, and the forced
+      // failure is the handler's work, not this ask (the session's kind,
+      // which it replaced, read no database in the handler).
+      if (k === 'execute') {
+        return async (stmt: { queryChunks?: unknown[] }) => {
+          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_is_admin')) {
+            return [{ admin: true, areas: [] }];
+          }
+          if (faults.inHandler && faults.make) throw faults.make();
+          return [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              type: 'page',
+              edit: true,
+              manage: true,
+              copy: false,
+              home: null,
+              held: false,
+            },
+          ];
+        };
+      }
+      // In the handler, a forced failure: every other use of the database
+      // throws it.
       if (faults.inHandler && faults.make) throw faults.make();
       if (k === 'select') return () => none;
-      if (k === 'execute') {
-        return async () => [
-          {
-            id: '11111111-1111-4111-8111-111111111111',
-            type: 'page',
-            edit: true,
-            manage: true,
-            copy: false,
-            home: null,
-            held: false,
-          },
-        ];
-      }
       return Reflect.get(t, k);
     },
   });
