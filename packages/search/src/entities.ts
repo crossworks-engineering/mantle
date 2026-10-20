@@ -365,7 +365,7 @@ export function graphPathSql(opts: GraphPathOptions): string {
   const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
 
   // This runs via postgres.js's SIMPLE query protocol (simpleReadOnly:
-  // db.$client's unsafe().simple()), NOT drizzle's db.execute — which uses the extended protocol
+  // db.$client's unsafe().simple()), NOT drizzle's db.execute, which uses the extended protocol
   // (Parse/Bind/Execute). Under the extended protocol, a recursive-CTE array
   // column's type isn't pinned at parse time, so the cycle guard
   // `= any(path_ids)` fails with "op ANY/ALL requires array on right side";

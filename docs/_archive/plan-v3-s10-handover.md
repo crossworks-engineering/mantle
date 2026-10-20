@@ -678,7 +678,7 @@ TABLE, whose every CTE body starts with SELECT, VALUES, WITH or TABLE (a
 nested WITH read the same way), with no INSERT, UPDATE, DELETE or MERGE
 where a statement may start (the start or after `(`), no INTO, no row lock,
 and no call of a function on WRITE_FUNCTIONS (set_config, setseed, the
-advisory locks, nextval, setval, pg_notify, lo_*, lowrite, dblink*, the
+advisory locks, nextval, setval, pg_notify, lo__, lowrite, dblink_, the
 backend, WAL, replication, stat reset and file functions, query_to_xml*,
 cursor_to_xml*, ts_stat), matched as a call (quoted or schema-qualified
 too) so a value or a longer name never matches. Everything else throws:
@@ -779,3 +779,132 @@ workstation suites were not run again on this base.
   write (see its top comment). The roles stay the bound.
 - From round 2b: rawWriteSqlScoped 1 (the restamp's home grant),
   rawSqlNonLiteral 63, the Telegram moderated-chat definer, r3.
+
+### Fix round 2 (the re-audit at f77e3800f)
+
+Rebased on main a5bbb2373 (v0.300.119, the postgres.js teardown patch)
+with no conflict: main touched no file of the branch, the pins file
+included. Measured on the rebased head and again on the code head:
+rawWriteSqlScoped 1, rawSqlNonLiteral 63, rawWriteSqlFiles 26,
+historyCodeComments 2334, each its pin. No pin moved.
+
+#### A `--` comment that a carriage return ends (HIGH)
+
+Postgres ends a `--` comment at the first `\n` or `\r` (scan.l:
+non_newline is `[^\n\r]`); sqlCode (packages/db/src/sql-text.ts) ended it
+at `\n` only, so in `select 1 --x\r; delete from t where a = 1` it blanked
+the delete and readSql let it through, and the lint read no write. sqlCode
+now ends the comment at the first of the two; the lint reads with the same
+sqlCode, so both moved together. The other places sql-text reads a line
+end: `blanks` keeps only `\n` (a `\r` in a blanked comment or literal turns
+into a space, still whitespace), a quoted name's `\r` turns into `_`
+inside the name, and insertSelectPairs splits on `\s`. None hides code.
+
+Cells: read-sql.test.ts refuses a delete statement, an update statement
+and a delete CTE after a comment a `\r` ends; sqlCode cuts two statements
+for `\n`, `\r` and `\r\n` alike, and a read with code after the `\r`
+passes unchanged. cleanup-counts.test.ts: the lint finds the delete and the
+delete CTE after a `\r` (and readSql refuses the same texts); a delete
+inside a comment ended by `\r\n` is still none.
+
+Two more readers outside this lane have the same gap (`--[^\n]*` or
+`indexOf('\n')`): packages/db/src/gateway/narrow-route.ts sqlCode (its
+transaction-control, role-change and session-SET refusals could be hidden
+behind `--x\r`; the S7a lane folds it onto sql-text after this merges) and
+gateway/handles.ts isWriteSql (fails closed there: executeWrite refuses a
+text it reads as no write). eslint-rules/rights-counts.mjs
+stripSqlComments reads the checked-in migrations the same way.
+
+#### Write functions, and the read-only backstop (MED)
+
+WRITE_FUNCTIONS (packages/db/src/read-sql.ts) gains `ts_rewrite` (runs
+its text argument), `pg_(?:clear|restore|set)_\w+_stats` (the pg18 stats
+writers, relation and attribute; `set` for the names of the pg18 betas),
+`brin_\w+`, `gin_clean_pending_list`, `pg_stat_\w*reset\w*` (was
+`pg_stat_reset\w*`: now pg_stat_statements_reset too),
+`pg_log_standby_snapshot` and `pg_backup_\w+`. read-sql.test.ts refuses
+each by name (ts_rewrite also schema-qualified), and the as-a-call cell
+reads six of them as a call, never as a value or a longer name.
+
+The backstop: text readSql let through now runs in a READ ONLY
+transaction, so Postgres refuses a write a function off the list makes.
+Its two callers, both covered:
+
+- graphPath (packages/search/src/entities.ts): `simpleReadOnly(text)`
+  opens `db.$client.begin`, starts `set transaction read only` and then
+  the walk on the simple protocol, both sent in one write (the order
+  matters: the system pool's client starts the read behind its actor SET
+  as soon as it is built, so the SET TRANSACTION is started first; the
+  first workstation run, with the two built in one array, let a writer
+  through and the cell caught it). Same pool as before: `db.$client`
+  outside a scope (the system pool), the turn scope's client in a turn.
+  Cost: a BEGIN and a COMMIT round trip around the walk, the read-only SET
+  pipelined with it.
+- the corpus audit (server/web/lib/integrity/audit.ts runCorpusAudit,
+  the five checks with readSql catalog text and the rest): every check in
+  one `readOnlyTransaction` (new, packages/db/src/read-only-tx.ts,
+  exported from @mantle/db): readTransaction (the reads' handle: the
+  scope's pool in a turn or request scope even where `db.transaction` is a
+  write, else the system pool, the pool `db.execute` took there) with
+  `set transaction read only` as its first statement. One connection for
+  the run instead of one per query; a failing check throws as before.
+
+No caller needs a write (measured): graph-path-read-only.db.test.ts finds
+a two-hop path outside a scope and runs the walk in a turn scope;
+audit-read-only.db.test.ts runs the whole audit on the anchor (pg-boss's
+schema made first, as the queue checks read it) and finds the five
+readSql checks among its rows. The refusal: each file makes a test-only
+function that inserts into a scratch table and one that calls nextval on
+a scratch sequence (neither on the list; readSql answers `select f()`
+unchanged), and Postgres refuses each with 25006 in the read-only
+transaction (graphPath's outside a scope and in a turn scope, the audit's
+helper), leaving no row and an uncalled sequence; the same calls outside
+it write (the cell has teeth). A cell reads
+`current_setting('transaction_read_only')` as `on` inside
+readOnlyTransaction. Both files pass in the default run (actor check
+warn, where the system pool's client sets the actor in a transaction) and
+under test:runtime-role.
+
+What READ ONLY does and does not stop, measured on pg18 (a probe in a
+throwaway container): it refuses INSERT, UPDATE, DELETE, MERGE, DDL
+(CREATE TEMP TABLE too), nextval and setval, row locks, and the same done
+inside a function, ts_rewrite's query text among them (a nextval there
+was refused). It does not stop set_config (with is_local false the
+setting outlived the transaction), advisory locks (a session lock was
+still held after the COMMIT), pg_notify, pg_restore_relation_stats and
+pg_clear_relation_stats (reltuples rewritten in pg_class inside a read-only
+transaction), brin_summarize_new_values, or the server and file
+functions. Those stay on WRITE_FUNCTIONS, the only bound for them; the
+list stays open-ended for anything of that kind it misses.
+
+Route and labels: no write route changed (both paths only read). The
+audit's statements leave the `db` proxy for readTransaction's handle: the
+same pool, but the proxy's per-statement notes (noteOwnRuleSystemRead,
+for member own-rule routes; the audit route is owner only) and its
+TypeScript actor check on `db.execute` are not passed per statement any
+more, as for every readTransaction caller.
+
+#### A WITH the lint could not walk (LOW)
+
+CTE_HEAD (sql-text.ts) read `as\s+(`, so `with x as(select 1) delete from
+t` and a second CTE written `b as(...)` left the WITH unwalked: readSql
+refused them (right) but rawWriteKind found nothing. Now `as\s*` and
+`materialized\s*` (the lint's WRITE_CTE too), and withParts marks a WITH
+whose statement starts with SEARCH or CYCLE as not walked (it read the
+clause as the statement before; readSql refused it there for its first
+word). When a WITH is not walked, rawWriteKind (eslint-rules/
+cleanup-counts.mjs) counts any insert, update, delete, merge or truncate
+in what is left as a write (FOR UPDATE and FOR NO KEY UPDATE left out);
+withParts now also returns that text when parentheses never close (it
+returned ''). Cells: cleanup-counts.test.ts finds `with x as(select 1)
+delete from t`, `with a as (select 1), b as(select 2) insert ...`, `with
+x as materialized(select 1) update ...`, and a SEARCH (depth and breadth)
+or CYCLE clause before a delete, an update or an insert, readSql refusing
+each; a SEARCH clause before a select and a CYCLE clause before a FOR
+UPDATE read are none. read-sql.test.ts: withParts walks the no-space
+heads, does not walk SEARCH or CYCLE, and readSql refuses the shapes.
+The repo's findings did not move (the four pins above).
+
+#### Gates
+
+GATES_TBD
