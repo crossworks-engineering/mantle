@@ -434,7 +434,7 @@ export function takeActorMisses(): ActorMiss[] {
 /** A NOTICE from an item table's write trigger (migration 0275). */
 export const SQL_MISS_PREFIX = 'mantle actor miss: ';
 
-/** A NOTICE from the narrow write count (migration 0311, report only):
+/** A NOTICE from the narrow write count (migration 0312, report only):
  *  `<check> <actor> <table> <op>`, check narrow-content-write or
  *  narrow-cascade-delete. */
 export const SQL_NARROW_PREFIX = 'mantle narrow write: ';

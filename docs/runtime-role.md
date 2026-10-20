@@ -307,7 +307,7 @@ changes nothing; the system-pool write scope carries the actor's write mode
 
 ### The narrow write count
 
-Report only (migration 0311): what the role would refuse once it is on by
+Report only (migration 0312): what the role would refuse once it is on by
 default is counted one release before, on every box, whatever the switch.
 Nothing is refused and no model work starts; the triggers raise a notice
 and the pool writes a miss row on another connection, as the actor check's
@@ -336,7 +336,7 @@ misses (at most one per check, actor and table an hour).
 actor and table rows in the fail-open rows' window; numbers only).
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so
 `current_user = session_user` is the pool login's), the box query and the
-revert (`packages/db/rollback/0311_narrow_write_observe.revert.sql`);
+revert (`packages/db/rollback/0312_narrow_write_observe.revert.sql`);
 `w7a-area-system-sweep.db.test.ts` runs every `systemWhole` tool with the
 switch on (narrow, no denial) and off (no content write counted).
 

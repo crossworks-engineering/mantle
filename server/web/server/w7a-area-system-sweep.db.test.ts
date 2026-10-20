@@ -409,7 +409,7 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
   // runs as mantle_system_narrow (uses by system:admin-area, no denial:
   // vitest.setup.ts fails the test on one); with the switch off, as on a
   // box today, none of its writes is a content write the count would
-  // report (migration 0311 narrow-content-write, narrow-cascade-delete), so
+  // report (migration 0312 narrow-content-write, narrow-cascade-delete), so
   // the flip refuses nothing these tools do. Last in the file: it reopens
   // the pools without the trap.
   it('the narrow-role proof: on the narrow role with the switch on, no content write counted with it off', async () => {

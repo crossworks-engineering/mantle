@@ -1,5 +1,5 @@
 /**
- * The narrow write count (plan v3.2 S7a part a3, migration 0311), report
+ * The narrow write count (plan v3.2 S7a part a3, migration 0312), report
  * only, on a real, migrated Postgres with the actor check in warn:
  *
  *  - narrow-content-write: a content write by a narrow reason's actor, as
@@ -12,7 +12,7 @@
  *  - the app's own path: with the switch off a narrow exit's content write
  *    outside a spot is counted, at a spot it is not.
  *  - the box count's query (scripts/arch-scoreboard-box.sh), and the
- *    revert (rollback/0311_narrow_write_observe.revert.sql).
+ *    revert (rollback/0312_narrow_write_observe.revert.sql).
  *
  * current_user = session_user: the cells that prove the predicate log in
  * as mantle_runtime (runtimeDatabaseUrl), the pool login of every fleet box,
@@ -46,7 +46,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
 const ROOT = join(__dirname, '..', '..', '..');
 const DIR = join(__dirname, '..', 'migrations');
-const TAG = '0311_narrow_write_observe';
+const TAG = '0312_narrow_write_observe';
 const REVERT = join(__dirname, '..', 'rollback', `${TAG}.revert.sql`);
 const PREFIX = 'mantle narrow write: ';
 const WRITE = 'update public.nodes set title = title where false';
@@ -276,11 +276,11 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
   });
 });
 
-describe.skipIf(!URL)('a database just before 0311 runs 0311 and only it, and its revert', () => {
+describe.skipIf(!URL)('a database just before 0312 runs 0312 and only it, and its revert', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let db: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
-  /** What 0311 changes in the catalog. */
+  /** What 0312 changes in the catalog. */
   const catalog = async () =>
     (
       await db<{ fn: string; cascade: number; actor: string | null; stmt: string | null }[]>`
@@ -327,7 +327,7 @@ describe.skipIf(!URL)('a database just before 0311 runs 0311 and only it, and it
     await scratch?.drop();
   });
 
-  it('the runner applies 0311 and only it; the revert leaves the catalog as before; a roll forward applies it again', async () => {
+  it('the runner applies 0312 and only it; the revert leaves the catalog as before; a roll forward applies it again', async () => {
     const before = await catalog();
     expect(before).toMatchObject({ cascade: 0, actor: null, stmt: null });
     expect(await apply()).toBe(1);

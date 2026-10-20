@@ -16,7 +16,7 @@ const journal = (
     entries: { idx: number; when: number; tag: string }[];
   }
 ).entries;
-const TAG = '0311_narrow_write_observe';
+const TAG = '0312_narrow_write_observe';
 
 /** The actor each request exit binds (viewer.ts noteRequestSystem). */
 const REQUEST_EXIT_REASON: Record<keyof typeof REQUEST_SYSTEM_ROUTE, string> = {
@@ -48,9 +48,9 @@ describe('mantle_narrow_actor names the narrow reasons (plan v3.2 S7a)', () => {
   });
 });
 
-describe('0311 is stamped above every `when` before it (renumber proof)', () => {
+describe('0312 is stamped above every `when` before it (renumber proof)', () => {
   const at = journal.findIndex((e) => e.tag === TAG);
-  it('is in the journal, after its predecessor, above S13s claimed 1790197980000', () => {
+  it('is in the journal, after its predecessor, above its predecessor's (0311, 1790197980000)', () => {
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.idx).toBe(journal[at - 1]!.idx + 1);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);

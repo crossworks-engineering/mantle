@@ -30,7 +30,7 @@
 --    own work (viewer.ts systemRouteNow); a write by a definer; a cascade
 --    from any other table.
 --
--- Re-runnable. Revert: packages/db/rollback/0311_narrow_write_observe.revert.sql.
+-- Re-runnable. Revert: packages/db/rollback/0312_narrow_write_observe.revert.sql.
 
 -- The triggers below take a lock on auth.users and agents: wait at most
 -- 30 s for it, then fail the roll (a migration never queues the box

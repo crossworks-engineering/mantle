@@ -35,7 +35,7 @@
 #     a brain reaches either only with no Admin workspace;
 #   - the narrow system role's counts (plan v3.2 S7a, report only): the
 #     distinct check, actor and table rows checked narrow-content-write,
-#     narrow-cascade-delete (migration 0311) and narrow-denied, in the
+#     narrow-cascade-delete (migration 0312) and narrow-denied, in the
 #     fail-open rows' window;
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
@@ -173,7 +173,7 @@ SQL
 # The narrow system role's counts (plan v3.2 S7a; report only): the
 # distinct check, actor and table rows of its miss rows in the same window
 # as the fail-open rows. narrow-content-write and narrow-cascade-delete:
-# migration 0311's count of a content write, or a delete that cascades into
+# migration 0312's count of a content write, or a delete that cascades into
 # content, by a narrow reason off the narrow role (what the role would
 # refuse once it is on, S7b); narrow-denied: a right the role does not hold,
 # met on the narrow route. Numbers only.
