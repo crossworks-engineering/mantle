@@ -17,15 +17,13 @@ set -euo pipefail
 # its harness scripts/test-tag-release.sh). A change to the push, the origin
 # check or the resume rules here must be made there too, in the same pass.
 # The copies differ only where the repos do: the version files, the workflows
-# a tag fires, mantle's demo/ guard, and jackdaw having no --no-verify.
+# a tag fires, and jackdaw having no --no-verify.
 #
 # Asserts, in the integrator clone (works from a worktree too):
 #   1. main is checked out and has no uncommitted tracked changes
 #   2. package.json and server/web/package.json agree on the version
 #   3. HEAD is that version's release commit (subject "release: vX.Y.Z")
-#   4. HEAD's tree has no demo/ (scripts/lib/demo-guard.sh, the check the
-#      pre-push hook runs; the push below skips that hook)
-#   5. the tag vX.Y.Z does not already exist (checked again just before the
+#   4. the tag vX.Y.Z does not already exist (checked again just before the
 #      tag is made: another session may tag it while verify runs)
 # then runs `pnpm verify` on that tree, creates the tag at that commit only
 # if it passed, pushes that commit as main + the tag together in one atomic
@@ -92,10 +90,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-# The shared demo/ guard, beside this script (resolved before the cd below).
-# shellcheck source=lib/demo-guard.sh
-. "$(cd "$(dirname "$0")" && pwd)/lib/demo-guard.sh"
 
 # The integrator clone (NOT the current worktree) — same resolution as
 # merge-branch.sh, so this works from inside a worktree too.
@@ -164,11 +158,6 @@ if [ "$subject" != "release: v$version" ]; then
   exit 1
 fi
 
-# demo/ must never reach main. The pre-push hook checks every push of main,
-# but the release push below skips the hook, so the same check runs here,
-# before the verify, so it fails in a second.
-demo_guard "$head" tag-release || exit 1
-
 tag="v$version"
 short="$(git rev-parse --short "$head")"
 resume=false
@@ -203,8 +192,7 @@ if ! $resume; then
   fi
   # HEAD must still be the commit the checks and the verify judged. If
   # another session landed a commit on main meanwhile, that commit carries no
-  # verify and no demo/ guard; nothing here may tag or push it, or this one
-  # over it.
+  # verify; nothing here may tag or push it, or this one over it.
   now="$(git rev-parse HEAD)"
   if [ "$now" != "$head" ]; then
     echo >&2

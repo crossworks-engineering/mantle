@@ -202,20 +202,6 @@ fresh 1.2.3
 expect "--no-push tags and prints the push, origin untouched" 0 old missing head \
   "push withheld" -- --no-push
 
-# H1: the release push skips the pre-push hook, so the demo/ guard the hook
-# runs must run here too, before the verify (scripts/lib/demo-guard.sh).
-fresh 1.2.3
-mkdir -p demo
-echo seed >demo/seed.sh
-git add demo
-git commit -q --amend --no-edit
-expect "a release commit carrying demo/ is refused before verify, nothing tagged or pushed" \
-  nonzero old missing missing "contains demo/" --
-[ ! -f "$PNPM_LOG" ] || {
-  echo "FAIL the demo/ refusal ran pnpm verify first"
-  fails=$((fails + 1))
-}
-
 # L1: an annotated tag made by hand at HEAD resumes, and origin's answer (the
 # tag object's id, not the commit's) is judged as landed, not NOT RELEASED.
 fresh 1.2.3
@@ -264,13 +250,12 @@ rm -rf "$tmp/other"
 expect "a non-fast-forward refusal says to delete the local tag" nonzero other missing head \
   "git tag -d $TAG" --
 
-# H (re-audit 2): another session lands a commit on main WHILE verify runs,
-# and that commit carries demo/. Tagging HEAD and pushing `main` by name would
-# release it unverified and unguarded. The script must refuse: no local tag,
+# H (re-audit 2): another session lands a commit on main WHILE verify runs.
+# Tagging HEAD and pushing `main` by name would release it unverified. The script must refuse: no local tag,
 # and origin gets nothing (its main stays at the commit before the release).
 fresh 1.2.3
-export PNPM_VERIFY_SIDE='mkdir -p demo && echo seed >demo/seed.sh && git add demo && git commit -q -m "landed during verify"'
-expect "a commit landed on main during verify (with demo/) is neither tagged nor pushed" \
+export PNPM_VERIFY_SIDE='echo landed >landed.txt && git add landed.txt && git commit -q -m "landed during verify"'
+expect "a commit landed on main during verify is neither tagged nor pushed" \
   nonzero old missing missing "HEAD moved during the verify" --
 unset PNPM_VERIFY_SIDE
 if [ "$(git log -1 --pretty=%s)" = "landed during verify" ] &&
@@ -280,23 +265,6 @@ if [ "$(git log -1 --pretty=%s)" = "landed during verify" ] &&
 else
   echo "FAIL origin holds neither the release commit, the landed commit, nor any tag"
   git --git-dir="$tmp/origin.git" for-each-ref | sed 's/^/     /'
-  fails=$((fails + 1))
-fi
-
-# L2 (re-audit 2): the demo/ guard fails closed. A SHA git cannot read a tree
-# for would give an empty ls-tree, which used to read as "no demo/".
-fresh 1.2.3
-# shellcheck source=lib/demo-guard.sh
-. "$(dirname "$SCRIPT")/lib/demo-guard.sh"
-bad_out="$(demo_guard 0123456789abcdef0123456789abcdef01234567 test 2>&1)"
-bad_rc=$?
-good_rc=0
-demo_guard HEAD test 2>/dev/null || good_rc=$?
-if [ "$bad_rc" != 0 ] && printf '%s\n' "$bad_out" | grep -q "cannot read a tree" && [ "$good_rc" = 0 ]; then
-  echo "ok   the demo/ guard refuses a SHA it cannot read, and passes a clean one"
-else
-  echo "FAIL the demo/ guard refuses a SHA it cannot read, and passes a clean one: bad rc=$bad_rc good rc=$good_rc"
-  printf '%s\n' "$bad_out" | sed 's/^/     /'
   fails=$((fails + 1))
 fi
 

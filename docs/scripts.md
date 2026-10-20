@@ -705,7 +705,7 @@ HEAD is read once, before the checks, and every later step names that SHA: the
 tag is made at it and the push sends `<sha>:refs/heads/main`, never `main` by
 name. If another session lands a commit on main while the verify runs, HEAD no
 longer matches and the script refuses (NOT tagged, NOT pushed), so a commit
-that skipped the verify and the demo/ guard can never ride the release push.
+that skipped the verify can never ride the release push.
 
 The push skips the pre-push hook on purpose: the hook would rerun the same
 verify inside `git push`, holding the connection to GitHub idle for minutes;
@@ -717,11 +717,8 @@ made by hand without a verify; if you did not make it with this script,
 `git tag -d` it and rerun. `--no-verify` skips the verify when the gates
 already ran on this exact commit; CI still runs on the tag.
 
-Because the push skips the hook, the hook's demo/ guard runs here too, against
-the release SHA before the verify: both source `scripts/lib/demo-guard.sh`,
-which fails closed (a SHA it cannot read a tree for is refused). Origin's tag
-is compared with the local tag's own object id, so a hand-made annotated tag is
-judged right. When `git ls-remote` itself fails the script says the state is
+Origin's tag is compared with the local tag's own object id, so a hand-made
+annotated tag is judged right. When `git ls-remote` itself fails the script says the state is
 unknown and shows its error rather than calling the refs missing; when origin's
 main has moved on (the atomic push refused as non-fast-forward) it says to
 `git tag -d vX.Y.Z` before integrating and rerunning. The jackdaw repo has the

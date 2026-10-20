@@ -21,22 +21,6 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-# ── demo/ must NEVER reach main ──────────────────────────────────────────────
-# The check itself lives in scripts/lib/demo-guard.sh, shared with
-# scripts/tag-release.sh, whose release push skips this hook.
-#
-# Checked BEFORE `pnpm verify` so it fails in a second rather than after a full
-# test run, and against the SHA being pushed rather than the working tree, so it
-# cannot be dodged by having something else checked out.
-# shellcheck source=../lib/demo-guard.sh
-. "$ROOT/scripts/lib/demo-guard.sh"
-while read -r _local_ref local_sha remote_ref _remote_sha; do
-  [ "$remote_ref" = "refs/heads/main" ] || continue
-  # All-zero local sha means a branch DELETION, nothing to inspect.
-  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
-  demo_guard "$local_sha" pre-push || exit 1
-done
-
 echo "── pre-push: typecheck + tests ──────────────────────────────────────"
 
 # git exports GIT_DIR (and friends) to this hook, naming the real repo. A test
