@@ -444,6 +444,17 @@ export function actorClient(base: PgSql): PgSql {
 
 /** closeDb: a detached write still on its reserved connection finishes
  *  first. */
+/** Keep `work` until it settles, so closeDb waits for it (actorPipelinesDone):
+ *  the narrow route's statements and transactions hold a connection of the
+ *  system pool too (gateway/narrow-route.ts), and a pool whose connection
+ *  comes back after its end began never finishes ending. */
+export function trackPipeline<T>(work: Promise<T>): Promise<T> {
+  actorPipelines.add(work);
+  const done = () => actorPipelines.delete(work);
+  work.then(done, done);
+  return work;
+}
+
 export async function actorPipelinesDone(): Promise<void> {
   while (actorPipelines.size > 0) await Promise.allSettled([...actorPipelines]);
 }

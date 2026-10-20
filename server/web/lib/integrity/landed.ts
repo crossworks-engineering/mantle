@@ -15,7 +15,15 @@
  * nothing to clean up, so leaving the screen mid-anything is harmless.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, sql, traces, withDeadlockRetry, withNodeDeleteHeads } from '@mantle/db';
+import {
+  db,
+  nodes,
+  onFullSystemRoute,
+  sql,
+  traces,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+} from '@mantle/db';
 import { deleteFileById } from '@mantle/files';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 
@@ -221,7 +229,11 @@ export async function deleteLandedNode(
   await db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId)));
 
   if (row.type === 'file') {
-    const res = await deleteFileById({ ownerId, fileId: nodeId });
+    // The item's delete on the full route from the narrow exit (plan v3.2
+    // S7a, FULL_ROUTE_SPOTS 'integrity-delete'), here and below.
+    const res = await onFullSystemRoute('integrity-delete', () =>
+      deleteFileById({ ownerId, fileId: nodeId }),
+    );
     if (!res.ok) {
       // No silent cascade here: point the operator at the confirm flow.
       const error =
@@ -238,10 +250,12 @@ export async function deleteLandedNode(
   }
 
   // Heads first (workspaces plan V4).
-  await withDeadlockRetry(() =>
-    withNodeDeleteHeads([nodeId], async (tx) => {
-      await tx.delete(nodes).where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
-    }),
+  await onFullSystemRoute('integrity-delete', () =>
+    withDeadlockRetry(() =>
+      withNodeDeleteHeads([nodeId], async (tx) => {
+        await tx.delete(nodes).where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
+      }),
+    ),
   );
   return { ok: true, type: row.type };
 }

@@ -83,6 +83,14 @@ const LABELS: Record<string, string> = {
   asSystemNarrow: 'asSystem exits on the narrow system role (may grow: a reason moved off full)',
   systemWholeOnFull:
     'systemWhole tools (run whole on the system pool) while admin-area routes full',
+  systemDbUses_narrow:
+    'systemDb uses in files reached in a scope: the narrow system role (may grow: a file moved off full)',
+  systemDbUses_full: 'systemDb uses in files reached outside every scope: the full system role',
+  requestSystemExits_narrow:
+    'request system exits on the narrow system role (REQUEST_SYSTEM_ROUTE; may grow)',
+  fullRouteSpots:
+    "spots where a narrow exit's own work writes a content table, on the full route (down only; S7b)",
+  fullRouteSpotCalls: 'onFullSystemRoute calls outside packages/db (down only; S7b)',
   systemWholeTools:
     'tool policies whose area scope is systemWhole (equal to the registry: tool-policy-snapshot.test.ts)',
   adminActRoutes: "Admin acts: an Admin user's write on the system pool with no scope (ADMIN_ACT)",
@@ -199,6 +207,8 @@ const MAY_GROW = new Set([
   'callerReads',
   'callerReadFiles',
   'asSystemNarrow',
+  'systemDbUses_narrow',
+  'requestSystemExits_narrow',
   // File counts of a counter pinned by itself: a file split (S5's of
   // client.ts) moves sites to more files, not more sites.
   'rawWriteSqlFiles',
@@ -213,6 +223,7 @@ const measured = measure(ROOT) as {
   numbers: Record<string, number>;
   perFile: {
     asSystemExitProblems?: string[];
+    systemDbRouteProblems?: string[];
     rights?: {
       requestSystemExitProblems?: string[];
       asSystemRouteProblems?: string[];
@@ -248,6 +259,7 @@ for (const [key, label] of Object.entries(LABELS)) {
 // pin the scoreboard cannot read would hide behind a pin that holds.
 const problems = [
   ...(measured.perFile.asSystemExitProblems ?? []),
+  ...(measured.perFile.systemDbRouteProblems ?? []),
   ...(measured.perFile.rights?.requestSystemExitProblems ?? []),
   ...(measured.perFile.rights?.asSystemRouteProblems ?? []),
   ...(measured.perFile.rights?.adminCountProblems ?? []),

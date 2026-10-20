@@ -20,6 +20,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
@@ -135,18 +136,22 @@ export async function createPeer(
   const outbound = input.outboundToken?.trim() || null;
 
   await ensureRoot(ownerId);
-  const [node] = await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'mantle_peer', path: PEERS_ROOT_LABEL }], (tx) =>
-      tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'mantle_peer',
-          title: displayName,
-          path: PEERS_ROOT_LABEL,
-          data: { base_url: baseUrl, description: input.description ?? '' },
-        })
-        .returning(),
+  // The peer's item, on the full route from a narrow exit (plan v3.2 S7a,
+  // FULL_ROUTE_SPOTS 'peer-item').
+  const [node] = await onFullSystemRoute('peer-item', () =>
+    withDeadlockRetry(() =>
+      withNodeInsertHeads(ownerId, [{ type: 'mantle_peer', path: PEERS_ROOT_LABEL }], (tx) =>
+        tx
+          .insert(nodes)
+          .values({
+            ownerId,
+            type: 'mantle_peer',
+            title: displayName,
+            path: PEERS_ROOT_LABEL,
+            data: { base_url: baseUrl, description: input.description ?? '' },
+          })
+          .returning(),
+      ),
     ),
   );
   if (!node) throw new Error('createPeer: node insert returned no row');
@@ -392,8 +397,10 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
   if (!row) return false;
   // One statement: mantle_peers and peer_shares both cascade from the node
   // (schema/mantle-peers.ts), so deleting it is the whole operation, atomically.
-  await withDeadlockRetry(() =>
-    withNodeDeleteHeads([row.nodeId], (tx) => tx.delete(nodes).where(eq(nodes.id, row.nodeId))),
+  await onFullSystemRoute('peer-item', () =>
+    withDeadlockRetry(() =>
+      withNodeDeleteHeads([row.nodeId], (tx) => tx.delete(nodes).where(eq(nodes.id, row.nodeId))),
+    ),
   );
   return true;
 }

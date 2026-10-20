@@ -29,6 +29,10 @@
  *  - a write outside a transaction ends with a RESET sent after the caller
  *    has its answer (resetRoundTrips): page save, which looks nothing up,
  *    takes off's round trips apart from those (A2b1 audit, Q1).
+ *  - the narrow system route's own statements (plan v3.2 S7a, tagged
+ *    `/* mantle:narrow *\/`: its BEGIN, its one SET, the hold check, its
+ *    COMMIT, in one send with the statement) are sent the same in every
+ *    mode, the actor in its SET too: the path's own, never the actor's.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2a-round-trips.db.test.ts
  * MANTLE_RT_REPORT=1 prints the table. MANTLE_RT_BASELINE=1 also compares
@@ -93,9 +97,17 @@ const SET_SQL = /set_config\('mantle\.actor'/;
  *  RESET_ACTOR_SQL): sent after the caller has the write's answer. */
 const RESET_SQL = /reset mantle\.actor;/;
 
+/** The narrow system route's own statements (plan v3.2 S7a: its BEGIN, its
+ *  one SET with the role and the actor, the hold check, its COMMIT), sent
+ *  the same in every check mode: the route's, never the actor's cost, so
+ *  counted as the path's own. */
+const NARROW_SQL = /\/\* mantle:narrow \*\//;
+/** The actor's own statement (ACTOR_SQL), not the narrow route's. */
+const actorOwn = (s: string) => ACTOR_SQL.test(s) && !NARROW_SQL.test(s);
+
 type Kind = 'noise' | 'actor' | 'other';
 const kindOf = (s: string): Kind =>
-  NOISE_SQL.test(s) ? 'noise' : ACTOR_SQL.test(s) ? 'actor' : 'other';
+  NOISE_SQL.test(s) ? 'noise' : actorOwn(s) ? 'actor' : 'other';
 
 /** A Postgres wire proxy that counts statements and round trips. */
 class WireCounter {
@@ -505,7 +517,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         if (warn.writeRoleStatements === 0)
           failures.push(`${p}: warn sent nothing to the write role`);
         if (on!.writeRoleStatements === 0) failures.push(`${p}: on sent nothing to the write role`);
-        const own = (st: string) => ACTOR_SQL.test(st);
+        const own = (st: string) => actorOwn(st);
         const a = tally(off.statements.filter((st) => !own(st)).map(norm));
         const c = tally(on!.statements.filter((st) => !own(st)).map(norm));
         for (const k of new Set([...a.keys(), ...c.keys()])) {
@@ -536,11 +548,11 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       // plan v3 S3, the mode never picks the pool), sent with the
       // transaction's first statement.
       const actorOff = off.statements.filter(
-        (s) => ACTOR_SQL.test(s) && !/set_config\('mantle\.ws'/.test(s),
+        (s) => actorOwn(s) && !/set_config\('mantle\.ws'/.test(s),
       );
       if (actorOff.length) failures.push(`${p}: off sent the actor: ${actorOff[0]}`);
       // (2) warn: the same statements as off, plus the actor's own.
-      const own = (s: string) => ACTOR_SQL.test(s);
+      const own = (s: string) => actorOwn(s);
       const a = tally(off.statements.filter((s) => !own(s)).map(norm));
       const b = tally(warn.statements.filter((s) => !own(s)).map(norm));
       for (const k of new Set([...a.keys(), ...b.keys()])) {

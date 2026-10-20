@@ -61,12 +61,19 @@ import { profileFlag } from '@mantle/client-types/profile-flags';
 import {
   currentWorkspaceScope,
   db,
+  onFullSystemRoute,
   pgErrorCode,
   profiles,
   readTransaction,
   resolveSingleOwnerId,
   type ConversationChannel,
 } from '@mantle/db';
+
+/** A write of a profile row: on the full route when it runs on a narrow
+ *  system exit (plan v3.2 S7a, viewer.ts FULL_ROUTE_SPOTS 'profile-row'). */
+function profileWrite<T>(fn: () => Promise<T>): Promise<T> {
+  return onFullSystemRoute('profile-row', fn);
+}
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
  *  back to DEFAULT_PREFERENCES. Auto-creates the profile row on
@@ -94,15 +101,17 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // In its own savepoint (a transaction of its own outside one): a failed
     // insert rolls back only itself and is caught here.
     try {
-      await db.transaction(async (tx) => {
-        await tx
-          .insert(profiles)
-          .values({
-            userId,
-            preferences: DEFAULT_PREFERENCES as unknown as Record<string, unknown>,
-          })
-          .onConflictDoNothing();
-      });
+      await profileWrite(() =>
+        db.transaction(async (tx) => {
+          await tx
+            .insert(profiles)
+            .values({
+              userId,
+              preferences: DEFAULT_PREFERENCES as unknown as Record<string, unknown>,
+            })
+            .onConflictDoNothing();
+        }),
+      );
     } catch {
       // not a login (a space's id), or a race: defaults as before
     }
@@ -252,25 +261,27 @@ export async function noteInboundChannel(
     // user's without Settings): the database would refuse it every turn.
     // Inside the try: the caller does not wait for this (fire and forget).
     if (!(await profileRowWritable(userId))) return;
-    await db
-      .insert(profiles)
-      .values({
-        userId,
-        preferences: { ...DEFAULT_PREFERENCES, reminderChannel: channel } as unknown as Record<
-          string,
-          unknown
-        >,
-      })
-      .onConflictDoUpdate({
-        target: profiles.userId,
-        set: {
-          preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
-          updatedAt: new Date(),
-        },
-        // Skip the write when it's already this channel — avoids bumping
-        // updatedAt on every turn from the same surface.
-        setWhere: sql`coalesce(${profiles.preferences}->>'reminderChannel', '') <> ${channel}`,
-      });
+    await profileWrite(() =>
+      db
+        .insert(profiles)
+        .values({
+          userId,
+          preferences: { ...DEFAULT_PREFERENCES, reminderChannel: channel } as unknown as Record<
+            string,
+            unknown
+          >,
+        })
+        .onConflictDoUpdate({
+          target: profiles.userId,
+          set: {
+            preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
+            updatedAt: new Date(),
+          },
+          // Skip the write when it's already this channel — avoids bumping
+          // updatedAt on every turn from the same surface.
+          setWhere: sql`coalesce(${profiles.preferences}->>'reminderChannel', '') <> ${channel}`,
+        }),
+    );
   } catch (err) {
     console.error('[profile] noteInboundChannel failed:', err instanceof Error ? err.message : err);
   }
@@ -343,20 +354,22 @@ export async function updateProfilePreferences(
   }
 
   const merge = JSON.stringify(patch);
-  const [row] = await db
-    .insert(profiles)
-    .values({
-      userId,
-      preferences: { ...DEFAULT_PREFERENCES, ...patch } as unknown as Record<string, unknown>,
-    })
-    .onConflictDoUpdate({
-      target: profiles.userId,
-      set: {
-        preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ preferences: profiles.preferences });
+  const [row] = await profileWrite(() =>
+    db
+      .insert(profiles)
+      .values({
+        userId,
+        preferences: { ...DEFAULT_PREFERENCES, ...patch } as unknown as Record<string, unknown>,
+      })
+      .onConflictDoUpdate({
+        target: profiles.userId,
+        set: {
+          preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ preferences: profiles.preferences }),
+  );
   const merged = (row?.preferences ?? {}) as Partial<ProfilePreferences>;
   return {
     timezone: merged.timezone ?? DEFAULT_PREFERENCES.timezone,
@@ -606,19 +619,21 @@ export async function savePreferenceIfRev<K extends RevisionedPreferenceKey>(
   // Materialise the row so the conditional UPDATE has one to match.
   await loadProfilePreferences(rowId);
   const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
-  const updated = await db
-    .update(profiles)
-    .set({
-      preferences: sql`${profiles.preferences} || ${JSON.stringify({ [key]: next })}::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(profiles.userId, rowId),
-        sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
-      ),
-    )
-    .returning({ userId: profiles.userId });
+  const updated = await profileWrite(() =>
+    db
+      .update(profiles)
+      .set({
+        preferences: sql`${profiles.preferences} || ${JSON.stringify({ [key]: next })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(profiles.userId, rowId),
+          sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
+        ),
+      )
+      .returning({ userId: profiles.userId }),
+  );
   if (updated.length > 0) return { ok: true, value: next };
   const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
   return { ok: false, current };
@@ -649,10 +664,11 @@ export async function bumpPreferenceCounter(
   await loadProfilePreferences(userId);
   const at = new Date().toISOString();
   const map = sql`coalesce(${profiles.preferences}->${key}, '{}'::jsonb)`;
-  const [row] = await db
-    .update(profiles)
-    .set({
-      preferences: sql`jsonb_set(
+  await profileWrite(async () => {
+    const [row] = await db
+      .update(profiles)
+      .set({
+        preferences: sql`jsonb_set(
         ${profiles.preferences},
         ARRAY[${key}]::text[],
         ${map} || jsonb_build_object(
@@ -663,19 +679,24 @@ export async function bumpPreferenceCounter(
           )
         )
       )`,
-    })
-    .where(eq(profiles.userId, userId))
-    .returning({ map: sql<unknown>`${profiles.preferences}->${key}` });
-  const stored = row?.map;
-  if (stored && typeof stored === 'object' && Object.keys(stored).length > spec.max + spec.slack) {
-    const trimmed = JSON.stringify(spec.project(stored) ?? {});
-    await db
-      .update(profiles)
-      .set({
-        preferences: sql`jsonb_set(${profiles.preferences}, ARRAY[${key}]::text[], ${trimmed}::jsonb)`,
       })
-      .where(eq(profiles.userId, userId));
-  }
+      .where(eq(profiles.userId, userId))
+      .returning({ map: sql<unknown>`${profiles.preferences}->${key}` });
+    const stored = row?.map;
+    if (
+      stored &&
+      typeof stored === 'object' &&
+      Object.keys(stored).length > spec.max + spec.slack
+    ) {
+      const trimmed = JSON.stringify(spec.project(stored) ?? {});
+      await db
+        .update(profiles)
+        .set({
+          preferences: sql`jsonb_set(${profiles.preferences}, ARRAY[${key}]::text[], ${trimmed}::jsonb)`,
+        })
+        .where(eq(profiles.userId, userId));
+    }
+  });
 }
 
 /** Format a Date in the user's timezone + locale. Cached per-locale

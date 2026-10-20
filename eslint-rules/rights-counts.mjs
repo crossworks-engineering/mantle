@@ -27,7 +27,13 @@
 import { balanced, readRepoFile, stripComments } from './arch-counts.mjs';
 import { adminCounts } from './admin-counts.mjs';
 import { asSystemExits } from './as-system-exits.mjs';
-import { asSystemReasons, asSystemRouteCounts, asSystemRouteMap } from './as-system-routes.mjs';
+import {
+  asSystemReasons,
+  asSystemRouteCounts,
+  asSystemRouteMap,
+  fullRouteSpots,
+  requestSystemRouteMap,
+} from './as-system-routes.mjs';
 
 /** The four workspace tables only definers should write. */
 export const WORKSPACE_TABLES = Object.freeze([
@@ -606,6 +612,8 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
     reasons: asSystemReasons(root),
     source: routeMap.source,
   });
+  const requestRoutes = requestSystemRouteMap(root);
+  const spots = fullRouteSpots(root, texts);
   const wholeOnFull =
     routeMap.routes['admin-area'] === 'narrow' ? 0 : admin.numbers.systemWholeTools;
   return {
@@ -615,6 +623,12 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
       requestSystemExits_loginSelf: exits['login-self'] ?? 0,
       requestSystemExits_adminWrite: exits['admin-write'] ?? 0,
       requestSystemExits_other: exitTotal - known,
+      // Plan v3.2 S7a: the exits whose why REQUEST_SYSTEM_ROUTE routes narrow.
+      requestSystemExits_narrow: Object.entries(exits)
+        .filter(([why]) => requestRoutes[why] === 'narrow')
+        .reduce((a, [, n]) => a + n, 0),
+      fullRouteSpots: spots.entries,
+      fullRouteSpotCalls: spots.calls,
       scopeHoldsAdminCalls: holdsAdmin,
       sqlAreaRules: fns.filter((f) => readsAreaLimits(f.body)).length + tsAreaSql,
       workspaceTableRawWrites: rawWrites,

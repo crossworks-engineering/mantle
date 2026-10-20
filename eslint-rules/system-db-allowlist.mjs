@@ -64,3 +64,45 @@ export const rule = {
 };
 
 export default { rules: { 'system-db-allowlist': rule } };
+
+/**
+ * The route each file's systemDb uses take (plan v3.2 S7a, section 2.1
+ * point 7): inside a turn or request scope systemDb runs on the narrow
+ * system role while MANTLE_NARROW_SYSTEM is on, outside every scope (a
+ * worker, a script, boot) on the full one (gateway/handles.ts). 'narrow':
+ * the file is reached in a scope, so its statements hold on the narrow role
+ * (measured with the switch on, the DB suites: no denial); 'full': only
+ * reached outside every scope. Counted in arch-counts.mjs (systemDbUses_narrow,
+ * systemDbUses_full); a file with uses and no mark fails arch:check.
+ */
+export const SYSTEM_DB_ROUTE = Object.freeze({
+  // Last use of a key in a turn, the vault reads of a tool.
+  'packages/api-keys/src/index.ts': 'narrow',
+  'packages/content/src/app-access-log.ts': 'narrow',
+  'packages/content/src/member-turn-ledger.ts': 'narrow',
+  'packages/content/src/share-access-log.ts': 'narrow',
+  'packages/content/src/team-access-log.ts': 'narrow',
+  'packages/content/src/team-messages.ts': 'narrow',
+  // The audit row of a tool write, written by the gate in the turn.
+  'packages/db/src/call-audit.ts': 'narrow',
+  // The push worker's count of parked extractions.
+  'packages/db/src/extract-parked.ts': 'full',
+  // A one-off maintenance script (extract-skip-stamp.ts).
+  'packages/db/src/extract-skip-backfill.ts': 'full',
+  // The extract worker's gate.
+  'packages/db/src/llm-guard.ts': 'full',
+  // An Admin user's item detail (GET /api/nodes/:id), a read.
+  'packages/db/src/mixed-summaries.ts': 'narrow',
+  // The approval queue, decided in the approver's scope.
+  'packages/db/src/pending-elevated.ts': 'narrow',
+  // An embed or extract failure, in a turn's embed as in the workers.
+  'packages/db/src/provider-alerts.ts': 'narrow',
+  // The embedding cache, in a turn's embed as in the workers.
+  'packages/embeddings/src/index.ts': 'narrow',
+  'packages/runtime/src/agent/tool-loop/execute-call.ts': 'narrow',
+  'packages/tools/src/tool-results.ts': 'narrow',
+  'packages/tracing/src/store.ts': 'narrow',
+  'packages/turn-stream/src/publish.ts': 'narrow',
+  'packages/turn-stream/src/replay.ts': 'narrow',
+  'server/web/lib/audit.ts': 'narrow',
+});

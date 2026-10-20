@@ -118,3 +118,39 @@ export function asSystemRouteCounts(holders, { routes, reasons, source = VIEWER 
   }
   return { full, narrow, byReason, problems };
 }
+
+/** The route of each request system exit: viewer.ts's REQUEST_SYSTEM_ROUTE
+ *  (plan v3.2 S7a), `{ [why]: 'narrow' | 'full' }`; empty when absent. */
+export function requestSystemRouteMap(root) {
+  const code = stripComments(readRepoFile(root, VIEWER) ?? '');
+  const at = code.search(/\bconst\s+REQUEST_SYSTEM_ROUTE\b/);
+  if (at < 0) return {};
+  const block = balanced(code, code.indexOf('{', code.indexOf('=', at)));
+  const routes = {};
+  for (const m of block.matchAll(/(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*))\s*:\s*'(\w+)'/g)) {
+    routes[m[1] ?? m[2] ?? m[3]] = m[4];
+  }
+  return routes;
+}
+
+/**
+ * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
+ * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table)
+ * and the onFullSystemRoute calls outside packages/db and tests. Both only
+ * go down (S7b moves each to the write role or a definer).
+ */
+export function fullRouteSpots(root, texts) {
+  const code = stripComments(readRepoFile(root, VIEWER) ?? '');
+  const at = code.search(/\bconst\s+FULL_ROUTE_SPOTS\b/);
+  const entries =
+    at < 0
+      ? 0
+      : [...balanced(code, code.indexOf('{', code.indexOf('=', at))).matchAll(/'[^'\n]+'\s*:/g)]
+          .length;
+  let calls = 0;
+  for (const { path, text } of texts) {
+    if (path.startsWith('packages/db/src/') || /\.test\.tsx?$/.test(path)) continue;
+    calls += [...stripComments(text).matchAll(/\bonFullSystemRoute\s*\(/g)].length;
+  }
+  return { entries, calls };
+}

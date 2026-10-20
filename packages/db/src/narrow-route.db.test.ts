@@ -145,6 +145,47 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
+  it('a full-route spot runs full with its actor inside a narrow exit, and changes nothing elsewhere', async () => {
+    // Inside a narrow exit: the spot's statement and transaction run full,
+    // as the same actor; around it the exit stays narrow.
+    const got = await v.asSystem(
+      async () => ({
+        spot: await v.onFullSystemRoute('profile-row', who),
+        spotTx: await v.onFullSystemRoute('profile-row', whoInTx),
+        // A drizzle query handed back unawaited runs where it is awaited.
+        spotLazy: await v.onFullSystemRoute('profile-row', () =>
+          m.db.execute(sql`select current_user::text as u`),
+        ),
+        after: await who(),
+      }),
+      'admin-area',
+    );
+    expect(got.spot.u).toBe(pool);
+    expect(got.spotTx.u).toBe(pool);
+    expect((got.spotLazy as unknown as { u: string }[])[0]!.u).toBe(pool);
+    expect(got.after).toEqual({ u: NARROW, a: 'system:admin-area' });
+    // A content write in a spot is not refused; outside one it is.
+    await v.asSystem(
+      () =>
+        v.onFullSystemRoute('profile-row', () =>
+          m.db.execute(sql`update public.profiles set updated_at = updated_at where false`),
+        ),
+      'admin-area',
+    );
+    expect(actor.takeNarrowDenials()).toEqual([]);
+    // In a request exit too.
+    const req = await v.runInRequestSlot(async () => {
+      v.noteRequestSystem('login-self');
+      return { spot: await v.onFullSystemRoute('profile-row', who), after: await who() };
+    });
+    expect(req.spot.u).toBe(pool);
+    expect(req.after.u).toBe(NARROW);
+    // Outside a narrow exit (system work, no exit) the spot changes nothing.
+    const work = await v.systemWork(() => v.onFullSystemRoute('profile-row', who), 'admin-area');
+    expect(work.u).toBe(pool);
+    expect((await v.onFullSystemRoute('profile-row', who)).u).toBe(pool);
+  });
+
   it('rolls back a statement or a transaction that left the role, and refuses transaction control', async () => {
     expect(
       await failure(

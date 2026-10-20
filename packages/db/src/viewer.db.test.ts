@@ -63,6 +63,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
         -- The system pool, when it logs in as the runtime role (arch A9).
         grant usage on schema viewer_test to mantle_runtime;
         grant select on viewer_probe to mantle_runtime;
+        -- systemDb in a turn scope, on the narrow route (plan v3.2 S7a).
+        grant usage on schema viewer_test to mantle_system_narrow;
+        grant select on viewer_probe to mantle_system_narrow;
       `);
     } finally {
       await admin.end();

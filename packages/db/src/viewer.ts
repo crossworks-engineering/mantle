@@ -1035,6 +1035,51 @@ export function systemRouteNow(): SystemRoute | null {
 }
 
 /**
+ * The spots where a narrow exit's own work writes a content table
+ * (measured with the switch on, plan v3.2 S7a part a2): each runs on the
+ * full route, keeping its actor, with its why (onFullSystemRoute). The rest
+ * of the exit stays narrow. A content table is never granted to the narrow
+ * role for one of these (access-matrix.ts narrowFor).
+ *
+ * TODO(S7b): move each to the write role in the caller's scope, or to a
+ * definer, and delete its spot; the list only shrinks.
+ */
+export const FULL_ROUTE_SPOTS = Object.freeze({
+  'profile-row':
+    "profiles is a content table (the write role's own-login rule): the login-self routes write the login's own row and the settings area the brain's, on a system exit with no scope to carry to the write role",
+  'peer-item':
+    'the peers area makes and re-keys a peer, an item (nodes) with its peer row, on the system pool',
+  'secrets-root':
+    'secret_create makes the Secrets root (a branch item) on the system pool after the keys area check',
+  'integrity-delete':
+    "the integrity screen's landed delete removes an item (nodes) and its traces on the system pool",
+  'promotion-space':
+    "a login's promotion turns its personal space's shared and submitted items (space_items) back into private drafts, in the role change's transaction",
+} as const satisfies Record<string, string>);
+
+/** A spot of FULL_ROUTE_SPOTS. */
+export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
+
+/**
+ * Run `fn` on the full route when the system pool's statements would take
+ * the narrow one now (systemRouteNow), keeping the actor; anywhere else
+ * (a login's scope, system work, the switch off) `fn` runs as it is. With
+ * the switch off nothing changes: the route is read only while it is on.
+ */
+export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
+  const actor = currentActor();
+  if (!FULL_ROUTE_SPOTS[spot] || actor?.kind !== 'system' || systemRouteNow() !== 'narrow') {
+    return Promise.resolve(fn());
+  }
+  // Awaited inside: a drizzle query runs when it is awaited, so it must be
+  // awaited where the route is set.
+  return systemRoutes.run(
+    Object.freeze({ route: 'full' as const, reason: actor.reason }),
+    async () => await fn(),
+  );
+}
+
+/**
  * The workspace system work: the reasons whose actor
  * (system:<reason>) a workspace definer takes from a caller with no acting
  * login. The SQL allowlist (mantle_ws_system_work, migration 0307) names

@@ -22,7 +22,7 @@ import {
 } from '../actor';
 import { reserveLease } from '../reserved';
 import { NARROW_ROLE } from '../runtime-role';
-import { ACTOR_SQL_TAG, firstModeReadNow } from './check-mode';
+import { NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import {
   lazyQuery,
   runsOutsideTransaction,
@@ -30,6 +30,7 @@ import {
   setActorSql,
   settingsFirst,
   statementBody,
+  trackPipeline,
   type QueryMode,
 } from './actor-sql';
 
@@ -44,7 +45,7 @@ type PgSql = ReturnType<typeof postgres>;
  */
 function narrowHeld(t: PgSql) {
   return t.unsafe(
-    `${ACTOR_SQL_TAG} select 1 / (current_user = '${NARROW_ROLE}')::int as narrow_held`,
+    `${NARROW_SQL_TAG} select 1 / (current_user = '${NARROW_ROLE}')::int as narrow_held`,
   );
 }
 
@@ -94,8 +95,8 @@ async function narrowSettingsSql(): Promise<string> {
   if (waitFor) await waitFor;
   const actor = currentActor();
   const role = `set_config('role', '${NARROW_ROLE}', true)`;
-  if (!actor) return `${ACTOR_SQL_TAG} select ${role}`;
-  return `${ACTOR_SQL_TAG} ${setActorSql([actorSetting(actor), writeModeOf(actor), actorCheckMode()])}, ${role}`;
+  if (!actor) return `${NARROW_SQL_TAG} select ${role}`;
+  return `${NARROW_SQL_TAG} ${setActorSql([actorSetting(actor), writeModeOf(actor), actorCheckMode()])}, ${role}`;
 }
 
 /**
@@ -111,10 +112,28 @@ function noteNarrowDenial(err: unknown): void {
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';
   if (env('NODE_ENV') === 'test') {
-    noteTestNarrowDenial(who, what.slice(0, 200));
+    // The refused statement's text too (postgres.js puts it on its error),
+    // so the measurement names the writer.
+    noteTestNarrowDenial(who, `${what.slice(0, 200)} | ${refusedQueryOf(err)}`);
     return;
   }
   noteActorMiss({ source: 'ts', check: 'narrow-denied', actor: who, detail: what.slice(0, 200) });
+}
+
+/** Tests only: the start of the refused statement's text, from the
+ *  driver's error or the one it is the cause of. */
+function refusedQueryOf(err: unknown): string {
+  type Carried = { query?: unknown; parameters?: unknown; cause?: unknown };
+  for (let e = err as Carried | undefined, i = 0; e && i < 4; i++) {
+    if (typeof e.query === 'string') {
+      const params = Array.isArray(e.parameters)
+        ? e.parameters.slice(0, 6).map((v) => String(v).slice(0, 40))
+        : [];
+      return `${e.query.replace(/\s+/g, ' ').slice(0, 240)} [${params.join(', ')}]`;
+    }
+    e = e.cause as typeof e;
+  }
+  return '?';
 }
 
 /** Tests only: count a statement or transaction sent on the narrow route,
@@ -144,11 +163,11 @@ export async function narrowStatement(
   const lease = await reserveLease(base);
   try {
     const conn = lease.sql;
-    const begin = lease.watch(sendIn(conn.unsafe(`${ACTOR_SQL_TAG} begin`), 'rows'));
+    const begin = lease.watch(sendIn(conn.unsafe(`${NARROW_SQL_TAG} begin`), 'rows'));
     const set = lease.watch(sendIn(conn.unsafe(setSql), 'rows'));
     const main = lease.watch(sendIn(conn.unsafe(query, (args ?? []) as never[]), mode));
     const held = lease.watch(sendIn(narrowHeld(conn), 'rows'));
-    const commit = lease.watch(sendIn(conn.unsafe(`${ACTOR_SQL_TAG} commit`), 'rows'));
+    const commit = lease.watch(sendIn(conn.unsafe(`${NARROW_SQL_TAG} commit`), 'rows'));
     const out = await Promise.allSettled([begin, set, main, held, commit]);
     const failed = out.findIndex((r) => r.status === 'rejected');
     if (failed >= 0) {
@@ -206,7 +225,8 @@ export function narrowRouteClient(withActor: PgSql, base: PgSql, narrowNow: () =
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
           if (!narrowNow()) return target.unsafe(query, args as never[], opts as never);
-          return lazyQuery((mode) => narrowStatement(base, query, args, mode));
+          // Tracked: closeDb waits for it (trackPipeline).
+          return lazyQuery((mode) => trackPipeline(narrowStatement(base, query, args, mode)));
         };
       }
       if (prop === 'begin') {
@@ -214,7 +234,7 @@ export function narrowRouteClient(withActor: PgSql, base: PgSql, narrowNow: () =
           if (!narrowNow() || typeof args[args.length - 1] !== 'function') {
             return (target.begin as (...a: unknown[]) => unknown)(...args);
           }
-          return narrowBegin(base, args);
+          return trackPipeline(narrowBegin(base, args));
         };
       }
       return Reflect.get(target, prop, receiver);

@@ -92,6 +92,7 @@ import {
 } from './app-broker.mjs';
 import { REINDEX_ALLOW, handReindex } from './no-hand-reindex.mjs';
 import { asSystemExits, clearParseCache, systemDbUses } from './as-system-exits.mjs';
+import { SYSTEM_DB_ROUTE } from './system-db-allowlist.mjs';
 import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
@@ -933,6 +934,30 @@ function lineCount(root, path) {
 
 /** Every repo number of plan section 3, plus the per-file maps the lints
  *  pin. */
+/** The systemDb uses of the files marked `route` (SYSTEM_DB_ROUTE). */
+function systemDbByRoute(systemDb, route) {
+  return Object.fromEntries(Object.entries(systemDb).filter(([f]) => SYSTEM_DB_ROUTE[f] === route));
+}
+
+/** A file with systemDb uses and no route mark, or a mark that is neither
+ *  'narrow' nor 'full', or a mark for a file with no uses: each a problem
+ *  that fails arch:check (plan v3.2 S7a). */
+function systemDbRouteProblems(systemDb) {
+  const out = [];
+  for (const f of Object.keys(systemDb)) {
+    const r = SYSTEM_DB_ROUTE[f];
+    if (r !== 'narrow' && r !== 'full') {
+      out.push(
+        `${f}: systemDb uses with no route in SYSTEM_DB_ROUTE (eslint-rules/system-db-allowlist.mjs)`,
+      );
+    }
+  }
+  for (const f of Object.keys(SYSTEM_DB_ROUTE)) {
+    if (!systemDb[f]) out.push(`${f}: marked in SYSTEM_DB_ROUTE but has no systemDb use`);
+  }
+  return out;
+}
+
 export function measure(root) {
   const files = countedFiles(root);
   const slugs = builtinSlugs(root, files);
@@ -1145,6 +1170,10 @@ export function measure(root) {
       asSystemExits: sum(exitsByFile),
       systemDbUses: sum(systemDb),
       systemDbFiles: Object.keys(systemDb).length,
+      // Plan v3.2 S7a: each file's uses by the route they take
+      // (system-db-allowlist.mjs SYSTEM_DB_ROUTE).
+      systemDbUses_narrow: sum(systemDbByRoute(systemDb, 'narrow')),
+      systemDbUses_full: sum(systemDbByRoute(systemDb, 'full')),
       asSystemFiles: Object.keys(asSystem).length,
       asSystemReasons: reasons.size,
       rawAclFiles: Object.keys(rawAcl).length,
@@ -1232,6 +1261,7 @@ export function measure(root) {
       asSystemHolders: exits.holders,
       asSystemExitProblems: exits.problems,
       systemDb,
+      systemDbRouteProblems: systemDbRouteProblems(systemDb),
       rawAcl,
       itemPrechecks,
       routePrechecks,
