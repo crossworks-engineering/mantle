@@ -163,12 +163,25 @@ export async function narrowStatement(
   const lease = await reserveLease(base);
   try {
     const conn = lease.sql;
-    const begin = lease.watch(sendIn(conn.unsafe(`${NARROW_SQL_TAG} begin`), 'rows'));
-    const set = lease.watch(sendIn(conn.unsafe(setSql), 'rows'));
-    const main = lease.watch(sendIn(conn.unsafe(query, (args ?? []) as never[]), mode));
-    const held = lease.watch(sendIn(narrowHeld(conn), 'rows'));
-    const commit = lease.watch(sendIn(conn.unsafe(`${NARROW_SQL_TAG} commit`), 'rows'));
-    const out = await Promise.allSettled([begin, set, main, held, commit]);
+    const sent: Promise<unknown>[] = [];
+    const send = (q: Parameters<typeof sendIn>[0], m: QueryMode) => {
+      sent.push(lease.watch(sendIn(q, m)));
+    };
+    try {
+      send(conn.unsafe(`${NARROW_SQL_TAG} begin`), 'rows');
+      send(conn.unsafe(setSql), 'rows');
+      send(conn.unsafe(query, (args ?? []) as never[]), mode);
+      send(narrowHeld(conn), 'rows');
+      send(conn.unsafe(`${NARROW_SQL_TAG} commit`), 'rows');
+    } catch (err) {
+      // A statement that threw while the pipeline was built: what was sent
+      // settles (never an unhandled rejection), and the connection, which
+      // may hold the open transaction, ends instead of going back.
+      await Promise.allSettled(sent);
+      if (sent.length > 0) await lease.end();
+      throw err;
+    }
+    const out = await Promise.allSettled(sent);
     const failed = out.findIndex((r) => r.status === 'rejected');
     if (failed >= 0) {
       if (failed === 3) throw new NarrowRoleLeftError();

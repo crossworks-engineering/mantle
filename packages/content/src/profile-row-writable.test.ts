@@ -27,6 +27,8 @@ vi.mock('@mantle/db', () => {
     resolveSingleOwnerId: async () => null,
     currentWorkspaceScope: () => (h.scope ? { kind: 'user' } : null),
     pgErrorCode: (e: unknown) => (e as { code?: string } | null)?.code ?? null,
+    // No narrow exit here: a full-route spot runs its work as it is.
+    onFullSystemRoute: <T>(_spot: string, fn: () => PromiseLike<T>) => Promise.resolve(fn()),
     readTransaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         execute: async (q: { queryChunks?: unknown[] }) => {

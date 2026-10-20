@@ -34,6 +34,8 @@ vi.mock('@mantle/db', () => {
     currentWorkspaceScope: () => null,
     scopeHoldsAdmin: async () => true,
     asSystem: <T>(fn: () => Promise<T>) => fn(),
+    // No narrow exit here: a full-route spot runs its work as it is.
+    onFullSystemRoute: <T>(_spot: string, fn: () => PromiseLike<T>) => Promise.resolve(fn()),
   };
 });
 

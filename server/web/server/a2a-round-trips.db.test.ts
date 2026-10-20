@@ -106,8 +106,7 @@ const NARROW_SQL = /\/\* mantle:narrow \*\//;
 const actorOwn = (s: string) => ACTOR_SQL.test(s) && !NARROW_SQL.test(s);
 
 type Kind = 'noise' | 'actor' | 'other';
-const kindOf = (s: string): Kind =>
-  NOISE_SQL.test(s) ? 'noise' : actorOwn(s) ? 'actor' : 'other';
+const kindOf = (s: string): Kind => (NOISE_SQL.test(s) ? 'noise' : actorOwn(s) ? 'actor' : 'other');
 
 /** A Postgres wire proxy that counts statements and round trips. */
 class WireCounter {
