@@ -465,3 +465,45 @@ wide page on main too.
 reads all 621 folders, so about 1,240 queries: 17 s. A member reads few
 folders, so main's member rail is fast. One grouped query, as the branch's
 trail counts do, would fix it.
+
+### Gates (fix round 2)
+
+Mac (DATABASE_URL unset), at 14385c570 (the code of f7dcf7b1d and this
+note): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one warning is main's, in
+a file this branch does not touch), `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0,
+`pnpm exec vitest run server packages eslint-rules --maxWorkers=3` 0 (861
+files passed, 274 skipped; 11,100 tests).
+
+Workstation (own clone ~/s13-work/mantle, own container s13-pg on 56413,
+made as CI makes it, MANTLE_CHECK_FLOOR=keep, systemd-run --user, one at a
+time, `--maxWorkers=3`, no `--`), at f7dcf7b1d:
+
+- folder-trail-0311.db.test.ts + folder-trail.test.ts 0 (18 tests);
+  s13-folder-trail-sweep.db.test.ts 0 (11 tests). (At 31e7732b9 the sweep's
+  "folder on the way opens" cell failed: a trail folder opened by id had no
+  parent id; fixed in f7dcf7b1d.)
+- full DB vitest 0 (1134 files passed, 1 skipped; 13,912 tests).
+- `pnpm test:actor-off` 0 (133 files, 1220 tests).
+- `pnpm test:actor-on` 0 (33 files, 405 tests).
+- `pnpm test:edit-on` 0 (45 files, 575 tests).
+- `pnpm test:matrix` 0 (4 files, 8 tests).
+- `pnpm test:runtime-role` 0 (283 files, 2834 tests).
+
+A8 oracles (`pnpm -C packages/db -s oracle:answers`, main 975bee317 and the
+branch, the same output byte for byte):
+
+- a1 336 68b48619289c835a0d5221c535f5dcddbca87935eb3ec2ac2c5fcbb9e4d6e216
+- a1-folders 18 b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461
+- a3a 41216 ac88c09d1fbd4a501c1847ce384d5b111113f612d94f29c0fedcb6510f5a5e38
+- a3a-detail 1472 ee4fd0febe04698dcb17b4fdcefccfb356382de6d1d8d51725ebc4c7235fa764
+- a8 314496 e9f19dbc359ace7c1a9a7dbaa57d860cfa1f89c98d7b95ae04c57588674b36f0
+
+The clone and s13-pg were removed after the gates.
+
+### Left after fix round 2
+
+1. Perf, wide root: +42 ms against main (target about +20); see "What a
+   further step needs". The wide rail is +33 (target about +30).
+2. CI on the head (the run on 14385c570 is in the report).
+3. Jackdaw pair step, unchanged.
