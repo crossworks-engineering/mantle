@@ -1478,8 +1478,8 @@ None moved (arch:check 0 after the rebase and after each commit).
 
 #### Gates (fix round 1)
 
-Mac, Node 26, DATABASE_URL unset, on 8ce4b6590 (code equal to the head but
-the journal-scope test and this file; rerun on the head below): pnpm -r
+Mac, Node 26, DATABASE_URL unset, on 8ce4b6590 and again on e55fcdefb
+(the head's code), the same exits and counts both times: pnpm -r
 typecheck 0, pnpm lint 0 (the one warning not this branch's), pnpm
 format:check 0, pnpm docs:check 0, pnpm arch:check 0, pnpm boot:smoke 0 (14
 services), pnpm -C server/web build 0, vitest run server packages
