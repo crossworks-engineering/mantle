@@ -366,3 +366,102 @@ name when done: `docker rm -fv s13-pg`, `rm -rf ~/s13-work`).
    ANDs the two bitmaps). Measure with the harness above (kept outside the
    repo, ~/s13-work/s13-perf.db.test.ts).
 3. Jackdaw pair step, unchanged (see above).
+
+## Fix round 2
+
+Rebased on main 975bee317 (v0.300.114); 0311 is still free on main, so the
+number and `when` (1790197980000) stay and the body changed in place. If
+S7a a3 (or any lane) takes 0311 first, renumber as "Migration" above says.
+
+### What changed
+
+- 0311 (`packages/db/migrations/0311_folder_trail_definer.sql`): the definer
+  is plpgsql now, same signature, grants and answers' shape. `under`: the
+  candidates (unread folders one and two levels down) come from the branch
+  index; then at most 2000 rows the scope reads below `under` are read (the
+  read_ws index). When that is all of them, every candidate on the way is
+  answered at both levels, as in round 1. When the scope reads more there
+  (a wide scope), each candidate one level down is probed down the path
+  index (deepest way first) and answered with the folder below it the probe
+  went through when that one is unread; a candidate two levels down under a
+  folder the scope reads is probed on its own. `paths` and `folder`: the
+  probe of round 1, unchanged. `SET plan_cache_mode = force_custom_plan`:
+  without it the sixth call in a session took a generic plan that read a
+  wide scope's rows for a small one (W root 20 ms to 60 ms, S root 2 ms to
+  30 ms in psql).
+- Changed answer (a member's session only, wide scope only): a trail folder
+  listed on a page counts at least one subfolder on the way when it has
+  one (so it unfolds, in the tree and in the folder picker), not every one;
+  opening it lists every folder on the way below it. A folder the login
+  reads still counts every subfolder on the way exactly. Small scopes (at
+  most 2000 rows read below the page) answer exactly as in round 1.
+- `packages/content/src/tree/read.ts`: `selectFolders(..., trail?: TrailAsk)`
+  (the definer inside the page's own statement; none for any other caller,
+  so the owner's statement is main's). `loadTreeFolder` asks one definer
+  page: `{ under: path, paths: [parent, path] }`; a folder opened by id that
+  the login does not read is found by the definer by id and its row read
+  with the same ask (round 1 asked the whole parent page for it: the wide
+  t11 page's 268 ms). `trailFolderById` is gone.
+- `packages/files/src/ops/folders.ts`: the rail reads the login's file rows
+  only (`type = 'file'`: the file index, not the read_ws one, finds them)
+  and counts each trail folder from that read and the folders it reads (no
+  further query); `folderCountsFor` (the Files list) matches parents by
+  `subpath` instead of an lquery array.
+- Cells: `folder-trail-0311.db.test.ts` "a wide scope (over 2000 rows read
+  below the folder)" (2001 notes the workspace reads: the same answers
+  under the root for the member and the other login, none under v, none
+  unscoped); the catalog cell expects the two settings.
+
+### Perf, end to end (the round 1 harness, same brain and scopes)
+
+Median of 25 (3 for a page over 1 s) per page, after 4 warm calls; main
+975bee317 and the branch at 31e7732b9 (the commit after it changes only the
+crumbs ask of a folder below the top level, which no row here opens), run one
+after the other in s13-pg:
+
+| page            | main     | branch   | delta  | round 1 branch |
+| --------------- | -------- | -------- | ------ | -------------- |
+| owner root      | 212.0 ms | 219.4 ms | +7     | 203 ms         |
+| owner t1        | 268.2 ms | 273.4 ms | +5     | 246 ms         |
+| owner rail      | 17.35 s  | 17.13 s  | -0.2 s | 15.9 s         |
+| small root      | 4.1 ms   | 9.8 ms   | +5.7   | 21.8 ms        |
+| small t1        | 404 4.3  | 27.1 ms  | new    | 35.7 ms        |
+| small rail      | 4.0 ms   | 26.9 ms  | +22.9  | 32.0 ms        |
+| small Files top | 4.3 ms   | 13.4 ms  | +9.1   | 10.6 ms        |
+| wide root       | 98.1 ms  | 140.5 ms | +42.4  | 204.9 ms       |
+| wide t1         | 158.0 ms | 153.1 ms | -4.9   | 144.1 ms       |
+| wide t11        | 404 4.3  | 156.5 ms | new    | 268.4 ms       |
+| wide rail       | 11.2 ms  | 44.2 ms  | +33.0  | 102.9 ms       |
+
+The owner runs main's statements (equal within run noise: a second run of
+the branch measured owner root 211.8 ms). Met: small root and t1, wide t1,
+the small rail; the wide rail is +33 (target about +30). Not met: the wide
+root, +42 (target about +20).
+
+Where the wide root's time goes (auto_explain in s13-pg): the definer is
+about 28 ms of it (the capped read 3 to 8 ms, ten probes about 2 ms each);
+the rest is main's statement with 20 folders instead of 10. Main's own
+statement spends about 75 of its 90 ms in `ic` (the item counts: the
+planner takes the read_ws index for `c.path = any(...)` and reads the
+100,000 rows the wide scope reads), on main as on the branch.
+
+What a further step needs: the probes cost the size of a hidden folder until
+the first row the scope reads, and the read the size of what the scope
+reads; only an index on both (read_ws with the path) answers "a row this
+scope reads below this folder" without either. The planner does not AND
+the read_ws and path bitmaps here (it estimates the two as independent; in
+this brain they never meet), so that is a new index (a migration on nodes)
+or a stored per-folder mark; both are beyond "simple". Cheaper and separate:
+main's `ic` read (the item counts) for a wide scope, which is most of every
+wide page on main too.
+
+### The owner's Files rail (main's own N+1; not fixed here)
+
+`listAllFolders` (packages/files/src/ops/folders.ts:406-407 on main) awaits
+`folderCounts` once per folder, and `folderCounts`
+(packages/files/src/ops/shared.ts:142) runs two queries each time: an lquery
+`path ~ 'x.*{1}'` (the GiST path index walks thousands of pages for it, about
+15 ms on this brain) and `path::text = x`, which no index serves. The owner
+reads all 621 folders, so about 1,240 queries: 17 s. A member reads few
+folders, so main's member rail is fast. One grouped query, as the branch's
+trail counts do, would fix it.
