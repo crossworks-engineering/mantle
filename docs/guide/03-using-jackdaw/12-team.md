@@ -1,54 +1,56 @@
-# Team and members
+# Workspaces and people
 
-Invite people to sign in to your brain as members, and decide what they read and change.
+Give each team, site or client a workspace, put people in it, and share items with it. How the rules work: [Who can use a brain](../04-concepts/05-access-tiers.md).
 
-A member signs in with their own login. They read what the workspaces they are users of hold, change items where they may edit, and chat with the Team workspace's assistant in their own thread.
+## Switch workspace
 
-Invites are in **Settings > Logins**. Team settings are on the **Team** screen.
+The workspace switcher sits at the top of the menu (an icon on a phone). Pick a workspace and the lists show its items. **All my workspaces** shows everything you can read. Your private workspace is **Only you**.
 
-## Before you start
+Search always looks in all your workspaces. A result from another workspace carries its name, and opening it switches there.
 
-Members chat with the assistant of the Team workspace. Set one on the Team workspace's page if it has none. **Team > Settings** shows which assistant that is under **Member chat**; with none set, members have no chat.
+## Make a workspace
 
-## Invite a member
+1. Open **Settings > Workspaces** and click **New workspace**.
+2. Enter a **Name** and, if you like, a description.
+3. Click **Make workspace**. You are its first user and its Moderator.
 
-1. Open **Settings > Logins** and click **Invite**.
-2. Enter the email and, if you like, a name.
-3. Click **Create invite** and copy the **Invite link**.
-4. Send the link to the person yourself. MantleOS does not email it.
-5. They open it, set a password, and are signed in.
+On its screen you can change its colour and icon, and pick its landing page. An admin also sets its assistant and connectors there.
 
-An invite link works once and expires after 72 hours. A new invite for the same person replaces the old link. Open invites are listed at the top of **Settings > Logins**: select one to **Revoke** it or make a **New link**.
+## Add people
 
-To disable, change or remove a login later, use **Settings > Logins**. See [Add logins](../05-admin/07-logins.md).
+1. Open the workspace in **Settings > Workspaces**.
+2. Under **Add a user**, search by name or email and click **Add**.
 
-## Decide what members see
+They read every item shared with the workspace at once. Only people who already have a login show up: invite someone new first ([Add users](../05-admin/07-logins.md)).
 
-A member reads what the workspaces they are users of hold, and changes what they may edit there: an item homed in a workspace where they are a Moderator, or shared to one of their workspaces with Write. Add them to a workspace, or share an item to one with **Grant Access**.
+A **Moderator** adds people, edits the workspace and changes the items whose home it is. Only an admin turns the **Moderator** switch on or off.
 
-Your email and journal stay out of the Team assistant's answers. To let it read them, open **Team > Settings** and, under **Read posture**, switch on **Expose email & journal**. It asks you to confirm. Leave it off unless you mean it.
+## Share an item
 
-## Member chats are private
+1. Open the item and click **Access**. The panel lists its home and every workspace it is shared with.
+2. Click **Add workspace** and pick one under **Share with**. You must be a Moderator of the item's home and of that workspace.
+3. Leave **Writable** off to let people there read only. Turn it on to let them edit.
 
-Each user's chats are their own. A member reads only their own thread with the Team assistant, and no admin reads it, the brain owner included. Your own assistant cannot read it either.
+To stop sharing, click **Revoke** on that row. To move the item to another home, pick **Home** on that row; you can keep it readable in the old home.
 
-## Changes members ask for
+A folder shares what is in it: open **Access…** from the folder's menu in the tree. The dialog says how many items gain the workspace before you confirm. If a page embeds items that are not shared the same way, the panel offers **Grant these too**.
 
-A member makes a change where they may edit. Where they may not, they ask you, and you make the change yourself or share the item to one of their workspaces with Write.
+## Pick the landing page
 
-## Sharing with members
+Each workspace has a landing page: what its people see at **Home**. A Moderator picks the **Built-in home** or a published app the workspace holds, under **Landing page**. See [Workspace home apps](../07-api/07-member-home-apps.md).
 
-Review is gone: members no longer submit items for you to approve, and there is no **Waiting for approval** or **Shared by members** list. To let members read an item, share it with **Grant Access**.
+## Take access away
 
-## Other tabs
+- **Remove a person**: click remove on their row. They lose the workspace's items at once, unless another of their workspaces has them. To leave a workspace, remove yourself.
+- **Archive a workspace**: **Archive workspace** at the top of its screen. It takes the workspace's shares off every item. It is refused while items still have their home there: move them first.
+- **End a login**: switch on **Disabled** in **Settings > Users**.
 
-- **Shared links**: every open link to your items, newest first.
-- **Settings**: member chat and the read posture. The home app moved to each workspace's screen: see [Workspace home apps](../07-api/07-member-home-apps.md).
+## Chat with a workspace's assistant
 
-Client logins are gone. To work with people outside your company, make a workspace for them in **Settings > Workspaces**. See [Add logins](../05-admin/07-logins.md).
+Each workspace can have one assistant. It reads only that workspace's items. Everyone has their own thread with it, and nobody else reads that thread, admins and the owner included.
 
 ## Next
 
 - [Who can use a brain](../04-concepts/05-access-tiers.md)
+- [Add users](../05-admin/07-logins.md)
 - [Agents and AI workers](13-agents.md)
-- Screen help: [Team](../06-help/team-admin.md)

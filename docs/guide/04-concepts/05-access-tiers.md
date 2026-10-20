@@ -1,63 +1,50 @@
 # Who can use a brain: workspaces
 
-Every person who uses your brain has a login. A login gives no rights by itself. What a person reads and changes comes from the workspaces they are in.
+Every person who uses your brain has one login. A login opens nothing by itself: what a person reads and changes comes only from the workspaces they are in.
+
+## One gate for every way in
+
+The app, MantleOS Desktop, the phone app, Telegram, MCP, an API key and a public link all come in through the same gate. The gate works out who is asking (a person, a key, an assistant, a link or another brain) and passes the request on under that name. The database then decides what that name may read and change.
+
+So the rules are the same everywhere: a person gets the same answer in the app, on the phone and over MCP. Work that runs later, such as an approved action or a scheduled run, is checked again with the person's rights at the moment it runs.
 
 ## The model
 
-- A **workspace** has a name, users, at most one assistant, and connectors.
-- Each user of a workspace has a **Moderator** tick.
-- An item is shared by a **grant** to a workspace. Each grant has a **Write** switch.
-- Every item has one **home** workspace.
-- The users of a workspace read every item granted to it. They change an item when its grant has Write on, or when they are a Moderator of its home.
+- A **workspace** is a group of people: a team, a site, a project or a client. It has users, at most one assistant, and connectors.
+- Every item has one **home** workspace. It is shared with another workspace by a **grant**, and each grant has its own **Write** switch.
+- People read every item shared with their workspaces. They change an item when its grant has Write on, or when they are a **Moderator** of its home.
+- An item you may not read looks like it does not exist.
 - A workspace with one user is private.
 
-You set permissions in two places only: **Settings > Workspaces**, and the **Grant Access** panel of each item.
+You set who sees what in two places only: **Settings > Workspaces**, and the **Access** panel of each item.
 
 ## The workspaces you have
 
 | Workspace                  | Who is in it                           | What it is for                                                                |
 | -------------------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| **Admin**                  | You and the other admins               | Running the brain: settings, logins, workspaces, assistants, connectors, keys |
+| **Admin**                  | You and the other admins               | Running the brain: settings, users, workspaces, assistants, connectors, keys  |
 | **Your private workspace** | Only you                               | Your own work. Nobody else sees it, admins included                           |
-| Any other                  | The users a Moderator or an admin adds | A team, a project, a group, a company you work with                           |
+| Any other                  | The people a Moderator or an admin adds | A team, a site, a project, a company you work with                           |
 
-Admin is the only workspace with rules of its own: it keeps its name, cannot be archived, and every admin is a Moderator of it, always. That tick cannot be turned off; to take it away, remove the person from Admin. A brain set up before October 2026 also has a **Team** workspace; it is a workspace like any other now.
+Admin is the only workspace with rules of its own: it keeps its name, cannot be archived, and every admin is always one of its Moderators. To make someone an admin, add them to Admin. Running the brain is not reading it: an admin reads only what is shared with the workspaces they are in.
 
-Any user may make a new workspace. They become its only user and its Moderator. Only an admin ticks **Moderator** for anyone else, or removes a Moderator from a workspace.
+A brain set up before October 2026 also has a **Team** workspace. It is a workspace like any other now.
 
-## Share an item
+Anyone may make a new workspace. They become its first user and its Moderator. Only an admin turns **Moderator** on or off for someone else, or removes a Moderator.
 
-1. Open the item and click **Access** to open its Grant Access panel.
-2. Under **Share with**, pick a workspace. You must be a Moderator of the item's home and of that workspace.
-3. Leave **Write** off to let its users read only. Turn it on to let them edit.
+## Nothing is shared by itself
 
-Nothing is shared by itself, with one exception: an item you put in a folder gets the folder's grants. The dialog tells you who will see it before you confirm.
+No item is shared unless someone shares it. The one exception: an item you put in a folder takes the folder's workspaces, and the dialog tells you who will see it before you confirm.
 
-**Public** links stay per item. A link opens one item for anyone who has it, with no login. See [Sharing and federation](06-sharing-and-federation.md).
+A public link is separate: it opens one item for anyone who has the link, with no login. See [Sharing and federation](06-sharing-and-federation.md).
 
 ## Assistants and chats
 
-Each workspace can have one assistant. It reads only that workspace's items, and it changes an item only for a user who could change it by hand. Each user reads only their own chats: no admin reads another user's chat, you included.
-
-## Add people
-
-| To add                       | Do this                                                                                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| A member                     | **Settings > Logins > Invite**. They get their private workspace only. Add them to the workspaces they need on **Settings > Workspaces**. |
-| Another admin                | Add them to the Admin workspace, or **Settings > Logins > Add login** with role Admin.                                                    |
-| Someone outside your company | Make a workspace for them, add their login, and share only what they need.                                                                |
-
-Client logins and emailed sign-in codes are gone. A former client login stays disabled.
-
-## Take access back
-
-- Remove the user from the workspace. They lose its items at once.
-- Turn a grant's **Write** off, or remove the grant.
-- **Settings > Logins**: switch on **Disabled** to end a login and all its sessions.
+Each workspace can have one assistant. It reads only that workspace's items, and it changes an item only for a person who could change it by hand. Each person's chats are their own: nobody else reads them, admins and the owner included.
 
 ## Next
 
+- [Workspaces and people](../03-using-jackdaw/12-team.md): make a workspace, add people, share an item
 - [Sharing and federation](06-sharing-and-federation.md)
-- [Add logins](../05-admin/07-logins.md)
-- [MCP as a login](../07-api/02-mcp-login.md)
-- Deep developer reference: [workspaces.md](../../workspaces.md)
+- [Add users](../05-admin/07-logins.md)
+- Deep developer reference: [workspaces.md](../../workspaces.md) and [actors.md](../../actors.md)

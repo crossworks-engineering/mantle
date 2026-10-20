@@ -4,13 +4,13 @@ Nothing leaves your brain unless you send it out on purpose. Every item starts p
 
 ## Workspaces
 
-Inside the brain, an item is shared by a grant to a workspace, in its **Grant Access** panel. Every new item starts in one home workspace and nowhere else. Who reads what is on [Who can use a brain](05-access-tiers.md).
+Inside the brain, an item is shared by a grant to a workspace, in its **Access** panel. Every new item starts in one home workspace and nowhere else. Who reads what is on [Who can use a brain](05-access-tiers.md).
 
 ## Public links
 
-Share an item and MantleOS makes a link anyone can open without a login. Turn sharing off and the link stops working at once. **Team > Shared links** lists every live link.
+Share an item and MantleOS makes a link anyone can open without a login. Turn sharing off and the link stops working at once. **Settings > Shared links** lists every live link.
 
-A link shows its item and the items you tick for it in the item's Grant Access panel. An image or embed you add to a page that already has a link is not shown on the link until you tick it there.
+A link shows its item and the items you tick for it in the item's **Access** panel. An image or embed you add to a page that already has a link is not shown on the link until you tick it there.
 
 To show one item to one outsider without a public link, share it with a contact. The contact opens it with a code you give them.
 
@@ -32,5 +32,5 @@ Your partner runs their own MantleOS brain. You pair the two brains and grant th
 ## Next
 
 - [Who can use a brain](05-access-tiers.md)
-- [Add logins](../05-admin/07-logins.md)
+- [Add users](../05-admin/07-logins.md)
 - Deep developer references: [workspaces.md](../../workspaces.md), [sharing.md](../../sharing.md), [federation.md](../../federation.md)

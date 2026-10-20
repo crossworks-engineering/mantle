@@ -4,6 +4,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 
 ## Find your way
 
+- **Workspace switcher**: at the top of the menu. Pick the workspace whose items the lists show. See [Workspaces and people](12-team.md).
 - **Scope**: the switch at the top of the menu shows **Work** (Workspace and Review), **Settings** (what you configure) or **Admin** (everything).
 - **Filter menu…**: type to find any screen, whatever the scope.
 - **Favorites**: star an item to pin it to the top in every scope.
@@ -14,7 +15,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 
 | Item | What it is for |
 |---|---|
-| [Dashboard](../06-help/dashboard.md) | Health of the brain: index size, spend, items waiting for you. |
+| [Home](../06-help/home.md) | The landing page of your current workspace. |
 | [Journal](../06-help/journal.md) | Facts about you, and what agents learned. |
 | [Email](../06-help/inbox.md) | Mail from your contacts, by account and folder. |
 | [Files](../06-help/files.md) | Your folder tree, read into the brain. |
@@ -37,7 +38,6 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 |---|---|
 | [Models](../06-help/models.md) | Catalogue of provider models and prices. |
 | [Discover](../06-help/discover.md) | Recent senders who are not contacts yet. |
-| [Team](../06-help/team-admin.md) | Invites, member chats, requests. |
 | [Pending](../06-help/pending.md) | Actions and questions waiting for you. |
 
 ## Settings
@@ -52,6 +52,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 | [API keys](../06-help/keys.md) | Provider keys: keys this brain uses to call other services. |
 | [MCP](../06-help/mcp.md) | Let an outside AI client use your brain. |
 | [API access](../06-help/api-access.md) | Your own keys for scripts and MCP clients that use this brain. |
+| [Telegram](../02-first-steps/05-connect-telegram.md) | Pair your own Telegram chat with an assistant. |
 | [Connectors](../06-help/connectors.md) | Use outside MCP servers and web APIs. |
 | [Agents](../06-help/agents.md) | The assistants and specialists. |
 | [AI workers](../06-help/ai-workers.md) | Background jobs: extract, summarise, voice, vision. |
@@ -69,13 +70,16 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 | [Backups](../06-help/backups.md) | Scheduled local database dumps. |
 | [Updates](../06-help/updates.md) | Check for and install releases. |
 | [Services](../06-help/services.md) | Switch optional services on and off. |
-| [Logins](../06-help/users.md) | Who can sign in, passwords, devices. |
+| [Users](../06-help/users.md) | Who can sign in, invites, passwords, devices. |
+| [Workspaces](12-team.md) | Who reads what: workspaces, their people and Moderators. |
+| [Shared links](../04-concepts/06-sharing-and-federation.md) | Every public link you have given out. |
 | [Audit log](../06-help/audit.md) | Who did what, and when. |
 
 ## System
 
 | Item | What it is for |
 |---|---|
+| [Dashboard](../06-help/dashboard.md) | Health of the brain: index size, spend, items waiting for you. |
 | [Studio](../06-help/studio.md) | The whole agent graph on one canvas. |
 | [API Console](../06-help/dev-tools.md) | Run any API route or tool by hand. |
 | [Runners](../06-help/runners.md) | Background workflows and their state. |

@@ -9,7 +9,7 @@ Every workspace has a landing page: what its users see at **Home** while it is t
 
 ## Set the landing page
 
-1. Share the app with the workspace (**Grant Access** on the app).
+1. Share the app with the workspace (its **Access** panel).
 2. Open **Settings > Workspaces** and pick the workspace.
 3. Under **Landing page**, pick the app.
 

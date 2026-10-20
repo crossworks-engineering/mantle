@@ -38,7 +38,7 @@ The installer generates these, and re-running it never replaces an existing key.
 
 - A login gives no rights by itself. Each user reads what is granted to the workspaces they are in, and the database itself enforces it. Admins manage the brain, but read only what their workspaces hold. See [Who can use a brain](../04-concepts/05-access-tiers.md).
 - Use a separate brain for groups that must not share admins.
-- End a login's access in **Settings > Logins** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add logins](07-logins.md).
+- End a login's access in **Settings > Users** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add users](07-logins.md).
 - Check **Settings > Audit log** when something appears that nobody remembers creating.
 
 ## The updater

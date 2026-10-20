@@ -13,7 +13,7 @@ The connector URL is the same one the owner uses, and every login gets the same 
 ## Before you start
 
 - The remote connector is on ([Connect Claude over MCP](01-connect-claude.md)).
-- The person has a login and is a user of the workspaces they should reach ([Add logins](../05-admin/07-logins.md)).
+- The person has a login and is a user of the workspaces they should reach ([Add users](../05-admin/07-logins.md)).
 
 ## Let someone connect
 
