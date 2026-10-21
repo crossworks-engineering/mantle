@@ -754,10 +754,13 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     await allow(chat.member, member);
     as(member);
     const mine = await import('@/app/api/telegram/my-chats/[id]/route');
-    expect(
-      (await mine.DELETE(new Request('http://x/', { method: 'DELETE' }), params(chat.member)))
-        .status,
-    ).toBe(200);
+    // As the gate runs it, with the acting login (see `moderate`).
+    const res = await m.runInRequestSlot(() => {
+      m.setRequestActor(m.loginActor(member, 'rw'));
+      m.noteRequestSystem('login-self');
+      return mine.DELETE(new Request('http://x/', { method: 'DELETE' }), params(chat.member));
+    });
+    expect(res.status).toBe(200);
     expect(await chatRow(chat.member)).toEqual({ s: 'pending', login: null, code: null });
   });
 
