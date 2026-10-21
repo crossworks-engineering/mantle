@@ -114,9 +114,11 @@ export function isWriteSql(text: string): boolean {
   // Read on the text's code (sql-text.ts): comments, strings and dollar
   // quotes blanked as Postgres's lexer reads them, so a verb in a value is
   // no write and a comment never hides one. Text that never closes is no
-  // statement Postgres runs: not a write (executeWrite refuses it).
-  const { code: body, unterminated } = sqlCode(text);
-  if (unterminated) return false;
+  // statement Postgres runs, and text Postgres may read otherwise (a
+  // backslash before a quote in a plain string, a U& name) is no statement
+  // this reader can vouch for: neither is a write (executeWrite refuses it).
+  const { code: body, unterminated, ambiguous } = sqlCode(text);
+  if (unterminated || ambiguous) return false;
   if (
     /^\s*\(?\s*(insert|update|delete|merge|truncate|lock|refresh|notify|call|do|create|alter|drop)\b/i.test(
       body,

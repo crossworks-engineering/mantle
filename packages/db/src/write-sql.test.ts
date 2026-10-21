@@ -40,6 +40,15 @@ describe('isWriteSql', () => {
   ])('a read: %s', (q) => expect(isWriteSql(q)).toBe(false));
 
   it.each([
+    // Text Postgres may read otherwise (sql-text.ts `ambiguous`): a
+    // backslash before a quote in a plain string, a U& name. Refused like
+    // text that never closes, whichever way it would be read.
+    "update nodes set title = 'a\\' where id = $1",
+    "select 'x\\'; delete from nodes where id = $1; select '1'",
+    'update U&"nodes" set title = $1',
+  ])('not a write (refused), read otherwise: %s', (q) => expect(isWriteSql(q)).toBe(false));
+
+  it.each([
     // A `--` comment a carriage return ends: the delete after it is code.
     'select 1 --x\r; delete from nodes where id = $1',
     // A dollar quote whose tag is not ASCII ends where Postgres ends it.
