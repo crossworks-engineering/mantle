@@ -388,7 +388,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       await pool.end();
     }
     // The boot line names it (read as the system pool reads it).
-    const [probe] = await su.unsafe<{ login: boolean; settings: number }[]>(rr.NARROW_LOGIN_SQL);
+    const probe = await rr.readNarrowLogin(su);
     expect(probe).toEqual({ login: true, settings: 2 });
     expect(rr.narrowLoginNote(probe!, true)).toMatch(/2 stored setting row\(s\).*next migrate/);
     // migrate's role step takes every one back.
@@ -449,7 +449,8 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       }
     } finally {
       g.__mantleNarrowSql = good;
-      await bad.end();
+      // A pool whose logins all failed ends only by its timeout.
+      await bad.end({ timeout: 1 });
     }
     expect(rr.narrowLoginNote({ login: false, settings: 0 }, true)).toMatch(
       /cannot log in: every narrow statement fails until you run migrate with MANTLE_NARROW_SYSTEM on/,
@@ -457,7 +458,15 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   });
 
   it('one pipeline for both pools, one failure answer (settingsPipeline)', async () => {
-    const pool = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    // A pool of one connection per case: each case's connection is the one
+    // the next statement on that pool gets.
+    const pools1: ReturnType<typeof postgres>[] = [];
+    const fresh = () => {
+      const p = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+      pools1.push(p);
+      return p;
+    };
+    let pool: ReturnType<typeof postgres> = fresh();
     const alive = async (pid: number) =>
       (
         await su<
@@ -469,9 +478,11 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         await new Promise((r) => setTimeout(r, 50));
       return !(await alive(pid));
     };
-    const run = (set: string, query: string, reset = 'reset mantle.cell') =>
+    /** One pipeline on `on` (a fresh pool unless given), which becomes
+     *  `pool` for the case's next statement. */
+    const run = (set: string, query: string, reset = 'reset mantle.cell', on = fresh()) =>
       as
-        .settingsPipeline(pool, () => set, query, [], 'rows', reset)
+        .settingsPipeline((pool = on), () => set, query, [], 'rows', reset)
         .then(
           (rows) => ({ ok: (rows as { p: number; c: string }[])[0]! }),
           (err: { code?: string }) => ({ err: err.code }),
@@ -493,8 +504,9 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       // Both failed: the SET's error (the cause).
       expect(await run('select 1/0', 'select no_such_column')).toEqual({ err: '22012' });
       // The statement failed alone: its own error; the connection goes back.
-      const pid = (await pool.unsafe<{ p: number }[]>('select pg_backend_pid() as p'))[0]!.p;
-      expect(await run(SET, 'select no_such_column')).toEqual({ err: '42703' });
+      const own = fresh();
+      const pid = (await own.unsafe<{ p: number }[]>('select pg_backend_pid() as p'))[0]!.p;
+      expect(await run(SET, 'select no_such_column', undefined, own)).toEqual({ err: '42703' });
       expect((await pool.unsafe<{ p: number; c: string }[]>(READ))[0]).toEqual({ p: pid, c: '' });
       // The RESET failed: the caller has its answer, the connection ends.
       const resetFailed = await run(SET, READ, 'select 1/0');
@@ -518,7 +530,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         );
       expect(thrown).toBe('SETX');
     } finally {
-      await pool.end();
+      await Promise.all(pools1.map((p) => p.end({ timeout: 1 })));
     }
   });
 

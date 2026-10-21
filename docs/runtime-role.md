@@ -267,10 +267,11 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   grant can stop) never reaches a narrow session through them; migrate
   takes every stored setting of the role back each run (`RESET ALL`, and
   the `IN DATABASE` form for each database) and sets its derived password
-  again (the login may change its own). A process that starts with the
-  switch on reads the role (`NARROW_LOGIN_SQL`, outside tests) and warns
-  when it cannot log in, naming the fix (run migrate with the switch on, or
-  set `MANTLE_NARROW_SYSTEM=0`), and on any stored setting. A role whose
+  again (the login may change its own). A production process reads the role
+  with its boot line (`readNarrowLogin`)
+  and, with the switch on, warns when it cannot log in, naming the fix (run
+  migrate with the switch on, or set `MANTLE_NARROW_SYSTEM=0`); any stored
+  setting it names whatever the switch. A role whose
   login migrate did not open fails the narrow statement, never the system
   pool instead (`NarrowLoginError`, its message the same fix);
 - one statement outside a transaction: on one reserved connection, a

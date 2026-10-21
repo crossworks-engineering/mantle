@@ -435,14 +435,17 @@ export const NARROW_CONNECTION_LIMIT = 36;
 
 /** What the boot line reads of the narrow role (narrowLoginNote): whether
  *  it may log in, and how many settings are stored on it (ALTER ROLE ...
- *  SET, any database). No row: the role is missing. Readable by any role. */
-export const NARROW_LOGIN_SQL = `
-  SELECT r.rolcanlogin AS login,
-         (SELECT count(*)::int FROM pg_catalog.pg_db_role_setting s
-           WHERE s.setrole = r.oid) AS settings
-    FROM pg_catalog.pg_roles r WHERE r.rolname = '${NARROW_ROLE}'`;
+ *  SET, any database). Null: the role is missing. Readable by any role. */
+export async function readNarrowLogin(sql: Sql): Promise<NarrowLoginRow | null> {
+  const rows = await sql<NarrowLoginRow[]>`
+    select r.rolcanlogin as login,
+           (select count(*)::int from pg_catalog.pg_db_role_setting s
+             where s.setrole = r.oid) as settings
+      from pg_catalog.pg_roles r where r.rolname = ${NARROW_ROLE}`;
+  return rows[0] ?? null;
+}
 
-/** A row of NARROW_LOGIN_SQL. */
+/** What readNarrowLogin reads. */
 export type NarrowLoginRow = { login: boolean; settings: number };
 
 /** The fix for a narrow role that cannot log in while the switch is on:

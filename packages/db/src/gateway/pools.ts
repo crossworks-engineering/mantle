@@ -11,14 +11,13 @@ import { env, feature, isProduction } from '@mantle/config';
 import {
   DB_ROLE_SQL,
   dbRoleNote,
-  NARROW_LOGIN_SQL,
   narrowDatabaseUrl,
   narrowLoginNote,
   narrowSystemOn,
   runtimeRoleOn,
   systemDatabaseUrl,
+  readNarrowLogin,
   type DbRoleRow,
-  type NarrowLoginRow,
 } from '../runtime-role';
 import { systemRouteNow, viewerDatabaseUrl, viewerRolePassword, type PoolRole } from '../viewer';
 import {
@@ -140,7 +139,6 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   runWithoutActor(() => {
     refreshActorCheckMode(sql);
     reportDbRole(sql);
-    reportNarrowLogin(sql, narrow);
   });
   return client;
 }
@@ -166,45 +164,32 @@ function reportDbRole(base: PgSql): void {
   if (!isProduction()) return;
   base
     .unsafe(`${ACTOR_SQL_TAG} ${DB_ROLE_SQL}`)
-    .then((rows) => {
+    .then(async (rows) => {
       const row = rows[0] as DbRoleRow | undefined;
       if (!row) return;
-      const note = dbRoleNote(row, runtimeRoleOn());
-      // The narrow route's switch, read once when the pool opened.
+      // The narrow route's switch, read once when the pool opened; its pool
+      // logs in as the role but in per-database mode (narrowDatabaseUrl).
+      const loginPool = narrowSystemOn() && !feature('viewerRolesPerDatabase');
       const narrow = `; narrow system route ${
         narrowSystemOn()
-          ? narrowDatabaseUrl()
+          ? loginPool
             ? 'on, its own pool logs in as mantle_system_narrow'
             : 'on, the role taken per transaction (per-database mode: the role has no login)'
           : 'off'
       } (MANTLE_NARROW_SYSTEM)`;
-      if (note) console.warn(`${note}${narrow}`);
-      else
+      // The narrow role itself: with the switch on and the route logging
+      // in as it, a role that cannot log in (migrate ran with the switch
+      // off) is named with its fix; a setting stored on the role, whatever
+      // the switch (narrowLoginNote).
+      const narrowNote = narrowLoginNote(await readNarrowLogin(base).catch(() => null), loginPool);
+      const roleNote = dbRoleNote(row, runtimeRoleOn());
+      const note = [roleNote && `${roleNote}${narrow}`, narrowNote].filter(Boolean).join('\n');
+      if (note) {
+        console.warn(
+          roleNote ? note : `[db] the system pool logs in as ${row.user}${narrow}\n${note}`,
+        );
+      } else
         console.log(`[db] the system pool logs in as ${row.user} (arch A9 runtime role)${narrow}`);
-    })
-    .catch(() => {});
-}
-
-/**
- * The narrow role at the process's start, once, outside tests: with the
- * switch on and the route logging in as the role, a role that cannot log
- * in (migrate ran with the switch off) is named with its fix, and any
- * setting stored on the role is named whatever the switch
- * (narrowLoginNote). Never in a statement's path.
- */
-function reportNarrowLogin(base: PgSql, switchOn: boolean): void {
-  if (env('NODE_ENV') === 'test') return;
-  let loginPool = false;
-  try {
-    loginPool = switchOn && narrowDatabaseUrl() !== null;
-  } catch {
-    // No master key: the narrow route fails on its own with that error.
-  }
-  base
-    .unsafe(`${ACTOR_SQL_TAG} ${NARROW_LOGIN_SQL}`)
-    .then((rows) => {
-      const note = narrowLoginNote((rows[0] as NarrowLoginRow | undefined) ?? null, loginPool);
-      if (note) console.warn(note);
     })
     .catch(() => {});
 }
@@ -433,6 +418,8 @@ export async function closeDb(): Promise<void> {
   // pool is no longer globalThis.__mantleSql, so none starts now).
   await actorPipelinesDone();
   if (sql) await sql.end();
-  if (narrowSql) await narrowSql.end();
+  // Its own pipelines are done above; a timeout, so a pool whose logins
+  // all failed (the role with no login) still ends.
+  if (narrowSql) await narrowSql.end({ timeout: 5 });
   if (viewers) await Promise.all([...viewers.values()].map((v) => v.sql.end()));
 }
