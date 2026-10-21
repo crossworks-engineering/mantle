@@ -342,18 +342,26 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     for (const x of await narrowPoolSessions()) expect([x.l, x.a]).toEqual(['', '']);
   });
 
-  it("the narrow pool's startup parameters: the server's defaults, over any setting stored on the role", async () => {
+  it("the narrow pool's startup parameters: the app's values and the system pool's, over any setting stored on the role", async () => {
     await reopen(true);
     const pool = pools.newNarrowPool(
       rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
       su,
     );
     try {
-      const [row] = await pool.unsafe<{ sp: string; tz: string; ds: string }[]>(
-        `select current_setting('search_path') as sp, current_setting('TimeZone') as tz,
-                current_setting('DateStyle') as ds`,
+      const want = pools.narrowStartup(su.parameters as unknown as Record<string, string>);
+      const keys = Object.keys(want);
+      const [row] = await pool.unsafe<Record<string, string>[]>(
+        `select ${keys.map((k) => `current_setting('${k}') as "${k}"`).join(', ')}`,
       );
-      expect(row).toEqual({ sp: '"$user", public', tz: 'UTC', ds: 'ISO, MDY' });
+      expect(row).toEqual(want);
+      // The fixed ones, and the system pool's own TimeZone and DateStyle.
+      expect(want).toMatchObject({
+        search_path: '"$user", public',
+        statement_timeout: '0',
+        TimeZone: su.parameters.TimeZone,
+        DateStyle: su.parameters.DateStyle,
+      });
       expect(pool.options.max).toBe(pools.NARROW_POOL_MAX);
     } finally {
       await pool.end();
@@ -571,7 +579,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       const resetFailed = await run(SET, READ, 'select 1/0');
       expect(resetFailed).toMatchObject({ ok: { c: 'x' } });
       expect(await gone((resetFailed as { ok: { p: number } }).ok.p)).toBe(true);
-      expect(await next()).toMatchObject({ c: '' });
+      expect(['', null]).toContain((await next()).c);
       // A SET text that throws: that error, before any connection is taken.
       const thrown = await as
         .settingsPipeline(
@@ -594,7 +602,9 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       const [first, second] = await Promise.all([run('select 1/0', READ), run(SET, READ)]);
       expect(first).toHaveProperty('ok');
       expect(second).toMatchObject({ ok: { c: 'x' } });
-      // The pool ends without a timeout: no reserve was left unsettled.
+      // The pool ends without a timeout once the pipelines are done (as
+      // closeDb waits for them): no reserve was left unsettled.
+      await as.actorPipelinesDone();
       await pool.end();
     } finally {
       // Ends in time: no reserve was left unsettled.

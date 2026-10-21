@@ -100,6 +100,9 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
     } finally {
       held.release();
     }
+    // As closeDb: the pipelines first (a connection whose reservation ends
+    // after the pool's end began is never ended: postgres.js).
+    await as.actorPipelinesDone();
     await expect(within(pool.end(), 5000)).resolves.toBeUndefined();
   });
 
@@ -115,6 +118,9 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
     expect((answer as { p: number }).p).not.toBe(pids[0]);
     held[0]!.release();
     held[1]!.release();
+    // As closeDb: the pipelines first (a connection whose reservation ends
+    // after the pool's end began is never ended: postgres.js).
+    await as.actorPipelinesDone();
     await expect(within(pool.end(), 5000)).resolves.toBeUndefined();
   });
 
@@ -227,6 +233,9 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
     // answers on both, and ends.
     const both = await Promise.all([pipeline(pool), pipeline(pool)]);
     expect(both.map((x) => x.c)).toEqual(['x', 'x']);
+    // As closeDb: the pipelines first (a connection whose reservation ends
+    // after the pool's end began is never ended: postgres.js).
+    await as.actorPipelinesDone();
     await expect(within(pool.end(), 5000)).resolves.toBeUndefined();
   });
 
