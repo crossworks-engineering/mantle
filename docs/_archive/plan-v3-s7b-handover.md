@@ -8,6 +8,12 @@ docs/runtime-role.md, "The narrow system role" and "The acting login".
 
 ## Part b1: the narrow pool and the acting login
 
+The fix round below changed this part: migration 0314 and its cells left it
+(the definers land with b2, so b1 has no migration), the pool holds 2
+connections per process under a limit of 36, and the narrow login's
+statements share the actor client's pipeline. Where this section and the
+fix round differ, the fix round holds.
+
 Branch feat/s7b-b1, from main at d0a207d2a (v0.300.129 plus one docs
 commit). The switch's default is unchanged (on in tests and development,
 off in production). One migration, `0314_acting_login_definers` (`when`
@@ -242,3 +248,216 @@ their volumes.
 4. The check-off full route now sends a request exit's actor settings (one
    more statement with a transaction's first, no round trip; a SET and a
    RESET around a single write). Not measured on a box.
+
+## b1 fix round
+
+After the b1 audit at cafa14530 (7.5/10, merge after fixes; the class close
+and the pooled sessions' isolation proven clean). Same branch, a fresh
+builder. Code head dbcebf99d (the suites below ran on it); the commit after
+it is this file and one pin.
+
+### What changed, by audit item
+
+- MED-1, the connection budget. `NARROW_POOL_MAX` 5 to 2, an idle timeout
+  of 30 s (gateway/pools.ts); the role's `CONNECTION LIMIT` 30 to 36
+  (runtime-role.ts `NARROW_CONNECTION_LIMIT`), sized to every pool a box
+  may open at once: 12 compose processes with the app env x 2 = 24, plus 4
+  stdio MCP servers x 2 = 8 and 2 operator runs (a maintain run and one
+  more CLI) x 2 = 4: 36. connection-ceiling.test.ts counts every process's
+  narrow pool with no min() (the line is 24 on the full shape, 12 on core)
+  and a new cell holds box + headroom (36) to the limit, the total to 90% of
+  max_connections and the total plus every headroom to max_connections.
+  Cell: narrow-login.db.test.ts "the role's CONNECTION LIMIT holds every
+  process's narrow pool at full use": the narrow role's rolconnlimit is 36;
+  on a role of its own with the same limit (the narrow role's connections
+  are shared with the test files running beside it), 18 pools made by the
+  pool's own factory, each 2 busy at once: 36 asked, 0 refused, 36
+  backends; one more connection while all are held: 53300.
+- MED-2, rule 2. Migration 0314 (the file, its revert and its journal
+  entry) left b1, with its cells (the narrow-login cell of the two
+  definers) and the three test harness changes made for it
+  (admin-membership, file-home-chat-0313, w7d-telegram are main's again).
+  b1 has no migration. The sender stays: the exit's route entry carries the
+  acting login, the gateway sends `mantle.acting_login` (on the narrow
+  route always, for a request exit's actor in every check mode), and no
+  narrow statement may name it.
+- LOW-1. docs/runtime-role.md "The acting login" now says this part only
+  sends it, and that the acting login alone does not close the gap: the
+  write role can clear its scope and set `mantle.acting_login`, so b2's
+  definers must also refuse with no scope unless the caller is a system or
+  narrow login. The b2 note below carries it.
+- LOW-2. Migrate's role step runs `ALTER ROLE mantle_system_narrow RESET
+ALL` and the `IN DATABASE` form for each database a setting is stored
+  for (runtime-role.ts `resetNarrowRoleSettings`), every run, after the
+  `ALTER ROLE ... PASSWORD` it already sent each run. The pool sends
+  `search_path`, `TimeZone`, `DateStyle` as startup parameters
+  (`NARROW_STARTUP`: `"$user", public`, UTC, `ISO, MDY`, the boxes'
+  defaults). The production boot line reads the role
+  (`readNarrowLogin`) and names any stored setting. Cells: "the narrow
+  pool's startup parameters"; "a setting the narrow login stores on
+  itself" (the login stores two, a raw session takes the per-database
+  search_path, the pool's session does not, the boot note names 2, migrate's
+  step leaves 0); "the narrow login may change its own password" (it can,
+  shown in a transaction that rolls back since the role is shared with the
+  files running beside it; each run's statement carries the derived
+  password; after a run the stored SCRAM verifier is the derived
+  password's and not the other).
+- LOW-3, gateway lens. One pipeline for a statement with session settings
+  around it: actor-sql.ts `settingsPipeline`, used by the actor client's
+  write outside a transaction and by the narrow login's statement with an
+  actor (narrow-route.ts `narrowLoginStatement`, which now only routes).
+  One failure answer: the statement's own result when it ran (a SET that
+  failed beside it is not the caller's error, the statement committed; the
+  connection then ends), else the SET's error when it failed too, else the
+  statement's; a failed SET or RESET ends the connection. The narrow route
+  had thrown the SET's error over a committed statement; the actor client
+  had not ended a connection whose SET failed. Cell: "one pipeline for both
+  pools, one failure answer" (all well, SET failed, both failed, statement
+  failed, RESET failed, SET text throws).
+- LOW-4. With the switch on and the route logging in as the role, the boot
+  line names a role that cannot log in and the fix ("run migrate with
+  MANTLE_NARROW_SYSTEM on ..., or set MANTLE_NARROW_SYSTEM=0",
+  `NARROW_LOGIN_FIX`); a refused login on the narrow pool (28000, 28P01)
+  fails the statement as `NarrowLoginError` with the same fix. closeDb ends
+  the narrow pool with a 5 s timeout (a pool whose logins all failed did
+  not end otherwise: found by the cell). Cells: runtime-role.test.ts (the
+  boot note, unit) and "a pool that cannot log in as the narrow role fails
+  the statement, closed, with the fix named" (a statement and a
+  transaction).
+- LOW-5. "the session SET is gone after the statement": after a narrow
+  statement of a request exit (it saw the acting login and the actor), every
+  connection of the pool held at once, outside a transaction, the
+  statement's own among them: none holds `mantle.acting_login` or
+  `mantle.actor`. "60 parallel narrow statements of two acting logins": 0
+  cross, every session the narrow role, at most 2 backends, the pool clean
+  after. The w7a sweep harness makes its narrow pool with the pool's own
+  factory (`newNarrowPool`), no parser copy.
+
+### Measured
+
+- Connections: the narrow line 24 of the role's 36 (12 left for 4 stdio
+  MCP servers and 2 operator runs); the full shape 373 of 405 (90% of 450),
+  393 of 450 with the stdio servers' write and narrow connections and the
+  operator runs; full with runs off 333; core 193.
+- Round trips with the pool of 2 (a2a-round-trips.db.test.ts,
+  MANTLE_RT_REPORT, workstation pg18, statements / round trips, check
+  off): chat turn start 126 / 155, page save 17 / 21, member page save 21 /
+  27, tree load 13 / 17, item open 9 / 12, search 23 / 30, MCP tool call
+  37 / 49: the same as b1 with the pool of 5.
+
+### The drill (N-1), workstation pg18, main d0a207d2a and the branch
+
+Each step: rolcanlogin / rolconnlimit / stored setting rows of the narrow
+role / ledger rows (no migration: 313 throughout).
+
+| Step                                                  | Exit | State                |
+| ----------------------------------------------------- | ---- | -------------------- |
+| init and migrate with main, production                | 0    | false / -1 / 0 / 313 |
+| migrate with the branch, production, switch on (N)    | 0    | true / 36 / 0 / 313  |
+| the narrow login stores a setting on itself           | 0    | true / 36 / 1 / 313  |
+| migrate with main (N-1 boot)                          | 0    | false / 36 / 1 / 313 |
+| the narrow login after N-1 (refused: NOLOGIN)         | 2    | false / 36 / 1 / 313 |
+| migrate with the branch, production, switch on        | 0    | true / 36 / 0 / 313  |
+| the narrow login again: search_path `"$user", public` | 0    | true / 36 / 0 / 313  |
+| the branch, production, switch unset                  | 0    | false / 36 / 0 / 313 |
+| the branch, production, switch on, runtime role unset | 0    | true / 36 / 0 / 313  |
+| the branch, production, switch on, per-database mode  | 0    | false / 36 / 0 / 313 |
+| the branch, development default (switch on)           | 0    | true / 36 / 0 / 313  |
+
+N-1 leaves the limit at 36 and a stored setting in place (main sets
+neither); the role has no login there, and the next migrate of the branch
+clears the setting. db-restore.sh makes the role before pg_restore, as in
+b1.
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Against b1: the two
+definers with no scope act for the login passed again (main's 0313 and
+0293 bodies: b1 no longer changes them). The actor client's write whose SET
+failed now ends its connection after the RESET (the answer is unchanged:
+the write's own); the narrow login's statement whose SET failed answers
+the statement's result where it threw the SET's error.
+
+### Pins
+
+historyCodeComments 2334 to 2333 (one counted comment line fewer in the
+rewritten pipeline comments). rawSqlNonLiteral stays 64 and narrow-route.ts
+5 (its login pool send site now sends a statement with no actor; with an
+actor the statement goes through actor-sql.ts, whose pin 9 holds). No
+other pin moved.
+
+### Gates
+
+Mac, Node 26, DATABASE_URL unset, on the code head: `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm lint` 0, `pnpm -r typecheck` 0, `pnpm boot:smoke` 0, `pnpm -C
+server/web build` 0, `vitest run server packages eslint-rules` 0 (870 files
+passed, 283 skipped; 11286 tests passed). The first full unit run had 2
+shell harness files time out under load (deploy-scripts.test.ts,
+shell-portability.test.ts, exit 1); alone they passed (11 tests, exit 0),
+and the full run again exited 0 (the counts above).
+
+Workstation, a fresh clone of the pushed dbcebf99d per suite, one
+pgvector pg18 container each (label mantle.test=s7b-b1,
+max_connections=450, port checked free, removed by exact name with its
+volumes), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, test lanes, --maxWorkers=3, MANTLE_NARROW_SYSTEM=1
+unless said; the default suites are the fresh-install shape
+(MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                        | Exit | Counts                              |
+| -------------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                    | 0    | 577 files; 6363 passed, 1 skipped   |
+| full DB vitest, shard 2/2                    | 0    | 576 files; 7851 passed              |
+| test:actor-off                               | 0    | 140 files; 1409 passed, 1 skipped   |
+| test:actor-on                                | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                                 | 0    | 46 files; 583 passed                |
+| test:matrix                                  | 0    | 4 files; 8 passed (run alone)       |
+| test:runtime-role in full                    | 0    | 293 files; 2914 passed, 1 skipped   |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0       | 0    | 1153 files; 14214 passed, 1 skipped |
+| the narrow cells (5 files, targeted)         | 0    | 5 files; 73 passed                  |
+| a2a-round-trips.db.test.ts, MANTLE_RT_REPORT | 0    | the numbers above (on c9354afa3)    |
+| the drill (N-1, production, per-database)    | 0    | every migrate step 0 (above)        |
+
+test:matrix first ran with the five other suites and failed only its time
+budget (the tool cells 214.5 s against 210 s, every cell the oracle's
+answer); run again beside two others it took 226.5 s, and b1's head
+8e7a57b44 beside it under the same load 221.0 s (also over): the load, not
+the pool of 2. Alone it passed (the tool cells 68.3 s warn, 46.8 s on).
+The round-trip run and the drill ran on c9354afa3, whose migrate and pool
+are the head's (the commit after it changed the boot line, closeDb's end
+timeout and one cell). Containers removed by exact name with their
+volumes.
+
+### For b2 (moved out of b1)
+
+- The definers, from cafa14530: `git show
+cafa14530:packages/db/migrations/0314_acting_login_definers.sql` and its
+  revert under packages/db/rollback, the journal entry (renumber and a new
+  `when` at merge), the narrow-login.db.test.ts cell "mantle_tg_chat_set and
+  mantle_access_key_revoke with no scope take only the acting login", and
+  the harness changes of 5cfdc673b, dda5c68d6 and 8e7a57b44 to
+  admin-membership.db.test.ts, file-home-chat-0313.db.test.ts and
+  w7d-telegram.db.test.ts (the handlers run inside a request exit, as the
+  gate runs them).
+- LOW-1: with no scope, `mantle_tg_chat_set` and `mantle_access_key_revoke`
+  must refuse unless the caller is a system login or the narrow login
+  (session_user, not only current_user), then take only the acting login;
+  the write role clearing its scope and setting `mantle.acting_login`
+  itself is refused (the auditor's E4 as a cell). The other definers that
+  take a login with no scope, as listed in 0314's header, each with a cell.
+- Rolling b2 back to b1 then needs no revert: b1 already sends the acting
+  login.
+
+### Open items
+
+1. The user role's pool has the same arithmetic gap MED-1 named for the
+   narrow role: 12 processes x 3 = 36 asked under its limit of 30
+   (connection-ceiling.test.ts still takes min() there). Not in b1's
+   scope (viewer-roles.ts); for the CEO to place.
+2. In the pipeline cell's first shape, a max-1 pool's reserve right after
+   the pipeline ended its connection did not return (the cell now takes a
+   pool per case). Not reproduced in isolation with reserveLease (a reserve
+   after lease.end, after an idle close and after a kill all returned).
+   The narrow pool ends a connection only when its SET or RESET fails.
+3. N-1 keeps the limit at 36 and any setting stored while N ran (above).
+4. Per-database mode keeps the S7a route (no login for the role).
