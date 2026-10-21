@@ -1431,6 +1431,15 @@ N-1's boot on the N database takes the new grants back (its own lists) and
 leaves the definers, unused; the revert puts the allowlist's body back to
 0307's (the same md5 as before 0313).
 
+Mac, Node 26, DATABASE_URL unset, on f39c4350a (code equal to
+52b6b7682): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one warning main
+has, contact-sharing-routes.db.test.ts), `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0 (no pin went down or up),
+`pnpm -C server/web build` 0, `pnpm boot:smoke` 0 (14 services),
+`vitest run server packages eslint-rules` 0 (870 files passed, 281
+skipped; 11289 tests passed). Earlier on a8e7f0b8b the unit run failed
+a10-body-sweep.test.ts (its stand-in, above), the only failure.
+
 ### Open items, for the CEO before the merge
 
 1. The fleet's own count of the routed-away raw writes: the suites and the
