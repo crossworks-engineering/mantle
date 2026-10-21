@@ -481,5 +481,61 @@ describe('the narrow system role rights', () => {
   });
 });
 
+describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => {
+  it("pinned at the app's values; TimeZone, DateStyle, IntervalStyle and string literals the system pool's; transaction_timeout from 17", async () => {
+    const { narrowStartup, NARROW_STARTUP_FIXED } = await import('./gateway/pools');
+    const pg16 = {
+      server_version: '16.4',
+      TimeZone: 'Etc/UTC',
+      DateStyle: 'ISO, MDY',
+      IntervalStyle: 'postgres',
+      standard_conforming_strings: 'on',
+    };
+    expect(narrowStartup(pg16)).toEqual({
+      search_path: '"$user", public',
+      default_transaction_read_only: 'off',
+      default_transaction_isolation: 'read committed',
+      row_security: 'on',
+      statement_timeout: '0',
+      lock_timeout: '0',
+      idle_in_transaction_session_timeout: '0',
+      idle_session_timeout: '0',
+      bytea_output: 'hex',
+      extra_float_digits: '1',
+      TimeZone: 'Etc/UTC',
+      DateStyle: 'ISO, MDY',
+      IntervalStyle: 'postgres',
+      standard_conforming_strings: 'on',
+    });
+    // Postgres 17 and later: transaction_timeout too (16 would refuse the
+    // login on an unknown startup parameter).
+    expect(narrowStartup({ ...pg16, server_version: '18.1 (Debian 18.1-1.pgdg13+2)' })).toEqual({
+      ...narrowStartup(pg16),
+      transaction_timeout: '0',
+    });
+    // Nothing reported yet: the fixed ones only (the route waits for the
+    // system pool's first report before a narrow connect).
+    expect(narrowStartup({})).toEqual({ ...NARROW_STARTUP_FIXED });
+  });
+
+  it("the pool reads them at each connect, from the system pool's latest report", async () => {
+    const { newNarrowPool } = await import('./gateway/pools');
+    const reported: Record<string, string> = {};
+    const system = { parameters: reported, options: { parsers: {}, serializers: {} } };
+    const pool = newNarrowPool('postgres://narrow:pw@127.0.0.1:1/db', system as never);
+    const startup = () =>
+      Object.fromEntries(
+        Object.entries(Object.assign({}, pool.options.connection)).filter(([, v]) => v),
+      );
+    expect(startup()).not.toHaveProperty('TimeZone');
+    Object.assign(reported, { server_version: '18.1', TimeZone: 'America/New_York' });
+    expect(startup()).toMatchObject({
+      TimeZone: 'America/New_York',
+      transaction_timeout: '0',
+      statement_timeout: '0',
+    });
+  });
+});
+
 /** The narrow role's table counts: `all` only goes down. */
 const NARROW_COUNTS = { all: 97, read: 36, none: 8 };

@@ -40,6 +40,7 @@
  * idle in pg_stat_activity that no query reaches, and as closeDb hanging.
  */
 import type { ReservedSql } from 'postgres';
+import { BusyError } from './pg-error';
 
 /** postgres.js's own connection errors (src/errors.js, Errors.connection):
  *  the socket closed (CONNECTION_CLOSED), the connection was destroyed
@@ -105,11 +106,79 @@ export interface Lease<S extends ReservedSql = ReservedSql> {
   release(): void;
 }
 
-/** Reserve one connection of `pool` as a lease. */
-export async function reserveLease<S extends ReservedSql>(pool: {
-  reserve(): Promise<S>;
-}): Promise<Lease<S>> {
-  const sql = await pool.reserve();
+/** How long a reserve waits for a connection of its pool before it fails
+ *  as busy (reserveLease): a pool held by stuck work, or a reserve the
+ *  driver never answers, becomes an error, never a hang. */
+export const RESERVE_WAIT_MS = 15_000;
+let reserveWaitMs = RESERVE_WAIT_MS;
+
+/** Tests only (not in index.ts): the default wait; null restores it. */
+export function setReserveWaitForTests(ms: number | null): void {
+  reserveWaitMs = ms ?? RESERVE_WAIT_MS;
+}
+
+/** No connection of the pool within the wait. Busy: the API answers it as
+ *  one (isBusy, 409), and it is logged. */
+export class PoolBusyError extends BusyError {
+  constructor() {
+    super('The server is busy; try again in a moment.');
+    this.name = 'PoolBusyError';
+  }
+}
+
+/** The one log line of a pool's bounded wait running out: `what` names
+ *  the pool and the wait (the write pool's own, role-tx.ts). */
+export function logPoolBusy(what: string): void {
+  console.error(`[db] ${what}`);
+}
+
+function poolBusy(ms: number): PoolBusyError {
+  logPoolBusy(`no reserved connection of the pool within ${ms} ms`);
+  return new PoolBusyError();
+}
+
+/** The wait of one reserve: how long, and the error it fails with. */
+export interface ReserveWait {
+  ms?: number;
+  busy?: () => Error;
+}
+
+/**
+ * Reserve one connection of `pool` as a lease, waiting at most `wait.ms`
+ * (RESERVE_WAIT_MS unless given): every reserve of this package, on every
+ * pool, goes through here. A connection that comes after the wait is handed
+ * back at once (nothing was sent on it). Two layers against a reserve that
+ * never settles: patches/postgres@3.4.9.patch keeps a reserve queued when a
+ * connection of a full pool closes (postgres.js 3.4.9 dropped it), and this
+ * wait turns any other into a busy error, so the caller, and closeDb behind
+ * it, never hangs on one.
+ */
+export async function reserveLease<S extends ReservedSql>(
+  pool: { reserve(): Promise<S> },
+  wait: ReserveWait = {},
+): Promise<Lease<S>> {
+  const ms = wait.ms ?? reserveWaitMs;
+  let late = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const reserved = pool.reserve();
+  const waited = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      late = true;
+      reject(wait.busy ? wait.busy() : poolBusy(ms));
+    }, ms);
+    timer.unref?.();
+  });
+  let sql: S;
+  try {
+    sql = await Promise.race([reserved, waited]);
+  } finally {
+    clearTimeout(timer);
+    if (late)
+      void reserved.then(
+        (c) => c.release(),
+        () => undefined,
+      );
+  }
   let gone = false;
   let released = false;
   return {
@@ -149,8 +218,9 @@ export async function reserveLease<S extends ReservedSql>(pool: {
 export async function withLease<S extends ReservedSql, T>(
   pool: { reserve(): Promise<S> },
   fn: (lease: Lease<S>) => Promise<T>,
+  wait: ReserveWait = {},
 ): Promise<T> {
-  const lease = await reserveLease(pool);
+  const lease = await reserveLease(pool, wait);
   try {
     return await fn(lease);
   } finally {

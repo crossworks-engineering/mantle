@@ -92,6 +92,31 @@ export async function revokePgBossRoutines(sql: {
   await sql.unsafe('REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA pgboss FROM PUBLIC');
 }
 
+/**
+ * The server-side large-object creators. No role the app runs as makes a
+ * large object (measured: no app code calls one, pg-boss neither), and one
+ * the narrow login made would be its own, outside every table's rules (the
+ * text check refuses the plain calls; it is not the boundary). So EXECUTE
+ * is taken from PUBLIC at every migrate (applyRuntimeGrants), in each
+ * database migrate runs in. lo_import is the superuser's already (Postgres
+ * 11 and later); named so the list is whole.
+ */
+export const LARGE_OBJECT_CREATORS = [
+  'pg_catalog.lo_create(oid)',
+  'pg_catalog.lo_creat(integer)',
+  'pg_catalog.lo_from_bytea(oid, bytea)',
+  'pg_catalog.lo_import(text)',
+  'pg_catalog.lo_import(text, oid)',
+] as const;
+
+/** Take EXECUTE on LARGE_OBJECT_CREATORS from PUBLIC (the superuser keeps
+ *  them). */
+export async function revokeLargeObjectCreators(sql: {
+  unsafe: (text: string) => PromiseLike<unknown>;
+}): Promise<void> {
+  await sql.unsafe(`REVOKE EXECUTE ON FUNCTION ${LARGE_OBJECT_CREATORS.join(', ')} FROM PUBLIC`);
+}
+
 /** A database (or any) name as a quoted identifier: its `"` doubled. */
 export function quotedIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
@@ -1180,7 +1205,8 @@ export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
  * granted to none: no role the app runs as makes a temporary object; a
  * narrow role that still holds it afterwards (a migrator that does not own
  * the database only gets a warning from the REVOKE) fails the run. EXECUTE
- * on pg-boss's routines is taken from PUBLIC (revokePgBossRoutines).
+ * on pg-boss's routines is taken from PUBLIC (revokePgBossRoutines), and
+ * on the large-object creators (revokeLargeObjectCreators).
  *
  * And mantle_owner's: USAGE on the schemas, every right on the tables and
  * EXECUTE on every function. Nobody logs in as it, but Postgres runs a
@@ -1258,6 +1284,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // tables pgboss:init makes after this migrate on a fresh box.
       await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS pgboss`);
       await revokePgBossRoutines(tx);
+      await revokeLargeObjectCreators(tx);
       await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${rt}`);
       await tx.unsafe(

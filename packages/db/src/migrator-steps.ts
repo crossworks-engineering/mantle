@@ -54,6 +54,16 @@ export async function beforeMigrations(
       '  WARNING the viewer roles not set: migrate runs as a role that may not manage roles',
     );
   }
+  /** A login role's line: LOGIN, or NOLOGIN with the cause that holds (the
+   *  switch, per-database mode, or no master key to derive its password). */
+  const loginLine = (role: string, switchName: string, on: boolean): string => {
+    if (!on) return `  ${role}: NOLOGIN (${switchName} is off)`;
+    if (perDatabase) return `  ${role}: NOLOGIN (per-database mode: no login for it)`;
+    if (!masterKey) {
+      return `  ${role}: NOLOGIN (${switchName} is on, but MANTLE_MASTER_KEY is not set: no password to derive)`;
+    }
+    return `  ${role}: LOGIN (${switchName} is on)`;
+  };
   const runtime = await ensureRuntimeRoles(sql, masterKey, {
     login: runtimeLogin,
     narrowLogin,
@@ -61,16 +71,8 @@ export async function beforeMigrations(
     warn: log.warn,
   });
   if (runtime === 'ok') {
-    log.info(
-      runtimeLogin && masterKey && !perDatabase
-        ? '  runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)'
-        : '  runtime role mantle_runtime: NOLOGIN (MANTLE_DB_RUNTIME_ROLE is off)',
-    );
-    log.info(
-      narrowLogin && masterKey && !perDatabase
-        ? '  narrow role mantle_system_narrow: LOGIN (MANTLE_NARROW_SYSTEM is on)'
-        : '  narrow role mantle_system_narrow: NOLOGIN (MANTLE_NARROW_SYSTEM is off, or per-database mode)',
-    );
+    log.info(loginLine('runtime role mantle_runtime', 'MANTLE_DB_RUNTIME_ROLE', runtimeLogin));
+    log.info(loginLine('narrow role mantle_system_narrow', 'MANTLE_NARROW_SYSTEM', narrowLogin));
   }
   if (runtime === 'not-superuser') {
     log.warn(

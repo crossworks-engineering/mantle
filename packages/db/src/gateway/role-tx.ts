@@ -21,7 +21,7 @@ import {
   type WorkspaceScope,
 } from '../viewer';
 import { longStack, noteActorMiss, noteTestWriteRoleGap } from '../actor';
-import { reserveLease, type Lease } from '../reserved';
+import { logPoolBusy, reserveLease, type Lease } from '../reserved';
 import { BusyError, permissionGapOf } from '../pg-error';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { writePoolSql } from './pools';
@@ -399,8 +399,8 @@ export class WritePoolBusyError extends BusyError {
 }
 
 function writePoolBusy(): WritePoolBusyError {
-  console.error(
-    `[db] login write gateway: no write-pool connection within ${writePoolWaitMs} ms (A2b2b M2)`,
+  logPoolBusy(
+    `login write gateway: no write-pool connection within ${writePoolWaitMs} ms (A2b2b M2)`,
   );
   return new WritePoolBusyError();
 }
@@ -452,30 +452,12 @@ export function boundedBegin(
 }
 
 /** A write-pool connection as a lease (reserved.ts: back to the pool only
- *  while usable), waiting at most writePoolWaitMs. One that comes later
- *  goes back at once, by its lease. */
+ *  while usable), waiting at most writePoolWaitMs: the one bounded reserve
+ *  every pool takes (reserveLease), with the write pool's wait and error.
+ *  One that comes later goes back at once. */
 export async function boundedReserve(): Promise<Lease> {
   checkNestedAcquire();
-  let late = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const reserved = reserveLease(writePoolSql());
-  const wait = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      late = true;
-      reject(writePoolBusy());
-    }, writePoolWaitMs);
-    timer.unref?.();
-  });
-  try {
-    return await Promise.race([reserved, wait]);
-  } finally {
-    clearTimeout(timer);
-    if (late)
-      void reserved.then(
-        (lease) => lease.release(),
-        () => undefined,
-      );
-  }
+  return reserveLease(writePoolSql(), { ms: writePoolWaitMs, busy: writePoolBusy });
 }
 
 /**

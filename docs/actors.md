@@ -301,7 +301,7 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 ## 13. Proof
 
 - Suites: `pnpm test`, `test:actor-off`, `test:actor-on`, `test:edit-on`,
-  `test:runtime-role`, `test:matrix` (A8 cells). An actor miss fails a test.
+  `test:runtime-role`, `test:matrix` (A8 cells), `test:serial`. An actor miss fails a test.
 - The scoreboard (`pnpm arch:check`, `scripts/arch-scoreboard.pins.json`):
   each count only goes down; a raise needs a reason in review.
 - `pnpm docs:check`: every path a doc names exists, and every

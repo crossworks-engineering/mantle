@@ -189,13 +189,15 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
       },
     });
     try {
-      // Not awaited: the close retries the reservation on a second
-      // connection, and in postgres.js 3.4.9 that retry never settles (the
-      // retried reservation has left the pool's queue, and the second
-      // connection opens to no one). Left as it is: this case pins only the
-      // lookup's promise.
-      void pool.reserve();
+      // The close opens a second connection for the reservation, which
+      // stays queued until that one is ready (patches/postgres@3.4.9.patch;
+      // unpatched it left the queue, the second connection opened to no one
+      // and the reservation never settled).
+      const reservation = pool.reserve();
       await until(() => sockets.length === 2, 'the second connection');
+      const conn = await reservation;
+      await expect(conn`select 1 as one`).resolves.toEqual([{ one: 1 }]);
+      conn.release();
       // The pool answers on the second connection, and nothing went unheld.
       await answers(pool);
       await sleep(50);

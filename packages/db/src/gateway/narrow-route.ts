@@ -195,7 +195,10 @@ export async function narrowStatement(
   narrowSendable(query);
   noteNarrowUse();
   noteNarrowFunctions(query);
-  if (pool) return narrowLoginStatement(pool, query, args, mode);
+  if (pool) {
+    await systemReported(base);
+    return narrowLoginStatement(pool, query, args, mode);
+  }
   const setSql = (await narrowSettingsSql(true))!;
   const lease = await reserveLease(base);
   try {
@@ -232,6 +235,33 @@ export async function narrowStatement(
   } finally {
     lease.release();
   }
+}
+
+/** The system pool's first report, while one is out (systemReported). */
+const systemReports = new WeakMap<object, Promise<void>>();
+
+/**
+ * Before the first narrow connect of a process: the narrow pool's startup
+ * parameters take the system pool's reported settings and its server's
+ * version (pools.ts narrowStartup), so the system pool must have connected
+ * once. Null (no wait, no round trip) once it has, which is every time but
+ * a process's very first narrow statement racing the system pool's first
+ * connect; then one `select 1` on the system pool. Its failure is not this
+ * statement's: the narrow statement then answers for itself.
+ */
+export function systemReported(base: PgSql): Promise<void> | null {
+  if ((base.parameters as Record<string, string | undefined>)?.server_version) return null;
+  let report = systemReports.get(base);
+  if (!report) {
+    report = Promise.resolve(base.unsafe('select 1').simple()).then(
+      () => undefined,
+      () => undefined,
+    );
+    systemReports.set(base, report);
+    // A failed report is tried again by the next narrow statement.
+    void report.then(() => systemReports.delete(base));
+  }
+  return report;
 }
 
 /** The hold check's refusal: division by zero (narrowHeld). */
@@ -399,6 +429,7 @@ export async function narrowBegin(
 ): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
   noteNarrowUse();
+  if (pool) await systemReported(base);
   // On the login pool the role is the session's: the SET carries the
   // actor's settings only (none with no actor).
   const setSql = await narrowSettingsSql(pool === null);

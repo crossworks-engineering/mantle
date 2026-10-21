@@ -588,16 +588,12 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(await held()).toBe(1);
     await su`select pg_advisory_unlock_all()`;
     expect(await held()).toBe(0);
-    // A large object commits, owned by the narrow role.
-    const made = [
-      ...(await committed<{ o: string }>('select lo_create(0)::text as o')),
-      ...(await committed<{ o: string }>("select lo_from_bytea(0, '\\x01'::bytea)::text as o")),
-    ].map((r) => r.o);
-    const owners = await su<{ u: string }[]>`
-      select pg_get_userbyid(lomowner) as u from pg_largeobject_metadata
-       where oid = any(${made}::oid[])`;
-    expect(owners.map((r) => r.u)).toEqual([NARROW, NARROW]);
-    for (const o of made) await su`select lo_unlink(${o}::oid)`;
+    // A large object: the narrow role may make none (EXECUTE on the
+    // creators is taken from PUBLIC at migrate, runtime-role.ts
+    // revokeLargeObjectCreators), sent unguarded too.
+    for (const stmt of ['select lo_create(0)', "select lo_from_bytea(0, '\\x01'::bytea)"]) {
+      expect(await failure(committed(stmt)), stmt).toMatchObject({ code: '42501' });
+    }
 
     // Routed: each refused, alone and in a transaction.
     for (const stmt of [

@@ -149,8 +149,10 @@ the switch.
 app service does), and `NOLOGIN` with no password when it does not. So a box
 that never switches has no login it does not use, and taking the switch out
 again closes the login at the next migrate. Its log says which:
-`runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)` or
-`NOLOGIN (... is off)`.
+`runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)`, or
+`NOLOGIN` with the cause that holds: the switch is off, per-database mode,
+or the switch is on with no `MANTLE_MASTER_KEY` to derive the password from.
+The narrow role's line reads the same with `MANTLE_NARROW_SYSTEM`.
 
 A statement that sets a password (the runtime role's, the viewer roles')
 runs in a transaction of its own that first sets, for that transaction only,
@@ -168,8 +170,12 @@ see it.
 that needs past the row rules but writes no item (an Admin-area tool, an
 area request, traces, spills, counters). It is `NOSUPERUSER`,
 `BYPASSRLS`, `NOINHERIT`, `CONNECTION LIMIT 36`, owns nothing and is a member of nothing (the
-text check below refuses the large-object functions, so narrow work cannot
-make it the owner of one). The runtime role is its member with `SET` only (`wantedMemberships`), so the
+text check below refuses the large-object functions, but it is not the
+boundary: migrate takes `EXECUTE` on the server-side creators, `lo_create`,
+`lo_creat`, `lo_from_bytea` and `lo_import`, from `PUBLIC` every run, in
+each database it runs in (`revokeLargeObjectCreators`; no role the app runs
+as makes a large object, measured), so the narrow login can make none and
+own none). The runtime role is its member with `SET` only (`wantedMemberships`), so the
 runtime role holds none of its rights and may take it; the superuser may take
 it as any role. Migrate makes it and its membership on every run
 (`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
@@ -260,14 +266,27 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   (`connection-ceiling.test.ts` reads the compose file and fails when that
   sum outgrows the limit, or the box's pools outgrow 90% of
   `max_connections`: the full shape 373 of 405, 393 of 450 with the stdio
-  servers' and the operator runs' connections). The pool sends
-  `search_path`, `TimeZone` and `DateStyle` as startup parameters (the
-  server's defaults, `NARROW_STARTUP`), so a setting the narrow login
-  stored on its own role (`ALTER ROLE current_user SET ...`, which no
-  grant can stop) never reaches a narrow session through them; migrate
-  takes every stored setting of the role back each run (`RESET ALL`, and
-  the `IN DATABASE` form for each database) and sets its derived password
-  again (the login may change its own). A production process reads the role
+  servers' and the operator runs' connections). The pool sends startup
+  parameters (`narrowStartup`), which win over any setting stored on the
+  role (`ALTER ROLE current_user SET ...`, for every database or `IN
+DATABASE`, which the narrow login may do and no grant can stop): every
+  setting that would refuse, cut short or change narrow work, at the value
+  the app runs every pool with (compose sets none, so Postgres's defaults):
+  `search_path`, `default_transaction_read_only` off,
+  `default_transaction_isolation` read committed, `row_security` on,
+  `statement_timeout`, `lock_timeout`,
+  `idle_in_transaction_session_timeout`, `idle_session_timeout` and (on
+  Postgres 17 and later) `transaction_timeout` 0, `bytea_output` hex,
+  `extra_float_digits` 1; and the system pool's own `TimeZone`, `DateStyle`,
+  `IntervalStyle` and `standard_conforming_strings`, as its connections last
+  reported them, read at each narrow connect (a process's first narrow
+  statement waits for the system pool's first connect: `systemReported`),
+  so the narrow route reads dates back in the text the system pool does.
+  Any other stored setting holds until the next migrate, which takes every
+  stored setting of the role back each run (`RESET ALL`, and the `IN
+DATABASE` form for each database), and the boot line names it; migrate
+  sets the derived password again each run (the login may change its own).
+  A production process reads the role
   with its boot line (`readNarrowLogin`)
   and, with the switch on, warns when it cannot log in, naming the fix (run
   migrate with the switch on, or set `MANTLE_NARROW_SYSTEM=0`); any stored
@@ -281,7 +300,10 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   pipeline (`gateway/actor-sql.ts` `settingsPipeline`): the `SET` goes in
   the statement's first send, the statement commits by itself, the caller
   has its answer before the `RESET` is answered, and a connection whose
-  `SET` or `RESET` failed ends instead of going back. One failure answer on
+  `SET` or `RESET` failed ends instead of going back (every reserve, on
+  every pool, waits at most 15 s, `reserved.ts` `reserveLease`: a busy
+  error, never a hang; and a reserve queued when a connection of a full
+  pool closes is answered, `patches/postgres@3.4.9.patch`). One failure answer on
   both pools: the statement's own result when it ran (a `SET` that failed
   beside it is no error of the caller's: the statement committed, with none
   of the settings, and met the database's checks as a statement with no

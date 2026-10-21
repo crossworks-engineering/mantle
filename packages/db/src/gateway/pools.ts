@@ -86,18 +86,80 @@ const NARROW_IDLE_TIMEOUT = 30;
 
 /**
  * The session settings the narrow pool sends when it connects (startup
- * parameters): they win over any setting stored on the role (ALTER ROLE ...
- * SET), which the narrow login may store on itself and which would
- * otherwise reach every later narrow session. migrate takes such settings
- * back each run (runtime-role.ts resetNarrowRoleSettings) and the boot line
- * warns on any (narrowLoginNote). The values are the server's defaults the
- * system pool runs with (the boxes' Postgres runs in UTC).
+ * parameters, narrowStartup): they win over any setting stored on the role
+ * (ALTER ROLE ... SET, for every database or for one), which the narrow
+ * login may store on itself and which would otherwise reach every later
+ * narrow session until the next migrate takes it back
+ * (runtime-role.ts resetNarrowRoleSettings; the boot line warns on any,
+ * narrowLoginNote).
+ *
+ * Pinned: the settings that would refuse, cut short or change what a
+ * narrow statement reads or writes. Any other setting stored on the role
+ * holds until that next migrate, and the boot line names it.
+ *
+ * These are fixed, at the values the app runs every pool with (compose
+ * sets none of them, so they are Postgres's defaults): the search path; a
+ * read-only default, the isolation default and row security (each would
+ * refuse narrow work); the timeouts (each would cut it short); the text of
+ * bytea and floats (drizzle parses it). transaction_timeout too, on a
+ * server that has it (narrowStartup).
  */
-export const NARROW_STARTUP: Readonly<Record<string, string>> = Object.freeze({
+export const NARROW_STARTUP_FIXED: Readonly<Record<string, string>> = Object.freeze({
   search_path: '"$user", public',
-  TimeZone: 'UTC',
-  DateStyle: 'ISO, MDY',
+  default_transaction_read_only: 'off',
+  default_transaction_isolation: 'read committed',
+  row_security: 'on',
+  statement_timeout: '0',
+  lock_timeout: '0',
+  idle_in_transaction_session_timeout: '0',
+  idle_session_timeout: '0',
+  bytea_output: 'hex',
+  extra_float_digits: '1',
 });
+
+/** Taken from the system pool: the values its connections last reported
+ *  (ParameterStatus), so the narrow route reads dates and intervals back
+ *  in the text the system pool does (drizzle parses that text) and reads
+ *  a string literal as it does, whatever the box's server runs with. */
+export const NARROW_STARTUP_FROM_SYSTEM = [
+  'TimeZone',
+  'DateStyle',
+  'IntervalStyle',
+  'standard_conforming_strings',
+] as const;
+
+/** Postgres 17 added transaction_timeout; an unknown startup parameter
+ *  fails the login, so it is sent only to a server that has it. */
+const TRANSACTION_TIMEOUT_SINCE = 17;
+
+/**
+ * The narrow pool's startup parameters for one connect, from what the
+ * system pool's connections reported (`reported`: postgres.js's
+ * `sql.parameters`): NARROW_STARTUP_FIXED, the system pool's
+ * NARROW_STARTUP_FROM_SYSTEM, and transaction_timeout 0 on Postgres 17 and
+ * later. The narrow route waits for the system pool's first report before
+ * its first narrow connect (narrow-route.ts systemReported), so none is
+ * missing there.
+ */
+export function narrowStartup(
+  reported: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const out: Record<string, string> = { ...NARROW_STARTUP_FIXED };
+  for (const key of NARROW_STARTUP_FROM_SYSTEM) {
+    const value = reported[key];
+    if (value) out[key] = value;
+  }
+  const major = Number(/^(\d+)/.exec(reported.server_version ?? '')?.[1] ?? 0);
+  if (major >= TRANSACTION_TIMEOUT_SINCE) out.transaction_timeout = '0';
+  return out;
+}
+
+/** Every key narrowStartup may give. */
+const NARROW_STARTUP_KEYS = [
+  ...Object.keys(NARROW_STARTUP_FIXED),
+  ...NARROW_STARTUP_FROM_SYSTEM,
+  'transaction_timeout',
+];
 
 /**
  * Lazy singleton. Initialised on first call so Next.js can build pages that
@@ -238,7 +300,8 @@ function narrowPoolSql(): PgSql | null {
 
 /**
  * A narrow pool logging in with `url` (narrowDatabaseUrl): its size, idle
- * timeout and startup parameters, and the same type parsers and
+ * timeout and startup parameters (narrowStartup, over `system`'s reported
+ * settings), and the same type parsers and
  * serializers as `system` (the system pool: drizzle set its own on that
  * client, dates and json pass through as text and drizzle maps them, and a
  * statement drizzle builds is sent on this pool too; without them a jsonb
@@ -251,10 +314,20 @@ export function newNarrowPool(url: string, system: PgSql): PgSql {
     idle_timeout: NARROW_IDLE_TIMEOUT,
     prepare: false,
     onnotice: onPgNotice,
-    connection: { ...NARROW_STARTUP },
   });
   Object.assign(narrow.options.parsers, system.options.parsers);
   Object.assign(narrow.options.serializers, system.options.serializers);
+  // Read at each connect: postgres.js copies its `connection` option once,
+  // when the pool is made, and sends what it holds then with every startup
+  // (a key with no value is left out).
+  const connection = narrow.options.connection as Record<string, unknown>;
+  for (const key of NARROW_STARTUP_KEYS) {
+    Object.defineProperty(connection, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => narrowStartup(system.parameters as Record<string, string | undefined>)[key],
+    });
+  }
   return narrow;
 }
 

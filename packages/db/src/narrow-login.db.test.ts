@@ -54,6 +54,9 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
   let dbName = '';
 
   const KEY = () => process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
+  /** The narrow role's own URL, with its derived password. */
+  const narrowUrlOf = () =>
+    rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE);
 
   /** The error a promise failed with (drizzle wraps the driver's). */
   const failure = async (p: PromiseLike<unknown>): Promise<{ code?: string; message?: string }> => {
@@ -396,19 +399,80 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     expect(await stored()).toBe(0);
   });
 
-  it('the narrow login may change its own password (rolled back here); every migrate run sets the derived one again', async () => {
-    // The role is the cluster's and other test files log in as it now: the
-    // change is shown in a transaction that rolls back.
-    const changed = await nl
-      .begin(async (t) => {
-        await t.unsafe(`alter role current_user password 'not-the-derived-one'`);
-        throw Object.assign(new Error('rollback'), { ok: true });
-      })
-      .then(
-        () => 'committed',
-        (err: { ok?: boolean; code?: string }) => (err.ok ? 'ran' : err.code),
-      );
-    expect(changed).toBe('ran');
+  it('every setting that would refuse, cut short or change narrow work, stored by the narrow login: the pool pins it, migrate takes it back', async () => {
+    // This database's own (IN DATABASE): the role is the cluster's, and the
+    // test files beside this one log in as it.
+    const stored: [string, string][] = [
+      ['default_transaction_read_only', 'on'],
+      ['default_transaction_isolation', 'serializable'],
+      ['row_security', 'off'],
+      ['statement_timeout', '50'],
+      ['lock_timeout', '1'],
+      ['idle_in_transaction_session_timeout', '600000'],
+      ['idle_session_timeout', '600000'],
+      ['transaction_timeout', '600000'],
+      ['bytea_output', 'escape'],
+      ['extra_float_digits', '-15'],
+      ['TimeZone', 'Pacific/Chatham'],
+      ['DateStyle', 'German, DMY'],
+      ['IntervalStyle', 'sql_standard'],
+    ];
+    for (const [name, value] of stored) {
+      await nl.unsafe(`alter role current_user in database "${dbName}" set ${name} = '${value}'`);
+    }
+    const count = async () =>
+      (
+        await su<{ n: number }[]>`
+          select count(*)::int as n from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
+           join pg_database d on d.oid = s.setdatabase
+           where r.rolname = ${NARROW} and d.datname = ${dbName}`
+      )[0]!.n;
+    expect(await count()).toBe(1);
+    const read = `select ${stored.map(([n]) => `current_setting('${n}') as "${n}"`).join(', ')},
+                         current_setting('transaction_read_only') as ro`;
+    // A session without the startup parameters takes them: read only, and
+    // a statement cut short (the auditor's P4).
+    const raw = postgres(narrowUrlOf(), { max: 1, prepare: false, onnotice: () => {} });
+    const pool = pools.newNarrowPool(narrowUrlOf(), su);
+    try {
+      const [rawRow] = await raw.unsafe<Record<string, string>[]>(read);
+      expect(rawRow).toMatchObject({ default_transaction_read_only: 'on', ro: 'on' });
+      expect(await failure(raw.unsafe('select pg_sleep(0.2)'))).toMatchObject({ code: '57014' });
+      // The pool's session: every one at the value the app runs with.
+      const [row] = await pool.unsafe<Record<string, string>[]>(read);
+      const want = pools.narrowStartup(su.parameters as unknown as Record<string, string>);
+      for (const [name] of stored) expect(row![name], name).toBe(want[name]);
+      expect(row!.ro).toBe('off');
+      await pool.unsafe('select pg_sleep(0.2)');
+    } finally {
+      await raw.end();
+      await pool.end();
+    }
+    // migrate's role step takes them back.
+    await rr.ensureRuntimeRoles(su, KEY(), { login: true, narrowLogin: true, warn: () => {} });
+    expect(await count()).toBe(0);
+  });
+
+  it('the narrow login may make no large object: EXECUTE on the creators is taken from PUBLIC at migrate', async () => {
+    for (const q of [
+      'select lo_create(0)',
+      'select lo_creat(-1)',
+      "select lo_from_bytea(0, '\\x01'::bytea)",
+      "select pg_catalog.lo_from_bytea(0, '\\x01'::bytea)",
+      "select lo_import('/etc/hosts')",
+    ]) {
+      expect(await failure(nl.unsafe(q)), q).toMatchObject({ code: '42501' });
+    }
+    const [n] = await su<{ n: number }[]>`select count(*)::int as n from pg_largeobject_metadata`;
+    expect(n!.n).toBe(0);
+    const [acl] = await su<{ pub: number }[]>`
+      select count(*)::int as pub from pg_proc p
+       where p.oid = any(${[...rr.LARGE_OBJECT_CREATORS]}::regprocedure[])
+         and has_function_privilege('public', p.oid, 'EXECUTE')`;
+    expect(acl!.pub).toBe(0);
+  });
+
+  it('every migrate run sets the derived password again (the login changing its own, committed: narrow-password.serial.db.test.ts)', async () => {
     // Each run's statement for the role carries the derived password.
     const stmts = rr.runtimeRoleStatements(new Set([NARROW]), null, rr.narrowRolePassword(KEY()));
     expect(stmts.filter((x) => x.startsWith(`ALTER ROLE "${NARROW}"`))).toEqual([
@@ -457,16 +521,12 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     );
   });
 
-  it('one pipeline for both pools, one failure answer (settingsPipeline)', async () => {
-    // A pool of one connection per case: each case's connection is the one
-    // the next statement on that pool gets.
-    const pools1: ReturnType<typeof postgres>[] = [];
-    const fresh = () => {
-      const p = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
-      pools1.push(p);
-      return p;
-    };
-    let pool: ReturnType<typeof postgres> = fresh();
+  it('one pipeline for both pools, one failure answer (settingsPipeline), on one pool of one connection', async () => {
+    // One pool of ONE connection for every case: each case's connection is
+    // the one the next statement gets, and a case whose connection ended
+    // leaves the pool to open it again for the next (a reserve queued as a
+    // connection closes is answered: patches/postgres@3.4.9.patch).
+    const pool = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
     const alive = async (pid: number) =>
       (
         await su<
@@ -478,40 +538,40 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         await new Promise((r) => setTimeout(r, 50));
       return !(await alive(pid));
     };
-    /** One pipeline on `on` (a fresh pool unless given), which becomes
-     *  `pool` for the case's next statement. */
-    const run = (set: string, query: string, reset = 'reset mantle.cell', on = fresh()) =>
+    const run = (set: string, query: string, reset = 'reset mantle.cell') =>
       as
-        .settingsPipeline((pool = on), () => set, query, [], 'rows', reset)
+        .settingsPipeline(pool, () => set, query, [], 'rows', reset)
         .then(
           (rows) => ({ ok: (rows as { p: number; c: string }[])[0]! }),
           (err: { code?: string }) => ({ err: err.code }),
         );
     const SET = `select set_config('mantle.cell', 'x', false)`;
     const READ = `select pg_backend_pid() as p, current_setting('mantle.cell', true) as c`;
+    const next = async () => (await pool.unsafe<{ p: number; c: string | null }[]>(READ))[0]!;
     try {
       // All well: the statement's answer, the setting on while it ran, the
       // connection handed back with it reset.
       const ok = await run(SET, READ);
       expect(ok).toMatchObject({ ok: { c: 'x' } });
-      const back = (await pool.unsafe<{ p: number; c: string | null }[]>(READ))[0]!;
-      expect(back).toEqual({ p: (ok as { ok: { p: number } }).ok.p, c: '' });
+      expect(await next()).toEqual({ p: (ok as { ok: { p: number } }).ok.p, c: '' });
       // The SET failed, the statement ran: the statement's own answer (it
-      // committed), and the connection ends.
+      // committed), and the connection ends; the pool answers on a new one.
       const setFailed = await run('select 1/0', READ);
       expect(['', null]).toContain((setFailed as { ok: { c: string | null } }).ok.c);
-      expect(await gone((setFailed as { ok: { p: number } }).ok.p)).toBe(true);
+      const setFailedPid = (setFailed as { ok: { p: number } }).ok.p;
+      expect(await gone(setFailedPid)).toBe(true);
+      expect((await next()).p).not.toBe(setFailedPid);
       // Both failed: the SET's error (the cause).
       expect(await run('select 1/0', 'select no_such_column')).toEqual({ err: '22012' });
       // The statement failed alone: its own error; the connection goes back.
-      const own = fresh();
-      const pid = (await own.unsafe<{ p: number }[]>('select pg_backend_pid() as p'))[0]!.p;
-      expect(await run(SET, 'select no_such_column', undefined, own)).toEqual({ err: '42703' });
-      expect((await pool.unsafe<{ p: number; c: string }[]>(READ))[0]).toEqual({ p: pid, c: '' });
+      const pid = (await next()).p;
+      expect(await run(SET, 'select no_such_column')).toEqual({ err: '42703' });
+      expect(await next()).toEqual({ p: pid, c: '' });
       // The RESET failed: the caller has its answer, the connection ends.
       const resetFailed = await run(SET, READ, 'select 1/0');
       expect(resetFailed).toMatchObject({ ok: { c: 'x' } });
       expect(await gone((resetFailed as { ok: { p: number } }).ok.p)).toBe(true);
+      expect(await next()).toMatchObject({ c: '' });
       // A SET text that throws: that error, before any connection is taken.
       const thrown = await as
         .settingsPipeline(
@@ -529,8 +589,16 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
           (e: { code?: string }) => e.code,
         );
       expect(thrown).toBe('SETX');
+      // A pipeline queued behind one whose SET fails (its connection ends
+      // as the second waits for the pool's only connection): answered.
+      const [first, second] = await Promise.all([run('select 1/0', READ), run(SET, READ)]);
+      expect(first).toHaveProperty('ok');
+      expect(second).toMatchObject({ ok: { c: 'x' } });
+      // The pool ends without a timeout: no reserve was left unsettled.
+      await pool.end();
     } finally {
-      await Promise.all(pools1.map((p) => p.end({ timeout: 1 })));
+      // Ends in time: no reserve was left unsettled.
+      await pool.end({ timeout: 5 });
     }
   });
 

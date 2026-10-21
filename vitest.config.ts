@@ -22,8 +22,10 @@ export default defineConfig({
   },
   test: {
     include: ['packages/**/src/**/*.test.ts', 'server/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
-    // The A8 matrix runs on its own (vitest.matrix.config.ts, `pnpm test:matrix`).
-    exclude: [...configDefaults.exclude, '**/*.matrix.test.ts'],
+    // The A8 matrix runs on its own (vitest.matrix.config.ts, `pnpm test:matrix`),
+    // and so do the files that change what the whole cluster shares
+    // (vitest.serial.config.ts, `pnpm test:serial`).
+    exclude: [...configDefaults.exclude, '**/*.matrix.test.ts', '**/*.serial.db.test.ts'],
     environment: 'node',
     // Writes the route manifest the security sweeps need (vitest.global-setup.ts).
     globalSetup: ['./vitest.global-setup.ts'],

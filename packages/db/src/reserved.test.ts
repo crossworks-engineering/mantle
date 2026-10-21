@@ -1,7 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { connectionGone, END_SESSION_SQL, reserveLease, withLease } from './reserved';
+import { isBusy } from './pg-error';
+import {
+  connectionGone,
+  END_SESSION_SQL,
+  PoolBusyError,
+  RESERVE_WAIT_MS,
+  reserveLease,
+  withLease,
+} from './reserved';
 
 /**
  * The reserved-connection lease (reserved.ts, hotfix after v0.300.13): a
@@ -124,6 +132,68 @@ describe('the lease', () => {
     lease.release();
     expect(f.sent).toEqual([END_SESSION_SQL]);
     expect(f.released()).toBe(0);
+  });
+});
+
+describe('every reserve waits a bounded time (the pool full, or a reserve the driver never answers)', () => {
+  /** A pool whose reserve settles only when `give()` is called. */
+  function slowPool() {
+    let give!: () => void;
+    let released = 0;
+    const conn = { unsafe: () => Promise.resolve([]), release: () => (released += 1) };
+    const came = new Promise<typeof conn>((ok) => (give = () => ok(conn)));
+    return { pool: { reserve: () => came } as never, give: () => give(), released: () => released };
+  }
+  const quiet = () => {
+    const error = console.error;
+    console.error = () => {};
+    return () => (console.error = error);
+  };
+
+  it('fails busy at the wait (409 by isBusy); a connection that comes later goes back at once', async () => {
+    const restore = quiet();
+    try {
+      const f = slowPool();
+      const err = await reserveLease(f.pool, { ms: 20 }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(PoolBusyError);
+      expect(isBusy(err)).toBe(true);
+      expect(f.released()).toBe(0);
+      f.give();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(f.released()).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it('a reserve that never settles fails at the wait: no caller hangs on it', async () => {
+    const restore = quiet();
+    try {
+      const never = { reserve: () => new Promise<never>(() => {}) } as never;
+      await expect(withLease(never, async () => 'ran', { ms: 20 })).rejects.toBeInstanceOf(
+        PoolBusyError,
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it("the caller's own error for its pool (the write pool's), and the default wait", async () => {
+    const f = slowPool();
+    const own = new Error('write pool busy');
+    await expect(reserveLease(f.pool, { ms: 5, busy: () => own })).rejects.toBe(own);
+    f.give();
+    expect(RESERVE_WAIT_MS).toBe(15_000);
+    // In time: the lease, no error.
+    const g = slowPool();
+    const leased = reserveLease(g.pool, { ms: 1000 });
+    g.give();
+    const lease = await leased;
+    lease.release();
+    expect(g.released()).toBe(1);
   });
 });
 

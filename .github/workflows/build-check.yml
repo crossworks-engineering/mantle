@@ -192,6 +192,14 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:matrix
 
+      # The files that change what the whole cluster shares (a role's
+      # password), alone: no other test runs beside them.
+      - name: Test (serial)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:serial
+
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)
         run: pnpm -C server/web build
