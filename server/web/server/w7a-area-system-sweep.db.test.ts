@@ -179,25 +179,17 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
     g.__mantleDb = undefined;
     g.__mantleSql = trapped(postgres(scratch.url, { max: 10, prepare: false }));
     m = await import('@mantle/db');
-    // The narrow route's own pool (plan v3.2 S7b) is a system pool too: the
-    // same trap on it, its parsers taken from the system pool once drizzle
-    // has set them (gateway/pools.ts narrowPoolSql does the same).
+    // The narrow route's own pool is a system pool too: the same trap on
+    // it, made by the pool's own factory (its size, startup parameters,
+    // and the system pool's parsers once drizzle has set them).
     await m.systemDb.execute(sql`select 1`);
     {
       const rr = await import('../../../packages/db/src/runtime-role');
-      const narrow = postgres(
-        rr.runtimeDatabaseUrl(
-          scratch.url,
-          rr.narrowRolePassword(process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key'),
-          rr.NARROW_ROLE,
-        ),
-        { max: 5, prepare: false },
-      );
-      const sys = (g.__mantleSql as ReturnType<typeof postgres>).options;
-      Object.assign(narrow.options.parsers, sys.parsers);
-      Object.assign(narrow.options.serializers, sys.serializers);
-      (globalThis as unknown as { __mantleNarrowSql?: unknown }).__mantleNarrowSql =
-        trapped(narrow);
+      const pools = await import('../../../packages/db/src/gateway/pools');
+      const url = rr.narrowDatabaseUrl();
+      (globalThis as unknown as { __mantleNarrowSql?: unknown }).__mantleNarrowSql = url
+        ? trapped(pools.newNarrowPool(url, g.__mantleSql as ReturnType<typeof postgres>))
+        : null;
     }
     t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');

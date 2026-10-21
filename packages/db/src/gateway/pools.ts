@@ -11,11 +11,14 @@ import { env, feature, isProduction } from '@mantle/config';
 import {
   DB_ROLE_SQL,
   dbRoleNote,
+  NARROW_LOGIN_SQL,
   narrowDatabaseUrl,
+  narrowLoginNote,
   narrowSystemOn,
   runtimeRoleOn,
   systemDatabaseUrl,
   type DbRoleRow,
+  type NarrowLoginRow,
 } from '../runtime-role';
 import { systemRouteNow, viewerDatabaseUrl, viewerRolePassword, type PoolRole } from '../viewer';
 import {
@@ -69,9 +72,33 @@ const VIEWER_POOL_MAX = 3;
 
 /** Connections of the narrow route's pool per process (narrowPoolSql).
  *  Every process's shares the role's CONNECTION LIMIT
- *  (NARROW_CONNECTION_LIMIT, runtime-role.ts); a process that runs no
- *  narrow work opens none. */
-const NARROW_POOL_MAX = 5;
+ *  (NARROW_CONNECTION_LIMIT, runtime-role.ts, which is sized to every box
+ *  process's pool at this size plus the stdio MCP servers' and the operator
+ *  runs'); a process that runs no narrow work opens none. Two: a narrow
+ *  statement holds its connection for one round trip (its SET goes with it,
+ *  its RESET behind the answer), so a burst queues briefly instead of
+ *  asking the server for more (the round trips, measured, are the same). */
+export const NARROW_POOL_MAX = 2;
+
+/** Seconds a narrow connection may sit idle before the pool closes it: a
+ *  process whose narrow work came in a burst gives its connections back to
+ *  the role's limit. */
+const NARROW_IDLE_TIMEOUT = 30;
+
+/**
+ * The session settings the narrow pool sends when it connects (startup
+ * parameters): they win over any setting stored on the role (ALTER ROLE ...
+ * SET), which the narrow login may store on itself and which would
+ * otherwise reach every later narrow session. migrate takes such settings
+ * back each run (runtime-role.ts resetNarrowRoleSettings) and the boot line
+ * warns on any (narrowLoginNote). The values are the server's defaults the
+ * system pool runs with (the boxes' Postgres runs in UTC).
+ */
+export const NARROW_STARTUP: Readonly<Record<string, string>> = Object.freeze({
+  search_path: '"$user", public',
+  TimeZone: 'UTC',
+  DateStyle: 'ISO, MDY',
+});
 
 /**
  * Lazy singleton. Initialised on first call so Next.js can build pages that
@@ -113,6 +140,7 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   runWithoutActor(() => {
     refreshActorCheckMode(sql);
     reportDbRole(sql);
+    reportNarrowLogin(sql, narrow);
   });
   return client;
 }
@@ -157,6 +185,30 @@ function reportDbRole(base: PgSql): void {
     .catch(() => {});
 }
 
+/**
+ * The narrow role at the process's start, once, outside tests: with the
+ * switch on and the route logging in as the role, a role that cannot log
+ * in (migrate ran with the switch off) is named with its fix, and any
+ * setting stored on the role is named whatever the switch
+ * (narrowLoginNote). Never in a statement's path.
+ */
+function reportNarrowLogin(base: PgSql, switchOn: boolean): void {
+  if (env('NODE_ENV') === 'test') return;
+  let loginPool = false;
+  try {
+    loginPool = switchOn && narrowDatabaseUrl() !== null;
+  } catch {
+    // No master key: the narrow route fails on its own with that error.
+  }
+  base
+    .unsafe(`${ACTOR_SQL_TAG} ${NARROW_LOGIN_SQL}`)
+    .then((rows) => {
+      const note = narrowLoginNote((rows[0] as NarrowLoginRow | undefined) ?? null, loginPool);
+      if (note) console.warn(note);
+    })
+    .catch(() => {});
+}
+
 /** The system pool's client with the actor (actorClient over
  *  globalThis.__mantleSql): the login write gateway's system path. */
 let adminActorSql: PgSql | null = null;
@@ -196,15 +248,29 @@ function narrowPoolSql(): PgSql | null {
   if (!globalThis.__mantleSql) throw new Error('narrow route: the database pools are closed');
   const url = narrowDatabaseUrl();
   if (!url) return (globalThis.__mantleNarrowSql = null);
-  const narrow = postgres(url, { max: NARROW_POOL_MAX, prepare: false, onnotice: onPgNotice });
-  // The same type parsers and serializers as the system pool: drizzle set
-  // its own on that client (dates and json pass through as text, drizzle
-  // maps them), and a statement it builds is sent on this pool too. Without
-  // them a jsonb value drizzle already serialized is serialized again.
-  const sys = globalThis.__mantleSql.options;
-  Object.assign(narrow.options.parsers, sys.parsers);
-  Object.assign(narrow.options.serializers, sys.serializers);
-  return (globalThis.__mantleNarrowSql = narrow);
+  return (globalThis.__mantleNarrowSql = newNarrowPool(url, globalThis.__mantleSql));
+}
+
+/**
+ * A narrow pool logging in with `url` (narrowDatabaseUrl): its size, idle
+ * timeout and startup parameters, and the same type parsers and
+ * serializers as `system` (the system pool: drizzle set its own on that
+ * client, dates and json pass through as text and drizzle maps them, and a
+ * statement drizzle builds is sent on this pool too; without them a jsonb
+ * value drizzle already serialized is serialized again). The one place a
+ * narrow pool is made: narrowPoolSql, and a test that traps the pool.
+ */
+export function newNarrowPool(url: string, system: PgSql): PgSql {
+  const narrow = postgres(url, {
+    max: NARROW_POOL_MAX,
+    idle_timeout: NARROW_IDLE_TIMEOUT,
+    prepare: false,
+    onnotice: onPgNotice,
+    connection: { ...NARROW_STARTUP },
+  });
+  Object.assign(narrow.options.parsers, system.options.parsers);
+  Object.assign(narrow.options.serializers, system.options.serializers);
+  return narrow;
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in

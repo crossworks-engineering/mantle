@@ -351,6 +351,103 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
 }
 
 /**
+ * One statement outside a transaction with session settings around it: the
+ * one pipeline of the system pool's actor client (a write as the actor)
+ * and of the narrow login pool (every narrow statement with an actor,
+ * narrow-route.ts). On one reserved connection of `pool`: `setSql()` (a
+ * session-level SET with no parameters, so it goes out in the statement's
+ * first send), the statement, and `resetSql` behind it, pipelined: one
+ * round trip, no BEGIN and no COMMIT (the statement commits by itself).
+ *
+ * One failure answer, on both:
+ *  - the statement ran: its own result, whatever the SET did. A SET that
+ *    failed beside a statement that ran is not the caller's error (the
+ *    statement committed, and a retry would run it twice): the statement
+ *    ran with none of the settings, so the database met it as a statement
+ *    with no actor (the actor check refuses a content write in on and logs
+ *    a miss in warn; on the narrow login the role's rights hold whatever
+ *    the settings), and the connection ends;
+ *  - the statement failed: the SET's error when the SET failed too (it is
+ *    the cause), else the statement's own;
+ *  - nothing sent (`setSql` threw: a value it refuses, before any
+ *    connection is taken; or no connection): that error.
+ *
+ * The caller has its answer before the RESET is answered. The connection
+ * goes back to the pool only once the RESET has answered, so no other
+ * statement ever sees these settings; one whose SET or RESET failed ends
+ * instead (lease.end: never handed back, nothing sent if it died). closeDb
+ * waits for the whole pipeline (actorPipelinesDone): postgres.js never
+ * finishes ending a pool whose reserved connection comes back late.
+ */
+export function settingsPipeline(
+  pool: PgSql,
+  setSql: () => string,
+  query: string,
+  args: unknown[] | undefined,
+  mode: QueryMode,
+  resetSql: string,
+): Promise<unknown> {
+  let settle!: (v: Promise<unknown>) => void;
+  const result = new Promise<unknown>((r) => (settle = r));
+  let answered = false;
+  /** The caller's answer, once: a later one is dropped (never left as an
+   *  unhandled rejection). */
+  const answer = (v: Promise<unknown>) => {
+    if (answered) return;
+    answered = true;
+    settle(v);
+  };
+  const life = (async () => {
+    let set: string;
+    let lease: Lease;
+    try {
+      set = setSql();
+      lease = await reserveLease(pool);
+    } catch (err) {
+      answer(Promise.reject(err));
+      return;
+    }
+    // True once the SET is built: postgres.js sends it a moment later.
+    // Ending a connection the SET never reached errs on the safe side.
+    let sent = false;
+    try {
+      const conn = lease.sql;
+      const setDone = lease.watch(conn.unsafe(set)).then(
+        () => null,
+        (err: unknown) => ({ err }),
+      );
+      sent = true;
+      const q = conn.unsafe(query, (args ?? []) as never[]);
+      const main = lease.watch(mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q);
+      const reset = lease.watch(conn.unsafe(resetSql).simple());
+      answer(
+        Promise.allSettled([setDone, main]).then(([, m]) => {
+          if (m.status === 'fulfilled') return m.value;
+          return setDone.then((setErr) => {
+            throw setErr ? setErr.err : m.reason;
+          });
+        }),
+      );
+      await reset;
+      // A SET that failed: the connection may hold part of the settings.
+      if (await setDone) await lease.end();
+    } catch (err) {
+      // Anything that throws here (a failed RESET, or a throw while the
+      // statements are built) fails the caller if it has no answer yet,
+      // and a connection that may hold the settings ends.
+      if (!answered) answer(Promise.reject(err));
+      if (sent) await lease.end();
+    } finally {
+      lease.release();
+    }
+  })();
+  actorPipelines.add(life);
+  const done = () => actorPipelines.delete(life);
+  life.then(done, done);
+  return result;
+}
+
+/**
  * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
  * while the check is not off and an actor is bound, a transaction (`begin`)
  * sets the actor with its first statement (no round trip of its own), and a
@@ -363,86 +460,6 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
  * Exported for actor-client.test.ts only (not in index.ts).
  */
 export function actorClient(base: PgSql): PgSql {
-  /**
-   * A write outside a transaction, as the actor (A2b1 audit, Q1): on one
-   * reserved connection, a session-level SET, the write and a RESET, all
-   * pipelined. The SET goes in the same send as the write, and the write
-   * commits by itself (no BEGIN, no COMMIT), so the caller waits exactly as
-   * long as with the check off; it gets the write's own result. The RESET
-   * runs behind the write, off the caller's path: the connection goes back
-   * to the pool only once the RESET has answered, so no other statement
-   * ever sees this actor. A RESET that fails ends the connection instead
-   * (pg_terminate_backend on itself), never handing it back with the
-   * settings on; a connection that died is neither sent to nor handed back
-   * (reserved.ts, hotfix after v0.300.13).
-   */
-  const pipelined = (
-    params: ActorParams,
-    query: string,
-    args: unknown[] | undefined,
-    mode: 'rows' | 'values' | 'simple',
-  ): Promise<unknown> => {
-    let settle!: (v: Promise<unknown>) => void;
-    const result = new Promise<unknown>((r) => (settle = r));
-    let answered = false;
-    /** The caller's answer, once: a later one is dropped (never left as an
-     *  unhandled rejection). */
-    const answer = (v: Promise<unknown>) => {
-      if (answered) return;
-      answered = true;
-      settle(v);
-    };
-    // Kept until the connection is back: closeDb waits for these first
-    // (postgres.js never finishes ending a pool whose reserved connection
-    // comes back late).
-    const life = (async () => {
-      // The SET's text first: a value it refuses (setActorSql throws) fails
-      // the caller before any connection is taken (A2b1 fix round 2, L1).
-      let setSql: string;
-      let lease: Lease;
-      try {
-        setSql = setActorSql(params, false);
-        lease = await reserveLease(base);
-      } catch (err) {
-        answer(Promise.reject(err));
-        return;
-      }
-      // True once the SET is built: postgres.js sends it a moment later.
-      // Ending a connection the SET never reached errs on the safe side.
-      let sent = false;
-      try {
-        const conn = lease.sql;
-        const set = conn.unsafe(setSql);
-        sent = true;
-        const q = conn.unsafe(query, (args ?? []) as never[]);
-        const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-        const reset = conn.unsafe(resetActorSqlFor(params)).simple();
-        answer(
-          Promise.allSettled([lease.watch(set), lease.watch(main)]).then(([s, m]) => {
-            // The write's own result. A SET that failed is reported when the
-            // write failed too (it is the cause); a write that ran without
-            // its actor meets the SQL check (a miss in warn, refused in on).
-            if (m.status === 'fulfilled') return m.value;
-            throw s.status === 'rejected' ? s.reason : m.reason;
-          }),
-        );
-        await lease.watch(reset);
-      } catch (err) {
-        // Anything that throws here (a failed RESET, or a throw while the
-        // statements are built) fails the caller if it has no answer yet,
-        // and a connection that may hold the settings ends instead of going
-        // back (lease.end: never handed back, nothing sent if it died).
-        if (!answered) answer(Promise.reject(err));
-        if (sent) await lease.end();
-      } finally {
-        lease.release();
-      }
-    })();
-    actorPipelines.add(life);
-    const done = () => actorPipelines.delete(life);
-    life.then(done, done);
-    return result;
-  };
   /** Run `query` as the actor bound now (decided when it runs). */
   const run = (
     query: string,
@@ -455,7 +472,16 @@ export function actorClient(base: PgSql): PgSql {
     const open = globalThis.__mantleSql === base;
     const params = open ? actorParams() : null;
     if (params && !runsOutsideTransaction(query) && wrapsStatement(query)) {
-      return pipelined(params, query, args, mode);
+      // A write outside a transaction, as the actor (A2b1 audit, Q1): the
+      // caller waits exactly as long as with the check off.
+      return settingsPipeline(
+        base,
+        () => setActorSql(params, false),
+        query,
+        args,
+        mode,
+        resetActorSqlFor(params),
+      );
     }
     const q = base.unsafe(query, args as never[], opts as never);
     return mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;

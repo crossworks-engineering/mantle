@@ -424,6 +424,11 @@ function writePoolSizeOf(file: string): number {
  *  connected to the box (each a process of its own). */
 const STDIO_MCP_PROCESSES = 4;
 
+/** Operator runs that may open a narrow pool beside the box processes and
+ *  the stdio MCP servers: a maintain run (one at a time per box) and one
+ *  more CLI (a backup or a repair script). */
+const NARROW_OPERATOR_PROCESSES = 2;
+
 /** Each LOGIN role's CONNECTION LIMIT, read from the statement migrate runs. */
 const ROLE_LIMITS = POOL_ROLES.map((role) => {
   const stmt = viewerRoleStatements(role, 'ceiling-test-key', false).join(' ');
@@ -469,9 +474,9 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
     (list ?? []).filter((p) => shape.processes.includes(p));
   const lines: Record<string, number> = {};
   if (systemCall) lines['system pool'] = sizeOf(systemCall) * shape.processes.length;
-  if (narrowCall) {
-    lines['role narrow'] = Math.min(NARROW_LIMIT, sizeOf(narrowCall) * shape.processes.length);
-  }
+  // Every process's narrow pool at full use: no min() with the role's
+  // limit (that hid a sum past it); the limit test below holds the sum.
+  if (narrowCall) lines['role narrow'] = sizeOf(narrowCall) * shape.processes.length;
   if (viewerCall) {
     // The write pool only in the processes that open it (A2b2b), each at
     // its own size; the stdio MCP server is no box process (the headroom).
@@ -503,6 +508,7 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
 }
 
 describe('Postgres connection ceiling', () => {
+  const limit = Math.floor((MAX_CONNECTIONS ?? 0) * CEILING_SHARE);
   it('reads max_connections from the postgres command, and only there', () => {
     expect(MAX_CONNECTIONS).not.toBeNull();
     expect(maxConnectionsOf(serviceBlocks(coreOverride).get('postgres'))).toBeNull();
@@ -570,6 +576,28 @@ describe('Postgres connection ceiling', () => {
     }
   });
 
+  it('the narrow role: every process its pool may open in, at full use, fits its CONNECTION LIMIT; the box under 90% with the headroom under max_connections', () => {
+    const per = sizeOf(narrowCall!);
+    const box = per * DB_PROCESSES.length;
+    const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
+    // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT.
+    expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
+      per: 2,
+      processes: 12,
+      box: 24,
+      headroom: 12,
+      sum: 36,
+    });
+    expect(box + headroom).toBeLessThanOrEqual(NARROW_LIMIT);
+    const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
+    for (const shape of SHAPES) {
+      const { total, lines } = ceiling(shape);
+      expect(lines['role narrow'], shape.name).toBe(per * shape.processes.length);
+      expect(total, shape.name).toBeLessThanOrEqual(limit);
+      expect(total + stdioWrite + headroom, shape.name).toBeLessThanOrEqual(MAX_CONNECTIONS ?? 0);
+    }
+  });
+
   it('the runs worker opens its boss only with MANTLE_RUNS on', () => {
     expect(queueWorkers(['worker_runs'])).toEqual({ always: [], runs: ['worker_runs'] });
   });
@@ -589,7 +617,6 @@ describe('Postgres connection ceiling', () => {
     }
   });
 
-  const limit = Math.floor((MAX_CONNECTIONS ?? 0) * CEILING_SHARE);
   for (const shape of SHAPES) {
     const { total, lines } = ceiling(shape);
     it(`${shape.name}: ${total} of ${limit} (${shape.processes.length} processes) ${JSON.stringify(lines)}`, () => {

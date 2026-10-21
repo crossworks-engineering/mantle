@@ -423,10 +423,58 @@ export function narrowDatabaseUrl(): string | null {
   return runtimeDatabaseUrl(url, narrowRolePassword(key), NARROW_ROLE);
 }
 
-/** The narrow role's CONNECTION LIMIT: every process's narrow pool
- *  (NARROW_POOL_MAX each, gateway/pools.ts) shares it, so the sum stays
- *  under the box's max_connections (connection-ceiling.test.ts). */
-export const NARROW_CONNECTION_LIMIT = 30;
+/** The narrow role's CONNECTION LIMIT, sized to every narrow pool a box
+ *  can open at once, each at NARROW_POOL_MAX (2, gateway/pools.ts): the 12
+ *  compose processes that take the app env (24), up to 4 stdio MCP servers
+ *  (8, the count the write role's limit leaves room for) and 2 operator
+ *  runs (a maintain run and one more CLI, 4). 24 + 8 + 4 = 36.
+ *  connection-ceiling.test.ts reads the compose file and fails when that
+ *  sum outgrows this limit, or the box's pools outgrow 90% of
+ *  max_connections. */
+export const NARROW_CONNECTION_LIMIT = 36;
+
+/** What the boot line reads of the narrow role (narrowLoginNote): whether
+ *  it may log in, and how many settings are stored on it (ALTER ROLE ...
+ *  SET, any database). No row: the role is missing. Readable by any role. */
+export const NARROW_LOGIN_SQL = `
+  SELECT r.rolcanlogin AS login,
+         (SELECT count(*)::int FROM pg_catalog.pg_db_role_setting s
+           WHERE s.setrole = r.oid) AS settings
+    FROM pg_catalog.pg_roles r WHERE r.rolname = '${NARROW_ROLE}'`;
+
+/** A row of NARROW_LOGIN_SQL. */
+export type NarrowLoginRow = { login: boolean; settings: number };
+
+/** The fix for a narrow role that cannot log in while the switch is on:
+ *  the boot line and the narrow route's error both name it. */
+export const NARROW_LOGIN_FIX =
+  'run migrate with MANTLE_NARROW_SYSTEM on (it gives mantle_system_narrow its login and password), or set MANTLE_NARROW_SYSTEM=0';
+
+/**
+ * The boot line's warning about the narrow role, or null when there is
+ * none. `loginPool`: the switch is on and the route logs in as the role
+ * (narrowDatabaseUrl not null). A role with no login (or none at all)
+ * then fails every narrow statement, closed: the line names the fix. A
+ * setting stored on the role is named whatever the switch: the narrow
+ * pool's startup parameters win over search_path, TimeZone and DateStyle,
+ * and the next migrate takes every one back.
+ */
+export function narrowLoginNote(row: NarrowLoginRow | null, loginPool: boolean): string | null {
+  const lines: string[] = [];
+  if (loginPool && !row?.login) {
+    lines.push(
+      `[db] MANTLE_NARROW_SYSTEM is on but ${NARROW_ROLE} ${
+        row ? 'cannot log in' : 'does not exist'
+      }: every narrow statement fails until you ${NARROW_LOGIN_FIX}`,
+    );
+  }
+  if (row && row.settings > 0) {
+    lines.push(
+      `[db] ${NARROW_ROLE} has ${row.settings} stored setting row(s) (ALTER ROLE ... SET): the narrow pool's startup parameters override search_path, TimeZone and DateStyle; the next migrate takes them all back`,
+    );
+  }
+  return lines.length ? lines.join('\n') : null;
+}
 
 /** Whether this process's pools log in as the runtime role. */
 export function runtimeRoleOn(): boolean {
@@ -881,7 +929,32 @@ export async function ensureRuntimeRoles(
   )) {
     await runRoleStatement(sql, stmt, true);
   }
+  await resetNarrowRoleSettings(sql);
   return 'ok';
+}
+
+/**
+ * Take back every setting stored on the narrow role (ALTER ROLE ... SET,
+ * for every database and for each one): its own login may store them on
+ * itself (a search_path, a timeout), and they would reach every later
+ * narrow session. Each migrate run, with the password set again above (a
+ * password the login changed on itself is the derived one again). A
+ * superuser's work (ensureRuntimeRoles).
+ */
+async function resetNarrowRoleSettings(sql: Sql): Promise<void> {
+  await runRoleStatement(sql, `ALTER ROLE "${NARROW_ROLE}" RESET ALL`, true);
+  const rows = await sql<{ db: string }[]>`
+    select d.datname as db from pg_catalog.pg_db_role_setting s
+      join pg_catalog.pg_roles r on r.oid = s.setrole
+      join pg_catalog.pg_database d on d.oid = s.setdatabase
+     where r.rolname = ${NARROW_ROLE}`;
+  for (const { db } of rows) {
+    await runRoleStatement(
+      sql,
+      `ALTER ROLE "${NARROW_ROLE}" IN DATABASE "${db.replace(/"/g, '""')}" RESET ALL`,
+      true,
+    );
+  }
 }
 
 /** The outcome of one ownership change (ownTables). `busy`: left for the

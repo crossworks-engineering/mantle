@@ -32,6 +32,8 @@ import {
   runtimeRoleStatements,
   narrowRolePassword,
   NARROW_CONNECTION_LIMIT,
+  NARROW_LOGIN_FIX,
+  narrowLoginNote,
   revokeOrder,
   systemDatabaseUrl,
   type HeldMembership,
@@ -108,6 +110,27 @@ describe('the runtime role statements', () => {
     expect(stmts.some((s) => /GRANT "mantle_write_user" TO "mantle_runtime"/.test(s))).toBe(false);
     // The owner holds no membership: it owns the marker itself.
     expect(wantedMemberships().some((m) => m.member === OWNER_ROLE)).toBe(false);
+  });
+
+  it("the narrow role's boot line: a role that cannot log in with the switch on names the fix; a stored setting is named whatever the switch", () => {
+    expect(NARROW_CONNECTION_LIMIT).toBe(36);
+    expect(narrowLoginNote({ login: true, settings: 0 }, true)).toBeNull();
+    expect(narrowLoginNote({ login: false, settings: 0 }, false)).toBeNull();
+    expect(narrowLoginNote(null, false)).toBeNull();
+    for (const row of [{ login: false, settings: 0 }, null]) {
+      expect(narrowLoginNote(row, true)).toBe(
+        `[db] MANTLE_NARROW_SYSTEM is on but ${NARROW_ROLE} ${
+          row ? 'cannot log in' : 'does not exist'
+        }: every narrow statement fails until you ${NARROW_LOGIN_FIX}`,
+      );
+    }
+    expect(NARROW_LOGIN_FIX).toMatch(/^run migrate with MANTLE_NARROW_SYSTEM on /);
+    for (const on of [true, false]) {
+      expect(narrowLoginNote({ login: true, settings: 2 }, on)).toMatch(
+        /^\[db\] mantle_system_narrow has 2 stored setting row\(s\) .*the next migrate takes them all back$/,
+      );
+    }
+    expect(narrowLoginNote({ login: false, settings: 1 }, true)!.split('\n')).toHaveLength(2);
   });
 
   it('the narrow system role: logs in only with its own password, bypasses the row rules, holds no owner power', () => {

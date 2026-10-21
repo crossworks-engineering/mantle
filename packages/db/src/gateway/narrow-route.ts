@@ -32,7 +32,7 @@ import {
   writeModeOf,
 } from '../actor';
 import { reserveLease } from '../reserved';
-import { NARROW_ROLE } from '../runtime-role';
+import { NARROW_LOGIN_FIX, NARROW_ROLE } from '../runtime-role';
 import { actingLoginNow } from '../viewer';
 import { NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
@@ -43,6 +43,7 @@ import {
   sendIn,
   setActorSql,
   settingsFirst,
+  settingsPipeline,
   trackPipeline,
   workResult,
   type ActorParams,
@@ -239,15 +240,11 @@ const HOLD_FAILED = '22012';
 /**
  * One statement outside a transaction on the narrow route's own pool
  * (plan v3.2 S7b): the session is the narrow role's, so no BEGIN, no role
- * SET, no hold check and no COMMIT. With an actor bound, on one reserved
- * connection: a session-level SET of its settings, the statement and a
- * RESET of them, pipelined, as the actor client sends a write outside a
- * transaction (actor-sql.ts pipelined): the SET goes in the statement's
- * first send (it has no parameters), the statement commits by itself, and
- * the caller has its answer before the RESET is answered; the connection
- * goes back only after the RESET, and one whose RESET failed ends instead
- * (never handed back with the settings on). With no actor, the statement
- * alone.
+ * SET, no hold check and no COMMIT. With an actor bound, the actor
+ * client's own pipeline (actor-sql.ts settingsPipeline: a session-level
+ * SET of its settings, the statement and a RESET of them on one reserved
+ * connection, one round trip, the caller answered before the RESET, one
+ * failure answer for both pools). With no actor, the statement alone.
  */
 async function narrowLoginStatement(
   pool: PgSql,
@@ -256,47 +253,44 @@ async function narrowLoginStatement(
   mode: QueryMode,
 ): Promise<unknown> {
   const params = await narrowParams();
-  // [text, its arguments, its mode]: the statement, with the SET before it
-  // and the RESET behind it when an actor is bound.
-  const texts: [string, unknown[], QueryMode][] = params
-    ? [
-        [`${NARROW_SQL_TAG} ${setActorSql(params, false)}`, [], 'rows'],
-        [query, args ?? [], mode],
-        [resetActorSqlFor(params, NARROW_SQL_TAG), [], 'simple'],
-      ]
-    : [[query, args ?? [], mode]];
-  const at = params ? 1 : 0;
-  const lease = await reserveLease(pool);
-  const sent: Promise<unknown>[] = [];
   try {
-    for (const [text, a, m] of texts) {
-      sent.push(lease.watch(sendIn(lease.sql.unsafe(text, a as never[]), m)));
-    }
+    if (!params) return await sendIn(pool.unsafe(query, (args ?? []) as never[]), mode);
+    return await settingsPipeline(
+      pool,
+      () => `${NARROW_SQL_TAG} ${setActorSql(params, false)}`,
+      query,
+      args,
+      mode,
+      resetActorSqlFor(params, NARROW_SQL_TAG),
+    );
   } catch (err) {
-    // Thrown while the pipeline was built: what was sent settles, and the
-    // connection, which may hold the settings, ends.
-    await Promise.allSettled(sent);
-    if (sent.length > 0) await lease.end();
-    lease.release();
-    throw err;
+    noteNarrowDenial(err);
+    throw narrowLoginError(err);
   }
-  // The RESET and the connection's return, behind the answer (closeDb
-  // waits for it: trackPipeline).
-  void trackPipeline(
-    Promise.allSettled(sent).then(async (out) => {
-      if (params && out[2]!.status === 'rejected') await lease.end();
-      lease.release();
-    }),
-  );
-  const [set, main] = await Promise.allSettled(sent.slice(0, at + 1));
-  const result = params ? main! : set!;
-  if (result.status === 'rejected') {
-    noteNarrowDenial(result.reason);
-    // A SET that failed is the cause (the statement then ran without it).
-    throw params && set!.status === 'rejected' ? set!.reason : result.reason;
+}
+
+/** The server's refusal of a login: the role may not log in (28000), or
+ *  the password is not its own (28P01). */
+const LOGIN_REFUSED = new Set(['28000', '28P01']);
+
+/** The narrow pool could not log in as the narrow role: migrate did not
+ *  give it its login (or its derived password) while the app has the
+ *  switch on. The statement fails closed; the message names the fix. */
+export class NarrowLoginError extends RuntimeFaultError {
+  constructor(cause: unknown) {
+    super(
+      `narrow system route: the pool cannot log in as ${NARROW_ROLE} (${pgErrorCode(cause)}): ${NARROW_LOGIN_FIX}`,
+      { cause },
+    );
+    this.name = 'NarrowLoginError';
   }
-  if (params && set!.status === 'rejected') throw set!.reason;
-  return result.value;
+}
+
+/** `err`, or NarrowLoginError when it is the server's refusal of the
+ *  narrow pool's login. */
+function narrowLoginError(err: unknown): unknown {
+  const code = pgErrorCode(err);
+  return code && LOGIN_REFUSED.has(code) ? new NarrowLoginError(err) : err;
 }
 
 /** One statement's query object, kept lazy (a postgres.js query runs when
@@ -431,7 +425,7 @@ export async function narrowBegin(
     );
   } catch (err) {
     noteNarrowDenial(err);
-    throw err;
+    throw pool ? narrowLoginError(err) : err;
   }
 }
 

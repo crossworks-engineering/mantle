@@ -167,7 +167,7 @@ see it.
 `mantle_system_narrow` is the role narrow system work will run as: an exit
 that needs past the row rules but writes no item (an Admin-area tool, an
 area request, traces, spills, counters). It is `NOSUPERUSER`,
-`BYPASSRLS`, `NOINHERIT`, `CONNECTION LIMIT 30`, owns nothing and is a member of nothing (the
+`BYPASSRLS`, `NOINHERIT`, `CONNECTION LIMIT 36`, owns nothing and is a member of nothing (the
 text check below refuses the large-object functions, so narrow work cannot
 make it the owner of one). The runtime role is its member with `SET` only (`wantedMemberships`), so the
 runtime role holds none of its rights and may take it; the superuser may take
@@ -249,21 +249,43 @@ Off, every statement runs as before. On, a statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 
-- on the route's own pool (`gateway/pools.ts` `narrowPoolSql`): its
-  connections log in as `mantle_system_narrow` (`narrowDatabaseUrl`), five
-  per process at most, opened on the first narrow statement (a process that
-  runs no narrow work opens none), every process's under the role's
-  `CONNECTION LIMIT` of 30 (`connection-ceiling.test.ts`: the full box
-  shape 349 to 379 of 405 with it). A role whose login migrate did not open
-  fails the narrow statement, never the system pool instead;
+- on the route's own pool (`gateway/pools.ts` `narrowPoolSql`, made by
+  `newNarrowPool`): its connections log in as `mantle_system_narrow`
+  (`narrowDatabaseUrl`), two per process at most (`NARROW_POOL_MAX`), opened
+  on the first narrow statement (a process that runs no narrow work opens
+  none) and closed after 30 idle seconds. The role's `CONNECTION LIMIT` of
+  36 is sized to every pool a box may open at once: the 12 compose
+  processes that take the app env at 2 each (24), up to 4 stdio MCP servers
+  (8) and 2 operator runs, a maintain run and one more CLI (4)
+  (`connection-ceiling.test.ts` reads the compose file and fails when that
+  sum outgrows the limit, or the box's pools outgrow 90% of
+  `max_connections`: the full shape 373 of 405, 393 of 450 with the stdio
+  servers' and the operator runs' connections). The pool sends
+  `search_path`, `TimeZone` and `DateStyle` as startup parameters (the
+  server's defaults, `NARROW_STARTUP`), so a setting the narrow login
+  stored on its own role (`ALTER ROLE current_user SET ...`, which no
+  grant can stop) never reaches a narrow session through them; migrate
+  takes every stored setting of the role back each run (`RESET ALL`, and
+  the `IN DATABASE` form for each database) and sets its derived password
+  again (the login may change its own). A process that starts with the
+  switch on reads the role (`NARROW_LOGIN_SQL`, outside tests) and warns
+  when it cannot log in, naming the fix (run migrate with the switch on, or
+  set `MANTLE_NARROW_SYSTEM=0`), and on any stored setting. A role whose
+  login migrate did not open fails the narrow statement, never the system
+  pool instead (`NarrowLoginError`, its message the same fix);
 - one statement outside a transaction: on one reserved connection, a
   session-level `SET` of the actor, its write mode, the box's check mode
   and the acting login (below), the statement, and a `RESET` of them, as
-  the actor client sends a write outside a transaction: the `SET` goes in
+  the actor client sends a write outside a transaction, through the same
+  pipeline (`gateway/actor-sql.ts` `settingsPipeline`): the `SET` goes in
   the statement's first send, the statement commits by itself, the caller
   has its answer before the `RESET` is answered, and a connection whose
-  `RESET` failed ends instead of going back. No `BEGIN`, no role `SET`, no
-  `COMMIT`. Measured with the check off (a2a-round-trips.db.test.ts,
+  `SET` or `RESET` failed ends instead of going back. One failure answer on
+  both pools: the statement's own result when it ran (a `SET` that failed
+  beside it is no error of the caller's: the statement committed, with none
+  of the settings, and met the database's checks as a statement with no
+  actor), else the `SET`'s error when it failed too, else the statement's.
+  No `BEGIN`, no role `SET`, no `COMMIT`. Measured with the check off (a2a-round-trips.db.test.ts,
   statements / round trips): a chat turn's start 104/144 with the switch
   off, 148/166 on the S7a route, 126/155 on the login pool with the `RESET`
   after the answer (the 11 more round trips are the `RESET`s, none on the
