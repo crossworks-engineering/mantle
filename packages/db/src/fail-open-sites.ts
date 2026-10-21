@@ -1,7 +1,7 @@
 /**
  * What makes a fail-open branch a hit (plan v3.2 S4a; fail-open.ts counts
  * it), and the writer of its row. gateway/scope-answers.ts and
- * gateway/write-route.ts call these at their four sites; viewer.ts calls
+ * gateway/write-route.ts call these at their three sites; viewer.ts calls
  * noteFailOpen itself.
  */
 import { getTableName, is } from 'drizzle-orm';

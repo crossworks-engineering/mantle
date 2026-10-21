@@ -111,6 +111,8 @@ const LABELS: Record<string, string> = {
   rawSqlNonLiteral:
     'raw SQL text that is no literal (.unsafe(x), sql.raw(x)) outside the allowlist (done: 0)',
   rawWriteSqlFiles: 'files with raw write SQL outside the allowlist (may grow: a split)',
+  rawWriteTargetRegex:
+    "regexes in packages/*/src and server/ that read a write statement's table from its text (done: 0)",
   historyCodeComments: 'comment lines carrying a history code (fix rounds, audit and step codes)',
   routeBodyReadFiles: 'route files reading the request body directly (A10 part 2)',
   routeBodyReadAllowed: 'route files named to read the body another way (A10 part 2)',

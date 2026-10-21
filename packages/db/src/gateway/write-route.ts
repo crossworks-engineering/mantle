@@ -23,7 +23,7 @@ import { actorCheckMode, actorSetting, currentActor, writeModeOf, type Actor } f
 import { WRITE_ROLE_TABLES } from '../access-matrix';
 import { noteScopedSystemWrite, tableNameOf } from '../fail-open-sites';
 import { ACTOR_SQL_TAG, firstModeReadNow } from './check-mode';
-import { MORE_STATEMENTS, runsOutsideTransaction, setActorSql, statementBody } from './actor-sql';
+import { runsOutsideTransaction, setActorSql } from './actor-sql';
 import { adminSql, getAdminDb, loginWritePoolOpen, onCloseDb } from './pools';
 import {
   JoinedWriteEndedError,
@@ -59,21 +59,6 @@ const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
  *  (no failed attempt). */
 function isWriteRoleTable(table: unknown): boolean {
   return is(table, PgTable) && WRITE_ROLE_TABLE_SET.has(tableNameOf(table));
-}
-
-/** The table a single INSERT, UPDATE or DELETE writes, as `schema.table`
- *  (an unqualified name is public's), or null: another statement, a WITH,
- *  more than one statement, a name it cannot read. Exported for
- *  actor-client.test.ts only (not in index.ts). */
-export function rawWriteTarget(query: string): string | null {
-  const body = statementBody(query, false);
-  if (MORE_STATEMENTS.test(body)) return null;
-  const m =
-    /^(?:insert\s+into|update(?:\s+only)?|delete\s+from(?:\s+only)?)\s+(?:"?([a-z_][a-z0-9_]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?(?=[\s(;]|$)/i.exec(
-      body,
-    );
-  if (!m) return null;
-  return `${(m[1] ?? 'public').toLowerCase()}.${m[2]!.toLowerCase()}`;
 }
 
 /** db.insert, update or delete of a scoped write (the db proxy): the
@@ -224,20 +209,18 @@ export async function onLoginWritePool<T>(paths: GatewayPaths<T>): Promise<T> {
  * The client behind the gateway's drizzle handle (loginWriteDb): what a
  * scoped write that `db` sends to the system pool (insert, update, delete,
  * a mutating request's transaction, executeWrite) runs on. Each statement
- * and each transaction asks the gateway when it runs; the system path is
- * exactly the system pool's client.
+ * and each transaction asks the gateway when it runs (loginWriteRoute: the
+ * actor and the write scope, never the statement's text); the system path
+ * is exactly the system pool's client. A statement on the write role that
+ * names a table the role holds no right on is refused by Postgres.
  */
 function loginWriteClient(): PgSql {
   const run = (query: string, args: unknown[] | undefined, mode: QueryMode) => {
     const system = () => sendIn(adminSql().unsafe(query, args as never[]), mode);
     if (runsOutsideTransaction(query)) return system();
-    // A single write to a table the write role holds no right on goes to
-    // the system pool before it is sent (no failed attempt).
-    const target = rawWriteTarget(query);
-    if (target !== null && !WRITE_ROLE_TABLE_SET.has(target)) {
-      noteScopedSystemWrite('raw-write', target, WRITE_ROLE_ACTORS);
-      return system();
-    }
+    // Every scoped statement goes to the write role, whatever its text
+    // names: Postgres refuses a table the role holds no right on (fail
+    // closed). No table is read from the text here.
     return onLoginWritePool({
       system,
       write: (route) => writeRoleStatement(route, query, args, mode),

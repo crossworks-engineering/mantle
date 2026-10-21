@@ -793,6 +793,58 @@ function laneOf(path) {
   return m ? m[1] : path.split('/')[0];
 }
 
+// ── a write's table read from its text ──────────────────────────────────────
+
+/** A regex source naming a write verb: INSERT INTO, DELETE FROM or UPDATE
+ *  (its whitespace tokens dropped first). */
+const TARGET_VERB = /insertinto|deletefrom|\bupdate\b/i;
+/** A capturing group that starts with a name's character: a class of
+ *  letters (`[a-z_`, `[A-Z`, `[\w`), `\w` or a negated class. */
+const NAME_CAPTURE = /\((?!\?)(?:\[\^|\[(?:[a-zA-Z_]|\\w)|\\w)/;
+
+/** Whether a regex source reads the table a write statement names: a write
+ *  verb and a group capturing a name. */
+export function readsWriteTarget(source) {
+  const flat = source.replace(/\\s[+*?]?/g, '');
+  return TARGET_VERB.test(flat) && NAME_CAPTURE.test(source);
+}
+
+/**
+ * The regexes in counted code that read the table a write statement names
+ * (the `rawWriteTargetRegex` pin): a regex literal, or `new RegExp(...)` /
+ * `RegExp(...)` of literal text, whose source names a write verb and
+ * captures a name after it. The login write gateway routed a raw write by
+ * such a reading until every scoped statement went to the write role,
+ * where Postgres refuses a table the role holds no right on: a new one is
+ * a routing decision made on text again. Comments are not code. Answers
+ * the 1-based lines.
+ */
+export function rawWriteTargetRegexSites(path, text) {
+  if (!/insert|delete|update/i.test(text)) return [];
+  const sf = parse(path, text);
+  const out = [];
+  const visit = (node) => {
+    let source = null;
+    if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+      const lit = node.getText(sf);
+      source = lit.slice(1, lit.lastIndexOf('/'));
+    } else if (
+      (ts.isNewExpression(node) || ts.isCallExpression(node)) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'RegExp' &&
+      node.arguments?.[0]
+    ) {
+      const arg = node.arguments[0];
+      if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) source = arg.text;
+      else if (ts.isTaggedTemplateExpression(arg)) source = arg.template.getText(sf).slice(1, -1);
+    }
+    if (source !== null && readsWriteTarget(source)) out.push(lineOf(sf, node.getStart(sf)));
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
 // ── all of them ─────────────────────────────────────────────────────────────
 
 /** The cleanup counts of the counted files ([{ path, text }]). */
@@ -800,9 +852,14 @@ export function cleanupCounts(root, texts) {
   const allowed = rawWriteAllowed(root);
   const codes = new Set(HISTORY_HEADING_CODES);
   const rawWrites = {};
+  const targetRegexes = {};
   const history = {};
   for (const { path, text } of texts) {
     if (isTestSupport(path)) continue;
+    if (rawWriteSwept(path) && !isHandRunHarness(path)) {
+      const lines = rawWriteTargetRegexSites(path, text);
+      if (lines.length) targetRegexes[path] = lines;
+    }
     if (rawWriteSwept(path) && !allowed.has(path) && !isHandRunHarness(path)) {
       const sites = rawWriteSqlSites(path, text);
       if (sites.length) rawWrites[path] = sites.map((s) => `${s.line}:${s.why}`);
@@ -821,10 +878,12 @@ export function cleanupCounts(root, texts) {
       rawWriteSqlScoped: sites.length - nonLiteral,
       rawSqlNonLiteral: nonLiteral,
       rawWriteSqlFiles: Object.keys(rawWrites).length,
+      rawWriteTargetRegex: total(targetRegexes),
       historyCodeComments: total(history),
     },
     detail: {
       rawWriteSql: rawWrites,
+      rawWriteTargetRegex: targetRegexes,
       historyCodeComments: history,
       problems: headingCodeProblems(root),
     },

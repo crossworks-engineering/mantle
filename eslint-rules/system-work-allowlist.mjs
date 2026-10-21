@@ -26,7 +26,9 @@ export const SYSTEM_WORK_PINS = {
   'server/web/lib/agent-telegram.ts': { count: 1, why: ['login-telegram'] },
   // The debug read of the bots (an Admin area route).
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
-  // The boot step that makes snapshot copies, under its advisory lock.
+  // The boot step that makes snapshot copies, under its advisory lock; a
+  // raced copy's home goes through mantle_file_restamp_home as workspace
+  // system work (the SQL allowlist names its actor, 0313).
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   // ws:clear-member-ticks: the Moderator ticks it clears go through
   // mantle_ws_set_moderator as workspace system work (the SQL allowlist

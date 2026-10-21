@@ -14,7 +14,7 @@
  * (server/web lib/agent-telegram.ts), so the two never differ.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   agents,
   asSystem,
@@ -26,13 +26,15 @@ import {
   telegramChats,
   type TelegramChat,
 } from '@mantle/db';
-import { chatLoginRefusal, loginModeratesBot, TELEGRAM_NOT_A_USER_CODE } from './chat-login';
+import { UUID_RE } from '@mantle/std';
+import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from './chat-login';
 import { sendMessage } from './outbound';
 
 /**
  * This file's one system door (arch A6): the pairing rows (a chat's code, its
  * login) are read and written on the system pool by the named reason
- * 'login-telegram'. Every read and write below goes through it.
+ * 'login-telegram'. The preview and the pairing go through it; a block or
+ * an unpair is its definer's (setChatPairing).
  */
 function telegramLoginSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'login-telegram');
@@ -455,6 +457,14 @@ async function notifyPaired(args: {
  * dropped) until a Moderator unpairs it; `unpair` clears its login and puts
  * it back to pending, so the person can pair again with a new code. Never
  * pairs. `accountId`, when given, must be the chat's bot.
+ *
+ * The rule and the write are one definer (mantle_tg_chat_set, 0313): the
+ * Telegram tables are granted to no role. A write, in its own transaction:
+ * on the write role in the login's own scope (a login's routes; the
+ * definer then takes the scope's own login only), on the narrow or full
+ * system route on the assistants area's route. A chat the caller may not
+ * touch, or none, answers no row: not found, so a caller who may not
+ * moderate the bot learns nothing about its chats.
  */
 export async function setChatPairing(args: {
   ownerId: string;
@@ -464,48 +474,35 @@ export async function setChatPairing(args: {
   accountId?: string;
 }): Promise<{ ok: true; chat: PairedChatSummary } | PairingRefusal> {
   const { ownerId, actorLoginId, chatId, action } = args;
-  return telegramLoginSystem(async () => {
-    const [chat] = await db
-      .select()
-      .from(telegramChats)
-      .where(
-        and(
-          eq(telegramChats.id, chatId),
-          eq(telegramChats.userId, ownerId),
-          ...(args.accountId ? [eq(telegramChats.accountId, args.accountId)] : []),
-        ),
-      )
-      .limit(1);
-    if (!chat) return { ok: false as const, error: 'chat not found.', code: 'not_found' as const };
-    const own = !!chat.loginId && chat.loginId.toLowerCase() === actorLoginId.toLowerCase();
-    if (
-      !own &&
-      !(await loginModeratesBot({ ownerId, loginId: actorLoginId, accountId: chat.accountId }))
-    ) {
-      // Nobody else's chat is named: a caller who may not moderate the bot
-      // learns nothing about its chats.
-      return { ok: false as const, error: 'chat not found.', code: 'not_found' as const };
-    }
-    await db
-      .update(telegramChats)
-      .set({
-        allowlistStatus: action === 'block' ? 'denied' : 'pending',
-        loginId: null,
-        pairingCode: null,
-        pairingExpiresAt: null,
-        pairingReplies: 0,
-        updatedAt: new Date(),
-      })
-      .where(eq(telegramChats.id, chat.id));
-    return {
-      ok: true as const,
-      chat: {
-        id: chat.id,
-        telegramChatId: chat.telegramChatId,
-        label: labelOf(chat),
-        noticeLabel: noticeLabelOf(chat),
-        agentName: await botAgentName(chat.accountId),
-      },
-    };
-  });
+  const notFound = { ok: false as const, error: 'chat not found.', code: 'not_found' as const };
+  // Not a login: nobody's chat (the rule never names one).
+  if (!UUID_RE.test(actorLoginId)) return notFound;
+  const rows = await db.transaction(
+    async (tx) =>
+      (await tx.execute(
+        sql`select id::text as id, telegram_chat_id as "telegramChatId", title, username,
+                   agent_name as "agentName"
+              from "public"."mantle_tg_chat_set"(${ownerId}::uuid, ${actorLoginId}::uuid,
+                                                 ${chatId}::uuid, ${action},
+                                                 ${args.accountId ?? null}::uuid)`,
+      )) as unknown as {
+        id: string;
+        telegramChatId: string;
+        title: string | null;
+        username: string | null;
+        agentName: string | null;
+      }[],
+  );
+  const chat = rows[0];
+  if (!chat) return notFound;
+  return {
+    ok: true as const,
+    chat: {
+      id: chat.id,
+      telegramChatId: chat.telegramChatId,
+      label: labelOf(chat),
+      noticeLabel: noticeLabelOf(chat),
+      agentName: chat.agentName ?? null,
+    },
+  };
 }

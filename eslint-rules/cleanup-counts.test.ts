@@ -20,6 +20,8 @@ import {
   rawWriteSwept,
   sqlStatements,
   // @ts-expect-error: plain-JS module, no types shipped.
+  rawWriteTargetRegexSites,
+  readsWriteTarget,
 } from './cleanup-counts.mjs';
 import { notReadSqlReason } from '../packages/db/src/read-sql';
 
@@ -570,5 +572,34 @@ describe('history codes in comments', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("rawWriteTargetRegexSites: a write statement's table read from its text", () => {
+  const of = (text: string) => rawWriteTargetRegexSites('packages/db/src/x.ts', text);
+
+  it('finds the regex the gateway routed by, and its other spellings', () => {
+    // The removed rawWriteTarget's regex, as main had it.
+    expect(
+      of(
+        'const m = /^(?:insert\\s+into|update(?:\\s+only)?|delete\\s+from(?:\\s+only)?)\\s+(?:"?([a-z_][a-z0-9_]*)"?\\s*\\.\\s*)?"?([a-z_][a-z0-9_]*)"?(?=[\\s(;]|$)/i.exec(b);',
+      ),
+    ).toEqual([1]);
+    expect(of('const r = /insert\\s+into\\s+(\\w+)/;')).toEqual([1]);
+    expect(of("const r = new RegExp('delete\\\\s+from\\\\s+([^\\\\s]+)');")).toEqual([1]);
+    expect(of('const r = RegExp(String.raw`update\\s+([A-Za-z_.]+)\\s+set`, "i");')).toEqual([1]);
+  });
+
+  it('a write verb with no name captured, a name with no write verb, a comment: none', () => {
+    // The gateway's write test (handles.ts isWriteSql) and the WITH test.
+    expect(
+      of(
+        'const r = /\\b(insert\\s+into|delete\\s+from|update\\s+[\\w".]+\\s+(as\\s+\\w+\\s+)?set|for\\s+(no\\s+key\\s+)?update)\\b/i;',
+      ),
+    ).toEqual([]);
+    expect(of('const W = /\\b(insert|update|delete|merge)\\b/i;')).toEqual([]);
+    expect(of('const r = /^select\\s+([a-z_]+)/;')).toEqual([]);
+    expect(of('// /insert\\s+into\\s+(\\w+)/ in a comment\nconst a = 1;')).toEqual([]);
+    expect(readsWriteTarget('insert\\s+into\\s+(?:\\w+)')).toBe(false);
   });
 });

@@ -48,7 +48,6 @@ import {
   draws,
   emailAttachments,
   flipThenPlace,
-  itemGrants,
   inFlipTransaction,
   type Node,
   nodes,
@@ -619,10 +618,10 @@ async function isWatcherInsert(
  * (see upsertFile): the stamp merged into its data after the write (its
  * extract_skipped at the row's own time, as 0267's create stamp trigger
  * does), then its grants replaced by one home row in `createWs`, Write off.
- * The stamp goes on before the home: on a snapshot copy the database lets
- * that home through (a private workspace, Write off) and nothing wider.
- * @heads-held by upsertFile (withHeads on the row). Exported for its write
- * role cell only (restamp-write-role.db.test.ts); not part of the package.
+ * The stamp goes on before the home: the home's definer takes only a row
+ * that carries a copy's stamp. Snapshot copies' system work only.
+ * @heads-held by upsertFile (withHeads on the row). Exported for its cells
+ * only (restamp-write-role.db.test.ts); not part of the package.
  */
 export async function restampRacedCreate(
   tx: Parameters<Parameters<typeof withHeads>[2]>[0],
@@ -641,14 +640,14 @@ export async function restampRacedCreate(
     })
     .where(eq(nodes.id, id));
   if (createWs) {
-    await tx.delete(itemGrants).where(eq(itemGrants.nodeId, id));
-    // Raw text on purpose: the write role may INSERT only some columns of
-    // item_grants (access-matrix.ts writeColumnsFor), and a drizzle insert
-    // names every column of the table (the rest as DEFAULT), which Postgres
-    // refuses for the role (42501). This statement names only the four the
-    // role may write (packages/files/src/restamp-write-role.db.test.ts).
-    await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
-                         values (${id}::uuid, ${createWs}::uuid, true, false)`);
+    // The row's grants replaced by one home in createWs, Write off, by its
+    // definer (mantle_file_restamp_home, 0313): only the snapshot copies'
+    // system work may, and only on a stamped copy, so no scope can turn
+    // it into a grant change of its own
+    // (packages/files/src/restamp-write-role.db.test.ts).
+    await tx.execute(
+      sql`select "public"."mantle_file_restamp_home"(${id}::uuid, ${createWs}::uuid)`,
+    );
   }
   const [row] = await tx.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   if (!row) throw new Error('upsertFile: the raced row is gone');

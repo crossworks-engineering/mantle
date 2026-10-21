@@ -1,21 +1,21 @@
 # Fail-open counts (plan v3.2 S4a)
 
-Six branches still answer yes, or send a write to the system pool, for code
+Five branches still answer yes, or send a write to the system pool, for code
 that has no system actor bound. S4a only counts them: each hit writes one
 miss row, and no answer changes. S4b (a later release, after one fleet
 release with every count at 0) refuses them. The spec is
 [actors.md](./actors.md), section 7.
 
-## The six sites
+## The sites
 
-| Site (`fail-open:<site>`) | Where                                                          | A hit when                                                                               |
-| ------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/gateway/scope-answers.ts`) | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound          |
-| `scope-has-area`          | `scopeHasArea`, its system case (gateway/scope-answers.ts)     | the same: a yes outside every workspace scope with no system actor bound                 |
-| `typed-write`             | `typedWrite` (gateway/write-route.ts)                          | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold |
-| `raw-write`               | `loginWriteClient` (gateway/write-route.ts)                    | a scoped raw write (`executeWrite`, a write transaction) to such a table                 |
-| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)                       | production lets an unlisted `asSystem` reason leave a turn scope                         |
-| `system-db`               | `assertSystemDbCaller` (viewer.ts)                             | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope        |
+| Site (`fail-open:<site>`) | Where                                                             | A hit when                                                                               |
+| ------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `scope-holds-admin`       | `scopeHoldsAdmin` (`packages/db/src/gateway/scope-answers.ts`)    | code outside every scope gets yes (`isUnscoped()`) and no system actor is bound          |
+| `scope-has-area`          | `scopeHasArea`, its system case (gateway/scope-answers.ts)        | the same: a yes outside every workspace scope with no system actor bound                 |
+| `typed-write`             | `typedWrite` (gateway/write-route.ts)                             | a scoped write (`db.insert`, `update`, `delete`) to a table the write role does not hold |
+| `raw-write`               | none since S10 round 3 (the name stays for an older image's rows) | never: a scoped raw write goes to the write role, which refuses such a table             |
+| `turn-exit`               | `asSystem` (`packages/db/src/viewer.ts`)                          | production lets an unlisted `asSystem` reason leave a turn scope                         |
+| `system-db`               | `assertSystemDbCaller` (viewer.ts)                                | production lets a file outside `SYSTEM_DB_MODULES` use `systemDb` in a turn scope        |
 
 System work takes the first two yes on purpose (a worker, an Admin area
 route, a named repair: each binds a system actor), so it is never counted;
@@ -34,7 +34,7 @@ with no Admin workspace.
 `packages/db/src/fail-open.ts` writes the row through actor.ts's miss writer
 (`mantle_actor_miss_log`, on another connection, after the statement):
 `check_name` is `fail-open:<site>`, `actor` the bound actor's kind (or the
-scope's kind in viewer.ts), `detail` the calling file. A raw write runs when
+scope's kind in viewer.ts), `detail` the calling file. A write runs when
 its query is awaited, often with no app frame on the stack; its `detail`
 names the table then (`unknown caller, table public.x`).
 
@@ -61,7 +61,7 @@ site's count is 0 only when no process hit it in that window;
 `brains_without_admin_workspace`, and `env_has_runtime_role_line` (n/a with
 no readable `.env`). The repo
 count is the pin `failOpenSites` (`scripts/arch-scoreboard.pins.json`): the
-six calls that note a hit. S4b takes it to 0.
+five calls that note a hit. S4b takes it to 0.
 
 ## Measuring the system-pool tables
 
@@ -73,7 +73,7 @@ throwaway database with the actor check in warn (`vitest.config.ts`).
 
 ## The scoped writes that stay on the system pool
 
-S4b refuses a scoped typed or raw write to a table the write role does not
+S4b refuses a scoped typed write to a table the write role does not
 hold, unless the table's access matrix row names
 `scopedSystemWrite: '<reason>'` (`packages/db/src/access-matrix.ts`). These
 are the tables the vitest measurement found; the box counts add what it
@@ -100,7 +100,7 @@ test reaches it with a login's scope): a box counts its hits, if any, as
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two
 unscoped yes (every test binds `system(test)`), a scoped write on a path no
-test reaches, or which table a box's raw writes name. The box counts see
+test reaches, or which table a box's writes name. The box counts see
 every site on real traffic but give numbers only: a site with a count above
 0 is read on that box (its `detail`, the calling file or the table) before
 S4b names or refuses it. S4b flips after one fleet release with every count

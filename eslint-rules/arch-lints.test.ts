@@ -201,7 +201,9 @@ describe('the architecture ratchets (pinned counts)', () => {
       if (f === 'packages/db/src/viewer.ts') continue;
       const text = readRepoFile(ROOT, f);
       if (text === null) continue;
-      const code = stripComments(text) as string;
+      // A maintenance task's slug (server/web/lib/maintenance/registry.ts:
+      // `pnpm maintain snapshot-copies`) names a task, not a reason.
+      const code = (stripComments(text) as string).replace(/\bslug:\s*'[^'\n]*'/g, '');
       for (const r of reasons) {
         const quote = '[\'"\\x60]';
         const lit = new RegExp(`${quote}(?:system:)?${r}${quote}`, 'g');

@@ -10,7 +10,6 @@ import {
   actorInTransaction,
   closeDb,
   needsActorWrap,
-  rawWriteTarget,
   refreshActorCheckMode,
   runsOutsideTransaction,
   setActorSql,
@@ -710,19 +709,5 @@ describe('the write role SET (arch A2b2b): one statement, transaction-local, che
       writeRoleSettingsSql({ ...scope, loginId: 'nope' }, ['link', 'ro', 'on'], null),
     ).toThrow(/login/);
     expect(() => writeRoleSettingsSql(scope, ["x'y", 'rw', 'on'], null)).toThrow(/not an actor/);
-  });
-});
-
-describe('rawWriteTarget (arch A2b2b: a raw single write routes by its table)', () => {
-  it('reads the table of an INSERT, UPDATE or DELETE', () => {
-    expect(rawWriteTarget('insert into item_marks (a) values (1)')).toBe('public.item_marks');
-    expect(rawWriteTarget('/* x */ update "public"."nodes" set a = 1')).toBe('public.nodes');
-    expect(rawWriteTarget('delete from only auth.users where id = $1')).toBe('auth.users');
-    expect(rawWriteTarget('UPDATE profiles AS p SET x = 1')).toBe('public.profiles');
-  });
-  it('null for anything else: a WITH, more than one statement, a read', () => {
-    expect(rawWriteTarget('with x as (select 1) update nodes set a = 1')).toBeNull();
-    expect(rawWriteTarget('update nodes set a = 1; delete from shares')).toBeNull();
-    expect(rawWriteTarget('select 1')).toBeNull();
   });
 });

@@ -165,7 +165,7 @@ const EXPLAIN_NO_ANALYZE = /^explain\b(?![^;]*\banaly[sz]e\b)/i;
  *  costs the wrap, a missed one would send a write with no actor. */
 const WITH_WRITES = /\b(insert|update|delete|merge)\b/i;
 /** A `;` with more text after it: more than one statement, unknown. */
-export const MORE_STATEMENTS = /;\s*\S/;
+const MORE_STATEMENTS = /;\s*\S/;
 
 /**
  * Whether the system pool sends `query` with the actor set (owner decision,

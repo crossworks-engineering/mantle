@@ -88,9 +88,13 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
   check mode: the mode decides refuse or report, never the pool. One
   `SET LOCAL` with the transaction's first statement carries the scope,
   the actor and the create home. Never a session SET.
-- A write to a table the write role holds no right on goes to the system
-  pool up front. Nothing runs again: a right the role lacks is a bug (an
-  error and a `write-role-gap` miss), a refusal is the caller's answer.
+- A typed write (`db.insert`, `update`, `delete`) to a table the write
+  role holds no right on goes to the system pool up front, by its drizzle
+  table (counted, `typed-write`; S4b). A raw scoped statement goes to the
+  write role whatever its text names: no table is read from SQL text, and
+  Postgres refuses a table the role holds no right on (42501). Nothing
+  runs again: a right the role lacks is a bug, a refusal is the caller's
+  answer.
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its
@@ -246,8 +250,8 @@ contact sharing, name checks, `mantle_ws_create`); the write role's grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`,
 `mantle_workspace_event`, 0279), folder subtree (`mantle_subtree_rewrite`,
 `mantle_subtree_refuse_hidden`, 0282), edit check writes
-(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307), its row, contact, landing app and archive (0309); the folder trail (`mantle_folder_trail`, 0311: the folders at or above a row a login's scope reads, by id, path and name only, for a login's own session's tree reads; no write asks it, so such a folder answers 404 to every write).
-With no acting login the 0307 and 0309 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`);
+(`mantle_secret_put`, `mantle_recall_retarget`, 0281), a workspace's users, resources and assistant (0307), its row, contact, landing app and archive (0309); a Telegram chat's block or unpair (`mantle_tg_chat_set`, 0313: its own login, a Moderator of its bot's workspace, an Admin user with the users area; the write and narrow roles); a raced snapshot copy's home (`mantle_file_restamp_home`, 0313: the snapshot copies' system work only, the runtime role); the folder trail (`mantle_folder_trail`, 0311: the folders at or above a row a login's scope reads, by id, path and name only, for a login's own session's tree reads; no write asks it, so such a folder answers 404 to every write).
+With no acting login the 0307, 0309 and 0313 writers refuse all but one named actor per definer (`mantle_ws_system_work(fn)`, three pairs);
 no TS writes the four workspace tables; named: login bridge, bridge connector, the switch, guards.
 
 ## 10. HTTP
@@ -335,9 +339,8 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - `Login` has no kind or role (`adminFacts`); its legacy shapes do. S8.
 - Route policy is spread over lists, not declared per route. S9.
-- Scoped code still holds raw write SQL, pinned per file (`eslint-rules/no-raw-write-sql.mjs`). S10.
 - The A8 matrix covers every kind and tool, not yet the routes. S11b.
-- Six branches fail open, counted since S4a (section 7, Fail-open counts). S4.
+- Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the
   settings are no credential; access is never decided from them on a role
   that runs caller-shaped SQL.

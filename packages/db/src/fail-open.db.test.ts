@@ -2,10 +2,11 @@
  * The fail-open count on a real, migrated Postgres (plan v3.2 S4a): a hit
  * writes its miss row (actor_check_misses, check 'fail-open:<site>', the
  * calling file) through mantle_actor_miss_log, after the statement, once
- * per site and file; the raw write site (loginWriteClient) and the typed
- * write site count a login's scoped write to a table the write role does
- * not hold, and the write still runs where it ran (the system pool); system
- * work is never counted. The query is the box script's
+ * per site and file; the typed write site counts a login's scoped write to
+ * a table the write role does not hold, and the write still runs where it
+ * ran (the system pool); a scoped raw write to such a table goes to the
+ * write role, and Postgres refuses it (no row, no hit); system work is
+ * never counted. The query is the box script's
  * (scripts/arch-scoreboard-box.sh, fail_open_misses).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/fail-open.db.test.ts
@@ -70,31 +71,28 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
       return fn();
     });
 
-  it('a scoped raw write to a system table: counted once, and it still runs', async () => {
+  it('a scoped raw write to a system table: the write role refuses it, no row and no hit', async () => {
     fo.resetFailOpenForTest();
     await su`delete from actor_check_misses`;
     const write = () =>
       m.executeWrite(
         sql`update "public"."provider_alerts" set provider = provider where false`,
       ) as unknown as Promise<unknown>;
-    await inWriteRequest(async () => {
-      await write();
-      await write();
-    });
-    await settle();
-    expect(await rowsBySite()).toEqual({ 'fail-open:raw-write': 1 });
-    const [row] = await su<{ actor: string; detail: string; source: string }[]>`
-      select actor, detail, source from actor_check_misses where check_name = 'fail-open:raw-write'`;
-    expect(row).toMatchObject({ actor: 'login', source: 'ts' });
-    // The write runs when awaited: the stack may hold no app frame, and the
-    // table names it then.
-    expect(row!.detail).toMatch(
-      /fail-open\.db\.test\.ts$|^unknown caller, table public\.provider_alerts$/,
+    const failed = await inWriteRequest(async () =>
+      write().then(
+        () => null,
+        (err: unknown) => err as { code?: string; message?: string; cause?: { code?: string } },
+      ),
     );
-    expect(fo.takeFailOpenHits()).toEqual([
-      { site: 'raw-write', actor: 'login', table: 'public.provider_alerts' },
-      { site: 'raw-write', actor: 'login', table: 'public.provider_alerts' },
-    ]);
+    // Sent on the write role (no table read from the text): Postgres
+    // refuses the table the role holds no right on.
+    expect(failed?.cause?.code ?? failed?.code).toBe('42501');
+    expect(
+      String((failed?.cause as { message?: string } | undefined)?.message ?? failed?.message),
+    ).toMatch(/permission denied for table provider_alerts/);
+    await settle();
+    expect(await rowsBySite()).toEqual({});
+    expect(fo.takeFailOpenHits()).toEqual([]);
   });
 
   it('a scoped typed write to a system table: counted, it still runs on the system pool', async () => {

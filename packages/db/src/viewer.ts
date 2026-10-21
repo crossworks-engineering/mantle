@@ -935,17 +935,10 @@ export const AS_SYSTEM_TURN_REASONS = [
  *    the items an Admin user took from a personal space, had none and was
  *    deleted with admin-space-taken.ts); the name is kept for the spaces
  *    family (W10).
- *  - `snapshot-copies`: the boot step that makes the read-only copies of
- *    snapshots (snapshot-copies.ts, systemWork), under its advisory lock.
  *  - `test`: a test's own setup, in test files only (eslint-rules/
  *    arch-lints.test.ts keeps it out of every counted file).
  */
-export const AS_SYSTEM_OTHER_REASONS = [
-  'login-notice',
-  'space-taken-authors',
-  'snapshot-copies',
-  'test',
-] as const;
+export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'space-taken-authors', 'test'] as const;
 
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
@@ -976,7 +969,7 @@ export type SystemRoute = 'narrow' | 'full';
  *  - `page-refold`: folds the derived text of pages (nodes) again.
  *  - `brain-bookkeeping`: the named system step writes content tables (a
  *    table's history, a file's derived counts, the reap of derived items).
- *  - `login-notice`, `snapshot-copies`: systemWork only (full by rule).
+ *  - `login-notice`: systemWork only (full by rule).
  *  - `space-taken-authors`: no caller (kept for the spaces family).
  *  - `test`: a test's own setup.
  */
@@ -997,7 +990,6 @@ export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Ob
   'brain-bookkeeping': 'full',
   'login-notice': 'full',
   'space-taken-authors': 'full',
-  'snapshot-copies': 'full',
   test: 'full',
 });
 
@@ -1103,8 +1095,8 @@ export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<
 
 /**
  * The workspace system work: the reasons whose actor
- * (system:<reason>) a workspace definer takes from a caller with no acting
- * login. The SQL allowlist (mantle_ws_system_work, migration 0307) names
+ * (system:<reason>) a definer takes from a caller with no acting login.
+ * The SQL allowlist (mantle_ws_system_work, migrations 0307 and 0313) names
  * exactly these actors, one per real caller, each with the one definer it
  * calls (a listed actor on another definer is refused), each added in the
  * release that moves its caller (at most five). Only systemWork takes one (asSystem with
@@ -1119,8 +1111,16 @@ export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<
  *    assistant attach), on mantle_ws_attach_assistants. The first
  *    owner and onboarding attach in the login's own scope instead (the
  *    assistants area), never as system work: both run inside a request.
+ *  - `snapshot-copies`: the boot step that makes the read-only copies of
+ *    snapshots and `pnpm maintain snapshot-copies` (snapshot-copies.ts,
+ *    under its advisory lock), on mantle_file_restamp_home (0313: the home
+ *    of a copy whose create raced the files watcher).
  */
-export const WORKSPACE_SYSTEM_REASONS = ['ws-clear-ticks', 'boot:migrate-workspaces'] as const;
+export const WORKSPACE_SYSTEM_REASONS = [
+  'ws-clear-ticks',
+  'boot:migrate-workspaces',
+  'snapshot-copies',
+] as const;
 
 export type WorkspaceSystemReason = (typeof WORKSPACE_SYSTEM_REASONS)[number];
 

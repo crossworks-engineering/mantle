@@ -83,10 +83,6 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/viewer-roles.ts': 3,
   'packages/db/src/workspace-live.ts': 1,
   'packages/db/src/workspaces-check.ts': 1,
-  // restampRacedCreate's home grant: the write role may INSERT only some
-  // columns of item_grants, and a drizzle insert names them all (42501).
-  // Raw until it becomes a definer call.
-  'packages/files/src/ops/files.ts': 1,
   'packages/tools/src/builtins-eval.ts': 1,
 };
 

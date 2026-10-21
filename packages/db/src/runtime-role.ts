@@ -209,6 +209,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "gateway/viewer-scope.ts: the creating login's private workspace (W6b create home)",
   'public.mantle_ws_skip_reason()':
     'snapshot-copies.ts and the integrity row workspaces_not_migrated',
+  'public.mantle_file_restamp_home(uuid,uuid)':
+    "packages/files ops/files.ts restampRacedCreate: a raced snapshot copy's home, the snapshot copies' system work only (0313)",
 };
 
 /**
@@ -250,6 +252,8 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
     "the workspaces area's Moderator tick (workspaces.ts setModerator) on an Admin area exit: the definer checks the acting login",
+  'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
+    "the assistants area's block or unpair of a chat of the assistant's bot (agent-telegram.ts setAgentTelegramChat) on an Admin area exit: the definer holds the rule, telegram_chats only (0313)",
 };
 
 /**
@@ -325,6 +329,8 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_share_close_admin(uuid)': 'shares (content): never a narrow statement',
   'public.mantle_share_contact_write_set(uuid,boolean)':
     'shares (content): never a narrow statement',
+  'public.mantle_file_restamp_home(uuid,uuid)':
+    "item_grants (content): the snapshot copies' system work only, never a narrow statement",
 };
 
 /** Tables the runtime role holds no right on (the access matrix's

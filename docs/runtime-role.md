@@ -38,7 +38,8 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   system pool calls itself, each listed with where it is called
   (`mantle_actor_miss_log`, `mantle_bridge_login`, `mantle_check_box_mode`,
   `mantle_embed_host`, `mantle_ws_attach_assistants`,
-  `mantle_ws_private_workspace`, `mantle_ws_skip_reason`). Everything else
+  `mantle_ws_private_workspace`, `mantle_ws_skip_reason`,
+  `mantle_file_restamp_home`). Everything else
   taken from `PUBLIC` is out of its reach: the workspaces switch and its steps
   (`mantle_ws_migrate`, `mantle_ws_migrate_bridged`, `mantle_ws_bridge_off`,
   `mantle_ws_spaces_fold`, `mantle_ws_review_off`, `mantle_ws_team_normal`;
@@ -188,11 +189,11 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
   (`packages/db/src/runtime-role.ts`), measured with the switch on (the full
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
-  what narrow statements call by name, twelve today (the read definers of
-  the login-self routes, the Admin area's approvals and the email discover;
-  `mantle_brain_id`; three writers on an area exit, each its own rule:
-  `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
-  `mantle_bridge_login`), and what the column defaults and checks of the
+  what narrow statements call by name, thirteen today (the read definers
+  of the login-self routes, the Admin area's approvals and the email
+  discover; `mantle_brain_id`; four writers on an area exit, each its own
+  rule: `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
+  `mantle_bridge_login`, `mantle_tg_chat_set`), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime role's.
   `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies with no

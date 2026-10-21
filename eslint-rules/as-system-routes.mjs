@@ -33,7 +33,6 @@ export const AS_SYSTEM_ROUTE_SEED = Object.freeze({
   'brain-bookkeeping': 'full',
   'login-notice': 'full',
   'space-taken-authors': 'full',
-  'snapshot-copies': 'full',
   test: 'full',
 });
 

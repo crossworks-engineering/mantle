@@ -985,6 +985,8 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a workspace’s contact set or cleared by the acting login (0309, S2b)',
   'public.mantle_ws_set_landing(uuid,uuid,uuid)':
     'a workspace’s landing app set or cleared by the acting login (0309, S2b)',
+  'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
+    'a Telegram chat blocked or unpaired by its own login, a Moderator of its bot’s workspace or an Admin user with the users area (0313): the role holds no right on telegram_chats',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

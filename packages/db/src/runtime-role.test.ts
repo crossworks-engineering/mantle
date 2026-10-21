@@ -376,6 +376,7 @@ describe('the narrow system role rights', () => {
       'public.mantle_login_areas(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
+      'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)',
       'public.mantle_ws_attach_assistants()',
       'public.mantle_ws_kind(uuid)',
       'public.mantle_ws_private_for(uuid,uuid)',

@@ -1,14 +1,20 @@
 /**
- * restampRacedCreate (ops/files.ts) on the write role, as
- * mantle_write_user in an Admin user's scope. Its home grant insert names
- * only the four columns of item_grants the role may INSERT, so Postgres
- * takes it past the column rights to the row rule; a drizzle insert of the
- * same row names every column (the rest as DEFAULT) and is refused by the
- * column rights, which is why that statement stays raw text
- * (packages/db/src/write-role-inserts.test.ts guards the rest of the code).
- * The restamp replaces every grant of the row, so with a create home it is
- * system work (snapshot-copies.ts): on the write role the row rule refuses
- * the home of a row the scope no longer reads.
+ * restampRacedCreate (ops/files.ts): the stamp of a snapshot copy whose
+ * create lost its name to the files watcher, and its home, by the home's
+ * definer (mantle_file_restamp_home, 0313).
+ *
+ *  - On the write role, as mantle_write_user in an Admin user's scope: the
+ *    stamp alone (a typed update) passes; with a create home the role may
+ *    not run the definer (no EXECUTE), so a scope never replaces a row's
+ *    grants this way.
+ *  - The definer's own check: only the snapshot copies' system work (no
+ *    acting login, no scope, not read only, the actor
+ *    system:snapshot-copies), only on a file of this brain that carries a
+ *    copy's stamp. Each other caller is refused (42501) and nothing moves.
+ *  - As that system work it replaces every grant of the row with one home,
+ *    Write off: the four columns the raw insert named, the rest their
+ *    defaults; and through @mantle/db's systemWork, in every check mode
+ *    (the actor goes with the statement with the check off too).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/restamp-write-role.db.test.ts
  */
@@ -29,7 +35,6 @@ describe.skipIf(!URL)('restampRacedCreate on the write role', () => {
   let su: ReturnType<Ts['superuserClient']>;
   let w: ReturnType<Ts['superuserClient']>;
   let restamp: typeof import('./ops/files').restampRacedCreate;
-  let itemGrants: typeof import('@mantle/db').itemGrants;
   const testKey = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
   let owner = '';
   let admin = '';
@@ -38,7 +43,6 @@ describe.skipIf(!URL)('restampRacedCreate on the write role', () => {
   beforeAll(async () => {
     ts = await import('@mantle/db/test-support');
     const viewer = await import('@mantle/db/viewer');
-    ({ itemGrants } = await import('@mantle/db'));
     ({ restampRacedCreate: restamp } = await import('./ops/files'));
     scratch = await ts.createMigratedScratchDatabase(URL!);
     su = ts.superuserClient(scratch.url, 2);
@@ -150,34 +154,136 @@ describe.skipIf(!URL)('restampRacedCreate on the write role', () => {
     expect(grants).toEqual([{ ws: admin, home: true }]);
   });
 
-  it('its home grant insert passes the role column rights; the row rule refuses the row it no longer reads', async () => {
-    // The restamp deletes every grant of the row, then inserts its home: the
-    // insert names only columns the role may write, so Postgres takes it to
-    // the row rule, which refuses a row the scope no longer reads. So the
-    // restamp with a create home is system work only (snapshot-copies.ts).
+  it('with a create home the write role may not run the home definer', async () => {
     const id = await itemInAdmin();
     const stamp = { snapshot_of: randomUUID(), extract_skipped: { reason: 'snapshot_copy' } };
     const r = await asOwnerOnWriteRole(id, (tx) => restamp(tx as never, id, stamp, other), true);
     expect(r.who).toBe('mantle_write_user');
     expect(r.code).toBe('42501');
-    expect(r.message).toMatch(/row-level security policy for table "item_grants"/);
-    expect(r.message).not.toMatch(/permission denied/);
+    expect(r.message).toMatch(/permission denied for function mantle_file_restamp_home/);
+    expect(await grantsOf(id)).toEqual([{ ws: admin, home: true, write: false, by: null }]);
   });
 
-  it('a drizzle insert of the same home grant is refused by the role column rights', async () => {
-    const id = await itemInAdmin();
-    const r = await asOwnerOnWriteRole(
-      id,
-      async (tx) => {
-        await tx.delete(itemGrants).where(sql`${itemGrants.nodeId} = ${id}`);
-        await tx
-          .insert(itemGrants)
-          .values({ nodeId: id, workspaceId: other, isHome: true, write: false });
-      },
-      true,
-    );
-    expect(r.who).toBe('mantle_write_user');
-    expect(r.code).toBe('42501');
-    expect(r.message).toMatch(/permission denied for table item_grants/);
+  /** A file of the brain, homed in Admin, with or without a copy's stamp. */
+  async function fileInAdmin(stamped: boolean, type: 'file' | 'note' = 'file'): Promise<string> {
+    const id = randomUUID();
+    const data = stamped ? { snapshot_of: randomUUID() } : {};
+    await su.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into nodes (id, owner_id, type, title, path, data)
+               values (${id}, ${owner}, ${type}, 'raced', ${type === 'file' ? 'files' : 'notes'}::ltree,
+                       ${tx.json(data)})`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${id}`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${id}, ${admin}, true, true)`;
+    });
+    return id;
+  }
+
+  async function grantsOf(
+    id: string,
+  ): Promise<{ ws: string; home: boolean; write: boolean; by: string | null }[]> {
+    return su<{ ws: string; home: boolean; write: boolean; by: string | null }[]>`
+      select workspace_id::text as ws, is_home as home, write, granted_by::text as by
+        from item_grants where node_id = ${id} order by workspace_id`;
+  }
+
+  /** The definer as the superuser (it may run it) with these settings. */
+  async function homeAs(
+    id: string,
+    settings: Record<string, string>,
+  ): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+    try {
+      await su.begin(async (tx) => {
+        for (const [k, v] of Object.entries(settings)) {
+          await tx`select set_config(${k}, ${v}, true)`;
+        }
+        await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+        await tx`select "public"."mantle_file_restamp_home"(${id}::uuid, ${other}::uuid)`;
+      });
+      return { ok: true };
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      return { ok: false, code: e.code ?? '?', message: e.message ?? '' };
+    }
+  }
+
+  const SYSTEM_WORK = { 'mantle.actor': 'system:snapshot-copies', 'mantle.write_mode': 'rw' };
+
+  it("the definer takes the snapshot copies' system work only, and leaves the row as it was otherwise", async () => {
+    const id = await fileInAdmin(true);
+    const refusals: Record<string, string>[] = [
+      {},
+      { 'mantle.actor': 'system:test', 'mantle.write_mode': 'rw' },
+      { 'mantle.actor': 'system:ws-clear-ticks', 'mantle.write_mode': 'rw' },
+      { 'mantle.actor': 'system:boot:migrate-workspaces', 'mantle.write_mode': 'rw' },
+      { 'mantle.actor': 'system:admin-area', 'mantle.write_mode': 'rw' },
+      { 'mantle.actor': 'system:operator:repair', 'mantle.write_mode': 'rw' },
+      { 'mantle.actor': `login:rw:${owner}`, 'mantle.write_mode': 'rw' },
+      // The right actor, but read only, in a scope, or with a login set.
+      { ...SYSTEM_WORK, 'mantle.write_mode': 'ro' },
+      { ...SYSTEM_WORK, 'mantle.ws': `{${admin}}` },
+      { ...SYSTEM_WORK, 'mantle.scope_login': owner },
+    ];
+    for (const settings of refusals) {
+      const r = await homeAs(id, settings);
+      expect(r, JSON.stringify(settings)).toMatchObject({ ok: false, code: '42501' });
+      expect((r as { message: string }).message).toMatch(/system work only/);
+    }
+    expect(await grantsOf(id)).toEqual([{ ws: admin, home: true, write: true, by: null }]);
+    // The right caller on a row that is no stamped copy file of this brain.
+    for (const row of [await fileInAdmin(false), await fileInAdmin(true, 'note')]) {
+      const r = await homeAs(row, SYSTEM_WORK);
+      expect(r).toMatchObject({ ok: false, code: '42501' });
+      expect((r as { message: string }).message).toMatch(/not a stamped copy/);
+      expect(await grantsOf(row)).toEqual([{ ws: admin, home: true, write: true, by: null }]);
+    }
+  });
+
+  it("as the snapshot copies' system work it replaces every grant with one home, Write off", async () => {
+    const id = await fileInAdmin(true);
+    // A second grant, made by a login: it goes too.
+    await su.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write, granted_by)
+               values (${id}, ${other}, false, true, ${owner})`;
+    });
+    expect(await homeAs(id, SYSTEM_WORK)).toEqual({ ok: true });
+    expect(await grantsOf(id)).toEqual([{ ws: other, home: true, write: false, by: null }]);
+    const [g] = await su<{ via: string | null; bridge: boolean | null }[]>`
+      select via_folder_id::text as via, bridge from item_grants where node_id = ${id}`;
+    expect(g).toEqual({ via: null, bridge: false });
+  });
+
+  it("restampRacedCreate under @mantle/db's systemWork('snapshot-copies'): stamped and homed", async () => {
+    // The app's own pools on this scratch database (the system pool as the
+    // box runs it: the superuser, or mantle_runtime under test:runtime-role).
+    process.env.DATABASE_URL = scratch!.url;
+    process.env.MANTLE_MASTER_KEY ??= testKey;
+    const m = await import('@mantle/db');
+    try {
+      const id = await fileInAdmin(false);
+      const stamp = { snapshot_of: randomUUID(), extract_skipped: { reason: 'snapshot_copy' } };
+      const seen = await m.systemWork(
+        () =>
+          m.db.transaction(async (tx) => {
+            await tx.execute(sql`select mantle_lock_heads(array[${id}]::uuid[], 'update')`);
+            const row = await restamp(tx as never, id, stamp, other);
+            const [a] = (await tx.execute(
+              sql`select current_setting('mantle.actor', true) as a`,
+            )) as unknown as { a: string }[];
+            return { row, actor: a!.a };
+          }),
+        'snapshot-copies',
+      );
+      expect(seen.actor).toBe('system:snapshot-copies');
+      expect(seen.row.id).toBe(id);
+      expect((seen.row.data as Record<string, unknown>).snapshot_of).toBe(stamp.snapshot_of);
+      expect(await grantsOf(id)).toEqual([{ ws: other, home: true, write: false, by: null }]);
+    } finally {
+      await m.closeDb();
+    }
   });
 });

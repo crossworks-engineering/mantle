@@ -1,5 +1,5 @@
 /**
- * The fail-open branches (plan v3.2 S4a): the six places where code with no
+ * The fail-open branches (plan v3.2 S4a): the five places where code with no
  * system actor bound still gets a yes or the system pool. S4a only counts
  * them; S4b refuses them once every box reads 0. Each hit writes one miss
  * row (actor_check_misses, check 'fail-open:<site>', detail the calling
@@ -18,7 +18,10 @@
  */
 import { env } from '@mantle/config';
 
-/** The sites, in the order of the plan's S4a list. */
+/** The sites, in the order of the plan's S4a list. `raw-write` has no
+ *  caller: a scoped raw write goes to the write role, which refuses a
+ *  table it holds no right on (gateway/write-route.ts). Kept so the row
+ *  an image one release back writes still has its name. */
 export const FAIL_OPEN_SITES = [
   'scope-holds-admin',
   'scope-has-area',

@@ -33,7 +33,7 @@ export {
   watchedSendsForTests,
   WritePoolBusyError,
 } from './gateway/role-tx';
-export { rawWriteTarget, writeRoleSettingsSql } from './gateway/write-route';
+export { writeRoleSettingsSql } from './gateway/write-route';
 export {
   brokerLockTx,
   NestedSystemTxError,
