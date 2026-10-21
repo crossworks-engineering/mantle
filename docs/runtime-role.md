@@ -166,14 +166,25 @@ see it.
 
 `mantle_system_narrow` is the role narrow system work will run as: an exit
 that needs past the row rules but writes no item (an Admin-area tool, an
-area request, traces, spills, counters). It is `NOLOGIN`, `NOSUPERUSER`,
-`BYPASSRLS`, `NOINHERIT`, owns nothing and is a member of nothing (the
+area request, traces, spills, counters). It is `NOSUPERUSER`,
+`BYPASSRLS`, `NOINHERIT`, `CONNECTION LIMIT 30`, owns nothing and is a member of nothing (the
 text check below refuses the large-object functions, so narrow work cannot
 make it the owner of one). The runtime role is its member with `SET` only (`wantedMemberships`), so the
 runtime role holds none of its rights and may take it; the superuser may take
 it as any role. Migrate makes it and its membership on every run
 (`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
-the others'. The narrow route takes it per transaction (below).
+the others'. It logs in only when migrate sees `MANTLE_NARROW_SYSTEM` on,
+as the runtime role follows its own switch: `LOGIN` with a password derived
+from `MANTLE_MASTER_KEY` (HKDF, the runtime role's scheme with its own
+label, `runtime-role:mantle_system_narrow`), `NOLOGIN` with no password
+otherwise, and always `NOLOGIN` in per-database mode (one cluster, several
+brains: one password cannot be every brain's). Migrate logs which. The
+narrow route's own pool logs in as it (below), whatever the system pool
+logs in as: with `MANTLE_DB_RUNTIME_ROLE` off (the system pool is the
+superuser) the narrow pool still logs in as the narrow role, so a fresh
+install with the runtime role off and the switch on works, and the narrow
+work there can no more reach the superuser than on a box with the runtime
+role on.
 
 Its rights, made equal to the access matrix at every migrate inside
 `applyRuntimeGrants` (`applyNarrowGrants`), from `narrow` in each row of
@@ -214,9 +225,14 @@ It is not a member of `mantle_owner`, so `mantle_owner_role()` says no to it
 and the derivation guards treat it as a limited role; it writes no content
 table anyway. Postgres runs a foreign key's cascade as the table's owner, so
 a narrow delete that cascades into a content table is not stopped by these
-grants. And `SET ROLE` asks the session's login: a statement that sets the
-role back leaves it. The role contains the app's own statements, not
-injected SQL; the actor stays `system:<reason>` either way.
+grants. `SET ROLE` asks the session's login: on the route's own pool the
+login is the narrow role, a member of nothing, so a statement that resets
+or changes the role lands on the narrow role again (it cannot `SET ROLE` to
+any role, has no `SET SESSION AUTHORIZATION`, makes no temporary object;
+`narrow-login.db.test.ts`). Only the per-database fallback, which takes the
+role per transaction from the system pool's login, has a role to go back
+to there; its hold check and text check stay. The actor stays
+`system:<reason>` either way.
 
 `runtime-role.db.test.ts` pins the attributes, the membership, the live
 grants table by table against `narrowFor`, the function list against the
@@ -233,17 +249,37 @@ Off, every statement runs as before. On, a statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 
-- one statement outside a transaction: `BEGIN`, one `SET`
-  (`set_config('role', 'mantle_system_narrow', true)` with the actor, its
-  write mode and the box's check mode, all transaction-local, never a
-  session `SET`), the statement, the hold check, `COMMIT`, pipelined on one
-  reserved connection (measured with the check off: page save 20 to 22
-  round trips, a chat turn's start 144 to 166; a2a-round-trips.db.test.ts);
-- a transaction: the same `SET` with its first statement, the hold check
-  before its `COMMIT`;
-- the hold check fails when the transaction is no longer the narrow role's
-  (a statement set the role back): the transaction rolls back whole
-  (`NarrowRoleLeftError`). A statement Postgres refuses inside a
+- on the route's own pool (`gateway/pools.ts` `narrowPoolSql`): its
+  connections log in as `mantle_system_narrow` (`narrowDatabaseUrl`), five
+  per process at most, opened on the first narrow statement (a process that
+  runs no narrow work opens none), every process's under the role's
+  `CONNECTION LIMIT` of 30 (`connection-ceiling.test.ts`: the full box
+  shape 349 to 379 of 405 with it). A role whose login migrate did not open
+  fails the narrow statement, never the system pool instead;
+- one statement outside a transaction: on one reserved connection, a
+  session-level `SET` of the actor, its write mode, the box's check mode
+  and the acting login (below), the statement, and a `RESET` of them, as
+  the actor client sends a write outside a transaction: the `SET` goes in
+  the statement's first send, the statement commits by itself, the caller
+  has its answer before the `RESET` is answered, and a connection whose
+  `RESET` failed ends instead of going back. No `BEGIN`, no role `SET`, no
+  `COMMIT`. Measured with the check off (a2a-round-trips.db.test.ts,
+  statements / round trips): a chat turn's start 104/144 with the switch
+  off, 148/166 on the S7a route, 126/155 on the login pool with the `RESET`
+  after the answer (the 11 more round trips are the `RESET`s, none on the
+  caller's path); page save 15/20 off, 19/22 S7a, 17/21 now. Turn-stream and
+  tracing writes stay narrow on these numbers;
+- a transaction: the actor's `SET` with its first statement (none with no
+  actor), the hold check before its `COMMIT`;
+- per-database mode (the role has no login): the role is taken per
+  transaction on the system pool, as S7a built it: `BEGIN`, one `SET`
+  (`set_config('role', 'mantle_system_narrow', true)` with the actor's
+  settings, never a session `SET`), the statement, the hold check,
+  `COMMIT`, pipelined on one reserved connection;
+- the hold check fails when the transaction is no longer the narrow role's:
+  the transaction rolls back whole (`NarrowRoleLeftError`). On the login
+  pool nothing can leave the role, so it never fires there; it stays as a
+  second line. A statement Postgres refuses inside a
   transaction, and one that opens or ends a transaction, is refused
   (`NarrowRouteRefusedError`);
 - the text check (`gateway/narrow-sendable.ts`): a narrow statement starts
@@ -331,8 +367,12 @@ any `set_config` but one whose first argument is a plain literal naming a
 `mantle.*` setting, or `lock_timeout` or `enable_sort`, and whose third is
 the literal `true`, so a name built by concatenation or sent as a bound
 parameter is refused; literals and comments are not read as statements):
-refused with `NarrowRouteRefusedError`. A function that changes the role
-inside cannot be seen by text: the hold check before the COMMIT rolls such
+refused with `NarrowRouteRefusedError`. On the login pool the text check is
+a guard against mistakes (a session setting, a gateway setting, a call whose
+effect outlives the transaction), not the boundary: the boundary is the
+login. A function that changes the role inside cannot be seen by text: on
+the login pool it lands on the narrow role again; on the per-database
+fallback the hold check before the COMMIT rolls such
 a transaction back (`NarrowRoleLeftError`), and the role may run no
 function it was not granted and create none. The narrow role runs no
 content-writing definer (`NARROW_SYSTEM_FUNCTIONS` is its whole list).
@@ -350,6 +390,34 @@ and a transaction; the request exits; the actor carried; a content write
 refused and noted; the hold check's rollback; the refused statements; off
 changes nothing; the system-pool write scope carries the actor's write mode
 (a definer's read-only refusal, `mantle_ws_archive`, reads it).
+`narrow-login.db.test.ts` pins the login: every escape form the S7a audits
+found, sent unguarded on a narrow session, leaves it the narrow role and a
+content write after it refused, the row absent; no `SET ROLE`, no
+`SET SESSION AUTHORIZATION`, no `TEMP`, no pg-boss routine, no definer off
+the two lists; the route on the login pool, opened lazily; each gateway
+setting refused by name.
+
+### The acting login
+
+A system actor carries the login it acts for (`actor.ts` `systemUnder`,
+`actingLoginOf`: the request's login on an Admin area or login-self exit,
+the turn's login on an `asSystem` exit), and the gateway sends it as
+`mantle.acting_login` with the actor's settings: on the narrow route always,
+on the full route whenever the actor's settings go, and for a request
+exit's actor in every check mode (`isRequestExitActor`: with the check off
+too, so its writes and transactions carry it). It is a gateway setting: no
+narrow statement may name it (`GATEWAY_SETTING`). A definer that acts for a
+login and runs with no scope takes only that login (0314):
+`mantle_tg_chat_set` (the assistants area's Telegram block and unpair) and
+`mantle_access_key_revoke`. In a scope the scope's own login rules, as
+before. So no caller with no scope can name a login it is not. The readers
+that take a login (`mantle_tg_my_chats`, `mantle_tg_moderated_chats`,
+`mantle_read_cursors`, `mantle_login_connector_rows`,
+`mantle_turn_heartbeats`, `mantle_ws_seen`, `mantle_access_keys_seen`,
+`mantle_snapshot_bytes`) are left as they are: some have a caller with no
+acting login (the heartbeat tick, a worker), and the narrow role may run
+none of them; the login facts (`mantle_area_rule`, `mantle_login_areas` and
+the rest) answer about a login another login may ask about.
 
 ### The narrow write count
 
