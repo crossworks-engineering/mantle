@@ -130,6 +130,14 @@ INSERT on node_acl_head with no actor`; one login, no workspace.
   Moderator; `mantle_ws_skip_reason()` null; no actor miss; brain log
   `[workspaces] first owner: migrated onto workspaces`.
 
+Again on the head rebased on v0.300.128 (no image is published for it):
+the same fresh install with the server run from the clone
+(`pnpm -C server/web exec tsx server/main.ts`, the image's command,
+`NODE_ENV=production`, `MANTLE_CHECK_FLOOR=raise`, no runtime role): check
+mode `on`, signup 200 `{"ok":true}`, one anchor, `admin` the only
+workspace with the owner its Moderator, on workspaces, no actor miss; the
+route table below answered the same.
+
 ## The public and first-run write routes (fresh brain, check on)
 
 On the fixed brain above (runtime role off, as the image runs), after the
@@ -173,6 +181,12 @@ the OAuth code exchange end to end, SSO, and federation with a real peer.
   else moved. Re-measured after the rebase on v0.300.128: the same. The
   request exits bullet of `docs/actors.md` is one line, so the spec's line
   count (down only, 344 on main) does not move.
+
+- Actor binders (`eslint-rules/actor-binders.mjs`), `viewer.ts` 7 to 6, a
+  pin that went down: the first owner's exit would have been an eighth
+  `runAsActor` call; instead `asSystem`, `systemWork` and the exit bind
+  through one private helper (`runSystemExit`), the same expression the
+  first two held inline.
 
 ## Gates and CI
 

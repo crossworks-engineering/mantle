@@ -51,8 +51,10 @@ export const ACTOR_BINDER_PINS = {
   // loginActorNow: the login's own row read as system(entry).
   'packages/db/src/gateway/scope-answers.ts': 1,
   // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
-  // binds system(reason) as asSystem does.
-  'packages/db/src/viewer.ts': 7,
+  // binds system(reason) as asSystem does. 7 to 6 with the first owner's
+  // exit: asSystem, systemWork and that exit bind through one helper
+  // (runSystemExit).
+  'packages/db/src/viewer.ts': 6,
   'packages/files/src/docs.ts': 1,
   'packages/files/src/ops/shared.ts': 1,
   // An MCP connection's private workspace, made as the connection's login

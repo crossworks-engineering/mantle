@@ -1239,8 +1239,7 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
     route: AS_SYSTEM_ROUTE[reason] ?? 'full',
     reason: (actor as Extract<Actor, { kind: 'system' }>).reason,
   });
-  const run = () =>
-    systemRoutes.run(entry, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
+  const run = () => runSystemExit(entry, actor, fn);
   if (left) return leftStore.run(left, run);
   return run();
 }
@@ -1287,6 +1286,13 @@ export function systemWork<T>(
   const actor = systemUnder(reason, currentActor());
   // Plan v3.2 S7a: system work runs full, whatever its reason.
   const entry: SystemRouteEntry = Object.freeze({ route: 'full', reason });
+  return runSystemExit(entry, actor, fn);
+}
+
+/** The system pool's one way out (asSystem, systemWork and the first
+ *  owner's exit): `fn` as `actor` on the route `entry` picked, any scope
+ *  masked. */
+function runSystemExit<T>(entry: SystemRouteEntry, actor: Actor, fn: () => Promise<T>): Promise<T> {
   return systemRoutes.run(entry, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
 }
 
@@ -1336,9 +1342,7 @@ export function enterFirstOwnerExit<T>(fn: () => Promise<T>): Promise<T> {
     route: REQUEST_SYSTEM_ROUTE['first-owner'],
     reason,
   });
-  return systemRoutes.run(entry, () =>
-    runAsActor(systemActor(reason), () => store.run(SYSTEM_EXIT, fn)),
-  );
+  return runSystemExit(entry, systemActor(reason), fn);
 }
 
 /**
