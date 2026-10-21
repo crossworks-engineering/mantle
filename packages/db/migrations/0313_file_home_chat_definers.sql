@@ -120,6 +120,14 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_tg_login_moderates"(uuid, uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'demo_reader') THEN
+    GRANT EXECUTE ON FUNCTION "public"."mantle_tg_login_moderates"(uuid, uuid, uuid) TO demo_reader;
+  END IF;
+END
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_tg_moderated_chats"(owner uuid, login uuid)
   RETURNS TABLE ("account_id" uuid, "bot_username" text, "agent_name" text, "agent_slug" text,
                  "id" uuid, "telegram_chat_id" text, "title" text, "username" text,

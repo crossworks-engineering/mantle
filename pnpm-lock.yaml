@@ -836,6 +836,9 @@ importers:
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@opentelemetry/api@1.9.1)(pg@8.22.0)(postgres@3.4.9(patch_hash=33d55f56319e26832c3c24b89156b7aeaf4d163cdac55e1ed9d8689df08093fa))

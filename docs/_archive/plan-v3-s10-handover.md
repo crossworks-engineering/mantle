@@ -1628,3 +1628,19 @@ has), `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
 `vitest run server packages eslint-rules` 0 (870 files passed, 281
 skipped; 11290 tests passed). Earlier, on 6c8de6e4f, the unit run failed
 the same admin-counts.test.ts cell as the DB run (fixed in 9f0d706f3).
+
+### Round 3, delta audit of fix round 1 (at 8108ab250): merge
+
+No HIGH or MED. Fixed before the merge:
+
+- 0313 grants EXECUTE on the Moderator rule to `demo_reader` where that
+  role exists, as 0297, 0300, 0306 and 0311 do for the read definers the
+  system pool calls (a demo box runs the app's system pool as it).
+- `loginModeratesBot` still answers no when the rule is refused, but says
+  so once per process, so a lost grant shows in the log instead of
+  silently emptying the moderated chats screen (log('telegram'), so
+  @mantle/telegram now depends on @mantle/tracing; no cycle).
+
+Noted, no change: with no brain yet (`mantle_brain_id()` NULL) a NULL
+owner passes the brain check of `mantle_tg_chat_set`, and matches no chat
+(no row, no write; probed).

@@ -25,7 +25,8 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
-import { UUID_RE } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
+import { log } from '@mantle/tracing';
 
 /**
  * A Telegram chat's login, its bot and the bot's assistant are read on the
@@ -99,6 +100,8 @@ export async function chatLoginRefusal(args: {
   return r.user_of_all ? null : 'not_a_user';
 }
 
+let moderatesFailedLogged = false;
+
 /**
  * Whether `loginId` may block or unpair any chat of bot `accountId`: a
  * Moderator of the bot's assistant's workspace (an assistant with no
@@ -122,7 +125,13 @@ export async function loginModeratesBot(args: {
       ),
     )) as unknown as { moderates: boolean }[];
     return rows[0]?.moderates === true;
-  } catch {
+  } catch (err) {
+    // Still no, but said once per process: a lost EXECUTE grant on the
+    // rule shows in the log instead of silently emptying the screen.
+    if (!moderatesFailedLogged) {
+      moderatesFailedLogged = true;
+      log('telegram').warn(`the Moderator rule was refused, it answers no: ${errorMessage(err)}`);
+    }
     return false;
   }
 }
