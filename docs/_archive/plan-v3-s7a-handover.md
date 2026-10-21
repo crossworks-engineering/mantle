@@ -1411,3 +1411,133 @@ and matrix steps included).
    process whose first probe lands on such a backend never turns the
    iterative scan on (the two cells alone read `off`, so loaded, both
    times; not shown to be this failure's cause).
+
+### Fix round 3 (the a3 re-audit at 90aa385b5)
+
+The re-audit's verdict was merge, with four LOWs, each fixed here with its
+cell. origin/main had not moved past 792c51b4e: no rebase.
+
+#### LOW-1: calls whose effect outlives the transaction
+
+Measured on pg18 (sent unguarded as the narrow role, committed, on one
+session): `set_limit(0.11)` leaves `show_limit()` at 0.11; `setseed(0.25)`
+leaves the session's random sequence seeded; `pg_advisory_lock(7771)` stays
+held on the session; `lo_create(0)` and `lo_from_bytea(...)` commit large
+objects owned by mantle_system_narrow. On the narrow route each passed the
+text check.
+
+Fix: read-sql.ts names the subset `SESSION_LASTING_FUNCTIONS` (set_limit,
+setseed, `pg_advisory_(?!xact_)\w+` and `pg_try_advisory_(?!xact_)\w+`: the
+session locks and unlocks, `lo_\w+`, lowrite), which WRITE_FUNCTIONS
+spreads (readSql's list unchanged: the xact forms are listed beside it), and
+narrow-sendable.ts refuses a call of one next to SQL_TEXT_RUNNER_CALL
+(`SESSION_LASTING_CALL`). The transaction's own advisory locks stay allowed:
+measured by grep, narrow-route code takes them (share-lock.ts
+`pg_advisory_xact_lock_shared`, advisory-lock.ts `advisoryXactLock` and
+`tryAdvisoryXactLock`); no app code takes a session lock or touches a large
+object (the one session lock is test-support.ts's, on its own client). Doc:
+docs/runtime-role.md and runtime-role.ts say the role owns nothing because
+the text check refuses the large-object functions, and the text check's list
+names the lasting calls.
+
+Cells: narrow-sendable.test.ts "refuses a function whose effect outlives
+the transaction" (15 forms refused, the name bare, qualified, quoted or upper
+case; the xact forms and a value naming one sent); narrow-route.db.test.ts
+"refuses a call whose effect outlives the transaction": each lasting effect
+above measured unguarded, then twelve forms refused routed (alone and in a
+transaction), no large object left, and `advisoryXactLock`,
+`tryAdvisoryXactLock` and `pg_advisory_xact_lock_shared` run on the narrow
+route as mantle_system_narrow, no advisory lock left in the database after.
+
+#### LOW-2: an array returned from begin
+
+postgres.js sends and awaits an array the work returns (`Promise.all`)
+before the COMMIT; a wrapper whose callback is async hands it a promise, so
+the array was never sent and the transaction committed empty. Measured:
+with the old wrappers the DB cell below fails (`out[0]` is an unsent query).
+Fix: `workResult` (gateway/actor-sql.ts), `Array.isArray(r) ? Promise.all(r)
+: r`, read in every gateway wrapper of begin or a savepoint: actorClient's
+begin, narrowBegin, the write role's writeTxOf (role-runner.ts), a joined
+write's savepoint (role-tx.ts joinWriteTx) and the turn scope's begin
+(scope.ts). The last three had the same shape; the gateway lens folds them
+onto the one reader.
+
+Cells: actor-client.test.ts "a begin's work that returns an array of
+statements" (workResult; the system pool's begin sends both, with the
+actor's SET, before the COMMIT, and answers their results; failed with the
+old wrapper); narrow-route.db.test.ts "a begin whose work returns an array
+of statements": `adminSql().begin(t => [t.unsafe(a), t.unsafe(b).values()])`
+on the narrow route, a full reason and no exit writes both rows and returns
+`[rows, values]`.
+
+#### LOW-3: comments in the migrations' SQL, read once
+
+`migrationSqlTexts` (arch-counts.mjs, feeding roleResets and gapTables) and
+`headsBypassesIn` (heads-bypass.ts) cut comments with regexes: a `--` or
+`/*` inside a string hid the rest, a `--` comment a `\r` ends ran to the
+`\n`, and heads-bypass did not cut block comments at all (a call inside one
+counted). Both now read `sqlCode(text).uncommented` (sql-text.ts), as
+rights-counts does. The two counters also no longer run the JavaScript
+comment reader over a migration's SQL (`sourceCode`): it took a `//` in a
+dollar quote for a comment.
+
+Cells: arch-lints.test.ts "the migrations' SQL for the role counters"
+(a reset or a role switch after `'a--b'`, `'/*'`, `$$ -- $$` and
+`$q$http://x$q$` is counted; after a `\r`-ended comment too; a real
+comment, a nested one whole, still is not); heads-bypass.test.ts "reads
+comments as Postgres does". Pins: none moved (arch:check output identical
+before and after the change): no hidden form in the repo's migrations.
+
+#### LOW-4: isWriteSql and ambiguous text
+
+isWriteSql answers no write (executeWrite refuses) for `ambiguous` text as
+for `unterminated`. Cell: write-sql.test.ts "not a write (refused), read
+otherwise" (`'a\'` in an UPDATE, the same before a DELETE, a U& name).
+
+#### Changed answers (fix round 3)
+
+Switch off: none expected (the full DB suite with MANTLE_NARROW_SYSTEM=0,
+below). Off the narrow route: readSql unchanged (the same functions);
+executeWrite refuses a write whose text holds a backslash before a quote in
+a plain string or a U& name (parameters are how app writes pass values); a
+begin or savepoint whose work returns an array now sends it (no app code
+returns one: the gateway's callers await their statements). Switch on: the
+narrow route also refuses set_limit, setseed, the session advisory locks
+and unlocks and the large-object functions. No change to what a member,
+client, key, peer or public link may do.
+
+#### Pins (fix round 3)
+
+None moved: arch:check 0, its output identical before and after LOW-3.
+
+#### Gates (fix round 3)
+
+Mac, Node 26, DATABASE_URL unset, on cf3456d21 (the code head; the handover
+commit after it is this file only, on which format:check, docs:check and
+arch:check ran again): pnpm -r typecheck 0, pnpm lint 0, pnpm format:check
+0, pnpm -C server/web build 0, pnpm docs:check 0, pnpm arch:check 0, pnpm
+boot:smoke 0 (14 services), vitest run server packages eslint-rules 0 (869
+files passed, 281 skipped; 11285 tests passed).
+
+Workstation, own clone ~/s7a3i-ws/repo (feat/s7a-a3 from GitHub plus a
+bundle of this round's commits, at cf3456d21), own container s7a3i-pg
+(pgvector pg18, 127.0.0.1:56410 checked free, max_connections=450, role
+postgres as CI), init-scratch 0 and migrate 0 with MANTLE_CHECK_FLOOR=keep,
+DATABASE_URL for those two only, systemd-run --user, --maxWorkers=3, one at
+a time, switch on unless said:
+
+| Gate                                                                                                              | Exit | Counts                                     |
+| ----------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ |
+| the round's cells (narrow-route.db, narrow-sendable, actor-client, write-sql, heads-bypass, read-sql, arch-lints) | 0    | 7 files; 273 passed                        |
+| the array-begin DB cell with the old wrappers (teeth; restored by git checkout after)                             | 1    | fails: `out[0]` is an unsent query         |
+| full DB vitest, MANTLE_NARROW_DUMP                                                                                | 0    | 1150 files; 14175 passed, 1 skipped; 857 s |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0                                                                            | 0    | 1150 files; 14175 passed, 1 skipped; 863 s |
+| test:runtime-role in full                                                                                         | 0    | 290 files; 2874 passed, 1 skipped          |
+| test:actor-on                                                                                                     | 0    | 33 files; 405 passed, 1 skipped            |
+
+No flake this round: every run passed first time. The switch-on dump has
+1182 lines, every one a use (no denial, no narrow write counted); no
+`narrow system route:` refusal and no NarrowRoleLeftError in the log. The
+switch-off dump holds only narrow-route.db.test.ts's own switch-on cells
+(22 lines). Cleaned up by name: the container (with its volume), the clone,
+the units (collected).
