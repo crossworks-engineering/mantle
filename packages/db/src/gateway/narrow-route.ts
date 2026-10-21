@@ -241,10 +241,13 @@ const HOLD_FAILED = '22012';
  * (plan v3.2 S7b): the session is the narrow role's, so no BEGIN, no role
  * SET, no hold check and no COMMIT. With an actor bound, on one reserved
  * connection: a session-level SET of its settings, the statement and a
- * RESET of them, pipelined (the SET goes in the statement's first send,
- * the RESET in its last); the statement commits by itself. A RESET that
- * fails ends the connection instead of handing it back with the settings
- * on. With no actor, the statement alone.
+ * RESET of them, pipelined, as the actor client sends a write outside a
+ * transaction (actor-sql.ts pipelined): the SET goes in the statement's
+ * first send (it has no parameters), the statement commits by itself, and
+ * the caller has its answer before the RESET is answered; the connection
+ * goes back only after the RESET, and one whose RESET failed ends instead
+ * (never handed back with the settings on). With no actor, the statement
+ * alone.
  */
 async function narrowLoginStatement(
   pool: PgSql,
@@ -253,43 +256,47 @@ async function narrowLoginStatement(
   mode: QueryMode,
 ): Promise<unknown> {
   const params = await narrowParams();
-  if (!params) {
-    try {
-      return await sendIn(pool.unsafe(query, (args ?? []) as never[]), mode);
-    } catch (err) {
-      noteNarrowDenial(err);
-      throw err;
-    }
-  }
-  const setSql = `${NARROW_SQL_TAG} ${setActorSql(params, false)}`;
-  const resetSql = resetActorSqlFor(params, NARROW_SQL_TAG);
+  // [text, its arguments, its mode]: the statement, with the SET before it
+  // and the RESET behind it when an actor is bound.
+  const texts: [string, unknown[], QueryMode][] = params
+    ? [
+        [`${NARROW_SQL_TAG} ${setActorSql(params, false)}`, [], 'rows'],
+        [query, args ?? [], mode],
+        [resetActorSqlFor(params, NARROW_SQL_TAG), [], 'simple'],
+      ]
+    : [[query, args ?? [], mode]];
+  const at = params ? 1 : 0;
   const lease = await reserveLease(pool);
+  const sent: Promise<unknown>[] = [];
   try {
-    const conn = lease.sql;
-    const sent: Promise<unknown>[] = [];
-    try {
-      sent.push(lease.watch(sendIn(conn.unsafe(setSql), 'rows')));
-      sent.push(lease.watch(sendIn(conn.unsafe(query, (args ?? []) as never[]), mode)));
-      sent.push(lease.watch(sendIn(conn.unsafe(resetSql), 'simple')));
-    } catch (err) {
-      // Thrown while the pipeline was built: what was sent settles, and the
-      // connection, which may hold the settings, ends.
-      await Promise.allSettled(sent);
-      if (sent.length > 0) await lease.end();
-      throw err;
+    for (const [text, a, m] of texts) {
+      sent.push(lease.watch(sendIn(lease.sql.unsafe(text, a as never[]), m)));
     }
-    const [set, main, reset] = await Promise.allSettled(sent);
-    if (reset!.status === 'rejected') await lease.end();
-    if (main!.status === 'rejected') {
-      noteNarrowDenial(main!.reason);
-      // A SET that failed is the cause (the statement then ran without it).
-      throw set!.status === 'rejected' ? set!.reason : main!.reason;
-    }
-    if (set!.status === 'rejected') throw set!.reason;
-    return main!.value;
-  } finally {
+  } catch (err) {
+    // Thrown while the pipeline was built: what was sent settles, and the
+    // connection, which may hold the settings, ends.
+    await Promise.allSettled(sent);
+    if (sent.length > 0) await lease.end();
     lease.release();
+    throw err;
   }
+  // The RESET and the connection's return, behind the answer (closeDb
+  // waits for it: trackPipeline).
+  void trackPipeline(
+    Promise.allSettled(sent).then(async (out) => {
+      if (params && out[2]!.status === 'rejected') await lease.end();
+      lease.release();
+    }),
+  );
+  const [set, main] = await Promise.allSettled(sent.slice(0, at + 1));
+  const result = params ? main! : set!;
+  if (result.status === 'rejected') {
+    noteNarrowDenial(result.reason);
+    // A SET that failed is the cause (the statement then ran without it).
+    throw params && set!.status === 'rejected' ? set!.reason : result.reason;
+  }
+  if (params && set!.status === 'rejected') throw set!.reason;
+  return result.value;
 }
 
 /** One statement's query object, kept lazy (a postgres.js query runs when

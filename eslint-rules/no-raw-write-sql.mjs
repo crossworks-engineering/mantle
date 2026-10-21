@@ -66,8 +66,9 @@ export const RAW_WRITE_PINS = {
   // executeWrite passes its argument (a string or built SQL) to execute.
   'packages/db/src/gateway/handles.ts': 4,
   // The narrow route sends the caller's statement as it is (as role-runner.ts),
-  // alone and in a narrow transaction (narrowTxClient).
-  'packages/db/src/gateway/narrow-route.ts': 4,
+  // alone and in a narrow transaction (narrowTxClient), and on its login
+  // pool with the actor's SET and RESET (narrowLoginStatement, plan v3.2 S7b).
+  'packages/db/src/gateway/narrow-route.ts': 5,
   'packages/db/src/gateway/pools.ts': 2,
   'packages/db/src/gateway/role-runner.ts': 3,
   'packages/db/src/gateway/role-tx.ts': 1,

@@ -72,11 +72,13 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     rr.setNarrowSystemForTests(on);
     await m.systemDb.execute(sql`select 1`);
   };
+  /** The test's own narrow session's backend: not the pool's. */
+  let nlPid = 0;
   const narrowBackends = async () =>
     (
       await su<{ n: number }[]>`
         select count(*)::int as n from pg_stat_activity
-         where usename = ${NARROW} and datname = ${dbName}`
+         where usename = ${NARROW} and datname = ${dbName} and pid <> ${nlPid}`
     )[0]!.n;
 
   beforeAll(async () => {
@@ -91,6 +93,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
       { max: 1, prepare: false, onnotice: () => {} },
     );
+    nlPid = (await nl.unsafe<{ p: number }[]>('select pg_backend_pid() as p'))[0]!.p;
     m = await import('./index');
     v = await import('./viewer');
     ns = await import('./gateway/narrow-sendable');
