@@ -1170,3 +1170,206 @@ Left open, with a lane:
   as before; graph_path does not run there.
 - LOW: @mantle/db/test-support has no lint fence against product
   imports, unlike @mantle/content/test-support.
+
+## Round 3 (feat/s10-r3, from main dd0d1d85f, v0.300.123)
+
+The last round: the last scoped raw write, the Telegram moderated-chat
+write, then the plan's end (section 3.2 point 3). One migration,
+`0313_file_home_chat_definers` (`when` 1790198100000, 60000 above 0312's;
+the renumber proof is file-home-chat-0313.db.test.ts: above every earlier
+`when`, and the revert takes that `when` off the ledger).
+
+### 1. The restamp's home (rawWriteSqlScoped 1 to 0)
+
+packages/files/src/ops/files.ts restampRacedCreate replaced every grant of
+a raced snapshot copy's row with one home by a raw insert (a drizzle insert
+names every column, and the write role holds INSERT on four of
+item_grants). It now calls a definer, `mantle_file_restamp_home(node, ws)`:
+the delete and the insert of the same four columns, as before.
+
+- Its own check: only the snapshot copies' system work. The one SQL
+  system-work allowlist (`mantle_ws_system_work`, 0307) takes a third
+  pair, `('system:snapshot-copies', 'mantle_file_restamp_home')`: no acting
+  login, no scope, not read only, that actor exactly. No second allowlist.
+  And only on a file of this brain that already carries a copy's stamp
+  (`data.snapshot_of`; the stamp goes on first, as before). Refused
+  otherwise (42501), nothing moves.
+- TypeScript: `snapshot-copies` moved from `AS_SYSTEM_OTHER_REASONS` to
+  `WORKSPACE_SYSTEM_REASONS` (viewer.ts), so systemWork refuses it inside a
+  request or an exit too, and its actor goes with every statement in every
+  check mode (actor-sql.ts `isWorkspaceSystemActor`; the definer reads it
+  with the actor check off). `AS_SYSTEM_ROUTE` and the route seed
+  (as-system-routes.mjs) lost the entry; the systemWork pin of
+  snapshot-copies.ts is unchanged. arch-lints.test.ts's reason check skips a
+  maintenance task's `slug:` (registry.ts names the task
+  `snapshot-copies`).
+- EXECUTE: the runtime role only (`RUNTIME_SYSTEM_FUNCTIONS`: the system
+  pool's login with the runtime role on), never the write, workspace or
+  narrow role (`NARROW_DENIED_FUNCTIONS`).
+- Route: unchanged (the system pool, in the copy's system work).
+- Cells (packages/files/src/restamp-write-role.db.test.ts): on the write
+  role in an Admin user's scope the stamp alone passes and the home is
+  refused ("permission denied for function"), grants untouched; as the
+  superuser the definer refuses no actor, `system:test`, the two other
+  allowlisted actors, `system:admin-area`, `system:operator:repair`, a
+  login actor, and the right actor read only, in a scope or with a scope
+  login set, each 42501 with the row untouched; the right actor on an
+  unstamped file or a stamped note: 42501; as the system work it replaces
+  every grant (a login-made one too) with one home, Write off, granted_by,
+  via_folder_id null, bridge false; and restampRacedCreate itself under
+  @mantle/db's `systemWork('snapshot-copies')` (the app's own pools) stamps
+  and homes the row, `mantle.actor` read as `system:snapshot-copies`, in the
+  default run and under test:actor-off and test:runtime-role.
+  server/web/server/w6b-fix2.db.test.ts L-4 (the watcher race end to end)
+  now makes its copy as the real caller does (`systemWork('snapshot-copies')`
+  for `asSystem('test')`); same assertions.
+
+### 2. The Telegram moderated-chat write
+
+setChatPairing (packages/telegram pairing.ts) read the chat, decided own
+chat or `loginModeratesBot` in TypeScript and updated telegram_chats, all
+on `asSystem('login-telegram')` (the narrow route with the switch on, else
+the system pool). Now one definer, `mantle_tg_chat_set(owner, login, chat,
+action, account)`, in the caller's own transaction:
+
+- The rule, moved: the chat of `owner` (on `account` when given) whose own
+  login is `login`, or whose bot's assistant's workspace (no workspace: the
+  Admin workspace) has `login` as an enabled Moderator and is live, or for
+  an Admin user with the users area (`mantle_area_rule`, as
+  `loginHasArea`). Anyone else, and a chat that is not there, answer no row
+  (the caller's 404, as before). `block` sets denied, `unpair` pending;
+  both clear the login and the pairing. An action other than these: 22023.
+- In a scope, or with an acting login set, `login` must be the scope's own
+  (42501). With no scope (the assistants area's route on its exit) it reads
+  the login it is given, as 0293's Telegram readers and
+  `mantle_access_key_revoke` do; only system routes run without a scope.
+- Answers the chat and its bot's assistant's name, so setChatPairing no
+  longer needs the exit; a login id that is no uuid answers not found
+  before any statement (as `loginModeratesBot` refused it).
+- EXECUTE, measured per role: the write role (`WRITE_ROLE_FUNCTIONS`; the
+  any-login routes' block and unpair run there in the login's scope:
+  s6-c3-any-login-writes.db.test.ts through the full pipeline, warn and
+  on), the narrow role (`NARROW_SYSTEM_FUNCTIONS`: the assistants area's
+  route, `POST /api/agents/:id/telegram/chats`; measured by a new row of
+  narrow-area-routes.db.test.ts through createApp with the switch on: the
+  dump shows `fn:mantle_tg_chat_set` 3 uses, no denial; with the grant
+  taken out of the clone's runtime-role.ts the row fails, "permission
+  denied for function mantle_tg_chat_set", a narrow denial and a 500), and
+  the runtime role through the write role's list. Not the workspace role,
+  not PUBLIC.
+- Cells for who may and may not (packages/db/src/file-home-chat-0313.db.test.ts,
+  on the write role in the login's own scope, session_user
+  mantle_write_user): may: the chat's own login (unpair and block), a
+  Moderator of the bot's workspace, an Admin user with the users area, the
+  anchor. May not (no row, row unchanged): a login in no workspace of the
+  bot, an Admin user whose users area is off, a disabled Moderator, a user
+  of the workspace on another login's chat, a Moderator on a bot with no
+  assistant, the wrong `account`, another owner's chat. Refused: a login
+  other than the scope's (42501), an unknown action (22023). On the narrow
+  role with no scope: an outsider gets no row, an Admin user with the users
+  area unpairs. The catalog: both definers SECURITY DEFINER with
+  `search_path=public, pg_temp`, EXECUTE per role as above.
+- Answers byte-equal: w7d-telegram.db.test.ts (the routes' handlers per
+  role), s6-c3-any-login-writes.db.test.ts (the full pipeline),
+  a4-guard-sweep.test.ts and a10-body-sweep.test.ts (every route and body as
+  recorded on main). The body sweep's database stand-in answers the
+  definer's transaction with no chat, as its reads answer no row (main read
+  the chat first and found none: 404 then and now).
+- The rows written are the same but for `updated_at`: the definer's `now()`
+  (the transaction's start) for the process clock; no answer carries it.
+- Pins: asSystemExits 55 to 54, asSystemNarrow 21 to 20 (pairing.ts's
+  holder keeps the preview and the pairing).
+
+### 3. The plan's end: no table read from a raw write's text
+
+`rawWriteTarget` and its test in `loginWriteClient` are gone
+(packages/db/src/gateway/write-route.ts), with its unit cells
+(actor-client.test.ts) and its export (client.ts barrel); `MORE_STATEMENTS`
+is no longer exported. Every scoped statement goes to the gateway's one
+decision (`loginWriteRoute`: the actor and the write scope, never the
+text); on the write role Postgres refuses a table the role holds no right
+on (42501, noted as a write-role gap: in production a `write-role-gap` miss
+row naming the caller, in tests a failure of the test, vitest.setup.ts).
+
+- typedWrite is not touched: it routes by the drizzle table object (no
+  text), and its system-pool tables are S4b's (`typed-write`).
+- The `raw-write` fail-open site has no caller (failOpenSites 6 to 5). The
+  name stays in `FAIL_OPEN_SITES` and the box script's list so a row an N-1
+  image writes still counts; docs/fail-open.md says so.
+- Cell: fail-open.db.test.ts, a login's scoped `executeWrite` of an update
+  of provider_alerts: refused 42501 "permission denied for table
+  provider_alerts", the gap noted, no fail-open row and no hit (it ran on
+  the system pool before, counted).
+
+Measured, so that no scoped write now meets a table the write role cannot
+write:
+
+- Main (dd0d1d85f), the full DB suite with `MANTLE_FAIL_OPEN_DUMP`: 156
+  hits, every one `typed-write` (item_marks, pending_tool_calls,
+  assistant_messages), no `raw-write` hit: no tested scoped raw write went
+  to the system pool by its table.
+- The branch, every full suite (below): no write-role gap in any (the
+  setup fails a test on one), no narrow denial.
+- By reading: the removed branch sent a statement to the system pool only
+  for a single INSERT, UPDATE or DELETE on a non-write-role table sent
+  through loginWriteClient's `unsafe`. Its callers are executeWrite (every
+  product call is a `SELECT pg_notify(...)`, which that test never matched)
+  and the gateway's drizzle handle (typedWrite gives it write-role tables
+  only; a transaction's `begin` already went to the write role).
+
+Scoped writes now refused by the write role (table, caller): none.
+
+Changed routes (system pool to write role or back), each with its cell:
+
+| Write                                                                                                            | Before                                                                     | Now                                                        | Cell                                                              |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| a login's block or unpair (`POST /api/telegram/chats/:id/block`, `/unpair`, `DELETE /api/telegram/my-chats/:id`) | asSystem('login-telegram'): narrow route (switch on), else the system pool | the write role in the login's scope, by mantle_tg_chat_set | s6-c3-any-login-writes.db.test.ts, file-home-chat-0313.db.test.ts |
+| the assistants area's block or unpair (`POST /api/agents/:id/telegram/chats`)                                    | narrow route (switch on), else the system pool                             | the same routes, by mantle_tg_chat_set                     | narrow-area-routes.db.test.ts                                     |
+| the restamp's home                                                                                               | the system pool (systemWork)                                               | the same, by mantle_file_restamp_home                      | restamp-write-role.db.test.ts                                     |
+| a scoped raw single write to a non-write-role table                                                              | the system pool, counted `raw-write`                                       | the write role, refused                                    | fail-open.db.test.ts (no product caller, measured above)          |
+
+No change to what a member, client, key, peer or public link may do.
+
+### Pins
+
+| Pin                 | Before | After | Why                                                        |
+| ------------------- | ------ | ----- | ---------------------------------------------------------- |
+| rawWriteSqlScoped   | 1      | 0     | the restamp's home is a definer call                       |
+| rawWriteSqlFiles    | 26     | 25    | ops/files.ts                                               |
+| rawWriteTargetRegex | (new)  | 0     | rawWriteTarget gone (1 on main, measured by the new count) |
+| failOpenSites       | 6      | 5     | the raw write site has no caller                           |
+| asSystemExits       | 55     | 54    | setChatPairing left telegramLoginSystem                    |
+| asSystemNarrow      | 21     | 20    | the same use ('login-telegram' routes narrow)              |
+| actorsMdLines       | 345    | 344   | the raw write limit line went                              |
+| actorsHistoryRefs   | 74     | 71    | the asSystemExits note gives its current reason only       |
+
+`rawWriteTargetRegex` (eslint-rules/cleanup-counts.mjs
+`rawWriteTargetRegexSites`): a regex literal, or `RegExp` of literal text,
+in packages/*/src and server/ that names INSERT INTO, DELETE FROM or
+UPDATE and captures a name: a route decided on a write's text again.
+Cells (cleanup-counts.test.ts): main's rawWriteTarget regex, `\w+`, a
+negated class through `new RegExp`, a `String.raw` one are found; the
+gateway's isWriteSql test, the WITH test, a read and a comment are not.
+`rawSqlNonLiteral` stays 63 (not this round's).
+
+### Rollback
+
+- `packages/db/rollback/0313_file_home_chat_definers.revert.sql`, as the
+  superuser, one transaction (its header has the command), while the newer
+  image is still up, then pin N-1: drops both definers, puts
+  `mantle_ws_system_work` back to 0307's body byte for byte, takes 0313 off
+  the ledger.
+- Without the revert, N-1 runs with 0313 in place: it calls neither
+  definer, and the extra allowlist pair names only the restamp definer.
+  N-1's boot grants its own lists: the write and narrow roles lose
+  EXECUTE on mantle_tg_chat_set, the runtime role on the restamp
+  definer (rule 2: N-1 as shipped).
+- The routes go back with the image: N-1's setChatPairing runs on its
+  exit again, and its loginWriteClient sends a raw write to a
+  non-write-role table to the system pool again (counted `raw-write`; the
+  box script still prints that site).
+- No row to undo: 0313 changes no table.
+- The drill (below) and the cell (file-home-chat-0313.db.test.ts: a
+  database just before 0313 applies it and only it; the revert leaves the
+  allowlist's body equal to before and both definers gone; forward again
+  equal to after).
