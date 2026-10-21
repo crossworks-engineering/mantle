@@ -533,6 +533,138 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(actor.takeNarrowDenials()).toEqual([]);
   });
 
+  it("refuses a call whose effect outlives the transaction (each lasts past COMMIT sent unguarded); the transaction's own advisory locks are sent", async () => {
+    /** Sent with no guard as the narrow role on the superuser's one
+     *  session, and committed: what is left on the session afterwards. */
+    const committed = <T extends object>(stmt: string) =>
+      su.begin(async (t) => {
+        await t.unsafe(`select set_config('role', '${NARROW}', true)`);
+        return t.unsafe<T[]>(stmt);
+      }) as Promise<T[]>;
+    // pg_trgm's set_limit and setseed change the pooled session.
+    await committed('select set_limit(0.11)');
+    expect((await su<{ l: number }[]>`select show_limit() as l`)[0]!.l).toBeCloseTo(0.11);
+    await su`select set_limit(0.3)`;
+    await committed('select setseed(0.25)');
+    const [after] = await su<{ r: number }[]>`select random() as r`;
+    await su`select setseed(0.25)`;
+    const [seeded] = await su<{ r: number }[]>`select random() as r`;
+    expect(after!.r).toBe(seeded!.r);
+    // A session advisory lock stays held on the session.
+    const held = async () =>
+      (
+        await su<{ n: number }[]>`
+          select count(*)::int as n from pg_locks
+           where locktype = 'advisory' and pid = pg_backend_pid()`
+      )[0]!.n;
+    await committed('select pg_advisory_lock(7771)');
+    expect(await held()).toBe(1);
+    await su`select pg_advisory_unlock_all()`;
+    expect(await held()).toBe(0);
+    // A large object commits, owned by the narrow role.
+    const made = [
+      ...(await committed<{ o: string }>('select lo_create(0)::text as o')),
+      ...(await committed<{ o: string }>("select lo_from_bytea(0, '\\x01'::bytea)::text as o")),
+    ].map((r) => r.o);
+    const owners = await su<{ u: string }[]>`
+      select pg_get_userbyid(lomowner) as u from pg_largeobject_metadata
+       where oid = any(${made}::oid[])`;
+    expect(owners.map((r) => r.u)).toEqual([NARROW, NARROW]);
+    for (const o of made) await su`select lo_unlink(${o}::oid)`;
+
+    // Routed: each refused, alone and in a transaction.
+    for (const stmt of [
+      'select set_limit(0.11)',
+      'select setseed(0.25)',
+      'select pg_advisory_lock(7771)',
+      'select pg_advisory_lock_shared(7771)',
+      'select pg_try_advisory_lock(7771)',
+      'select pg_try_advisory_lock_shared(7771)',
+      'select pg_advisory_unlock_all()',
+      'select lo_create(0)',
+      'select lo_creat(-1)',
+      "select lo_from_bytea(0, '\\x01'::bytea)",
+      "select lo_import('/etc/hosts')",
+      "select lowrite(lo_open(1, 131072), '\\x01'::bytea)",
+    ]) {
+      expect(
+        await failure(v.asSystem(() => m.db.execute(sql.raw(stmt)), 'admin-area')),
+        stmt,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+      expect(
+        await failure(
+          v.asSystem(() => m.db.transaction((tx) => tx.execute(sql.raw(stmt))), 'admin-area'),
+        ),
+        `${stmt} (in a transaction)`,
+      ).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    }
+    expect(
+      (await su<{ n: number }[]>`select count(*)::int as n from pg_largeobject_metadata`)[0]!.n,
+    ).toBe(0);
+
+    // The transaction's own advisory locks (share-lock.ts, advisory-lock.ts)
+    // are sent on the narrow route and end with it.
+    const al = await import('./advisory-lock');
+    const xact = await v.asSystem(
+      () =>
+        m.db.transaction(async (tx) => {
+          await al.advisoryXactLock(tx, 'narrow-probe-xact', 'hashtextextended');
+          const locked = await al.tryAdvisoryXactLock(tx, 'narrow-probe-try', 'hashtext');
+          await tx.execute(sql`select pg_advisory_xact_lock_shared(7772)`);
+          const rows = (await tx.execute(sql`select current_user as u`)) as unknown as {
+            u: string;
+          }[];
+          return { u: rows[0]!.u, locked };
+        }),
+      'admin-area',
+    );
+    expect(xact).toEqual({ u: NARROW, locked: true });
+    expect(
+      (
+        await su<{ n: number }[]>`
+          select count(*)::int as n from pg_locks
+           where locktype = 'advisory'
+             and database = (select oid from pg_database where datname = current_database())`
+      )[0]!.n,
+    ).toBe(0);
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
+  it('a begin whose work returns an array of statements sends them all before the COMMIT and answers their results, on every route', async () => {
+    const pools = await import('./gateway/pools');
+    type Tx = postgres.TransactionSql & {
+      unsafe: (q: string) => PromiseLike<unknown> & { values: () => PromiseLike<unknown> };
+    };
+    const insert = (marker: string) => `${probeInsert(marker)} returning detail`;
+    const both = (a: string, b: string) =>
+      pools.adminSql().begin((raw) => {
+        const t = raw as unknown as Tx;
+        return [t.unsafe(insert(a)), t.unsafe(insert(b)).values()];
+      }) as unknown as Promise<[{ detail: string }[], string[][]]>;
+    const full = (Object.keys(v.AS_SYSTEM_ROUTE) as (keyof typeof v.AS_SYSTEM_ROUTE)[]).find(
+      (r) => v.AS_SYSTEM_ROUTE[r] === 'full',
+    )!;
+    const runs: [string, (w: () => Promise<unknown>) => Promise<unknown>][] = [
+      ['narrow', (w) => v.asSystem(w, 'admin-area')],
+      ['full', (w) => v.asSystem(w, full)],
+      ['no exit', (w) => w()],
+    ];
+    for (const [route, run] of runs) {
+      const a = `array-a-${route}-${randomUUID()}`;
+      const b = `array-b-${route}-${randomUUID()}`;
+      const out = (await run(() => both(a, b))) as [{ detail: string }[], string[][]];
+      expect(
+        out[0].map((r) => r.detail),
+        route,
+      ).toEqual([a]);
+      expect(out[1], route).toEqual([[b]]);
+      expect([await probeRows(a), await probeRows(b)], route).toEqual([1, 1]);
+      await su`delete from public.actor_check_misses
+                where check_name = 'narrow-probe' and detail in (${a}, ${b})`;
+    }
+    expect(actor.takeNarrowDenials()).toEqual([]);
+  });
+
   it("sends a transaction's statements in the order they are awaited, on every route", async () => {
     const pools = await import('./gateway/pools');
     type Tx = postgres.TransactionSql & {
