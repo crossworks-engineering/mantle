@@ -188,6 +188,68 @@ the OAuth code exchange end to end, SSO, and federation with a real peer.
   through one private helper (`runSystemExit`), the same expression the
   first two held inline.
 
+## Hardening round
+
+The audit at `53a620fe0` said merge, with five low findings and a note.
+Each is fixed here with a cell, before the merge.
+
+- **LOW-1, the exit ran any function.** `firstOwnerSwitch(loginId, fn)`
+  ran whatever `fn` it was given as `system:first-owner-attach` on the
+  full route, and `@mantle/db` exports it. Now `firstOwnerSwitch(loginId)`
+  takes no function: inside the exit it runs the switch itself, the same
+  call the boot runs (`mantle_ws_migrate_locked` through
+  `executeAsMigrator`), and returns its rows. `migrateWorkspacesQuietly`
+  calls it with the id only (`WsMigrateRow` is the exit's row type). Cell
+  (`ws-fresh-signup.db.test.ts`): a function passed past the type by a cast
+  is never run in any refusal; on the switched brain the exit refuses and
+  the workspaces are unchanged. The request exits count
+  (`eslint-rules/rights-counts.mjs`) now counts each call of
+  `firstOwnerSwitch` as one exit and does not follow its login id as if it
+  were a reason (with the id as its only argument the engine had followed
+  `migrateWorkspacesQuietly` to its callers and read 2); a unit cell pins
+  that (three callers of the wrapping function: still 1).
+- **LOW-2, the brain check and the switch were not atomic.** Moot with
+  LOW-1: no caller can put other work between them, and the check now
+  runs in the switch's own transaction. `executeAsMigrator(query, guard)`
+  takes an optional guard (a select whose `ok` must be true, else it
+  throws its refusal and the query never runs), on both paths (runtime
+  role off: `db.transaction`; on: the migrator's connection), through one
+  helper so each path keeps its one statement site (the raw SQL pin of
+  `handles.ts` stays 4). Read committed: a login committed between the two
+  statements is not seen by the guard, but the signup's own 403 and the
+  switch's skip of a brain with clients still stand.
+- **LOW-3, `noteRequestSystem` refused `first-owner` at the type level
+  only.** With a cast it bound `system:first-owner-attach` for the rest of
+  the request, and an unknown value bound a system actor with no reason.
+  It now throws at run time unless `why` is `area` or `login-self`, before
+  it reads the slot. Cell (`viewer.test.ts`): `first-owner`, `admin-write`,
+  an empty string and `undefined`, each cast, throw inside a request slot,
+  leave no outcome, no route and the same actor; `first-owner` throws
+  outside a slot too.
+- **LOW-4, `runSystemExit` was a binder the pin did not see.** The actor
+  binders count (`eslint-rules/actor-binders.mjs`) now counts its calls; a
+  unit cell in `process-entries.test.ts` (its definition and a comment do
+  not count, a call with type arguments does).
+- **LOW-5, the comment on `executeAsMigrator`.** It said only the switch
+  calls it; `server/web/scripts/backfill-conversation.ts` does too (ALTER
+  TABLE ... DISABLE and ENABLE TRIGGER, which run in a transaction). The
+  comment names both callers and says that, both paths being a
+  transaction, CREATE INDEX CONCURRENTLY or VACUUM would fail through it
+  with the role off as well as on (no caller sends one). The reviewed
+  reason in `eslint-rules/heads-writers.mjs` says the same.
+- **LOW-6, note only.** The `first-owner` bullet of `docs/actors.md` is
+  one long line, kept so the spec's line count (down only) does not move.
+  Left as it is.
+
+Pin moves in this round:
+
+- Actor binders, `packages/db/src/viewer.ts` 6 to 9, measured, with its
+  note in the pin: no new binder; the count now sees the three calls of
+  the private helper (`asSystem`, `systemWork`, the first owner's exit),
+  so a fourth exit through it moves the pin.
+- Nothing else moved: `requestSystemExits` 4 (`first-owner` 1), the raw
+  write SQL pin of `handles.ts` 4.
+
 ## Gates and CI
 
 See the final report of this branch's session for the exit codes and the
