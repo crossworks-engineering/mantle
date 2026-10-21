@@ -1280,3 +1280,60 @@ narrow-route.db.test.ts makes no table: its probe row is a miss row with the
 cell's marker (`actor_check_misses`, which the pool's login may write).
 scope.db.test.ts's ensureConcurrentIndexes cell runs on an empty scratch
 database of its own. Neither makes a table in the shared test database.
+
+#### Changed answers (fix round 2)
+
+Switch off: none expected (the full DB suite with MANTLE_NARROW_SYSTEM=0 is
+still to run, below). Off the narrow route: isWriteSql reads a nested
+comment, a string and a `\r` as Postgres does, so executeWrite refuses a
+read it once let through (only a read hidden behind a nested comment, or a
+write verb inside a value) and takes a write after a `\r` comment it once
+refused; statementBody cuts what Postgres skips (needsActorWrap,
+runsOutsideTransaction); a transaction client sends `.values()`,
+`.simple()` and tagged-template statements when awaited, not when built
+(the same statements, in await order); pg-boss routines are no longer
+PUBLIC-executable (only the migrator, their owner, runs them); a migrate
+that leaves the narrow role holding TEMPORARY fails. Switch on: the narrow
+route also refuses text that never closes or is ambiguous, the SQL text
+runners, and the three settings LOW-b names outside the gateway's SET. No
+change to what a member, client, key, peer or public link may do.
+
+#### Pins (fix round 2)
+
+None moved: arch:check output identical after the rebase, after the fold
+and on the handover head (rights-counts' readings unchanged; the raw write
+pin of runtime-role.ts holds at 8).
+
+#### Gates (fix round 2)
+
+Mac, Node 26, DATABASE_URL unset, on 87cba8c4d (the code head; the later
+commits are this file only, on which arch:check, docs:check and
+format:check ran again: 0, 0, 0): pnpm -r typecheck 0, pnpm lint 0, pnpm
+format:check 0, pnpm -C server/web build 0, pnpm docs:check 0, pnpm
+arch:check 0, pnpm boot:smoke 0, vitest run server packages eslint-rules 0
+(869 files passed, 281 skipped; 11275 tests passed),
+scripts/test-deploy-scripts.sh 0 (519 passed).
+
+Workstation, own clone ~/s7a3g-ws/repo (main from GitHub plus a bundle of
+the branch), own container s7a3g-pg (pgvector pg18, 127.0.0.1:56395 checked
+free, max_connections=450, role postgres as CI), init-scratch and migrate
+with MANTLE_CHECK_FLOOR=keep (0), systemd-run --user, --maxWorkers=3, on
+87cba8c4d: the round's cells together 0 (7 files, 106 tests:
+narrow-route.db, runtime-role.db, pgboss-routines.db, scope.db,
+narrow-observe.db, narrow-sendable, actor-client), so every fold form left
+the role sent unguarded on pg18 and was refused routed, the order probe
+held on the three routes, the real pg-boss cell and the non-owner TEMPORARY
+run passed.
+
+#### State at hand-over (about 120 tool calls)
+
+Done: every item of the round, with cells, the Mac gates, the cells on
+pg18. Not run yet, in this order, one at a time (the same recipe, a new
+prefix): full DB vitest switch on, full DB vitest MANTLE_NARROW_SYSTEM=0,
+test:actor-off, test:actor-on, test:edit-on, test:matrix, test:runtime-role
+in full, and the N-1 drill (init and migrate with main, the branch, main,
+the revert, main, the branch: 0312 unchanged by this round, so the drill
+should read as fix round 1's; the new TEMPORARY assert and the pg-boss
+revoke ride every migrate of the branch). The full run with the switch on
+had started at hand-over and was stopped with the unit; its container and
+clone were removed by name. Then CI on the pushed head.
