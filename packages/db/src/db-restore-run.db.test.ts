@@ -27,6 +27,13 @@
  * database to run in a local Docker container (CI and the workstation do);
  * without one it fails on CI and is skipped elsewhere.
  *
+ * A run that is killed (a stopped unit, a timeout, a cancelled vitest) never
+ * reaches afterAll, and its target keeps running. So every target carries the
+ * label mantle.test=db-restore-run and the time it was started, and each run
+ * first removes the labelled targets older than two hours, with their
+ * volumes. MANTLE_RESTORE_TEST_STALE_MS sets another age (0 removes every
+ * labelled target, a run going on beside this one included).
+ *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/db-restore-run.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -48,6 +55,13 @@ const ROOT = join(__dirname, '..', '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'db-restore.sh');
 const MIGRATIONS = join(__dirname, '..', 'migrations');
 const VARIANTS = ['new', 'old', 'gone', 'nofn', 'another', 'mixed'] as const;
+/** On every target this file starts: how a later run finds one a killed run left. */
+const TARGET_LABEL = 'mantle.test=db-restore-run';
+/** When the target was started, in ms since the epoch. */
+const STARTED_LABEL = 'mantle.test.started';
+const TARGET_NAME = /^mantle_restore_test_[0-9a-f]{8}$/;
+/** A labelled target older than this is a leftover: no run takes this long. */
+const STALE_MS = Number(process.env.MANTLE_RESTORE_TEST_STALE_MS ?? 2 * 60 * 60 * 1000);
 type Variant = (typeof VARIANTS)[number];
 
 const tools = DB_URL ? findPgTools(DB_URL, process.env.MANTLE_TEST_PG_CONTAINER) : null;
@@ -63,6 +77,31 @@ const TRIGGER_0204 = readFileSync(join(MIGRATIONS, '0204_folder_sharing.sql'), '
   .split('--> statement-breakpoint')
   .map((s) => s.trim())
   .find((s) => s.includes('CREATE TRIGGER "nodes_share_refresh_after"'))!;
+
+/**
+ * Remove the labelled targets older than STALE_MS, by the exact names docker
+ * lists, and return those names. A failed list or removal is not an error:
+ * the sweep only tidies, the run does not depend on it.
+ */
+function removeStaleTargets(now = Date.now()): string[] {
+  const listed = runCommand('docker', [
+    'ps',
+    '-a',
+    '--filter',
+    `label=${TARGET_LABEL}`,
+    '--format',
+    `{{.Names}}\t{{.Label "${STARTED_LABEL}"}}`,
+  ]);
+  if (listed.status !== 0) return [];
+  const stale = listed.stdout
+    .toString()
+    .split('\n')
+    .map((line) => line.trim().split('\t'))
+    .filter(([name, started]) => TARGET_NAME.test(name ?? '') && now - Number(started) >= STALE_MS)
+    .map(([name]) => name!);
+  if (stale.length > 0) runCommand('docker', ['rm', '-f', '-v', ...stale]);
+  return stale;
+}
 
 describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for real', () => {
   let base: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
@@ -130,6 +169,10 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
         'the test database does not run in a local Docker container: db-restore.sh cannot be ' +
           'run (MANTLE_TEST_PG_CONTAINER names the container when the lookup by port fails)',
       );
+    }
+    const removed = removeStaleTargets();
+    if (removed.length > 0) {
+      console.info(`removed ${removed.length} stale restore target(s): ${removed.join(' ')}`);
     }
     dir = mkdtempSync(join(tmpdir(), 'mantle-restore-test-'));
     // One migrated brain with a login.
@@ -216,11 +259,17 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
       .stdout.toString()
       .trim();
     expect(image).toBeTruthy();
+    // --rm: a target that stops (a docker restart) goes with its volume too.
     const started = runCommand('docker', [
       'run',
       '-d',
+      '--rm',
       '--name',
       target,
+      '--label',
+      TARGET_LABEL,
+      '--label',
+      `${STARTED_LABEL}=${Date.now()}`,
       '-e',
       'POSTGRES_PASSWORD=restore-test',
       image,
@@ -239,7 +288,7 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
   }, 300_000);
 
   afterAll(async () => {
-    if (targetStarted) runCommand('docker', ['rm', '-f', target]);
+    if (targetStarted) runCommand('docker', ['rm', '-f', '-v', target]);
     await base?.drop();
     if (dir) rmSync(dir, { recursive: true, force: true });
   }, 120_000);
