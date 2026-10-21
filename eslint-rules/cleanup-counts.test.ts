@@ -590,6 +590,20 @@ describe("rawWriteTargetRegexSites: a write statement's table read from its text
     expect(of('const r = RegExp(String.raw`update\\s+([A-Za-z_.]+)\\s+set`, "i");')).toEqual([1]);
   });
 
+  it('finds a capture that starts with \\S, a quote, any character or a name; a grouped verb; MERGE INTO; spaces', () => {
+    expect(of('const r = /insert\\s+into\\s+(\\S+)/i;')).toEqual([1]);
+    expect(of('const r = /update\\s+([\\S]+)\\s+set/i;')).toEqual([1]);
+    expect(of('const r = /(insert)\\s+into\\s+(\\w+)/i;')).toEqual([1]);
+    expect(of('const r = /(?:delete)\\s+(from)\\s+([a-z_]+)/i;')).toEqual([1]);
+    expect(of('const r = /merge\\s+into\\s+(\\w+)/i;')).toEqual([1]);
+    expect(of("const r = new RegExp('(merge)\\\\s+into\\\\s+(\\\\S+)', 'i');")).toEqual([1]);
+    expect(of('const r = /insert into ("?\\w+"?)/i;')).toEqual([1]);
+    expect(of('const r = /delete\\s+from\\s+(?<table>\\w+)/i;')).toEqual([1]);
+    expect(of('const r = /update\\s+(.+?)\\s+set/i;')).toEqual([1]);
+    expect(readsWriteTarget('(insert)\\s+into\\s+(\\S+)')).toBe(true);
+    expect(readsWriteTarget('MERGE INTO (\\w+)')).toBe(true);
+  });
+
   it('a write verb with no name captured, a name with no write verb, a comment: none', () => {
     // The gateway's write test (handles.ts isWriteSql) and the WITH test.
     expect(
@@ -601,5 +615,8 @@ describe("rawWriteTargetRegexSites: a write statement's table read from its text
     expect(of('const r = /^select\\s+([a-z_]+)/;')).toEqual([]);
     expect(of('// /insert\\s+into\\s+(\\w+)/ in a comment\nconst a = 1;')).toEqual([]);
     expect(readsWriteTarget('insert\\s+into\\s+(?:\\w+)')).toBe(false);
+    // Lookarounds and a non-capturing group capture nothing.
+    expect(readsWriteTarget('merge\\s+into\\s+(?=\\w)(?<!x)(?:\\S+)')).toBe(false);
+    expect(of('const r = /^merge\\b/i; const s = /(\\w+)/;')).toEqual([]);
   });
 });

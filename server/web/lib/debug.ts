@@ -171,7 +171,8 @@ export async function countTopics(userId: string, opts: { query?: string } = {})
 /** Which Telegram chats a caller of /api/debug/telegram may see (W7d fix
  *  round 1, L6): the anchor every chat; any other login its own chats and
  *  those of the bots it moderates (a Moderator of the bot's assistant's
- *  workspace, an Admin user with the users area: loginModeratesBot). */
+ *  workspace, an Admin user with the users area: loginModeratesBot, the
+ *  one rule mantle_tg_login_moderates). */
 export type TelegramChatVisibility = { all: true } | { loginId: string; accountIds: string[] };
 
 export async function telegramChatVisibility(

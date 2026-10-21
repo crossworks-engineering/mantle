@@ -458,11 +458,14 @@ async function notifyPaired(args: {
  * it back to pending, so the person can pair again with a new code. Never
  * pairs. `accountId`, when given, must be the chat's bot.
  *
- * The rule and the write are one definer (mantle_tg_chat_set, 0313): the
- * Telegram tables are granted to no role. A write, in its own transaction:
+ * The write is one definer (mantle_tg_chat_set, 0313), which asks the
+ * bot's one Moderator rule (mantle_tg_login_moderates): the Telegram tables
+ * are granted to no role. Refused for a read-only caller or an owner that
+ * is not this brain. A write, in its own transaction:
  * on the write role in the login's own scope (a login's routes; the
  * definer then takes the scope's own login only), on the narrow or full
- * system route on the assistants area's route. A chat the caller may not
+ * system route on the assistants area's route (no scope: the definer acts
+ * for the login it is passed, the request's). A chat the caller may not
  * touch, or none, answers no row: not found, so a caller who may not
  * moderate the bot learns nothing about its chats.
  */

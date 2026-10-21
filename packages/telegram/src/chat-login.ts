@@ -24,7 +24,7 @@
  * 'login-telegram', never in a scope (systemWork refuses one, A6b).
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, liveWorkspaceSql, loginHasArea, systemWork, telegramChats } from '@mantle/db';
+import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /**
@@ -103,7 +103,9 @@ export async function chatLoginRefusal(args: {
  * Whether `loginId` may block or unpair any chat of bot `accountId`: a
  * Moderator of the bot's assistant's workspace (an assistant with no
  * workspace: the Admin workspace), or an Admin user whose users area is on.
- * Fails closed.
+ * The rule is one definer (mantle_tg_login_moderates, 0313), which the
+ * block or unpair and the moderated chats screen ask too; this asks it on
+ * the system pool. Fails closed.
  */
 export async function loginModeratesBot(args: {
   ownerId: string;
@@ -114,31 +116,12 @@ export async function loginModeratesBot(args: {
   if (!UUID_RE.test(loginId)) return false;
   try {
     const rows = (await telegramSystemWork(() =>
-      db.execute(sql`
-          with admin_ws as (
-            select w.id from workspaces w
-             where w.owner_id = ${ownerId}::uuid and w.is_admin
-             limit 1
-          )
-          select
-            exists (
-              select 1
-                from telegram_accounts t
-                join channels ch on ch.id = t.channel_id
-                join agents a on a.id = ch.agent_id and a.owner_id = ${ownerId}::uuid
-                join workspaces w on w.id = coalesce(a.workspace_id, (select id from admin_ws))
-                                 and ${liveWorkspaceSql('w')}
-                join workspace_users u on u.workspace_id = w.id
-                                      and u.login_id = ${loginId}::uuid and u.moderator
-                join auth.users l on l.id = u.login_id and l.disabled_at is null
-               where t.id = ${accountId}::uuid
-            ) as moderates
-        `),
+      db.execute(
+        sql`select "public"."mantle_tg_login_moderates"(${ownerId}::uuid, ${loginId}::uuid,
+                                                       ${accountId}::uuid) as moderates`,
+      ),
     )) as unknown as { moderates: boolean }[];
-    const r = rows[0];
-    if (!r) return false;
-    if (r.moderates) return true;
-    return await loginHasArea(loginId, 'users');
+    return rows[0]?.moderates === true;
   } catch {
     return false;
   }

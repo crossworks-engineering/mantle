@@ -795,17 +795,20 @@ function laneOf(path) {
 
 // ── a write's table read from its text ──────────────────────────────────────
 
-/** A regex source naming a write verb: INSERT INTO, DELETE FROM or UPDATE
- *  (its whitespace tokens dropped first). */
-const TARGET_VERB = /insertinto|deletefrom|\bupdate\b/i;
-/** A capturing group that starts with a name's character: a class of
- *  letters (`[a-z_`, `[A-Z`, `[\w`), `\w` or a negated class. */
-const NAME_CAPTURE = /\((?!\?)(?:\[\^|\[(?:[a-zA-Z_]|\\w)|\\w)/;
+/** A regex source naming a write verb: INSERT INTO, DELETE FROM, UPDATE or
+ *  MERGE INTO (its whitespace tokens, spaces and group brackets dropped
+ *  first, so `(insert)\s+into` reads as the verb too). */
+const TARGET_VERB = /insertinto|deletefrom|mergeinto|\bupdate\b/i;
+/** A capturing group (a named one too) that starts with a name's character,
+ *  after an optional quote (`"` or `"?`): a class of letters (`[a-z_`, `[A-Z`, `[\w`,
+ *  `[\S`), `\w`, `\S`, any character (`.`) or a negated class. */
+const NAME_CAPTURE =
+  /\((?!\?(?!<[A-Za-z_]))(?:\?<[A-Za-z_]\w*>)?(?:"\??)?(?:\[\^|\[(?:[a-zA-Z_"]|\\[wS])|\\[wS]|\.)/;
 
 /** Whether a regex source reads the table a write statement names: a write
  *  verb and a group capturing a name. */
 export function readsWriteTarget(source) {
-  const flat = source.replace(/\\s[+*?]?/g, '');
+  const flat = source.replace(/\\s[+*?]?| +|\(\?:|[()]/g, '');
   return TARGET_VERB.test(flat) && NAME_CAPTURE.test(source);
 }
 
@@ -813,14 +816,14 @@ export function readsWriteTarget(source) {
  * The regexes in counted code that read the table a write statement names
  * (the `rawWriteTargetRegex` pin): a regex literal, or `new RegExp(...)` /
  * `RegExp(...)` of literal text, whose source names a write verb and
- * captures a name after it. The login write gateway routed a raw write by
+ * captures a name. The login write gateway routed a raw write by
  * such a reading until every scoped statement went to the write role,
  * where Postgres refuses a table the role holds no right on: a new one is
  * a routing decision made on text again. Comments are not code. Answers
  * the 1-based lines.
  */
 export function rawWriteTargetRegexSites(path, text) {
-  if (!/insert|delete|update/i.test(text)) return [];
+  if (!/insert|delete|update|merge/i.test(text)) return [];
   const sf = parse(path, text);
   const out = [];
   const visit = (node) => {

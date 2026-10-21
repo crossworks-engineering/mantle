@@ -39,7 +39,7 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   (`mantle_actor_miss_log`, `mantle_bridge_login`, `mantle_check_box_mode`,
   `mantle_embed_host`, `mantle_ws_attach_assistants`,
   `mantle_ws_private_workspace`, `mantle_ws_skip_reason`,
-  `mantle_file_restamp_home`). Everything else
+  `mantle_file_restamp_home`, `mantle_tg_login_moderates`). Everything else
   taken from `PUBLIC` is out of its reach: the workspaces switch and its steps
   (`mantle_ws_migrate`, `mantle_ws_migrate_bridged`, `mantle_ws_bridge_off`,
   `mantle_ws_spaces_fold`, `mantle_ws_review_off`, `mantle_ws_team_normal`;

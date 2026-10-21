@@ -211,6 +211,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'snapshot-copies.ts and the integrity row workspaces_not_migrated',
   'public.mantle_file_restamp_home(uuid,uuid)':
     "packages/files ops/files.ts restampRacedCreate: a raced snapshot copy's home, the snapshot copies' system work only (0313)",
+  'public.mantle_tg_login_moderates(uuid,uuid,uuid)':
+    "packages/telegram chat-login.ts loginModeratesBot: a Telegram bot's Moderator rule about a login, a read definer (0313)",
 };
 
 /**

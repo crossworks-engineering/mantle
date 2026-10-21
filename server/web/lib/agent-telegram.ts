@@ -442,9 +442,10 @@ export async function unpairMyTelegramChat(
  * The chats of every bot the signed-in login moderates (GET
  * /api/telegram/moderated-chats, workspaces W7d): bots whose assistant's
  * workspace it is a Moderator of, or every bot for an Admin user with the
- * users area (loginModeratesBot's rule). Empty for anyone else. By their
- * definer (mantle_tg_moderated_chats, 0293: the rule in SQL; in a scope,
- * the scope's own login only; A6b: on the system pool before,
+ * users area (the bot's Moderator rule, mantle_tg_login_moderates, 0313).
+ * Empty for anyone else. By their definer (mantle_tg_moderated_chats,
+ * 0293, asking that rule since 0313; in a scope, the scope's own login
+ * only; A6b: on the system pool before,
  * 'login-telegram'). Each bot's chats as its own screen sorts them.
  */
 export async function listModeratedTelegramChats(

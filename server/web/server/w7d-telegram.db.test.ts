@@ -663,6 +663,30 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect((await listAs(admin2)).ids.has(chat.member)).toBe(true);
   });
 
+  it('loginModeratesBot asks the one Moderator rule (mantle_tg_login_moderates)', async () => {
+    const { loginModeratesBot } = await import('@mantle/telegram');
+    for (const login of [owner, admin2, member, mod, outsider]) {
+      for (const acct of [account.team, account.admin]) {
+        const [rule] = await su<{ m: boolean }>(sql`
+          select "public"."mantle_tg_login_moderates"(${owner}::uuid, ${login}::uuid,
+                                                       ${acct}::uuid) as m`);
+        expect(await loginModeratesBot({ ownerId: owner, loginId: login, accountId: acct })).toBe(
+          rule!.m,
+        );
+      }
+    }
+    // Team's bot: its Moderator and the Admin users with the users area.
+    const team = async (login: string) =>
+      loginModeratesBot({ ownerId: owner, loginId: login, accountId: account.team });
+    expect([await team(mod), await team(admin2), await team(owner)]).toEqual([true, true, true]);
+    expect([await team(member), await team(outsider)]).toEqual([false, false]);
+    // Not a login, not a bot: no (fails closed).
+    expect(await loginModeratesBot({ ownerId: owner, loginId: 'x', accountId: account.team })).toBe(
+      false,
+    );
+    expect(await loginModeratesBot({ ownerId: owner, loginId: mod, accountId: 'x' })).toBe(false);
+  });
+
   it("a tool on a Telegram surface sends through the chat's own bot, never the first one (L7)", async () => {
     const { accountForSurface } = await import('@mantle/telegram');
     expect((await accountForSurface(account.team))?.id).toBe(account.team);
