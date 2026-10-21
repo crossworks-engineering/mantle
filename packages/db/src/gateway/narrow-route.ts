@@ -23,7 +23,6 @@ import { env } from '@mantle/config';
 import { RuntimeFaultError } from '@mantle/std';
 import { permissionGapOf, pgErrorCode } from '../pg-error';
 import {
-  actingLoginOf,
   actorCheckMode,
   actorSetting,
   currentActor,
@@ -34,6 +33,7 @@ import {
 } from '../actor';
 import { reserveLease } from '../reserved';
 import { NARROW_ROLE } from '../runtime-role';
+import { actingLoginNow } from '../viewer';
 import { NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
 import { narrowSendable } from './narrow-sendable';
@@ -79,7 +79,7 @@ export class NarrowRoleLeftError extends RuntimeFaultError {
  * The actor's settings on the narrow route: set whatever the check's mode,
  * so the database always knows who wrote (the actor stays system:<reason>),
  * its write mode (a read-only caller's definers refuse) and the acting
- * login a system actor carries (mantle.acting_login, plan v3.2 S7b). Null
+ * login of the exit (actingLoginNow: mantle.acting_login, plan v3.2 S7b). Null
  * with no actor bound.
  */
 async function narrowParams(): Promise<ActorParams | null> {
@@ -87,7 +87,7 @@ async function narrowParams(): Promise<ActorParams | null> {
   if (waitFor) await waitFor;
   const actor = currentActor();
   if (!actor) return null;
-  const acting = actor.kind === 'system' ? (actingLoginOf(actor) ?? undefined) : undefined;
+  const acting = actingLoginNow() ?? undefined;
   return [actorSetting(actor), writeModeOf(actor), actorCheckMode(), undefined, acting];
 }
 

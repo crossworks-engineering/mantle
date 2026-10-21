@@ -10,14 +10,13 @@ import { reserveLease, type Lease } from '../reserved';
 import { sqlCode } from '../sql-text';
 import { UUID_RE } from '@mantle/std';
 import {
-  actingLoginOf,
   actorCheckMode,
   actorSetting,
   currentActor,
   fullRouteSpotNow,
   writeModeOf,
 } from '../actor';
-import { isRequestExitActor, isWorkspaceSystemActor } from '../viewer';
+import { actingLoginNow, isWorkspaceSystemActor, requestExitActingLogin } from '../viewer';
 import { firstModeReadNow } from './check-mode';
 
 type PgSql = ReturnType<typeof postgres>;
@@ -114,7 +113,7 @@ export function setActorSql(
 
 /** The actor's settings (setActorSql): its value, write mode, the box's
  *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow), and
- *  the acting login a system actor carries (actingLoginOf, plan v3.2 S7b:
+ *  the acting login of the exit it runs in (actingLoginNow, plan v3.2 S7b:
  *  mantle.acting_login, which only the gateway's own SET may name). */
 export type ActorParams = readonly [
   string,
@@ -225,8 +224,10 @@ export function actorParams(): ActorParams | null {
   // A request exit's system actor too (plan v3.2 S7b): it carries the
   // login it acts for, which a definer acting for a login with no scope
   // reads (mantle_tg_chat_set, 0314), whatever the mode.
-  if (mode === 'off' && !isWorkspaceSystemActor(actor) && !isRequestExitActor(actor)) return null;
-  const acting = actor.kind === 'system' ? (actingLoginOf(actor) ?? undefined) : undefined;
+  if (mode === 'off' && !isWorkspaceSystemActor(actor) && requestExitActingLogin() === null) {
+    return null;
+  }
+  const acting = actingLoginNow() ?? undefined;
   return [
     actorSetting(actor),
     writeModeOf(actor),

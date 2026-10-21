@@ -33,7 +33,6 @@ import {
   loginActor,
   systemActor,
   systemUnder,
-  actingLoginOf,
   runInActorSlot,
   setSlotActor,
   slotActor,
@@ -417,9 +416,16 @@ export function noteRequestSystem(why: Exclude<RequestSystemWhy, 'first-owner'>)
   // as system(reason); an Admin user's write or read on the system pool
   // stays its login (named by the guard).
   const reason = REQUEST_SYSTEM_REASON[why];
-  setSlotActor(systemUnder(reason, slotActor()));
-  // Plan v3.2 S7a: the exit picks its route (REQUEST_SYSTEM_ROUTE).
-  slot.systemRoute = Object.freeze({ route: REQUEST_SYSTEM_ROUTE[why], reason });
+  const outer = slotActor();
+  setSlotActor(systemUnder(reason, outer));
+  // Plan v3.2 S7a: the exit picks its route (REQUEST_SYSTEM_ROUTE); S7b:
+  // with the login it acts for.
+  const login = outer?.kind === 'login' ? outer.loginId : undefined;
+  slot.systemRoute = Object.freeze({
+    route: REQUEST_SYSTEM_ROUTE[why],
+    reason,
+    ...(login ? { login } : {}),
+  });
 }
 
 /**
@@ -1042,7 +1048,13 @@ export const REQUEST_SYSTEM_REASON: Readonly<Record<RequestSystemWhy, string>> =
 
 /** The route an exit picked, with the actor reason it bound: the route
  *  holds only while that actor is the one bound (systemRouteNow). */
-type SystemRouteEntry = { readonly route: SystemRoute; readonly reason: string };
+type SystemRouteEntry = {
+  readonly route: SystemRoute;
+  readonly reason: string;
+  /** The acting login (plan v3.2 S7b): the login whose request or turn
+   *  this exit runs for, sent as mantle.acting_login (actingLoginNow). */
+  readonly login?: string;
+};
 
 const systemRoutes = new AsyncLocalStorage<SystemRouteEntry>();
 
@@ -1056,12 +1068,49 @@ const systemRoutes = new AsyncLocalStorage<SystemRouteEntry>();
  * named repair, the miss log) runs full, as its own actor.
  */
 export function systemRouteNow(): SystemRoute | null {
+  return boundExitEntry()?.entry.route ?? null;
+}
+
+/** The nearest exit's entry while the actor it bound is still the one
+ *  bound (systemRouteNow), and whether it is the request's own exit. */
+function boundExitEntry(): { entry: SystemRouteEntry; request: boolean } | null {
   let entry = systemRoutes.getStore();
-  if (!entry && store.getStore() === undefined) entry = requestSlots.getStore()?.systemRoute;
+  let request = false;
+  if (!entry && store.getStore() === undefined) {
+    entry = requestSlots.getStore()?.systemRoute;
+    request = entry !== undefined;
+  }
   if (!entry) return null;
   const actor = currentActor();
   if (actor?.kind !== 'system' || actor.reason !== entry.reason) return null;
-  return entry.route;
+  return { entry, request };
+}
+
+/**
+ * The acting login of the exit the current system work runs in (plan v3.2
+ * S7b): the login whose request (an Admin area or login-self exit) or turn
+ * (an asSystem exit inside a login's scope or exit) it runs for, or null.
+ * Held only while the exit's actor is the one bound, as its route is. The
+ * gateway sends it as mantle.acting_login with the actor's settings; a
+ * definer that acts for a login with no scope takes only it (0314).
+ */
+export function actingLoginNow(): string | null {
+  return boundExitEntry()?.entry.login ?? null;
+}
+
+/** The acting login of the request's own system exit (noteRequestSystem),
+ *  or null: its settings go with every write and transaction in every check
+ *  mode (gateway/actor-sql.ts actorParams). */
+export function requestExitActingLogin(): string | null {
+  const bound = boundExitEntry();
+  return bound?.request ? (bound.entry.login ?? null) : null;
+}
+
+/** The login an exit acts for: the outer login actor's, else the acting
+ *  login of the exit it runs in. */
+function exitLogin(outer: Actor | null): string | undefined {
+  if (outer?.kind === 'login') return outer.loginId;
+  return actingLoginNow() ?? undefined;
 }
 
 /**
@@ -1169,19 +1218,6 @@ export function boundLoginId(): string | null {
   return currentWorkspaceScope()?.loginId?.toLowerCase() ?? null;
 }
 
-/** Whether `actor` is a request system exit's (noteRequestSystem: an Admin
- *  area route, a login's own things) with the login it acts for: its
- *  settings go with every write and transaction in every check mode, so a
- *  definer that acts for a login with no scope reads that login (0314). */
-export function isRequestExitActor(actor: Actor | null): boolean {
-  return (
-    actor?.kind === 'system' &&
-    actingLoginOf(actor) !== null &&
-    (actor.reason === REQUEST_SYSTEM_REASON.area ||
-      actor.reason === REQUEST_SYSTEM_REASON['login-self'])
-  );
-}
-
 /** Whether `actor` is workspace system work (WORKSPACE_SYSTEM_REASONS). */
 export function isWorkspaceSystemActor(actor: Actor | null): boolean {
   return (
@@ -1261,9 +1297,11 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
   );
   // Plan v3.2 S7a: the reason's route (AS_SYSTEM_ROUTE); an unknown one
   // runs full.
+  const login = exitLogin(currentActor());
   const entry: SystemRouteEntry = Object.freeze({
     route: AS_SYSTEM_ROUTE[reason] ?? 'full',
     reason: (actor as Extract<Actor, { kind: 'system' }>).reason,
+    ...(login ? { login } : {}),
   });
   const run = () => runSystemExit(entry, actor, fn);
   if (left) return leftStore.run(left, run);

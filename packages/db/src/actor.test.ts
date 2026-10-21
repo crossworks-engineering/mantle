@@ -95,19 +95,8 @@ describe('binding the actor', () => {
     runAsSystem('outer', () => runWithoutActor(() => expect(currentActor()).toBeNull()));
   });
 
-  it('asSystem runs as system(reason), carrying the login it acts for (plan v3.2 S7b)', async () => {
+  it('asSystem runs as system(reason)', async () => {
     await runAsActor(loginActor(L), () =>
-      asSystem(
-        async () =>
-          expect(currentActor()).toEqual({
-            ...systemActor('login-notice'),
-            login: L.toLowerCase(),
-          }),
-        'login-notice',
-      ),
-    );
-    // No login outside: no acting login.
-    await runAsActor(systemActor('outer'), () =>
       asSystem(
         async () => expect(currentActor()).toEqual(systemActor('login-notice')),
         'login-notice',

@@ -36,11 +36,12 @@ off in production). One migration, `0314_acting_login_definers` (`when`
   statement and keeps the hold check before `COMMIT`. In per-database mode
   (no login) the S7a route as it was: the role per transaction on the
   system pool. The text check runs on both.
-- The acting login: a system actor carries the login it acts for
-  (actor.ts `systemUnder`, `actingLoginOf`); setActorSql sends it as
-  `mantle.acting_login`; the narrow route always sends it; the full route
-  sends it with the actor's settings, and for a request exit's actor
-  (viewer.ts `isRequestExitActor`) in every check mode. A gateway setting
+- The acting login: each system exit records the login it acts for beside
+  its route (viewer.ts `SystemRouteEntry.login`, `actingLoginNow`; the
+  actor object is unchanged); setActorSql sends it as `mantle.acting_login`;
+  the narrow route always sends it; the full route sends it with the
+  actor's settings, and for the request's own exit
+  (`requestExitActingLogin`) in every check mode. A gateway setting
   (narrow-sendable.ts `GATEWAY_SETTING`).
 - Migration 0314: `mantle_tg_chat_set` and `mantle_access_key_revoke` with
   no scope take only the acting login (42501 otherwise); in a scope the
@@ -50,6 +51,6 @@ off in production). One migration, `0314_acting_login_definers` (`when`
   the per-database route (rolls back); the narrow attributes (unit and DB);
   the ceiling (a third pool in pools.ts, the narrow role's line); the
   0313 and admin-membership cells that call the two definers with no scope
-  now set the acting login; the actor cells (the acting login on
-  `asSystem`, setActorSql's uuid check); narrow-sendable's gateway settings.
+  now set the acting login; setActorSql's uuid check; narrow-sendable's
+  gateway settings.
 - Docs: docs/runtime-role.md (the role's login, the route, the acting login).

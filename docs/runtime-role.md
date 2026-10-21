@@ -399,12 +399,14 @@ setting refused by name.
 
 ### The acting login
 
-A system actor carries the login it acts for (`actor.ts` `systemUnder`,
-`actingLoginOf`: the request's login on an Admin area or login-self exit,
-the turn's login on an `asSystem` exit), and the gateway sends it as
+Each system exit records the login it acts for beside its route
+(`viewer.ts` `actingLoginNow`: the request's login on an Admin area or
+login-self exit, the outer login's on an `asSystem` exit inside a login's
+scope or exit), held only while the exit's actor is the one bound; the actor
+itself is unchanged (`system:<reason>`). The gateway sends it as
 `mantle.acting_login` with the actor's settings: on the narrow route always,
-on the full route whenever the actor's settings go, and for a request
-exit's actor in every check mode (`isRequestExitActor`: with the check off
+on the full route whenever the actor's settings go, and for the request's
+own exit in every check mode (`requestExitActingLogin`: with the check off
 too, so its writes and transactions carry it). It is a gateway setting: no
 narrow statement may name it (`GATEWAY_SETTING`). A definer that acts for a
 login and runs with no scope takes only that login (0314):

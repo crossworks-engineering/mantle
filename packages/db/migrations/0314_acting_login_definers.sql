@@ -1,7 +1,7 @@
 -- With no scope, a definer that acts for a login takes only the acting
 -- login (plan v3.2 S7b part b1): the login whose request or turn the
 -- system work runs for, which the gateway sends as mantle.acting_login
--- with the actor's settings (packages/db actor.ts actingLoginOf,
+-- with the actor's settings (packages/db viewer.ts actingLoginNow,
 -- gateway/actor-sql.ts setActorSql; on the narrow route always, on the
 -- full route for a request exit's actor in every check mode). No other
 -- statement may name the setting on the narrow route (narrow-sendable.ts
