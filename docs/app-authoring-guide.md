@@ -88,6 +88,16 @@ app decides its own size, layout, and scrolling.** So:
 - `host.ui.resize()` is a legacy no-op; there's nothing to resize; the frame is
   the viewport.
 
+**The host shows your name, icon and description.** In the workspace the
+app sits under the host's one header row (the item header every page, note
+and table has): it shows the app's icon and name, and its description sits
+behind ⓘ. So don't draw them again: no title or `<h1>` with the app's name, no
+hero block, no intro line that repeats the description. Start with the app's
+own content (its toolbar, inputs, data). Headings for sections inside the app
+are fine. A shared link and a home app show the app on its own, without
+the header; if the app must name itself there, keep it to one small line, never
+a hero.
+
 ## Styling: theme tokens only
 
 Use theme classes so the app follows the user's live theme, **never hardcode
@@ -584,6 +594,8 @@ export default function App() {
   surfaces undeclared `host.tools.call(slug)` as a warning. Declare first.
 - **Expecting direct brain access** → there is none. Go through a declared tool.
 - **Destructive SQLite migration** → unsupported. Schema is append-only.
+- **Drawing the app's own title** → the name shows twice. The host's header
+  already shows the name, icon and description; start with the content.
 
 ## Sharing an app
 

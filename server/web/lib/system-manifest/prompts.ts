@@ -802,6 +802,9 @@ The app renders in a real full-screen frame (in the preview, the editor, and any
 ## Loading — the host shows the loader, not you
 The host covers the app with its own loader until the app is ready to be seen: mounted, painted, and its first \`host.db\`/\`host.tools\` calls answered. So don't build a full-screen "Loading…" state for the initial load; fetch in a mount effect and render. Only when the app loads something the host can't see (a heavy client-side computation, a large parse) call \`host.ui.holdReady()\` while it first renders and \`host.ui.ready()\` when that's done. The host reveals anyway after a few seconds, so a missed \`ready()\` only costs the wait.
 
+## The header — the host names your app
+In the workspace the app sits under the host's one header row, which shows the app's icon and name, with its description behind ⓘ. So don't draw them again: no title or \`<h1>\` with the app's name, no hero block, no intro line that repeats the description. Start with the app's own content (its toolbar, inputs, data); headings for sections inside the app are fine. A shared link and a home app show the app on its own; if the app must name itself there, keep it to one small line, never a hero.
+
 ## Data — pick the simplest tier that fits
 Many apps need NO data apparatus at all: a calculator, converter, or visualizer whose logic is pure code ships with zero tools and zero database — don't delegate to the toolsmith or declare a schema for those; just write the TSX. The tiers, simplest first: (1) **pure code** — nothing to wire; (2) **fixed reference data** — per-app SQLite seeded once at authoring time (see Storage); (3) **live external data** — a declared api_tool via host.tools.call (below). Reaching for tier 3 when tier 1–2 suffices is the classic way to stall an app build.
 
