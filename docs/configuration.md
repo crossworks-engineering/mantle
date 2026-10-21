@@ -119,7 +119,7 @@ as `env()` does) and the three profile readers in
 | `bootReconcileOff` | `MANTLE_DISABLE_BOOT_RECONCILE` | off | skip the system manifest reconcile at production boot |
 | `detachedDev` | `MANTLE_DETACHED_DEV` | off (never in production) | DB-less detached dev: page navigations render without a session |
 | `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |
-| `narrowSystem` | `MANTLE_NARROW_SYSTEM` | the caller | the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow (default: on in tests and development, off in production; plan v3.2 S7a) |
+| `narrowSystem` | `MANTLE_NARROW_SYSTEM` | the caller | the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow, on a pool that logs in as it (migrate gives the role its login only while this is on) (default: on in tests and development, off in production; plan v3.2 S7a, S7b) |
 | `mcpTerminal` | `MANTLE_MCP_TERMINAL` | the caller | the MCP surface offers the terminal tools (default: stdio yes, HTTP no) |
 | `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Neat gradient |
 | `streamThoughts` | `profile.streamThoughts` | on | stream the thought trail live while a turn runs |
