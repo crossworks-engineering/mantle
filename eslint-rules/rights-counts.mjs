@@ -127,11 +127,12 @@ export function requestSystemExits(files) {
   const r = asSystemExits(files, { call: REQUEST_SYSTEM, follow: 'forwarders' });
   const byReason = { ...r.byReason };
   const problems = [...r.problems];
-  // The first owner's exit: every use of firstOwnerSwitch, whatever it
-  // passes (its reason is its own), under 'first-owner'; its entry named
-  // in no other file.
+  // The first owner's exit: every call of firstOwnerSwitch, whatever it
+  // passes (its reason is its own; its one argument, a login id, is no
+  // reason to follow), under 'first-owner'; its entry named in no other
+  // file. The engine still reports a renamed or passed-around one.
   const fo = asSystemExits(files, { call: FIRST_OWNER_SWITCH, follow: 'forwarders' });
-  const uses = Object.values(fo.byReason).reduce((a, b) => a + b, 0);
+  const uses = fo.holders.reduce((a, h) => a + h.siteList.length, 0);
   if (uses > 0) byReason['first-owner'] = (byReason['first-owner'] ?? 0) + uses;
   problems.push(...fo.problems);
   for (const { path, text } of files) {

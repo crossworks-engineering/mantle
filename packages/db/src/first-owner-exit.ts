@@ -11,13 +11,18 @@
  * request, and the request's own actor, system(http:no-login), names no
  * work, so the switch takes this exit: system(first-owner-attach) on the
  * full route (viewer.ts REQUEST_SYSTEM_ROUTE 'first-owner'), for that one
- * call. It refuses, before `fn` runs:
+ * call. The exit runs the switch itself and nothing else: it takes no
+ * function, so no caller can run other work as this actor. It refuses,
+ * before the switch runs:
  *  - anywhere but a request no login made, outside every scope, once per
  *    request (viewer.ts enterFirstOwnerExit);
  *  - on a brain whose logins are not exactly `loginId`, the anchor, or
  *    that has a workspace: the brain the signup just gave its first owner,
  *    still off workspaces. A brain with an owner never reaches it (the
- *    signup answers 403 first), nor one already switched.
+ *    signup answers 403 first), nor one already switched. That check runs
+ *    in the switch's own transaction (executeAsMigrator's guard), so the
+ *    brain it reads is the one the switch then works on in that
+ *    transaction.
  * The SQL allowlist of workspace system work (mantle_ws_system_work) does
  * not name this actor: the switch calls none of its definers, and the
  * assistant attach that follows runs in the new owner's own scope
@@ -25,28 +30,31 @@
  */
 import { sql } from 'drizzle-orm';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
-import { db } from './client';
+import { executeAsMigrator } from './client';
 import { enterFirstOwnerExit } from './viewer';
 
-/** Run `fn` (the switch) as the first owner's exit: see the top. */
-export function firstOwnerSwitch<T>(loginId: string, fn: () => Promise<T>): Promise<T> {
+/** A row of the workspaces switch (mantle_ws_migrate_locked). */
+export type FirstOwnerSwitchRow = { section: string; subject: string; metric: string; n: number };
+
+/** Switch the brain onto workspaces as the first owner's exit (see the
+ *  top): the same call the boot runs, mantle_ws_migrate_locked through
+ *  executeAsMigrator, and nothing else. */
+export function firstOwnerSwitch(loginId: string): Promise<FirstOwnerSwitchRow[]> {
   return enterFirstOwnerExit(async () => {
-    if (!UUID_RE.test(loginId)) {
+    if (typeof loginId !== 'string' || !UUID_RE.test(loginId)) {
       throw new RuntimeFaultError("the first owner's exit refused: not a login id");
     }
-    const [brain] = (await db.execute(sql`
-      select (select count(*) from auth.users)::int as logins,
-             exists (select 1 from auth.users where id = ${loginId}::uuid and is_owner) as anchor,
-             exists (select 1 from "public"."workspaces") as ws`)) as unknown as {
-      logins: number;
-      anchor: boolean;
-      ws: boolean;
-    }[];
-    if (!brain || Number(brain.logins) !== 1 || !brain.anchor || brain.ws) {
-      throw new RuntimeFaultError(
-        "the first owner's exit refused: only on a brain whose one login is this new owner, with no workspaces yet",
-      );
-    }
-    return fn();
+    const rows = await executeAsMigrator<FirstOwnerSwitchRow>(
+      sql`select * from "public"."mantle_ws_migrate_locked"()`,
+      {
+        sql: sql`
+          select (select count(*) from auth.users) = 1
+             and exists (select 1 from auth.users where id = ${loginId}::uuid and is_owner)
+             and not exists (select 1 from "public"."workspaces") as ok`,
+        refusal:
+          "the first owner's exit refused: only on a brain whose one login is this new owner, with no workspaces yet",
+      },
+    );
+    return rows.map((r) => ({ ...r, n: Number(r.n) }));
   });
 }

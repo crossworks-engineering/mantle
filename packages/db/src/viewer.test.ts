@@ -774,6 +774,36 @@ describe('the request scope (workspaces W6a)', () => {
     });
   });
 
+  it('noteRequestSystem refuses the first owner`s exit and an unknown value at run time, whatever a cast says', async () => {
+    const v = await import('./viewer');
+    const a = await import('./actor');
+    for (const why of ['first-owner', 'admin-write', '', undefined]) {
+      const seen = await v.runInRequestSlot(async () => {
+        const before = a.currentActor();
+        let threw = '';
+        try {
+          v.noteRequestSystem(why as never);
+        } catch (err) {
+          threw = (err as Error).message;
+        }
+        return {
+          threw,
+          outcome: v.currentRequestOutcome(),
+          route: v.systemRouteNow(),
+          same: a.currentActor() === before,
+        };
+      });
+      expect(seen).toEqual({
+        threw: `noteRequestSystem refused '${String(why)}': only 'area' and 'login-self'`,
+        outcome: null,
+        route: null,
+        same: true,
+      });
+    }
+    // Outside a slot too: the refusal comes before the slot check.
+    expect(() => v.noteRequestSystem('first-owner' as never)).toThrow(/refused 'first-owner'/);
+  });
+
   it('narrowsWorkspaceScope: subsets of the same login only', async () => {
     const v = await import('./viewer');
     const outer = scopeOf([W1, W2], [W1]);

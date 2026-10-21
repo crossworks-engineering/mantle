@@ -394,9 +394,21 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
   return true;
 }
 
+/** The exits noteRequestSystem may note: the first owner's has its own
+ *  entry (enterFirstOwnerExit), for one call, never the rest of a request. */
+const NOTED_REQUEST_SYSTEM: ReadonlySet<string> = new Set(['area', 'login-self']);
+
 /** Record that the guard let this request through on the system pool (the
- *  route sweep asserts it is an Admin user's). No-op outside a slot. */
+ *  route sweep asserts it is an Admin user's). No-op outside a slot. Throws
+ *  on any `why` but 'area' and 'login-self', whatever a cast says: the
+ *  first owner's exit or an unknown value would bind a system actor (one
+ *  with no reason) for the rest of the request. */
 export function noteRequestSystem(why: Exclude<RequestSystemWhy, 'first-owner'>): void {
+  if (typeof why !== 'string' || !NOTED_REQUEST_SYSTEM.has(why)) {
+    throw new RuntimeFaultError(
+      `noteRequestSystem refused '${String(why)}': only 'area' and 'login-self'`,
+    );
+  }
   const slot = requestSlots.getStore();
   if (!slot || slot.scope) return;
   slot.outcome = { kind: 'system', why };

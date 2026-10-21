@@ -131,11 +131,18 @@ describe.skipIf(!URL)('the first sign-up on a fresh brain, actor check on', () =
 
   it('the exit refuses outside a request, in a request a login made, inside another exit, and on a brain with no login', async () => {
     const m = await import('@mantle/db');
+    // The exit takes no function: one passed past the type, by a cast, is
+    // never run (the exit runs the switch and nothing else).
     const ran: string[] = [];
     const sw = (id: string) =>
-      m.firstOwnerSwitch(id, async () => {
+      (
+        m.firstOwnerSwitch as unknown as (
+          id: string,
+          fn: () => Promise<unknown>,
+        ) => Promise<unknown>
+      )(id, async () => {
         ran.push(id);
-        return 'switched';
+        return 'other work';
       });
     const id = randomUUID();
     // A worker, a boot step, a script, a test's bare call: no request.
@@ -219,22 +226,14 @@ describe.skipIf(!URL)('the first sign-up on a fresh brain, actor check on', () =
   it('the exit refuses on the switched brain, its owner`s id included, and runs nothing', async () => {
     const m = await import('@mantle/db');
     const [owner] = await su<{ id: string }[]>`select id::text as id from auth.users`;
-    const ran: string[] = [];
+    const before = await su`select id, bridge_key from workspaces order by id`;
     for (const id of [owner!.id, randomUUID()]) {
-      expect(
-        await outcome(
-          inRequest(() =>
-            m.firstOwnerSwitch(id, async () => {
-              ran.push(id);
-            }),
-          ),
-        ),
-      ).toEqual({
+      expect(await outcome(inRequest(() => m.firstOwnerSwitch(id)))).toEqual({
         refused:
           "the first owner's exit refused: only on a brain whose one login is this new owner, with no workspaces yet",
       });
     }
-    expect(ran).toEqual([]);
+    expect(await su`select id, bridge_key from workspaces order by id`).toEqual(before);
   });
 
   it('the boot`s switch on the switched brain changes nothing (unchanged)', async () => {

@@ -183,4 +183,16 @@ describe('the actor binders (eslint-rules/actor-binders.mjs)', () => {
     ].join('\n');
     expect(binderSites(text)).toBe(5);
   });
+
+  it('counts the exit helper runSystemExit: each exit through it binds an actor', () => {
+    const text = [
+      'function runSystemExit<T>(entry: E, actor: Actor, fn: () => Promise<T>): Promise<T> {',
+      '  return systemRoutes.run(entry, () => runAsActor(actor, fn));',
+      '}',
+      '// runSystemExit(entry, actor, fn)',
+      'return runSystemExit(entry, systemActor(reason), fn);',
+      'const run = () => runSystemExit<number>(entry, actor, fn);',
+    ].join('\n');
+    expect(binderSites(text)).toBe(3);
+  });
 });

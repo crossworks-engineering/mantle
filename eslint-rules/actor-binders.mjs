@@ -2,8 +2,10 @@
  * actor-binders (workspaces arch A2a): where code names who it runs as. Each
  * product file that binds an actor is listed with its number of binder
  * calls: runAsActor, runAsSystem, runReadPathWrite, runInActorSlot,
- * setSlotActor, setRequestActor, runWithoutActor, actorStore.run and
- * actorStore.enterWith. A call with type arguments counts too, nested ones
+ * setSlotActor, setRequestActor, runWithoutActor, runSystemExit (viewer.ts's
+ * private exit helper: each exit through it binds a system actor of its
+ * own, so a new one moves the pin), actorStore.run and actorStore.enterWith.
+ * A call with type arguments counts too, nested ones
  * included (`runAsSystem<Array<Row>>(`). Comments and the helpers' own
  * definitions do not count. eslint-rules/process-entries.test.ts fails on
  * any other count, so a binder only appears, moves or goes with a reviewed
@@ -16,7 +18,7 @@ const TYPE_ARGS = '<(?:[^<>()]|<(?:[^<>()]|<[^<>()]*>)*>)*>';
 
 const BINDER_CALL = new RegExp(
   '(?<!function\\s+)\\b(?:runAsActor|runAsSystem|runReadPathWrite|runInActorSlot|' +
-    `setSlotActor|setRequestActor|runWithoutActor)(?:${TYPE_ARGS})?\\(|` +
+    `setSlotActor|setRequestActor|runWithoutActor|runSystemExit)(?:${TYPE_ARGS})?\\(|` +
     '\\bactorStore\\.(?:run|enterWith)\\(',
   'g',
 );
@@ -53,8 +55,11 @@ export const ACTOR_BINDER_PINS = {
   // 9 since arch A6b: systemWork, system work that refuses a workspace scope,
   // binds system(reason) as asSystem does. 7 to 6 with the first owner's
   // exit: asSystem, systemWork and that exit bind through one helper
-  // (runSystemExit).
-  'packages/db/src/viewer.ts': 6,
+  // (runSystemExit). 6 to 9 in the fresh-signup hardening round, measured:
+  // no new binder, the count now sees that private helper's calls (asSystem,
+  // systemWork, the first owner's exit: 3), so a fourth exit through it
+  // moves this pin as a fourth runAsActor call would have.
+  'packages/db/src/viewer.ts': 9,
   'packages/files/src/docs.ts': 1,
   'packages/files/src/ops/shared.ts': 1,
   // An MCP connection's private workspace, made as the connection's login

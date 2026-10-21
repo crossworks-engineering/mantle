@@ -193,35 +193,73 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   },
 });
 
+/** A check `executeAsMigrator` runs first, in the same transaction: a
+ *  select whose first row's `ok` must be true, else it throws `refusal`
+ *  and the query never runs (the transaction rolls back). */
+export type MigratorGuard = { readonly sql: SQL; readonly refusal: string };
+
 /**
- * Work the runtime role may not do (arch A9): the workspaces switch runs
- * DDL (mantle_ws_migrate_locked, at the first owner and at boot). With
+ * Work the runtime role may not do (arch A9): DDL. With
  * MANTLE_DB_RUNTIME_ROLE on it runs on the migrator's URL (DATABASE_URL,
  * the role that runs the migrations) in one transaction of its own, with
  * the actor bound now, on a connection opened for it and closed after.
  * Off, it runs on `db` in a transaction of its own, which sends the actor
- * bound now first, as every transaction does: the switch is a bare select,
- * which outside a transaction goes with no actor (only a write does), and
- * the check on refuses the rows it writes (a fresh install's first owner
- * was never served). Only the switch calls it: every other statement of the
- * app runs as the runtime role (runtime-role.ts).
+ * bound now first, as every transaction does: the workspaces switch is a
+ * bare select, which outside a transaction goes with no actor (only a
+ * write does), and the check on refuses the rows it writes (a fresh
+ * install's first owner was never served). `guard`, when given, runs first
+ * in that same transaction (MigratorGuard).
+ *
+ * Its callers: the workspaces switch (mantle_ws_migrate_locked, at boot,
+ * at the terminal wizard's first owner, and inside the first owner's exit,
+ * first-owner-exit.ts, with its brain check as the guard), and
+ * server/web/scripts/backfill-conversation.ts (ALTER TABLE ... DISABLE and
+ * ENABLE TRIGGER, which run in a transaction). Every other statement of the
+ * app runs as the runtime role (runtime-role.ts). Both paths run in a
+ * transaction, so a statement that may not (CREATE INDEX CONCURRENTLY,
+ * VACUUM) fails through it with the role off as well as on; no caller
+ * sends one (concurrent-indexes.ts runs its own).
  */
 export async function executeAsMigrator<T extends Record<string, unknown>>(
   query: SQL,
+  guard?: MigratorGuard,
 ): Promise<T[]> {
   if (!runtimeRoleOn()) {
-    return [...((await db.transaction((tx) => tx.execute(query))) as unknown as T[])];
+    return (await db.transaction((tx) =>
+      guarded((q: SQL) => tx.execute(q), query, guard),
+    )) as unknown as T[];
   }
   checkActorBound('executeAsMigrator');
-  const { sql: text, params } = new PgDialect().sqlToQuery(query);
+  const dialect = new PgDialect();
   const rows = await withMigratorConnection((conn) =>
     conn.begin(async (tx) => {
       const actor = actorParams();
       if (actor) await tx.unsafe(`${ACTOR_SQL_TAG} ${setActorSql(actor)}`);
-      return [...(await tx.unsafe(text, params as never[]))];
+      return guarded(
+        async (q) => {
+          const { sql: text, params } = dialect.sqlToQuery(q);
+          return [...(await tx.unsafe(text, params as never[]))];
+        },
+        query,
+        guard,
+      );
     }),
   );
   return rows as unknown as T[];
+}
+
+/** `guard` (when given) then `query`, each through `run`, in the caller's
+ *  one transaction: a refused guard throws and the query never runs. */
+async function guarded(
+  run: (q: SQL) => Promise<readonly unknown[]>,
+  query: SQL,
+  guard: MigratorGuard | undefined,
+): Promise<unknown[]> {
+  if (guard) {
+    const [g] = (await run(guard.sql)) as { ok?: unknown }[];
+    if (g?.ok !== true) throw new RuntimeFaultError(guard.refusal);
+  }
+  return [...(await run(query))];
 }
 
 export type Db = PostgresJsDatabase<typeof schema>;

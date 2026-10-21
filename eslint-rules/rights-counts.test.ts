@@ -55,12 +55,17 @@ describe('requestSystemExits', () => {
   it('counts each use of firstOwnerSwitch as the first-owner exit; its entry only in its own file', () => {
     const use = `
       import { firstOwnerSwitch } from '@mantle/db';
-      export async function f(id: string) { return firstOwnerSwitch(id, () => run()); }
+      export async function f(id: string) { return firstOwnerSwitch(id); }
     `;
     expect(exits(use, "noteRequestSystem('area');")).toEqual({
       byReason: { area: 1, 'first-owner': 1 },
       problems: [],
     });
+    // Its login id passed on from a parameter is not a reason: the
+    // function's own callers are not followed, each call site counts once.
+    const callers = "import { f } from './f0'; f('a'); f('b'); f('c');";
+    expect(exits(use, callers).byReason).toEqual({ 'first-owner': 1 });
+    expect(exits(use, use.replace('f(', 'g(')).byReason).toEqual({ 'first-owner': 2 });
     const r = exits("import { enterFirstOwnerExit } from '@mantle/db/viewer';");
     expect(r.byReason).toEqual({});
     expect(r.problems).toEqual(['f0.ts: names enterFirstOwnerExit (only first-owner-exit.ts may)']);

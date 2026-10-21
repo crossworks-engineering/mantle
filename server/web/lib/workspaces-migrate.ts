@@ -34,12 +34,14 @@ import {
   db,
   executeAsMigrator,
   firstOwnerSwitch,
+  type FirstOwnerSwitchRow,
   hasRequestSlot,
   loginScopeFor,
   systemPoolTxInScope,
 } from '@mantle/db';
 
-export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
+/** A row of the switch: the same shape the first owner's exit returns. */
+export type WsMigrateRow = FirstOwnerSwitchRow;
 
 /** Migrate this brain if it has no workspaces and nothing stops it. The
  *  switch runs DDL, which the runtime role may not (arch A9): on the
@@ -94,14 +96,15 @@ function failure(when: string, err: unknown): void {
  *  next boot tries again, and the integrity rows show what is left).
  *  `loginId`: the first owner, just made. Inside its signup request the
  *  switch takes the first owner's exit (firstOwnerSwitch,
- *  system(first-owner-attach)), which refuses any other request or brain;
+ *  system(first-owner-attach)), which runs the same switch itself and
+ *  refuses any other request or brain;
  *  outside a request (the terminal wizard, scripts/onboard.ts) it runs as
  *  that process's own actor, as the boot's runs as its systemWork. */
 export async function migrateWorkspacesQuietly(when: string, loginId?: string): Promise<void> {
   try {
     const rows =
       loginId !== undefined && hasRequestSlot()
-        ? await firstOwnerSwitch(loginId, () => migrateWorkspaces())
+        ? await firstOwnerSwitch(loginId)
         : await migrateWorkspaces();
     const skip = rows.find((r) => r.section === 'skip');
     if (skip && skip.metric !== 'already migrated') {
