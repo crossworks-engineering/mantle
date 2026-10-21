@@ -18,6 +18,7 @@ Desktop. Engine names in code stay as they are (`MANTLE_*`, `@mantle/*`,
 | `mantle-logo-os.svg` | The mantleOS wordmark: script "mantle" and an "OS" tag (1829x441). | The default wherever there is horizontal room: site and docs headers, READMEs, decks. |
 | `mantle-logo-os-sun-icon.svg` | Icon and wordmark in one square (2000x2000). | Only an occasional big square placement. Never small. |
 | `mantle-logo-design.af` | The Affinity design source for all of the above. | Edit the marks here, then re-export. |
+| `mantle-colors.svg` | The brand palette: eleven swatches. | The reference for every brand colour (see Colours). |
 
 - **SVG is the master.** All three are true vectors with the text converted to
   curves, no embedded bitmaps and no external references, so they render the
@@ -39,16 +40,32 @@ Desktop. Engine names in code stay as they are (`MANTLE_*`, `@mantle/*`,
 
 ## Colours
 
-The marks are drawn in six colours:
+The brand palette is the eleven colours in `mantle-colors.svg`. The marks
+use five of them; the rest are for surfaces, text and charts.
 
-| hex | where |
-|---|---|
-| `#2D1500` brand brown | Ink on cream. |
-| `#FDE7BC` brand cream | The "OS" letters, and the icon background where one is needed. |
-| `#EB9F13` amber | The sun's top band. |
-| `#E46E08` sunset orange | The middle band. |
-| `#C83C04` rust | The sun, the bottom band, the "mantle" script and the OS tag. |
-| `#5C1E02` deep rust | The badge's rim. |
+| hex | name | in the marks |
+|---|---|---|
+| `#FDE7BC` | cream | The "OS" letters, and the icon background where one is needed. |
+| `#F0C88C` | dune | |
+| `#EB9F13` | gold | The sun's top band. |
+| `#E46E08` | flame | The middle band. |
+| `#C83C04` | rust | The sun, the bottom band, the "mantle" script and the OS tag. |
+| `#5C1E02` | bark | The badge's rim. |
+| `#341A00` | deep brown | |
+| `#120F0E` | night | |
+| `#BAAE94` | grey sand | |
+| `#52524C` | grey olive | |
+| `#3C3C3F` | grey slate | |
+
+There is no other brown: `#2D1500`, listed here before, is not a brand
+colour (it was the old Jackdaw theme's text colour, and no mark uses it).
+
+The two cool greys (olive is green, slate is blue-violet) sit outside the
+warm family, so the MantleOS theme does not use them as they are; it re-cuts
+them at the same lightness on the warm hue. The theme's blended colours
+(paper `#FAEDCF`, rust for text `#B23A06`, the warm borders and surfaces)
+live in `packages/share-ui/themes/seeds.mjs`, the `jackdaw` entry labelled
+MantleOS.
 
 ## Don't
 
