@@ -261,6 +261,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_contact(uuid,uuid,uuid)']!,
   'mantle_ws_set_landing(uuid,uuid,uuid)':
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_landing(uuid,uuid,uuid)']!,
+  'mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

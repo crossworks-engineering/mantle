@@ -223,6 +223,52 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     expect(await x(sql`select 1 from assistant_messages where agent_id = ${id}`)).toHaveLength(0);
   });
 
+  it("assistants: POST block and unpair of a chat on the assistant's bot (its definer on the narrow role)", async () => {
+    // Not a content write: the measure of the narrow role's EXECUTE on
+    // mantle_tg_chat_set (0313; runtime-role.ts NARROW_SYSTEM_FUNCTIONS).
+    // The area route's exit runs the definer on the narrow route; a refused
+    // EXECUTE is a narrow denial, which fails the test (vitest.setup.ts).
+    const agent = randomUUID();
+    const channel = randomUUID();
+    const account = randomUUID();
+    const chat = randomUUID();
+    await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt)
+      values (${agent}, ${owner}, ${`${tag}-tg`}, ${`${tag}-tg`}, 'test/model', 'p')`);
+    await x(sql`insert into channels (id, owner_id, agent_id, type, display_name, credentials_enc)
+      values (${channel}, ${owner}, ${agent}, 'telegram', ${`@${tag}_tg`}, '\\x00')`);
+    await x(sql`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
+      values (${account}, ${owner}, ${`${tag}_tg_bot`}, 'inbox.telegram_test', ${channel})`);
+    await x(sql`insert into telegram_chats
+        (id, account_id, user_id, telegram_chat_id, chat_type, title, allowlist_status, login_id)
+      values (${chat}, ${account}, ${owner}, '9001', 'private', 'Pat', 'allowed', ${owner})`);
+    const status = async () =>
+      (
+        await x<{ s: string; login: string | null }>(sql`
+          select allowlist_status::text as s, login_id::text as login
+            from telegram_chats where id = ${chat}`)
+      )[0];
+    const block = await call(`/api/agents/${agent}/telegram/chats`, 'POST', {
+      chatId: chat,
+      status: 'denied',
+    });
+    clean(block);
+    expect(block.status, block.text).toBe(200);
+    expect(await status()).toEqual({ s: 'denied', login: null });
+    const unpair = await call(`/api/agents/${agent}/telegram/chats`, 'POST', {
+      chatId: chat,
+      status: 'pending',
+    });
+    clean(unpair);
+    expect(unpair.status, unpair.text).toBe(200);
+    expect(await status()).toEqual({ s: 'pending', login: null });
+    // Another bot's chat id under this assistant: not found, nothing moves.
+    const other = await call(`/api/agents/${agent}/telegram/chats`, 'POST', {
+      chatId: randomUUID(),
+      status: 'denied',
+    });
+    expect(other.status, other.text).toBe(404);
+  });
+
   /** A builtin tool row of the owner (its handler is the builtin's). */
   const seedTool = async (slug: string) => {
     const { BUILTIN_TOOLS } = await import('@mantle/tools');

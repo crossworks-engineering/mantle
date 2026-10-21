@@ -99,9 +99,13 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     snapshot_of: of,
     extract_skipped: { reason: 'snapshot_copy', at: new Date().toISOString() },
   });
+  // As snapshot-copies.ts makes one: its system work (a raced copy's home
+  // is mantle_file_restamp_home's, which takes that actor only, 0313).
   const makeCopy = <T>(home: string, of: string, fn: () => Promise<T>) =>
-    sys(() =>
-      m.withCreateHome({ createWs: home, privateWs: null, quiet: true, stamp: stampOf(of) }, fn),
+    m.systemWork(
+      () =>
+        m.withCreateHome({ createWs: home, privateWs: null, quiet: true, stamp: stampOf(of) }, fn),
+      'snapshot-copies',
     );
   /** A folded member file (W6b): its row in `files`, its bytes in its old
    *  space's directory. */

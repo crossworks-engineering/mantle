@@ -166,6 +166,22 @@ vi.mock('@mantle/db', async (importOriginal) => {
           ];
         };
       }
+      // A Telegram chat's block or unpair is its definer's, in a
+      // transaction (mantle_tg_chat_set, 0313): it finds no chat here, as
+      // the reads above find no row (main read the chat first, on the
+      // system pool, and found none). Any other transaction wants a
+      // database and throws, as the real one does.
+      if (k === 'transaction') {
+        return async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            execute: async (stmt: { queryChunks?: unknown[] }) => {
+              if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_tg_chat_set')) {
+                return [];
+              }
+              throw new Error('DATABASE_URL must be set');
+            },
+          });
+      }
       return Reflect.get(t, k);
     },
   });
