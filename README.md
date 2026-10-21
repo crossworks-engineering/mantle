@@ -196,10 +196,10 @@ the tour of how it is built is [docs/architecture.md](./docs/architecture.md).
 
 Counted from this tree on every release. A fresh brain ships with 14 agents, 21 skills, 295 built-in tools and 13 background AI workers, all on one Postgres database. Test counts are cases *declared*; table-driven tests expand to more when they run.
 
-Version 0.300.126: 6,640 commits and 630 releases since 2026-05-14, about 42 commits a day.
+Version 0.300.127: 6,642 commits and 630 releases since 2026-05-14, about 42 commits a day.
 
 ```
-commits/week, last 23 weeks   ▂▃▃▂▁▁▃▂▂▂▃▂▂▂▂▂▂▁▁▆▄▇█   peak 1186
+commits/week, last 23 weeks   ▂▃▃▂▁▁▃▂▂▂▃▂▂▂▂▂▂▁▁▆▄▇█   peak 1188
 ```
 
 <!-- stats:end -->
