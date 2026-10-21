@@ -290,8 +290,8 @@ main in `a10-content-changed.main.json`):
   on main the reuse ran after the key pre-flight, so a missing cloud key
   left a cell commit unindexed.
 
-**Follow-up in jackdaw.** The dev-tools catalog text that describes what a
-write re-indexes lives in the frontend repo (crossworks-engineering/jackdaw)
+**Follow-up in mantle-client.** The dev-tools catalog text that describes what a
+write re-indexes lives in the frontend repo (crossworks-engineering/mantle-client)
 and still describes main before A10 #7; it should be brought in line with
 this section (a rename re-embeds, never a model call).
 

@@ -196,5 +196,5 @@ jobs:
       - name: Build (server/web)
         run: pnpm -C server/web build
 
-  # The UI e2e suite moved to the jackdaw repo with the frontend (2026-08-13
+  # The UI e2e suite moved to the mantle-client repo with the frontend (2026-08-13
   # split); its CI job left with it. Server-side coverage stays in `verify`.

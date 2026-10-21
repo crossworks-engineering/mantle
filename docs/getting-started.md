@@ -9,9 +9,9 @@ a running box is [`update-prod.md`](./update-prod.md).
 
 > **This repo is the brain only.** Since the 2026-08-13 split the owner UI
 > (sign-up, onboarding, every owner screen) lives in the separate
-> [jackdaw](https://github.com/crossworks-engineering/jackdaw) repo. `pnpm start`
+> [mantle-client](https://github.com/crossworks-engineering/mantle-client) repo. `pnpm start`
 > here gives you the API, the MCP server and the workers on
-> http://localhost:3000, and no screen. Run the UI from a jackdaw checkout with
+> http://localhost:3000, and no screen. Run the UI from a mantle-client checkout with
 > `pnpm dev:fe` there, pointed at this brain.
 
 ## Layout
@@ -106,7 +106,7 @@ That's the brain. **Sign-up and the onboarding wizard live in the UI**, so now
 run jackdaw against it:
 
 ```bash
-git clone https://github.com/crossworks-engineering/jackdaw && cd jackdaw
+git clone https://github.com/crossworks-engineering/mantle-client && cd mantle-client
 pnpm install
 pnpm dev:fe     # the owner UI against your brain; its README documents the env file
 ```

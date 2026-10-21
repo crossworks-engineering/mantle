@@ -221,7 +221,7 @@ Builds + pushes the **server image**, `<youruser>/mantle-server:v1`. Every
 brain service (web, api, sandboxd, the workers, migrate) runs from that same
 image, differing only in the compose `command:`. The media sidecar is a
 separate image (`<ns>/mantle-media`, from `infra/media-sidecar`), and the owner
-UI image (`<ns>/mantle-client`) is built by the jackdaw repo, not here. Use a real tag (`v1`, a date, or a git sha), `latest`
+UI image (`<ns>/mantle-client`) is built by the mantle-client repo, not here. Use a real tag (`v1`, a date, or a git sha), `latest`
 is fine but harder to roll back from.
 
 > **Automated alternative (the official images).** A push of a `v*` tag runs

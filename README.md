@@ -14,12 +14,12 @@
 [![commit activity](https://img.shields.io/github/commit-activity/m/crossworks-engineering/mantle?label=commits%2Fmonth&logo=git&logoColor=white)](https://github.com/crossworks-engineering/mantle/commits/main)
 [![last commit](https://img.shields.io/github/last-commit/crossworks-engineering/mantle?label=last%20commit&logo=github)](https://github.com/crossworks-engineering/mantle/commits/main)
 
-> **Mantle and Jackdaw.** Jackdaw is the app: the web and desktop interface you
-> use. Mantle is the engine underneath it: the memory, the agents, and the API.
-> This repo is Mantle. The app lives in
-> [crossworks-engineering/jackdaw](https://github.com/crossworks-engineering/jackdaw),
-> and one Jackdaw can connect to many Mantle brains. If you only use it, think
-> "Jackdaw". If you self-host it or build on it, you work with Mantle.
+> **MantleOS.** MantleOS Desktop is the app: the web and desktop interface you
+> use. Underneath it is the brain: the memory, the agents, and the API.
+> This repo is the brain (the engine, still called Mantle in code). The app
+> lives in
+> [crossworks-engineering/mantle-client](https://github.com/crossworks-engineering/mantle-client),
+> and one MantleOS Desktop can connect to many brains.
 
 **A second brain that's actually awake.** Most AI assistants are a chat window
 with amnesia; they wait for you to ask. Mantle ingests your emails, files,
@@ -200,7 +200,7 @@ MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercon
 
 The one-liner asks how the brain should be reached (a domain with HTTPS,
 this machine only, or the machine's network) and what to install, then
-brings up both stacks: the brain and the owner UI ([Jackdaw](https://github.com/crossworks-engineering/jackdaw),
+brings up both stacks: the brain and the owner UI ([MantleOS Desktop](https://github.com/crossworks-engineering/mantle-client),
 a separate container). `MANTLE_YES=1` skips the questions. Open the
 address it prints, create your account, and the onboarding wizard takes
 it from there: model keys, your assistant's personality, who you are.
@@ -223,10 +223,10 @@ cp .env.example server/web/.env.local   # two generated secrets, see the guide
 pnpm start                              # the brain on :3000, no screen
 ```
 
-The owner UI is the [jackdaw](https://github.com/crossworks-engineering/jackdaw)
+The owner UI is the [mantle-client](https://github.com/crossworks-engineering/mantle-client)
 repo: clone it, `pnpm install`, `pnpm dev:fe` against your brain, and sign
-up there. The desktop app ships from jackdaw's
-[Releases](https://github.com/crossworks-engineering/jackdaw/releases).
+up there. The desktop app ships from mantle-client's
+[Releases](https://github.com/crossworks-engineering/mantle-client/releases).
 
 Embeddings default to an online model you pick in onboarding; prefer
 everything local? There's an opt-in local embedder, see

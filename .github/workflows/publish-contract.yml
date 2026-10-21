@@ -1,6 +1,6 @@
 # Publishes the contract packages (@crossworks/{client-types,content-core,
 # voice-client,share-ui,app-build}) to npm on every release tag, so the
-# jackdaw repo (the split frontend) can consume the server's wire contract as
+# mantle-client repo (the split frontend) can consume the server's wire contract as
 # ordinary npm deps (split plan P1, docs/plans/jackdaw-repo-split.md).
 #
 # Workspace names stay @mantle/*; scripts/publish-contract.mjs renames to the

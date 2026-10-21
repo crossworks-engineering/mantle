@@ -1,11 +1,12 @@
 # server/web: the HTTP API, workers, and render surfaces
 
 This tier is the brain's public face over HTTP. The owner UI is **not** here:
-it lives in the jackdaw repo (`crossworks-engineering/jackdaw`) since the
+it lives in the mantle-client repo (`crossworks-engineering/mantle-client`, named
+jackdaw until 2026-10-21) since the
 2026-08-13 split and consumes this repo's published contract packages
 (`@crossworks/{client-types,content-core,voice-client,share-ui,app-build}`).
 UI conventions, the style guide and the shadcn/Tailwind rules live there —
-`jackdaw/docs/ui-style-guide.md` is authoritative for anything visual.
+`mantle-client/docs/ui-style-guide.md` is authoritative for anything visual.
 
 What is here:
 

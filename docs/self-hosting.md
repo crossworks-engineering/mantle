@@ -322,7 +322,7 @@ gate), so a schema-bearing release applies itself. The whole roll is
 **Versions: two streams, one pairing.** The server image
 (`mantle-server`) is released from the mantle repo (`vX.Y.Z`); the owner
 UI (`mantle-client`) is released from the
-[jackdaw repo](https://github.com/crossworks-engineering/jackdaw) on its
+[mantle-client repo](https://github.com/crossworks-engineering/mantle-client) on its
 own stream (`vA.B.C`). Each server release embeds the client tag it was
 tested with; the in-app updater applies that pairing automatically. For
 manual updates: set `MANTLE_CLIENT_IMAGE_TAG` in `.env` to the paired tag

@@ -34,10 +34,10 @@ export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
 /** The owner UI ships from its own repo (and its own version stream) since
  *  the 2026-08 split — the check watches BOTH, or UI releases are invisible. */
-export const CLIENT_RELEASES_REPO = 'crossworks-engineering/jackdaw';
+export const CLIENT_RELEASES_REPO = 'crossworks-engineering/mantle-client';
 export const CLIENT_RELEASES_URL = `https://github.com/${CLIENT_RELEASES_REPO}/releases`;
 
-/** The jackdaw client tag this server build was released against — the
+/** The mantle-client tag this server build was released against — the
  *  "release pair". Baked into the image beside the canonical compose files
  *  (Dockerfile → /app/release/client-tag, from client-pair.tag at the repo
  *  root); the updater sidecar reads the same file from the TARGET image when

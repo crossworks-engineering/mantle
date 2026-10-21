@@ -4,7 +4,7 @@
 #   git push origin main v0.20.71
 #
 # 1. Builds BOTH Mantle images (v0.200.0 split — mantle-server runs web/agent/
-#    workers/migrate) for amd64 + (the owner-UI image builds in the jackdaw repo)
+#    workers/migrate) for amd64 + (the owner-UI image builds in mantle-client)
 #    arm64, each (target, arch) on its OWN native GitHub runner in parallel,
 #    then merges each target's digests into a multi-arch manifest pushed to
 #    Docker Hub as <namespace>/mantle-server:<tag> and :latest.

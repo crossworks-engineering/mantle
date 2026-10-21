@@ -4,7 +4,7 @@ MantleOS Desktop, for Linux, macOS and Windows, opens a brain that is already in
 
 ## Install
 
-Download the installer for your system from the [MantleOS Desktop releases page](https://github.com/crossworks-engineering/jackdaw/releases):
+Download the installer for your system from the [MantleOS Desktop releases page](https://github.com/crossworks-engineering/mantle-client/releases):
 
 | System | File |
 |---|---|

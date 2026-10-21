@@ -2,7 +2,7 @@
 
 > A fresh Mantle install boots into a working brain with **no SQL and no env
 > editing**: install (or `pnpm start` the brain and `pnpm dev:fe` the UI from a
-> [jackdaw](https://github.com/crossworks-engineering/jackdaw) checkout) → open
+> [mantle-client](https://github.com/crossworks-engineering/mantle-client) checkout) → open
 > the browser → create an account → walk a resumable wizard that adds model
 > keys, provisions the assistant + specialists + AI workers, runs a sanity check, captures the brain's **purpose**, and shapes
 > the assistant's personality. Everything it sets up is editable later under

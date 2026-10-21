@@ -3,7 +3,7 @@
 #   --target server → mantle-server: every backend service — API/web host,
 #     DBOS runner, the workers, one-shot migrate — same image, different
 #     compose `command:` per service (docker-compose.yml).
-#   (the owner-UI / client image moved to the jackdaw repo at the split)
+#   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
 # One MANTLE_IMAGE_TAG drives both composes — releases are lockstep.
@@ -85,7 +85,7 @@ RUN apt-get update \
     && npm install -g pnpm@11.28.5 \
     # ELECTRON_SKIP_BINARY_DOWNLOAD is vestigial: it existed because
     # client/desktop was a workspace member and dragged electron's ~100MB
-    # binary into this image. The desktop app moved to the jackdaw repo on
+    # binary into this image. The desktop app moved to the mantle-client repo on
     # 2026-08-13 and this workspace is server/* + packages/* only, so nothing
     # depends on electron any more. Kept as a cheap guard in case a transitive
     # dep ever reintroduces it.
@@ -268,5 +268,5 @@ EXPOSE 3000
 # `pnpm exec next start` CMD and every worker service).
 CMD ["pnpm", "-C", "server/web", "exec", "tsx", "server/main.ts"]
 
-# The owner-UI (client) image moved to the jackdaw repo at the split
-# (2026-08-13): https://github.com/crossworks-engineering/jackdaw
+# The owner-UI (client) image moved to the mantle-client repo at the split
+# (2026-08-13): https://github.com/crossworks-engineering/mantle-client

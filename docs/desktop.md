@@ -6,15 +6,15 @@ the things a browser tab can't: OS notifications, `mantle://` deep links, a
 tray, and auto-update. Design history and decisions:
 [desktop-app-plan.md](_archive/desktop-app-plan.md). The desktop shell's
 source and developer docs live in the
-[jackdaw repo](https://github.com/crossworks-engineering/jackdaw) (its
+[mantle-client repo](https://github.com/crossworks-engineering/mantle-client) (its
 `client/desktop` package), not in this repo.
 
 ## Install
 
 Installers are attached to each
-[jackdaw GitHub release](https://github.com/crossworks-engineering/jackdaw/releases):
+[mantle-client GitHub release](https://github.com/crossworks-engineering/mantle-client/releases):
 a Debian package and AppImage for Linux, an arm64 dmg and zip for macOS, and a
-Windows installer, built by CI on the jackdaw tag (its own version stream; the
+Windows installer, built by CI on the mantle-client tag (its own version stream; the
 server release that pairs with it is recorded in the mantle repo's
 `client-pair.tag`). macOS builds are currently unsigned (Gatekeeper will ask
 for a right-click → Open on first launch, and self-update is disabled there

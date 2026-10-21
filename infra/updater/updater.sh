@@ -503,7 +503,7 @@ refresh_scripts() {
 
 # ── release pair: which owner-UI tag rides with a server roll ────────────────
 # Since the repo split the client image versions on its OWN stream (built by
-# the jackdaw repo). Each server image embeds the client tag it was released
+# the mantle-client repo). Each server image embeds the client tag it was released
 # against at /app/release/client-tag; a server roll moves the client to that
 # tag so the pair a user runs is always one that was tested together.
 

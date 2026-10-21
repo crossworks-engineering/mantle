@@ -89,8 +89,10 @@ which would re-fire the tag-triggered image builds.
   with why) fails `pnpm arch:check`, so `pnpm verify` and CI go red. Add it
   to one of them, with the handover, and re-pin `historyCodeComments` if
   the count moves.
-- **The frontend lives in its own repo since 2026-08-13**:
-  [crossworks-engineering/jackdaw](https://github.com/crossworks-engineering/jackdaw)
+- **The frontend lives in its own repo since 2026-08-13** (named jackdaw
+  until 2026-10-21, now mantle-client; never recreate a repo called jackdaw,
+  installed desktop apps reach the new name through GitHub's redirect):
+  [crossworks-engineering/mantle-client](https://github.com/crossworks-engineering/mantle-client)
   (the owner UI + Electron shell + web-ui kit + UI e2e). It consumes this
   repo's published contract packages (@crossworks/{client-types,content-core,
   voice-client,share-ui,app-build}). Plain `pnpm dev` here runs the BRAIN

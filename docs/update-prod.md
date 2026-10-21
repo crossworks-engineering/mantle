@@ -42,8 +42,8 @@ no source tree needed on the VPS.
 1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
    extent), commit the `release: vX.Y.Z`, `git tag vX.Y.Z`, `git push origin main
 vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
-   `client-pair.tag` at the repo root names the jackdaw client tag this release
-   is tested with — the updater rolls the owner UI to it. When a new jackdaw
+   `client-pair.tag` at the repo root names the mantle-client tag this release
+   is tested with — the updater rolls the owner UI to it. When a new mantle-client
    release should reach the fleet, bump this file and cut a (patch) mantle
    release; that IS the distribution mechanism. (The reverse order at a
    contract change: mantle first — the tag publishes the npm contracts — then

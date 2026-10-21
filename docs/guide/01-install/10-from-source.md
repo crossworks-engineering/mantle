@@ -47,7 +47,7 @@ This repo is the brain only: it serves the API on `http://localhost:3000` and ha
 1. In another terminal, next to the mantle checkout:
 
    ```bash
-   git clone https://github.com/crossworks-engineering/jackdaw && cd jackdaw
+   git clone https://github.com/crossworks-engineering/mantle-client && cd mantle-client
    pnpm install
    echo "MANTLE_REMOTE=http://localhost:3000" > client/web/.env.detached.local
    pnpm dev:fe --port 3001

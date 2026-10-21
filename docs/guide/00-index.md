@@ -43,4 +43,4 @@ Each screen in the app also has its own help page, under **Using MantleOS > Scre
 
 ## Get the source
 
-The MantleOS server is open source on [GitHub](https://github.com/crossworks-engineering/mantle). The web app and MantleOS Desktop are in their own [repository](https://github.com/crossworks-engineering/jackdaw).
+The MantleOS server is open source on [GitHub](https://github.com/crossworks-engineering/mantle). The web app and MantleOS Desktop are in their own [repository](https://github.com/crossworks-engineering/mantle-client).
