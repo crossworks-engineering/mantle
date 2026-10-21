@@ -242,6 +242,37 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
     expect(verdict("select 'query_to_xml(' as x, count(*) from pgboss.job")).toBe('sent');
   });
 
+  it("refuses a function whose effect outlives the transaction; the transaction's own advisory locks are sent", () => {
+    for (const q of [
+      'select set_limit(0.1)',
+      'select public.set_limit(0.1)',
+      'select setseed(0.5)',
+      'select pg_advisory_lock(42)',
+      'select pg_catalog.pg_advisory_lock_shared(42)',
+      'select pg_try_advisory_lock(1, 2)',
+      'select "pg_try_advisory_lock_shared"(42)',
+      'select pg_advisory_unlock_all()',
+      'select PG_ADVISORY_LOCK (42)',
+      'select lo_create(0)',
+      'select lo_creat(-1)',
+      "select lo_from_bytea(0, 'x'::bytea)",
+      "select lo_import('/etc/hosts')",
+      "select lowrite(lo_open(1, 131072), 'x'::bytea)",
+      "select lo_put(1, 0, 'x'::bytea)",
+    ]) {
+      expect(verdict(q), q).toBe('refused');
+    }
+    for (const q of [
+      'select pg_advisory_xact_lock(42)',
+      'select pg_advisory_xact_lock_shared(mantle_share_lock_key($1::uuid))',
+      'select pg_try_advisory_xact_lock(42) as locked',
+      'select pg_catalog.pg_try_advisory_xact_lock_shared(1, 2)',
+      "select 'pg_advisory_lock(' as x, set_limit_count from t",
+    ]) {
+      expect(verdict(q), q).toBe('sent');
+    }
+  });
+
   it('a tagged template: a placeholder never names a function or a setting; a fragment may start with any other word', () => {
     for (const q of [
       "select $1('role', 'none', true)",

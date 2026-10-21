@@ -50,6 +50,23 @@ export const SQL_TEXT_RUNNERS: readonly string[] = Object.freeze([
   'dblink\\w*',
 ]);
 
+/** Functions whose effect outlives the transaction that calls them: a
+ *  session setting (pg_trgm's set_limit, setseed), a session advisory lock
+ *  or its unlock (the pg_advisory_xact_* forms end with the transaction and
+ *  are not here), and every large-object function (an object made or
+ *  written commits, owned by the role that made it). Here and on the narrow
+ *  system route's text check (gateway/narrow-sendable.ts), whose role must
+ *  leave nothing behind on the pooled session or in the database's large
+ *  objects. */
+export const SESSION_LASTING_FUNCTIONS: readonly string[] = Object.freeze([
+  'set_limit',
+  'setseed',
+  'pg_advisory_(?!xact_)\\w+',
+  'pg_try_advisory_(?!xact_)\\w+',
+  'lo_\\w+',
+  'lowrite',
+]);
+
 /** Functions a read never calls: each writes, takes a lock, changes the
  *  session or the server, or runs its text argument. The built-ins, those
  *  of the extensions the database runs (pg_trgm's set_limit), and the
@@ -59,15 +76,13 @@ export const SQL_TEXT_RUNNERS: readonly string[] = Object.freeze([
  *  the text's code, so a value never matches. */
 export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   ...SQL_TEXT_RUNNERS,
+  ...SESSION_LASTING_FUNCTIONS,
   'set_config',
-  'setseed',
-  'pg_advisory_\\w+',
-  'pg_try_advisory_\\w+',
+  'pg_advisory_xact_\\w+',
+  'pg_try_advisory_xact_\\w+',
   'nextval',
   'setval',
   'pg_notify',
-  'lo_\\w+',
-  'lowrite',
   'pg_terminate_backend',
   'pg_cancel_backend',
   'pg_reload_conf',
@@ -89,7 +104,6 @@ export const WRITE_FUNCTIONS: readonly string[] = Object.freeze([
   'pg_import_system_collations',
   'pg_log_backend_memory_contexts',
   'binary_upgrade_\\w+',
-  'set_limit',
   'pg_nextoid',
   'pg_stop_making_pinned_objects',
   'mantle_operator_actor',

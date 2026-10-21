@@ -166,8 +166,9 @@ see it.
 `mantle_system_narrow` is the role narrow system work will run as: an exit
 that needs past the row rules but writes no item (an Admin-area tool, an
 area request, traces, spills, counters). It is `NOLOGIN`, `NOSUPERUSER`,
-`BYPASSRLS`, `NOINHERIT`, owns nothing and is a member of nothing. The
-runtime role is its member with `SET` only (`wantedMemberships`), so the
+`BYPASSRLS`, `NOINHERIT`, owns nothing and is a member of nothing (the
+text check below refuses the large-object functions, so narrow work cannot
+make it the owner of one). The runtime role is its member with `SET` only (`wantedMemberships`), so the
 runtime role holds none of its rights and may take it; the superuser may take
 it as any role. Migrate makes it and its membership on every run
 (`ensureRuntimeRoles`), and a hand grant to it or from it is taken back like
@@ -252,7 +253,13 @@ TRANSACTION`; no role change in any spelling, no DO block, no `U&` name,
   no tagged-template placeholder where a function or a setting is named,
   no call of a function that runs its text as SQL (`SQL_TEXT_RUNNERS`,
   shared with readSql: `query_to_xml`, `ts_stat`, pg-boss's
-  `job_table_run`, `dblink` and the rest), no text that never closes or that
+  `job_table_run`, `dblink` and the rest), no call of a function whose
+  effect outlives the transaction (`SESSION_LASTING_FUNCTIONS`, shared with
+  readSql: `set_limit`, `setseed`, a session advisory lock or unlock, any
+  large-object function; the transaction's own `pg_advisory_xact_lock` and
+  its kin stay allowed: share-lock.ts and advisory-lock.ts take them), so
+  narrow work leaves nothing on the pooled session and makes no large
+  object; no text that never closes or that
   Postgres may read otherwise. The text is read by the repo's one SQL text
   reader (`packages/db/src/sql-text.ts`, as Postgres's lexer: nested block
   comments, a `--` comment a `\r` ends, dollar-quote tags and names with
@@ -316,8 +323,8 @@ only: the scope decides the route at run time, and the switch-on suite, not
 the mark, proves a file holds on it.
 
 Inside a narrow transaction each statement is checked before it is sent
-(a role change, the name bare or quoted; a session-level SET or RESET;
-transaction control; a DO block; any statement naming `pg_settings`; and
+(a role change, the name bare or quoted; a session-level SET or RESET,
+or a call whose effect outlives the transaction; transaction control; a DO block; any statement naming `pg_settings`; and
 any `set_config` but one whose first argument is a plain literal naming a
 `mantle.*` setting, or `lock_timeout` or `enable_sort`, and whose third is
 the literal `true`, so a name built by concatenation or sent as a bound

@@ -35,7 +35,9 @@
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
  *  - mantle_system_narrow (NOLOGIN): the narrow system
- *    role. BYPASSRLS, owns nothing, member of nothing, and its rights come
+ *    role. BYPASSRLS, owns nothing (the narrow route's text check refuses
+ *    the large-object functions that would make it an owner), member of
+ *    nothing, and its rights come
  *    from the access matrix (narrowFor): read only on the content tables,
  *    read and write on the system and admin tables, nothing where the
  *    runtime role has nothing, and EXECUTE on the runtime role's allowlist

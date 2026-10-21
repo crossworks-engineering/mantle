@@ -8,7 +8,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { RuntimeFaultError } from '@mantle/std';
-import { SQL_TEXT_RUNNERS } from '../read-sql';
+import { SESSION_LASTING_FUNCTIONS, SQL_TEXT_RUNNERS } from '../read-sql';
 import { sqlCode } from '../sql-text';
 import { runsOutsideTransaction } from './actor-sql';
 
@@ -64,6 +64,19 @@ const SET_CONFIG_CALL = /(?<![\w$])"?set_config"?\s*\(/gi;
  */
 const SQL_TEXT_RUNNER_CALL = new RegExp(
   String.raw`(?<![\w$])"?(?:${SQL_TEXT_RUNNERS.join('|')})"?\s*\(`,
+  'i',
+);
+
+/**
+ * A call of a function whose effect outlives the transaction (shared with
+ * readSql: read-sql.ts SESSION_LASTING_FUNCTIONS): set_limit and setseed
+ * change the pooled session, a session advisory lock stays held on it, a
+ * large object commits owned by the narrow role. The transaction's own
+ * advisory locks (pg_advisory_xact_lock and its kin, which share-lock.ts and
+ * advisory-lock.ts take) end with it and stay allowed.
+ */
+const SESSION_LASTING_CALL = new RegExp(
+  String.raw`(?<![\w$])"?(?:${SESSION_LASTING_FUNCTIONS.join('|')})"?\s*\(`,
   'i',
 );
 
@@ -256,7 +269,8 @@ const PLACEHOLDER_NAME = /(?<!\binto\s+)\$\d+\s*\(|^set\s+local\s+\$\d+/i;
  * outlives the transaction); any set_config but a transaction-local one of
  * a literal name narrowSettingAllowed allows; a U& string or identifier;
  * a call of a function that runs its text argument as SQL
- * (SQL_TEXT_RUNNER_CALL); text that never closes or that Postgres may read
+ * (SQL_TEXT_RUNNER_CALL) or whose effect outlives the transaction
+ * (SESSION_LASTING_CALL); text that never closes or that Postgres may read
  * otherwise (sqlCode's `unterminated` and `ambiguous`); and any statement
  * whose first word is not a read or a row write (NARROW_FIRST_WORDS) or an
  * allowed SET LOCAL or SET TRANSACTION.
@@ -304,6 +318,11 @@ export function narrowSendable(query: string, tagged = false): void {
   }
   if (SQL_TEXT_RUNNER_CALL.test(code)) {
     throw new NarrowRouteRefusedError('a function that runs its text as SQL');
+  }
+  if (SESSION_LASTING_CALL.test(code)) {
+    throw new NarrowRouteRefusedError(
+      'a function whose effect outlives the transaction (a session setting, a session advisory lock, a large object)',
+    );
   }
   for (const [k, st] of statementsOf(code).entries()) {
     const first =
