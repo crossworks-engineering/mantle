@@ -195,10 +195,16 @@ function narrowPoolSql(): PgSql | null {
   // A pool being closed (closeDb) opens no new one behind it.
   if (!globalThis.__mantleSql) throw new Error('narrow route: the database pools are closed');
   const url = narrowDatabaseUrl();
-  globalThis.__mantleNarrowSql = url
-    ? postgres(url, { max: NARROW_POOL_MAX, prepare: false, onnotice: onPgNotice })
-    : null;
-  return globalThis.__mantleNarrowSql;
+  if (!url) return (globalThis.__mantleNarrowSql = null);
+  const narrow = postgres(url, { max: NARROW_POOL_MAX, prepare: false, onnotice: onPgNotice });
+  // The same type parsers and serializers as the system pool: drizzle set
+  // its own on that client (dates and json pass through as text, drizzle
+  // maps them), and a statement it builds is sent on this pool too. Without
+  // them a jsonb value drizzle already serialized is serialized again.
+  const sys = globalThis.__mantleSql.options;
+  Object.assign(narrow.options.parsers, sys.parsers);
+  Object.assign(narrow.options.serializers, sys.serializers);
+  return (globalThis.__mantleNarrowSql = narrow);
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
