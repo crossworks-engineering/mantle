@@ -9,7 +9,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { noteActorMiss, setActorMissLogger, type ActorMiss } from './actor';
-import { AS_SYSTEM_ROUTE, REQUEST_SYSTEM_ROUTE } from './viewer';
+import { AS_SYSTEM_ROUTE, REQUEST_SYSTEM_REASON, REQUEST_SYSTEM_ROUTE } from './viewer';
 
 const DIR = join(__dirname, '..', 'migrations');
 const journal = (
@@ -19,13 +19,19 @@ const journal = (
 ).entries;
 const TAG = '0312_narrow_write_observe';
 
-/** The actor each request exit binds (viewer.ts noteRequestSystem). */
+/** The actor each request exit binds (viewer.ts noteRequestSystem,
+ *  enterFirstOwnerExit). */
 const REQUEST_EXIT_REASON: Record<keyof typeof REQUEST_SYSTEM_ROUTE, string> = {
   area: 'http:admin-area',
   'login-self': 'http:login-self',
+  'first-owner': 'first-owner-attach',
 };
 
 describe('mantle_narrow_actor names the narrow reasons (plan v3.2 S7a)', () => {
+  it('each request exit binds the actor this list names', () => {
+    expect(REQUEST_SYSTEM_REASON).toEqual(REQUEST_EXIT_REASON);
+  });
+
   it('equals AS_SYSTEM_ROUTE and REQUEST_SYSTEM_ROUTE', () => {
     const files = readdirSync(DIR)
       .filter((f) => f.endsWith('.sql'))

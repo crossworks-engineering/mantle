@@ -199,14 +199,18 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
  * MANTLE_DB_RUNTIME_ROLE on it runs on the migrator's URL (DATABASE_URL,
  * the role that runs the migrations) in one transaction of its own, with
  * the actor bound now, on a connection opened for it and closed after.
- * Off, it runs on `db` as before. Only the switch calls it: every other
- * statement of the app runs as the runtime role (runtime-role.ts).
+ * Off, it runs on `db` in a transaction of its own, which sends the actor
+ * bound now first, as every transaction does: the switch is a bare select,
+ * which outside a transaction goes with no actor (only a write does), and
+ * the check on refuses the rows it writes (a fresh install's first owner
+ * was never served). Only the switch calls it: every other statement of the
+ * app runs as the runtime role (runtime-role.ts).
  */
 export async function executeAsMigrator<T extends Record<string, unknown>>(
   query: SQL,
 ): Promise<T[]> {
   if (!runtimeRoleOn()) {
-    return [...((await db.execute(query)) as unknown as T[])];
+    return [...((await db.transaction((tx) => tx.execute(query))) as unknown as T[])];
   }
   checkActorBound('executeAsMigrator');
   const { sql: text, params } = new PgDialect().sqlToQuery(query);

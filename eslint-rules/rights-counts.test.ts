@@ -52,6 +52,20 @@ describe('requestSystemExits', () => {
     });
   });
 
+  it('counts each use of firstOwnerSwitch as the first-owner exit; its entry only in its own file', () => {
+    const use = `
+      import { firstOwnerSwitch } from '@mantle/db';
+      export async function f(id: string) { return firstOwnerSwitch(id, () => run()); }
+    `;
+    expect(exits(use, "noteRequestSystem('area');")).toEqual({
+      byReason: { area: 1, 'first-owner': 1 },
+      problems: [],
+    });
+    const r = exits("import { enterFirstOwnerExit } from '@mantle/db/viewer';");
+    expect(r.byReason).toEqual({});
+    expect(r.problems).toEqual(['f0.ts: names enterFirstOwnerExit (only first-owner-exit.ts may)']);
+  });
+
   it('skips the definition and counts a reason it cannot read as unnamed', () => {
     const text = `
       export function noteRequestSystem(why: Why): void { mark(why); }
@@ -445,7 +459,7 @@ describe('the repo', () => {
   }));
   const { numbers, detail } = rightsCounts(ROOT, texts) as {
     numbers: Record<string, number>;
-    detail: { requestSystemExitProblems: string[] };
+    detail: { requestSystemExitProblems: string[]; requestSystemExits: Record<string, number> };
   };
 
   it('follows every request system exit (no renamed call or wrapper, no wrapper chain)', () => {
@@ -454,10 +468,13 @@ describe('the repo', () => {
 
   it('reads every request system exit reason', () => {
     expect(numbers.requestSystemExits_other).toBe(0);
+    // The first owner's exit: its one use (workspaces-migrate.ts).
+    expect(detail.requestSystemExits['first-owner']).toBe(1);
     expect(numbers.requestSystemExits).toBe(
       numbers.requestSystemExits_area! +
         numbers.requestSystemExits_loginSelf! +
-        numbers.requestSystemExits_adminWrite!,
+        numbers.requestSystemExits_adminWrite! +
+        detail.requestSystemExits['first-owner']!,
     );
   });
 

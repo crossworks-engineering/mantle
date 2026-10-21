@@ -121,7 +121,11 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     rr.setNarrowSystemForTests(true);
     const reasons = [...v.AS_SYSTEM_TURN_REASONS, ...v.AS_SYSTEM_OTHER_REASONS];
     expect(Object.keys(v.AS_SYSTEM_ROUTE).sort()).toEqual([...reasons].sort());
-    expect(v.REQUEST_SYSTEM_ROUTE).toEqual({ area: 'narrow', 'login-self': 'narrow' });
+    expect(v.REQUEST_SYSTEM_ROUTE).toEqual({
+      area: 'narrow',
+      'login-self': 'narrow',
+      'first-owner': 'full',
+    });
   });
 
   it('a narrow reason runs as the narrow role, a statement and a transaction, with its actor', async () => {

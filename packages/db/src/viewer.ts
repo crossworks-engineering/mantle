@@ -159,8 +159,17 @@ export type RequestOutcome =
   | { kind: 'own-rule'; loginId: string }
   | {
       kind: 'system';
-      why: 'area' | 'login-self';
+      why: RequestSystemWhy;
     };
+
+/**
+ * Why a request runs on the system pool: `area` (an Admin area route, after
+ * the area check) and `login-self` (a login's own things), which the
+ * session guard notes for the rest of the request (noteRequestSystem); and
+ * `first-owner`, the first owner's switch onto workspaces inside the
+ * signup, for that one call only (enterFirstOwnerExit, first-owner-exit.ts).
+ */
+export type RequestSystemWhy = 'area' | 'login-self' | 'first-owner';
 
 type RequestSlot = {
   scope: Scope | null;
@@ -181,6 +190,9 @@ type RequestSlot = {
   /** The route of this request's system exit (noteRequestSystem,
    *  REQUEST_SYSTEM_ROUTE), with the actor reason it binds. */
   systemRoute?: SystemRouteEntry;
+  /** The first owner's exit ran in this request (enterFirstOwnerExit):
+   *  once per request. */
+  firstOwnerExit?: true;
 };
 
 /**
@@ -384,14 +396,14 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
 
 /** Record that the guard let this request through on the system pool (the
  *  route sweep asserts it is an Admin user's). No-op outside a slot. */
-export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' }>['why']): void {
+export function noteRequestSystem(why: Exclude<RequestSystemWhy, 'first-owner'>): void {
   const slot = requestSlots.getStore();
   if (!slot || slot.scope) return;
   slot.outcome = { kind: 'system', why };
   // Arch A2a (plan 4.1): an Admin area route and the login's own things run
   // as system(reason); an Admin user's write or read on the system pool
   // stays its login (named by the guard).
-  const reason = why === 'area' ? 'http:admin-area' : 'http:login-self';
+  const reason = REQUEST_SYSTEM_REASON[why];
   setSlotActor(systemUnder(reason, slotActor()));
   // Plan v3.2 S7a: the exit picks its route (REQUEST_SYSTEM_ROUTE).
   slot.systemRoute = Object.freeze({ route: REQUEST_SYSTEM_ROUTE[why], reason });
@@ -993,14 +1005,26 @@ export const AS_SYSTEM_ROUTE: Readonly<Record<AsSystemReason, SystemRoute>> = Ob
   test: 'full',
 });
 
-/** The route of each request system exit (noteRequestSystem): an Admin
- *  area route and the login's own row run narrow (plan v3.2 section 2.1
- *  point 4). Typed so a new exit must pick. */
-export const REQUEST_SYSTEM_ROUTE: Readonly<
-  Record<Extract<RequestOutcome, { kind: 'system' }>['why'], SystemRoute>
-> = Object.freeze({
+/** The route of each request system exit (noteRequestSystem,
+ *  enterFirstOwnerExit): an Admin area route and the login's own row run
+ *  narrow (plan v3.2 section 2.1 point 4). Typed so a new exit must pick.
+ *  Full, with why:
+ *   - `first-owner`: the first owner's switch onto workspaces
+ *     (mantle_ws_migrate_locked) makes the Admin workspace, its users and
+ *     the grants of every item, and runs DDL on the migrator's connection
+ *     when the runtime role is on: the boot's switch, which runs full
+ *     (systemWork), inside the signup. */
+export const REQUEST_SYSTEM_ROUTE: Readonly<Record<RequestSystemWhy, SystemRoute>> = Object.freeze({
   area: 'narrow',
   'login-self': 'narrow',
+  'first-owner': 'full',
+});
+
+/** The actor reason each request system exit binds: system(<reason>). */
+export const REQUEST_SYSTEM_REASON: Readonly<Record<RequestSystemWhy, string>> = Object.freeze({
+  area: 'http:admin-area',
+  'login-self': 'http:login-self',
+  'first-owner': 'first-owner-attach',
 });
 
 /** The route an exit picked, with the actor reason it bound: the route
@@ -1268,6 +1292,54 @@ export function systemWork<T>(
 
 /** The workspace scope the nearest asSystem left (see scopeLeftForSystem). */
 const leftStore = new AsyncLocalStorage<WorkspaceScope>();
+
+/** The actor of a request no login made: the HTTP gate's start
+ *  (runInRequestSlot), which the signup keeps. */
+const NO_LOGIN_REASON = 'http:no-login';
+
+/**
+ * The first owner's request system exit (REQUEST_SYSTEM_ROUTE
+ * 'first-owner'): run `fn` as system(first-owner-attach) on its route
+ * (full), any request scope masked. ONLY first-owner-exit.ts calls it (not
+ * in index.ts; firstOwnerSwitch adds the brain's own condition), and it
+ * refuses, before `fn` runs, unless this is a request no login made:
+ *  - inside a request slot (an HTTP handler), never in a worker, a boot
+ *    step, a script or a test's bare call;
+ *  - no scope of any kind open (a login's request scope, a turn, a link,
+ *    a space, a transaction, an asSystem or systemWork exit, a scope left
+ *    behind) and nothing the session guard let through (no outcome);
+ *  - the request's actor is still the gate's system(http:no-login): a
+ *    signed-in login, a key, a share or a peer has another;
+ *  - once per request.
+ * The actor never leaks out: after `fn` the request runs as before.
+ */
+export function enterFirstOwnerExit<T>(fn: () => Promise<T>): Promise<T> {
+  const slot = requestSlots.getStore();
+  const actor = currentActor();
+  const refused = !slot
+    ? 'it runs only inside a request'
+    : store.getStore() !== undefined || leftStore.getStore() !== undefined || slot.scope
+      ? 'it runs outside every scope only'
+      : slot.outcome
+        ? 'the session guard let this request through already'
+        : actor?.kind !== 'system' || actor.reason !== NO_LOGIN_REASON || actor.mode
+          ? 'it runs only in a request no login made'
+          : slot.firstOwnerExit
+            ? 'it runs once per request'
+            : null;
+  if (refused) {
+    return Promise.reject(new RuntimeFaultError(`the first owner's exit refused: ${refused}`));
+  }
+  slot!.firstOwnerExit = true;
+  const reason = REQUEST_SYSTEM_REASON['first-owner'];
+  const entry: SystemRouteEntry = Object.freeze({
+    route: REQUEST_SYSTEM_ROUTE['first-owner'],
+    reason,
+  });
+  return systemRoutes.run(entry, () =>
+    runAsActor(systemActor(reason), () => store.run(SYSTEM_EXIT, fn)),
+  );
+}
 
 /**
  * The workspace scope that asSystem left to reach the system pool the

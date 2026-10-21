@@ -30,7 +30,14 @@
  * mantle.ws_former_clients = 'reviewed'), then started again.
  */
 import { sql } from 'drizzle-orm';
-import { db, executeAsMigrator, loginScopeFor, systemPoolTxInScope } from '@mantle/db';
+import {
+  db,
+  executeAsMigrator,
+  firstOwnerSwitch,
+  hasRequestSlot,
+  loginScopeFor,
+  systemPoolTxInScope,
+} from '@mantle/db';
 
 export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
 
@@ -84,10 +91,18 @@ function failure(when: string, err: unknown): void {
 }
 
 /** Best effort: log what happened, never throw (signup and boot go on; the
- *  next boot tries again, and the integrity rows show what is left). */
+ *  next boot tries again, and the integrity rows show what is left).
+ *  `loginId`: the first owner, just made. Inside its signup request the
+ *  switch takes the first owner's exit (firstOwnerSwitch,
+ *  system(first-owner-attach)), which refuses any other request or brain;
+ *  outside a request (the terminal wizard, scripts/onboard.ts) it runs as
+ *  that process's own actor, as the boot's runs as its systemWork. */
 export async function migrateWorkspacesQuietly(when: string, loginId?: string): Promise<void> {
   try {
-    const rows = await migrateWorkspaces();
+    const rows =
+      loginId !== undefined && hasRequestSlot()
+        ? await firstOwnerSwitch(loginId, () => migrateWorkspaces())
+        : await migrateWorkspaces();
     const skip = rows.find((r) => r.section === 'skip');
     if (skip && skip.metric !== 'already migrated') {
       console.warn(`[workspaces] ${when}: not migrated (${skip.subject})`);

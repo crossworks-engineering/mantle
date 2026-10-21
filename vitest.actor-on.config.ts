@@ -33,6 +33,8 @@ export default defineConfig({
       // The folders above what a login reads, as structure (0311), off, warn and on.
       'server/web/server/s13-folder-trail-sweep.db.test.ts',
       'packages/db/src/folder-trail-0311.db.test.ts',
+      // A fresh install's first sign-up and the first owner's exit (on).
+      'server/web/server/ws-fresh-signup.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },
   },

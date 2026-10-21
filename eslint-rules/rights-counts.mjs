@@ -100,6 +100,18 @@ function isTestSupport(path) {
 
 const REQUEST_SYSTEM = 'noteRequestSystem';
 
+/** The first owner's request system exit (packages/db/src/first-owner-exit.ts):
+ *  each use of firstOwnerSwitch is one exit, reason 'first-owner'. */
+const FIRST_OWNER_SWITCH = 'firstOwnerSwitch';
+
+/** The one file that may call the exit's own entry (viewer.ts
+ *  enterFirstOwnerExit, not in index.ts): first-owner-exit.ts. */
+const FIRST_OWNER_EXIT = 'enterFirstOwnerExit';
+const FIRST_OWNER_EXIT_FILES = new Set([
+  'packages/db/src/viewer.ts',
+  'packages/db/src/first-owner-exit.ts',
+]);
+
 /**
  * The request system exits of the counted files (`[{ path, text }]`) by
  * reason, and the problems that would hide one. The wrapper-following
@@ -113,7 +125,22 @@ const REQUEST_SYSTEM = 'noteRequestSystem';
  */
 export function requestSystemExits(files) {
   const r = asSystemExits(files, { call: REQUEST_SYSTEM, follow: 'forwarders' });
-  return { byReason: r.byReason, problems: r.problems };
+  const byReason = { ...r.byReason };
+  const problems = [...r.problems];
+  // The first owner's exit: every use of firstOwnerSwitch, whatever it
+  // passes (its reason is its own), under 'first-owner'; its entry named
+  // in no other file.
+  const fo = asSystemExits(files, { call: FIRST_OWNER_SWITCH, follow: 'forwarders' });
+  const uses = Object.values(fo.byReason).reduce((a, b) => a + b, 0);
+  if (uses > 0) byReason['first-owner'] = (byReason['first-owner'] ?? 0) + uses;
+  problems.push(...fo.problems);
+  for (const { path, text } of files) {
+    if (FIRST_OWNER_EXIT_FILES.has(path)) continue;
+    if (new RegExp(`\\b${FIRST_OWNER_EXIT}\\b`).test(stripComments(text))) {
+      problems.push(`${path}: names ${FIRST_OWNER_EXIT} (only first-owner-exit.ts may)`);
+    }
+  }
+  return { byReason, problems };
 }
 
 // ── Admin asks ──────────────────────────────────────────────────────────────
@@ -565,7 +592,13 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   const fns = migrationFunctions(root);
   const writers = fns.filter((f) => writesWorkspaceTable(f.body));
   const exitTotal = Object.values(exits).reduce((a, b) => a + b, 0);
-  const known = (exits.area ?? 0) + (exits['login-self'] ?? 0) + (exits['admin-write'] ?? 0);
+  // 'first-owner' is known: counted in requestSystemExits, with its own
+  // pin note, never as other.
+  const known =
+    (exits.area ?? 0) +
+    (exits['login-self'] ?? 0) +
+    (exits['admin-write'] ?? 0) +
+    (exits['first-owner'] ?? 0);
   const roleReaders = fns.filter((f) => readsLoginRole(f.body));
   const admin = adminCounts(root, texts);
   const routeMap = asSystemRouteMap(root);

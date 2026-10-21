@@ -285,8 +285,9 @@ TRANSACTION`; no role change in any spelling, no DO block, no `U&` name,
 
 Who picks it (`packages/db/src/viewer.ts`): `AS_SYSTEM_ROUTE`, a
 `Record<AsSystemReason, 'narrow' | 'full'>`, so a new reason must pick, and
-`REQUEST_SYSTEM_ROUTE` for the guard's request exits (`area`,
-`login-self`). The nearest `asSystem` decides; `systemWork` always runs
+`REQUEST_SYSTEM_ROUTE` for the request exits (the guard's `area` and
+`login-self`, narrow; the first owner's `first-owner`, full: the signup's
+switch onto workspaces, as the boot's). The nearest `asSystem` decides; `systemWork` always runs
 full (workers, boot steps; `WorkspaceSystemReason` too). The pick holds only
 while the actor the exit bound is still bound: code inside it that binds
 another actor (a named repair, the miss log) runs full, as itself.

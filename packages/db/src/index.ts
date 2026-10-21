@@ -153,6 +153,7 @@ export {
   type RequestOutcome,
 } from './viewer';
 export { systemStep, type StepItems, type SystemStep } from './system-step';
+export { firstOwnerSwitch } from './first-owner-exit';
 export { nameTaken, snapshotBytesUsed, type TakenName } from './brain-answers';
 export {
   folderTrail,
