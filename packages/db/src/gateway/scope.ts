@@ -22,6 +22,7 @@ import {
   type WorkspaceScope,
 } from '../viewer';
 import { withLease } from '../reserved';
+import { workResult } from './actor-sql';
 import { getAdminDb, getViewerDb, turnScopedDbOnce } from './pools';
 import { uuidArrayLiteral } from './write-route';
 
@@ -115,7 +116,7 @@ export function turnScopedClient(base: PgSql): PgSql {
       }
       return base.begin(async (t) => {
         await t.unsafe(SCOPE_SETTINGS_SQL, settings);
-        return fn(t as unknown as PgSql);
+        return workResult(fn(t as unknown as PgSql));
       });
     },
   };

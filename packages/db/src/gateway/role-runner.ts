@@ -12,7 +12,7 @@ import type postgres from 'postgres';
 import { runTxHooks } from '../viewer';
 import { permissionGapOf } from '../pg-error';
 import { ACTOR_SQL_TAG } from './check-mode';
-import { settingsFirst } from './actor-sql';
+import { settingsFirst, workResult } from './actor-sql';
 import {
   boundedBegin,
   boundedReserve,
@@ -86,7 +86,7 @@ async function writeTxOf(
         const client = settingsFirst(watchTx(t, tx, tx), () => setSql);
         tx.t = client;
         try {
-          const value = await work(client);
+          const value = await workResult(work(client));
           // Joins left running (not awaited) finish inside it.
           await tx.joins;
           return value;

@@ -51,6 +51,18 @@ export function sendIn(q: QueryLike, mode: QueryMode): Promise<unknown> {
   });
 }
 
+/**
+ * What a begin's work returned, as postgres.js reads it: an array (of
+ * pending statements, `begin(t => [t\`...\`, t\`...\`])`) is sent and
+ * awaited together, in its order, before the COMMIT, and the transaction
+ * answers their results. A wrapper whose callback is async hides the array
+ * from postgres.js (it sees a promise), so every gateway wrapper of begin
+ * or of a savepoint reads its work's value here.
+ */
+export function workResult(value: unknown): unknown {
+  return Array.isArray(value) ? Promise.all(value) : value;
+}
+
 /** The pipelined statements in flight (actorClient), for closeDb. */
 const actorPipelines = new Set<Promise<unknown>>();
 
@@ -458,7 +470,7 @@ export function actorClient(base: PgSql): PgSql {
             const waitFor = firstModeReadNow();
             if (waitFor && currentActor() && !actorParams()) await waitFor;
             const params = actorParams();
-            return fn(params ? actorInTransaction(t, params) : t);
+            return workResult(fn(params ? actorInTransaction(t, params) : t));
           };
           return (target.begin as (...a: unknown[]) => unknown)(...args.slice(0, -1), wrapped);
         };

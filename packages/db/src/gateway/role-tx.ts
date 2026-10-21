@@ -39,7 +39,7 @@ export type LoginWriteRoute = {
   scope: WorkspaceScope;
 };
 
-import { lazyQuery, sendIn, type QueryLike } from './actor-sql';
+import { lazyQuery, sendIn, workResult, type QueryLike } from './actor-sql';
 export { lazyQuery, sendIn, type QueryMode } from './actor-sql';
 
 // ── Write-role denials (A2b2b fix round 1, H1) ──────────────────────────────
@@ -250,7 +250,7 @@ export function joinWriteTx(open: WriteTx, work: (sp: PgSql) => unknown): Promis
       child.t = sp;
       return openWriteTx.run(child, async () => {
         try {
-          const value = await work(sp);
+          const value = await workResult(work(sp));
           await child.joins;
           return value;
         } catch (err) {

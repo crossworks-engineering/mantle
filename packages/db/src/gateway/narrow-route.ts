@@ -31,6 +31,7 @@ import {
   setActorSql,
   settingsFirst,
   trackPipeline,
+  workResult,
   type QueryMode,
 } from './actor-sql';
 
@@ -318,7 +319,7 @@ export async function narrowBegin(base: PgSql, args: unknown[]): Promise<unknown
       ...args.slice(0, -1),
       async (t: PgSql) => {
         const set = settingsFirst(t, () => setSql);
-        const value = await work(narrowTxClient(set, seen));
+        const value = await workResult(work(narrowTxClient(set, seen)));
         try {
           await narrowHeld(set);
         } catch (err) {

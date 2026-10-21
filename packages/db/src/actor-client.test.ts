@@ -16,7 +16,7 @@ import {
   setActorSql,
   writeRoleSettingsSql,
 } from './client';
-import { statementBody } from './gateway/actor-sql';
+import { statementBody, workResult } from './gateway/actor-sql';
 
 type PgSql = Parameters<typeof actorInTransaction>[0];
 
@@ -238,6 +238,64 @@ describe('a transaction client sends in the order its statements are awaited', (
       await tick();
     }
     await all;
+  });
+});
+
+describe("a begin's work that returns an array of statements", () => {
+  /** A base whose begin reads its work's value as postgres.js does (an
+   *  array is sent and awaited together before the COMMIT), and whose
+   *  statements are sent on their first then. */
+  function arrayBase() {
+    const sent: string[] = [];
+    const q = (text: string) => ({
+      then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => {
+        sent.push(text);
+        return Promise.resolve([{ text }]).then(ok, bad);
+      },
+    });
+    const t = { unsafe: (text: string) => q(text) } as unknown as PgSql;
+    const base = {
+      begin: async (fn: (t: PgSql) => unknown) => {
+        sent.push('begin');
+        const x = fn(t);
+        const out = await Promise.resolve(Array.isArray(x) ? Promise.all(x) : x);
+        sent.push('commit');
+        return out;
+      },
+    } as unknown as PgSql;
+    return { base, t, sent };
+  }
+
+  it('workResult sends an array together, in its order, and passes any other value on', async () => {
+    const { t, sent } = arrayBase();
+    expect(await workResult([t.unsafe('a'), t.unsafe('b')])).toEqual([
+      [{ text: 'a' }],
+      [{ text: 'b' }],
+    ]);
+    expect(sent).toEqual(['a', 'b']);
+    expect(workResult(7)).toBe(7);
+  });
+
+  it("the system pool's begin sends both statements before the COMMIT and answers their results", async () => {
+    const { base, sent } = arrayBase();
+    const client = actorClient(base);
+    const begin = client.begin as unknown as (fn: (t: PgSql) => unknown) => Promise<unknown>;
+    const out = await begin((t) => [
+      t.unsafe('insert into t values (1)'),
+      t.unsafe('insert into t values (2)'),
+    ]);
+    // The test run binds an actor: its SET goes with the first statement.
+    expect(sent[0]).toBe('begin');
+    expect(sent[1]).toMatch(/set_config\('mantle\.actor'/);
+    expect(sent.slice(2)).toEqual([
+      'insert into t values (1)',
+      'insert into t values (2)',
+      'commit',
+    ]);
+    expect(out).toEqual([
+      [{ text: 'insert into t values (1)' }],
+      [{ text: 'insert into t values (2)' }],
+    ]);
   });
 });
 
