@@ -1464,3 +1464,167 @@ a10-body-sweep.test.ts (its stand-in, above), the only failure.
    own statements, the S7a lane), the lint's verbs (SELECT INTO, COPY
    FROM, CALL, DO: the write role now refuses them in scoped code at run
    time, which is the bound plan 3.2 point 3 names).
+
+### Round 3, fix round 1 (the audit at 454aee869: merge after the doc fix)
+
+Rebased first: origin/main had moved to 2720d4bee (v0.300.125, the
+frontend repo's new name and the README; no migration, no pin, no file of
+this branch's), a clean rebase, so 0313 keeps its number and its `when`
+(1790198100000, above 0312's). 0313 is not merged, so it changed in place
+with its revert.
+
+- MED (doc), fixed. docs/actors.md said the 0307, 0309 and 0313 writers
+  all refuse every actor but one named one when there is no acting login.
+  Not so for `mantle_tg_chat_set`: with no scope it never consults
+  `mantle_ws_system_work` and acts for the login it is passed (the narrow
+  and system routes; as on main, where the TypeScript did the same on the
+  exit). The line now says the 0307 and 0309 writers and
+  `mantle_file_restamp_home` refuse all but one named actor, and
+  `mantle_tg_chat_set` with no scope consults no allowlist and acts for
+  the login passed. The same said where the definer is described: 0313's
+  header, pairing.ts setChatPairing, and the rule line of docs/actors.md
+  (now naming the Moderator rule's definer and the read-only and
+  other-brain refusals). docs/runtime-role.md and docs/fail-open.md needed
+  no change for this.
+- LOW-2, fixed. `mantle_tg_chat_set` refuses `mantle.write_mode = 'ro'`
+  as its first statement (42501, "a read-only caller"), the check 0307's
+  acting-login check makes. Cell (file-home-chat-0313.db.test.ts "a
+  read-only caller and an owner that is not this brain are refused
+  first"): on the write role in the login's own scope with the mode ro,
+  unpair, block and an unknown action each 42501 (read only before the
+  action check), the row untouched; on the narrow role with no scope, ro: 42501.
+- LOW-3, fixed. Then `owner` must be `mantle_brain_id()` (42501, "only on
+  this brain"), as 0307 checks it. Cell (the same): an owner that is not
+  this brain naming its own chat, on the write role and on the narrow
+  role: 42501, the row untouched. No route answer moves: every caller
+  passes the request's owner, which is the brain (the suites below).
+- LOW-4 (gateway lens), fixed. The bot's Moderator rule is one definer,
+  `mantle_tg_login_moderates(owner, login, account)` (0313): an enabled
+  Moderator of the live workspace of the bot's assistant (no workspace:
+  the owner's Admin workspace), or an Admin user with the users area
+  (`mantle_area_rule`). SECURITY DEFINER, STABLE, `search_path=public,
+pg_temp`, PUBLIC revoked, EXECUTE for the runtime role only
+  (`RUNTIME_SYSTEM_FUNCTIONS`: loginModeratesBot asks it on the system
+  pool by `systemWork('login-telegram')`, a full route); the definers call
+  it as their owner; not the write, narrow or viewer roles (measured: the
+  narrow dump names no use, and no narrow statement calls it). Its askers:
+  - `mantle_tg_chat_set`: own chat, else the rule (its copy went).
+  - `mantle_tg_moderated_chats`: 0313 redefines 0293's body
+    (CREATE OR REPLACE, grants kept): the bots CTE asks the rule where it
+    held its copy. Kept as they were: a brain with no Admin workspace
+    answers the anchor only, and the area ask stays
+    `mantle_login_area` OR'd in (0304: the rule OR "the brain has no
+    Admin workspace"), so the answer is the same: M or (N or R) equals
+    (M or R) or (N or R). The revert restores 0293's body byte for byte
+    (md5 below).
+  - `loginModeratesBot` (packages/telegram chat-login.ts, used by
+    server/web/lib/debug.ts telegramChatVisibility) calls it instead of its
+    inline SQL and loginHasArea; it still fails closed (no uuid, an error:
+    false).
+    Answers byte-equal, cells (file-home-chat-0313.db.test.ts "the bot's
+    Moderator rule is one definer; each of its askers answers as its own
+    copy did"): every login (an enabled Moderator, a disabled one, a
+    Moderator of another workspace, of an archived workspace, of Admin for a
+    bot whose assistant has no workspace, an Admin user with the users area
+    on and off, a plain user, an outsider, the anchor) against four bots
+    (Team's, a helper's with no workspace, the archived workspace's, one
+    with no assistant): the definer's answer is the expected one and equals
+    the copy loginModeratesBot held, run beside it; and the moderated chats
+    screen answers row for row as 0293's body (loaded from 0293 into
+    pg_temp and run beside it) for every login. The block or unpair on the
+    new cases: a Moderator of another workspace and of the archived one, no
+    row; an Admin Moderator with the users area off on the helper's bot,
+    unpairs; Team's Moderator on the helper's bot, no row. In the W7d suite,
+    `loginModeratesBot` equals the definer for five logins on two bots, the
+    expected ones for Team's bot, and false for a non-uuid login or bot.
+    Catalog cell: three definers, each its EXECUTE per role.
+- LOW-5, fixed (cheap). `rawWriteTargetRegexSites` reads MERGE INTO as a
+  write verb, drops spaces and group brackets before it looks for one (so
+  `(insert)\s+into` and `insert into` count), and takes a capture that
+  starts with `\S`, `[\S`, a quote (`"` or `"?`), any character (`.`), or
+  is named (`(?<t>...)`). Cells (cleanup-counts.test.ts): each of those
+  found; a lookaround, a non-capturing group, MERGE with no INTO, and the
+  earlier non-findings still none. The tree still measures 0.
+- LOW-1, named for S7b, not built. The write role reaches the unscoped
+  path of `mantle_tg_chat_set` (no scope, no acting login: it acts for the
+  login passed) only by clearing its own scope settings in its own
+  transaction; no product path does (the write role's callers always run
+  in a login's scope). The real fix: the narrow route carries the acting
+  login as a gateway setting (gatewaySettings, sent with the statement as
+  the scope's are), and the definer requires it when there is no scope,
+  refusing a `login` argument that is not it. Then no caller can name a
+  login it is not. S7b's, with the narrow route's request exits.
+
+Pins: sqlMembershipAsks 3 to 2 (loginModeratesBot's inline Moderator ask
+went; chatLoginRefusal's stays), inHandlerAreaChecks 20 to 19 and
+inHandlerAreaCheckFiles 17 to 16 (its loginHasArea went), each with a
+note; admin-counts.test.ts classes chat-login.ts's one ask (membership 1).
+rawWriteTargetRegex stays 0 with the wider count. Nothing went up. The
+pins were lowered by hand (the `--pin` rewrite reorders the file and drops
+the notes of a lowered key).
+
+Changed answers: none for any member, client, key, peer or public link.
+At the definer level only: `mantle_tg_chat_set` now refuses a read-only
+caller and an owner that is not this brain (42501) where it answered no
+row or acted before; no route reaches either (a read-only caller is
+refused at the gate before these write routes, and every owner passed is
+the brain's).
+
+#### Gates
+
+Code head 9f0d706f3. Workstation, own clone ~/s10r3f/clone (main from
+GitHub plus a bundle of the branch), own container s10r3f-pg (pgvector
+pg18, 127.0.0.1:56710 checked free, max_connections=450, role postgres as
+CI), init-scratch 0 and migrate 0 with MANTLE_CHECK_FLOOR=keep,
+DATABASE_URL for those two only, systemd-run --user, --maxWorkers=3, one
+at a time, switch on unless said:
+
+| Gate                                                        | Exit | Counts                                                      |
+| ----------------------------------------------------------- | ---- | ----------------------------------------------------------- |
+| 6c8de6e4f, the round's cells and their neighbours (7 files) | 0    | 159 passed, 1 skipped                                       |
+| 6c8de6e4f, full DB vitest                                   | 1    | 1 cell: admin-counts.test.ts's ask count (fixed, 9f0d706f3) |
+| 9f0d706f3, full DB vitest, fail-open and narrow dumps       | 0    | 1151 files; 14195 passed, 1 skipped; 872 s                  |
+| 9f0d706f3, full DB vitest, MANTLE_NARROW_SYSTEM=0           | 0    | 1151 files; 14195 passed, 1 skipped                         |
+| test:actor-off                                              | 0    | 139 files; 1390 passed, 1 skipped                           |
+| test:actor-on                                               | 0    | 33 files; 405 passed, 1 skipped                             |
+| test:runtime-role in full                                   | 0    | 291 files; 2891 passed, 1 skipped                           |
+| test:edit-on                                                | 0    | 45 files; 575 passed                                        |
+| test:matrix                                                 | 0    | 4 files; 8 passed (their known-cell lists unchanged)        |
+| the N-1 drill (own container s10r3f-rb-pg, 127.0.0.1:56711) | 0    | every step 0 (below)                                        |
+
+No known flake met in any run. The switch-on dumps: fail-open 156 hits,
+every one `typed-write` (no `raw-write`), as on main; narrow 1175 lines,
+no denial, `fn:mantle_tg_chat_set` 3 uses, no use of the Moderator rule's
+definer; no write-role gap and no `narrow system route:` refusal in any
+log.
+
+The N-1 drill, main 2720d4bee and the branch 9f0d706f3, each step's state
+as the definers present (of three) / md5 (first 8) of the bodies of
+mantle_ws_system_work, mantle_tg_moderated_chats, mantle_tg_login_moderates,
+mantle_tg_chat_set, mantle_file_restamp_home / the 0313 ledger row /
+EXECUTE on mantle_tg_chat_set for the write and narrow roles / the runtime
+role's on the restamp definer and on the Moderator rule:
+
+| Step                         | Exit | State                                                                            |
+| ---------------------------- | ---- | -------------------------------------------------------------------------------- |
+| init and migrate with main   | 0, 0 | 0 / c96949b3 2655c403 - - - / 0 / - / - -                                        |
+| migrate with the branch (N)  | 0    | 3 / 8a2ebe6a ea17a9bb 70ef5bac b8266526 e138cbc1 / 1 / true true / true true     |
+| migrate with main (N-1 boot) | 0    | 3 / 8a2ebe6a ea17a9bb 70ef5bac b8266526 e138cbc1 / 1 / false false / false false |
+| the revert                   | 0    | 0 / c96949b3 2655c403 - - - / 0 / - / - -                                        |
+| migrate with main            | 0    | 0 / c96949b3 2655c403 - - - / 0 / - / - -                                        |
+| migrate with the branch      | 0    | 3 / 8a2ebe6a ea17a9bb 70ef5bac b8266526 e138cbc1 / 1 / true true / true true     |
+
+The revert puts both redefined bodies back to the md5 they had before
+0313 (mantle_ws_system_work c96949b3, 0307's; mantle_tg_moderated_chats
+2655c403, 0293's). On the N database under N-1's boot, the moderated
+chats screen still answers as the view role (its definer calls the rule
+as its owner), and the runtime role may not call the rule (N-1's boot
+grants its own list; N-1 never calls it).
+
+Mac, Node 26, DATABASE_URL unset, on this handover commit (code equal to
+9f0d706f3): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one warning main
+has), `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `pnpm boot:smoke` 0 (14 services),
+`vitest run server packages eslint-rules` 0 (870 files passed, 281
+skipped; 11290 tests passed). Earlier, on 6c8de6e4f, the unit run failed
+the same admin-counts.test.ts cell as the DB run (fixed in 9f0d706f3).
