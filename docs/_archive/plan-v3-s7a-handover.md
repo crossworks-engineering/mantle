@@ -1541,3 +1541,14 @@ No flake this round: every run passed first time. The switch-on dump has
 switch-off dump holds only narrow-route.db.test.ts's own switch-on cells
 (22 lines). Cleaned up by name: the container (with its volume), the clone,
 the units (collected).
+
+#### CI (fix round 3)
+
+On 0c45596b6: run 39538411761 failure, one cell in Test (actor check off):
+actor-client.test.ts "the system pool's begin sends both statements"
+expected the actor's SET, which the actor-off suite does not send (a cell
+of this round, not a flake; the workstation ran the suites this brief
+named, not test:actor-off). The cell now holds in both modes (the
+statements less any actor SET, at most one SET); run under the actor-off
+config and the default one, 33 of 33 each. The next run's id and result
+are in the round's report.

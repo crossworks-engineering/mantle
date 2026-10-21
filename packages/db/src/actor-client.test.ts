@@ -284,14 +284,16 @@ describe("a begin's work that returns an array of statements", () => {
       t.unsafe('insert into t values (1)'),
       t.unsafe('insert into t values (2)'),
     ]);
-    // The test run binds an actor: its SET goes with the first statement.
-    expect(sent[0]).toBe('begin');
-    expect(sent[1]).toMatch(/set_config\('mantle\.actor'/);
-    expect(sent.slice(2)).toEqual([
+    // With the actor check on, the actor's SET goes with the first
+    // statement; with it off (test:actor-off), none is sent.
+    const actorSet = /set_config\('mantle\.actor'/;
+    expect(sent.filter((q) => !actorSet.test(q))).toEqual([
+      'begin',
       'insert into t values (1)',
       'insert into t values (2)',
       'commit',
     ]);
+    expect(sent.filter((q) => actorSet.test(q)).length).toBeLessThanOrEqual(1);
     expect(out).toEqual([
       [{ text: 'insert into t values (1)' }],
       [{ text: 'insert into t values (2)' }],
