@@ -1373,3 +1373,85 @@ gateway's isWriteSql test, the WITH test, a read and a comment are not.
   database just before 0313 applies it and only it; the revert leaves the
   allowlist's body equal to before and both definers gone; forward again
   equal to after).
+
+### Gates
+
+Code head 52b6b7682 (the commits after it change this file only).
+
+Workstation, own clone ~/s10r3/clone (main from GitHub plus bundles of the
+branch), own container s10r3-pg (pgvector pg18, 127.0.0.1:56610 checked
+free, max_connections=450, role postgres as CI), init-scratch 0 and
+migrate 0 with MANTLE_CHECK_FLOOR=keep, DATABASE_URL for those two only,
+systemd-run --user, --maxWorkers=3, one at a time, switch on unless said:
+
+| Gate                                                       | Exit | Counts                                                  |
+| ---------------------------------------------------------- | ---- | ------------------------------------------------------- |
+| main dd0d1d85f, full DB vitest, MANTLE_FAIL_OPEN_DUMP      | 0    | 1150 files; 14177 passed, 1 skipped; 0 `raw-write` hits |
+| a8e7f0b8b, the round's cells (9 files)                     | 1    | 5 cells: their fixtures (fixed in be5c13584)            |
+| be5c13584, full DB vitest                                  | 1    | 7 cells in 5 files (below)                              |
+| 52b6b7682, the fixed and the flaky files (8)               | 0    | 95 passed, 1 skipped                                    |
+| 52b6b7682, the narrow row without its grant (teeth)        | 1    | "permission denied for function mantle_tg_chat_set"     |
+| 52b6b7682, full DB vitest, dumps                           | 0    | 1151 files; 14191 passed, 1 skipped; 885 s              |
+| 52b6b7682, full DB vitest, MANTLE_NARROW_SYSTEM=0          | 0    | 1151 files; 14191 passed, 1 skipped                     |
+| test:actor-off                                             | 0    | 139 files; 1388 passed, 1 skipped                       |
+| test:actor-on                                              | 0    | 33 files; 405 passed, 1 skipped                         |
+| test:edit-on                                               | 0    | 45 files; 575 passed                                    |
+| test:matrix                                                | 0    | 4 files; 8 passed                                       |
+| test:runtime-role in full                                  | 0    | 291 files; 2888 passed, 1 skipped                       |
+| the N-1 drill (own container s10r3-rb-pg, 127.0.0.1:56611) | 0    | every step 0 (below)                                    |
+
+The run on be5c13584 failed: w6b-fix2 L-4 (its copy as `asSystem('test')`,
+which the restamp definer refuses: now the copies' own system work),
+a10-body-sweep (its stand-in had no transaction), write-role.db.test.ts
+(the reviewed list of the write role's definers lacked the new one), and the
+known flakes chat-archive.db.test.ts (3 cells) and
+conversation-trace.db.test.ts (1 cell), content-search misses; both passed on
+the rerun of those files and in every later full run. Every run from
+52b6b7682 passed first time. In every full run: no write-role gap, no
+narrow denial, no `narrow system route:` refusal; the switch-on dump has
+1174 lines, every one a use (`fn:mantle_tg_chat_set` 3, from
+narrow-area-routes.db.test.ts); the fail-open dump 156 hits, every one
+`typed-write`, as on main.
+
+The N-1 drill, main dd0d1d85f and the branch 52b6b7682, each step's state
+as definers / the md5 of mantle_ws_system_work's body / the 0313 ledger row
+/ EXECUTE on mantle_tg_chat_set for the write and narrow roles / EXECUTE
+on mantle_file_restamp_home for the runtime role:
+
+| Step                         | Exit | State                                  |
+| ---------------------------- | ---- | -------------------------------------- |
+| init and migrate with main   | 0, 0 | 0 / c96949b3 / 0 / - / -               |
+| migrate with the branch (N)  | 0    | 2 / 8a2ebe6a / 1 / true true / true    |
+| migrate with main (N-1 boot) | 0    | 2 / 8a2ebe6a / 1 / false false / false |
+| the revert                   | 0    | 0 / c96949b3 / 0 / - / -               |
+| migrate with main            | 0    | 0 / c96949b3 / 0 / - / -               |
+| migrate with the branch      | 0    | 2 / 8a2ebe6a / 1 / true true / true    |
+
+N-1's boot on the N database takes the new grants back (its own lists) and
+leaves the definers, unused; the revert puts the allowlist's body back to
+0307's (the same md5 as before 0313).
+
+### Open items, for the CEO before the merge
+
+1. The fleet's own count of the routed-away raw writes: the suites and the
+   code reading find no scoped raw write to a table the write role cannot
+   write, but a box sees paths no test reaches. Before the merge, read
+   `fail_open_misses:raw-write` on each box (scripts/arch-scoreboard-box.sh,
+   numbers only; it counts the `fail-open:raw-write` rows an image up to
+   this release writes). Anything above 0 is a scoped raw write the write
+   role would refuse after the roll: read that box's `detail` (the caller
+   or the table) first. After the roll, a refusal shows as a
+   `write-role-gap` miss row naming the caller.
+2. mantle_tg_chat_set with no scope reads the login it is given (the 0293
+   Telegram readers' and mantle_access_key_revoke's shape). Only the
+   narrow role and the system pool run without a scope (the assistants
+   area's route), so this is what that route did before; a stricter shape
+   (an acting login from the request on the narrow route) needs the
+   request exit to carry its login, which is outside this lane.
+3. `snapshot-copies` is a workspace system reason now: its statements carry
+   their actor with the actor check off too (one SET with each), at boot
+   and in `pnpm maintain snapshot-copies` only.
+4. From earlier rounds, not this one's: rawSqlNonLiteral 63 (packages/db's
+   own statements, the S7a lane), the lint's verbs (SELECT INTO, COPY
+   FROM, CALL, DO: the write role now refuses them in scoped code at run
+   time, which is the bound plan 3.2 point 3 names).
