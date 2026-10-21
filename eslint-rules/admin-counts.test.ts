@@ -545,9 +545,10 @@ describe('the repo', () => {
     });
   });
 
-  it('classes the two Telegram asks as membership, not area rules', () => {
+  it('classes the Telegram ask as membership, not an area rule (the Moderator one is its definer)', () => {
+    // chatLoginRefusal's ask; loginModeratesBot asks mantle_tg_login_moderates.
     const tg = texts.find((t) => t.path === 'packages/telegram/src/chat-login.ts')!;
-    expect(tsAdminSqlKinds(tg.text)).toEqual({ rules: 0, membership: 2 });
+    expect(tsAdminSqlKinds(tg.text)).toEqual({ rules: 0, membership: 1 });
   });
 
   it('reads the role column in the functions S8b must pin', () => {
