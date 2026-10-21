@@ -31,9 +31,11 @@ Desktop. Engine names in code stay as they are (`MANTLE_*`, `@mantle/*`,
 
 - **docs.mantleos.io** (`docs-site/`): the wordmark in the header and the icon
   as the favicon, copied here at build by `docs-site/scripts/sync-brand.mjs`.
-- **mantleos.io** (mantle-site repo) and the **jackdaw** repo (MantleOS web,
-  Desktop and mobile) keep copies with the Affinity ids stripped. When a file
-  here changes, copy it there again.
+- **mantleos.io** (mantle-site repo), **mantle-client** (MantleOS web and
+  Desktop, named jackdaw until 2026-10-21) and **mantle-mobile** (the phone
+  app) keep copies with the Affinity ids stripped. When a file here changes,
+  copy it there again.
+- **This repo's README** shows the wordmark straight from this folder.
 
 ## Colours
 
