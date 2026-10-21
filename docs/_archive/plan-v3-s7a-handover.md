@@ -1325,15 +1325,89 @@ the role sent unguarded on pg18 and was refused routed, the order probe
 held on the three routes, the real pg-boss cell and the non-owner TEMPORARY
 run passed.
 
-#### State at hand-over (about 120 tool calls)
+#### The full suites (fix round 2, on 013e79cba)
 
-Done: every item of the round, with cells, the Mac gates, the cells on
-pg18. Not run yet, in this order, one at a time (the same recipe, a new
-prefix): full DB vitest switch on, full DB vitest MANTLE_NARROW_SYSTEM=0,
-test:actor-off, test:actor-on, test:edit-on, test:matrix, test:runtime-role
-in full, and the N-1 drill (init and migrate with main, the branch, main,
-the revert, main, the branch: 0312 unchanged by this round, so the drill
-should read as fix round 1's; the new TEMPORARY assert and the pg-boss
-revoke ride every migrate of the branch). The full run with the switch on
-had started at hand-over and was stopped with the unit; its container and
-clone were removed by name. Then CI on the pushed head.
+The first builder of this round stopped at about 120 tool calls with every
+item, the Mac gates and the round's cells on pg18 done; a second builder
+ran the full suites. Workstation, own clone ~/s7a3h-ws/repo (feat/s7a-a3
+from GitHub at 013e79cba), own container s7a3h-pg (pgvector pg18,
+127.0.0.1:56400 checked free, max_connections=450, role postgres as CI),
+init-scratch 0 and migrate 0 with MANTLE_CHECK_FLOOR=keep, DATABASE_URL
+for those two only, systemd-run --user, --maxWorkers=3, one at a time,
+switch on unless said:
+
+| Gate                                      | Exit | Counts                                        |
+| ----------------------------------------- | ---- | --------------------------------------------- |
+| full DB vitest, MANTLE_NARROW_DUMP        | 0    | 1150 files; 14163 passed, 1 skipped           |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0    | 1    | 2 files, 4 cells failed (below); 14159 passed |
+| the same, rerun once                      | 0    | 1150 files; 14163 passed, 1 skipped           |
+| test:actor-off                            | 0    | 138 files; 1368 passed, 1 skipped             |
+| test:actor-on                             | 0    | 33 files; 405 passed, 1 skipped               |
+| test:edit-on                              | 0    | 45 files; 575 passed                          |
+| test:matrix                               | 0    | 4 files; 8 passed                             |
+| test:runtime-role in full                 | 1    | 3 files, 5 cells failed (below); 2867 passed  |
+| the same, rerun once                      | 0    | 290 files; 2872 passed, 1 skipped             |
+| the N-1 drill (own container s7a3h-rb-pg) | 0    | every step 0 (below)                          |
+
+What moved: nothing. The switch-on dump has 1181 lines, every one a use
+(no denial, no narrow write counted); no `narrow system route:` refusal
+and no NarrowRoleLeftError in either full run's log. The switch-off dump
+holds only narrow-route.db.test.ts's own switch-on cells (20 lines). The
+counts against fix round 1 (1140 files, 14009 passed) grew with main
+(v0.300.121) and this round's cells; no cell's answer changed. No hang:
+the full runs took 884 s and 860 s. The round-trip and order cells pass in
+every suite they are in, and no other cell that counts statements moved.
+
+The failures, none on the narrow route and none this branch's:
+
+- `packages/runtime/src/agent/chat-archive.db.test.ts` "New chat ..."
+  (the archived summary note missing from `contentHits`; the file's two
+  later cells fail from it, as they read the first one's thread) and
+  `packages/runtime/src/agent/conversation-trace.db.test.ts` (the near
+  page missing from the vector hits), together, in the switch-off run and
+  in the first runtime-role run. Both are the owner's turn context's HNSW
+  content pool (packages/search/src/hnsw.ts `withHnswPool`, owner filter
+  on the index order) on a busy shared database; this branch changes no
+  file in packages/search or packages/runtime, the switch-off run takes no
+  narrow route, both files pass alone (8 of 8, switch off) and in the
+  reruns, and S11a's handover records the conversation-trace cell failing
+  the same way on its full run. Left as an open item below.
+- `packages/db/src/access-matrix.db.test.ts` "re-applying heals drift"
+  (first runtime-role run): `tuple concurrently deleted`, a catalog race
+  with another file's GRANTs, the class scope.db's
+  `ensureConcurrentIndexes` cell showed before; passed on the rerun.
+
+The N-1 drill, main 792c51b4e and the branch 013e79cba, each step's state
+as cascade triggers / mantle_narrow_actor / the 0312 ledger row / ledger
+rows / the md5 of mantle_actor_check_stmt's body / PUBLIC's TEMPORARY /
+the narrow role's TEMP:
+
+| Step                         | Exit | State                                    |
+| ---------------------------- | ---- | ---------------------------------------- |
+| init and migrate with main   | 0, 0 | 0 / no / 0 / 311 / 31be63d4 / 1 / true   |
+| migrate with the branch (N)  | 0    | 3 / yes / 1 / 312 / 39dc0bd1 / 0 / false |
+| migrate with main (N-1 boot) | 0    | unchanged                                |
+| the revert                   | 0    | 0 / no / 0 / 311 / 31be63d4 / 0 / false  |
+| migrate with main            | 0    | unchanged                                |
+| migrate with the branch      | 0    | 3 / yes / 1 / 312 / 39dc0bd1 / 0 / false |
+
+As fix round 1's: the revert puts the actor check's body back byte for
+byte and TEMPORARY stays taken (the new assert and the pg-boss revoke ran
+on each branch migrate, with no pgboss schema on this database).
+Cleaned up by name: the two containers (with their volumes), the clone,
+the units.
+
+CI on 013e79cba: run 39518868731 success (every step, the runtime role
+and matrix steps included).
+
+#### Open items (fix round 2)
+
+1. The owner's content pool can miss a row on a busy shared test
+   database (chat-archive.db.test.ts, conversation-trace.db.test.ts, above):
+   not this branch's; for the search lane. One lead, measured: the
+   `hasIterativeScan` probe in hnsw.ts reads `hnsw.iterative_scan` with
+   `current_setting(..., true)`, which is null on a backend that has not
+   loaded pgvector yet, and the answer is kept for the process, so a
+   process whose first probe lands on such a backend never turns the
+   iterative scan on (the two cells alone read `off`, so loaded, both
+   times; not shown to be this failure's cause).
