@@ -91,6 +91,8 @@ describe('readSql', () => {
     ['an advisory lock', 'select pg_advisory_lock(1)'],
     ['a try advisory lock', 'select pg_try_advisory_lock(1)'],
     ['an advisory transaction lock', 'select pg_advisory_xact_lock(1)'],
+    ['the bare advisory transaction prefix', 'select pg_advisory_xact_(1)'],
+    ['the bare try advisory transaction prefix', 'select pg_try_advisory_xact_(1)'],
     ['an advisory unlock', 'select pg_advisory_unlock_all()'],
     ['nextval', "select nextval('s')"],
     ['setval', "select setval('s', 1)"],

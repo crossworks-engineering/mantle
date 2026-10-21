@@ -1552,3 +1552,24 @@ named, not test:actor-off). The cell now holds in both modes (the
 statements less any actor SET, at most one SET); run under the actor-off
 config and the default one, 33 of 33 each. The next run's id and result
 are in the round's report.
+
+#### Audit of fix round 3 (delta 90aa385b5 to a447d7b59): merge
+
+No regression or hole in the delta. Fixed before the merge: the readSql
+list matched again exactly what it matched before the round (the xact
+advisory patterns take `\w*`, so the bare `pg_advisory_xact_` and
+`pg_try_advisory_xact_` prefixes are refused as before; cells in
+read-sql.test.ts).
+
+Left open, outside this part:
+
+- headsBypassesIn (packages/db/src/heads-bypass.ts) does not match the
+  quoted form every shipped migration writes
+  (`"public"."mantle_heads_bypass"('...')`), so the migration output lists
+  no bypass and the shipped-migrations test checks nothing. The database's
+  own heads_check_misses rows still record each bypass. A regex that takes
+  the quotes makes the test fail on 0272, which calls 0267's bypass inside
+  a function body; decide that case when it is fixed.
+- No test returns an array from begin through writeTxOf, joinWriteTx or
+  the turn-scope begin, or has one statement of an array fail. The code
+  reading says they behave.
