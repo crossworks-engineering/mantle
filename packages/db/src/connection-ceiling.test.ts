@@ -28,6 +28,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { POOL_ROLES, viewerRoleStatements } from './viewer-roles';
+import { runtimeRoleStatements } from './runtime-role';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (rel: string) => readFileSync(join(repoRoot, rel), 'utf8');
@@ -357,7 +358,19 @@ function sizeOf(call: Call): number {
  *  process and role; the write role's at the size each opener asks for). */
 const clientCalls = CALLS.filter((c) => c.file === CLIENT_TS && c.kind === 'postgres');
 const viewerCall = clientCalls.find((c) => /viewerDatabaseUrl\(/.test(c.args));
-const systemCall = clientCalls.find((c) => !/viewerDatabaseUrl\(/.test(c.args));
+/** The narrow route's own pool (plan v3.2 S7b): NARROW_POOL_MAX per process
+ *  that runs narrow work, under the narrow role's CONNECTION LIMIT. */
+const narrowCall = clientCalls.find((c) => /\bNARROW_POOL_MAX\b/.test(c.args));
+const systemCall = clientCalls.find(
+  (c) => !/viewerDatabaseUrl\(/.test(c.args) && !/\bNARROW_POOL_MAX\b/.test(c.args),
+);
+/** The narrow role's CONNECTION LIMIT, read from the statement migrate runs. */
+const NARROW_LIMIT = (() => {
+  const stmt = runtimeRoleStatements(new Set(), null, 'ceilingtest').join(' ');
+  const m = stmt.match(/ROLE "mantle_system_narrow" WITH [^;]*?CONNECTION LIMIT (\d+)/);
+  if (!m) throw new Error('the narrow role: no CONNECTION LIMIT');
+  return Number(m[1]);
+})();
 
 /** VIEWER_POOL_MAX, read from client.ts: each limited pool's size per
  *  process, and the most a write pool opener may ask for. */
@@ -456,6 +469,9 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
     (list ?? []).filter((p) => shape.processes.includes(p));
   const lines: Record<string, number> = {};
   if (systemCall) lines['system pool'] = sizeOf(systemCall) * shape.processes.length;
+  if (narrowCall) {
+    lines['role narrow'] = Math.min(NARROW_LIMIT, sizeOf(narrowCall) * shape.processes.length);
+  }
   if (viewerCall) {
     // The write pool only in the processes that open it (A2b2b), each at
     // its own size; the stdio MCP server is no box process (the headroom).
@@ -513,13 +529,14 @@ describe('Postgres connection ceiling', () => {
     expect(unknown, 'a new pool: add it to SITES (who opens it) or ONE_SHOT').toEqual([]);
   });
 
-  it('each counted site still opens its pool, once (client.ts: system + limited)', () => {
+  it('each counted site still opens its pool, once (client.ts: system + limited + narrow)', () => {
     for (const s of SITES) {
       const n = CALLS.filter((c) => c.file === s.file && c.kind === s.kind).length;
-      expect(n, `${s.kind} ${s.file}`).toBe(s.file === CLIENT_TS ? 2 : 1);
+      expect(n, `${s.kind} ${s.file}`).toBe(s.file === CLIENT_TS ? 3 : 1);
     }
     expect(systemCall).toBeDefined();
     expect(viewerCall).toBeDefined();
+    expect(narrowCall).toBeDefined();
   });
 
   it('the write pool: web, api, the runs worker, the Telegram poller and the stdio MCP server open it (A2b2b)', () => {

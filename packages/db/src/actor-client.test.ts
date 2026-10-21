@@ -387,6 +387,14 @@ describe('setActorSql checks each value before it inlines it (A2b)', () => {
       "'login:rw:0f0e0d0c-0b0a-4908-8706-050403020100'",
     );
     expect(setActorSql(['system:repair:page-block-ids', 'rw', 'on'])).toContain("'on'");
+    // The acting login a system actor carries (plan v3.2 S7b): a uuid only.
+    const L = '0f0e0d0c-0b0a-4908-8706-050403020100';
+    expect(setActorSql(['system:http:admin-area', 'rw', 'off', undefined, L])).toContain(
+      `set_config('mantle.acting_login', '${L}', true)`,
+    );
+    expect(() => setActorSql(['system:x', 'rw', 'off', undefined, "x'; reset role"])).toThrow(
+      /acting login/,
+    );
   });
 
   it('refuses any other shape, so nothing reaches the literal', () => {

@@ -320,6 +320,10 @@ describe('narrowSendable (plan v3.2 S7a)', () => {
       "select set_config('mantle.create_ws', $1, true)",
       "select set_config('mantle.private_ws', $1, true)",
       "select set_config('mantle.create_stamp', $1, true)",
+      // The acting login (plan v3.2 S7b): a definer with no scope acts for
+      // it, so a narrow statement never names it.
+      "select set_config('mantle.acting_login', $1, true)",
+      "set local mantle.acting_login = '00000000-0000-4000-8000-000000000000'",
       'set local "mantle.create_ws" = \'x\'',
       'set local mantle . "create_stamp" to \'{}\'',
     ]) {

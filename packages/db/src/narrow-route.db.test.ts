@@ -220,12 +220,33 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect((await v.onFullSystemRoute('profile-row', who)).u).toBe(pool);
   });
 
-  it('rolls back a statement or a transaction that left the role, and refuses transaction control', async () => {
-    // A function that changes the role (the text cannot show it): the hold
-    // check rolls the work back.
+  it('a function that changes the role has nowhere to go on the login pool; the SET route (per-database) rolls it back; transaction control is refused', async () => {
+    // The login pool (plan v3.2 S7b): the session is the narrow role's own,
+    // so a role change inside a function lands on the narrow role again.
+    const left = (await v.asSystem(
+      () =>
+        m.db.transaction(async (tx) => {
+          await tx.execute(sql`select public.narrow_probe_leave()`);
+          return tx.execute(sql`select current_user::text as u, session_user::text as s`);
+        }),
+      'admin-area',
+    )) as unknown as { u: string; s: string }[];
+    expect(left[0]).toEqual({ u: NARROW, s: NARROW });
+    // The SET route, which a per-database box still takes (the role has no
+    // login there): the hold check rolls the work back.
+    const pools = await import('./gateway/pools');
     expect(
       await failure(
-        v.asSystem(() => m.db.execute(sql`select public.narrow_probe_leave()`), 'admin-area'),
+        v.asSystem(
+          () =>
+            nr.narrowStatement(
+              pools.rawAdminSql(),
+              'select public.narrow_probe_leave()',
+              [],
+              'rows',
+            ),
+          'admin-area',
+        ),
       ),
     ).toBeInstanceOf(nr.NarrowRoleLeftError);
     const marker = `narrow-left-${randomUUID()}`;
@@ -233,11 +254,13 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       await failure(
         v.asSystem(
           () =>
-            m.db.transaction(async (tx) => {
-              await tx.execute(sql`select public.narrow_probe_leave()`);
-              // As the session's own login now: the hold check must undo this.
-              await tx.execute(sql.raw(probeInsert(marker)));
-            }),
+            nr.narrowBegin(pools.rawAdminSql(), [
+              async (tx: postgres.TransactionSql) => {
+                await tx.unsafe('select public.narrow_probe_leave()');
+                // As the session's own login now: the hold check must undo this.
+                await tx.unsafe(probeInsert(marker));
+              },
+            ]),
           'admin-area',
         ),
       ),

@@ -309,10 +309,13 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
     expect(await rowOf(id)).toEqual(untouched(L.member));
   });
 
-  it('on the narrow role with no scope the rule reads the login it is given', async () => {
+  it('on the narrow role with no scope the rule reads the login it is given (the acting login, 0314)', async () => {
     const run = async (login: string, id: string): Promise<number> =>
       su.begin(async (tx) => {
-        await tx`select set_config('role', 'mantle_system_narrow', true)`;
+        // The gateway sends the acting login with the actor (0314): the
+        // login passed must be it.
+        await tx`select set_config('role', 'mantle_system_narrow', true),
+                        set_config('mantle.acting_login', ${login}, true)`;
         const [me] = await tx<{ u: string }[]>`select current_user::text as u`;
         expect(me!.u).toBe('mantle_system_narrow');
         const rows = await tx`

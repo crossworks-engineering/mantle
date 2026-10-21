@@ -35,7 +35,16 @@ export type Actor =
   | { kind: 'contact'; canWrite: boolean }
   /** `mode: 'ro'`: system work done inside a read-only caller (a read key's
    *  area route, an asSystem in its request) stays read only (systemUnder). */
-  | { kind: 'system'; reason: string; mode?: 'ro' }
+  | {
+      kind: 'system';
+      reason: string;
+      mode?: 'ro';
+      /** The acting login (plan v3.2 S7b): the login whose request or
+       *  turn this system work runs for (systemUnder). The gateway sends it
+       *  as mantle.acting_login with the actor; a definer that acts for a
+       *  login with no scope takes only this one (0314). Never mantle.actor. */
+      login?: string;
+    }
   | { kind: 'peer'; peerId: string | null };
 
 /** A system reason: lower case, `:` between parts (worker:extract,
@@ -65,12 +74,29 @@ export function systemActor(reason: string): Actor {
  * note). An assistant with no user still does its own system work (its
  * traces, its turn's rows), as a peer(share) does its audit row: they keep
  * write mode rw here. A named repair or backfill does not use this: it
- * writes for any caller (runReadPathWrite, plan 20.3 item 8).
+ * writes for any caller (runReadPathWrite, plan 20.3 item 8). The login
+ * `outer` acts for rides along as the acting login (actingLoginOf).
  */
 export function systemUnder(reason: string, outer: Actor | null): Actor {
   const actor = systemActor(reason);
-  if (outer && narrowsSystemWork(outer)) return Object.freeze({ ...actor, mode: 'ro' as const });
-  return actor;
+  const login = actingLoginOf(outer);
+  const ro = outer !== null && narrowsSystemWork(outer);
+  if (!ro && !login) return actor;
+  return Object.freeze({
+    ...actor,
+    ...(ro ? { mode: 'ro' as const } : {}),
+    ...(login ? { login } : {}),
+  });
+}
+
+/** The login an actor acts for: a login's own, or the acting login a
+ *  system actor carries (systemUnder); null for any other. */
+export function actingLoginOf(actor: Actor | null): string | null {
+  if (actor?.kind === 'login') return actor.loginId;
+  if (actor?.kind === 'system' && actor.login && UUID_RE.test(actor.login)) {
+    return actor.login.toLowerCase();
+  }
+  return null;
 }
 
 /** The read-only callers whose system work stays read only (systemUnder). */

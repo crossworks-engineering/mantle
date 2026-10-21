@@ -30,6 +30,8 @@ import {
   runtimeReadOnlyTables,
   runtimeRolePassword,
   runtimeRoleStatements,
+  narrowRolePassword,
+  NARROW_CONNECTION_LIMIT,
   revokeOrder,
   systemDatabaseUrl,
   type HeldMembership,
@@ -108,21 +110,36 @@ describe('the runtime role statements', () => {
     expect(wantedMemberships().some((m) => m.member === OWNER_ROLE)).toBe(false);
   });
 
-  it('the narrow system role: never logs in, bypasses the row rules, holds no owner power', () => {
+  it('the narrow system role: logs in only with its own password, bypasses the row rules, holds no owner power', () => {
+    // Its login follows its own password (MANTLE_NARROW_SYSTEM at migrate),
+    // never the runtime role's.
     for (const pw of ['pw_1-x', null]) {
       const r = runtimeRoleStatements(new Set(), pw).find((x) =>
         x.includes(`ROLE "${NARROW_ROLE}" WITH`),
       )!;
       expect(r).toBe(
         `CREATE ROLE "${NARROW_ROLE}" WITH NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB ` +
-          'NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL',
+          `NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${NARROW_CONNECTION_LIMIT} PASSWORD NULL`,
       );
     }
+    const on = runtimeRoleStatements(new Set([NARROW_ROLE]), null, 'npw_2-y');
+    expect(on.find((x) => x.includes(`"${NARROW_ROLE}" WITH`))).toBe(
+      `ALTER ROLE "${NARROW_ROLE}" WITH LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB ` +
+        `NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${NARROW_CONNECTION_LIMIT} PASSWORD 'npw_2-y'`,
+    );
+    // The narrow password never reaches the runtime role, nor the reverse.
+    expect(on.find((x) => x.includes(`"${RUNTIME_ROLE}" WITH`))).toMatch(
+      / WITH NOLOGIN .*PASSWORD NULL$/,
+    );
     expect(
       runtimeRoleStatements(new Set([NARROW_ROLE]), null).find((x) =>
         x.includes(`"${NARROW_ROLE}" WITH`),
       ),
     ).toMatch(/^ALTER ROLE "mantle_system_narrow" WITH NOLOGIN /);
+    expect(() => runtimeRoleStatements(new Set(), null, "x'y")).toThrow(/base64url/);
+    // Two labels of one key: the passwords differ.
+    expect(narrowRolePassword('k')).not.toBe(runtimeRolePassword('k'));
+    expect(narrowRolePassword('k')).toBe(narrowRolePassword('k'));
     // The runtime role may SET ROLE to it, never inherit it; it is a member
     // of nothing, and nothing else is a member of it.
     expect(stmts).toContain(

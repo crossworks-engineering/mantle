@@ -107,7 +107,7 @@ export const NARROW_LOCAL_SETTINGS: Readonly<Record<string, string>> = Object.fr
  * statement of narrow work.
  */
 const GATEWAY_SETTING =
-  /^mantle\.(?:actor|actor_check|write_mode|route|login_id|ws|mod_ws|scope_[a-z0-9_]+|create_ws|private_ws|create_stamp)$/;
+  /^mantle\.(?:actor|actor_check|write_mode|route|acting_login|login_id|ws|mod_ws|scope_[a-z0-9_]+|create_ws|private_ws|create_stamp)$/;
 
 /** The gateway's own SET is being sent (gatewaySettings). */
 const gatewaySetting = new AsyncLocalStorage<true>();

@@ -38,13 +38,15 @@ const consoleLog: StepLog = {
  *  outcome for afterMigrations. `runtimeLogin`: MANTLE_DB_RUNTIME_ROLE as
  *  migrate sees it (compose passes it through x-app-env): the runtime role
  *  may log in only then, and is NOLOGIN again at the first migrate without
- *  it. */
+ *  it. `narrowLogin`: MANTLE_NARROW_SYSTEM as migrate sees it, the same for
+ *  the narrow role (its own pool's login, gateway/pools.ts). */
 export async function beforeMigrations(
   sql: Sql,
   masterKey: string | null,
   perDatabase: boolean,
   runtimeLogin: boolean,
   log: StepLog = consoleLog,
+  narrowLogin = false,
 ): Promise<RuntimeRolesOutcome> {
   // Refuses to reset roles another brain on this cluster owns.
   if ((await ensureViewerRoles(sql, masterKey, perDatabase)) === 'not-permitted') {
@@ -54,6 +56,7 @@ export async function beforeMigrations(
   }
   const runtime = await ensureRuntimeRoles(sql, masterKey, {
     login: runtimeLogin,
+    narrowLogin,
     perDatabase,
     warn: log.warn,
   });
@@ -62,6 +65,11 @@ export async function beforeMigrations(
       runtimeLogin && masterKey && !perDatabase
         ? '  runtime role mantle_runtime: LOGIN (MANTLE_DB_RUNTIME_ROLE is on)'
         : '  runtime role mantle_runtime: NOLOGIN (MANTLE_DB_RUNTIME_ROLE is off)',
+    );
+    log.info(
+      narrowLogin && masterKey && !perDatabase
+        ? '  narrow role mantle_system_narrow: LOGIN (MANTLE_NARROW_SYSTEM is on)'
+        : '  narrow role mantle_system_narrow: NOLOGIN (MANTLE_NARROW_SYSTEM is off, or per-database mode)',
     );
   }
   if (runtime === 'not-superuser') {

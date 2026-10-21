@@ -95,7 +95,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     scratch = await createMigratedScratchDatabase(URL!);
     const keep = (n: { message?: string }) => notices.push(n.message ?? '');
     su = postgres(scratch.url, { max: 1, prepare: false, onnotice: keep });
-    expect(await ensureRuntimeRoles(su, KEY, { login: true })).toBe('ok');
+    expect(await ensureRuntimeRoles(su, KEY, { login: true, narrowLogin: true })).toBe('ok');
     rt = postgres(runtimeDatabaseUrl(scratch.url, runtimeRolePassword(KEY)), {
       max: 1,
       prepare: false,

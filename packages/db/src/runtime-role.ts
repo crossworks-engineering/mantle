@@ -34,16 +34,21 @@
  *    write role's own membership tests (0277, 0278) count only a direct
  *    membership, so the system pool is still "not the write role's login"
  *    there, as it was as the superuser.
- *  - mantle_system_narrow (NOLOGIN): the narrow system
- *    role. BYPASSRLS, owns nothing (the narrow route's text check refuses
+ *  - mantle_system_narrow: the narrow system role. It logs in only when
+ *    migrate sees MANTLE_NARROW_SYSTEM on (LOGIN, its password derived from
+ *    MANTLE_MASTER_KEY as the runtime role's is, another label; NOLOGIN
+ *    otherwise), and the narrow route's own pool logs in as it
+ *    (narrowDatabaseUrl, gateway/pools.ts), so a narrow session holds no
+ *    other role to go back to. BYPASSRLS, owns nothing (the narrow route's text check refuses
  *    the large-object functions that would make it an owner), member of
  *    nothing, and its rights come
  *    from the access matrix (narrowFor): read only on the content tables,
  *    read and write on the system and admin tables, nothing where the
  *    runtime role has nothing, and EXECUTE on the runtime role's allowlist
  *    less NARROW_DENIED_FUNCTIONS. The runtime role may SET ROLE to it (no
- *    INHERIT), and the superuser may as any role: a system transaction
- *    takes it with set_config('role', ..., true), never a session SET.
+ *    INHERIT), and the superuser may as any role: the narrow route's
+ *    fallback (per-database mode, where the role gets no login) takes it per
+ *    transaction with set_config('role', ..., true), never a session SET.
  *    Not a member of mantle_owner, so the derivation guards
  *    (mantle_owner_role) count it as a limited role: it writes no content
  *    table anyway.
@@ -364,13 +369,23 @@ export function narrowReadOnlyTables(): string[] {
  * restore and after a master-key change.
  */
 export function runtimeRolePassword(masterKey: string): string {
-  if (!masterKey)
-    throw new Error('MANTLE_MASTER_KEY must be set to derive the runtime role password');
+  return loginRolePassword(masterKey, RUNTIME_ROLE);
+}
+
+/** The narrow system role's password: the runtime role's scheme, its own
+ *  label (`runtime-role:mantle_system_narrow`). */
+export function narrowRolePassword(masterKey: string): string {
+  return loginRolePassword(masterKey, NARROW_ROLE);
+}
+
+/** HKDF-SHA256 over the master key, labelled by the role. */
+function loginRolePassword(masterKey: string, role: string): string {
+  if (!masterKey) throw new Error(`MANTLE_MASTER_KEY must be set to derive the ${role} password`);
   const key = hkdfSync(
     'sha256',
     Buffer.from(masterKey, 'utf8'),
     Buffer.from('mantle-runtime-role', 'utf8'),
-    Buffer.from('runtime-role:mantle_runtime', 'utf8'),
+    Buffer.from(`runtime-role:${role}`, 'utf8'),
     32,
   );
   return Buffer.from(key).toString('base64url');
@@ -378,12 +393,40 @@ export function runtimeRolePassword(masterKey: string): string {
 
 /** `adminUrl` with the runtime role's user and password. Host, port,
  *  database and options stay. */
-export function runtimeDatabaseUrl(adminUrl: string, password: string): string {
+export function runtimeDatabaseUrl(
+  adminUrl: string,
+  password: string,
+  role = RUNTIME_ROLE,
+): string {
   const u = new URL(adminUrl);
-  u.username = RUNTIME_ROLE;
+  u.username = role;
   u.password = password; // base64url: nothing to escape
   return u.toString();
 }
+
+/**
+ * The URL the narrow route's own pool logs in with (gateway/pools.ts): the
+ * same server and database as DATABASE_URL, as mantle_system_narrow, or
+ * null when the role has no login here (MANTLE_VIEWER_ROLES_PER_DATABASE:
+ * one cluster, several brains, so one password cannot be every brain's;
+ * the route then takes the role per transaction on the system pool, as
+ * before). Independent of MANTLE_DB_RUNTIME_ROLE: the system pool may log
+ * in as the superuser, the narrow pool never does.
+ */
+export function narrowDatabaseUrl(): string | null {
+  const url = env('DATABASE_URL');
+  if (!url) throw new Error('DATABASE_URL must be set');
+  if (feature('viewerRolesPerDatabase')) return null;
+  const key = env('MANTLE_MASTER_KEY');
+  if (!key)
+    throw new Error('MANTLE_NARROW_SYSTEM needs MANTLE_MASTER_KEY (the narrow role password)');
+  return runtimeDatabaseUrl(url, narrowRolePassword(key), NARROW_ROLE);
+}
+
+/** The narrow role's CONNECTION LIMIT: every process's narrow pool
+ *  (NARROW_POOL_MAX each, gateway/pools.ts) shares it, so the sum stays
+ *  under the box's max_connections (connection-ceiling.test.ts). */
+export const NARROW_CONNECTION_LIMIT = 30;
 
 /** Whether this process's pools log in as the runtime role. */
 export function runtimeRoleOn(): boolean {
@@ -618,9 +661,12 @@ function roleAttrs(role: string, password: string | null): string {
   }
   // The narrow system role reads and writes past the row rules, as the
   // system pool does, but only where the access matrix lets it
-  // (applyNarrowGrants). Nobody logs in as it.
+  // (applyNarrowGrants). The narrow route's own pool logs in as it while
+  // MANTLE_NARROW_SYSTEM is on (its password given), never otherwise.
   if (role === NARROW_ROLE) {
-    return `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL`;
+    return password
+      ? `LOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${NARROW_CONNECTION_LIMIT} PASSWORD '${password}'`
+      : `NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${NARROW_CONNECTION_LIMIT} PASSWORD NULL`;
   }
   return `NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
@@ -633,16 +679,18 @@ function roleAttrs(role: string, password: string | null): string {
 export function runtimeRoleStatements(
   existing: ReadonlySet<string>,
   password: string | null,
+  narrowPassword: string | null = null,
 ): string[] {
-  if (password !== null && !/^[A-Za-z0-9_-]+$/.test(password)) {
-    throw new Error('runtime role password is not base64url');
+  for (const p of [password, narrowPassword]) {
+    if (p !== null && !/^[A-Za-z0-9_-]+$/.test(p)) {
+      throw new Error('runtime role password is not base64url');
+    }
   }
   const out: string[] = [];
   for (const role of RUNTIME_ROLES) {
     const verb = existing.has(role) ? 'ALTER' : 'CREATE';
-    out.push(
-      `${verb} ROLE "${role}" WITH ${roleAttrs(role, role === RUNTIME_ROLE ? password : null)}`,
-    );
+    const pw = role === RUNTIME_ROLE ? password : role === NARROW_ROLE ? narrowPassword : null;
+    out.push(`${verb} ROLE "${role}" WITH ${roleAttrs(role, pw)}`);
   }
   for (const m of wantedMemberships()) {
     out.push(
@@ -778,7 +826,8 @@ export async function takeBackMemberships(
  * runtime role logs in only when `login` (migrate: MANTLE_DB_RUNTIME_ROLE
  * on), with a master key and outside per-database mode; otherwise it is
  * NOLOGIN with no password, so switching the switch off closes the login at
- * the next migrate. Needs a superuser (a BYPASSRLS role is a superuser's to
+ * the next migrate. The narrow role the same, by `narrowLogin`
+ * (MANTLE_NARROW_SYSTEM). Needs a superuser (a BYPASSRLS role is a superuser's to
  * make): any other caller changes nothing and gets 'not-superuser'.
  * Postgres 16 or later (membership options). Before the migrations: they
  * and the grants name the roles. `warn`: each membership taken back
@@ -787,7 +836,14 @@ export async function takeBackMemberships(
 export async function ensureRuntimeRoles(
   sql: Sql,
   masterKey: string | null,
-  opts: { login: boolean; perDatabase?: boolean; warn?: (line: string) => void },
+  opts: {
+    login: boolean;
+    /** MANTLE_NARROW_SYSTEM as migrate sees it: the narrow role logs in only
+     *  then (with a master key, outside per-database mode). */
+    narrowLogin?: boolean;
+    perDatabase?: boolean;
+    warn?: (line: string) => void;
+  },
 ): Promise<RuntimeRolesOutcome> {
   const [me] = await sql<{ su: boolean; v: number }[]>`
     select r.rolsuper as su, current_setting('server_version_num')::int as v
@@ -812,11 +868,17 @@ export async function ensureRuntimeRoles(
     select rolname from pg_roles where rolname = any(${[...RUNTIME_ROLES]}::text[])`;
   const password =
     opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
+  const narrowPassword =
+    opts.narrowLogin && masterKey && !opts.perDatabase ? narrowRolePassword(masterKey) : null;
   // Wrong memberships first, so the GRANTs below land on a clean slate (a
   // membership is one row per grantor: a GRANT does not change another
   // grantor's row).
   await takeBackMemberships(sql, opts.warn ?? ((line) => console.warn(line)));
-  for (const stmt of runtimeRoleStatements(new Set(rows.map((r) => r.rolname)), password)) {
+  for (const stmt of runtimeRoleStatements(
+    new Set(rows.map((r) => r.rolname)),
+    password,
+    narrowPassword,
+  )) {
     await runRoleStatement(sql, stmt, true);
   }
   return 'ok';

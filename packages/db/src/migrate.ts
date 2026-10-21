@@ -64,6 +64,7 @@ import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { afterMigrations, beforeMigrations } from './migrator-steps';
+import { narrowSystemOn } from './runtime-role';
 import { checkFloorPolicy, raiseCheckFloor } from './check-floor';
 
 async function main() {
@@ -86,6 +87,10 @@ async function main() {
       env('MANTLE_MASTER_KEY') ?? null,
       feature('viewerRolesPerDatabase'),
       feature('dbRuntimeRole'),
+      undefined,
+      // The narrow route's switch as the app reads it (runtime-role.ts
+      // narrowSystemOn): its pool logs in as the narrow role only then.
+      narrowSystemOn(),
     );
 
     const journal = (

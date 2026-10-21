@@ -33,6 +33,7 @@ import {
   loginActor,
   systemActor,
   systemUnder,
+  actingLoginOf,
   runInActorSlot,
   setSlotActor,
   slotActor,
@@ -1166,6 +1167,19 @@ export function boundLoginId(): string | null {
   const actor = currentActor();
   if (actor?.kind === 'login') return actor.loginId;
   return currentWorkspaceScope()?.loginId?.toLowerCase() ?? null;
+}
+
+/** Whether `actor` is a request system exit's (noteRequestSystem: an Admin
+ *  area route, a login's own things) with the login it acts for: its
+ *  settings go with every write and transaction in every check mode, so a
+ *  definer that acts for a login with no scope reads that login (0314). */
+export function isRequestExitActor(actor: Actor | null): boolean {
+  return (
+    actor?.kind === 'system' &&
+    actingLoginOf(actor) !== null &&
+    (actor.reason === REQUEST_SYSTEM_REASON.area ||
+      actor.reason === REQUEST_SYSTEM_REASON['login-self'])
+  );
 }
 
 /** Whether `actor` is workspace system work (WORKSPACE_SYSTEM_REASONS). */

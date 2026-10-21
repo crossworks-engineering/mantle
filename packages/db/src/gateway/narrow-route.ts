@@ -1,17 +1,29 @@
 /**
  * The narrow system route (plan v3.2 section 2.1 point 3): a statement or
- * a transaction of a reason routed 'narrow' runs on the system pool as
- * mantle_system_narrow, the role taken per transaction by
- * set_config('role', ..., true) with the actor's settings (never a session
- * SET), the hold check before the COMMIT. The write role's runner has the
- * same shape (role-runner.ts); this one sits below pools.ts, which builds
- * the system pool's client over it (narrowRouteClient).
+ * a transaction of a reason routed 'narrow' runs as mantle_system_narrow.
+ *
+ * Since S7b on the route's own pool, whose connections log in as the
+ * narrow role (gateway/pools.ts narrowPoolSql): the role is the session's
+ * own, a member of nothing, so no statement can leave it (a reset or a
+ * role change lands on the narrow role again). A statement outside a
+ * transaction carries the actor as a session-level SET pipelined with it
+ * and a RESET behind it (no BEGIN, no COMMIT); a transaction sets the
+ * actor with its first statement, and the hold check runs before its
+ * COMMIT. Where the role has no login (per-database mode, narrowPoolSql
+ * null) the route takes the role per transaction on the system pool, as
+ * S7a built it: set_config('role', ..., true) with the actor's settings
+ * (never a session SET), the hold check before the COMMIT.
+ *
+ * The text check (narrow-sendable.ts) runs on both: on the login pool it
+ * guards against mistakes (a session setting, a gateway setting, a call
+ * whose effect outlives the transaction), never the boundary itself.
  */
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
 import { RuntimeFaultError } from '@mantle/std';
 import { permissionGapOf, pgErrorCode } from '../pg-error';
 import {
+  actingLoginOf,
   actorCheckMode,
   actorSetting,
   currentActor,
@@ -27,11 +39,13 @@ import { sqlCode } from '../sql-text';
 import { narrowSendable } from './narrow-sendable';
 import {
   lazyQuery,
+  resetActorSqlFor,
   sendIn,
   setActorSql,
   settingsFirst,
   trackPipeline,
   workResult,
+  type ActorParams,
   type QueryMode,
 } from './actor-sql';
 
@@ -62,18 +76,32 @@ export class NarrowRoleLeftError extends RuntimeFaultError {
 }
 
 /**
- * The one SET of a narrow transaction (never a session SET): the role,
- * transaction-local, and the actor, its write mode and the box's check mode
- * (set whatever the mode, so the database always knows who wrote: the
- * actor stays system:<reason>). Inlined, checked literals (setActorSql).
+ * The actor's settings on the narrow route: set whatever the check's mode,
+ * so the database always knows who wrote (the actor stays system:<reason>),
+ * its write mode (a read-only caller's definers refuse) and the acting
+ * login a system actor carries (mantle.acting_login, plan v3.2 S7b). Null
+ * with no actor bound.
  */
-async function narrowSettingsSql(): Promise<string> {
+async function narrowParams(): Promise<ActorParams | null> {
   const waitFor = firstModeReadNow();
   if (waitFor) await waitFor;
   const actor = currentActor();
+  if (!actor) return null;
+  const acting = actor.kind === 'system' ? (actingLoginOf(actor) ?? undefined) : undefined;
+  return [actorSetting(actor), writeModeOf(actor), actorCheckMode(), undefined, acting];
+}
+
+/**
+ * The one SET of a narrow transaction (never a session SET): the actor's
+ * settings (narrowParams), and on the system pool (`takeRole`) the role,
+ * transaction-local. Inlined, checked literals (setActorSql). Null: nothing
+ * to set (the login pool, no actor).
+ */
+async function narrowSettingsSql(takeRole: boolean): Promise<string | null> {
+  const params = await narrowParams();
   const role = `set_config('role', '${NARROW_ROLE}', true)`;
-  if (!actor) return `${NARROW_SQL_TAG} select ${role}`;
-  return `${NARROW_SQL_TAG} ${setActorSql([actorSetting(actor), writeModeOf(actor), actorCheckMode()])}, ${role}`;
+  if (!params) return takeRole ? `${NARROW_SQL_TAG} select ${role}` : null;
+  return `${NARROW_SQL_TAG} ${setActorSql(params)}${takeRole ? `, ${role}` : ''}`;
 }
 
 /**
@@ -161,11 +189,13 @@ export async function narrowStatement(
   query: string,
   args: unknown[] | undefined,
   mode: QueryMode,
+  pool: PgSql | null = null,
 ): Promise<unknown> {
   narrowSendable(query);
   noteNarrowUse();
   noteNarrowFunctions(query);
-  const setSql = await narrowSettingsSql();
+  if (pool) return narrowLoginStatement(pool, query, args, mode);
+  const setSql = (await narrowSettingsSql(true))!;
   const lease = await reserveLease(base);
   try {
     const conn = lease.sql;
@@ -205,6 +235,62 @@ export async function narrowStatement(
 
 /** The hold check's refusal: division by zero (narrowHeld). */
 const HOLD_FAILED = '22012';
+
+/**
+ * One statement outside a transaction on the narrow route's own pool
+ * (plan v3.2 S7b): the session is the narrow role's, so no BEGIN, no role
+ * SET, no hold check and no COMMIT. With an actor bound, on one reserved
+ * connection: a session-level SET of its settings, the statement and a
+ * RESET of them, pipelined (the SET goes in the statement's first send,
+ * the RESET in its last); the statement commits by itself. A RESET that
+ * fails ends the connection instead of handing it back with the settings
+ * on. With no actor, the statement alone.
+ */
+async function narrowLoginStatement(
+  pool: PgSql,
+  query: string,
+  args: unknown[] | undefined,
+  mode: QueryMode,
+): Promise<unknown> {
+  const params = await narrowParams();
+  if (!params) {
+    try {
+      return await sendIn(pool.unsafe(query, (args ?? []) as never[]), mode);
+    } catch (err) {
+      noteNarrowDenial(err);
+      throw err;
+    }
+  }
+  const setSql = `${NARROW_SQL_TAG} ${setActorSql(params, false)}`;
+  const resetSql = resetActorSqlFor(params, NARROW_SQL_TAG);
+  const lease = await reserveLease(pool);
+  try {
+    const conn = lease.sql;
+    const sent: Promise<unknown>[] = [];
+    try {
+      sent.push(lease.watch(sendIn(conn.unsafe(setSql), 'rows')));
+      sent.push(lease.watch(sendIn(conn.unsafe(query, (args ?? []) as never[]), mode)));
+      sent.push(lease.watch(sendIn(conn.unsafe(resetSql), 'simple')));
+    } catch (err) {
+      // Thrown while the pipeline was built: what was sent settles, and the
+      // connection, which may hold the settings, ends.
+      await Promise.allSettled(sent);
+      if (sent.length > 0) await lease.end();
+      throw err;
+    }
+    const [set, main, reset] = await Promise.allSettled(sent);
+    if (reset!.status === 'rejected') await lease.end();
+    if (main!.status === 'rejected') {
+      noteNarrowDenial(main!.reason);
+      // A SET that failed is the cause (the statement then ran without it).
+      throw set!.status === 'rejected' ? set!.reason : main!.reason;
+    }
+    if (set!.status === 'rejected') throw set!.reason;
+    return main!.value;
+  } finally {
+    lease.release();
+  }
+}
 
 /** One statement's query object, kept lazy (a postgres.js query runs when
  *  it is awaited, in the mode `.values()` or `.simple()` picked), with its
@@ -305,20 +391,27 @@ function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
  * aborted by a statement whose error the work caught without a savepoint),
  * the caller gets that statement's error, never NarrowRoleLeftError.
  */
-export async function narrowBegin(base: PgSql, args: unknown[]): Promise<unknown> {
+export async function narrowBegin(
+  base: PgSql,
+  args: unknown[],
+  pool: PgSql | null = null,
+): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
   noteNarrowUse();
-  const setSql = await narrowSettingsSql();
+  // On the login pool the role is the session's: the SET carries the
+  // actor's settings only (none with no actor).
+  const setSql = await narrowSettingsSql(pool === null);
+  const on = pool ?? base;
   let firstError: { err: unknown } | null = null;
   const seen = (err: unknown) => {
     firstError ??= { err };
     noteNarrowDenial(err);
   };
   try {
-    return await (base.begin as (...a: unknown[]) => Promise<unknown>)(
+    return await (on.begin as (...a: unknown[]) => Promise<unknown>)(
       ...args.slice(0, -1),
       async (t: PgSql) => {
-        const set = settingsFirst(t, () => setSql);
+        const set = setSql === null ? t : settingsFirst(t, () => setSql);
         const value = await workResult(work(narrowTxClient(set, seen)));
         try {
           await narrowHeld(set);
@@ -338,18 +431,28 @@ export async function narrowBegin(base: PgSql, args: unknown[]): Promise<unknown
 /**
  * The system pool's client with the narrow route (plan v3.2 S7a): a
  * statement or a transaction sent while `narrowNow()` says so runs on the
- * narrow route (narrowStatement, narrowBegin), on `base`'s connections;
+ * narrow route (narrowStatement, narrowBegin), on `narrowPool()`'s
+ * connections (the narrow role's own login, S7b), else on `base`'s;
  * everything else is `withActor`'s (the actor client), exactly as before.
  * Decided when the statement is sent, in the caller's context.
  */
-export function narrowRouteClient(withActor: PgSql, base: PgSql, narrowNow: () => boolean): PgSql {
+export function narrowRouteClient(
+  withActor: PgSql,
+  base: PgSql,
+  narrowNow: () => boolean,
+  narrowPool: () => PgSql | null = () => null,
+): PgSql {
   return new Proxy(withActor, {
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
           if (!narrowNow()) return target.unsafe(query, args as never[], opts as never);
           // Tracked: closeDb waits for it (trackPipeline).
-          return lazyQuery((mode) => trackPipeline(narrowStatement(base, query, args, mode)));
+          return lazyQuery((mode) =>
+            trackPipeline(
+              Promise.resolve().then(() => narrowStatement(base, query, args, mode, narrowPool())),
+            ),
+          );
         };
       }
       if (prop === 'begin') {
@@ -357,7 +460,7 @@ export function narrowRouteClient(withActor: PgSql, base: PgSql, narrowNow: () =
           if (!narrowNow() || typeof args[args.length - 1] !== 'function') {
             return (target.begin as (...a: unknown[]) => unknown)(...args);
           }
-          return trackPipeline(narrowBegin(base, args));
+          return trackPipeline(Promise.resolve().then(() => narrowBegin(base, args, narrowPool())));
         };
       }
       return Reflect.get(target, prop, receiver);

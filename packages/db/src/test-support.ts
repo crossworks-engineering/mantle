@@ -756,9 +756,10 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
   try {
     await ensureViewerRoles(sql, masterKey);
     // And the runtime roles (arch A9), with a login: a run with
-    // MANTLE_DB_RUNTIME_ROLE=1 logs its pools in as mantle_runtime, its
-    // password from this key.
-    await ensureRuntimeRoles(sql, masterKey, { login: true });
+    // MANTLE_DB_RUNTIME_ROLE=1 logs its pools in as mantle_runtime, and the
+    // narrow route's pool logs in as mantle_system_narrow, their passwords
+    // from this key.
+    await ensureRuntimeRoles(sql, masterKey, { login: true, narrowLogin: true });
   } finally {
     await sql.end();
   }

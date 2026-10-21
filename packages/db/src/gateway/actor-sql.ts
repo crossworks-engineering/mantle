@@ -8,14 +8,16 @@
 import type postgres from 'postgres';
 import { reserveLease, type Lease } from '../reserved';
 import { sqlCode } from '../sql-text';
+import { UUID_RE } from '@mantle/std';
 import {
+  actingLoginOf,
   actorCheckMode,
   actorSetting,
   currentActor,
   fullRouteSpotNow,
   writeModeOf,
 } from '../actor';
-import { isWorkspaceSystemActor } from '../viewer';
+import { isRequestExitActor, isWorkspaceSystemActor } from '../viewer';
 import { firstModeReadNow } from './check-mode';
 
 type PgSql = ReturnType<typeof postgres>;
@@ -83,7 +85,10 @@ const actorPipelines = new Set<Promise<unknown>>();
  *  (A2b, defence in depth for the inlined literals): actor.ts builds them,
  *  so a refusal here is a bug, never a caller's input. Exported for
  *  actor-client.test.ts only (not in index.ts). */
-export function setActorSql([actor, writeMode, mode, route]: ActorParams, local = true): string {
+export function setActorSql(
+  [actor, writeMode, mode, route, acting]: ActorParams,
+  local = true,
+): string {
   if (!ACTOR_VALUE_RE.test(actor)) throw new Error('actor setting: not an actor');
   if (writeMode !== 'rw' && writeMode !== 'ro') throw new Error('actor setting: write mode');
   if (mode !== 'off' && mode !== 'warn' && mode !== 'on') {
@@ -97,17 +102,27 @@ export function setActorSql([actor, writeMode, mode, route]: ActorParams, local 
     return `'${v.replace(/'/g, "''")}'`;
   };
   if (route !== undefined && route !== 'full') throw new Error('actor setting: route');
+  if (acting !== undefined && !UUID_RE.test(acting)) throw new Error('actor setting: acting login');
   return (
     `select set_config('mantle.actor', ${lit(actor)}, ${local}), ` +
     `set_config('mantle.write_mode', ${lit(writeMode)}, ${local}), ` +
     `set_config('mantle.actor_check', ${lit(mode)}, ${local})` +
-    (route ? `, set_config('mantle.route', 'full', ${local})` : '')
+    (route ? `, set_config('mantle.route', 'full', ${local})` : '') +
+    (acting ? `, set_config('mantle.acting_login', ${lit(acting)}, ${local})` : '')
   );
 }
 
 /** The actor's settings (setActorSql): its value, write mode, the box's
- *  check mode, and 'full' at a declared full-route spot (fullRouteSpotNow). */
-export type ActorParams = readonly [string, string, string, ('full' | undefined)?];
+ *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow), and
+ *  the acting login a system actor carries (actingLoginOf, plan v3.2 S7b:
+ *  mantle.acting_login, which only the gateway's own SET may name). */
+export type ActorParams = readonly [
+  string,
+  string,
+  string,
+  ('full' | undefined)?,
+  (string | undefined)?,
+];
 
 /** Takes back a session-level setActorSql(…, false): a real RESET, so each
  *  setting is the database's default again (the box mode for
@@ -115,8 +130,15 @@ export type ActorParams = readonly [string, string, string, ('full' | undefined)
 export const RESET_ACTOR_SQL =
   '/* mantle:actor */ reset mantle.actor; reset mantle.write_mode; reset mantle.actor_check';
 
-/** RESET_ACTOR_SQL for a SET that carried the full-route spot's setting. */
-const RESET_ACTOR_ROUTE_SQL = `${RESET_ACTOR_SQL}; reset mantle.route`;
+/** RESET_ACTOR_SQL for a SET that also carried the full-route spot's
+ *  setting or an acting login (resetActorSqlFor). */
+export function resetActorSqlFor(params: ActorParams, tag = ''): string {
+  return (
+    (tag ? RESET_ACTOR_SQL.replace('/* mantle:actor */', tag) : RESET_ACTOR_SQL) +
+    (params[3] ? '; reset mantle.route' : '') +
+    (params[4] ? '; reset mantle.acting_login' : '')
+  );
+}
 
 /** The shape of a mantle.actor value (actorSetting's output): no quote, no
  *  space, no NUL. Wider than mantle_set_actor's own pattern on purpose:
@@ -200,9 +222,18 @@ export function actorParams(): ActorParams | null {
   // too: the workspace definers read mantle.actor to know it
   // (mantle_ws_system_work, 0307), whatever the check's mode. Its mode goes
   // as 'off', the box's own, so no check reads it.
-  if (mode === 'off' && !isWorkspaceSystemActor(actor)) return null;
-  const params = [actorSetting(actor), writeModeOf(actor), mode] as const;
-  return fullRouteSpotNow() ? [...params, 'full'] : params;
+  // A request exit's system actor too (plan v3.2 S7b): it carries the
+  // login it acts for, which a definer acting for a login with no scope
+  // reads (mantle_tg_chat_set, 0314), whatever the mode.
+  if (mode === 'off' && !isWorkspaceSystemActor(actor) && !isRequestExitActor(actor)) return null;
+  const acting = actor.kind === 'system' ? (actingLoginOf(actor) ?? undefined) : undefined;
+  return [
+    actorSetting(actor),
+    writeModeOf(actor),
+    mode,
+    fullRouteSpotNow() ? 'full' : undefined,
+    acting,
+  ] as const;
 }
 
 /** SET TRANSACTION (drizzle's transaction config): Postgres takes it only
@@ -384,7 +415,7 @@ export function actorClient(base: PgSql): PgSql {
         sent = true;
         const q = conn.unsafe(query, (args ?? []) as never[]);
         const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-        const reset = conn.unsafe(params[3] ? RESET_ACTOR_ROUTE_SQL : RESET_ACTOR_SQL).simple();
+        const reset = conn.unsafe(resetActorSqlFor(params)).simple();
         answer(
           Promise.allSettled([lease.watch(set), lease.watch(main)]).then(([s, m]) => {
             // The write's own result. A SET that failed is reported when the

@@ -11,6 +11,7 @@ import { env, feature, isProduction } from '@mantle/config';
 import {
   DB_ROLE_SQL,
   dbRoleNote,
+  narrowDatabaseUrl,
   narrowSystemOn,
   runtimeRoleOn,
   systemDatabaseUrl,
@@ -41,6 +42,12 @@ declare global {
     | Map<PoolRole, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
     | undefined;
 
+  /** The narrow route's own pool (plan v3.2 S7b): logs in as
+   *  mantle_system_narrow; opened on the first narrow statement. null: the
+   *  role has no login here (per-database mode), the route takes the role
+   *  per transaction on the system pool instead. */
+  var __mantleNarrowSql: ReturnType<typeof postgres> | null | undefined;
+
   /** The turn-scope handle (workspaces W4b), over the workspace role's pool. */
   var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
 
@@ -59,6 +66,12 @@ declare global {
  *  The write role's pool (getViewerDb('write')) opens only in the processes
  *  that call openLoginWritePool, at the size each asks for (at most this). */
 const VIEWER_POOL_MAX = 3;
+
+/** Connections of the narrow route's pool per process (narrowPoolSql).
+ *  Every process's shares the role's CONNECTION LIMIT
+ *  (NARROW_CONNECTION_LIMIT, runtime-role.ts); a process that runs no
+ *  narrow work opens none. */
+const NARROW_POOL_MAX = 5;
 
 /**
  * Lazy singleton. Initialised on first call so Next.js can build pages that
@@ -90,6 +103,7 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
     actorClient(sql),
     sql,
     () => narrow && systemRouteNow() === 'narrow',
+    narrowPoolSql,
   );
   adminActorSql = withActor;
   const client = drizzle(withActor, { schema });
@@ -129,7 +143,13 @@ function reportDbRole(base: PgSql): void {
       if (!row) return;
       const note = dbRoleNote(row, runtimeRoleOn());
       // The narrow route's switch, read once when the pool opened.
-      const narrow = `; narrow system route ${narrowSystemOn() ? 'on' : 'off'} (MANTLE_NARROW_SYSTEM)`;
+      const narrow = `; narrow system route ${
+        narrowSystemOn()
+          ? narrowDatabaseUrl()
+            ? 'on, its own pool logs in as mantle_system_narrow'
+            : 'on, the role taken per transaction (per-database mode: the role has no login)'
+          : 'off'
+      } (MANTLE_NARROW_SYSTEM)`;
       if (note) console.warn(`${note}${narrow}`);
       else
         console.log(`[db] the system pool logs in as ${row.user} (arch A9 runtime role)${narrow}`);
@@ -153,9 +173,32 @@ export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
   getAdminDb();
   const sql = globalThis.__mantleSql!;
   return (narrowDb ??= drizzle(
-    narrowRouteClient(actorClient(sql), sql, () => true),
+    narrowRouteClient(actorClient(sql), sql, () => true, narrowPoolSql),
     { schema },
   ));
+}
+
+/**
+ * The narrow route's own pool (plan v3.2 S7b, the design that closes the
+ * class of plan 2.1 MED-A): every connection logs in as
+ * mantle_system_narrow, which is a member of nothing, so a statement that
+ * resets or changes the role has no other role to reach. Made on the first
+ * narrow statement (postgres.js connects on the first query), so a process
+ * that runs no narrow work opens no connection. null when the role has no
+ * login here (narrowDatabaseUrl: per-database mode). A role whose login
+ * migrate did not open (MANTLE_NARROW_SYSTEM off at migrate, on in the app)
+ * fails the narrow statement (never the system pool instead): the error
+ * names the fix.
+ */
+function narrowPoolSql(): PgSql | null {
+  if (globalThis.__mantleNarrowSql !== undefined) return globalThis.__mantleNarrowSql;
+  // A pool being closed (closeDb) opens no new one behind it.
+  if (!globalThis.__mantleSql) throw new Error('narrow route: the database pools are closed');
+  const url = narrowDatabaseUrl();
+  globalThis.__mantleNarrowSql = url
+    ? postgres(url, { max: NARROW_POOL_MAX, prepare: false, onnotice: onPgNotice })
+    : null;
+  return globalThis.__mantleNarrowSql;
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
@@ -302,7 +345,9 @@ export function onCloseDb(reset: () => void): void {
 export async function closeDb(): Promise<void> {
   const sql = globalThis.__mantleSql;
   const viewers = globalThis.__mantleViewerDbs;
+  const narrowSql = globalThis.__mantleNarrowSql;
   globalThis.__mantleSql = undefined;
+  globalThis.__mantleNarrowSql = undefined;
   globalThis.__mantleDb = undefined;
   globalThis.__mantleViewerDbs = undefined;
   globalThis.__mantleTurnDb = undefined;
@@ -316,5 +361,6 @@ export async function closeDb(): Promise<void> {
   // pool is no longer globalThis.__mantleSql, so none starts now).
   await actorPipelinesDone();
   if (sql) await sql.end();
+  if (narrowSql) await narrowSql.end();
   if (viewers) await Promise.all([...viewers.values()].map((v) => v.sql.end()));
 }

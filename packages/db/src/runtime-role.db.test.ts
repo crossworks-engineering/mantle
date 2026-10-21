@@ -96,7 +96,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     scratch = await createMigratedScratchDatabase(URL!);
     admin = postgres(scratch.url, { max: 1, onnotice: () => {} });
     // The cluster roles with a login (the global setup makes them too).
-    expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
+    expect(await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true })).toBe('ok');
     rt = postgres(runtimeDatabaseUrl(scratch.url, runtimeRolePassword(KEY)), {
       max: 1,
       onnotice: () => {},
@@ -331,7 +331,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(direct?.n).toBe(0);
   });
 
-  it('the narrow system role: no login, BYPASSRLS, owns nothing, a member of nothing', async () => {
+  it('the narrow system role: its own login, BYPASSRLS, owns nothing, a member of nothing', async () => {
     const [r] = await admin<
       {
         login: boolean;
@@ -348,15 +348,17 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
              rolcreaterole as cr, rolcreatedb as cd, rolreplication as repl,
              rolpassword is not null as pw
         from pg_authid where rolname = ${NARROW_ROLE}`;
+    // LOGIN with its password: migrate saw MANTLE_NARROW_SYSTEM on (the
+    // tests' default), so the narrow route's pool logs in as it.
     expect(r).toEqual({
-      login: false,
+      login: true,
       su: false,
       bypass: true,
       inh: false,
       cr: false,
       cd: false,
       repl: false,
-      pw: false,
+      pw: true,
     });
     const [owns] = await admin<{ n: number }[]>`
       select (select count(*)::int from pg_class where relowner = to_regrole(${NARROW_ROLE}))
@@ -675,7 +677,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(broken[0]?.detail).toMatch(/may become mantle_owner/);
     const [mode] = (await rt.unsafe(DB_ROLE_SQL)) as unknown as DbRoleRow[];
     expect(dbRoleMode(mode!)).toBe('other');
-    expect(await ensureRuntimeRoles(admin, KEY, { login: true })).toBe('ok');
+    expect(await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true })).toBe('ok');
     await afterMigrations(admin, 'ok', { info: () => {}, warn: () => {} });
     const ms = await admin<{ role: string; inherit: boolean; set: boolean }[]>`
       select r.rolname as role, m.inherit_option as inherit, m.set_option as set
@@ -886,7 +888,9 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
           ),
         ).toBe(true);
       }
-      expect(await ensureRuntimeRoles(admin, KEY, { login: true, warn: () => {} })).toBe('ok');
+      expect(
+        await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true, warn: () => {} }),
+      ).toBe('ok');
       // Who is a member of mantle_owner now: the runtime role, and no other
       // role that is not a superuser.
       const members = await admin<{ name: string }[]>`
