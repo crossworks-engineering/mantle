@@ -1564,9 +1564,9 @@ read-sql.test.ts).
 Left open, outside this part:
 
 - headsBypassesIn (packages/db/src/heads-bypass.ts) does not match the
-  quoted form every shipped migration writes
-  (`"public"."mantle_heads_bypass"('...')`), so the migration output lists
-  no bypass and the shipped-migrations test checks nothing. The database's
+  schema-qualified, quoted call every shipped migration writes, so the
+  migration output lists no bypass and the shipped-migrations test checks
+  nothing. The database's
   own heads_check_misses rows still record each bypass. A regex that takes
   the quotes makes the test fail on 0272, which calls 0267's bypass inside
   a function body; decide that case when it is fixed.
