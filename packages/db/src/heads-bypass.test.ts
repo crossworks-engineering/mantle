@@ -14,6 +14,17 @@ describe('headsBypassesIn', () => {
     ).toEqual(['0250_backfill_x', "it's named"]);
     expect(headsBypassesIn(['UPDATE nodes SET title = title'])).toEqual([]);
   });
+
+  it('reads comments as Postgres does: a -- in a string, a \\r-ended comment, a block comment', () => {
+    expect(
+      headsBypassesIn([
+        "select '--' as a, mantle_heads_bypass('after_a_string')",
+        "select 1 -- note\rselect mantle_heads_bypass('after_a_cr')",
+        "/* select mantle_heads_bypass('in_a_comment') */ select 1",
+        "/* a /* b */ select mantle_heads_bypass('nested') */ select 1",
+      ]),
+    ).toEqual(['after_a_string', 'after_a_cr']);
+  });
 });
 
 describe('every shipped migration bypasses under its own tag only', () => {

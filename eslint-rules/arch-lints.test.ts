@@ -1,3 +1,5 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RuleTester } from 'eslint';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -7,6 +9,7 @@ import {
   asSystemSites,
   failOpenSiteCount,
   gapRerunCount,
+  migrationSqlTexts,
   roleResetCount,
   builtinSlugs,
   countedFiles,
@@ -1435,6 +1438,38 @@ describe('roleResetCount (plan v3.2 S7a)', () => {
     expect(of('// reset role')).toBe(0);
     expect(of('await tx`reset role`', 'packages/db/src/gateway/narrow-route.ts')).toBe(0);
     expect(of('await tx`reset role`', 'packages/db/src/x.test.ts')).toBe(0);
+  });
+});
+
+describe("the migrations' SQL for the role counters (migrationSqlTexts)", () => {
+  /** The counts of one migration file, read as the arch check reads it. */
+  const counts = (sql: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'mantle-migration-sql-'));
+    try {
+      mkdirSync(join(root, 'packages/db/migrations'), { recursive: true });
+      writeFileSync(join(root, 'packages/db/migrations/0001_probe.sql'), sql);
+      const files = migrationSqlTexts(root);
+      return { resets: roleResetCount(files), reruns: gapRerunCount(files) };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  it('counts a role change after a string or a dollar quote holding -- or /*', () => {
+    expect(counts("select 'a--b'; reset role;").resets).toBe(1);
+    expect(counts("select '/*'; reset role; select '*/';").resets).toBe(1);
+    expect(counts('select $$ -- $$; set local role none;').resets).toBe(1);
+    expect(counts("select '--'; set role mantle_gap_writer;").reruns).toBe(1);
+    // A `//` in a dollar quote is no comment either (the JavaScript reader
+    // would blank the rest of the line).
+    expect(counts('select $q$http://x$q$; reset role;').resets).toBe(1);
+  });
+  it('ends a -- comment at a carriage return, as Postgres does', () => {
+    expect(counts('select 1 -- note\rreset role;').resets).toBe(1);
+    expect(counts('select 1 -- note\rset role mantle_gap_writer;').reruns).toBe(1);
+  });
+  it('still blanks real comments, nested ones whole', () => {
+    expect(counts('-- reset role\nselect 1;').resets).toBe(0);
+    expect(counts('/* a /* b */ reset role */ select 1;').resets).toBe(0);
   });
 });
 

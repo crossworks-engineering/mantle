@@ -96,6 +96,7 @@ import { SYSTEM_DB_ROUTE } from './system-db-allowlist.mjs';
 import { nameListSites } from './name-lists.mjs';
 import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
+import { sqlCode } from '../packages/db/src/sql-text.ts';
 import { cleanupCounts } from './cleanup-counts.mjs';
 import { gatewayCounts } from './gateway-counts.mjs';
 
@@ -880,8 +881,8 @@ export function gapRerunCount(files) {
   const WRITE =
     /^['"]?(?:\$\{(?:WRITE|VIEW|NARROW)_ROLE\}|mantle_(?:write|view)_user|mantle_system_narrow)['"]?$/;
   let n = 0;
-  for (const { text } of files) {
-    for (const m of stripComments(text).matchAll(SWITCH)) {
+  for (const { path, text } of files) {
+    for (const m of sourceCode(path, text).matchAll(SWITCH)) {
       const target = (m[1] ?? m[2] ?? '').trim();
       if (m[1] !== undefined && !ROLE_NAME.test(target)) continue;
       if (!WRITE.test(target) && target.toLowerCase() !== 'none') n++;
@@ -913,7 +914,7 @@ export function roleResetCount(files) {
   for (const { path, text } of files) {
     const p = path.replace(/\\/g, '/');
     if (p.includes('packages/db/src/gateway/') || /\.test\.[cm]?[jt]sx?$/.test(p)) continue;
-    const code = stripComments(text);
+    const code = sourceCode(path, text);
     n += (code.match(RESET) ?? []).length;
     for (const m of code.matchAll(CALL)) {
       const rest = code.slice(m.index + m[0].length);
@@ -927,10 +928,21 @@ export function roleResetCount(files) {
   return n;
 }
 
+/** A counted file's code: TypeScript and JavaScript with their comments
+ *  blanked (stripComments); a migration's SQL as migrationSqlTexts gives it
+ *  (its comments already blanked as Postgres reads them; the JavaScript
+ *  reader would take a `//` in a dollar quote for a comment, or a standard
+ *  string's closing `\'` for an escape). */
+function sourceCode(path, text) {
+  return path.endsWith('.sql') ? text : stripComments(text);
+}
+
 /** The migrations' SQL (packages/db/migrations/*.sql), its comments
- *  blanked (`--` to the line's end, `/* *\/`), for the role counters: a
- *  function body that changes the role is what a text check of the
- *  statements sent cannot see. */
+ *  blanked as Postgres reads them (sql-text.ts sqlCode's `uncommented`, as
+ *  rights-counts reads it: a `--` or `/*` inside a string or a dollar quote
+ *  is no comment, block comments nest, a `--` comment a `\r` ends), for the
+ *  role counters: a function body that changes the role is what a text
+ *  check of the statements sent cannot see. */
 export function migrationSqlTexts(root) {
   const dir = join(root, 'packages/db/migrations');
   return readdirSync(dir)
@@ -938,9 +950,7 @@ export function migrationSqlTexts(root) {
     .sort()
     .map((f) => ({
       path: `packages/db/migrations/${f}`,
-      text: readFileSync(join(dir, f), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/--[^\n]*/g, ''),
+      text: sqlCode(readFileSync(join(dir, f), 'utf8')).uncommented,
     }));
 }
 
