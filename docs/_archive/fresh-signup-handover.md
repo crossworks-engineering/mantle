@@ -250,6 +250,32 @@ Pin moves in this round:
 - Nothing else moved: `requestSystemExits` 4 (`first-owner` 1), the raw
   write SQL pin of `handles.ts` 4.
 
+Gates of this round (Mac, exit codes): `pnpm -r typecheck` 0, `pnpm lint`
+0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, `pnpm boot:smoke` 0, unit vitest
+(`DATABASE_URL` unset) 1 then 0: 11283 passed, 1 failed, the deploy
+scripts harness (`spawnSync /bin/bash ETIMEDOUT` while the Mac was under
+load); that file alone again: passed.
+
+Workstation, a throwaway clone, each suite in its own pgvector pg18
+container (`max_connections=450`, `MANTLE_CHECK_FLOOR=keep`,
+`--maxWorkers=3`), the five in parallel through the test lanes (four
+lanes; the fifth waited 2m20s): full DB vitest 1152 files passed, the same
+with `MANTLE_NARROW_SYSTEM=0` 1152 passed, `test:actor-off` 139 passed,
+`test:actor-on` 34 passed, `test:runtime-role` in full 292 passed; all exit
+0, no flake, `ws-fresh-signup.db.test.ts` 8 passed in each that runs it.
+Wall clock from the first start to the last finish: 19m11s
+(17:53:44 to 18:12:55).
+
+The fresh install again on this head: fresh pg and RustFS, the init SQL,
+migrate, `pgboss:init`, provision, `objectstore:ensure`,
+`NODE_ENV=production`, `MANTLE_CHECK_FLOOR=raise`, the server from the
+clone with the runtime role off. Check mode `on`; `POST /api/auth/signup`
+200 `{"ok":true}`, a second 403; one login (the owner, admin), `admin` the
+only workspace with the owner its Moderator, `mantle_ws_skip_reason()`
+null, `actor_check_misses` 0, no actor error in Postgres's log; brain log
+`[workspaces] first owner: migrated onto workspaces`.
+
 ## Gates and CI
 
 See the final report of this branch's session for the exit codes and the
