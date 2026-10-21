@@ -223,7 +223,7 @@ export function actorParams(): ActorParams | null {
   // as 'off', the box's own, so no check reads it.
   // A request exit's system actor too (plan v3.2 S7b): it carries the
   // login it acts for, which a definer acting for a login with no scope
-  // reads (mantle_tg_chat_set, 0314), whatever the mode.
+  // will read (the second part's definers), whatever the mode.
   if (mode === 'off' && !isWorkspaceSystemActor(actor) && requestExitActingLogin() === null) {
     return null;
   }

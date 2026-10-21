@@ -152,15 +152,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
       action === 'block'
         ? await import('@/app/api/telegram/chats/[id]/block/route')
         : await import('@/app/api/telegram/chats/[id]/unpair/route');
-    // The handler runs as the HTTP gate runs it (the session guard is
-    // stubbed here, so no scope is entered): a request whose login acts on
-    // its own things with no scope, the acting login the gateway sends (plan
-    // v3.2 S7b, 0314: with no scope the definer takes only that login).
-    return m.runInRequestSlot(() => {
-      m.setRequestActor(m.loginActor(login, 'rw'));
-      m.noteRequestSystem('login-self');
-      return route.POST(new Request('http://x/api', { method: 'POST' }), params(id));
-    });
+    return route.POST(new Request('http://x/api', { method: 'POST' }), params(id));
   };
   const resetChat = async (id: string, c: string | null) =>
     x(sql`update telegram_chats
@@ -754,13 +746,10 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     await allow(chat.member, member);
     as(member);
     const mine = await import('@/app/api/telegram/my-chats/[id]/route');
-    // As the gate runs it, with the acting login (see `moderate`).
-    const res = await m.runInRequestSlot(() => {
-      m.setRequestActor(m.loginActor(member, 'rw'));
-      m.noteRequestSystem('login-self');
-      return mine.DELETE(new Request('http://x/', { method: 'DELETE' }), params(chat.member));
-    });
-    expect(res.status).toBe(200);
+    expect(
+      (await mine.DELETE(new Request('http://x/', { method: 'DELETE' }), params(chat.member)))
+        .status,
+    ).toBe(200);
     expect(await chatRow(chat.member)).toEqual({ s: 'pending', login: null, code: null });
   });
 

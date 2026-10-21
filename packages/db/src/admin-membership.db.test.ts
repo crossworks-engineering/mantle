@@ -145,8 +145,6 @@ describe.skipIf(!URL)('mantle_login_is_admin_user is role AND membership (S8a)',
         await tx`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
                  values (${key}, ${tag}, ${L.mem}, ${key.replace(/-/g, '').slice(0, 8)},
                          ${createHash('sha256').update(key).digest('hex')}, 'read')`;
-        // No scope: the acting login the gateway sends must be `who` (0314).
-        await tx`select set_config('mantle.acting_login', ${who}, true)`;
         const got = await tx<{ id: string }[]>`
           select id::text from mantle_access_key_revoke(${key}::uuid, ${who}::uuid)`;
         return got.length;

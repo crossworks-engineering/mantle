@@ -408,18 +408,25 @@ itself is unchanged (`system:<reason>`). The gateway sends it as
 on the full route whenever the actor's settings go, and for the request's
 own exit in every check mode (`requestExitActingLogin`: with the check off
 too, so its writes and transactions carry it). It is a gateway setting: no
-narrow statement may name it (`GATEWAY_SETTING`). A definer that acts for a
-login and runs with no scope takes only that login (0314):
-`mantle_tg_chat_set` (the assistants area's Telegram block and unpair) and
-`mantle_access_key_revoke`. In a scope the scope's own login rules, as
-before. So no caller with no scope can name a login it is not. The readers
-that take a login (`mantle_tg_my_chats`, `mantle_tg_moderated_chats`,
-`mantle_read_cursors`, `mantle_login_connector_rows`,
-`mantle_turn_heartbeats`, `mantle_ws_seen`, `mantle_access_keys_seen`,
-`mantle_snapshot_bytes`) are left as they are: some have a caller with no
-acting login (the heartbeat tick, a worker), and the narrow role may run
-none of them; the login facts (`mantle_area_rule`, `mantle_login_areas` and
-the rest) answer about a login another login may ask about.
+narrow statement may name it (`GATEWAY_SETTING`).
+
+This part only sends it; no definer reads it yet. The definers that act for
+a login with no scope (`mantle_tg_chat_set`, the assistants area's Telegram
+block and unpair, and `mantle_access_key_revoke`) take the rule in the
+default-on release, so rolling that release back leaves a sender in place.
+The acting login alone does not close the gap of a caller naming a login it
+is not: the write role can clear its own scope and set
+`mantle.acting_login` in its transaction, so with no scope those definers
+must also refuse unless the caller is a system login (the system pool's
+role) or the narrow login. In a scope the scope's own login rules, as
+before. The readers that take a login (`mantle_tg_my_chats`,
+`mantle_tg_moderated_chats`, `mantle_read_cursors`,
+`mantle_login_connector_rows`, `mantle_turn_heartbeats`, `mantle_ws_seen`,
+`mantle_access_keys_seen`, `mantle_snapshot_bytes`) stay as they are: some
+have a caller with no acting login (the heartbeat tick, a worker), and the
+narrow role may run none of them; the login facts (`mantle_area_rule`,
+`mantle_login_areas` and the rest) answer about a login another login may
+ask about.
 
 ### The narrow write count
 

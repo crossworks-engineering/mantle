@@ -1091,8 +1091,9 @@ function boundExitEntry(): { entry: SystemRouteEntry; request: boolean } | null 
  * S7b): the login whose request (an Admin area or login-self exit) or turn
  * (an asSystem exit inside a login's scope or exit) it runs for, or null.
  * Held only while the exit's actor is the one bound, as its route is. The
- * gateway sends it as mantle.acting_login with the actor's settings; a
- * definer that acts for a login with no scope takes only it (0314).
+ * gateway sends it as mantle.acting_login with the actor's settings; the
+ * definers that act for a login with no scope will take only it, and only
+ * from a system or narrow login (docs/runtime-role.md, "The acting login").
  */
 export function actingLoginNow(): string | null {
   return boundExitEntry()?.entry.login ?? null;

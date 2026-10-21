@@ -15,10 +15,9 @@
  *    (session_user is the narrow role), opened on the first narrow
  *    statement; no gateway setting may be named by a narrow statement, one
  *    cell per name.
- *  - The acting login (S10 r3 LOW-1, 0314): a request exit's actor carries
- *    it, on the narrow route and on the full route in every check mode;
- *    mantle_tg_chat_set and mantle_access_key_revoke with no scope take
- *    only it.
+ *  - The acting login: a request exit's actor carries it, on the narrow
+ *    route and on the full route in every check mode. The definers that
+ *    take only it with no scope land with part b2.
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -314,56 +313,5 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       else process.env.MANTLE_ACTOR_CHECK = saved;
       await reopen(true);
     }
-  });
-
-  it('mantle_tg_chat_set and mantle_access_key_revoke with no scope take only the acting login (0314)', async () => {
-    const login = randomUUID();
-    const other = randomUUID();
-    /** Sent as the narrow login with no scope, `acting` as the gateway
-     *  would send it; rolled back. */
-    const call = async (fn: string, acting: string | null, on = nl) =>
-      on
-        .begin(async (t) => {
-          if (acting) await t`select set_config('mantle.acting_login', ${acting}, true)`;
-          await t.unsafe(fn);
-          throw Object.assign(new Error('rollback'), { ok: true });
-        })
-        .then(
-          () => 'ok',
-          (err: { ok?: boolean; code?: string; message?: string }) =>
-            err.ok ? 'ok' : `${err.code}: ${err.message}`,
-        );
-    const tg = `select * from public.mantle_tg_chat_set('${brain}'::uuid, '${login}'::uuid,
-                  '${randomUUID()}'::uuid, 'unpair', null)`;
-    const key = `select * from public.mantle_access_key_revoke('${randomUUID()}'::uuid, '${login}'::uuid)`;
-    // The Telegram write as the narrow login (its EXECUTE); the key revoke
-    // as the superuser (the narrow role may not run it: the rule is the
-    // definer's, whoever calls it with no scope).
-    for (const [name, fn, on] of [
-      ['mantle_tg_chat_set', tg, nl],
-      ['mantle_access_key_revoke', key, su],
-    ] as const) {
-      expect(await call(fn, null, on), `${name}, none`).toMatch(/^42501: .*only the acting login/);
-      expect(await call(fn, other, on), `${name}, another`).toMatch(
-        /^42501: .*only the acting login/,
-      );
-      // The acting login itself: the call runs (no chat or key by that id:
-      // no row, no error).
-      expect(await call(fn, login, on), `${name}, its own`).toBe('ok');
-    }
-    // In a scope the scope's own login rules, as before (0313, 0293): the
-    // acting login is not read there.
-    const scoped = await su
-      .begin(async (t) => {
-        await t`select set_config('mantle.scope_login', ${login}, true),
-                       set_config('mantle.acting_login', ${other}, true)`;
-        await t.unsafe(tg);
-        throw Object.assign(new Error('rollback'), { ok: true });
-      })
-      .then(
-        () => 'ok',
-        (err: { ok?: boolean; code?: string }) => (err.ok ? 'ok' : err.code),
-      );
-    expect(scoped).toBe('ok');
   });
 });
