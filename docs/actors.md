@@ -219,14 +219,7 @@ each calling file is pinned (`eslint-rules/as-system-allowlist.mjs`).
 - **Request exits** (`noteRequestSystem`, `server/web/lib/auth/session.ts`):
   `area` (an Admin area route, after the area check), `login-self` (a
   login's own things); `admin-write` has no site since S6 c3 (an Admin
-  user's writes run in its scope). And `first-owner`
-  (`firstOwnerSwitch`, `packages/db/src/first-owner-exit.ts`): the
-  signup's switch of a fresh install onto workspaces, as
-  `system:first-owner-attach` on the full route, for that one call. It
-  refuses outside a request no login made, inside any scope, twice in a
-  request, and on a brain whose one login is not the new anchor or that
-  has a workspace. Outside a request (the terminal wizard) the first
-  owner's switch runs as that process's own actor, as the boot's does.
+  user's writes run in its scope). `first-owner` (`firstOwnerSwitch`, `packages/db/src/first-owner-exit.ts`): the signup's switch of a fresh install onto workspaces as `system:first-owner-attach`, full route, that one call; refused outside a request no login made, in any scope, twice, or unless the brain's one login is the new anchor and it has no workspace (the terminal wizard switches as its own script actor).
 - **`systemStep(step, { items, need }, fn)`**
   (`packages/db/src/system-step.ts`): bookkeeping after the write's item
   check; it answers the caller numbers, yes or no, or rows its scope reads.

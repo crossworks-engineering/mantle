@@ -1,6 +1,7 @@
 # Fresh signup: the first owner's exit (handover)
 
-Branch `feat/fresh-signup`, based on main at v0.300.127. Not merged, not
+Branch `feat/fresh-signup`, rebased on main at v0.300.128 (first built on
+v0.300.127). Not merged, not
 tagged, not rolled. Dev-brain task d5289a8b.
 
 ## The bug
@@ -169,7 +170,9 @@ the OAuth code exchange end to end, SSO, and federation with a real peer.
   `requestSystemExits_other` stays 0; full, so `requestSystemExits_narrow`
   stays 3), and fails arch:check when any file but `viewer.ts` and
   `first-owner-exit.ts` names its entry `enterFirstOwnerExit`. Nothing
-  else moved.
+  else moved. Re-measured after the rebase on v0.300.128: the same. The
+  request exits bullet of `docs/actors.md` is one line, so the spec's line
+  count (down only, 344 on main) does not move.
 
 ## Gates and CI
 
