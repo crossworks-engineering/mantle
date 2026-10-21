@@ -246,7 +246,7 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
     expect(await rowOf(lone)).toMatchObject({ s: 'denied' });
     expect(await rowOf(id)).toMatchObject({ s: 'denied' });
     // Another owner's chat id under this owner: nothing.
-    const foreign = await chatOf(L.member, account.team, randomUUID());
+    const foreign = await chatOf(L.member, account.team, L.outsider);
     expect(await onWriteRole(L.member, { chat: foreign })).toEqual({ ok: true, rows: [] });
     expect(await rowOf(foreign)).toEqual(untouched(L.member));
   });
@@ -287,7 +287,7 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
     expect(facts).toHaveLength(2);
     for (const f of facts) {
       expect(f.definer, f.fn).toBe(true);
-      expect(f.config, f.fn).toEqual(['search_path="public", pg_temp']);
+      expect(f.config, f.fn).toEqual(['search_path=public, pg_temp']);
     }
     const may = async (role: string, fn: string): Promise<boolean> =>
       (

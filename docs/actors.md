@@ -88,13 +88,9 @@ own, with the actor it binds: [process-inventory.md](./process-inventory.md)
   check mode: the mode decides refuse or report, never the pool. One
   `SET LOCAL` with the transaction's first statement carries the scope,
   the actor and the create home. Never a session SET.
-- A typed write (`db.insert`, `update`, `delete`) to a table the write
-  role holds no right on goes to the system pool up front, by its drizzle
-  table (counted, `typed-write`; S4b). A raw scoped statement goes to the
-  write role whatever its text names: no table is read from SQL text, and
-  Postgres refuses a table the role holds no right on (42501). Nothing
-  runs again: a right the role lacks is a bug, a refusal is the caller's
-  answer.
+- A typed write to a table the write role holds no right on goes to the system
+  pool by its drizzle table (`typed-write`, S4b); a raw one goes to the write
+  role (no table read from text) and Postgres refuses it. Nothing runs again.
 - The scoped pools never run the setter functions. Only `packages/db`
   sets `mantle.*` settings.
 - Transactions: `withSystemTx` in an open system transaction is its

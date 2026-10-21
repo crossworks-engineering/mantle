@@ -164,19 +164,32 @@ describe.skipIf(!URL)('restampRacedCreate on the write role', () => {
     expect(await grantsOf(id)).toEqual([{ ws: admin, home: true, write: false, by: null }]);
   });
 
-  /** A file of the brain, homed in Admin, with or without a copy's stamp. */
-  async function fileInAdmin(stamped: boolean, type: 'file' | 'note' = 'file'): Promise<string> {
+  /** A file of the brain, homed in Admin (Write off), and `more` grants,
+   *  then stamped as a copy when `stamped` (the database refuses a wider
+   *  grant on a row that already carries the stamp). */
+  async function fileInAdmin(
+    stamped: boolean,
+    type: 'file' | 'note' = 'file',
+    more: { ws: string; by: string }[] = [],
+  ): Promise<string> {
     const id = randomUUID();
-    const data = stamped ? { snapshot_of: randomUUID() } : {};
     await su.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
       await tx`insert into nodes (id, owner_id, type, title, path, data)
                values (${id}, ${owner}, ${type}, 'raced', ${type === 'file' ? 'files' : 'notes'}::ltree,
-                       ${tx.json(data)})`;
+                       '{}'::jsonb)`;
       await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
       await tx`delete from item_grants where node_id = ${id}`;
       await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-               values (${id}, ${admin}, true, true)`;
+               values (${id}, ${admin}, true, false)`;
+      for (const g of more) {
+        await tx`insert into item_grants (node_id, workspace_id, is_home, write, granted_by)
+                 values (${id}, ${g.ws}, false, true, ${g.by})`;
+      }
+      if (stamped) {
+        await tx`update nodes set data = jsonb_build_object('snapshot_of', ${randomUUID()}::text)
+                  where id = ${id}`;
+      }
     });
     return id;
   }
@@ -231,25 +244,20 @@ describe.skipIf(!URL)('restampRacedCreate on the write role', () => {
       expect(r, JSON.stringify(settings)).toMatchObject({ ok: false, code: '42501' });
       expect((r as { message: string }).message).toMatch(/system work only/);
     }
-    expect(await grantsOf(id)).toEqual([{ ws: admin, home: true, write: true, by: null }]);
+    expect(await grantsOf(id)).toEqual([{ ws: admin, home: true, write: false, by: null }]);
     // The right caller on a row that is no stamped copy file of this brain.
     for (const row of [await fileInAdmin(false), await fileInAdmin(true, 'note')]) {
       const r = await homeAs(row, SYSTEM_WORK);
       expect(r).toMatchObject({ ok: false, code: '42501' });
       expect((r as { message: string }).message).toMatch(/not a stamped copy/);
-      expect(await grantsOf(row)).toEqual([{ ws: admin, home: true, write: true, by: null }]);
+      expect(await grantsOf(row)).toEqual([{ ws: admin, home: true, write: false, by: null }]);
     }
   });
 
   it("as the snapshot copies' system work it replaces every grant with one home, Write off", async () => {
-    const id = await fileInAdmin(true);
     // A second grant, made by a login: it goes too.
-    await su.begin(async (tx) => {
-      await tx`select set_config('mantle.actor', 'system:test', true)`;
-      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
-      await tx`insert into item_grants (node_id, workspace_id, is_home, write, granted_by)
-               values (${id}, ${other}, false, true, ${owner})`;
-    });
+    const id = await fileInAdmin(true, 'file', [{ ws: other, by: owner }]);
+    expect(await grantsOf(id)).toHaveLength(2);
     expect(await homeAs(id, SYSTEM_WORK)).toEqual({ ok: true });
     expect(await grantsOf(id)).toEqual([{ ws: other, home: true, write: false, by: null }]);
     const [g] = await su<{ via: string | null; bridge: boolean | null }[]>`

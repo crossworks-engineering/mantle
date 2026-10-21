@@ -90,6 +90,10 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
     expect(
       String((failed?.cause as { message?: string } | undefined)?.message ?? failed?.message),
     ).toMatch(/permission denied for table provider_alerts/);
+    // The gateway notes the refusal as a write-role gap (in production a
+    // `write-role-gap` miss row naming the caller; vitest.setup.ts fails any
+    // test that leaves one): taken here, as this cell meets it on purpose.
+    expect(m.takeWriteRoleGaps()).toEqual(['permission denied for table provider_alerts']);
     await settle();
     expect(await rowsBySite()).toEqual({});
     expect(fo.takeFailOpenHits()).toEqual([]);
