@@ -335,18 +335,10 @@ export const GENERATED_COLOR_THEMES: ColorTheme[] = [
   },
   {
     id: 'jackdaw',
-    label: 'Jackdaw',
+    label: 'MantleOS',
     swatches: {
-      light: ['#e46e08', '#f0c88c', '#fde7bc'],
-      dark: ['#eb9f13', '#452a18', '#120f0e'],
-    },
-  },
-  {
-    id: 'jackdaw-harvest',
-    label: 'Jackdaw Harvest',
-    swatches: {
-      light: ['#14565d', '#c4e5e8', '#f8deb9'],
-      dark: ['#49a8b3', '#14565d', '#1f1f1f'],
+      light: ['#b23a06', '#f0c88c', '#faedcf'],
+      dark: ['#eb9f13', '#2d241d', '#120f0e'],
     },
   },
 ];
