@@ -1001,7 +1001,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -1014,7 +1014,7 @@
       "detail": {
        "via": "member",
        "slug": "note_create",
-       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -1027,7 +1027,7 @@
       "source": "tool",
       "via": "member",
       "slug": "note_create",
-      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -1043,7 +1043,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -1056,7 +1056,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -1069,7 +1069,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -1085,7 +1085,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -1098,7 +1098,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -1111,7 +1111,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -1263,7 +1263,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -1276,7 +1276,7 @@
       "detail": {
        "via": "member",
        "slug": "model_pool_list",
-       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -1289,7 +1289,7 @@
       "source": "tool",
       "via": "member",
       "slug": "model_pool_list",
-      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -1730,7 +1730,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -1743,7 +1743,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -1756,7 +1756,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -2569,7 +2569,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -2582,7 +2582,7 @@
       "detail": {
        "via": "owner",
        "slug": "note_create",
-       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -2595,7 +2595,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "note_create",
-      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -2607,7 +2607,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -2620,7 +2620,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -2633,7 +2633,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -2645,7 +2645,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -2658,7 +2658,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -2671,7 +2671,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -2809,7 +2809,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -2822,7 +2822,7 @@
       "detail": {
        "via": "owner",
        "slug": "model_pool_list",
-       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -2835,7 +2835,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "model_pool_list",
-      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]
@@ -3246,7 +3246,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
    },
    "audit": [
     [
@@ -3259,7 +3259,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there."
       }
      }
     ],
@@ -3272,7 +3272,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.",
       "status": 403
      }
     ]

@@ -34,6 +34,8 @@ export const table_row_add: BuiltinToolDef = {
     itemArgs: [{ param: 'table_id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
+    // A team app may make this row write (runtime-policy.ts memberAppRefusal).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add a row',
@@ -112,6 +114,8 @@ export const table_rows_add: BuiltinToolDef = {
     itemArgs: [{ param: 'table_id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
+    // A team app may make this row write (runtime-policy.ts memberAppRefusal).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add many rows',
@@ -198,6 +202,8 @@ export const table_rows_upsert: BuiltinToolDef = {
     itemArgs: [{ param: 'table_id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
+    // A team app may make this row write (runtime-policy.ts memberAppRefusal).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_ID_PRE,
   name: 'Upsert many rows by key',
@@ -423,6 +429,8 @@ export const table_row_update: BuiltinToolDef = {
     itemArgs: [{ param: 'table_id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
+    // A team app may make this row write (runtime-policy.ts memberAppRefusal).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_ID_PRE,
   name: 'Update a row',
@@ -551,6 +559,8 @@ export const table_cell_set: BuiltinToolDef = {
     itemArgs: [{ param: 'table_id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('table_id'),
+    // A team app may make this row write (runtime-policy.ts memberAppRefusal).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_ID_PRE,
   name: 'Set one cell',

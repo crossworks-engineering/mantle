@@ -18,10 +18,19 @@
  *      read-only turn uses): an app loop has no model in between, so a
  *      writing or spending builtin an admin put in a system-wide group for
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
- *      `spends` since audit F17, as a read can spend too);
+ *      `spends` since audit F17, as a read can spend too). One exception
+ *      (task 2178377a, 2026-10-22): a row write the policy marks
+ *      `table-rows` (add a row or rows, upsert rows, update a row, set a
+ *      cell), on a Table homed in a workspace that holds the app (rule 6);
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
  *      those run only in the Admin workspace; tool-group levels went in
- *      workspaces W7b, plan 5.4).
+ *      workspaces W7b, plan 5.4);
+ *   6. a row write names, in `table_id`, a Table homed in a workspace that
+ *      holds the app (appHolderHomes in @mantle/db: the holders beyond Admin
+ *      an app run reads through, AppRunFor). It then runs as the running
+ *      login in the app's scope, so the database decides whether that user
+ *      may write the Table (its Write switch, a Moderator of its home, the
+ *      actor and edit checks): a user who may not writes nothing.
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
  * runner's login's workspaces, and with `check.appId` every workspace that
@@ -40,6 +49,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  appHolderHomes,
   db,
   registerPolicySource,
   toolGroups,
@@ -49,7 +59,7 @@ import {
 } from '@mantle/db';
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
-import { appToolPolicy } from './runtime-policy';
+import { appToolPolicy, type AppBuiltinFacts } from './runtime-policy';
 import { builtinPolicy } from './tool-policy';
 
 /** Retired builtins with no definition here (the system manifest's
@@ -110,14 +120,45 @@ async function inSystemWideGroup(ownerId: string, slug: string): Promise<boolean
   return !!row;
 }
 
+/** What a broker tells the rule of one call: a connector tool's (the app
+ *  whose holders must hold its connector, or the rules alone for an
+ *  author's warning, external-access.ts), and the call's `input`, which
+ *  names the Table a row write changes (rule 6). */
+export type AppToolCheck = OutsideToolCheck & { input?: Readonly<Record<string, unknown>> };
+
+/** The argument a row write names its Table in (every `table-rows` tool's
+ *  only item argument, policy itemArgs). */
+const TABLE_ROWS_ARG = 'table_id';
+
+/** Why a team app's row write may not change the Table its call names, or
+ *  null (rule 6). The rules alone (an author's warning) name no call: null.
+ *  No app or no Table named: refused (fail closed). */
+async function tableRowsTargetRefusal(
+  ownerId: string,
+  slug: string,
+  check: AppToolCheck | undefined,
+): Promise<string | null> {
+  if (check?.rulesOnly) return null;
+  const raw = check?.input?.[TABLE_ROWS_ARG];
+  const tableId = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  const homed =
+    !!check?.appId && !!tableId && (await appHolderHomes(ownerId, check.appId, tableId));
+  if (homed) return null;
+  const which = tableId
+    ? `the Table '${tableId}' is not one (or does not exist)`
+    : `the call names no Table in '${TABLE_ROWS_ARG}'`;
+  return `The tool '${slug}' may only change rows of a Table homed in a workspace that holds this app, and ${which}. Pass the id of a Table that lives in this app's workspace (table_list shows the Tables this app reads). A team app's data is shared by everyone who runs it, so it writes only where they all work.`;
+}
+
 /** May a member's run of an app that declares `declared` call `slug`?
- *  `check` goes to a connector tool's rule (external-access.ts). */
+ *  `check` goes to a connector tool's rule (external-access.ts) and, with
+ *  the call's input, to a row write's Table (rule 6). */
 export async function memberAppToolVerdict(
   ownerId: string,
   declared: readonly string[],
   slug: string,
   loginId?: string,
-  check?: OutsideToolCheck,
+  check?: AppToolCheck,
 ): Promise<MemberAppToolVerdict> {
   if (!declared.includes(slug)) {
     return {
@@ -141,17 +182,16 @@ export async function memberAppToolVerdict(
     return outsideToolVerdict(ownerId, tool, slug, 'member', loginId, check);
   }
   // Lazy: the registry imports every builtin, app_tools_set among them.
-  const { isBuiltinReadOnly, isBuiltinSpending } = await import('./registry');
+  const { isBuiltinReadOnly, isBuiltinSpending, isBuiltinTeamTableRowWrite } =
+    await import('./registry');
+  const builtin: AppBuiltinFacts = {
+    readOnly: isBuiltinReadOnly(tool.handler.ref),
+    spends: isBuiltinSpending(tool.handler.ref),
+    tableRows: isBuiltinTeamTableRowWrite(tool.handler.ref),
+  };
   // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts, arch
   // A3c), the one reading of them.
-  const policy = appToolPolicy(
-    tool,
-    {
-      readOnly: isBuiltinReadOnly(tool.handler.ref),
-      spends: isBuiltinSpending(tool.handler.ref),
-    },
-    memberAppRefusedName,
-  );
+  const policy = appToolPolicy(tool, builtin, memberAppRefusedName);
   const refused = policy?.fields?.memberApp;
   if (typeof refused === 'string') return { ok: false, status: 403, reason: refused };
   if (!(await inSystemWideGroup(ownerId, slug))) {
@@ -160,6 +200,12 @@ export async function memberAppToolVerdict(
       status: 403,
       reason: `The tool '${slug}' is only in Admin-only tool groups, so this app can't use it outside the Admin workspace.`,
     };
+  }
+  // Rule 6: a write rules 2 to 4 let through (only a `table-rows` row
+  // write) changes only a Table homed in a holder of the app.
+  if (!builtin.readOnly) {
+    const target = await tableRowsTargetRefusal(ownerId, slug, check);
+    if (target) return { ok: false, status: 403, reason: target };
   }
   return { ok: true, tool };
 }
@@ -194,7 +240,7 @@ export function appToolGatePolicy(ref: PolicyRef): GatePolicy | null {
       fields: Object.freeze({ memberApp: answer }),
     });
   }
-  const builtin = ref.builtin as { readOnly: boolean; spends: boolean } | undefined;
+  const builtin = ref.builtin as AppBuiltinFacts | undefined;
   const own = appToolPolicy(row, builtin ?? null, memberAppRefusedName);
   if (!own) return null;
   // Only the verdict answers the member-app rule (rules 1 to 5 and the

@@ -199,9 +199,14 @@ type ToolPolicyFields = Readonly<{
    *  6d: it replaced WRITE_RULES, the registry keyed by name). Unset on a
    *  write: the call waits. */
   clientSourced?: ClientSourcedRule;
-  /** A team app may call it (default, by its other rules) or never
-   *  (member-app-tools.ts memberAppRefusedName). */
-  memberApp?: 'ok' | 'refused';
+  /** A team app may call it (default, by its other rules), never
+   *  (member-app-tools.ts memberAppRefusedName), or, for a write,
+   *  `table-rows`: a row write a team app may make to a Table homed in a
+   *  workspace that holds the app, as the running login, whose own rights
+   *  the database checks (runtime-policy.ts memberAppRefusal; task
+   *  2178377a, 2026-10-22). Only the row writes carry it: no table create,
+   *  delete or rename, no column, tab or snapshot change, no row delete. */
+  memberApp?: 'ok' | 'refused' | 'table-rows';
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram
    *  turn) is offered it only when the owner opted in (teamPrivateReads),

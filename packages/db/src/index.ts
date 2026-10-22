@@ -47,6 +47,7 @@ export {
   NestedSystemTxError,
   withViewer,
   viewerScopeFor,
+  appHolderHomes,
   withScope,
   withTurnScope,
   ScopeLostError,

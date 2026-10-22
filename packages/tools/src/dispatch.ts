@@ -36,6 +36,7 @@ import {
   getBuiltinHandler,
   isBuiltinReadOnly,
   isBuiltinSpending,
+  isBuiltinTeamTableRowWrite,
 } from './registry';
 // The `app-tool` policy source (an app broker's call, A5 step 6a).
 import './member-app-tools';
@@ -189,7 +190,11 @@ async function appToolRun(
   const h = tool.handler as ToolHandler;
   const builtin =
     h.kind === 'builtin'
-      ? { readOnly: isBuiltinReadOnly(h.ref), spends: isBuiltinSpending(h.ref) }
+      ? {
+          readOnly: isBuiltinReadOnly(h.ref),
+          spends: isBuiltinSpending(h.ref),
+          tableRows: isBuiltinTeamTableRowWrite(h.ref),
+        }
       : null;
   const ref = Object.freeze({
     kind: 'app-tool',

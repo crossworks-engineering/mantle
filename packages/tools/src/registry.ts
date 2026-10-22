@@ -86,6 +86,13 @@ export function isBuiltinReadOnly(slug: string): boolean {
   return tableBuiltin(slug)?.policy.effect === 'read';
 }
 
+/** Is this builtin a row write a team app may make (`policy.memberApp`
+ *  'table-rows', runtime-policy.ts memberAppRefusal)? Unknown slugs answer
+ *  false. */
+export function isBuiltinTeamTableRowWrite(slug: string): boolean {
+  return tableBuiltin(slug)?.policy.memberApp === 'table-rows';
+}
+
 /** Does this builtin start paid model work on a call (`policy.startsModelWork`)? Unknown
  *  slugs answer false; the callers that refuse spenders (the member app
  *  broker) also refuse anything that is not a known read-only builtin. */

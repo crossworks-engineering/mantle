@@ -72,3 +72,31 @@ describe('memberAppToolVerdict refused list', () => {
     }
   });
 });
+
+describe('the row writes a team app may make (task 2178377a)', () => {
+  it('are exactly the five Table row writes, each a write naming its Table in table_id', () => {
+    const marked = BUILTIN_TOOLS.filter((t) => t.policy.memberApp === 'table-rows');
+    expect(marked.map((t) => t.slug).sort()).toEqual([
+      'table_cell_set',
+      'table_row_add',
+      'table_row_update',
+      'table_rows_add',
+      'table_rows_upsert',
+    ]);
+    for (const t of marked) {
+      expect(t.policy.effect, t.slug).toBe('write');
+      expect(t.policy.spends, t.slug).toBe('none');
+      expect(t.policy.itemArgs, t.slug).toEqual([{ param: 'table_id' }]);
+    }
+  });
+
+  it('leave every other Table write refused: no schema, tab, snapshot, table or row delete change', () => {
+    const others = BUILTIN_TOOLS.filter(
+      (t) => t.slug.startsWith('table_') && t.policy.effect === 'write',
+    ).filter((t) => t.policy.memberApp !== 'table-rows');
+    const slugs = others.map((t) => t.slug);
+    for (const s of ['table_row_delete', 'table_column_add', 'table_delete', 'table_commit']) {
+      expect(slugs, s).toContain(s);
+    }
+  });
+});

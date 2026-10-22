@@ -40,8 +40,8 @@ import {
 import type { AccessLevel } from '@mantle/client-types';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
-import { memberAppToolVerdict } from './member-app-tools';
-import type { OutsideToolCheck } from './external-access';
+import { memberAppToolVerdict, type AppToolCheck } from './member-app-tools';
+import { TEAM_APP_TOOLS_ALLOWED } from './runtime-policy';
 import type { ToolHandlerContext } from './types';
 
 /** The rules an app's tool call runs under. */
@@ -82,14 +82,15 @@ export const APP_NO_TOOLS = "This app can't use tools here.";
 /** May a run at `level` of an app that declares `declared` call `slug`?
  *  `loginId`: who runs it, when known; a connector tool then also needs the
  *  login's workspace rule (loginConnectorRule, W4b fix round 2), the same
- *  as the login's own MCP. */
+ *  as the login's own MCP. `check.input`: the call's input, which names the
+ *  Table a team app's row write changes (member-app-tools.ts rule 6). */
 export async function appToolVerdict(
   level: AppToolLevel,
   ownerId: string,
   declared: readonly string[],
   slug: string,
   loginId?: string,
-  check?: OutsideToolCheck,
+  check?: AppToolCheck,
 ): Promise<AppToolVerdict> {
   switch (level) {
     case 'team':
@@ -196,7 +197,8 @@ export function appToolScope(
 /**
  * For an app a workspace other than Admin holds: one warning per declared
  * tool its runs would refuse, in the broker's own words (the team rules run
- * for every runner, R2). An app the Admin workspace alone holds gets none,
+ * for every runner, R2), and one per row write it declares, saying the only
+ * Tables it runs on (member-app-tools.ts rule 6). An app the Admin workspace alone holds gets none,
  * unless a member built it (the author ceiling runs it at team rules for its
  * admins too). Given back by every author move that can change the answer:
  * `app_tools_set`, `app_publish`, a grant change and moving it into another
@@ -210,6 +212,8 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     const level = appToolLevel('admin', app.toolRules, app.authorLevel);
     if (level !== 'team') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
+    // Lazy: the registry imports every builtin, app_tools_set among them.
+    const { isBuiltinTeamTableRowWrite } = await import('./registry');
     const warnings: string[] = [];
     for (const slug of declared) {
       // No run here, so no runner login: the rules alone, against the
@@ -219,9 +223,23 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         rulesOnly: true,
         appId,
       });
-      if (verdict.ok) continue;
+      if (verdict.ok) {
+        // A row write runs, but only on a Table homed in a workspace that
+        // holds the app, for a user who may write it there (rule 6).
+        const h = verdict.tool.handler;
+        if (h.kind === 'builtin' && isBuiltinTeamTableRowWrite(h.ref)) {
+          warnings.push(
+            `The tool '${slug}' runs here only on a Table homed in a workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace); its rows land in the Table's draft. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`,
+          );
+        }
+        continue;
+      }
+      // What a team app may call, once (a write's refusal says it already).
+      const allowed = verdict.reason.includes(TEAM_APP_TOOLS_ALLOWED)
+        ? ''
+        : ` ${TEAM_APP_TOOLS_ALLOWED}`;
       warnings.push(
-        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules. Declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin open a connector to that workspace, switch External access on for an http tool that only reads, or keep the app in the Admin workspace only.`,
+        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules.${allowed} Declare such a tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin open a connector to that workspace, switch External access on for an http tool that only reads, or keep the app in the Admin workspace only.`,
       );
     }
     return warnings;

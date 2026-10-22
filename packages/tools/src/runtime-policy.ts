@@ -107,16 +107,35 @@ export function shellToolPolicy(row: Row): RuntimeToolPolicy {
   });
 }
 
+/** The registry facts of a built-in an app calls: whether it is a read,
+ *  whether it starts paid model work, and whether it is a row write a team
+ *  app may make (`tableRows`: policy memberApp 'table-rows'). */
+export type AppBuiltinFacts = { readOnly: boolean; spends: boolean; tableRows?: boolean };
+
+/** What a team app may call, in one sentence: the refusal and the author's
+ *  warning name it, so neither drifts from this rule. */
+export const TEAM_APP_TOOLS_ALLOWED =
+  'A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.';
+
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
- *  builtin ref refused, it spends, it is not read-only, it needs a
- *  confirm; `refused`: whether no team app calls a name, member-app-tools.ts
+ *  builtin ref refused, it spends, it writes, it needs a confirm;
+ *  `refused`: whether no team app calls a name, member-app-tools.ts
  *  memberAppRefusedName, the policy's `memberApp`). The one reading of
- *  them: memberAppToolVerdict and appToolPolicy both ask it. */
+ *  them: memberAppToolVerdict and appToolPolicy both ask it.
+ *
+ *  A write is refused, but for a row write the policy marks `table-rows`
+ *  (task 2178377a, 2026-10-22): a team app's database is shared by every
+ *  holder, so it changes only rows of a Table homed in a workspace that
+ *  holds the app (memberAppToolVerdict asks the call's table, the app's
+ *  holders as AppRunFor reads them), and it runs as the running login in
+ *  the app's scope, so the database's own checks (the item's Write switch,
+ *  a Moderator, the actor and edit checks) decide whether that user may. A
+ *  shared link runs no built-in at all (contactAppToolVerdict). */
 export function memberAppRefusal(
   slug: string,
   ref: string,
-  builtin: { readOnly: boolean; spends: boolean },
+  builtin: AppBuiltinFacts,
   requiresConfirm: boolean,
   refused: (name: string) => boolean,
 ): string | null {
@@ -126,8 +145,8 @@ export function memberAppRefusal(
   if (builtin.spends) {
     return `The tool '${slug}' starts paid model work on every call, so a team app can't use it.`;
   }
-  if (!builtin.readOnly) {
-    return `The tool '${slug}' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).`;
+  if (!builtin.readOnly && builtin.tableRows !== true) {
+    return `The tool '${slug}' changes data or reaches outside the brain, so a team app can't use it. ${TEAM_APP_TOOLS_ALLOWED}`;
   }
   if (requiresConfirm) {
     return `The tool '${slug}' needs an admin's confirmation, so a team app can't use it.`;
@@ -144,7 +163,7 @@ export function memberAppRefusal(
  */
 export function appToolPolicy(
   row: Row,
-  builtin: { readOnly: boolean; spends: boolean } | null,
+  builtin: AppBuiltinFacts | null,
   refused: (name: string) => boolean,
 ): RuntimeToolPolicy | null {
   const h = row.handler as ToolHandler;

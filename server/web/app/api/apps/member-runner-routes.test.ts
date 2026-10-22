@@ -381,9 +381,11 @@ describe('member tool broker', () => {
     });
     // The rule is asked about THIS app's declared tools, for this brain,
     // for this login (its connector rule, W4b fix round 2), and this app (every
-    // workspace that holds it must hold the connector, plan R2).
+    // workspace that holds it must hold the connector, plan R2), with the
+    // call's input (it names a row write's Table, member-app-tools.ts rule 6).
     expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN, {
       appId: APP,
+      input: {},
     });
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
   });

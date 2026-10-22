@@ -146,7 +146,12 @@ type Run = {
   actsFor: () => Promise<ViewerFor | null>;
 };
 
-function runOf(config: AppToolBrokerConfig, app: AppToolBrokerApp, slug: string): Run {
+function runOf(
+  config: AppToolBrokerConfig,
+  app: AppToolBrokerApp,
+  slug: string,
+  input: Readonly<Record<string, unknown>>,
+): Run {
   const declared = app.manifest.toolSlugs ?? [];
   if (config.via === 'contact') {
     const { share, served } = config;
@@ -174,7 +179,9 @@ function runOf(config: AppToolBrokerConfig, app: AppToolBrokerApp, slug: string)
   // keeps the Team rule, so the admin's own connectors never lift an
   // author-limited app above what it runs with for its members.
   const loginId = config.via === 'member' || level !== 'team' ? config.runner.loginId : undefined;
-  const check = config.via === 'member' || level !== 'admin' ? { appId: app.id } : undefined;
+  // The call's input names the Table a team app's row write changes
+  // (member-app-tools.ts rule 6: only one homed in a holder of the app).
+  const check = config.via === 'member' || level !== 'admin' ? { appId: app.id, input } : undefined;
   const scope = level === 'none' ? null : appToolScope(level, config.runner, { id: app.id });
   return {
     rules: level,
@@ -234,7 +241,7 @@ export async function runAppToolBroker(
   const { slug, input, confirmToken } = parsed.data;
   const system = config.via === 'member' ? config.system : <T>(fn: () => Promise<T>) => fn();
 
-  const run = runOf(config, app, slug);
+  const run = runOf(config, app, slug, input);
   const verdict = await system(run.verdict);
   const who = whoOf(config);
   const via = config.via;

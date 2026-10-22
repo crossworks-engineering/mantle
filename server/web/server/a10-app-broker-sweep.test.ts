@@ -457,6 +457,8 @@ const LINK_ERROR =
   "the link's refused or failed call lands its error row now (via 'contact', the share and the contact), as the owner's and a member's always did (main logged none)";
 const ADMIN_APP_DATA_DOOR =
   "an Admin user's run reaches its app's database on the system pool by the app-data door, after the app's lookup in its scope, as a member's run does (F4 fix round 2, item 11: in its scope since F4, an Admin user who only reads the app was refused)";
+const TEAM_CALL_INPUT =
+  "a call at team rules hands its input to the verdict now (check.input), which names the Table a team app's row write changes: only one homed in a workspace that holds the app runs (task 2178377a, member-app-tools.ts rule 6)";
 const NAMED_CHANGES: Readonly<Record<string, string>> = {
   'db owner-admin query': ADMIN_APP_DATA_DOOR,
   'db owner-admin exec': ADMIN_APP_DATA_DOOR,
@@ -467,10 +469,19 @@ const NAMED_CHANGES: Readonly<Record<string, string>> = {
   'tool owner-admin oversized': OWNER_ADMIN_CALL,
   'tool owner-admin refused': OWNER_REFUSAL,
   'tool owner-admin unknown-tool': OWNER_REFUSAL,
-  'tool owner-team refused': OWNER_REFUSAL,
-  'tool owner-team unknown-tool': OWNER_REFUSAL,
+  'tool owner-team refused': `${OWNER_REFUSAL}; ${TEAM_CALL_INPUT}`,
+  'tool owner-team unknown-tool': `${OWNER_REFUSAL}; ${TEAM_CALL_INPUT}`,
   'tool owner-admin confirm-mismatch':
     'a confirmation that expired or does not match lands its Activity row now (refused: the reason), beside the error row main wrote',
+  'tool owner-team read': TEAM_CALL_INPUT,
+  'tool owner-team write': TEAM_CALL_INPUT,
+  'tool owner-team tool-error': TEAM_CALL_INPUT,
+  'tool owner-team oversized': TEAM_CALL_INPUT,
+  'tool member read': TEAM_CALL_INPUT,
+  'tool member write': TEAM_CALL_INPUT,
+  'tool member refused': TEAM_CALL_INPUT,
+  'tool member unknown-tool': TEAM_CALL_INPUT,
+  'tool member tool-error': TEAM_CALL_INPUT,
   'tool link refused': LINK_ERROR,
   'tool link unknown-tool': LINK_ERROR,
   'tool link tool-error': LINK_ERROR,

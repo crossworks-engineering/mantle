@@ -82,6 +82,7 @@ export {
   scopeHoldsAdmin,
 } from './gateway/scope-answers';
 export {
+  appHolderHomes,
   createHomeFallback,
   loginScopeColumns,
   loginScopeFor,

@@ -23,6 +23,7 @@ import { externalAccessToolSig } from './external-access';
 import { memberAppRefusedName } from './member-app-tools';
 import {
   NO_RUNTIME_POLICY_ERROR,
+  TEAM_APP_TOOLS_ALLOWED,
   apiToolPolicy,
   appToolPolicy,
   connectorToolPolicy,
@@ -191,13 +192,38 @@ describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said
       "The tool 'web_search' starts paid model work on every call, so a team app can't use it.",
     );
     expect(rule(b('page_update'), false, false)).toBe(
-      "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      `The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. ${TEAM_APP_TOOLS_ALLOWED}`,
     );
     expect(rule({ ...b('page_get'), requiresConfirm: true }, true, false)).toBe(
       "The tool 'page_get' needs an admin's confirmation, so a team app can't use it.",
     );
     // Spending is said before writing, as before.
     expect(rule(b('video_ingest'), false, true)).toContain('starts paid model work');
+  });
+
+  it('a row write a team app may make (table-rows): allowed by the rule, still a write', () => {
+    const t = b('table_row_add');
+    const policy = appToolPolicy(
+      t,
+      { readOnly: false, spends: false, tableRows: true },
+      memberAppRefusedName,
+    );
+    expect(policy).toMatchObject({ effect: 'write', fields: { memberApp: null } });
+    // Its other rules still hold: a confirm, a spend, a refused name.
+    expect(
+      appToolPolicy(
+        { ...t, requiresConfirm: true },
+        { readOnly: false, spends: false, tableRows: true },
+        memberAppRefusedName,
+      )?.fields?.memberApp,
+    ).toContain("needs an admin's confirmation");
+    expect(
+      appToolPolicy(t, { readOnly: false, spends: true, tableRows: true }, memberAppRefusedName)
+        ?.fields?.memberApp,
+    ).toContain('starts paid model work');
+    // Without the mark a write is refused, and the refusal says what is allowed.
+    expect(rule(b('table_row_delete'), false, false)).toContain(TEAM_APP_TOOLS_ALLOWED);
+    expect(TEAM_APP_TOOLS_ALLOWED).toContain('homed in a workspace that holds the app');
   });
 
   it('an outside tool: its own row type', () => {
