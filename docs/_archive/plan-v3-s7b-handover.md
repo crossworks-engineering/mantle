@@ -3827,3 +3827,155 @@ the Microsoft refresh's failure note (last_sync_error) stays narrow, by
 design; curated_models insert and delete stay narrow while its update is
 at a spot (an insert of a new entry gives what an edit gives: round 8's
 reasoning, kept).
+
+## Part b2, round 14: the call scan, the switches on insert, the cost class (handed over)
+
+Same branch. Inputs: the brief's "b2 round 14 inputs" (re-audits at
+f95cab33a: app 8, DB 8, no HIGH, one app MED), items 1 to 11 in order. One
+builder; commits 3d837dd8a to the head of this section. Round 13c's gate
+set on f95cab33a was all 0 (matrix 0 on its solo rerun r13cmx2).
+
+### What changed, by item
+
+1. App MED-1 and its class. `mantle_connector_beyond_admin` (a structure
+   read with no identity read: an inactive scope reads the owner's rows)
+   is on NARROW_SYSTEM_FUNCTIONS, so a connector's sync, move and key
+   rotate run on the Admin area's narrow exit; the disable of the unmarked
+   write tools beyond Admin runs at tool-config with the voided marks (one
+   spot, so the marks are never voided without it). Cell:
+   external-access.viewer.db.test.ts, the clear on the area's exit. The
+   class fix: the static scan (narrow-write-scan.ts scanCalls,
+   scanRepoCalls) reads every `mantle_<name>(` call in the SQL text of the
+   source and holds it against what the narrow role may run (its
+   allowlist and PUBLIC definers by name, or a function that runs as its
+   caller and stays PUBLIC's, read from the migrations). Any other call is
+   at a spot, in a system file, or pinned per file with its count
+   (NARROW_SCAN_FN_OPEN, 126 pairs) and its function's decision
+   (NARROW_SCAN_FN_DECIDED, 100 functions, by category: denied by name,
+   runtime-denied, the runtime role's, invoker taken from PUBLIC, a viewer
+   definer called in a login scope). A new call of a definer the narrow
+   role may not run fails the unit suite. runtime-role.db.test.ts checks
+   the scan's reading against the catalog (what it holds runnable the
+   narrow role may run; no decided function is runnable).
+2. DB LOW-1 and app LOW-2. Migration 0324_narrow_off_on_insert (new): the
+   'off:' rule meets an INSERT (mantle_narrow_one_way: two asserted
+   replaces of its 0321 body; every trigger with an 'off:' rule fires on
+   INSERT too, generated from the catalog). narrowNeedsSpot answers an
+   insert that starts a switch on (named, or by a column default of true:
+   insertTurnsOn); the calendar's new feed runs at feed-enable. The 13b
+   catalog cell's sibling (narrow-rules-14.db.test.ts) reads INSERT rights.
+   worker_group_ensure uses its HTTP twin's narrowNeedsSpot branch;
+   model_pool_set and model_pool_remove run at model-route (item 5).
+3. DB LOW-2. The leak check (0321 edited in place: it has run on no box)
+   reads a SQL-standard body (pg_get_function_sqlbody), a quoted or
+   qualified current_setting, pg_show_all_settings, domain checks, and
+   matches the readers by exact `public.` signature (the dynamic and maker
+   names in public only). migrate runs it inside each migration's
+   transaction before the ledger row (migrate-runner.ts), so a migration
+   that leaves a leak fails and leaves nothing (cell: identity-gateway
+   db test, a planted migration, no function and no ledger row after).
+4. DB LOW-3. The system schema pattern is a parameter
+   (SYSTEM_SCHEMA_LIKE = `pg\_%` as sent; unit cells on the text and the
+   source); migrate revokes every default-privilege entry naming PUBLIC or
+   the narrow role but Postgres's own restated defaults (defaultAclEntries,
+   defaultAclRevoke). DB cell: a hand CREATE on pgboss and three default
+   ACL entries taken back by migrate.
+5. DB LOW-4 (the destination and cost class). Off the narrow list, at
+   model-route: an assistant's provider, model, backup provider and model,
+   thinking effort; a worker's provider, model and backups; the embedder's
+   providers, model, dimensions, extraction concurrency and time budget,
+   local batch and timeout (its labels and a backup switched off stay); a
+   pool entry's insert and delete (curated_models left
+   NARROW_REINSERT_HELD). Callers: agents.ts and ai-workers.ts already
+   branched by narrowNeedsSpot; the effort tool (toolsmith groups.ts), the
+   extraction PATCH, the pools POST and DELETE, the MCP pool tools, the
+   curate run and the seed at model-route.
+6. DB LOW-5. prompt_versions left the narrow list; the Studio's version
+   insert runs at skill-text.
+7. App LOW-1. isWriteRefused reads the one walk (pgErrorCode) and does not
+   skip a 42501 on the narrow route (systemRouteNow first, so no pool is
+   asked outside an exit); isRunnerEngineAbsent reads findDatabaseError;
+   the tool results sweep no longer runs inside a turn.
+8. App LOW-3. A fire's status and completion reason are CASE expressions
+   on the row's own status (a pause during the fire stands; an active row
+   at its max completes; a row no longer active keeps its next fire). Cell
+   as the real narrow login (narrow-rules-14).
+9. Docs: runtime-role.md revert order (0324, 0323, 0322, ...), the five
+   acting-login definers, the leak check's forms and its per-migration
+   run, the call scan.
+
+Not done: 9 (login-self rows generated from the route table), 11 (J's
+epoch per release, K's per-call pins of the write scan, L's narrowSpotFor
+and one acting-login helper, M's leftovers, the INFO note).
+
+Revert: packages/db/rollback/0324_narrow_off_on_insert.revert.sql (before
+0323's: INSERT out of the triggers, the two replaces reversed, its ledger
+row removed). 0321's edit changes only mantle_identity_leaks (its revert
+drops it, unchanged). Rollback note: an older image on this schema with
+the switch on has its narrow destination, cost, pool and prompt version
+writes refused, and its new calendar feed (inserted on); production's
+default is off.
+
+### The forge proof (the real narrow login)
+
+`~/s7b-b2/r14/proof14.sh` (forge14.sql = round 13b's 83 forms plus 22;
+pre14.sql: the hand grants before a second migrate). Before = f95cab33a
+(x-r14pb.log), after = 0349514d3 (x-r14pa.log).
+
+| Forge (round 14)                                                   | Before | After |
+| ------------------------------------------------------------------ | ------ | ----- |
+| a calendar feed deleted and inserted again on (named, by default)  | wrote  | 42501 |
+| an assistant's provider, model, backups, thinking effort           | wrote  | 42501 |
+| a worker's provider, model                                         | wrote  | 42501 |
+| the embedder's model, provider, dimensions, concurrency, batch     | wrote  | 42501 |
+| a pool entry added, removed                                        | wrote  | 42501 |
+| a prompt version inserted                                          | wrote  | 42501 |
+| a table in pgboss after a hand CREATE to PUBLIC and a migrate      | wrote  | 42501 |
+| default ACL entries naming PUBLIC or the narrow role after migrate | 4      | 0     |
+| the connector beyond-Admin read on the narrow login (allowed)      | 42501  | ran   |
+| rounds 12 to 13b's 67 forms                                        | 42501  | 42501 |
+| the product writes (16 plus 5)                                     | wrote  | wrote |
+| the sweep: functions that changed a row                            | 0      | 0     |
+| the catalog check: leaks                                           | 0      | 0     |
+
+After: 84 refused all 42501, 21 allowed all wrote.
+
+### Pins
+
+fullRouteSpotCalls 117 to 129 (twelve: the cost class 9, a new feed, the
+worker group's update, a prompt version), rawSqlNonLiteral 64 to 65 (the
+default ACL revoke), each with its reason. FULL_ROUTE_SPOT_FILES gains the
+five model-route files and groups.ts' model-route. NARROW_SCAN_OPEN lost
+three entries (the connector disable, the MCP pool update, the MCP worker
+group update).
+
+### Gates
+
+Targeted (workstation, two at a time): r14t1/r14t2 (dbe867cb8) red on
+four test fixes (the leak cell's ledger, the sweep's four new spot rows,
+containment's allowed assistant edit, the prompt version's author), all
+fixed; r14t3 (on) 0 and r14t4 (actor-off) 0 on e3048783d. Mac on the
+working tree: typecheck of db, tools, web, calendar, runtime 0; arch:check
+0; docs:check 0; the touched unit files pass. The full gate set was not
+run on one head in this round.
+
+### Left (round 14b), in order
+
+1. The full gate set on one head (the brief's list), then a fix round on
+   what it shows. Watch: the switch-on suites for a narrow 42501 that
+   isWriteRefused used to skip (it now throws), and any product insert of
+   a switch-bearing row on a narrow exit (0324).
+2. Item 9: the login-self rows generated from the route table with the
+   non-empty body cell.
+3. Item 11: J (the counter's epoch per release), K (the write scan's pins
+   by occurrence, coverage per call), L (narrowSpotFor; ai-workers.ts's
+   mixed vault key and params edit; one helper for the five acting-login
+   callers), M (run-maker, the Telegram readers, lint arrow functions),
+   the INFO note (insertStructureItem's then callback).
+
+Doubts for the auditor: NARROW_SCAN_FN_DECIDED's categories come from the
+lists and the grants, not from tracing every caller (the 126 pairs are
+pinned exact, so any new one is a decision); the external-access app
+checks (mantle_app_holders, mantle_login_connector_rows) are decided as
+login-scope reads; 0324's INSERT rule reads only the 'off' rules (the
+others compare a row with its old self).
