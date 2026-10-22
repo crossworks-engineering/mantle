@@ -25,10 +25,6 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.audit_log.detail': 'insert only: an audit line, read by no model',
   'public.calendar_accounts.sync_state':
     "insert only: a new feed's sync cursor (the owner's feed, NARROW_REINSERT_HELD), no prompt",
-  'public.curated_models.routes':
-    "insert only: an entry of the owner's model picker (NARROW_REINSERT_HELD): catalog vendors, never a vault key or a base URL",
-  'public.curated_models.pricing':
-    "insert only: the picker's price estimate (NARROW_REINSERT_HELD); doubt named for the auditor: shown, not a cap",
   'public.heartbeat_fires.state_before': "insert only: a fire's log row, after the fire",
   'public.heartbeat_fires.state_after': "insert only: a fire's log row, after the fire",
   'public.heartbeat_fires.reply_surface_ref': "insert only: a fire's log row, after the fire",
