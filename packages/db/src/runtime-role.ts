@@ -1298,6 +1298,19 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // member of PUBLIC, the narrow login too. A fresh migrate grants
       // PUBLIC neither, so this changes nothing there.
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM PUBLIC`);
+      // Nor a sequence (a nextval or setval on an app sequence) nor CREATE
+      // in any schema but the system's own (round 13b, the re-audit's DB
+      // LOW-4): a fresh migrate grants PUBLIC neither on an app schema, so
+      // this changes nothing there; a hand grant is taken back every run.
+      // The roles that need a sequence hold their own grant (the runtime
+      // role's, the write role's, the narrow role's measured ones).
+      await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schemas} FROM PUBLIC`);
+      const createSchemas = await tx<{ s: string }[]>`
+        select quote_ident(n.nspname) as s from pg_namespace n
+         where n.nspname not like 'pg\_%' and n.nspname <> 'information_schema'
+           and has_schema_privilege('public', n.oid, 'CREATE')`;
+      for (const { s } of createSchemas)
+        await tx.unsafe(`REVOKE CREATE ON SCHEMA ${s} FROM PUBLIC`);
       const publicDefiners = await tx<{ fn: string }[]>`
         select p.oid::regprocedure::text as fn
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace

@@ -406,7 +406,8 @@ export async function updateAgent(
     next.personaNotes !== undefined ||
     next.skillSlugs !== undefined ||
     next.memoryConfig !== undefined ||
-    next.params !== undefined;
+    next.params !== undefined ||
+    next.description !== undefined;
   // Which vault key an assistant sends and where (api_key_id, base_url,
   // configured_by and their backups) is not the narrow login's either
   // (access-matrix.ts NARROW_NEVER_UPDATE): such an edit runs at model-route.

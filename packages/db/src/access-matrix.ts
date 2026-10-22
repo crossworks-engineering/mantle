@@ -311,9 +311,9 @@ export type NarrowWrite = {
 
 export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freeze({
   'auth.users': {
-    update: ['display_name', 'disabled_at', 'session_epoch'],
+    update: ['disabled_at', 'session_epoch'],
     delete: false,
-    why: "the users area renames and disables a login and ends its sessions (endLoginSessions bumps session_epoch). A new login, a role, a password, a contact link, an enable and a login's delete (DELETE /api/users/:id: its foreign keys cascade, and the brain owner's would cascade the brain) run at the spot login-credential (round 12; 0320 also refuses the narrow role the owner's and an Admin user's row)",
+    why: "the users area disables a login and ends its sessions (endLoginSessions bumps session_epoch). A new login, a role, a password, a contact link, an enable and a login's delete (DELETE /api/users/:id: its foreign keys cascade, and the brain owner's would cascade the brain) run at the spot login-credential (round 12; 0320 also refuses the narrow role the owner's and an Admin user's row). Round 13b (item F): a rename too (display_name reaches the prompts as the user's name)",
   },
   'public.access_keys': {
     update: ['revoked_at', 'revoked_by'],
@@ -368,7 +368,6 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.agents': {
     update: [
       'name',
-      'description',
       'provider',
       'model',
       'backup_provider',
@@ -388,12 +387,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open. Item F: its description too (the delegate tool and roster read it to the model), at skill-text",
   },
   'public.tool_groups': {
-    update: ['name', 'description', 'enabled', 'updated_at'],
+    update: ['name', 'enabled', 'updated_at'],
     delete: false,
-    why: "the connectors and settings areas rename, describe, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'. Round 8: its integration and configuring login (where its calls, token and vault refs go) run at the full-route spot tool-config",
+    why: "the connectors and settings areas rename, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'. Round 8: its integration and configuring login (where its calls, token and vault refs go) run at the full-route spot tool-config. Round 13b (item F): its description too (the model reads it to pick the group's tools, and the delegate roster quotes it), at tool-config",
   },
   // The rest of the measured allowlist (round 8): every table the narrow
   // login wrote over the measured suites, its operations and its columns.

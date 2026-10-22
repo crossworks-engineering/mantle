@@ -15,6 +15,10 @@
  *  - D (0323): every enabled, is_default and backup_enabled column the
  *    narrow role may update is off-only, read from the catalog: a new one
  *    fails here.
+ *  - F: the prompt-reaching text the narrow login held (a tool group's and
+ *    an assistant's description, a login's display name) is off its list.
+ *  - E: migrate takes CREATE on every schema and every app sequence right
+ *    back from PUBLIC.
  */
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -168,6 +172,18 @@ const REFUSED_CD: readonly [string, string][] = [
   ],
 ];
 
+const REFUSED_F: readonly [string, string][] = [
+  [
+    "F: a tool group's description (read by the model)",
+    `update tool_groups set description = 'forged' where true`,
+  ],
+  [
+    "F: an assistant's description (read by the delegate tool)",
+    `update agents set description = 'forged' where id = '${AGENT_ADMIN}'`,
+  ],
+  ["F: the owner's display name", `update auth.users set display_name = 'forged' where is_owner`],
+];
+
 const ALLOWED: readonly [string, string][] = [
   [
     "ok: a member's message to its workspace assistant",
@@ -248,7 +264,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
   it('every forge is refused (42501) and changes no row', async () => {
     const before = await snapshot();
     const bad: string[] = [];
-    for (const [label, stmt] of [...REFUSED, ...REFUSED_CD]) {
+    for (const [label, stmt] of [...REFUSED, ...REFUSED_CD, ...REFUSED_F]) {
       const got = await run(stmt);
       if (got !== '42501') bad.push(`${label}: ${got}`);
     }
@@ -278,6 +294,46 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
        order by 1, 2`;
     expect(rows.length).toBeGreaterThan(5);
     expect(rows.filter((r) => !r.held).map((r) => `${r.tbl}.${r.col}`)).toEqual([]);
+  });
+
+  it('E: migrate takes CREATE on a schema and a sequence right back from PUBLIC', async () => {
+    const [seq] = await su<{ s: string }[]>`
+      select quote_ident(n.nspname) || '.' || quote_ident(c.relname) as s
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where c.relkind = 'S' and n.nspname = 'public' order by c.relname limit 1`;
+    expect(seq?.s).toBeTruthy();
+    await su.unsafe(`grant create on schema public to public`);
+    await su.unsafe(`grant create on schema auth to public`);
+    await su.unsafe(`create schema if not exists forge_13b`);
+    await su.unsafe(`grant create on schema forge_13b to public`);
+    await su.unsafe(
+      `grant usage, select, update on all sequences in schema public, auth to public`,
+    );
+    // The hand grants reach the narrow login (a member of PUBLIC).
+    expect(await run(`create table public.forge_13b_t (x int)`)).toBe('ok');
+    const rr = await import('./runtime-role');
+    await rr.applyRuntimeGrants(su);
+    const [r] = await su.unsafe(`select
+        has_schema_privilege('public', 'public', 'CREATE') as pub,
+        has_schema_privilege('public', 'auth', 'CREATE') as auth,
+        has_schema_privilege('public', 'forge_13b', 'CREATE') as other,
+        (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where c.relkind = 'S' and n.nspname in ('public', 'auth')
+            and (has_sequence_privilege('public', c.oid, 'USAGE')
+                 or has_sequence_privilege('public', c.oid, 'UPDATE'))) as seqs`);
+    expect(r).toEqual({ pub: false, auth: false, other: false, seqs: 0 });
+    const bad: string[] = [];
+    for (const [label, stmt] of [
+      ['E: a table made in public', `create table public.forge_13b_t (x int)`],
+      ['E: a table made in auth', `create table auth.forge_13b_t (x int)`],
+      ['E: a table made in another schema', `create table forge_13b.t (x int)`],
+      ['E: a sequence moved', `select setval('${seq!.s}', 1)`],
+    ] as const) {
+      const got = await run(stmt);
+      if (got !== '42501') bad.push(`${label}: ${got}`);
+    }
+    expect(bad).toEqual([]);
+    await su.unsafe(`drop schema forge_13b cascade`);
   });
 
   it('B: COPY meets the insert rule (a row with no assistant)', async () => {

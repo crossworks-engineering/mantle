@@ -228,8 +228,13 @@ export async function applyLoginChange(
     // the exit's own route. An enable (disabled_at back to NULL) lets the
     // login in again: the narrow login may only set disabled_at (0318), so
     // an enable runs at the spot too.
+    // A rename too (round 13b): the display name reaches the prompts as the
+    // user's name, so the narrow login holds no write of it.
     const credential =
-      changes.role !== undefined || changes.contactId !== undefined || changes.disabledAt === null;
+      changes.role !== undefined ||
+      changes.contactId !== undefined ||
+      changes.disabledAt === null ||
+      changes.displayName !== undefined;
     const run = (fn: () => Promise<void>) =>
       credential ? onFullSystemRoute('login-credential', fn) : fn();
     await run(() =>
