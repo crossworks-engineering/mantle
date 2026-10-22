@@ -1996,3 +1996,179 @@ not drained (test-support.ts now re-exports takeNarrowDenials), the round
 5 peer shape compared base_url (named per run), and migrate's grants named
 a column a 0232 schema lacks (ws-switch-preflight). The full suites were
 NOT rerun on f243629c4: the next round reruns them first.
+
+## Part b2, round 6: agents and tool groups, the area-route sweep (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round does the CEO's round 6 items 1 to 3. The default flip (item 4) is
+NOT in this round: item 3's sweep landed, but its documentation update
+cell is open (below) and the final head's suites were still running at the
+handover. The switch's default is unchanged.
+
+### Item 1: the rerun on f243629c4
+
+Workstation, a fresh clone of the pushed f243629c4 per suite (label
+mantle.test=s7b-b2, containers removed by exact name with their volumes),
+switch on unless said:
+
+| Suite                                   | Exit | Counts                                           |
+| --------------------------------------- | ---- | ------------------------------------------------ |
+| full DB vitest, shard 1/2               | 0    | 581 files; 6405 passed, 1 skipped                |
+| full DB vitest, shard 2/2               | 0    | 580 files; 7870 passed                           |
+| test:actor-off                          | 0    |                                                  |
+| test:actor-on                           | 0    |                                                  |
+| test:edit-on                            | 1, 1 | 583 of 583 passed both runs; one afterAll hook   |
+| test:matrix                             | 1    | every cell the oracle's; the time budget 240.5 s |
+| test:runtime-role in full               | see  | still running at the handover                    |
+| test:serial                             | 0    |                                                  |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | see  | still running at the handover                    |
+| the drill (N-1: b1 against b2's schema) | 0    | 318 ledger rows; every migrate step 0            |
+
+No red that is a product failure: test:edit-on failed only an afterAll
+hook's 10 s (a2b2b-write-gateway, then w6b-member-writes in the rerun;
+every test passed, load average 11 to 17), test:matrix only its 210 s time
+budget beside five lanes, as rounds 1 to 5 met. Both are in the final
+head's run below.
+
+### Item 2: agents and tool groups
+
+Measured writers (round 5's row trigger and round 4's statement log, the
+switch on): agents INSERT (the assistants area's create), tool_group_slugs
+(agent_grant_tool_group), assigned_user_id, api_key_id, tts_worker_id, and
+the definers' workspace_id and DELETE; tool_groups INSERT (5),
+tool_slugs (5), integration, description, updated_at (the toolsmith and the
+connector syncs). The code paths (every `insert`, `update` and `delete` of
+the two tables, read one by one) add the assistants area's edit and clone,
+the manifest's apply and adopt (studio reset, config adopt), the runs
+worker's default assistant, the group create, edit and delete, /api/tools
+and the sandbox's group.
+
+- Column rights (access-matrix.ts NARROW_COLUMN_RIGHTS; both tables also
+  in NARROW_CREDENTIAL_TABLES): agents UPDATE of every column but the
+  grants (`tool_group_slugs`, `role`, `workspace_id`, `slug`, `owner_id`,
+  `id`), no DELETE (the delete is mantle_agent_delete's); tool_groups
+  UPDATE of `name`, `description`, `integration`, `enabled`,
+  `configured_by`, `updated_at` (never `tool_slugs`, `slug`, `admin_only`,
+  `owner_id`), no DELETE. Never INSERT on either. Judged, with why: the
+  model routes, keys and a group's integration and configuring login stay
+  writable (outbound configuration, as api_keys: no login or key gets in);
+  `enabled` on both (an enable restores what an admin's grant already
+  said); `memory_config` (its `delegate_to` names delegates, which run in
+  the caller's own scope: not measured as a grant, open item 3).
+- 0318-style one way, folded into 0318 (same class, no box has run it):
+  agents `assigned_user_id` only to NULL (the users area's lockout releases
+  a login's assistant on the narrow login). 0318 now holds nine triggers.
+- Two spots (viewer.ts FULL_ROUTE_SPOTS, as-system-routes.mjs):
+  `assistant-grant` (server/web lib/agents.ts create, a role or tool group
+  edit, clone; system-manifest/seed.ts applyManifest and
+  adoptManifestItem; runs worker.ts ensureWorkerAgent; toolsmith groups.ts
+  agent_grant_tool_group) and `tool-group-grant` (lib/tool-groups.ts
+  create, a tools edit, delete; /api/tools; toolsmith groups.ts upsert and
+  common.ts; mcp-sync.ts and openapi-sync.ts update, create and remove;
+  sandbox files.ts create). A group's removal and the array_remove of its
+  grants run together at tool-group-grant.
+- Not wrapped, with why: boot-only writers (reconcile.ts, runtime.ts's core
+  tool floor, outside every scope: full), the scripts and the bench (CLI),
+  and the writers of allowed columns (usage stamps, persona notes, prompt
+  versions, thinking effort, connector edits, the MCP token refresh).
+
+Cells:
+
+- narrow-containment.db.test.ts "agents and tool_groups (round 6)", on the
+  switched brain as the narrow login: 15 statements refused 42501 (each
+  insert, each grant column, an assignment to a login, each delete), the
+  two rows and both counts unchanged; the allowed columns, the usage
+  stamps and a release each run; no INSERT and no DELETE on either table;
+  no UPDATE right on any of the nine grant columns; the superuser not held
+  by the one-way rule. The 0318 cell counts 9 triggers.
+- narrow-spots.db.test.ts "round 6": on the narrow exit against the full
+  route, equal answers for a group made, its tools changed, edited; an
+  assistant made, granted the group, edited, cloned for the admin, the
+  assignment released; the group removed and its grant gone.
+- Run on 0532ef177 (5 files, the round 4 and 5 cells and the area routes
+  with them): 0, 64 passed.
+
+### Item 3: the ONE area-route sweep
+
+- server/web/server/narrow-area-sweep.entries.ts: one entry per writing
+  area row of the route table (buildRoutePolicy over the manifest: an
+  area, effect write, not gone, not public): 140 rows, 138 driven, 2
+  skipped with why (the HEAD rows of the two OAuth callbacks: the GET
+  row's handler, driven as GET). narrow-area-sweep.entries.test.ts (unit)
+  fails on a writing area row with no entry and on an entry with no row.
+- server/web/server/narrow-area-sweep.db.test.ts: every entry driven
+  through createApp as the Admin owner with a session cookie, the a10 body
+  sweep's valid body at the sample path, on a fresh brain with the switch
+  on, then on a second fresh brain (the same fixture) with it off. The
+  fixture holds rows at the sample id (a member login, an assistant, a
+  tool group, a skill). Asserted: no narrow denial per row, every answer
+  equal both ways (status and body less ids, stamps, timings and minted
+  tokens), no 500 but three named offline rows (500 both ways: no network
+  here), and a documentation collection made from a real markdown file.
+- Result (61ad240eb's code): 138 rows driven; on-pass statuses 2xx 41, 3xx
+  1, 4xx 91, 5xx 5 (three offline rows and two more whose answers are
+  equal both ways); 0 narrow denials; 0 rows answering differently.
+  The 91 4xx rows stop before their write (a 404 at the sample id or a
+  400 at the sample body): equal, but not a write reached. Driving them to
+  their writes needs a body and a row per route (the narrow-area-routes
+  rows do this for the content writers).
+- LOW-4's docs item: the insert from a real markdown file through the
+  definer is driven at route level (made 200, equal both ways). The update
+  is open: enabling an enabled collection after the file changed answered
+  200 but left the item's first text (on the narrow pass; the off pass was
+  not compared yet), so the reread does not reach upsertDocFromDisk's
+  update this way. The definer's docs-item update stays celled at the
+  gateway (structure-item.db.test.ts).
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Below them: on a
+narrow exit an assistant made, cloned, granted or given a role and a tool
+group made, removed or its tools changed run on the system pool's own
+login (`assistant-grant`, `tool-group-grant`), as before b2; the narrow
+login may no longer insert or delete either, write a grant column, or
+assign an assistant to a login (42501).
+
+### Pins
+
+fullRouteSpots 13 to 15, fullRouteSpotCalls 21 to 42 (reasons in
+scripts/arch-scoreboard.pins.json; the CEO told). No other pin moved.
+
+### Rollback (round 6)
+
+0318 gains one trigger (agents, `drop:assigned_user_id`); its revert drops
+it with the others. The column rights and spots are code and migrate's
+grants: an older image's migrate grants its own matrix back.
+
+### Gates (round 6)
+
+Mac, Node 26, DATABASE_URL unset, on 61ad240eb: `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r
+typecheck` 0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm
+test:serial` 0, `vitest run server packages eslint-rules` 0 (873 files
+passed, 290 skipped; 11303 tests passed). The head after it changes the
+sweep's docs cell and this file only (format, lint and docs again 0).
+
+The final workstation suites on 61ad240eb: running at the handover; the
+next round reads ~/s7b-b2/x-f*.exit and x-f*.log on the
+workstation (fs1, fs2, faoff, faon, feon, fmatrix, frrole, fserial, foff;
+drill.log) and the Mac gate list, and records them here.
+
+### Left (round 7)
+
+1. Record the final head's suites (above); rerun test:matrix and
+   test:edit-on in a quiet lane if they fail only their budget or a hook.
+2. The docs item's update at route level (item 3).
+3. memory_config's delegate_to: measure whether delegation reaches tools
+   the caller's assistant was not granted; if so, a grant column.
+4. The default flip, LAST: narrowSystemOn() true unless
+   MANTLE_NARROW_SYSTEM=0|off|false, read once at boot and logged; the kill
+   switch in docs/runtime-role.md and docs/update-prod.md (env flip plus
+   `docker compose up -d`); fresh installs (on) and per-database mode (the
+   S7a route) named.
+5. Pins: asSystemFull floor, fullRouteSpots and fullRouteSpotCalls at what
+   is left, systemWholeOnFull 0, requestSystemExits on narrow.
+6. The box counts the CEO must see at 0 before the fleet flip
+   (scripts/arch-scoreboard-box.sh on every box): `narrow_misses`
+   narrow-content-write, narrow-cascade-delete and narrow-denied, and
+   `fail_open_misses`.
