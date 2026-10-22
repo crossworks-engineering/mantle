@@ -163,8 +163,8 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
   it("the other definers that take a login with no scope (0314's header): none writes for the login it is given", async () => {
     // Each called with no scope as the superuser (every right), a login
     // that is no login of this brain, the brain as its owner argument:
-    // refused, or it runs and changes no row (pg_stat_xact_* counts this
-    // transaction's own writes). The narrow role may run none of the
+    // refused, or it runs and changes no row (pg_stat_xact_* read before
+    // and after the call). The narrow role may run none of the
     // readers.
     const readers = [
       'mantle_tg_my_chats',
@@ -190,6 +190,8 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
     /** Refused with no acting login: each writes only for the scope's own. */
     const refused = ['mantle_ws_private_workspace', 'mantle_ws_remove_user'];
     const login = randomUUID();
+    const WRITES = `select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int as n
+                      from pg_stat_xact_all_tables where schemaname in ('public', 'auth')`;
     const sigs = await su<
       { name: string; args: string; names: string[] | null; narrow: boolean }[]
     >`
@@ -215,12 +217,12 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
       const label = `${s.name}(${s.args})`;
       answers[label] = await su
         .begin(async (t) => {
+          // The counts before and after, in the call's own transaction: a
+          // backend's counts not yet flushed carry earlier transactions'.
+          const before = await t.unsafe<{ n: number }[]>(WRITES);
           await t.unsafe(`select * from public.${s.name}(${args.join(', ')})`);
-          const [w] = await t.unsafe<{ n: number }[]>(
-            `select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int as n
-               from pg_stat_xact_all_tables where schemaname in ('public', 'auth')`,
-          );
-          throw Object.assign(new Error('rollback'), { writes: w!.n });
+          const after = await t.unsafe<{ n: number }[]>(WRITES);
+          throw Object.assign(new Error('rollback'), { writes: after[0]!.n - before[0]!.n });
         })
         .then(
           () => 'ran',
@@ -230,6 +232,8 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
       if (readers.includes(s.name))
         expect(s.narrow, `${label}: the narrow role runs it`).toBe(false);
     }
+    if (process.env.MANTLE_ACTING_REPORT)
+      process.stdout.write(`${JSON.stringify(answers, null, 1)}\n`);
     for (const [label, a] of Object.entries(answers)) {
       const name = label.slice(0, label.indexOf('('));
       if (refused.includes(name)) expect(a, label).toBe('refused 42501');
