@@ -198,12 +198,34 @@ Its rights, made equal to the access matrix at every migrate inside
 
 - derived when a row sets none: the runtime role's `'none'` stays `'none'`
   and its `'read'` stays `'read'` (definers write those); a `content` table
-  is `'read'`; a `system` or `admin` table is `'all'` (`SELECT, INSERT,
-UPDATE, DELETE`). A row may set a narrower value than the derived one, never a wider one (it
-  throws);
-- column-level on the credential and rights tables it writes
-  (`NARROW_WRITES`, access-matrix.ts): `SELECT`, `UPDATE` of only the
-  listed columns, `DELETE` where listed, never `INSERT`. `auth.users`:
+  is `'read'`; a `system` or `admin` table is `'all'`. A row may set a
+  narrower value than the derived one, never a wider one (it throws);
+- on an `'all'` table, `SELECT`, and WRITES ONLY AS A MEASURED ALLOWLIST
+  (`NARROW_WRITES`, access-matrix.ts; S7b part b2 round 8, the class fix of
+  the full audits: the writes were derived by table name, so a rights table
+  with a plain name was writable): `INSERT` where listed, `UPDATE` of only
+  the listed columns (always column-level), `DELETE` where listed. A table
+  or column not listed is read only, so a new one is closed by default.
+  Measured with the switch on over the full DB suite, actor-off, actor-on,
+  edit-on, runtime-role and the area-route sweep (a row trigger on every
+  table and the statement log). Never on it (`NARROW_NEVER_UPDATE`,
+  `NARROW_NEVER_INSERT`): a maker, owner, login, workspace or agent column,
+  a destination (base URLs, vault key ids, a handler, an integration, a
+  redirect URI, a root path), what runs (a run's status, a run item's
+  state, a pending call's tool, arguments and origin, a skill's
+  instructions, a heartbeat's schedule, assistant and skill), and an
+  insert into a table whose row is executed, decided or grants (runs, run
+  items, pending calls, heartbeats, skills, tools, tool groups, agents,
+  channels, AI workers, the embedding row and the rest of the list). Those
+  writes run at a full-route spot, one per job (`run-control`,
+  `model-route`, `tool-config`, `heartbeat-maker`, `skill-text`,
+  `pending-park`, `docs-root`, `agent-group-grant`), where `systemDb`
+  takes the system pool too; a caller asks `narrowNeedsSpot` (one helper
+  reading the allowlist) whether its write needs one. A narrow session can
+  therefore no longer forge a run the sweep executes, a heartbeat that
+  fires as the anchor, a skill's text, a parked call, or point a vault key
+  at another host (narrow-allowlist.db.test.ts);
+- the credential and rights tables within it: `auth.users`:
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);
   `access_keys`: `revoked_at`, `revoked_by`; `oauth_access_tokens` and
@@ -212,12 +234,14 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   `revoked_at`; `mantle_peers`: `last_contacted_at`, `updated_at`, and the
   unbind of a session end (`acts_as_login_id`, `ended_acts_as_login_id`);
   `telegram_chats`: no write; `agents`: every column but its grants
-  (`tool_group_slugs`, `role`, `workspace_id`, `slug`, `owner_id`, `id`),
+  (`tool_group_slugs`, `role`, `workspace_id`, `slug`, `owner_id`, `id`)
+  and its routes' keys, base URLs and configuring login (`model-route`),
   `assigned_user_id` only released, `memory_config` but its `delegate_to`
   key (a delegate runs with its own tool groups for the caller, so naming
   one is a grant: round 7); `tool_groups`: `name`, `description`,
   `integration`, `enabled`, `configured_by`, `updated_at` (never
-  `tool_slugs`, `slug`, `admin_only` or `owner_id`), and neither table's
+  `tool_slugs`, `slug`, `admin_only` or `owner_id`; since round 8 not
+  `integration` or `configured_by` either: `tool-config`), and neither table's
   `DELETE`. Measured with the switch on (every statement
   the narrow login sent in the full DB suite, `log_statement = mod`; then a
   trigger logging each row the narrow login wrote on these tables with its
