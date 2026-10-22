@@ -3469,3 +3469,74 @@ fullRouteSpots 28 to 29 (acting-login), fullRouteSpotCalls 102 to 106 (the
 four callers), with reasons in arch-scoreboard.pins.json;
 FULL_ROUTE_SPOT_FILES and FULL_ROUTE_SPOT_CALLBACKS (narrowTx) list them.
 historyCodeComments unchanged (2341).
+
+### Gates (round 13, handed over red)
+
+Workstation on 4eab5822c (prefix r13, `UNITR=13 ~/s7b-b2/launch9.sh`):
+test:serial 0; actor-off 1, actor-on 1, edit-on 1 (read below); s1, s2,
+runtime-role, switch off, runtime role off, matrix and the round 8 proof
+were still running at hand-over (`bash ~/s7b-b2/grab3.sh r13s1 r13s2
+r13rrole r13off r13rroff r13matrix r13proof`). The real-login proof
+(proof13.sh) on 4eab5822c: x-r13pf.exit 0 (39 forges 42501, the 8 product
+writes wrote, the sweep 0 wrote, 0 leaks). The drill on 82393dbe7
+(drill13.sh: round 12's plus 0321's revert first): x-r13drill2.exit 0
+(read its table in drill13.log; on 4eab5822c the roll forward after the
+reverts failed, MigrationGapError, because 0321's revert kept its ledger
+row: fixed in 82393dbe7).
+
+Mac, Node 26, DATABASE_URL unset (typecheck on 4eab5822c, the rest on the
+working tree of 82393dbe7): typecheck 0, format:check 0, docs:check 0,
+arch:check 0, web build 0, lint 1, full unit vitest 1 (4 of 11320).
+
+### Left (round 13b), in order
+
+A (finish; the class rule is in, these are its fallout):
+
+1. The acting login with the actor check off. actor-off fails the
+   TS-path cells of structure-item.db.test.ts and narrow-containment
+   (made, sealed, calendar, the turn cell, the edit, the heads re-read):
+   with the check off the full route sends no SET, so a turn's acting login
+   (not a request exit's, which actorParams sends in every mode) never
+   reaches the definer at the acting-login spot, and the definer now
+   refuses a missing one. Fix in the gateway: at the acting-login spot the
+   acting login is sent in every check mode (gateway/actor-sql.ts, the
+   spot's SET), with a cell in actor-off. Then rerun the narrow-area
+   sweep (it fails on the same rows, plus its SPOT_ROWS: add the
+   acting-login rows: PATCH /api/workspaces/:id/users/:loginId, the
+   Telegram chat block and unpair, the structure rows, the assistant
+   delete).
+2. migrate's leak check on a database that has not reached 0321: the
+   old-migration cells (workspaces-bridge-off 0261, workspaces-review-off
+   0264, workspaces-user-threads(-orphan) 0269, level-roles-off-0273) run
+   afterMigrations on a partial migrate where mantle_identity_leaks() does
+   not exist yet. assertNoIdentityLeaks should skip (and say so) when
+   `to_regprocedure('public.mantle_identity_leaks()')` is null; read each
+   failure first to confirm.
+3. Lint (1 error): packages/db/src/test-support/identity-sweep.ts names
+   mantle.ws, mantle.mod_ws and mantle.scope_login: pin it in
+   eslint-rules/scope-settings.mjs with its reason (a forge of the narrow
+   login in tests). Unit (4): eslint-rules/arch-lints.test.ts "scope
+   settings ... pinned files only" (the same pin) and "workspace system
+   work: its reasons only in pinned systemWork calls" (identity-sweep.ts
+   and identity-gateway.db.test.ts name `system:ws-clear-ticks` as the
+   forged actor: pin with why, or build the string); as-system-exits.test.ts
+   "every holder listed" (narrowTx: add it where that test lists holders);
+   server/web/lib/deploy-scripts.test.ts (the harness: read its output,
+   likely the revert order or a rollback file check that wants 0321).
+4. The sweep's one unparsed row in proof13 (pgp_sym_encrypt: its bytea
+   output broke sweep13.sh's line parse; the DB cell counts by transaction
+   id and is not affected).
+5. Rerun every gate on one head, as listed in the brief.
+
+B to M: not started (message guard; JSON columns; enable class; PUBLIC
+schema CREATE and sequences; prompt-reaching text; flip blockers; the
+42501 detector; heartbeat fire SQL; the counter epoch; the scan's pins;
+narrowSpotFor; the leftovers but forge12's quoting, done in forge13). The
+forge script for them: ~/s7b-b2/r13/forge13.sql (add each as a block like
+round 13's), proof13.sh runs it with the sweep and the catalog check.
+
+Doubts for the auditor: the actor reader's `system:narrow` on the narrow
+role (a decision, not NULL: see item A.2); the trigger condition allowance
+for the edit check's contact rule (it reads the raw actor to add a check);
+the non-identity key list (mantle.human and mantle.ws_former_clients
+named on it from their readers' bodies).
