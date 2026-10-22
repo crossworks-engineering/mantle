@@ -399,11 +399,25 @@ work runs on the full route, keeping its actor, at a spot named in
 `FULL_ROUTE_SPOTS` (`viewer.ts`, `onFullSystemRoute`), each with its why;
 the rest of the exit stays narrow: `profile-row` (the login-self routes and
 the settings area write `profiles`, the write role's own-login table, with
-no scope to carry), `peer-item` (a peer is an item), `secrets-root`
-(`secret_create`'s Secrets root), `integrity-delete` (the landed delete),
-`promotion-space` (a promotion's personal-space settle). The list only
-shrinks: S7b moves each to the write role in the caller's scope or to a
-definer. Outside a narrow exit a spot changes nothing.
+no scope to carry), `integrity-delete` (the landed delete),
+`promotion-space` (a promotion's personal-space settle), and the others
+the list names. The list only shrinks: S7b moves each to the write role in
+the caller's scope or to a definer. Outside a narrow exit a spot changes
+nothing.
+
+The structure items an Admin area's narrow exit makes, edits and removes
+(the Secrets root, a secret, a peer, a sender's contact, a documentation
+item and the folders above one) left the spots in S7b part b2: on the
+narrow route each write is one call of `mantle_structure_item` (migration
+0315, `gateway/structure-item.ts`). Its KIND is one of a fixed list that
+fixes the item's type, the area its writer must hold (keys, connectors or
+settings), the operations open to it and where a new one lands; the caller
+must be a system session with no scope (0314's rule), name the acting
+login, and that login must hold the kind's area (`mantle_area_rule`). The
+narrow role runs it and holds no right on `nodes`. Anywhere else (a
+login's scope, a full reason, the switch off) the app's own statements run
+as before; the definer does what they did (the row, the heads, the index
+reset), so placement and readers are the same.
 
 The route's own statements carry `/* mantle:narrow */` (never the actor's
 tag): the round-trip test counts them as the path's in every mode. Its

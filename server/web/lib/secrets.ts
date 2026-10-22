@@ -27,13 +27,12 @@ import {
   db,
   nodes,
   changedFields,
-  markContentChanged,
+  deleteStructureItems,
+  insertStructureItem,
   secrets,
+  updateStructureItem,
   withDeadlockRetry,
-  withNodeDeleteHeads,
-  withNodeInsertHeads,
   type Node,
-  onFullSystemRoute,
 } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 import { dedupeTags } from '@mantle/content/tags';
@@ -97,26 +96,19 @@ function nodeToRow(node: Node): SecretRow {
  *  added. Same pattern as `ensureFilesRootBranch` over in @mantle/files
  *  but without the disk side. */
 async function ensureSecretsRoot(ownerId: string): Promise<void> {
-  // Heads first (workspaces plan U1): the folder the root lands in.
+  // Heads first (workspaces plan U1): the folder the root lands in. A
+  // structure item (gateway/structure-item.ts): on the keys area's narrow
+  // exit, the definer.
   await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'branch', path: SECRETS_ROOT_LABEL }], async (tx) => {
-      await tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'branch',
-          title: 'Secrets',
-          slug: SECRETS_ROOT_LABEL,
-          path: SECRETS_ROOT_LABEL,
-          data: {
-            description:
-              'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
-          },
-        })
-        .onConflictDoNothing({
-          target: [nodes.ownerId, nodes.path],
-          where: sql`${nodes.type} = 'branch'`,
-        });
+    insertStructureItem('secrets-root', {
+      ownerId,
+      title: 'Secrets',
+      slug: SECRETS_ROOT_LABEL,
+      path: SECRETS_ROOT_LABEL,
+      data: {
+        description:
+          'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+      },
     }),
   );
 }
@@ -205,17 +197,9 @@ export type CreateSecretInput = {
   fields: SecretField[];
 };
 
-/** A secret's write on the keys area's system exit: on the full route
- *  (viewer.ts FULL_ROUTE_SPOTS 'secret-item'). */
-function secretWrite<T>(fn: () => Promise<T>): Promise<T> {
-  return onFullSystemRoute('secret-item', fn);
-}
-
-export function createSecret(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
-  return secretWrite(() => createSecretNow(ownerId, input));
-}
-
-async function createSecretNow(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
+/** A secret's item is a structure item (gateway/structure-item.ts): on the
+ *  keys area's narrow exit, the definer makes, edits and removes it. */
+export async function createSecret(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
   await ensureSecretsRoot(ownerId);
   const sanitisedFields = sanitiseFields(input.fields);
   const payload: SecretPayload = {
@@ -233,45 +217,34 @@ async function createSecretNow(ownerId: string, input: CreateSecretInput): Promi
   // The node and its sealed value in one transaction, the secrets folder's
   // head first (plan U1). No outside effects, so a retry is safe.
   const inserted = await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'secret', path: SECRETS_ROOT_LABEL }], async (tx) => {
-      const [row] = await tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'secret',
-          title: input.title.trim().slice(0, 200) || 'Untitled secret',
-          slug: null,
-          path: SECRETS_ROOT_LABEL,
-          data,
-          tags: dedupeTags(input.tags),
-        })
-        .returning();
-      if (!row) throw new Error('createSecret: insert returned no row');
-
-      const sealed = seal(JSON.stringify(payload), aadFor(row.id));
-      await tx.insert(secrets).values({
-        nodeId: row.id,
-        ciphertext: sealed.ciphertext,
-        keyVersion: sealed.keyVersion,
-      });
-      return row;
-    }),
+    insertStructureItem(
+      'secret',
+      {
+        ownerId,
+        title: input.title.trim().slice(0, 200) || 'Untitled secret',
+        slug: null,
+        path: SECRETS_ROOT_LABEL,
+        data,
+        tags: dedupeTags(input.tags),
+      },
+      async (tx, row) => {
+        const sealed = seal(JSON.stringify(payload), aadFor(row.id));
+        await tx.insert(secrets).values({
+          nodeId: row.id,
+          ciphertext: sealed.ciphertext,
+          keyVersion: sealed.keyVersion,
+        });
+      },
+    ),
   );
+  if (!inserted) throw new Error('createSecret: insert returned no row');
 
   return nodeToRow(inserted);
 }
 
 export type UpdateSecretInput = Partial<CreateSecretInput>;
 
-export function updateSecret(
-  ownerId: string,
-  id: string,
-  input: UpdateSecretInput,
-): Promise<SecretRow | null> {
-  return secretWrite(() => updateSecretNow(ownerId, id, input));
-}
-
-async function updateSecretNow(
+export async function updateSecret(
   ownerId: string,
   id: string,
   input: UpdateSecretInput,
@@ -322,20 +295,17 @@ async function updateSecretNow(
     tags: [node.tags, tags],
   });
 
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(nodes)
-      .set({
-        ...(input.title !== undefined ? { title } : {}),
-        ...(input.tags !== undefined ? { tags } : {}),
-        data: newData,
-        updatedAt: new Date(),
-      })
-      .where(eq(nodes.id, id))
-      .returning();
-    if (!row) return row;
-    return (await markContentChanged(tx, { id, type: 'secret' }, changed)) ?? row;
-  });
+  const updated = await updateStructureItem(
+    'secret',
+    ownerId,
+    id,
+    {
+      ...(input.title !== undefined ? { title } : {}),
+      ...(input.tags !== undefined ? { tags } : {}),
+      data: newData,
+    },
+    changed,
+  );
   if (!updated) throw new Error('updateSecret: update returned no row');
 
   if (nextPayload) {
@@ -353,11 +323,7 @@ async function updateSecretNow(
   return nodeToRow(updated);
 }
 
-export function deleteSecret(ownerId: string, id: string): Promise<boolean> {
-  return secretWrite(() => deleteSecretNow(ownerId, id));
-}
-
-async function deleteSecretNow(ownerId: string, id: string): Promise<boolean> {
+export async function deleteSecret(ownerId: string, id: string): Promise<boolean> {
   const [node] = await db
     .select({ id: nodes.id })
     .from(nodes)
@@ -365,11 +331,7 @@ async function deleteSecretNow(ownerId: string, id: string): Promise<boolean> {
     .limit(1);
   if (!node) return false;
   // Cascade drops the `secrets` row too. Heads first (plan V4).
-  await withDeadlockRetry(() =>
-    withNodeDeleteHeads([id], async (tx) => {
-      await tx.delete(nodes).where(eq(nodes.id, id));
-    }),
-  );
+  await withDeadlockRetry(() => deleteStructureItems('secret', ownerId, [id]));
   return true;
 }
 

@@ -6,7 +6,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { nodes, onFullSystemRoute, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
+import { insertStructureItem, nodes, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { nodeUrl } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -85,35 +85,20 @@ export const secret_create: BuiltinToolDef = {
     // with no content, made on the system pool after the keys area check
     // (W7a fix round 2); the secret itself is created in the caller's scope,
     // with the database's create check.
-    // On the full route from the narrow exit (plan v3.2 S7a, FULL_ROUTE_SPOTS
-    // 'secrets-root').
+    // A structure item (packages/db gateway/structure-item.ts): on the keys
+    // area's narrow exit, the definer makes it.
     await areaSystem('keys', () =>
-      onFullSystemRoute('secrets-root', () =>
-        withDeadlockRetry(() =>
-          withNodeInsertHeads(
-            ctx.ownerId,
-            [{ type: 'branch', path: SECRETS_ROOT_LABEL }],
-            async (tx) => {
-              await tx
-                .insert(nodes)
-                .values({
-                  ownerId: ctx.ownerId,
-                  type: 'branch',
-                  title: 'Secrets',
-                  slug: SECRETS_ROOT_LABEL,
-                  path: SECRETS_ROOT_LABEL,
-                  data: {
-                    description:
-                      'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
-                  },
-                })
-                .onConflictDoNothing({
-                  target: [nodes.ownerId, nodes.path],
-                  where: sql`${nodes.type} = 'branch'`,
-                });
-            },
-          ),
-        ),
+      withDeadlockRetry(() =>
+        insertStructureItem('secrets-root', {
+          ownerId: ctx.ownerId,
+          title: 'Secrets',
+          slug: SECRETS_ROOT_LABEL,
+          path: SECRETS_ROOT_LABEL,
+          data: {
+            description:
+              'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+          },
+        }),
       ),
     );
 

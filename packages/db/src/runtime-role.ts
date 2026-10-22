@@ -243,6 +243,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "packages/files ops/files.ts restampRacedCreate: a raced snapshot copy's home, the snapshot copies' system work only (0313)",
   'public.mantle_tg_login_moderates(uuid,uuid,uuid)':
     "packages/telegram chat-login.ts loginModeratesBot: a Telegram bot's Moderator rule about a login, a read definer (0313)",
+  'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
+    'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0315)',
 };
 
 /**
@@ -286,6 +288,8 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "the workspaces area's Moderator tick (workspaces.ts setModerator) on an Admin area exit: the definer checks the acting login",
   'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
     "the assistants area's block or unpair of a chat of the assistant's bot (agent-telegram.ts setAgentTelegramChat) on an Admin area exit: the definer holds the rule, telegram_chats only (0313)",
+  'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
+    "the keys, connectors and settings areas' structure items (gateway/structure-item.ts: the Secrets root, a secret, a peer, a sender's contact, a documentation item) on an Admin area exit or in a turn's area exit: the definer holds the rule, the listed kinds of nodes only (0315)",
 };
 
 /**

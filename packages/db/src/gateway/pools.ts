@@ -202,6 +202,7 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
   // The narrow route (plan v3.2 S7a): its switch read once, here, and
   // logged; a statement of a reason routed 'narrow' runs as the narrow role.
   const narrow = narrowSystemOn();
+  poolNarrow = narrow;
   const withActor = narrowRouteClient(
     actorClient(sql),
     sql,
@@ -273,6 +274,20 @@ function reportDbRole(base: PgSql): void {
 
 /** The system pool's client with the actor (actorClient over
  *  globalThis.__mantleSql): the login write gateway's system path. */
+/** The narrow switch the system pool read when it opened (null before). */
+let poolNarrow: boolean | null = null;
+
+/**
+ * Whether a system pool statement sent now takes the narrow route: the
+ * switch the pool read when it opened and the exit's pick (the pool's own
+ * test, above). For a writer that must send a different statement there
+ * (gateway/structure-item.ts), never to choose a pool.
+ */
+export function narrowRouteNow(): boolean {
+  getAdminDb();
+  return (poolNarrow ?? narrowSystemOn()) && systemRouteNow() === 'narrow';
+}
+
 let adminActorSql: PgSql | null = null;
 
 /** The system pool's handle on the narrow route, always (getNarrowDb). */

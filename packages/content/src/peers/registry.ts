@@ -17,10 +17,10 @@ import {
   mantlePeers,
   nodes,
   type MantlePeer,
+  deleteStructureItems,
+  insertStructureItem,
   withDeadlockRetry,
-  withNodeDeleteHeads,
   withNodeInsertHeads,
-  onFullSystemRoute,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
@@ -136,23 +136,15 @@ export async function createPeer(
   const outbound = input.outboundToken?.trim() || null;
 
   await ensureRoot(ownerId);
-  // The peer's item, on the full route from a narrow exit (plan v3.2 S7a,
-  // FULL_ROUTE_SPOTS 'peer-item').
-  const [node] = await onFullSystemRoute('peer-item', () =>
-    withDeadlockRetry(() =>
-      withNodeInsertHeads(ownerId, [{ type: 'mantle_peer', path: PEERS_ROOT_LABEL }], (tx) =>
-        tx
-          .insert(nodes)
-          .values({
-            ownerId,
-            type: 'mantle_peer',
-            title: displayName,
-            path: PEERS_ROOT_LABEL,
-            data: { base_url: baseUrl, description: input.description ?? '' },
-          })
-          .returning(),
-      ),
-    ),
+  // The peer's item, a structure item (packages/db gateway/structure-item.ts):
+  // on the peers area's narrow exit, the definer makes it.
+  const node = await withDeadlockRetry(() =>
+    insertStructureItem('peer', {
+      ownerId,
+      title: displayName,
+      path: PEERS_ROOT_LABEL,
+      data: { base_url: baseUrl, description: input.description ?? '' },
+    }),
   );
   if (!node) throw new Error('createPeer: node insert returned no row');
 
@@ -397,11 +389,7 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
   if (!row) return false;
   // One statement: mantle_peers and peer_shares both cascade from the node
   // (schema/mantle-peers.ts), so deleting it is the whole operation, atomically.
-  await onFullSystemRoute('peer-item', () =>
-    withDeadlockRetry(() =>
-      withNodeDeleteHeads([row.nodeId], (tx) => tx.delete(nodes).where(eq(nodes.id, row.nodeId))),
-    ),
-  );
+  await withDeadlockRetry(() => deleteStructureItems('peer', ownerId, [row.nodeId]));
   return true;
 }
 

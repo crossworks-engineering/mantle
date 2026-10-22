@@ -20,6 +20,7 @@ import {
   authUsers,
   changedFields,
   db,
+  insertStructureItem,
   markContentChanged,
   type Node,
   nodes,
@@ -445,35 +446,32 @@ export async function createContact(
 ): Promise<ContactWriteResult> {
   const fields = normalizeContactInput(input);
   await ensureRoot(ownerId);
-  const [row] = await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'contact', path: CONTACTS_ROOT_LABEL }], (tx) =>
-      tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'contact',
-          title: deriveContactTitle({
-            firstName: fields.firstName,
-            lastName: fields.lastName,
-            company: fields.company,
-            emails: fields.emails,
-            countryCode: fields.countryCode,
-            cell: fields.cell,
-          }),
-          path: CONTACTS_ROOT_LABEL,
-          data: {
-            first_name: fields.firstName,
-            last_name: fields.lastName,
-            company: fields.company,
-            emails: fields.emails,
-            country_code: fields.countryCode,
-            cell: fields.cell,
-            description: fields.description,
-          },
-          tags: dedupeTags(input.tags ?? []),
-        })
-        .returning(),
-    ),
+  // A structure item (packages/db gateway/structure-item.ts): in a login's
+  // scope as before; on the email area's narrow exit (a sender made a
+  // contact), the definer makes it.
+  const row = await withDeadlockRetry(() =>
+    insertStructureItem('contact', {
+      ownerId,
+      title: deriveContactTitle({
+        firstName: fields.firstName,
+        lastName: fields.lastName,
+        company: fields.company,
+        emails: fields.emails,
+        countryCode: fields.countryCode,
+        cell: fields.cell,
+      }),
+      path: CONTACTS_ROOT_LABEL,
+      data: {
+        first_name: fields.firstName,
+        last_name: fields.lastName,
+        company: fields.company,
+        emails: fields.emails,
+        country_code: fields.countryCode,
+        cell: fields.cell,
+        description: fields.description,
+      },
+      tags: dedupeTags(input.tags ?? []),
+    }),
   );
   if (!row) throw new Error('createContact: insert returned no row');
   return { contact: { ...rowOf(row), sharing: null }, addedEmails: fields.emails };

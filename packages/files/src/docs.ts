@@ -28,16 +28,14 @@ import {
   db,
   docCollections,
   eq,
-  inArray,
   isWriteRefused,
   nodes,
-  markContentChanged,
   sql,
   withDeadlockRetry,
-  withNodeDeleteHeads,
-  withNodeInsertHeads,
+  insertStructureItem,
+  updateStructureItem,
+  deleteStructureItems,
   runReadPathWrite,
-  onFullSystemRoute,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
@@ -140,23 +138,15 @@ async function ensureDocBranchChain(ownerId: string, ltreePath: string): Promise
     const prefix = segments.slice(0, i).join('.');
     const label = segments[i - 1]!;
     const slug = ltreeToDash(label);
-    // Heads first (workspaces plan U1): the folder it lands in, shared.
+    // Heads first (workspaces plan U1): the folder it lands in, shared. A
+    // structure item (packages/db gateway/structure-item.ts).
     await withDeadlockRetry(() =>
-      withNodeInsertHeads(ownerId, [{ type: 'branch', path: prefix }], async (tx) => {
-        await tx
-          .insert(nodes)
-          .values({
-            ownerId,
-            type: 'branch',
-            title: i === 1 ? 'Documentation' : slug,
-            slug: null,
-            path: prefix,
-            data: { description: '', slug },
-          })
-          .onConflictDoNothing({
-            target: [nodes.ownerId, nodes.path],
-            where: sql`${nodes.type} = 'branch'`,
-          });
+      insertStructureItem('docs-branch', {
+        ownerId,
+        title: i === 1 ? 'Documentation' : slug,
+        slug: null,
+        path: prefix,
+        data: { description: '', slug },
       }),
     );
   }
@@ -219,36 +209,28 @@ export async function upsertDocFromDisk(args: {
     if (oldData.sha256 === sha256) return { status: 'noop', nodeId: existing.id };
     // New text: the whole index again (the kind registry's `indexed`),
     // announced when this transaction commits.
-    const updated = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(nodes)
-        .set({ title: loc.relPath, data: newData, updatedAt: new Date() })
-        .where(eq(nodes.id, existing.id))
-        .returning({ id: nodes.id });
-      if (row) await markContentChanged(tx, { id: row.id, type: 'documentation' }, ['content']);
-      return row;
-    });
+    const updated = await updateStructureItem(
+      'documentation',
+      ownerId,
+      existing.id,
+      { title: loc.relPath, data: newData },
+      ['content'],
+    );
     if (!updated) throw new Error('upsertDocFromDisk: update returned no row');
     return { status: 'updated', nodeId: updated.id };
   }
 
   await ensureDocBranchChain(ownerId, loc.parentPath);
   // Heads first (workspaces plan U1): the folder it lands in, shared.
-  const [inserted] = await withDeadlockRetry(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'documentation', path: loc.parentPath }], (tx) =>
-      tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'documentation',
-          title: loc.relPath,
-          slug: null,
-          path: loc.parentPath,
-          data: newData,
-          tags: ['documentation', collection.origin],
-        })
-        .returning({ id: nodes.id }),
-    ),
+  const inserted = await withDeadlockRetry(() =>
+    insertStructureItem('documentation', {
+      ownerId,
+      title: loc.relPath,
+      slug: null,
+      path: loc.parentPath,
+      data: newData,
+      tags: ['documentation', collection.origin],
+    }),
   );
   if (!inserted) throw new Error('upsertDocFromDisk: insert returned no row');
   // INSERT of a non-branch node auto-fires node_ingested (migration 0018).
@@ -275,11 +257,8 @@ export async function deleteDocByRelPath(args: {
     .limit(1);
   if (!node) return { ok: false };
   // Heads first (workspaces plan U1).
-  await withDeadlockRetry(() =>
-    withNodeDeleteHeads([node.id], async (tx) => {
-      await tx.delete(nodes).where(eq(nodes.id, node.id)); // content_chunks cascade via FK
-    }),
-  );
+  // content_chunks cascade via FK.
+  await withDeadlockRetry(() => deleteStructureItems('documentation', args.ownerId, [node.id]));
   return { ok: true };
 }
 
@@ -400,20 +379,7 @@ export type ReconcileResult = {
  * prod (immutable docs) the ONLY indexing path. Skips deletion on an empty
  * walk (the safety guard).
  */
-/** A collection's index writes on the docs area's system exit: on the full
- *  route (viewer.ts FULL_ROUTE_SPOTS 'docs-collection'). */
-function docsWrite<T>(fn: () => Promise<T>): Promise<T> {
-  return onFullSystemRoute('docs-collection', fn);
-}
-
-export function reconcileCollection(
-  ownerId: string,
-  collection: DocCollection,
-): Promise<ReconcileResult> {
-  return docsWrite(() => reconcileCollectionNow(ownerId, collection));
-}
-
-async function reconcileCollectionNow(
+export async function reconcileCollection(
   ownerId: string,
   collection: DocCollection,
 ): Promise<ReconcileResult> {
@@ -487,11 +453,7 @@ export async function reconcileEnabledCollections(ownerId: string): Promise<void
 
 /** Hard-delete every documentation node in a collection (chunks cascade). Run
  *  when a collection is disabled. */
-export function purgeCollection(ownerId: string, collectionKey: string): Promise<number> {
-  return docsWrite(() => purgeCollectionNow(ownerId, collectionKey));
-}
-
-async function purgeCollectionNow(ownerId: string, collectionKey: string): Promise<number> {
+export async function purgeCollection(ownerId: string, collectionKey: string): Promise<number> {
   const where = and(
     eq(nodes.ownerId, ownerId),
     eq(nodes.type, 'documentation'),
@@ -502,12 +464,7 @@ async function purgeCollectionNow(ownerId: string, collectionKey: string): Promi
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return 0;
   const deleted = await withDeadlockRetry(() =>
-    withNodeDeleteHeads(ids, (tx) =>
-      tx
-        .delete(nodes)
-        .where(and(where, inArray(nodes.id, ids)))
-        .returning({ id: nodes.id }),
-    ),
+    deleteStructureItems('documentation', ownerId, ids),
   );
   return deleted.length;
 }

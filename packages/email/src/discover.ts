@@ -4,7 +4,7 @@
  * provider on demand across every enabled account; persists nothing. Lifted
  * from the `server/web` settings/discover action so it's reachable over HTTP.
  */
-import { onFullSystemRoute, type EmailAccount } from '@mantle/db';
+import { type EmailAccount } from '@mantle/db';
 import { createContact, loadContactGate } from '@mantle/content';
 import { listAccounts } from './accounts';
 import { enqueueBackfills } from './backfill-queue';
@@ -116,16 +116,14 @@ export async function addContactFromSender(
   const [firstName, ...rest] = (name || addr.split('@')[0] || addr).split(/\s+/);
 
   try {
-    // On the full route from the email area's narrow exit (viewer.ts
-    // FULL_ROUTE_SPOTS 'sender-contact').
-    const { contact, addedEmails } = await onFullSystemRoute('sender-contact', () =>
-      createContact(userId, {
-        firstName: firstName || undefined,
-        lastName: rest.join(' ') || undefined,
-        emails: [addr],
-        description: '',
-      }),
-    );
+    // On the email area's narrow exit the contact's item is the structure
+    // definer's (packages/db gateway/structure-item.ts).
+    const { contact, addedEmails } = await createContact(userId, {
+      firstName: firstName || undefined,
+      lastName: rest.join(' ') || undefined,
+      emails: [addr],
+      description: '',
+    });
     await enqueueBackfills(userId, addedEmails);
     return { ok: true, id: contact.id };
   } catch (err) {

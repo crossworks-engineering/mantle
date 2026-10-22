@@ -144,18 +144,13 @@ export function requestSystemRouteMap(root) {
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/calendar/src/manage.ts': ['calendar-events'],
-  'packages/content/src/peers/registry.ts': ['peer-item'],
   'packages/content/src/profile-preferences.ts': ['profile-row'],
-  'packages/email/src/discover.ts': ['sender-contact'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
-  'packages/files/src/docs.ts': ['docs-collection'],
-  'packages/tools/src/builtins-secrets.ts': ['secrets-root'],
   'packages/tools/src/pending.ts': ['pending-call'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/agents.ts': ['agent-conversation'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
   'server/web/lib/login-update.ts': ['promotion-space'],
-  'server/web/lib/secrets.ts': ['secret-item'],
 });
 
 /**

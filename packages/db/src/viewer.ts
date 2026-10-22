@@ -1139,27 +1139,19 @@ function exitLogin(outer: Actor | null): string | undefined {
  * role for one of these (access-matrix.ts narrowFor).
  *
  * TODO(S7b): move each to the write role in the caller's scope, or to a
- * definer, and delete its spot; the list only shrinks.
+ * definer, and delete its spot; the list only shrinks. The structure items
+ * (the Secrets root, a secret, a peer, a sender's contact, a documentation
+ * item) moved to one definer (gateway/structure-item.ts, migration 0315).
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
     "profiles is a content table (the write role's own-login rule): the login-self routes write the login's own row and the settings and backups areas the brain's, on a system exit with no scope to carry to the write role",
-  'peer-item':
-    'the peers area makes and re-keys a peer, an item (nodes) with its peer row, on the system pool',
-  'secrets-root':
-    'secret_create makes the Secrets root (a branch item) on the system pool after the keys area check',
   'integrity-delete':
     "the integrity screen's landed delete removes an item (nodes) and its traces on the system pool",
   'promotion-space':
     "a login's promotion turns its personal space's shared and submitted items (space_items) back into private drafts, in the role change's transaction",
-  'secret-item':
-    "the keys area's secret routes make, edit and delete a secret item (nodes) with its sealed row, and the Secrets root, on the system pool",
   reembed:
     'the embedding rebuild (the AI workers and embedding areas) writes every stored vector of the brain (nodes, facts, entities, chunks, windows, recall nodes) on the system pool',
-  'docs-collection':
-    "the docs area's collection create, switch and resync index a collection's markdown as documentation items (nodes) and remove them, on the system pool",
-  'sender-contact':
-    'the email area promotes a discovered sender to a contact item (nodes), and makes the Contacts root, on the system pool',
   'calendar-events':
     "the calendar area's unsubscribe removes the events the calendar synced (nodes) on the system pool",
   'agent-conversation':
