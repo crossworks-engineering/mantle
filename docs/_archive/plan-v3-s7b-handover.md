@@ -3979,3 +3979,125 @@ pinned exact, so any new one is a decision); the external-access app
 checks (mantle_app_holders, mantle_login_connector_rows) are decided as
 login-scope reads; 0324's INSERT rule reads only the 'off' rules (the
 others compare a row with its old self).
+
+## Part b2, round 14b: the experience read, the read sweep, the traced decisions (handed over)
+
+Same branch. Inputs: the brief's "b2 round 14b inputs". One builder;
+commits 9e11ba275 to the head of this section.
+
+### Item 0: the live miss and its class
+
+Dev's actor_check_misses held one narrow row (SELECT only, 2026-10-22
+19:42 UTC): narrow-denied, "permission denied for function
+mantle_agent_experience", actor system:http:admin-area. Cause: GET
+/api/agents is an assistants area row, so the guard runs its handler on
+the area's narrow exit (session.ts noteRequestSystem('area')), and
+listAgents' withExperience calls the definer, which the narrow role could
+not run. Round 14's call scan had decided the function "called in a login
+scope" from the lists; the chat bundle's call is in a scope, the agents
+screen's is not. No suite sent the read: the area sweep sent only writing
+rows. Fix: mantle_agent_experience on NARROW_SYSTEM_FUNCTIONS (counts only,
+no content; on the narrow role the identity readers answer no scope, so
+it counts the owner's assistants as on the system pool).
+
+The class (a read on a narrow exit that no suite sends): the area sweep
+now sends every GET of an area row and of a `self` row from the route
+table (sweepReadRows, 129 rows, with the switch on and off; four streams
+skipped with why), none may be refused by the narrow role and each answers
+the same status both ways. Its first run found a second live bug: GET
+/api/debug/maintenance settles stale runs (reapStaleRuns) and the narrow
+role may not UPDATE maintenance_runs (round 14's isWriteRefused change
+made the skip a throw). Fix: maintenance_runs state, finished_at, summary
+on NARROW_WRITES (no insert, no delete).
+
+The re-trace: every function NARROW_SCAN_FN_DECIDED decided as "called in
+a login scope" (54), the runtime role's (10) and the PUBLIC invokers (2),
+66 in all, traced call site by call site to their routes, tools and
+workers. Six more ran on an area's narrow exit, each now on
+NARROW_SYSTEM_FUNCTIONS (all reads, no identity or no scope on the
+narrow role) and off the decided list:
+
+| Function                                    | Reached by                                                                        |
+| ------------------------------------------- | --------------------------------------------------------------------------------- |
+| mantle_access_log_names                     | GET /api/apps/:id/access-log (users area), a log row with an actor                |
+| mantle_contact_sharing                      | POST /api/team-admin/invites from a contact (the lookup before the insert spot)   |
+| mantle_check_box_mode, mantle_check_lowered | GET /api/debug/integrity/audit (settings area), its check rows                    |
+| mantle_ws_skip_reason                       | the same audit, workspaces_not_migrated (an invoker: the narrow role's own reads) |
+| mantle_ws_any_shared                        | the same audit, the snapshot row (grant-reads.ts)                                 |
+
+The sweep's fixture now reaches each (an access log row with an actor, an
+invite from a contact, pg-boss's job table, which the replaced pg-boss
+never made: the audit and the extraction screen answered 500 on it both
+ways and hid the checks behind it). The other 59 hold: in a login scope
+(the any-login rows: workspaces, grants, access keys, shell, chat,
+Telegram), behind a workspace scope test, at a spot, full system work, or
+grant lists only. One low doubt: after forgetRequestLogins on a narrow
+route (mobile logout, a device revoke, the session end), a later guard
+read would ask mantle_login_is_admin on the narrow route; the sweep drives
+the device revoke clean, mobile logout takes a bearer the sweep does not
+send.
+
+### Item 2 (part): item 9
+
+The login-self rows come from the route table: LOGIN_SELF_ENTRIES has an
+entry for every writing `self` row (25 sent, 10 skipped with why: device
+bearers, file bodies, a turn, a transcription, a summary), checked against
+the table by narrow-area-sweep.entries.test.ts; a PUT names a field
+(profile fonts, push preferences, member push preferences), the member MCP
+client disconnect is sent with a fixture grant. Two answer non-2xx by name
+(no archived chat, no pairing code), the same both ways.
+
+### Pins
+
+NARROW_SYSTEM_FUNCTIONS 11 to 18 (agent_experience and the six);
+NARROW_SCAN_FN_DECIDED 100 to 93, NARROW_SCAN_FN_OPEN loses their pairs;
+route policy lists 16 to 15 (the sweep's hand list gone; ROUTE_LIST_PINS);
+the sweep's SPOT_ROWS gain three reads that write at a spot (docs-root,
+ms-account, profile-row) and the login's own chat rows (acting-login, on
+every route). tool-matrix.test.ts skips the call scan's pins (a path key
+read as a destructuring).
+
+### Gates
+
+Mac on ba2723391 (all 0): pnpm -r typecheck, lint, format:check,
+docs:check, arch:check, pnpm -C server/web build, full unit vitest (877
+files, 11337 tests). Before it, 8fab28158 was red on three (the db
+typecheck, arch's route list pin, two unit files), fixed in ba2723391.
+
+Workstation, the full set on ba2723391 (round 14 never ran it): shard 1/2
+0 (6466), actor-off 0 (1544), actor-on 0 (413), edit-on 0 (583),
+runtime-role 0 (3017), serial 0, the forge proof 0, launch9's old proof
+0, the drill 0 (0324's revert first in its list); shard 2/2 1 (two 15 s
+timeouts under six busy lanes: workspaces-migrate.db.test.ts L-a and
+a6b-exit-sweep.db.test.ts client-sourced, neither near this round's
+code); matrix 1 (its time budget only, 357 s against 210 s, with six
+lanes busy: rerun alone, as round 13c's r13cmx2). The switch-off and
+runtime-role-off full runs were still running at hand over. Targeted
+r14bt2 (8fab28158: the sweep, runtime-role, narrow-allowlist,
+narrow-login db tests) 0. 6da596f89 (the six) went to a targeted run
+(r14bt4: the sweep, runtime-role, narrow-login, identity-gateway).
+
+Not yet: every gate 0 on one head. The full set was launched on this
+section's head (run names r14bf*, ~/s7b-b2/x-r14bf*.exit and .log; the
+proof r14bfpf, the drill x-r14bfdrill.exit): read them first.
+
+### Left (round 14c), in order
+
+1. Read the r14bf* set on this section's head (and r14bt4); rerun shard
+   2/2's two timeouts and the matrix alone if they repeat as load only;
+   fix anything else; all 0 on one head.
+2. Item 11: J (the counter's epoch per release), K (the write scan's pins
+   by occurrence, coverage per call), L (narrowSpotFor; ai-workers.ts's
+   mixed vault key and params edit enters skill-text, not both; one
+   helper for the five acting-login callers), M (run-maker, the Telegram
+   readers, lint arrow functions), the INFO note (insertStructureItem's
+   then callback).
+3. The forgetRequestLogins doubt above (a mobile logout bearer cell on
+   the narrow route).
+
+Doubts for the auditor: the trace of the 66 decisions is a reading of the
+code (routes, tools, workers), confirmed where the sweep reaches the
+call; the turn and tool paths rest on the switch-on suites. Each of the
+seven new allowlist entries is a read; the two that read rows with no
+scope on the narrow role (access log names, contact sharing dates) read
+no more than the narrow role's own SELECT already does.

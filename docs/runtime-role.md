@@ -775,7 +775,9 @@ the owner's and an Admin user's row) count through 0319's report branch).
 What the counts do not see, and which the switch-on suites measure
 instead (the DB vitest shards, actor-off, actor-on, edit-on, runtime-role
 and the area-route sweep, each with `MANTLE_NARROW_SYSTEM=1`; a refusal
-there fails the run): a function the narrow role may not EXECUTE (outside
+there fails the run; the sweep sends every writing area row, every
+writing `self` row and every GET of an area or `self` row, from the route
+table, so a read on an area's narrow exit is measured too): a function the narrow role may not EXECUTE (outside
 `NARROW_SYSTEM_FUNCTIONS`), a read of a table or column it may not SELECT,
 and a TRUNCATE (no role the app runs as holds it). The static narrow
 write scan (`packages/db/src/narrow-write-scan.test.ts`) reads the source
