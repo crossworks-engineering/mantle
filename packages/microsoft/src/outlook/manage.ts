@@ -6,7 +6,7 @@
  * syncs it via the Graph provider.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, emailAccounts, msAccounts, type EmailAccount } from '@mantle/db';
+import { db, emailAccounts, msAccounts, onFullSystemRoute, type EmailAccount } from '@mantle/db';
 
 /** The companion mailbox account for an MS account, if one exists. */
 export async function getMailAccount(
@@ -31,28 +31,34 @@ export async function ensureMailAccount(ownerId: string, msAccountId: string): P
     .limit(1);
   if (!ms) return false;
 
-  await db
-    .insert(emailAccounts)
-    .values({
-      userId: ownerId,
-      provider: 'microsoft',
-      address: ms.upn,
-      displayName: ms.displayName ?? null,
-      branchPath: `${ms.branchPath}.mail`,
-      msAccountId: ms.id,
-      enabled: true,
-    })
-    .onConflictDoUpdate({
-      target: [emailAccounts.userId, emailAccounts.address],
-      set: {
+  // The account made or bound (its provider, Microsoft account and branch
+  // path: which mailbox the brain reads and where it lands) is not the
+  // narrow login's (access-matrix.ts NARROW_NEVER_INSERT and
+  // NARROW_NEVER_UPDATE_TABLE): the full-route spot mail-account.
+  await onFullSystemRoute('mail-account', () =>
+    db
+      .insert(emailAccounts)
+      .values({
+        userId: ownerId,
         provider: 'microsoft',
-        msAccountId: ms.id,
+        address: ms.upn,
         displayName: ms.displayName ?? null,
+        branchPath: `${ms.branchPath}.mail`,
+        msAccountId: ms.id,
         enabled: true,
-        lastSyncError: null,
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [emailAccounts.userId, emailAccounts.address],
+        set: {
+          provider: 'microsoft',
+          msAccountId: ms.id,
+          displayName: ms.displayName ?? null,
+          enabled: true,
+          lastSyncError: null,
+          updatedAt: new Date(),
+        },
+      }),
+  );
   return true;
 }
 

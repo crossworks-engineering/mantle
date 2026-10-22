@@ -391,18 +391,29 @@ export async function updateAgent(
   // own tool groups: 0318 keeps the key on the narrow login): such an edit
   // runs at the full-route spot assistant-grant; any other edit stays on the
   // narrow login (column rights, access-matrix.ts NARROW_WRITES).
+  // An enable (the assistant answers again) is a grant too: 0320 lets the
+  // narrow login only switch it off.
   const grants =
     patch.role !== undefined ||
     patch.toolGroupSlugs !== undefined ||
+    patch.enabled === true ||
     (patch.memoryConfig != null && 'delegate_to' in patch.memoryConfig);
+  // What it runs (its prompt, persona notes, skill list): skill-text, as a
+  // skill's instructions (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
+  const runs =
+    next.systemPrompt !== undefined ||
+    next.personaNotes !== undefined ||
+    next.skillSlugs !== undefined;
   // Which vault key an assistant sends and where (api_key_id, base_url,
   // configured_by and their backups) is not the narrow login's either
   // (access-matrix.ts NARROW_NEVER_UPDATE): such an edit runs at model-route.
   const [row] = grants
     ? await onFullSystemRoute('assistant-grant', write)
-    : narrowNeedsSpot(agents, 'update', next)
-      ? await onFullSystemRoute('model-route', write)
-      : await write();
+    : runs
+      ? await onFullSystemRoute('skill-text', write)
+      : narrowNeedsSpot(agents, 'update', next)
+        ? await onFullSystemRoute('model-route', write)
+        : await write();
   return row ? toSummary(row) : null;
 }
 
@@ -712,11 +723,15 @@ async function mutatePersonaNotes(
     .limit(1);
   if (!row) return null;
   const next = transform((row.personaNotes ?? []) as PersonaNote[]);
-  const [updated] = await db
-    .update(agents)
-    .set({ personaNotes: next, updatedAt: new Date() })
-    .where(eq(agents.id, row.id))
-    .returning();
+  // Part of what the assistant runs (its prompt): the full-route spot
+  // skill-text (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
+  const [updated] = await onFullSystemRoute('skill-text', () =>
+    db
+      .update(agents)
+      .set({ personaNotes: next, updatedAt: new Date() })
+      .where(eq(agents.id, row.id))
+      .returning(),
+  );
   return updated ? toSummary(updated) : null;
 }
 

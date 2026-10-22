@@ -143,8 +143,10 @@ export async function updateToolGroup(
   // NARROW_WRITES).
   // Its integration (where its calls and token go) or configuring login:
   // the full-route spot tool-config.
+  // An enable (its tools answer again) is a grant too: 0320 lets the
+  // narrow login only switch it off.
   const [row] =
-    patch.toolSlugs !== undefined
+    patch.toolSlugs !== undefined || patch.enabled === true
       ? await onFullSystemRoute('tool-group-grant', write)
       : narrowNeedsSpot(toolGroups, 'update', next)
         ? await onFullSystemRoute('tool-config', write)

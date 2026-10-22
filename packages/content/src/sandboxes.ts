@@ -1,5 +1,5 @@
 import { and, desc, eq, or } from 'drizzle-orm';
-import { db, sandboxes, type Sandbox, type NewSandbox } from '@mantle/db';
+import { db, onFullSystemRoute, sandboxes, type Sandbox, type NewSandbox } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /**
@@ -14,7 +14,13 @@ import { UUID_RE } from '@mantle/std';
 export const SANDBOX_NAME_RE = /^[a-z0-9][a-z0-9-]{1,31}$/;
 
 export async function createSandboxRow(input: NewSandbox): Promise<Sandbox> {
-  const [row] = await db.insert(sandboxes).values(input).returning();
+  // A sandbox made names its maker (created_by): with INSERT and DELETE the
+  // narrow login could put a removed sandbox back under another maker, so
+  // the row is made at the full-route spot sandbox-make (access-matrix.ts
+  // NARROW_NEVER_INSERT).
+  const [row] = await onFullSystemRoute('sandbox-make', () =>
+    db.insert(sandboxes).values(input).returning(),
+  );
   return row!;
 }
 

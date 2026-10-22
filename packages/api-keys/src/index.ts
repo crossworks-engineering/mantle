@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { db, systemDb, apiKeys, type ApiKey } from '@mantle/db';
+import { db, onFullSystemRoute, systemDb, apiKeys, type ApiKey } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { InputError } from '@mantle/std';
 import { normalizeAnthropicWorkspaceId, type ProviderCredential } from '@mantle/voice-client';
@@ -258,19 +258,25 @@ export async function setApiKey(
   const id = randomUUID();
   const { ciphertext, keyVersion } = seal(plaintext, id);
   const masked = maskPlaintext(plaintext);
-  const [inserted] = await db
-    .insert(apiKeys)
-    .values({
-      id,
-      userId,
-      service,
-      label,
-      keyEnc: ciphertext,
-      keyVersion,
-      masked,
-      anthropicWorkspaceId: workspace ?? null,
-    })
-    .returning();
+  // A key made is not the narrow login's (access-matrix.ts
+  // NARROW_NEVER_INSERT): its seal binds its id only, so with INSERT and
+  // DELETE a narrow session could put a key back under another service.
+  // The full-route spot model-route (where a vault key goes).
+  const [inserted] = await onFullSystemRoute('model-route', () =>
+    db
+      .insert(apiKeys)
+      .values({
+        id,
+        userId,
+        service,
+        label,
+        keyEnc: ciphertext,
+        keyVersion,
+        masked,
+        anthropicWorkspaceId: workspace ?? null,
+      })
+      .returning(),
+  );
   if (!inserted) throw new Error('failed to insert api_key');
   return inserted;
 }

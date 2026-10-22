@@ -13,7 +13,15 @@
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { InputError, isUuid } from '@mantle/std';
-import { db, agents, skills, aiWorkers, promptVersions, type PromptVersion } from '@mantle/db';
+import {
+  db,
+  agents,
+  skills,
+  aiWorkers,
+  onFullSystemRoute,
+  promptVersions,
+  type PromptVersion,
+} from '@mantle/db';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { PROSE_REGISTRY, type ProseEntityType } from './registry';
 
@@ -78,6 +86,23 @@ export async function readLiveProse(
  *  heartbeats then run its words, so they become its (W7a fix round 4,
  *  @mantle/tools heartbeat-maker.ts). */
 async function writeLiveProse(
+  ownerId: string,
+  entityType: string,
+  entityId: string,
+  field: string,
+  body: string,
+  login: string | null,
+): Promise<void> {
+  // What an assistant, skill or AI worker runs (its prompt, instructions,
+  // extraction prompt) is not the narrow login's (access-matrix.ts
+  // NARROW_NEVER_UPDATE and NARROW_NEVER_UPDATE_TABLE): the Studio's commit
+  // writes it at the full-route spot skill-text.
+  await onFullSystemRoute('skill-text', () =>
+    writeLiveProseRow(ownerId, entityType, entityId, field, body, login),
+  );
+}
+
+async function writeLiveProseRow(
   ownerId: string,
   entityType: string,
   entityId: string,

@@ -161,7 +161,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/app/api/telegram/chats/[id]/route.ts': ['telegram-responder'],
   'server/web/app/api/runs/[id]/route.ts': ['run-control'],
   'packages/tools/src/builtins-runs.ts': ['run-control'],
-  'server/web/lib/ai-workers.ts': ['model-route'],
+  'server/web/lib/ai-workers.ts': ['model-route', 'skill-text'],
   'server/web/lib/embedding-config.ts': ['model-route'],
   'packages/tools/src/crud.ts': ['tool-config'],
   'packages/tools/src/external-access.ts': ['tool-config'],
@@ -179,7 +179,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/files/src/docs.ts': ['docs-root'],
   'server/web/lib/worker-groups.ts': ['agent-group-grant'],
   'packages/tools/src/builtins-pending.ts': ['agent-group-grant'],
-  'server/web/lib/agents.ts': ['assistant-grant', 'model-route'],
+  'server/web/lib/agents.ts': ['assistant-grant', 'model-route', 'skill-text'],
   'server/web/lib/system-manifest/seed.ts': [
     'assistant-grant',
     'tool-group-grant',
@@ -194,6 +194,17 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/openapi-sync.ts': ['tool-group-grant', 'tool-config'],
   'packages/tools/src/sandbox/files.ts': ['tool-group-grant', 'tool-config'],
   'server/web/lib/push/store.ts': ['push-device'],
+  'server/web/app/api/users/[id]/route.ts': ['login-credential'],
+  'packages/api-keys/src/index.ts': ['model-route'],
+  'packages/tools/src/builtins-persona.ts': ['skill-text'],
+  'packages/email/src/accounts.ts': ['mail-account'],
+  'packages/microsoft/src/outlook/manage.ts': ['mail-account'],
+  'packages/content/src/sandboxes.ts': ['sandbox-make'],
+  'server/web/lib/agent-telegram.ts': ['telegram-connect'],
+  'server/web/lib/studio/prompt-versions.ts': ['skill-text'],
+  'server/web/lib/mcp-connectors.ts': ['tool-config'],
+  'server/web/lib/openapi-connectors.ts': ['tool-config'],
+  'server/api/src/agent/reflector.ts': ['skill-text'],
 });
 
 /**

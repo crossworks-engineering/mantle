@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, authUsers, eq } from '@mantle/db';
+import { db, authUsers, eq, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -120,13 +120,19 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // the relay can be told: a cascade would drop them silently. A comment
   // keeps its author's name (the FK goes SET NULL): the role grants nothing
   // and takes nothing (W8a).
+  // A login's delete cascades its rows (and the brain owner's would
+  // cascade the brain): not the narrow login's (access-matrix.ts
+  // NARROW_WRITES, auth.users DELETE; 0320 also refuses it the owner's and
+  // an Admin user's row). The full-route spot login-credential.
   let ended: { pushTokens: string[] };
   try {
-    ended = await db.transaction(async (tx) => {
-      const tokens = await deleteLoginSubscriptions(targetId, tx);
-      await tx.delete(authUsers).where(eq(authUsers.id, targetId));
-      return { pushTokens: tokens };
-    });
+    ended = await onFullSystemRoute('login-credential', () =>
+      db.transaction(async (tx) => {
+        const tokens = await deleteLoginSubscriptions(targetId, tx);
+        await tx.delete(authUsers).where(eq(authUsers.id, targetId));
+        return { pushTokens: tokens };
+      }),
+    );
   } catch (err) {
     if (isLastAdminRefusal(err)) {
       return NextResponse.json({ error: LAST_ADMIN_MESSAGE }, { status: 409 });

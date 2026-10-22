@@ -312,8 +312,8 @@ export type NarrowWrite = {
 export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freeze({
   'auth.users': {
     update: ['display_name', 'disabled_at', 'session_epoch'],
-    delete: true,
-    why: "the users area renames, disables and enables a login and ends its sessions (endLoginSessions bumps session_epoch), and removes one (DELETE /api/users/:id, counted by 0312's cascade count). A new login, a role, a password and a contact link run at the spot login-credential; a re-enabled login still needs its own password, which no narrow column sets",
+    delete: false,
+    why: "the users area renames and disables a login and ends its sessions (endLoginSessions bumps session_epoch). A new login, a role, a password, a contact link, an enable and a login's delete (DELETE /api/users/:id: its foreign keys cascade, and the brain owner's would cascade the brain) run at the spot login-credential (round 12; 0320 also refuses the narrow role the owner's and an Admin user's row)",
   },
   'public.access_keys': {
     update: ['revoked_at', 'revoked_by'],
@@ -377,12 +377,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'via_tailnet',
       'backup_via_tailnet',
       'tts_worker_id',
-      'system_prompt',
-      'skill_slugs',
       'memory_config',
       'params',
       'thinking_effort',
-      'persona_notes',
       'avatar',
       'assigned_user_id',
       'assigned_at',
@@ -393,7 +390,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8)",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant",
   },
   'public.tool_groups': {
     update: ['name', 'description', 'enabled', 'updated_at'],
@@ -426,15 +423,13 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'params',
       'priority',
       'provider',
-      'system_prompt',
       'updated_at',
       'via_tailnet',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12)',
   },
   'public.api_keys': {
-    insert: true,
     update: [
       'anthropic_workspace_id',
       'key_enc',
@@ -444,7 +439,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by a login turn, system:admin-area, system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by a login turn, system:admin-area, system:http:admin-area. Round 12: a key made runs at the full-route spot model-route (its seal binds its id only, so a delete and reinsert under another service reused it); a replace and a delete stay',
   },
   'public.app_access_log': {
     insert: true,
@@ -487,18 +482,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. A collection made (its root_path) runs at the full-route spot docs-root',
   },
   'public.email_accounts': {
-    insert: true,
-    update: [
-      'display_name',
-      'enabled',
-      'imap_included_folders',
-      'last_sync_error',
-      'ms_account_id',
-      'provider',
-      'updated_at',
-    ],
+    update: ['display_name', 'enabled', 'imap_included_folders', 'last_sync_error', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+    why: 'measured (round 8): UPDATE by system:http:admin-area. Round 12: an account made (its branch path, ingest policy, provider and Microsoft account), its IMAP or SMTP host or its password (where the app password goes) run at the full-route spot mail-account; ms_account_id and provider never change on the narrow login',
   },
   'public.emails': {
     update: ['is_read', 'is_starred', 'updated_at'],
@@ -541,12 +527,11 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'fire_count',
       'last_fired_at',
       'next_fire_at',
-      'state',
       'status',
       'updated_at',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A heartbeat made, or its maker, schedule, assistant or skill changed, runs at the full-route spot heartbeat-maker; next_fire_at, fire_count, last_fired_at and status are the bookkeeping of a fire (its schedule, maker, cooldown and limit never)',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A heartbeat made, or its maker, schedule, assistant or skill changed, runs at the full-route spot heartbeat-maker; next_fire_at, fire_count, last_fired_at and status are the bookkeeping of a fire (its schedule, maker, cooldown and limit never). Round 12: 0320 holds the books one way on the narrow role (fire_count only up, last_fired_at and next_fire_at only forward, next_fire_at never set again from NULL, status never back to active); its state (a prompt input), a resume and a snooze run at heartbeat-maker',
   },
   'public.microsoft_config': {
     update: ['client_id', 'tenant', 'updated_at'],
@@ -625,10 +610,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: "measured (round 9, the statement log: no row trigger saw it, the delete failed first): the connectors area replaces a drive's scope set (setDriveScopes: delete then insert, in one transaction). Which folders of a drive the brain already reads are ingested: no login, maker or destination column",
   },
   'public.sandboxes': {
-    insert: true,
     update: ['last_used_at', 'status'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. Round 12: a sandbox made (its maker, created_by) runs at the full-route spot sandbox-make: with INSERT and DELETE the narrow login could put a deleted sandbox back under another maker',
   },
   'public.secrets': {
     insert: true,
@@ -771,6 +755,24 @@ export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[
       'agent_slug',
       'skill_slug',
       'surface',
+      'state',
+    ],
+    // What an assistant or AI worker runs (round 12): its prompt, persona
+    // notes and skill list, as a skill's instructions (skill-text).
+    'public.agents': ['system_prompt', 'persona_notes', 'skill_slugs'],
+    'public.ai_workers': ['system_prompt'],
+    // Where an account's mail comes from and goes (round 12): mail-account.
+    'public.email_accounts': [
+      'ms_account_id',
+      'provider',
+      'imap_host',
+      'imap_port',
+      'smtp_host',
+      'smtp_port',
+      'imap_config_enc',
+      'branch_path',
+      'ingest_policy',
+      'address',
     ],
   },
 );
@@ -819,7 +821,33 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
   'public.mantle_peers',
   'public.peer_shares',
   'public.peer_share_scopes',
+  // Round 12: an account made (its branch path and ingest policy), a
+  // sandbox made (its maker) and a vault key made (its service: a delete
+  // and reinsert of the same id under another service reused the seal,
+  // which binds the id only; model-route).
+  'public.email_accounts',
+  'public.sandboxes',
+  'public.api_keys',
 ]);
+
+/**
+ * Tables the narrow role may INSERT into and DELETE from whose rows carry
+ * a column NARROW_NEVER_UPDATE names (a maker, a login, a destination, a
+ * sealed value): a delete then an insert of the same id would change that
+ * column without an UPDATE (plan v3.2 S7b part b2 round 12, the
+ * delete-then-reinsert class). Each is listed with why it gives nothing;
+ * runtime-role.test.ts fails on one not listed.
+ */
+export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.freeze({
+  'public.curated_models':
+    "the model pools area adds an entry (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: an entry names a model, its vendor and its catalog routes for the owner's picker, never a vault key or a base URL; its owner_id is the brain's",
+  'public.calendar_accounts':
+    "the calendar area adds the owner's feed (INSERT measured), so a delete and reinsert gives the narrow login nothing a plain insert does not: a feed brings content in, never a right, and its owner_id is the brain's (named for S7c's signed acting login)",
+  'public.pdf_passwords':
+    'the owner stores a PDF password (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: it opens a PDF the brain already holds, never a right',
+  'public.traces':
+    "a trace records what ran; a forged one is a false record (S7c), never a right: nothing executes, grants or sends from a trace's owner, login, assistant or workspace",
+});
 
 /**
  * What the measured narrow writes still name that the rules above refuse,

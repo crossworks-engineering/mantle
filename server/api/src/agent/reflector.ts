@@ -36,6 +36,7 @@ import {
   type ConversationChannel,
   type PersonaNote,
   type ReflectorParams,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { backgroundFence, withFenceNote, type Fence } from '@mantle/std';
@@ -500,10 +501,14 @@ async function reflectOnAgent(
       await step(
         { name: 'append_notes', kind: 'db_write', input: { count: appended.length } },
         async (h) => {
-          await db
-            .update(agents)
-            .set({ personaNotes: merged, updatedAt: new Date() })
-            .where(eq(agents.id, agent.id));
+          // Part of what the assistant runs (its prompt): the full-route
+          // spot skill-text (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
+          await onFullSystemRoute('skill-text', () =>
+            db
+              .update(agents)
+              .set({ personaNotes: merged, updatedAt: new Date() })
+              .where(eq(agents.id, agent.id)),
+          );
           h.setMeta({ totalNotesAfter: merged.length });
         },
       );

@@ -3,12 +3,15 @@
  * make it a lock, the URL the app's pools use, and the mode report.
  * runtime-role.db.test.ts proves the lock on a real Postgres.
  */
+import * as schema from './schema';
+import { tablesOf } from './narrow-write-scan';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ACCESS_MATRIX,
   CREDENTIAL_NAME,
   NARROW_CREDENTIAL_TABLES,
   NARROW_MOVES_LEFT,
+  NARROW_REINSERT_HELD,
   NARROW_NEVER_INSERT,
   NARROW_NEVER_UPDATE,
   NARROW_NEVER_UPDATE_TABLE,
@@ -627,6 +630,27 @@ describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class f
   it('names no maker, rights, destination or execution column and no such insert but the moves left, each with its spot', () => {
     expect(refused()).toEqual(Object.keys(NARROW_MOVES_LEFT).sort());
     for (const why of Object.values(NARROW_MOVES_LEFT)) expect(why).toMatch(/^[a-z-]+(:|$)/);
+  });
+
+  it('a table it may INSERT into and DELETE from carries no maker, login, destination or sealed column, or is held with why (round 12: the delete-then-reinsert class)', () => {
+    const tables = new Map(
+      [...tablesOf(schema as Record<string, unknown>).values()].map((t) => [t.name, t]),
+    );
+    const flagged: string[] = [];
+    for (const [table, w] of Object.entries(NARROW_WRITES)) {
+      if (!w.insert || !w.delete) continue;
+      const info = tables.get(table);
+      expect(info, table).toBeDefined();
+      const never = new Set([...NARROW_NEVER_UPDATE, ...(NARROW_NEVER_UPDATE_TABLE[table] ?? [])]);
+      const cols = Object.values(info!.columns).filter((c) => never.has(c) && c !== 'id');
+      if (cols.length > 0) flagged.push(table);
+    }
+    expect(flagged.sort()).toEqual(Object.keys(NARROW_REINSERT_HELD).sort());
+    for (const why of Object.values(NARROW_REINSERT_HELD)) expect(why.length).toBeGreaterThan(40);
+    // The ones the full re-audit forged: a key, a sandbox and a mail
+    // account take no narrow INSERT now.
+    for (const t of ['public.api_keys', 'public.sandboxes', 'public.email_accounts'])
+      expect(narrowMayWrite(t, 'insert'), t).toBe(false);
   });
 
   it('the moves left only shrink (30 measured; 1 after the spots of round 8; 0 after push-device in round 9)', () => {

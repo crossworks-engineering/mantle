@@ -25,6 +25,7 @@ import {
   db,
   agents,
   activeNotes,
+  onFullSystemRoute,
   applyPersonaUpdate,
   noteRef,
   type PersonaNote,
@@ -232,10 +233,15 @@ const update_persona: BuiltinToolDef = {
     }
 
     await areaSystem('assistants', async () => {
-      await db
-        .update(agents)
-        .set({ personaNotes: result.notes, updatedAt: new Date() })
-        .where(eq(agents.id, row.id));
+      // The persona notes are part of what the assistant runs (its
+      // prompt): not the narrow login's (access-matrix.ts
+      // NARROW_NEVER_UPDATE_TABLE), the full-route spot skill-text.
+      await onFullSystemRoute('skill-text', () =>
+        db
+          .update(agents)
+          .set({ personaNotes: result.notes, updatedAt: new Date() })
+          .where(eq(agents.id, row.id)),
+      );
       // The persona notes are in this agent's prompt, which its heartbeats
       // run: a login other than the anchor writing them makes those
       // heartbeats its own (W7a fix round 4, heartbeat-maker.ts).

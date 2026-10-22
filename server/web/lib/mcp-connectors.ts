@@ -9,7 +9,13 @@
 
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantle/db';
+import {
+  db,
+  onFullSystemRoute,
+  toolGroups,
+  type ToolGroup,
+  type ToolGroupMcpBinding,
+} from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { getConfigStatus } from '@mantle/microsoft';
 import {
@@ -225,17 +231,22 @@ export async function updateMcpConnector(
     };
   }
 
-  let [updated] = await db
-    .update(toolGroups)
-    .set({
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-      ...(bindingTouched ? { integration: { ...row.integration!, mcp: nextMcp } } : {}),
-      ...(repaired ? { configuredBy: login } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(toolGroups.id, row.id))
-    .returning();
+  // A group's integration, configuring login and enable (where its calls,
+  // token and vault refs go; an enable is a grant, 0320) are not the narrow
+  // login's: the full-route spot tool-config (access-matrix.ts NARROW_WRITES).
+  let [updated] = await onFullSystemRoute('tool-config', () =>
+    db
+      .update(toolGroups)
+      .set({
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+        ...(bindingTouched ? { integration: { ...row.integration!, mcp: nextMcp } } : {}),
+        ...(repaired ? { configuredBy: login } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(toolGroups.id, row.id))
+      .returning(),
+  );
   // After the row update, never before: that update writes the binding it
   // read, which would clobber a fresher oauth block.
   if (oauthTouched) {

@@ -9,7 +9,14 @@
 import { createHash } from 'node:crypto';
 import { PgBoss } from 'pg-boss';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@mantle/db';
+import {
+  db,
+  emailAccounts,
+  onFullSystemRoute,
+  syncRuns,
+  type EmailAccount,
+  type SyncRun,
+} from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
@@ -187,58 +194,53 @@ export async function saveImapAccount(
   if (accountId) {
     const existing = await getAccount(userId, accountId);
     if (!existing) return { ok: false, error: 'Account not found.' };
-    await db
-      .update(emailAccounts)
-      .set({
-        imapHost: host,
-        imapPort: port,
-        imapSecure: secure,
-        smtpHost: smtpHost ?? null,
-        smtpPort: smtpPort ?? null,
-        smtpSecure,
-        displayName: displayName ?? null,
-        firstScanDays,
-        enabled: true,
-        lastSyncError: null,
-        updatedAt: new Date(),
-        // Re-seal only when a new password was supplied (AAD bound to the
-        // unchanged stored address).
-        ...(password
-          ? {
-              imapConfigEnc: seal(
-                JSON.stringify({ password }),
-                `imap:${userId}:${existing.address}`,
-              ).ciphertext,
-            }
-          : {}),
-      })
-      .where(and(eq(emailAccounts.id, existing.id), eq(emailAccounts.userId, userId)));
+    // Its IMAP and SMTP hosts and its sealed password (where the app
+    // password is sent) are not the narrow login's (access-matrix.ts
+    // NARROW_NEVER_UPDATE_TABLE): the full-route spot mail-account.
+    await onFullSystemRoute('mail-account', () =>
+      db
+        .update(emailAccounts)
+        .set({
+          imapHost: host,
+          imapPort: port,
+          imapSecure: secure,
+          smtpHost: smtpHost ?? null,
+          smtpPort: smtpPort ?? null,
+          smtpSecure,
+          displayName: displayName ?? null,
+          firstScanDays,
+          enabled: true,
+          lastSyncError: null,
+          updatedAt: new Date(),
+          // Re-seal only when a new password was supplied (AAD bound to the
+          // unchanged stored address).
+          ...(password
+            ? {
+                imapConfigEnc: seal(
+                  JSON.stringify({ password }),
+                  `imap:${userId}:${existing.address}`,
+                ).ciphertext,
+              }
+            : {}),
+        })
+        .where(and(eq(emailAccounts.id, existing.id), eq(emailAccounts.userId, userId))),
+    );
     return { ok: true, id: existing.id };
   }
 
   if (!password) return { ok: false, error: 'App password is required.' };
   const sealed = seal(JSON.stringify({ password }), `imap:${userId}:${address}`);
-  const [row] = await db
-    .insert(emailAccounts)
-    .values({
-      userId,
-      provider: 'imap',
-      address,
-      displayName: displayName ?? null,
-      imapHost: host,
-      imapPort: port,
-      imapSecure: secure,
-      smtpHost: smtpHost ?? null,
-      smtpPort: smtpPort ?? null,
-      smtpSecure,
-      imapConfigEnc: sealed.ciphertext,
-      ingestPolicy: 'approve_list',
-      branchPath: accountBranchPath(address),
-      firstScanDays,
-    })
-    .onConflictDoUpdate({
-      target: [emailAccounts.userId, emailAccounts.address],
-      set: {
+  // An account made (its hosts, sealed password, branch path and ingest
+  // policy): the full-route spot mail-account (access-matrix.ts
+  // NARROW_NEVER_INSERT).
+  const [row] = await onFullSystemRoute('mail-account', () =>
+    db
+      .insert(emailAccounts)
+      .values({
+        userId,
+        provider: 'imap',
+        address,
+        displayName: displayName ?? null,
         imapHost: host,
         imapPort: port,
         imapSecure: secure,
@@ -246,14 +248,29 @@ export async function saveImapAccount(
         smtpPort: smtpPort ?? null,
         smtpSecure,
         imapConfigEnc: sealed.ciphertext,
+        ingestPolicy: 'approve_list',
+        branchPath: accountBranchPath(address),
         firstScanDays,
-        enabled: true,
-        lastSyncError: null,
-        // branchPath is *not* reset on re-connect — preserves the existing
-        // ltree location for any mail already ingested under it.
-      },
-    })
-    .returning({ id: emailAccounts.id });
+      })
+      .onConflictDoUpdate({
+        target: [emailAccounts.userId, emailAccounts.address],
+        set: {
+          imapHost: host,
+          imapPort: port,
+          imapSecure: secure,
+          smtpHost: smtpHost ?? null,
+          smtpPort: smtpPort ?? null,
+          smtpSecure,
+          imapConfigEnc: sealed.ciphertext,
+          firstScanDays,
+          enabled: true,
+          lastSyncError: null,
+          // branchPath is *not* reset on re-connect — preserves the existing
+          // ltree location for any mail already ingested under it.
+        },
+      })
+      .returning({ id: emailAccounts.id }),
+  );
   return { ok: true, id: row!.id };
 }
 

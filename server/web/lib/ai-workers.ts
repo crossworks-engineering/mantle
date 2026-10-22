@@ -201,9 +201,13 @@ export async function updateAiWorker(
       .returning();
   // Its vault key, base URL or configuring login (and their backups): the
   // full-route spot model-route (access-matrix.ts NARROW_NEVER_UPDATE).
-  const [row] = narrowNeedsSpot(aiWorkers, 'update', set)
-    ? await onFullSystemRoute('model-route', write)
-    : await write();
+  // Its prompt (what it runs): skill-text, as a skill's instructions.
+  const [row] =
+    set.systemPrompt !== undefined
+      ? await onFullSystemRoute('skill-text', write)
+      : narrowNeedsSpot(aiWorkers, 'update', set)
+        ? await onFullSystemRoute('model-route', write)
+        : await write();
   return row ?? null;
 }
 

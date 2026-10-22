@@ -1184,7 +1184,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'pending-call':
     "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
   'login-credential':
-    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0318 refuses the narrow role): the users area's create, role change, enable and password set, and a login's own password change (login-self); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
+    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0318 refuses the narrow role) and a login's delete (its foreign keys cascade; the owner's would cascade the brain, which 0320 refuses the narrow role whatever its grants): the users area's create, role change, enable, delete and password set, and a login's own password change (login-self); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
   'structure-no-login':
     "a structure item (gateway/structure-item.ts) written in a narrow exit that acts for no login (a turn that answers none, as a heartbeat's with the actor check off): the definer takes only an acting login, so the app's own statements run here, as before it",
   'pair-code':
@@ -1208,7 +1208,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'heartbeat-maker':
     "a heartbeat made, or its maker (created_by: whom it fires as), schedule, assistant or skill changed (the heartbeats area, heartbeat_state_set's move to a login, the maker restamp of a skill or tool group edit, the manifest's heartbeats): the narrow login keeps only the bookkeeping of a fire (S7b part b2 round 8)",
   'skill-text':
-    "a skill made, or its instructions (what every assistant and heartbeat that runs it does) or another column changed (the skills area, the toolsmith's docs skill): the narrow login keeps only updated_at and the delete (S7b part b2 round 8)",
+    "a skill made, or its instructions (what every assistant and heartbeat that runs it does) or another column changed (the skills area, the toolsmith's docs skill): the narrow login keeps only updated_at and the delete (S7b part b2 round 8). Round 12, the same rule for what an assistant or AI worker runs: an assistant's system_prompt, persona_notes and skill_slugs (server/web lib/agents.ts update and persona notes, update_persona), an AI worker's system_prompt (lib/ai-workers.ts)",
   'pending-park':
     "a tool call parked for an Admin's decision (pending_tool_calls INSERT: its tool, arguments, origin and maker; the turn's confirm gate, an agent's queued call, the toolsmith, the API console's queue): the narrow login may decide one (status, result), never make or swap one (S7b part b2 round 8)",
   'docs-root':
@@ -1223,6 +1223,12 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "a tool group made, removed or its tools changed (tool_groups INSERT and DELETE, its grant columns tool_slugs, slug, admin_only, and an assistant's grant of a removed group: server/web lib/tool-groups.ts, /api/tools, the toolsmith, the MCP and OpenAPI syncs, the sandbox's group): a group's tools are what every assistant granted it may call; the narrow login may write only a group's name, description, integration, enable and configuring login",
   'push-device':
     "a phone subscribed to push (push_subscriptions INSERT and the upsert's login_id, owner_id and token_id: the login-self POST /api/push/subscriptions and /api/member/push, push/store.ts insertSubscription, in one transaction with its token check and the per-login cap) and the relay pushes go through (push_instance: its URL and token, /api/push/connect and /api/push/reset, savePushInstance): a device row decides whose notifications reach which phone and the relay where they all go, so the narrow login holds no INSERT of either and no UPDATE of a device's login, owner or token; it keeps a device's delete and its push stamp (S7b part b2 round 9)",
+  'mail-account':
+    "a mail account made or bound, or its IMAP or SMTP host or sealed password changed (email_accounts INSERT, the Microsoft mailbox's upsert, provider, ms_account_id, branch_path, ingest_policy, the hosts and imap_config_enc: packages/email accounts.ts saveAccount, packages/microsoft outlook/manage.ts ensureMailAccount): which mailbox the brain reads, where its mail lands and where the app password is sent; the narrow login keeps an account's name, folders, enable and error stamps (S7b part b2 round 12)",
+  'sandbox-make':
+    "a sandbox made (sandboxes INSERT with its maker, created_by: packages/content sandboxes.ts createSandboxRow): with INSERT and DELETE the narrow login could put a removed sandbox back under another maker; it keeps a sandbox's status, stamp and delete (S7b part b2 round 12)",
+  'telegram-connect':
+    "a bot bound to an assistant (telegram_accounts INSERT and its bot and branch path, the channel's INSERT or upsert with its sealed token and the assistant it answers as, and their enable: server/web lib/agent-telegram.ts connectAgentTelegram): which assistant a bot's chats reach; the narrow login may only switch a bot or channel off (0320) (S7b part b2 round 12)",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */

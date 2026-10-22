@@ -267,7 +267,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
       await db
         .update(heartbeats)
         .set({
-          nextFireAt: new Date(now.getTime() + bumpMs),
+          nextFireAt: laterFire(new Date(now.getTime() + bumpMs)),
           updatedAt: now,
         })
         .where(eq(heartbeats.id, hb.id));
@@ -649,7 +649,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
       .set({
         lastFiredAt: now,
         fireCount: after.fireCount + 1,
-        nextFireAt: finalStatus === 'active' ? nextFireAt : null,
+        nextFireAt: finalStatus === 'active' && nextFireAt ? laterFire(nextFireAt) : null,
         status: finalStatus,
         completionReason: finalReason,
         updatedAt: now,
@@ -694,12 +694,24 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
     await db
       .update(heartbeats)
       .set({
-        nextFireAt: new Date(now.getTime() + 5 * 60_000),
+        nextFireAt: laterFire(new Date(now.getTime() + 5 * 60_000)),
         updatedAt: now,
       })
       .where(eq(heartbeats.id, hb.id));
     return { disposition: 'error', error: msg };
   }
+}
+
+/**
+ * A fire's next time, never earlier than the one stored and never set on a
+ * row whose next fire is gone (NULL: paused or completed): the narrow login
+ * keeps a fire's books only forward (migration 0320; a manual fire runs on
+ * an Admin area exit). On a scheduled fire the stored time is due, so the
+ * new one is later anyway; a manual fire before it keeps the schedule.
+ */
+function laterFire(at: Date) {
+  return sql`case when ${heartbeats.nextFireAt} is null then null::timestamptz
+                  else greatest(${heartbeats.nextFireAt}, ${at.toISOString()}::timestamptz) end`;
 }
 
 /**

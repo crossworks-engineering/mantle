@@ -233,11 +233,16 @@ const heartbeat_snooze: BuiltinToolDef = {
       ctx.step?.setMeta({ branch: 'no_target', error: target.error });
       return { ok: false, error: target.error };
     }
+    // A snooze may move the next fire earlier, which the narrow login may
+    // not (0320: next_fire_at only forward): the full-route spot
+    // heartbeat-maker.
     await heartbeatRow(() =>
-      db
-        .update(heartbeats)
-        .set({ nextFireAt: next, updatedAt: new Date() })
-        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+      onFullSystemRoute('heartbeat-maker', () =>
+        db
+          .update(heartbeats)
+          .set({ nextFireAt: next, updatedAt: new Date() })
+          .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+      ),
     );
     ctx.step?.setMeta({
       branch: 'snoozed',
@@ -291,10 +296,10 @@ const heartbeat_update_state: BuiltinToolDef = {
         .update(heartbeats)
         .set({ state: next, updatedAt: new Date(), ...maker })
         .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
-    // A new maker (whom it fires as): the full-route spot heartbeat-maker.
-    await heartbeatRow(() =>
-      'createdBy' in maker ? onFullSystemRoute('heartbeat-maker', write) : write(),
-    );
+    // The state is a prompt input of every fire, and a new maker is whom
+    // it fires as: neither is the narrow login's (access-matrix.ts
+    // NARROW_NEVER_UPDATE_TABLE): the full-route spot heartbeat-maker.
+    await heartbeatRow(() => onFullSystemRoute('heartbeat-maker', write));
     const patchedKeys = Object.keys(patch);
     ctx.step?.setMeta({
       branch: 'updated',

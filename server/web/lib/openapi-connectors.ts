@@ -9,7 +9,13 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
+import {
+  db,
+  onFullSystemRoute,
+  toolGroups,
+  type ToolGroup,
+  type ToolGroupIntegration,
+} from '@mantle/db';
 import {
   KNOWN_OPENAPI_APIS,
   integrationPairing,
@@ -166,17 +172,22 @@ export async function updateOpenapiConnector(
   }
   const repaired = before.key !== after.key || before.dest !== after.dest;
 
-  const [updated] = await db
-    .update(toolGroups)
-    .set({
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-      ...(bindingTouched ? { integration: nextIntegration } : {}),
-      ...(repaired ? { configuredBy: login } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(toolGroups.id, row.id))
-    .returning();
+  // A group's integration, configuring login and enable (where its calls,
+  // token and vault refs go; an enable is a grant, 0320) are not the narrow
+  // login's: the full-route spot tool-config (access-matrix.ts NARROW_WRITES).
+  const [updated] = await onFullSystemRoute('tool-config', () =>
+    db
+      .update(toolGroups)
+      .set({
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+        ...(bindingTouched ? { integration: nextIntegration } : {}),
+        ...(repaired ? { configuredBy: login } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(toolGroups.id, row.id))
+      .returning(),
+  );
   if (repaired) {
     warnings.push('auth or host changed: re-run the sync so the mirrored tools carry it');
   }

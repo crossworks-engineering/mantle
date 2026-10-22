@@ -11,7 +11,15 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { defineDomainError, UUID_RE } from '@mantle/std';
-import { systemWork, authUsers, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
+import {
+  systemWork,
+  authUsers,
+  channels,
+  db,
+  onFullSystemRoute,
+  telegramAccounts,
+  telegramChats,
+} from '@mantle/db';
 import {
   botAgentId,
   disableTelegramChannel,
@@ -164,48 +172,54 @@ export async function connectAgentTelegram(
   }
 
   const target = byAgent ?? byUsername;
-  let accountId: string;
-  if (target) {
-    accountId = target.id;
-    // Pointing this row at a *different* bot? Telegram update-ids are per-bot,
-    // so the old bot's offset is meaningless for the new one — carrying it over
-    // can skip past the new bot's early messages. Reset so its stream is read
-    // from the start. (Same-bot token rotation keeps the offset.)
-    const botChanged = target.botUsername !== me.username;
-    await db
-      .update(telegramAccounts)
-      .set({
-        botUsername: me.username,
-        branchPath,
-        enabled: true,
-        lastPollError: null,
-        ...(botChanged ? { lastUpdateOffset: 0 } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(telegramAccounts.id, accountId));
-  } else {
-    const [inserted] = await db
-      .insert(telegramAccounts)
-      .values({
-        userId: ownerId,
-        botUsername: me.username,
-        branchPath,
-        enabled: true,
-      })
-      .returning({ id: telegramAccounts.id });
-    accountId = inserted!.id;
-  }
+  // The bot bound to the assistant (its account row, its channel with the
+  // sealed token and the assistant it answers as, and an enable) is not the
+  // narrow login's (access-matrix.ts NARROW_NEVER_INSERT; 0320: enabled
+  // only off): the full-route spot telegram-connect.
+  await onFullSystemRoute('telegram-connect', async () => {
+    let accountId: string;
+    if (target) {
+      accountId = target.id;
+      // Pointing this row at a *different* bot? Telegram update-ids are per-bot,
+      // so the old bot's offset is meaningless for the new one — carrying it over
+      // can skip past the new bot's early messages. Reset so its stream is read
+      // from the start. (Same-bot token rotation keeps the offset.)
+      const botChanged = target.botUsername !== me.username;
+      await db
+        .update(telegramAccounts)
+        .set({
+          botUsername: me.username,
+          branchPath,
+          enabled: true,
+          lastPollError: null,
+          ...(botChanged ? { lastUpdateOffset: 0 } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(telegramAccounts.id, accountId));
+    } else {
+      const [inserted] = await db
+        .insert(telegramAccounts)
+        .values({
+          userId: ownerId,
+          botUsername: me.username,
+          branchPath,
+          enabled: true,
+        })
+        .returning({ id: telegramAccounts.id });
+      accountId = inserted!.id;
+    }
 
-  // The channel holds the token (sealed under the channel id) + the agent
-  // binding, and links the account via channel_id. This is the source of truth.
-  await upsertTelegramChannel({
-    ownerId,
-    agentId,
-    accountId,
-    botUsername: me.username,
-    branchPath,
-    token: trimmed,
-    enabled: true,
+    // The channel holds the token (sealed under the channel id) + the agent
+    // binding, and links the account via channel_id. This is the source of truth.
+    await upsertTelegramChannel({
+      ownerId,
+      agentId,
+      accountId,
+      botUsername: me.username,
+      branchPath,
+      token: trimmed,
+      enabled: true,
+    });
   });
 
   const binding = await getAgentTelegram(ownerId, agentId);
