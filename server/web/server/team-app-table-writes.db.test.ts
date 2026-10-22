@@ -24,10 +24,21 @@
  *  6. an app the Admin workspace alone holds, run by the owner: admin rules,
  *     as before (a schema write runs).
  *
- * A team app's run scope only read before (withViewer); an allowed row
+ * Fix round 1 (the audit at ed3767f6d): the app's write scope reads the
+ * drafts it may edit (an upsert twice leaves one row; an update and a cell
+ * set reach a row the app added), a draft's row and byte ceilings and the
+ * call's size ceiling, the Activity row names the Table and the row count,
+ * a read-only login or a request that does not write writes nothing,
+ * withViewer's `writes` takes only its request's own writer, the Table's
+ * home is asked again where the write runs, an app two workspaces hold
+ * writes nothing, and table_commit (Jason's yes) publishes the draft under
+ * the same rule.
+ *
+ * A team app's run scope only read before (withViewer); an allowed Table
  * write now enters it as a write scope (withViewer's `writes`, only for a
- * login running an app), so the write goes through the login write gateway
- * with the app's scope and the database checks it.
+ * login running an app in its own mutating request), so the write goes
+ * through the login write gateway (opened in beforeAll) with the app's
+ * scope and the database checks it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-table-writes.db.test.ts
  */
@@ -36,7 +47,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi, type Mock } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -67,6 +78,8 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
   let otherWs = '';
   let teamApp = '';
   let adminApp = '';
+  /** An app two workspaces beyond Admin hold: its run reads none. */
+  let twoHolderApp = '';
   /** Tables by key: homed in the holder with Write on (`own`), homed in
    *  the holder with Write off (`readOnly`), homed in another workspace
    *  with Write granted to the holder (`elsewhere`), homed in Admin
@@ -88,18 +101,25 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
   const SLUGS = [
     'table_row_add',
     'table_rows_add',
+    'table_rows_upsert',
+    'table_row_update',
     'table_cell_set',
+    'table_commit',
     'table_column_add',
     'table_row_delete',
   ];
 
+  /** How the request runs: the login's actor mode, and whether the request
+   *  writes (the tool broker route is a POST: it does). */
+  type Req = { mode?: 'rw' | 'ro'; writes?: boolean };
+
   /** `fn` in `login`'s request scope, as the session guard enters it for a
-   *  POST (the tool broker route is one). */
-  const inRequest = async <T>(login: string, fn: () => Promise<T>): Promise<T> => {
+   *  POST (requestMode(true): it reads drafts). */
+  const inRequest = async <T>(login: string, fn: () => Promise<T>, req: Req = {}): Promise<T> => {
     const scope = await m.viewerScopeFor({ login });
-    return m.runAsActor(m.loginActor(login, 'rw'), () =>
+    return m.runAsActor(m.loginActor(login, req.mode ?? 'rw'), () =>
       m.runInRequestSlot(async () => {
-        if (!m.enterRequestScope(scope, { writes: true, drafts: false })) {
+        if (!m.enterRequestScope(scope, { writes: req.writes ?? true, drafts: true })) {
           throw new Error('the request scope was not entered');
         }
         return fn();
@@ -120,18 +140,32 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
   });
 
   /** A member's run of the Team-held app (lib/app-runner.ts memberToolBroker). */
-  const memberCall = (login: string, slug: string, input: Record<string, unknown>) =>
-    inRequest(login, async () =>
-      answer(
-        await broker.runAppToolBroker(request(slug, input), {
-          via: 'member',
-          ownerId: owner,
-          runner: { loginId: login, name: 'Runner' },
-          app: async () => ({ id: teamApp, manifest: { toolSlugs: SLUGS } }),
-          system: (fn) => m.asSystem(fn, 'app-data'),
-        }),
-      ),
+  const memberCall = (
+    login: string,
+    slug: string,
+    input: Record<string, unknown>,
+    req: Req & { app?: string } = {},
+  ) =>
+    inRequest(
+      login,
+      async () =>
+        answer(
+          await broker.runAppToolBroker(request(slug, input), {
+            via: 'member',
+            ownerId: owner,
+            runner: { loginId: login, name: 'Runner' },
+            maxBytes: 8 * 1024 * 1024,
+            app: async () => ({ id: req.app ?? teamApp, manifest: { toolSlugs: SLUGS } }),
+            system: (fn) => m.asSystem(fn, 'app-data'),
+          }),
+        ),
+      req,
     );
+
+  /** The rows of a Table's grid (its draft, else published) whose Name is
+   *  `name`. */
+  const named = async (id: string, name: string): Promise<number> =>
+    (await grid(id)).split(JSON.stringify(name)).length - 1;
 
   /** The owner's run (the tool broker route's Admin branch). */
   const ownerCall = (appId: string, slug: string, input: Record<string, unknown>) =>
@@ -192,6 +226,9 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
+    // The login write gateway, as web opens it (the audit's INFO): an app's
+    // write goes to the write role, whose own checks answer it.
+    m.openLoginWritePool({ max: 2 });
     t = await import('@mantle/tools');
     broker = await import('@/lib/app-tool-broker');
     const c = await import('@mantle/content');
@@ -281,6 +318,10 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
       [adminWs, false, false],
     ]);
     adminApp = await app([[adminWs, true, true]]);
+    twoHolderApp = await app([
+      [holderWs, true, true],
+      [otherWs, false, false],
+    ]);
 
     // The box's checks on, as an operator switches them.
     process.env.MANTLE_ACTOR_CHECK = 'on';
@@ -335,7 +376,7 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     });
     expect(res.status).toBe(403);
     expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('homed in a workspace that holds this app');
+    expect(res.body.error).toContain('homed in the workspace that holds this app');
     // No Table named: refused the same way (fail closed).
     const none = await memberCall(writer, 'table_row_add', { cells: { Name: 'x' } });
     expect(none.status).toBe(403);
@@ -396,23 +437,219 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(await grid(tables.admin)).toContain(`${tag} admin column`);
   });
 
-  it('only a login running an app writes through withViewer', async () => {
+  it("only a login running an app, as its own request's writer, writes through withViewer", async () => {
     const noop = async () => 'ran';
-    await expect(m.withViewer({ login: writer }, noop, { writes: true })).rejects.toThrow(
+    const forged = { loginId: writer.toLowerCase() };
+    await expect(m.withViewer({ login: writer }, noop, { writes: forged })).rejects.toThrow(
       /only a login running an app/,
     );
-    await expect(m.withViewer({ agent: null }, noop, { writes: true })).rejects.toThrow(
+    await expect(m.withViewer({ agent: null }, noop, { writes: forged })).rejects.toThrow(
       /only a login running an app/,
     );
-    await expect(m.withViewer({ link: { served: [] } }, noop, { writes: true })).rejects.toThrow(
+    await expect(m.withViewer({ link: { served: [] } }, noop, { writes: forged })).rejects.toThrow(
       /only a login running an app/,
     );
+    // A writer not made by appRunWriter, or another login's: refused.
+    const app = { login: writer, app: { id: teamApp } };
+    await expect(m.withViewer(app, noop, { writes: forged })).rejects.toThrow(/own login/);
+    await inRequest(moderator, async () => {
+      const other = m.appRunWriter();
+      expect(other?.loginId).toBe(moderator.toLowerCase());
+      await expect(m.withViewer(app, noop, { writes: other! })).rejects.toThrow(/own login/);
+    });
+    // appRunWriter: none for a read-only login, none in a request that
+    // does not write.
+    expect(await inRequest(writer, async () => m.appRunWriter(), { mode: 'ro' })).toBeNull();
+    expect(await inRequest(writer, async () => m.appRunWriter(), { writes: false })).toBeNull();
+  });
+
+  it('a read-only login, or a request that does not write: refused, nothing lands', async () => {
+    const ro = await memberCall(
+      writer,
+      'table_row_add',
+      { table_id: tables.own, cells: { Name: `${tag} read only` } },
+      { mode: 'ro' },
+    );
+    expect(ro.status).toBe(403);
+    expect(ro.body.error).toContain('cannot change data');
+    const read = await memberCall(
+      writer,
+      'table_row_add',
+      { table_id: tables.own, cells: { Name: `${tag} no write` } },
+      { writes: false },
+    );
+    expect(read.status).toBe(403);
+    expect(read.body.error).toContain('cannot change data');
+    expect(await named(tables.own, `${tag} read only`)).toBe(0);
+    expect(await named(tables.own, `${tag} no write`)).toBe(0);
+  });
+
+  it('the draft is read back: an upsert twice leaves one row; update and cell set reach a row the app added', async () => {
+    const up = { table_id: tables.own, key: ['Name'], rows: [{ Name: `${tag} upsert` }] };
+    const first = await memberCall(writer, 'table_rows_upsert', up);
+    expect(first.body.ok, JSON.stringify(first.body)).toBe(true);
+    expect(first.body.output).toMatchObject({ added: 1 });
+    const second = await memberCall(writer, 'table_rows_upsert', up);
+    expect(second.body.ok, JSON.stringify(second.body)).toBe(true);
+    expect(second.body.output).toMatchObject({ added: 0, unchanged: 1 });
+    expect(await named(tables.own, `${tag} upsert`)).toBe(1);
+
+    const added = await memberCall(writer, 'table_row_add', {
+      table_id: tables.own,
+      cells: { Name: `${tag} app row` },
+    });
+    expect(added.body.ok, JSON.stringify(added.body)).toBe(true);
+    const rowId = (added.body.output as { row_id: string }).row_id;
+    const upd = await memberCall(writer, 'table_row_update', {
+      table_id: tables.own,
+      row_id: rowId,
+      cells: { Name: `${tag} app row updated` },
+    });
+    expect(upd.body.ok, JSON.stringify(upd.body)).toBe(true);
+    const cell = await memberCall(writer, 'table_cell_set', {
+      table_id: tables.own,
+      row_id: rowId,
+      column: 'Name',
+      value: `${tag} app row set`,
+    });
+    expect(cell.body.ok, JSON.stringify(cell.body)).toBe(true);
+    expect(await named(tables.own, `${tag} app row set`)).toBe(1);
+    expect(await named(tables.own, `${tag} app row`)).toBe(0);
+  });
+
+  it('the app scope reads drafts only of Tables the login may edit', async () => {
+    // The Moderator wrote readOnly's draft (1b); the writer has no Write on
+    // it: in the app's write scope its draft column is not read.
+    const seen = await inRequest(writer, async () => {
+      const w = m.appRunWriter();
+      return m.asSystem(
+        () =>
+          m.withViewer(
+            { login: writer, app: { id: teamApp } },
+            async () => {
+              const { windowFile } = await import('../../../packages/tools/src/tables/common');
+              const { readDocClipped } = await import('@mantle/tabledb');
+              const abs = await windowFile(owner, tables.readOnly);
+              return abs ? JSON.stringify(readDocClipped(abs, 500).doc) : '';
+            },
+            { writes: w! },
+          ),
+        'app-data',
+      );
+    });
+    expect(seen).toContain('published row');
+    expect(seen).not.toContain(`${tag} by moderator`);
+  });
+
+  it('the Activity row names the Table and the row count, not the cells', async () => {
+    const { recordAppAccess } = await import('@mantle/content');
+    (recordAppAccess as Mock).mockClear();
+    const res = await memberCall(writer, 'table_rows_add', {
+      table_id: tables.own,
+      rows: [{ Name: `${tag} logged a` }, { Name: `${tag} logged b` }],
+    });
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    const detail = (recordAppAccess as Mock).mock.calls.at(-1)?.[0]?.detail as Record<
+      string,
+      unknown
+    >;
+    expect(detail).toMatchObject({
+      slug: 'table_rows_add',
+      write: true,
+      table_id: tables.own,
+      rows: 2,
+    });
+    expect(JSON.stringify(detail)).not.toContain('logged a');
+  });
+
+  it('the ceilings: a draft past its rows, a call past its bytes: refused, nothing lands', async () => {
+    const saved = process.env.TABLE_IMPORT_MAX_ROWS;
+    process.env.TABLE_IMPORT_MAX_ROWS = '3';
+    try {
+      const res = await memberCall(writer, 'table_rows_add', {
+        table_id: tables.own,
+        rows: [{ Name: `${tag} past the ceiling` }],
+      });
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toContain("ceiling of a team app's writes");
+    } finally {
+      if (saved === undefined) delete process.env.TABLE_IMPORT_MAX_ROWS;
+      else process.env.TABLE_IMPORT_MAX_ROWS = saved;
+    }
+    expect(await named(tables.own, `${tag} past the ceiling`)).toBe(0);
+    const big = await memberCall(writer, 'table_rows_add', {
+      table_id: tables.own,
+      rows: [{ Name: `${tag} big ${'x'.repeat(t.APP_TABLE_WRITE_MAX_BYTES)}` }],
+    });
+    expect(big.status).toBe(403);
+    expect(big.body.error).toContain("the most a team app's Table write takes");
+    expect((await grid(tables.own)).includes(`${tag} big`)).toBe(false);
+  });
+
+  it('the home is asked again where the write runs: a Table outside the app scope takes none', async () => {
+    const c = await import('@mantle/content');
+    const before = await hasDraft(tables.elsewhere);
+    await expect(
+      inRequest(writer, async () => {
+        const w = m.appRunWriter();
+        return m.asSystem(
+          () =>
+            m.withViewer(
+              { login: writer, app: { id: teamApp } },
+              () => c.applyTableOps(owner, tables.elsewhere, [{ op: 'row_add', cells: {} }]),
+              { writes: w! },
+            ),
+          'app-data',
+        );
+      }),
+    ).rejects.toThrow(/not allowed to edit/);
+    expect(await hasDraft(tables.elsewhere)).toBe(before);
+  });
+
+  it('an app two workspaces beyond Admin hold writes no Table', async () => {
+    const res = await memberCall(
+      writer,
+      'table_row_add',
+      { table_id: tables.own, cells: { Name: `${tag} two holders` } },
+      { app: twoHolderApp },
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('is not one');
+    expect(await named(tables.own, `${tag} two holders`)).toBe(0);
+    const warnings = await m.asSystem(() => t.appToolWarnings(owner, twoHolderApp), 'test');
+    expect(warnings.find((w) => w.includes("'table_row_add'"))).toContain('writes no Table here');
+  });
+
+  it('table_commit: refused elsewhere, without Write and on a link; publishes its own Table', async () => {
+    const elsewhere = await memberCall(writer, 'table_commit', { id: tables.elsewhere });
+    expect(elsewhere.status).toBe(403);
+    expect(elsewhere.body.error).toContain('homed in the workspace that holds this app');
+    // The Moderator's draft on readOnly (1b): the writer may not publish it.
+    expect(await hasDraft(tables.readOnly)).toBe(true);
+    const noRight = await memberCall(writer, 'table_commit', { id: tables.readOnly });
+    expect(noRight.body.ok).toBe(false);
+    expect(noRight.body.error).toMatch(
+      /cannot change this item|Write on it|Moderator|not allowed/i,
+    );
+    expect(await hasDraft(tables.readOnly)).toBe(true);
+    const link = await linkCall('table_commit', { id: tables.own });
+    expect(link.status).toBe(403);
+    expect(link.body.error).toContain('a shared link runs no built-in tools');
+    expect(await hasDraft(tables.own)).toBe(true);
+
+    const res = await memberCall(writer, 'table_commit', { id: tables.own });
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    expect(await hasDraft(tables.own)).toBe(false);
+    const published = await grid(tables.own);
+    for (const v of ['one', 'two', 'upsert', 'app row set'])
+      expect(published).toContain(`${tag} ${v}`);
   });
 
   it('the publish warning says where a declared row write runs, and refuses the rest', async () => {
     const warnings = await m.asSystem(() => t.appToolWarnings(owner, teamApp), 'test');
     const of = (slug: string) => warnings.filter((w) => w.includes(`'${slug}'`));
-    expect(of('table_row_add')[0]).toContain('homed in a workspace that holds this app');
+    expect(of('table_row_add')[0]).toContain('homed in the workspace that holds this app');
+    expect(of('table_commit')[0]).toContain('homed in the workspace that holds this app');
     expect(of('table_column_add')[0]).toContain('changes data or reaches outside the brain');
     expect(of('table_row_delete')[0]).toContain(t.TEAM_APP_TOOLS_ALLOWED);
   });
