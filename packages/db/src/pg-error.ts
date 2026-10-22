@@ -88,6 +88,18 @@ export function permissionGapOf(err: unknown): string | null {
   return /^permission denied for /.test(message) ? message.slice(0, 200) : null;
 }
 
+/**
+ * Any 42501 insufficient_privilege on the error or its cause chain (drizzle
+ * wraps the driver's error in `.cause`): a privilege gap, or a refusal a
+ * check, a row rule or a definer raised with that code. The one detector of
+ * a refused write for a caller that must rethrow it, never swallow it
+ * (round 13b, the app re-audit's L1: three callers read `.code` on the
+ * wrapper and so never saw one).
+ */
+export function isRefusedRight(err: unknown): boolean {
+  return pgErrorCode(err) === '42501';
+}
+
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';

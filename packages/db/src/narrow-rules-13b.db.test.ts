@@ -40,6 +40,7 @@ const PENDING = '10000000-0000-4000-8000-000000000001';
 const WORKER = '20000000-0000-4000-8000-000000000001';
 const FEED = '20000000-0000-4000-8000-000000000002';
 const DOCS = '20000000-0000-4000-8000-000000000003';
+const HEARTBEAT = 'd0000000-0000-4000-8000-000000000002';
 const SETTLED = '10000000-0000-4000-8000-000000000002';
 
 const FIXTURES = [
@@ -65,6 +66,8 @@ const FIXTURES = [
   `insert into doc_collections (id, owner_id, key, label, enabled)
    values ('${DOCS}', @BRAIN@, 'forge-docs', 'Forge docs', false)`,
   `update agents set backup_enabled = false where id = '${AGENT_ADMIN}'`,
+  `insert into heartbeats (id, owner_id, slug, name, agent_slug, skill_slug, schedule, schedule_kind, surface, status, fire_count, last_fired_at, next_fire_at)
+   values ('${HEARTBEAT}', @BRAIN@, 'hb-live', 'live', 'forge-admin', 'x', '{"every_minutes":60}', 'interval', '{}', 'active', 3, now(), now() + interval '1 hour')`,
   `insert into assistant_messages (id, owner_id, agent_id, direction, text, status, login_id) values
   ('${PENDING}', @BRAIN@, '${AGENT_ADMIN}', 'outbound', '', 'pending', @BRAIN@),
   ('${SETTLED}', @BRAIN@, '${AGENT_ADMIN}', 'outbound', 'the answer', 'complete', @BRAIN@)`,
@@ -200,6 +203,13 @@ const ALLOWED: readonly [string, string][] = [
     'ok: a pending turn settles (text, model, status, data)',
     `update assistant_messages set text = 'done', model = 'x/y', status = 'complete',
        data = data || '{"thoughts":"t"}' where id = '${PENDING}'`,
+  ],
+  [
+    // Item I: the fire's books in SQL (fire.ts): a fire that started before
+    // another's write keeps the newer last fire and still counts.
+    'ok: a late fire`s books (an older time) keep the newer last fire',
+    `update heartbeats set last_fired_at = greatest(last_fired_at, now() - interval '2 hours'),
+       fire_count = fire_count + 1 where id = '${HEARTBEAT}'`,
   ],
   ['ok: an AI worker renamed', `update ai_workers set name = 'renamed' where id = '${WORKER}'`],
   [

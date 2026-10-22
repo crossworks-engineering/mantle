@@ -644,11 +644,16 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
       finalReason = 'max_fires';
     }
 
+    // The fire's books in SQL (round 13b, the app re-audit's L3): the count
+    // goes up from the row's own value and the last fire never moves back,
+    // so two fires racing on one row keep both and never meet 0320's
+    // one-way rules (fire_count only up, last_fired_at only forward) with a
+    // value read before the other's write.
     await db
       .update(heartbeats)
       .set({
-        lastFiredAt: now,
-        fireCount: after.fireCount + 1,
+        lastFiredAt: sql`greatest(${heartbeats.lastFiredAt}, ${now.toISOString()}::timestamptz)`,
+        fireCount: sql`${heartbeats.fireCount} + 1`,
         nextFireAt: finalStatus === 'active' && nextFireAt ? laterFire(nextFireAt) : null,
         status: finalStatus,
         completionReason: finalReason,

@@ -38,6 +38,7 @@ import {
   hasRequestSlot,
   loginScopeFor,
   systemPoolTxInScope,
+  isRefusedRight,
 } from '@mantle/db';
 
 /** A row of the switch: the same shape the first owner's exit returns. */
@@ -150,7 +151,7 @@ export async function attachDefaultAssistantsQuietly(when: string, loginId: stri
   } catch (err) {
     // A refused right (42501) is rethrown, never logged away:
     // the narrow login met a write it may not make.
-    if ((err as { code?: string } | null)?.code === '42501') throw err;
+    if (isRefusedRight(err)) throw err;
     failure(when, err);
   }
 }

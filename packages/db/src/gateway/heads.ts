@@ -10,6 +10,7 @@ import { type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema/index';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { currentScopeTx, currentSpaceScope, currentSystemTx } from '../viewer';
+import { pgErrorCode } from '../pg-error';
 import { getAdminDb } from './pools';
 import { uuidArrayLiteral } from './write-route';
 import { withSystemTx } from './system-tx';
@@ -255,14 +256,10 @@ export async function lockMoreHeads(
  *  NOWAIT lock that was busy. */
 const RETRYABLE = new Set(['40P01', '40001', '55P03']);
 
+/** The SQLSTATE on the error or its cause chain: pg-error.ts pgErrorCode,
+ *  the one walk (round 13b: two walkers had grown apart). */
 export function sqlState(err: unknown): string | null {
-  let e: unknown = err;
-  for (let depth = 0; e && depth < 4; depth++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return null;
+  return pgErrorCode(err);
 }
 
 /**

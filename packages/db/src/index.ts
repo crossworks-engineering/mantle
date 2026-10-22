@@ -371,6 +371,7 @@ export {
   type EditRefusalDetail,
   pgConstraint,
   pgErrorCode,
+  isRefusedRight,
 } from './pg-error';
 export { adminActTx } from './admin-act';
 export {

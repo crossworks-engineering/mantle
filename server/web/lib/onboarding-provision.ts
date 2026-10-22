@@ -1,4 +1,4 @@
-import { db, agents, eq, and } from '@mantle/db';
+import { db, agents, eq, and, isRefusedRight } from '@mantle/db';
 import { findProviderKeyIds } from '@mantle/api-keys';
 import {
   buildPersonaPrompt,
@@ -75,7 +75,7 @@ async function seedSpecialistStack(ownerId: string): Promise<string[]> {
     // A refused right (42501: a write the narrow login may not make off its
     // spot) is a bug to see, never a quiet empty stack.
     //
-    if ((err as { code?: string } | null)?.code === '42501') throw err;
+    if (isRefusedRight(err)) throw err;
     console.error('[onboarding] applyManifest failed:', err);
     return [];
   }
@@ -153,7 +153,7 @@ export async function provisionDefaults(
     // of the narrow login is a route bug, never a soft failure: it is thrown,
     // not logged and swallowed (plan v3.2 S7b part b2 round 8 B).
     await seedToolCapabilities(ownerId).catch((err) => {
-      if ((err as { code?: string } | null)?.code === '42501') throw err;
+      if (isRefusedRight(err)) throw err;
       console.error('[onboarding] seedToolCapabilities failed:', err);
     });
   }

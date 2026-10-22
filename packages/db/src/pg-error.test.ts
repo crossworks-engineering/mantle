@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isRefusedRight,
   BusyError,
   POOL_BUSY_MESSAGE,
   PoolBusyError,
@@ -63,6 +64,20 @@ describe('pgErrorCode', () => {
     const a: { message: string; cause?: unknown } = { message: 'a' };
     a.cause = a;
     expect(pgErrorCode(a)).toBeNull();
+  });
+});
+
+describe('isRefusedRight (round 13b: the one 42501 detector)', () => {
+  it('finds 42501 on the driver error and through the wrapper`s cause', () => {
+    const pg = Object.assign(new Error('permission denied for table agents'), { code: '42501' });
+    expect(isRefusedRight(pg)).toBe(true);
+    // drizzle's DrizzleQueryError carries no code of its own: the driver's
+    // error is its cause (the reading the three callers missed).
+    const wrapped = Object.assign(new Error('Failed query: update agents'), { cause: pg });
+    expect((wrapped as { code?: string }).code).toBeUndefined();
+    expect(isRefusedRight(wrapped)).toBe(true);
+    expect(isRefusedRight(Object.assign(new Error('x'), { code: '23505' }))).toBe(false);
+    expect(isRefusedRight(null)).toBe(false);
   });
 });
 
