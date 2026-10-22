@@ -49,7 +49,9 @@ export const TOOL_LIST_PINS = {
  *  The narrow area sweep's hand list of login-self rows (LOGIN_SELF_ROWS)
  *  is gone: its entries come from the route table now (selfWriteRows),
  *  keyed like the area entries, so narrow-area-sweep.entries.ts holds no
- *  list (1 to 0). */
+ *  list (1 to 0). The route declarations (plan v3.2), part 0 round 2:
+ *  public-session-routes.ts leaves the count, the session sweep's test
+ *  data, not a policy (arch-counts.mjs ROUTE_LISTS_NOT_POLICY). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
@@ -59,5 +61,4 @@ export const ROUTE_LIST_PINS = {
   'server/web/lib/auth/route-scope.ts': 4,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,
-  'server/web/server/public-session-routes.ts': 1,
 };
