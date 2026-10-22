@@ -433,7 +433,7 @@ describe('the narrow system role rights', () => {
     // The content and workspace writers among the definers (the a2
     // re-audit's 17 less mantle_ws_attach_assistants, the onboarding attach
     // on the assistants area's exit, measured), each denied by name;
-    // mantle_bridge_login since S7b b2 round 4 (it runs at the spot
+    // mantle_bridge_login too (it runs at the spot
     // login-credential with the role change).
     const writers = [
       'mantle_bridge_login',

@@ -32,13 +32,17 @@ DECLARE
   seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME;
   narrow_key text := 'mantle.narrow_missed_' || TG_TABLE_NAME;
   who text := coalesce(current_setting('mantle.actor', true), '');
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
   mode text;
 BEGIN
   IF who <> '' THEN
     IF who LIKE 'system:%' THEN
       IF "public"."mantle_narrow_actor"(who)
-         AND current_user::text = CASE WHEN current_setting('role') = 'none'
-                                      THEN session_user::text ELSE current_setting('role') END
+         AND current_user::text = own_role
          AND coalesce(current_setting('mantle.route', true), '') <> 'full'
          AND coalesce(current_setting(narrow_key, true), '') <> TG_OP THEN
         PERFORM set_config(narrow_key, TG_OP, true);
@@ -68,11 +72,15 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_cascade_stmt"()
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
 BEGIN
   IF pg_trigger_depth() = 1 AND who LIKE 'system:%' THEN
     IF "public"."mantle_narrow_actor"(who)
-       AND current_user::text = CASE WHEN current_setting('role') = 'none'
-                                      THEN session_user::text ELSE current_setting('role') END
+       AND current_user::text = own_role
        AND coalesce(current_setting('mantle.route', true), '') <> 'full'
        AND EXISTS (SELECT 1 FROM gone) THEN
       RAISE NOTICE 'mantle narrow write: narrow-cascade-delete % % DELETE', who, TG_TABLE_NAME;

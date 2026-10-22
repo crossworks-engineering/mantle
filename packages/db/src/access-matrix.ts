@@ -279,7 +279,7 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
  * narrow system role (plan v3.2 S7b part b2): SELECT, UPDATE of only the
  * columns listed, DELETE only where it says, never INSERT. Measured with
  * the switch on (the full DB suite under `log_statement = mod`, every
- * statement the narrow login sent; the handover's round 4): what narrow
+ * statement the narrow login sent; the handover's b2 measurement): what narrow
  * reasons write, less every column that grants or proves a right. The rest
  * of each table's writes run at the full-route spot login-credential
  * (viewer.ts FULL_ROUTE_SPOTS) or in the login's own scope. The narrow

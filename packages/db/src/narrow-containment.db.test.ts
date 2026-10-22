@@ -1,5 +1,5 @@
 /**
- * The narrow login's containment (plan v3.2 S7b part b2, round 4: the
+ * The narrow login's containment (plan v3.2 S7b part b2: the
  * interim audit of 0314 and 0315). On the narrow login the acting login is
  * a mistake guard only: a raw narrow session may name any acting login
  * (only the gateway's text check stops it). The database boundaries are
@@ -39,7 +39,7 @@ import {
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('the narrow login holds no right and no credential (S7b b2 round 4)', () => {
+describe.skipIf(!URL)('the narrow login holds no right and no credential', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let rr: typeof import('./runtime-role');
   let v: typeof import('./viewer');

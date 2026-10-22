@@ -255,7 +255,10 @@ export function fullRouteSpots(
     // The bare name in an import from @mantle/db (never `as`), and calls
     // with a literal spot; any other mention is a binding the count misses.
     let imported = 0;
-    for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@mantle\/db'/g)) {
+    // (inside packages/db, from its own viewer module).
+    for (const m of body.matchAll(
+      /import\s*\{([^}]*)\}\s*from\s*'(?:@mantle\/db|(?:\.\.?\/)+viewer)'/g,
+    )) {
       for (const part of m[1].split(',')) {
         if (!/\bonFullSystemRoute\b/.test(part)) continue;
         if (/^\s*(?:type\s+)?onFullSystemRoute\s*$/.test(part)) imported += 1;

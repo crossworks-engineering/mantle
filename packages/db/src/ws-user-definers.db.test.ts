@@ -1095,8 +1095,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       await sql<{ on: boolean }[]>`select to_regrole(${RUNTIME_ROLE}) is not null as on`
     )[0]!.on;
     // The runtime role only: the users area's new login and role change
-    // run it at the full-route spot login-credential, never the narrow role
-    // (S7b b2 round 4).
+    // run it at the full-route spot login-credential, never the narrow role.
     expect(await mayRun('public.mantle_bridge_login(uuid)')).toEqual(
       hasRuntime ? [RUNTIME_ROLE] : [],
     );
