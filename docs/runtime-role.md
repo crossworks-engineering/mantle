@@ -758,8 +758,11 @@ actor and table rows, all time: every row since the count began, which the
 maintenance reaper keeps; numbers only), and `narrow_misses:would-refuse`
 and `narrow_misses:would-refuse-tables` (migration 0319: the writes the
 role would refuse, made with the switch off; like 0317's counts it asks
-for the session's own role, so a definer's own writes are not counted on
-a superuser's pool, and 0320's row rules (a heartbeat's books, an enable,
+for the session's own role, so a definer's own writes are left out on the
+narrow route and with the runtime role on, and counted on a system pool
+logged in as the superuser that owns the definers, where the two are one
+role (the "Exact with the runtime role on" note above: read those boxes'
+counts with that in mind), and 0320's row rules (a heartbeat's books, an enable,
 the owner's and an Admin user's row) count through 0319's report branch).
 
 What the counts do not see, and which the switch-on suites measure
