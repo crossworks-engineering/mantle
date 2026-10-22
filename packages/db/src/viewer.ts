@@ -126,6 +126,11 @@ type Scope = {
   /** A system transaction's own (withSystemTx): what a nested call must
    *  match to reuse it (arch A2b, plan 20.2). */
   nest?: SystemTxNest;
+  /** A system transaction opened in a request's own system exit (an Admin
+   *  area, the login's own row): that exit, so its route and acting login
+   *  hold for the work inside, as they hold for the transaction's own
+   *  statements (boundExitEntry). */
+  requestExit?: SystemRouteEntry;
   /** A turn scope (workspaces W4b): no transaction of its own; every query
    *  opens a short one on the workspace role (gateway/scope.ts). */
   perQuery?: true;
@@ -848,7 +853,23 @@ export function runInSystemTx<T>(
   if (open && !open.request && !(open.system && open.tx && open.nest)) {
     return Promise.reject(new RuntimeFaultError('runInSystemTx: only outside a viewer scope'));
   }
-  return store.run({ system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest }, fn);
+  // The request's own system exit, when the transaction opens in it (or in
+  // a system transaction that did): kept on the scope, which would hide it
+  // otherwise (boundExitEntry), so the work inside takes the exit's route
+  // and acting login, as the transaction's own statements do (plan v3.2
+  // S7b part b2).
+  const bound = boundExitEntry();
+  const requestExit = bound?.request ? bound.entry : undefined;
+  return store.run(
+    {
+      system: true,
+      tx: scope.tx,
+      hooks: scope.hooks,
+      nest: scope.nest,
+      ...(requestExit ? { requestExit } : {}),
+    },
+    fn,
+  );
 }
 
 /** The system transaction the current code runs in (runInSystemTx), or
@@ -1093,8 +1114,11 @@ export function systemRouteNow(): SystemRoute | null {
 function boundExitEntry(): { entry: SystemRouteEntry; request: boolean } | null {
   let entry = systemRoutes.getStore();
   let request = false;
-  if (!entry && store.getStore() === undefined) {
-    entry = requestSlots.getStore()?.systemRoute;
+  if (!entry) {
+    // The request's exit: outside every scope, or inside a system
+    // transaction opened in it (runInSystemTx keeps it on the scope).
+    const s = store.getStore();
+    entry = s === undefined ? requestSlots.getStore()?.systemRoute : s.requestExit;
     request = entry !== undefined;
   }
   if (!entry) return null;

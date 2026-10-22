@@ -22,10 +22,10 @@ import { RuntimeFaultError } from '@mantle/std';
 import type * as schema from '../schema/index';
 import { nodes, type Node } from '../schema/nodes';
 import { markContentChanged } from '../content-changed';
-import { actingLoginNow, currentCreateHome, currentSpaceScope, currentSystemTx } from '../viewer';
+import { actingLoginNow, currentCreateHome, currentSpaceScope } from '../viewer';
 import { db } from './handles';
 import { withNodeDeleteHeads, withNodeInsertHeads } from './heads';
-import { getAdminDb, narrowRouteNow } from './pools';
+import { narrowRouteNow } from './pools';
 import { withSystemTx } from './system-tx';
 import { uuidArrayLiteral } from './write-route';
 
@@ -56,18 +56,15 @@ export type StructureInsert = {
 };
 
 /**
- * The narrow route's transaction for a definer call: the system pool's own
- * (the narrow route takes it, as the exit's pick), or a savepoint of the
- * system transaction already open. Not withSystemTx outside one: its scope
- * hides a request exit's route and acting login from the statements inside
- * (viewer.ts boundExitEntry), so they would leave the narrow route. The
- * acting login is read here, outside, and passed to the definer, which
- * also checks it against the setting the gateway sends.
+ * The narrow route's transaction for a definer call: a system transaction
+ * (withSystemTx), a savepoint of the one already open. Inside it the exit's
+ * route and acting login hold (viewer.ts runInSystemTx keeps a request
+ * exit's), so the transaction is the narrow login's. The acting login is
+ * passed to the definer, which also checks it against the setting the
+ * gateway sends.
  */
 function narrowTx<T>(fn: (tx: Tx, login: string | null) => Promise<T>): Promise<T> {
-  const login = actingLoginNow();
-  if (currentSystemTx()) return withSystemTx((tx) => fn(tx, login));
-  return getAdminDb().transaction((tx) => fn(tx, login));
+  return withSystemTx((tx) => fn(tx, actingLoginNow()));
 }
 
 /** The definer, one call; its ids. */
