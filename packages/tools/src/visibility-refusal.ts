@@ -6,7 +6,7 @@
  * tools (builtins-tree.ts) and the Files tools (files/*).
  */
 import { TreeVisibilityError } from '@mantle/content/tree';
-import { BUSY_MESSAGE, isBusy } from '@mantle/db';
+import { busyMessage, isBusy } from '@mantle/db';
 
 /** The `confirm` input every such tool declares (an undeclared key is
  *  dropped by the MCP bridge's schema, so the tool could never go ahead). */
@@ -19,7 +19,7 @@ export const CONFIRM_INPUT = {
 /** The refusal text for a TreeVisibilityError (or a busy write: another
  *  change held the rows, review F7), or null for anything else. */
 export function visibilityRefusal(err: unknown): string | null {
-  if (isBusy(err)) return BUSY_MESSAGE;
+  if (isBusy(err)) return busyMessage(err);
   if (!(err instanceof TreeVisibilityError)) return null;
   const names = (list: Array<{ name: string }>) => list.map((w) => w.name).join(', ');
   const shown = err.diff.changes

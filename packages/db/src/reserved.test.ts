@@ -1,13 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { isBusy } from './pg-error';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { BUSY_MESSAGE, BusyError, POOL_BUSY_MESSAGE, busyMessage, isBusy } from './pg-error';
 import {
   connectionGone,
   END_SESSION_SQL,
+  NARROW_RESERVE_WAIT_MS,
   PoolBusyError,
   RESERVE_WAIT_MS,
   reserveLease,
+  reserveWaitMs,
   withLease,
 } from './reserved';
 
@@ -186,7 +189,8 @@ describe('every reserve waits a bounded time (the pool full, or a reserve the dr
     const own = new Error('write pool busy');
     await expect(reserveLease(f.pool, { ms: 5, busy: () => own })).rejects.toBe(own);
     f.give();
-    expect(RESERVE_WAIT_MS).toBe(15_000);
+    expect(RESERVE_WAIT_MS).toBe(120_000);
+    expect(NARROW_RESERVE_WAIT_MS).toBe(15_000);
     // In time: the lease, no error.
     const g = slowPool();
     const leased = reserveLease(g.pool, { ms: 1000 });
@@ -194,6 +198,103 @@ describe('every reserve waits a bounded time (the pool full, or a reserve the dr
     const lease = await leased;
     lease.release();
     expect(g.released()).toBe(1);
+  });
+});
+
+describe('the wait of a reserve, by its pool', () => {
+  const never = { reserve: () => new Promise<never>(() => {}) } as never;
+  const quiet = () => {
+    const error = console.error;
+    const lines: string[] = [];
+    console.error = (...a: unknown[]) => void lines.push(a.map(String).join(' '));
+    return { lines, restore: () => (console.error = error) };
+  };
+  /** Whether `p` has settled after `ms` of fake time. */
+  async function stateAfter(p: Promise<unknown>, ms: number): Promise<'pending' | unknown> {
+    let out: unknown = 'pending';
+    p.then(
+      () => (out = 'ok'),
+      (e: unknown) => (out = e),
+    );
+    await vi.advanceTimersByTimeAsync(ms);
+    return out;
+  }
+
+  it('the system, user and index pools wait 120 s (only a reserve that never settles fails); the narrow pool 15 s', async () => {
+    vi.useFakeTimers();
+    const q = quiet();
+    try {
+      expect(reserveWaitMs('pool')).toBe(120_000);
+      expect(reserveWaitMs('narrow')).toBe(15_000);
+      const long = reserveLease(never);
+      expect(await stateAfter(long, 119_999)).toBe('pending');
+      const late = await stateAfter(long, 1);
+      expect(late).toBeInstanceOf(PoolBusyError);
+      const narrow = reserveLease(never, { pool: 'narrow' });
+      expect(await stateAfter(narrow, 14_999)).toBe('pending');
+      expect(await stateAfter(narrow, 1)).toBeInstanceOf(PoolBusyError);
+      expect(q.lines).toEqual([
+        '[db] no reserved connection of the pool within 120000 ms',
+        '[db] no reserved connection of the narrow pool within 15000 ms',
+      ]);
+    } finally {
+      q.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("settingsPipeline: the system pool's long wait, the narrow pool's when the caller names it", async () => {
+    const { settingsPipeline } = await import('./gateway/actor-sql');
+    vi.useFakeTimers();
+    const q = quiet();
+    try {
+      const run = (wait?: { pool: 'narrow' }) =>
+        settingsPipeline(never, () => 'select 1', 'select 1', [], 'rows', 'select 1', wait);
+      const system = run();
+      expect(await stateAfter(system, 15_000)).toBe('pending');
+      expect(await stateAfter(system, 105_000)).toBeInstanceOf(PoolBusyError);
+      const narrow = run({ pool: 'narrow' });
+      expect(await stateAfter(narrow, 15_000)).toBeInstanceOf(PoolBusyError);
+    } finally {
+      q.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('each reserve names its wait: only the narrow pool takes the short one; the write pool keeps its own', () => {
+    const src = (f: string) => readFileSync(join(__dirname, f), 'utf8');
+    // The narrow login pool's statements (narrow-route.ts narrowLoginStatement).
+    expect(src('gateway/narrow-route.ts')).toMatch(
+      /resetActorSqlFor\(params, NARROW_SQL_TAG\),\s*\/\/[^\n]*\n\s*\{ pool: 'narrow' \},/,
+    );
+    expect(src('gateway/narrow-route.ts').match(/pool: 'narrow'/g)).toHaveLength(1);
+    // The per-database narrow route (the system pool's connections), the
+    // user pool's scoped statements, the index builds: the default wait.
+    expect(src('gateway/narrow-route.ts')).toContain('const lease = await reserveLease(base);');
+    expect(src('gateway/scope.ts')).toMatch(/withLease\(base, async \(lease\) =>/);
+    expect(src('concurrent-indexes.ts')).toMatch(/withLease\(sql, async \(lease\) =>/);
+    // The system pool's actor pipeline passes its caller's wait (none: the
+    // default) and the write pool its own (WRITE_POOL_WAIT_MS 15 s).
+    expect(src('gateway/actor-sql.ts')).toContain('lease = await reserveLease(pool, wait);');
+    expect(src('gateway/role-tx.ts')).toContain('const WRITE_POOL_WAIT_MS = 15_000;');
+    expect(src('gateway/role-tx.ts')).toContain(
+      'reserveLease(writePoolSql(), { ms: writePoolWaitMs, busy: writePoolBusy })',
+    );
+  });
+
+  it("a busy answer: a pool's wait run out says the plain text, under drizzle's wrap too; a lock or deadlock says the folders one", () => {
+    const wrapped = Object.assign(new Error('Failed query: select 1'), {
+      cause: new PoolBusyError(),
+    });
+    expect(isBusy(wrapped)).toBe(true);
+    expect(busyMessage(wrapped)).toBe(POOL_BUSY_MESSAGE);
+    expect(busyMessage(new PoolBusyError())).toBe(POOL_BUSY_MESSAGE);
+    expect(POOL_BUSY_MESSAGE).not.toMatch(/folders|item/);
+    const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    expect(busyMessage(deadlock)).toBe(BUSY_MESSAGE);
+    expect(busyMessage(Object.assign(new Error('x'), { cause: deadlock }), 'own')).toBe('own');
+    // Another write's BusyError keeps its caller's text, as before.
+    expect(busyMessage(new BusyError(), 'own')).toBe('own');
   });
 });
 

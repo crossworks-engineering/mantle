@@ -6,7 +6,7 @@
  * in flight.
  */
 import type postgres from 'postgres';
-import { reserveLease, type Lease } from '../reserved';
+import { reserveLease, type Lease, type ReserveWait } from '../reserved';
 import { sqlCode } from '../sql-text';
 import { UUID_RE } from '@mantle/std';
 import {
@@ -372,6 +372,9 @@ export function settingsFirst(t: PgSql, setSql: () => string): PgSql {
  *  - nothing sent (`setSql` threw: a value it refuses, before any
  *    connection is taken; or no connection): that error.
  *
+ * The reserve waits as `wait` says (reserved.ts reserveLease: the system
+ * pool's long wait unless the caller names the narrow pool's).
+ *
  * The caller has its answer before the RESET is answered. The connection
  * goes back to the pool only once the RESET has answered, so no other
  * statement ever sees these settings; one whose SET or RESET failed ends
@@ -386,6 +389,7 @@ export function settingsPipeline(
   args: unknown[] | undefined,
   mode: QueryMode,
   resetSql: string,
+  wait: ReserveWait = {},
 ): Promise<unknown> {
   let settle!: (v: Promise<unknown>) => void;
   const result = new Promise<unknown>((r) => (settle = r));
@@ -402,7 +406,7 @@ export function settingsPipeline(
     let lease: Lease;
     try {
       set = setSql();
-      lease = await reserveLease(pool);
+      lease = await reserveLease(pool, wait);
     } catch (err) {
       answer(Promise.reject(err));
       return;

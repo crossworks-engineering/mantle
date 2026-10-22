@@ -269,19 +269,27 @@ for an exit routed `'narrow'` runs as `mantle_system_narrow`
   servers' and the operator runs' connections). The pool sends startup
   parameters (`narrowStartup`), which win over any setting stored on the
   role (`ALTER ROLE current_user SET ...`, for every database or `IN
-DATABASE`, which the narrow login may do and no grant can stop): every
-  setting that would refuse, cut short or change narrow work, at the value
-  the app runs every pool with (compose sets none, so Postgres's defaults):
-  `search_path`, `default_transaction_read_only` off,
+DATABASE`, which the narrow login may do and no grant can stop). A chosen
+  list, not every setting a session can carry: the ones found to refuse
+  narrow work, cut it short, end its session, make a commit return before
+  it is durable, or change what a statement reads, writes or parses. Fixed
+  at the value the app runs every pool with (compose sets none, so
+  Postgres's defaults): `search_path`, `default_transaction_read_only` off,
   `default_transaction_isolation` read committed, `row_security` on,
   `statement_timeout`, `lock_timeout`,
   `idle_in_transaction_session_timeout`, `idle_session_timeout` and (on
-  Postgres 17 and later) `transaction_timeout` 0, `bytea_output` hex,
-  `extra_float_digits` 1; and the system pool's own `TimeZone`, `DateStyle`,
-  `IntervalStyle` and `standard_conforming_strings`, as its connections last
-  reported them, read at each narrow connect (a process's first narrow
-  statement waits for the system pool's first connect: `systemReported`),
-  so the narrow route reads dates back in the text the system pool does.
+  Postgres 17 and later) `transaction_timeout` 0, `exit_on_error` off,
+  `synchronous_commit` on, `bytea_output` hex, `extra_float_digits` 1,
+  `array_nulls` on, `transform_null_equals` off, `xmloption` content,
+  `gin_fuzzy_search_limit` 0. And the system pool's own `TimeZone`,
+  `DateStyle`, `IntervalStyle`, `timezone_abbreviations` and
+  `standard_conforming_strings`: the values a session of the system pool
+  starts with (`pg_settings.reset_val`, never one a session or transaction
+  of it set since), read once per process before its first narrow statement
+  (`systemStartup`, one statement on the system pool, then never again) and
+  taken at each narrow connect, so the narrow route reads dates back in the
+  text the system pool does. A read that fails fails the narrow statement
+  (`NarrowStartupError`): no narrow connect without its settings.
   Any other stored setting holds until the next migrate, which takes every
   stored setting of the role back each run (`RESET ALL`, and the `IN
 DATABASE` form for each database), and the boot line names it; migrate
@@ -300,10 +308,13 @@ DATABASE` form for each database), and the boot line names it; migrate
   pipeline (`gateway/actor-sql.ts` `settingsPipeline`): the `SET` goes in
   the statement's first send, the statement commits by itself, the caller
   has its answer before the `RESET` is answered, and a connection whose
-  `SET` or `RESET` failed ends instead of going back (every reserve, on
-  every pool, waits at most 15 s, `reserved.ts` `reserveLease`: a busy
-  error, never a hang; and a reserve queued when a connection of a full
-  pool closes is answered, `patches/postgres@3.4.9.patch`). One failure answer on
+  `SET` or `RESET` failed ends instead of going back (every reserve waits
+  a bounded time, `reserved.ts` `reserveLease`: the narrow pool's 15 s,
+  the system pool's, the user pool's and the index builds' 120 s, which
+  only a reserve that never settles reaches, the write pool its own 15 s;
+  then a busy error, 409 with a plain "The server is busy" text, never a
+  hang; a reserve queued when a connection of a full pool closes is
+  answered, and an ending pool reserves nothing, `patches/postgres@3.4.9.patch`). One failure answer on
   both pools: the statement's own result when it ran (a `SET` that failed
   beside it is no error of the caller's: the statement committed, with none
   of the settings, and met the database's checks as a statement with no

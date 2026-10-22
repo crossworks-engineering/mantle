@@ -9,7 +9,7 @@
  * c.req.raw directly if request data is ever needed.
  */
 import type { Context } from 'hono';
-import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
+import { BUSY_MESSAGE, BusyError, busyMessage, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { domainErrorAnswer } from '@mantle/std';
 // Registers BadBodyError's row in the domain error table.
@@ -42,9 +42,11 @@ export function answerAppError(err: Error, c: Context): Response {
   if (domain) return Response.json(domain.body, { status: domain.status });
   // Another write held the same rows (a deadlock broken, a lock timeout):
   // "busy, try again" for a person, never the SQL (folder audit review F7).
+  // A pool's wait run out (a read as well, under drizzle's wrap too) says
+  // the plain text, never the folders one (busyMessage).
   if (isBusy(err)) {
     return Response.json(
-      { error: err instanceof BusyError ? err.message : BUSY_MESSAGE },
+      { error: busyMessage(err, err instanceof BusyError ? err.message : BUSY_MESSAGE) },
       { status: 409 },
     );
   }

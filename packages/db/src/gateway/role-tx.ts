@@ -22,7 +22,7 @@ import {
 } from '../viewer';
 import { longStack, noteActorMiss, noteTestWriteRoleGap } from '../actor';
 import { logPoolBusy, reserveLease, type Lease } from '../reserved';
-import { BusyError, permissionGapOf } from '../pg-error';
+import { PoolBusyError, permissionGapOf } from '../pg-error';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { writePoolSql } from './pools';
 
@@ -390,10 +390,11 @@ export function setWritePoolWaitForTests(ms: number | null): void {
 }
 
 /** No write-pool connection within the wait (WRITE_POOL_WAIT_MS). Busy:
- *  the API answers it as one (isBusy, 409), and it is logged. */
-export class WritePoolBusyError extends BusyError {
+ *  the API answers it as one (isBusy, 409, POOL_BUSY_MESSAGE), and it is
+ *  logged. */
+export class WritePoolBusyError extends PoolBusyError {
   constructor() {
-    super('The server is busy; try again in a moment.');
+    super();
     this.name = 'WritePoolBusyError';
   }
 }

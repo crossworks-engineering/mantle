@@ -162,6 +162,11 @@ export const BUSY_MESSAGE = 'Another change to these folders is under way; try a
 /** The same for an item save (a page, note or drawing). */
 export const SAVE_BUSY_MESSAGE = 'Another change to this item is under way; try again in a moment.';
 
+/** What a person reads when no connection of a pool came within its wait
+ *  (PoolBusyError): plain, for a read as for a write, never the folders or
+ *  item text (nothing else held those rows). */
+export const POOL_BUSY_MESSAGE = 'The server is busy; try again in a moment.';
+
 /** A write that met another on the same rows twice: its message is for
  *  people, never SQL. isBusy() is true for it (the API answers 409). */
 export class BusyError extends Error {
@@ -169,6 +174,33 @@ export class BusyError extends Error {
     super(message);
     this.name = 'BusyError';
   }
+}
+
+/** No connection of a pool within its bounded wait (reserved.ts
+ *  reserveLease; the write pool's own, role-tx.ts WritePoolBusyError).
+ *  Busy (isBusy, 409), with POOL_BUSY_MESSAGE. */
+export class PoolBusyError extends BusyError {
+  constructor() {
+    super(POOL_BUSY_MESSAGE);
+    this.name = 'PoolBusyError';
+  }
+}
+
+/**
+ * The text a person reads for a busy error (isBusy): POOL_BUSY_MESSAGE when
+ * a pool's wait ran out (a PoolBusyError on the error or its cause chain:
+ * it reaches a route wrapped by drizzle, a read as well as a write), else
+ * `fallback`, the caller's text for another write holding the rows (a
+ * deadlock, a lock timeout, a BusyError of its own). Only the pool's case
+ * reads differently than before it.
+ */
+export function busyMessage(err: unknown, fallback: string = BUSY_MESSAGE): string {
+  let e: unknown = err;
+  for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
+    if (e instanceof PoolBusyError) return POOL_BUSY_MESSAGE;
+    e = (e as PgLike).cause;
+  }
+  return fallback;
 }
 
 /**
@@ -189,7 +221,8 @@ export async function withBusyRetry<T>(
     try {
       return await run();
     } catch (err) {
-      if (isBusy(err)) throw new BusyError(message);
+      // A pool's wait run out says so (busyMessage), never the item text.
+      if (isBusy(err)) throw new BusyError(busyMessage(err, message));
       throw err;
     }
   }

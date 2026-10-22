@@ -342,14 +342,21 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     for (const x of await narrowPoolSessions()) expect([x.l, x.a]).toEqual(['', '']);
   });
 
-  it("the narrow pool's startup parameters: the app's values and the system pool's, over any setting stored on the role", async () => {
+  it("the narrow pool's startup parameters: the app's values and the system pool's session-start ones, over any setting stored on the role", async () => {
     await reopen(true);
+    // The system pool's session-start values, read once (a session SET of
+    // the system pool after it never reaches a narrow connect).
+    await nr.systemStartup(su);
+    await su.unsafe(`set timezone = 'Pacific/Chatham'`);
+    expect(su.parameters.TimeZone).toBe('Pacific/Chatham');
     const pool = pools.newNarrowPool(
       rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
       su,
     );
     try {
-      const want = pools.narrowStartup(su.parameters as unknown as Record<string, string>);
+      const start = nr.systemStartupOf(su)!;
+      expect(start.TimeZone).not.toBe('Pacific/Chatham');
+      const want = pools.narrowStartup(start);
       const keys = Object.keys(want);
       const [row] = await pool.unsafe<Record<string, string>[]>(
         `select ${keys.map((k) => `current_setting('${k}') as "${k}"`).join(', ')}`,
@@ -359,11 +366,12 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       expect(want).toMatchObject({
         search_path: '"$user", public',
         statement_timeout: '0',
-        TimeZone: su.parameters.TimeZone,
-        DateStyle: su.parameters.DateStyle,
+        TimeZone: start.TimeZone,
+        DateStyle: start.DateStyle,
       });
       expect(pool.options.max).toBe(pools.NARROW_POOL_MAX);
     } finally {
+      await su.unsafe('reset timezone');
       await pool.end();
     }
   });
@@ -407,7 +415,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     expect(await stored()).toBe(0);
   });
 
-  it('every setting that would refuse, cut short or change narrow work, stored by the narrow login: the pool pins it, migrate takes it back', async () => {
+  it('every pinned setting, stored by the narrow login: a raw session takes it, the pool pins it, migrate takes it back', async () => {
     // This database's own (IN DATABASE): the role is the cluster's, and the
     // test files beside this one log in as it.
     const stored: [string, string][] = [
@@ -421,9 +429,16 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       ['transaction_timeout', '600000'],
       ['bytea_output', 'escape'],
       ['extra_float_digits', '-15'],
+      ['exit_on_error', 'on'],
+      ['synchronous_commit', 'off'],
+      ['array_nulls', 'off'],
+      ['transform_null_equals', 'on'],
+      ['xmloption', 'document'],
+      ['gin_fuzzy_search_limit', '1'],
       ['TimeZone', 'Pacific/Chatham'],
       ['DateStyle', 'German, DMY'],
       ['IntervalStyle', 'sql_standard'],
+      ['timezone_abbreviations', 'India'],
     ];
     for (const [name, value] of stored) {
       await nl.unsafe(`alter role current_user in database "${dbName}" set ${name} = '${value}'`);
@@ -441,15 +456,22 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     // A session without the startup parameters takes them: read only, and
     // a statement cut short (the auditor's P4).
     const raw = postgres(narrowUrlOf(), { max: 1, prepare: false, onnotice: () => {} });
+    // The route reads the system pool's session-start values before a
+    // narrow connect (systemStartup); the pool takes them at connect.
+    await nr.systemStartup(su);
     const pool = pools.newNarrowPool(narrowUrlOf(), su);
     try {
       const [rawRow] = await raw.unsafe<Record<string, string>[]>(read);
       expect(rawRow).toMatchObject({ default_transaction_read_only: 'on', ro: 'on' });
       expect(await failure(raw.unsafe('select pg_sleep(0.2)'))).toMatchObject({ code: '57014' });
       // The pool's session: every one at the value the app runs with.
+      expect(rawRow).toMatchObject({ exit_on_error: 'on', array_nulls: 'off' });
       const [row] = await pool.unsafe<Record<string, string>[]>(read);
-      const want = pools.narrowStartup(su.parameters as unknown as Record<string, string>);
-      for (const [name] of stored) expect(row![name], name).toBe(want[name]);
+      const want = pools.narrowStartup(nr.systemStartupOf(su)!);
+      for (const [name] of stored) {
+        expect(row![name], name).toBe(want[name]);
+        expect(want[name], name).toBeDefined();
+      }
       expect(row!.ro).toBe('off');
       await pool.unsafe('select pg_sleep(0.2)');
     } finally {

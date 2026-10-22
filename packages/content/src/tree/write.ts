@@ -17,7 +17,7 @@ import {
 } from '@mantle/std';
 import {
   assertItemRight,
-  BUSY_MESSAGE,
+  busyMessage,
   db,
   executeWrite,
   isBusy,
@@ -174,7 +174,7 @@ async function refusing<T>(run: () => Promise<T>): Promise<T> {
     try {
       return await run();
     } catch (err) {
-      if (isBusy(err)) throw new TreeError('conflict', BUSY_MESSAGE);
+      if (isBusy(err)) throw new TreeError('conflict', busyMessage(err));
       return refusingError(err);
     }
   }
@@ -543,7 +543,7 @@ export async function moveTreeItems(
     } catch (err) {
       result.failed.push({
         id,
-        error: isBusy(err) ? BUSY_MESSAGE : publicErrorMessage(err, 'tree move'),
+        error: isBusy(err) ? busyMessage(err) : publicErrorMessage(err, 'tree move'),
       });
     }
   }

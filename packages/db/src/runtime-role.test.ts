@@ -482,13 +482,14 @@ describe('the narrow system role rights', () => {
 });
 
 describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => {
-  it("pinned at the app's values; TimeZone, DateStyle, IntervalStyle and string literals the system pool's; transaction_timeout from 17", async () => {
+  it("pinned at the app's values; TimeZone, DateStyle, IntervalStyle, zone abbreviations and string literals the system pool's; transaction_timeout from 17", async () => {
     const { narrowStartup, NARROW_STARTUP_FIXED } = await import('./gateway/pools');
     const pg16 = {
       server_version: '16.4',
       TimeZone: 'Etc/UTC',
       DateStyle: 'ISO, MDY',
       IntervalStyle: 'postgres',
+      timezone_abbreviations: 'Default',
       standard_conforming_strings: 'on',
     };
     expect(narrowStartup(pg16)).toEqual({
@@ -500,11 +501,18 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
       lock_timeout: '0',
       idle_in_transaction_session_timeout: '0',
       idle_session_timeout: '0',
+      exit_on_error: 'off',
+      synchronous_commit: 'on',
       bytea_output: 'hex',
       extra_float_digits: '1',
+      array_nulls: 'on',
+      transform_null_equals: 'off',
+      xmloption: 'content',
+      gin_fuzzy_search_limit: '0',
       TimeZone: 'Etc/UTC',
       DateStyle: 'ISO, MDY',
       IntervalStyle: 'postgres',
+      timezone_abbreviations: 'Default',
       standard_conforming_strings: 'on',
     });
     // Postgres 17 and later: transaction_timeout too (16 would refuse the
@@ -513,27 +521,67 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
       ...narrowStartup(pg16),
       transaction_timeout: '0',
     });
-    // Nothing reported yet: the fixed ones only (the route waits for the
-    // system pool's first report before a narrow connect).
+    // Nothing read: the fixed ones only (the route never connects so: it
+    // reads the system pool's first and fails closed when it cannot).
     expect(narrowStartup({})).toEqual({ ...NARROW_STARTUP_FIXED });
   });
 
-  it("the pool reads them at each connect, from the system pool's latest report", async () => {
+  it("the pool reads them at each connect, from the system pool's session-start values (systemStartup), never its reported parameters", async () => {
     const { newNarrowPool } = await import('./gateway/pools');
-    const reported: Record<string, string> = {};
-    const system = { parameters: reported, options: { parsers: {}, serializers: {} } };
+    const { systemStartup, systemStartupOf } = await import('./gateway/narrow-route');
+    const reported: Record<string, string> = { server_version: '18.1', TimeZone: 'Asia/Tokyo' };
+    let rows: { name: string; reset_val: string }[] = [];
+    let reads = 0;
+    let fail: Error | null = new Error('connection refused');
+    const system = {
+      parameters: reported,
+      options: { parsers: {}, serializers: {} },
+      unsafe: () => {
+        reads += 1;
+        return fail ? Promise.reject(fail) : Promise.resolve(rows);
+      },
+    };
     const pool = newNarrowPool('postgres://narrow:pw@127.0.0.1:1/db', system as never);
     const startup = () =>
       Object.fromEntries(
         Object.entries(Object.assign({}, pool.options.connection)).filter(([, v]) => v),
       );
+    // Nothing read yet: no system value (a session SET the pool reported,
+    // here TimeZone, never reaches it).
     expect(startup()).not.toHaveProperty('TimeZone');
-    Object.assign(reported, { server_version: '18.1', TimeZone: 'America/New_York' });
+    // A read that fails fails the narrow statement (fail closed), and the
+    // next one reads again.
+    await expect(systemStartup(system as never)).rejects.toMatchObject({
+      name: 'NarrowStartupError',
+    });
+    expect(systemStartupOf(system)).toBeUndefined();
+    // A read that misses a setting fails closed too.
+    fail = null;
+    rows = [{ name: 'TimeZone', reset_val: 'UTC' }];
+    await expect(systemStartup(system as never)).rejects.toMatchObject({
+      name: 'NarrowStartupError',
+    });
+    rows = [
+      { name: 'TimeZone', reset_val: 'America/New_York' },
+      { name: 'DateStyle', reset_val: 'ISO, MDY' },
+      { name: 'IntervalStyle', reset_val: 'postgres' },
+      { name: 'timezone_abbreviations', reset_val: 'Default' },
+      { name: 'standard_conforming_strings', reset_val: 'on' },
+      { name: 'server_version', reset_val: '18.1' },
+    ];
+    await systemStartup(system as never);
+    expect(reads).toBe(3);
     expect(startup()).toMatchObject({
       TimeZone: 'America/New_York',
       transaction_timeout: '0',
       statement_timeout: '0',
+      exit_on_error: 'off',
     });
+    // Read once: no round trip after (null), whatever the pool reports.
+    reported.TimeZone = 'Pacific/Chatham';
+    expect(systemStartup(system as never)).toBeNull();
+    expect(reads).toBe(3);
+    expect(startup()).toMatchObject({ TimeZone: 'America/New_York' });
   });
 });
 

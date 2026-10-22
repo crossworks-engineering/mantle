@@ -81,10 +81,18 @@ index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..14fd1a23da085a9799b5b7a04df6ad03
      if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
      const parser = options.parsers[oid]
 diff --git a/cf/src/index.js b/cf/src/index.js
-index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52f3a02965 100644
+index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..173592dbb2f84561d4aeee279886c6ca039d4e92 100644
 --- a/cf/src/index.js
 +++ b/cf/src/index.js
-@@ -206,26 +206,42 @@ function Postgres(a, b) {
+@@ -202,30 +202,52 @@ function Postgres(a, b) {
+   }
+ 
+   async function reserve() {
++    // mantle patch: an ending pool reserves nothing (the connection would
++    // outlive the pool's end, and the process with it).
++    if (ending)
++      throw Errors.connection('CONNECTION_ENDED', options, options)
+     const queue = Queue()
      const c = open.length
        ? open.shift()
        : await new Promise((resolve, reject) => {
@@ -116,8 +124,11 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52
 +      if (c.reserved !== reservation)
 +        return
        c.reserved = null
+-      onopen(c)
 +      c.onclose = null
-       onopen(c)
++      // mantle patch: handed back after the pool's end began, the
++      // connection ends (its end() waits for it), never back to the pool.
++      ending ? c.terminate() : onopen(c)
      }
  
      return sql
@@ -129,7 +140,7 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52
        c.queue === full
          ? queue.push(q)
          : c.execute(q) || move(c, full)
-@@ -238,12 +254,20 @@ function Postgres(a, b) {
+@@ -238,12 +260,20 @@ function Postgres(a, b) {
      let savepoints = 0
        , connection
        , prepare = null
@@ -151,7 +162,7 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52
        ])
      } catch (error) {
        throw error
-@@ -290,6 +314,9 @@ function Postgres(a, b) {
+@@ -290,6 +320,9 @@ function Postgres(a, b) {
        }
  
        function handler(q) {
@@ -161,7 +172,36 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52
          q.catch(e => uncaughtError || (uncaughtError = e))
          c.queue === full
            ? queries.push(q)
-@@ -424,7 +451,13 @@ function Postgres(a, b) {
+@@ -369,13 +402,27 @@ function Postgres(a, b) {
+ 
+     await 1
+     let timer
+-    return ending = Promise.race([
++    ending = Promise.race([
+       new Promise(r => timeout !== null && (timer = setTimeout(destroy, timeout * 1000, r))),
+       Promise.all(connections.map(c => c.end()).concat(
+         listen.sql ? listen.sql.end({ timeout: 0 }) : [],
+         subscribe.sql ? subscribe.sql.end({ timeout: 0 }) : []
+       ))
+     ]).then(() => clearTimeout(timer))
++    // mantle patch: a reserve still waiting for a connection is refused, as
++    // one asked from now on is (reserve): given one, it would outlive the end.
++    endReserves()
++    return ending
++  }
++
++  // mantle patch: every queued reserve refused, the other queued requests
++  // kept in their order (end, onclose).
++  function endReserves() {
++    const err = Errors.connection('CONNECTION_ENDED', options, options)
++    for (let n = queries.length; n > 0; n--) {
++      const q = queries.shift()
++      q.reserve ? q.reject(err) : queries.push(q)
++    }
+   }
+ 
+   async function close() {
+@@ -424,7 +471,15 @@ function Postgres(a, b) {
      c.reserved = null
      c.onclose && (c.onclose(e), c.onclose = null)
      options.onclose && options.onclose(c.id)
@@ -172,6 +212,8 @@ index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a9c7b7fc3792c6dca75d696f03de52
 +    // an initial query to run) and never settled: a reserve queued behind a
 +    // full pool when one of its connections closed (a kill, a restart, a
 +    // session ended on purpose) hung, and the pool's end with it.
++    // An ending pool opens no connection for a reserve (endReserves).
++    ending && endReserves()
 +    queries.length && connect(c, queries.peek().reserve ? queries.peek() : queries.shift())
    }
  }
@@ -272,10 +314,18 @@ index 07f6716702ac888215c86ad6e0071aaf55ae519c..3d4dcf3ef4e7b9bc4409ef9e5d40a537
      if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
      const parser = options.parsers[oid]
 diff --git a/cjs/src/index.js b/cjs/src/index.js
-index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e6a108a84 100644
+index f09c61c7e998f411560b95c9a8e1ed6a97972c11..164d61c919c0d02de0addb5107d4dd67cd93bb07 100644
 --- a/cjs/src/index.js
 +++ b/cjs/src/index.js
-@@ -205,26 +205,42 @@ function Postgres(a, b) {
+@@ -201,30 +201,52 @@ function Postgres(a, b) {
+   }
+ 
+   async function reserve() {
++    // mantle patch: an ending pool reserves nothing (the connection would
++    // outlive the pool's end, and the process with it).
++    if (ending)
++      throw Errors.connection('CONNECTION_ENDED', options, options)
+     const queue = Queue()
      const c = open.length
        ? open.shift()
        : await new Promise((resolve, reject) => {
@@ -307,8 +357,11 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e
 +      if (c.reserved !== reservation)
 +        return
        c.reserved = null
+-      onopen(c)
 +      c.onclose = null
-       onopen(c)
++      // mantle patch: handed back after the pool's end began, the
++      // connection ends (its end() waits for it), never back to the pool.
++      ending ? c.terminate() : onopen(c)
      }
  
      return sql
@@ -320,7 +373,7 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e
        c.queue === full
          ? queue.push(q)
          : c.execute(q) || move(c, full)
-@@ -237,12 +253,20 @@ function Postgres(a, b) {
+@@ -237,12 +259,20 @@ function Postgres(a, b) {
      let savepoints = 0
        , connection
        , prepare = null
@@ -342,7 +395,7 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e
        ])
      } catch (error) {
        throw error
-@@ -289,6 +313,9 @@ function Postgres(a, b) {
+@@ -289,6 +319,9 @@ function Postgres(a, b) {
        }
  
        function handler(q) {
@@ -352,7 +405,36 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e
          q.catch(e => uncaughtError || (uncaughtError = e))
          c.queue === full
            ? queries.push(q)
-@@ -423,7 +450,13 @@ function Postgres(a, b) {
+@@ -368,13 +401,27 @@ function Postgres(a, b) {
+ 
+     await 1
+     let timer
+-    return ending = Promise.race([
++    ending = Promise.race([
+       new Promise(r => timeout !== null && (timer = setTimeout(destroy, timeout * 1000, r))),
+       Promise.all(connections.map(c => c.end()).concat(
+         listen.sql ? listen.sql.end({ timeout: 0 }) : [],
+         subscribe.sql ? subscribe.sql.end({ timeout: 0 }) : []
+       ))
+     ]).then(() => clearTimeout(timer))
++    // mantle patch: a reserve still waiting for a connection is refused, as
++    // one asked from now on is (reserve): given one, it would outlive the end.
++    endReserves()
++    return ending
++  }
++
++  // mantle patch: every queued reserve refused, the other queued requests
++  // kept in their order (end, onclose).
++  function endReserves() {
++    const err = Errors.connection('CONNECTION_ENDED', options, options)
++    for (let n = queries.length; n > 0; n--) {
++      const q = queries.shift()
++      q.reserve ? q.reject(err) : queries.push(q)
++    }
+   }
+ 
+   async function close() {
+@@ -423,7 +470,15 @@ function Postgres(a, b) {
      c.reserved = null
      c.onclose && (c.onclose(e), c.onclose = null)
      options.onclose && options.onclose(c.id)
@@ -363,6 +445,8 @@ index f09c61c7e998f411560b95c9a8e1ed6a97972c11..6e4fec2c43bd9ef684fa1c60dca7215e
 +    // an initial query to run) and never settled: a reserve queued behind a
 +    // full pool when one of its connections closed (a kill, a restart, a
 +    // session ended on purpose) hung, and the pool's end with it.
++    // An ending pool opens no connection for a reserve (endReserves).
++    ending && endReserves()
 +    queries.length && connect(c, queries.peek().reserve ? queries.peek() : queries.shift())
    }
  }
@@ -463,10 +547,18 @@ index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..8856ec84d60639dd7dd4da56d1eb3793
      if (!!options.parsers[typarray] && !!options.serializers[typarray]) return
      const parser = options.parsers[oid]
 diff --git a/src/index.js b/src/index.js
-index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff08591ca6 100644
+index c7fba3dace20173f4cb13f3f138bb6d213b43683..e0ff771487a2eb862b379a0134535fb33744e052 100644
 --- a/src/index.js
 +++ b/src/index.js
-@@ -205,26 +205,42 @@ function Postgres(a, b) {
+@@ -201,30 +201,52 @@ function Postgres(a, b) {
+   }
+ 
+   async function reserve() {
++    // mantle patch: an ending pool reserves nothing (the connection would
++    // outlive the pool's end, and the process with it).
++    if (ending)
++      throw Errors.connection('CONNECTION_ENDED', options, options)
+     const queue = Queue()
      const c = open.length
        ? open.shift()
        : await new Promise((resolve, reject) => {
@@ -498,8 +590,11 @@ index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff
 +      if (c.reserved !== reservation)
 +        return
        c.reserved = null
+-      onopen(c)
 +      c.onclose = null
-       onopen(c)
++      // mantle patch: handed back after the pool's end began, the
++      // connection ends (its end() waits for it), never back to the pool.
++      ending ? c.terminate() : onopen(c)
      }
  
      return sql
@@ -511,7 +606,7 @@ index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff
        c.queue === full
          ? queue.push(q)
          : c.execute(q) || move(c, full)
-@@ -237,12 +253,20 @@ function Postgres(a, b) {
+@@ -237,12 +259,20 @@ function Postgres(a, b) {
      let savepoints = 0
        , connection
        , prepare = null
@@ -533,7 +628,7 @@ index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff
        ])
      } catch (error) {
        throw error
-@@ -289,6 +313,9 @@ function Postgres(a, b) {
+@@ -289,6 +319,9 @@ function Postgres(a, b) {
        }
  
        function handler(q) {
@@ -543,7 +638,36 @@ index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff
          q.catch(e => uncaughtError || (uncaughtError = e))
          c.queue === full
            ? queries.push(q)
-@@ -423,7 +450,13 @@ function Postgres(a, b) {
+@@ -368,13 +401,27 @@ function Postgres(a, b) {
+ 
+     await 1
+     let timer
+-    return ending = Promise.race([
++    ending = Promise.race([
+       new Promise(r => timeout !== null && (timer = setTimeout(destroy, timeout * 1000, r))),
+       Promise.all(connections.map(c => c.end()).concat(
+         listen.sql ? listen.sql.end({ timeout: 0 }) : [],
+         subscribe.sql ? subscribe.sql.end({ timeout: 0 }) : []
+       ))
+     ]).then(() => clearTimeout(timer))
++    // mantle patch: a reserve still waiting for a connection is refused, as
++    // one asked from now on is (reserve): given one, it would outlive the end.
++    endReserves()
++    return ending
++  }
++
++  // mantle patch: every queued reserve refused, the other queued requests
++  // kept in their order (end, onclose).
++  function endReserves() {
++    const err = Errors.connection('CONNECTION_ENDED', options, options)
++    for (let n = queries.length; n > 0; n--) {
++      const q = queries.shift()
++      q.reserve ? q.reject(err) : queries.push(q)
++    }
+   }
+ 
+   async function close() {
+@@ -423,7 +470,15 @@ function Postgres(a, b) {
      c.reserved = null
      c.onclose && (c.onclose(e), c.onclose = null)
      options.onclose && options.onclose(c.id)
@@ -554,6 +678,8 @@ index c7fba3dace20173f4cb13f3f138bb6d213b43683..8fd19a3df1eae246e5a7b944d10777ff
 +    // an initial query to run) and never settled: a reserve queued behind a
 +    // full pool when one of its connections closed (a kill, a restart, a
 +    // session ended on purpose) hung, and the pool's end with it.
++    // An ending pool opens no connection for a reserve (endReserves).
++    ending && endReserves()
 +    queries.length && connect(c, queries.peek().reserve ? queries.peek() : queries.shift())
    }
  }

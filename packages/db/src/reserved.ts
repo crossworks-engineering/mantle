@@ -40,7 +40,7 @@
  * idle in pg_stat_activity that no query reaches, and as closeDb hanging.
  */
 import type { ReservedSql } from 'postgres';
-import { BusyError } from './pg-error';
+import { PoolBusyError } from './pg-error';
 
 /** postgres.js's own connection errors (src/errors.js, Errors.connection):
  *  the socket closed (CONNECTION_CLOSED), the connection was destroyed
@@ -106,25 +106,46 @@ export interface Lease<S extends ReservedSql = ReservedSql> {
   release(): void;
 }
 
-/** How long a reserve waits for a connection of its pool before it fails
- *  as busy (reserveLease): a pool held by stuck work, or a reserve the
- *  driver never answers, becomes an error, never a hang. */
-export const RESERVE_WAIT_MS = 15_000;
-let reserveWaitMs = RESERVE_WAIT_MS;
+/**
+ * How long a reserve waits for a connection of its pool before it fails as
+ * busy (reserveLease), by the pool:
+ *  - `pool` (the default): the system pool, the user pool (a turn's scoped
+ *    statements), the per-database narrow route (it takes the system
+ *    pool's connections) and the index builds. Those waited for good before
+ *    the bound; it is long, so it only catches a reserve that never
+ *    settles, never a pool that is merely busy: a worker's write failing
+ *    busy fails its job, and a job's retry runs its model work again (cost
+ *    safety).
+ *  - `narrow`: the narrow route's own pool (two connections per process),
+ *    whose statements are one round trip each.
+ * The write pool keeps its own wait and error (role-tx.ts boundedReserve).
+ */
+export const RESERVE_WAIT_MS = 120_000;
+export const NARROW_RESERVE_WAIT_MS = 15_000;
 
-/** Tests only (not in index.ts): the default wait; null restores it. */
-export function setReserveWaitForTests(ms: number | null): void {
-  reserveWaitMs = ms ?? RESERVE_WAIT_MS;
+export type ReservePool = 'pool' | 'narrow';
+
+const DEFAULT_WAITS: Readonly<Record<ReservePool, number>> = Object.freeze({
+  pool: RESERVE_WAIT_MS,
+  narrow: NARROW_RESERVE_WAIT_MS,
+});
+const reserveWaits: Record<ReservePool, number> = { ...DEFAULT_WAITS };
+
+/** The wait a reserve of `pool` takes now (reserveLease). */
+export function reserveWaitMs(pool: ReservePool): number {
+  return reserveWaits[pool];
 }
 
-/** No connection of the pool within the wait. Busy: the API answers it as
- *  one (isBusy, 409), and it is logged. */
-export class PoolBusyError extends BusyError {
-  constructor() {
-    super('The server is busy; try again in a moment.');
-    this.name = 'PoolBusyError';
+/** Tests only (not in index.ts): one pool's wait, or both when `pool` is
+ *  not given; null restores the default. */
+export function setReserveWaitForTests(ms: number | null, pool?: ReservePool): void {
+  for (const k of pool ? [pool] : (['pool', 'narrow'] as const)) {
+    reserveWaits[k] = ms ?? DEFAULT_WAITS[k];
   }
 }
+
+/** No connection of the pool within the wait: busy (pg-error.ts). */
+export { PoolBusyError };
 
 /** The one log line of a pool's bounded wait running out: `what` names
  *  the pool and the wait (the write pool's own, role-tx.ts). */
@@ -132,21 +153,25 @@ export function logPoolBusy(what: string): void {
   console.error(`[db] ${what}`);
 }
 
-function poolBusy(ms: number): PoolBusyError {
-  logPoolBusy(`no reserved connection of the pool within ${ms} ms`);
+function poolBusy(pool: ReservePool, ms: number): PoolBusyError {
+  logPoolBusy(
+    `no reserved connection of the ${pool === 'narrow' ? 'narrow ' : ''}pool within ${ms} ms`,
+  );
   return new PoolBusyError();
 }
 
-/** The wait of one reserve: how long, and the error it fails with. */
+/** The wait of one reserve: which pool's (its default wait), or its own
+ *  length, and the error it fails with. */
 export interface ReserveWait {
+  pool?: ReservePool;
   ms?: number;
   busy?: () => Error;
 }
 
 /**
  * Reserve one connection of `pool` as a lease, waiting at most `wait.ms`
- * (RESERVE_WAIT_MS unless given): every reserve of this package, on every
- * pool, goes through here. A connection that comes after the wait is handed
+ * (else the wait of `wait.pool`, RESERVE_WAIT_MS by default): every reserve
+ * of this package, on every pool, goes through here. A connection that comes after the wait is handed
  * back at once (nothing was sent on it). Two layers against a reserve that
  * never settles: patches/postgres@3.4.9.patch keeps a reserve queued when a
  * connection of a full pool closes (postgres.js 3.4.9 dropped it), and this
@@ -157,14 +182,15 @@ export async function reserveLease<S extends ReservedSql>(
   pool: { reserve(): Promise<S> },
   wait: ReserveWait = {},
 ): Promise<Lease<S>> {
-  const ms = wait.ms ?? reserveWaitMs;
+  const kind = wait.pool ?? 'pool';
+  const ms = wait.ms ?? reserveWaits[kind];
   let late = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const reserved = pool.reserve();
   const waited = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       late = true;
-      reject(wait.busy ? wait.busy() : poolBusy(ms));
+      reject(wait.busy ? wait.busy() : poolBusy(kind, ms));
     }, ms);
     timer.unref?.();
   });

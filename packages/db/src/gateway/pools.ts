@@ -30,7 +30,7 @@ import {
 } from '../actor';
 import { ACTOR_SQL_TAG, forgetActorCheckModePool, refreshActorCheckMode } from './check-mode';
 import { actorClient, actorPipelinesDone } from './actor-sql';
-import { narrowRouteClient } from './narrow-route';
+import { narrowRouteClient, systemStartupOf } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
 
@@ -93,15 +93,21 @@ const NARROW_IDLE_TIMEOUT = 30;
  * (runtime-role.ts resetNarrowRoleSettings; the boot line warns on any,
  * narrowLoginNote).
  *
- * Pinned: the settings that would refuse, cut short or change what a
- * narrow statement reads or writes. Any other setting stored on the role
- * holds until that next migrate, and the boot line names it.
+ * A chosen list, not every setting a session can carry: the ones found to
+ * refuse narrow work, cut it short, end its session, make a commit return
+ * before it is durable, or change what a statement reads, writes or
+ * parses. A setting not on it, stored on the role by the narrow login,
+ * reaches narrow sessions until that next migrate (RESET ALL each run),
+ * and the boot line names it.
  *
  * These are fixed, at the values the app runs every pool with (compose
  * sets none of them, so they are Postgres's defaults): the search path; a
  * read-only default, the isolation default and row security (each would
- * refuse narrow work); the timeouts (each would cut it short); the text of
- * bytea and floats (drizzle parses it). transaction_timeout too, on a
+ * refuse narrow work); the timeouts (each would cut it short);
+ * exit_on_error (any error would end the session); synchronous_commit; the
+ * text of bytea and floats (drizzle parses it); array_nulls,
+ * transform_null_equals, xmloption and gin_fuzzy_search_limit (each
+ * changes what a statement reads or writes). transaction_timeout too, on a
  * server that has it (narrowStartup).
  */
 export const NARROW_STARTUP_FIXED: Readonly<Record<string, string>> = Object.freeze({
@@ -113,18 +119,27 @@ export const NARROW_STARTUP_FIXED: Readonly<Record<string, string>> = Object.fre
   lock_timeout: '0',
   idle_in_transaction_session_timeout: '0',
   idle_session_timeout: '0',
+  exit_on_error: 'off',
+  synchronous_commit: 'on',
   bytea_output: 'hex',
   extra_float_digits: '1',
+  array_nulls: 'on',
+  transform_null_equals: 'off',
+  xmloption: 'content',
+  gin_fuzzy_search_limit: '0',
 });
 
-/** Taken from the system pool: the values its connections last reported
- *  (ParameterStatus), so the narrow route reads dates and intervals back
- *  in the text the system pool does (drizzle parses that text) and reads
- *  a string literal as it does, whatever the box's server runs with. */
+/** Taken from the system pool: the values a session of it starts with
+ *  (narrow-route.ts systemStartup reads them once, `reset_val`, never what a
+ *  session set since), so the narrow route reads dates and intervals back
+ *  in the text the system pool does (drizzle parses that text), reads a
+ *  date's zone abbreviation and a string literal as it does, whatever the
+ *  box's server runs with. */
 export const NARROW_STARTUP_FROM_SYSTEM = [
   'TimeZone',
   'DateStyle',
   'IntervalStyle',
+  'timezone_abbreviations',
   'standard_conforming_strings',
 ] as const;
 
@@ -133,23 +148,23 @@ export const NARROW_STARTUP_FROM_SYSTEM = [
 const TRANSACTION_TIMEOUT_SINCE = 17;
 
 /**
- * The narrow pool's startup parameters for one connect, from what the
- * system pool's connections reported (`reported`: postgres.js's
- * `sql.parameters`): NARROW_STARTUP_FIXED, the system pool's
+ * The narrow pool's startup parameters for one connect, from the system
+ * pool's session-start values (`system`: narrow-route.ts systemStartup,
+ * with `server_version`): NARROW_STARTUP_FIXED, the system pool's
  * NARROW_STARTUP_FROM_SYSTEM, and transaction_timeout 0 on Postgres 17 and
- * later. The narrow route waits for the system pool's first report before
- * its first narrow connect (narrow-route.ts systemReported), so none is
+ * later. The narrow route reads them before its first narrow connect and
+ * fails closed when it cannot (no narrow statement is sent), so none is
  * missing there.
  */
 export function narrowStartup(
-  reported: Readonly<Record<string, string | undefined>>,
+  system: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
   const out: Record<string, string> = { ...NARROW_STARTUP_FIXED };
   for (const key of NARROW_STARTUP_FROM_SYSTEM) {
-    const value = reported[key];
+    const value = system[key];
     if (value) out[key] = value;
   }
-  const major = Number(/^(\d+)/.exec(reported.server_version ?? '')?.[1] ?? 0);
+  const major = Number(/^(\d+)/.exec(system.server_version ?? '')?.[1] ?? 0);
   if (major >= TRANSACTION_TIMEOUT_SINCE) out.transaction_timeout = '0';
   return out;
 }
@@ -300,8 +315,8 @@ function narrowPoolSql(): PgSql | null {
 
 /**
  * A narrow pool logging in with `url` (narrowDatabaseUrl): its size, idle
- * timeout and startup parameters (narrowStartup, over `system`'s reported
- * settings), and the same type parsers and
+ * timeout and startup parameters (narrowStartup, over `system`'s
+ * session-start settings, systemStartupOf), and the same type parsers and
  * serializers as `system` (the system pool: drizzle set its own on that
  * client, dates and json pass through as text and drizzle maps them, and a
  * statement drizzle builds is sent on this pool too; without them a jsonb
@@ -325,7 +340,7 @@ export function newNarrowPool(url: string, system: PgSql): PgSql {
     Object.defineProperty(connection, key, {
       enumerable: true,
       configurable: true,
-      get: () => narrowStartup(system.parameters as Record<string, string | undefined>)[key],
+      get: () => narrowStartup(systemStartupOf(system) ?? {})[key],
     });
   }
   return narrow;

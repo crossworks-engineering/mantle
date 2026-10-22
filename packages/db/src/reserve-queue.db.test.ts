@@ -23,6 +23,8 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/reserve-queue.db.test.ts
  */
+import { spawn } from 'node:child_process';
+import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -291,4 +293,168 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
       await bad.end({ timeout: 1 });
     }
   });
+  it("the waits per pool: the narrow pool's runs out while the system pool's still waits, on the real route", async () => {
+    await m.closeDb();
+    rr.setNarrowSystemForTests(true);
+    await m.systemDb.execute(sql`select 1`);
+    // Warm the route's narrow pool, then hold it whole (2).
+    await v.asSystem(() => m.db.execute(sql`select 1`), 'admin-area');
+    const g = globalThis as unknown as { __mantleNarrowSql: ReturnType<typeof postgres> };
+    const narrowPool = g.__mantleNarrowSql;
+    const held = await Promise.all([narrowPool.reserve(), narrowPool.reserve()]);
+    const error = console.error;
+    const logged: string[] = [];
+    console.error = (...a: unknown[]) => void logged.push(a.map(String).join(' '));
+    reserved.setReserveWaitForTests(300, 'narrow');
+    try {
+      expect(reserved.reserveWaitMs('pool')).toBe(reserved.RESERVE_WAIT_MS);
+      expect(reserved.RESERVE_WAIT_MS).toBe(120_000);
+      // A narrow statement of an Admin-area exit: busy at the narrow wait.
+      const t0 = Date.now();
+      const err = await v
+        .asSystem(() => m.db.execute(sql`select 1`), 'admin-area')
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(Date.now() - t0).toBeLessThan(5000);
+      expect(m.isBusy(err)).toBe(true);
+      expect(m.busyMessage(err)).toBe(m.POOL_BUSY_MESSAGE);
+      expect(logged.some((l) => l.includes('of the narrow pool within 300 ms'))).toBe(true);
+      // The system pool held whole: its pipeline still waits past the
+      // narrow wait (the long one), and is answered once a connection
+      // comes back.
+      const system = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+      try {
+        const hold = await system.reserve();
+        const queued = pipeline(system);
+        expect(await within(queued, 1000)).toBe('pending');
+        hold.release();
+        expect(await within(queued, 5000)).toMatchObject({ c: 'x' });
+        await as.actorPipelinesDone();
+      } finally {
+        await system.end({ timeout: 5 });
+      }
+    } finally {
+      reserved.setReserveWaitForTests(null);
+      console.error = error;
+      for (const h of held) h.release();
+    }
+    await expect(within(m.closeDb(), 8000)).resolves.toBeUndefined();
+  });
+
+  /** Backends of this database with `app` as their application_name. */
+  const backendsOf = async (app: string) =>
+    (
+      await su<{ n: number }[]>`
+        select count(*)::int as n from pg_stat_activity
+         where datname = ${dbName} and application_name = ${app}`
+    )[0]!.n;
+
+  it('postgres.js: an ending pool reserves nothing, refuses a reserve queued as it ends, and ends with no backend left', async () => {
+    const app = `reserve-end-${process.pid}-a`;
+    const pool = postgres(scratch.url, {
+      max: 1,
+      prepare: false,
+      onnotice: () => {},
+      connection: { application_name: app },
+    });
+    // The pool held by a long statement; a reserve queued behind it.
+    const long = pool.unsafe('select pg_sleep(0.5)').then(() => 'ok');
+    await new Promise((r) => setTimeout(r, 100));
+    const queued = pool.reserve().then(
+      (c) => (c.release(), 'reserved'),
+      (e: { code?: string }) => e.code,
+    );
+    const ending = pool.end();
+    const asked = await pool.reserve().then(
+      (c) => (c.release(), 'reserved'),
+      (e: { code?: string }) => e.code,
+    );
+    expect(asked).toBe('CONNECTION_ENDED');
+    expect(await within(queued, 5000)).toBe('CONNECTION_ENDED');
+    // The statement already running finishes; the end returns.
+    expect(await long).toBe('ok');
+    await expect(within(ending, 5000)).resolves.toBeUndefined();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await backendsOf(app)).toBe(0);
+  });
+
+  it("postgres.js: a reservation handed back after the pool's end began ends, and the end returns", async () => {
+    const app = `reserve-end-${process.pid}-b`;
+    const pool = postgres(scratch.url, {
+      max: 2,
+      prepare: false,
+      onnotice: () => {},
+      connection: { application_name: app },
+    });
+    const lease = await reserved.reserveLease(pool);
+    await lease.sql.unsafe('select 1');
+    expect(await backendsOf(app)).toBe(1);
+    const ending = pool.end();
+    // Still reserved: the end waits for it.
+    expect(await within(ending, 300)).toBe('pending');
+    lease.release();
+    await expect(within(ending, 5000)).resolves.toBeUndefined();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await backendsOf(app)).toBe(0);
+  });
+
+  it('a CLI: a pipeline asked while a long statement holds the system pool, then closeDb: refused, 0 backends, the process exits', async () => {
+    const app = `reserve-end-${process.pid}-cli`;
+    const src = join(__dirname);
+    // The child's own system pool of one connection (as P6), held by a
+    // long statement; closeDb as a CLI's last step, and a pipeline asked of
+    // the pool as it begins (the re-audit's shape: on the old patch the
+    // queued reserve opened a connection after the end and the process
+    // never exited). It must exit by itself.
+    const script = `(async () => {
+      const postgres = (await import('postgres')).default;
+      const m = await import(${JSON.stringify(join(src, 'index.ts'))});
+      const as = await import(${JSON.stringify(join(src, 'gateway', 'actor-sql.ts'))});
+      const one = postgres(process.env.DATABASE_URL, { max: 1, prepare: false, onnotice: () => {} });
+      globalThis.__mantleSql = one;
+      await one.unsafe('select 1');
+      const long = one.unsafe('select pg_sleep(1)').then(() => 'ok', (e) => e.code);
+      await new Promise((r) => setTimeout(r, 100));
+      // closeDb has begun (its wait for the pipelines found none); a caller
+      // still holding the pool asks for a pipeline before the end begins.
+      const closing = m.closeDb();
+      const late = as
+        .settingsPipeline(one, () => "select set_config('mantle.cell', 'x', false)", 'select 1 as one', [], 'rows', 'reset mantle.cell')
+        .then(() => 'answered', (e) => e.code || e.name);
+      await closing;
+      console.log(JSON.stringify({ closed: true, late: await late, long: await long }));
+    })().catch((e) => { console.error(e); process.exitCode = 3; });`;
+    const tsx = join(__dirname, '..', 'node_modules', '.bin', 'tsx');
+    const child = spawn(tsx, ['--eval', script], {
+      cwd: join(__dirname, '..'),
+      env: {
+        ...process.env,
+        DATABASE_URL: scratch.url,
+        MANTLE_MASTER_KEY: KEY(),
+        PGAPPNAME: app,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let errOut = '';
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (errOut += d.toString()));
+    const exited = new Promise<number | null>((r) => child.on('exit', (code) => r(code)));
+    const code = await within(exited, 20_000);
+    if (code === 'pending') {
+      // Hung: count what it holds, then end that one process (its pid).
+      const live = await backendsOf(app);
+      child.kill('SIGKILL');
+      await exited;
+      throw new Error(`the CLI did not exit; ${live} backend(s) live; stdout ${out}`);
+    }
+    expect({ code, err: code === 0 ? '' : errOut }).toEqual({ code: 0, err: '' });
+    const line = JSON.parse(out.trim().split('\n').pop()!) as Record<string, unknown>;
+    // The pipeline asked as the pool's end began: refused, never a
+    // connection that outlives the end; the long statement finished.
+    expect(line).toEqual({ closed: true, late: 'CONNECTION_ENDED', long: 'ok' });
+    expect(await backendsOf(app)).toBe(0);
+  }, 30_000);
 });

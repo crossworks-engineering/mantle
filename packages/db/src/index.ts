@@ -343,6 +343,9 @@ export {
 export {
   BUSY_MESSAGE,
   BusyError,
+  POOL_BUSY_MESSAGE,
+  PoolBusyError,
+  busyMessage,
   SAVE_BUSY_MESSAGE,
   withBusyRetry,
   isBusy,

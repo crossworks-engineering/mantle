@@ -34,7 +34,7 @@ import {
 import { reserveLease } from '../reserved';
 import { NARROW_LOGIN_FIX, NARROW_ROLE } from '../runtime-role';
 import { actingLoginNow } from '../viewer';
-import { NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
+import { ACTOR_SQL_TAG, NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
 import { narrowSendable } from './narrow-sendable';
 import {
@@ -196,7 +196,7 @@ export async function narrowStatement(
   noteNarrowUse();
   noteNarrowFunctions(query);
   if (pool) {
-    await systemReported(base);
+    await systemStartup(base);
     return narrowLoginStatement(pool, query, args, mode);
   }
   const setSql = (await narrowSettingsSql(true))!;
@@ -237,31 +237,84 @@ export async function narrowStatement(
   }
 }
 
-/** The system pool's first report, while one is out (systemReported). */
-const systemReports = new WeakMap<object, Promise<void>>();
+/** The system pool's session-start settings, once read (systemStartup). */
+const systemStartups = new WeakMap<object, Readonly<Record<string, string>>>();
+/** A read of them, while one is out. */
+const systemStartupReads = new WeakMap<object, Promise<void>>();
+
+/** The settings systemStartup reads: the ones the narrow pool takes from
+ *  the system pool (pools.ts NARROW_STARTUP_FROM_SYSTEM) and the server's
+ *  version. Kept here, beside the read, as the names pg_settings uses. */
+const SYSTEM_STARTUP_NAMES = [
+  'TimeZone',
+  'DateStyle',
+  'IntervalStyle',
+  'timezone_abbreviations',
+  'standard_conforming_strings',
+  'server_version',
+];
+
+/** What systemStartup read for `base`, or undefined before (pools.ts
+ *  newNarrowPool reads it at each narrow connect). */
+export function systemStartupOf(base: object): Readonly<Record<string, string>> | undefined {
+  return systemStartups.get(base);
+}
 
 /**
  * Before the first narrow connect of a process: the narrow pool's startup
- * parameters take the system pool's reported settings and its server's
- * version (pools.ts narrowStartup), so the system pool must have connected
- * once. Null (no wait, no round trip) once it has, which is every time but
- * a process's very first narrow statement racing the system pool's first
- * connect; then one `select 1` on the system pool. Its failure is not this
- * statement's: the narrow statement then answers for itself.
+ * parameters take the system pool's session-start settings and its
+ * server's version (pools.ts narrowStartup). Read once per system pool,
+ * then kept: `reset_val` of pg_settings, the value a session of the system
+ * pool starts with (the server's, the database's and the role's settings
+ * and the pool's own startup), never one a session or a transaction of it
+ * SET since (postgres.js's reported parameters follow every SET of any
+ * connection of the pool). Null (no wait, no round trip) once read.
+ *
+ * A read that fails fails the narrow statement (fail closed): no narrow
+ * connect without its pins. The next narrow statement reads again.
  */
-export function systemReported(base: PgSql): Promise<void> | null {
-  if ((base.parameters as Record<string, string | undefined>)?.server_version) return null;
-  let report = systemReports.get(base);
-  if (!report) {
-    report = Promise.resolve(base.unsafe('select 1').simple()).then(
-      () => undefined,
-      () => undefined,
+export function systemStartup(base: PgSql): Promise<void> | null {
+  if (systemStartups.has(base)) return null;
+  let read = systemStartupReads.get(base);
+  if (!read) {
+    read = Promise.resolve(
+      base.unsafe(
+        `${ACTOR_SQL_TAG} select name, reset_val from pg_catalog.pg_settings where name = any($1::text[])`,
+        [SYSTEM_STARTUP_NAMES] as never[],
+      ),
+    ).then(
+      (rows) => {
+        const got = Object.fromEntries(
+          (rows as unknown as { name: string; reset_val: string }[]).map((r) => [
+            r.name,
+            r.reset_val,
+          ]),
+        );
+        for (const name of SYSTEM_STARTUP_NAMES) {
+          if (!got[name]) throw new NarrowStartupError(new Error(`${name} not read`));
+        }
+        systemStartups.set(base, Object.freeze(got));
+      },
+      (err: unknown) => {
+        throw new NarrowStartupError(err);
+      },
     );
-    systemReports.set(base, report);
-    // A failed report is tried again by the next narrow statement.
-    void report.then(() => systemReports.delete(base));
+    systemStartupReads.set(base, read);
+    const done = () => systemStartupReads.delete(base);
+    read.then(done, done);
   }
-  return report;
+  return read;
+}
+
+/** The system pool's session-start settings could not be read: the narrow
+ *  statement fails closed (no narrow connect without its pins). */
+export class NarrowStartupError extends RuntimeFaultError {
+  constructor(cause: unknown) {
+    super("narrow system route: the system pool's session settings could not be read", {
+      cause,
+    });
+    this.name = 'NarrowStartupError';
+  }
 }
 
 /** The hold check's refusal: division by zero (narrowHeld). */
@@ -292,6 +345,8 @@ async function narrowLoginStatement(
       args,
       mode,
       resetActorSqlFor(params, NARROW_SQL_TAG),
+      // The narrow pool's own wait (reserved.ts NARROW_RESERVE_WAIT_MS).
+      { pool: 'narrow' },
     );
   } catch (err) {
     noteNarrowDenial(err);
@@ -429,7 +484,7 @@ export async function narrowBegin(
 ): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
   noteNarrowUse();
-  if (pool) await systemReported(base);
+  if (pool) await systemStartup(base);
   // On the login pool the role is the session's: the SET carries the
   // actor's settings only (none with no actor).
   const setSql = await narrowSettingsSql(pool === null);
