@@ -1354,7 +1354,19 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
     const cols = NARROW_COLUMN_RIGHTS[name];
     if (cols) {
       await tx.unsafe(`GRANT SELECT${cols.delete ? ', DELETE' : ''} ON ${t} TO ${nr}`);
-      const list = cols.update.map((c) => `"${c}"`).join(', ');
+      // Only the columns this schema has: migrate's grants also run on an
+      // older schema (a box before the migration that adds a column).
+      const have = new Set(
+        (
+          await tx<{ c: string }[]>`
+            select attname::text as c from pg_attribute
+             where attrelid = ${t}::regclass and attnum > 0 and not attisdropped`
+        ).map((r) => r.c),
+      );
+      const list = cols.update
+        .filter((c) => have.has(c))
+        .map((c) => `"${c}"`)
+        .join(', ');
       if (list) await tx.unsafe(`GRANT UPDATE (${list}) ON ${t} TO ${nr}`);
       continue;
     }
