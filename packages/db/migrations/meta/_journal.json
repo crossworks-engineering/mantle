@@ -2192,6 +2192,13 @@
       "when": 1790198100000,
       "tag": "0313_file_home_chat_definers",
       "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1790198160000,
+      "tag": "0314_ws_connector_options",
+      "breakpoints": true
     }
   ]
 }

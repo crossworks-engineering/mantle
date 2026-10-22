@@ -152,6 +152,9 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'the workspaces the scope’s own login sees: its live ones, every one for the users area',
   'mantle_ws_people(uuid)': 'a workspace’s users, for a user of it or the users area',
   'mantle_ws_resource_rows(uuid)': 'a workspace’s resources, for a user of it or the users area',
+  // 0314: the "add connector" list, the attach's rule word for word.
+  'mantle_ws_connector_options(uuid)':
+    'the connectors a workspace may hold (slug, name, kind, held; no binding), for the connectors area on a workspace it may see',
   'mantle_ws_item_counts(uuid)':
     'a workspace’s homes, grants and removed rows, for a Moderator of it or the users area',
   'mantle_ws_login_search(text,integer,integer)':
