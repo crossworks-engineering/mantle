@@ -155,7 +155,7 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
       s: 'mantle_system_narrow',
     });
     // The narrow role taken by SET on another login (the fallback route).
-    expect((await read(su, 'set local role mantle_system_narrow')).login).toBeNull();
+    expect((await read(su, 'set local role mantle_system_narrow'))?.login).toBeNull();
     const off = await read(su);
     expect(off).toMatchObject({
       login: ids.owner,
