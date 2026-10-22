@@ -200,38 +200,54 @@ DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."telegram_account
 CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."telegram_accounts"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('off:enabled');
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_guard"()
-  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_ok"(
+  owner uuid, agent uuid, login uuid, ws uuid)
+  RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
+  -- A definer: it reads workspace_users and auth.users, which the narrow
+  -- role may not read whole. NULL when the row is consistent, else why.
+  SELECT CASE
+    WHEN "mantle_narrow_message_ok"."owner" IS DISTINCT FROM "public"."mantle_brain_id"()
+      THEN 'only this brain''s'
+    WHEN "mantle_narrow_message_ok"."agent" IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM "public"."agents" a
+            WHERE a."id" = "mantle_narrow_message_ok"."agent"
+              AND a."owner_id" = "mantle_narrow_message_ok"."owner")
+      THEN 'only this brain''s assistant'
+    WHEN "mantle_narrow_message_ok"."login" IS NOT NULL AND "mantle_narrow_message_ok"."ws" IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM "public"."workspace_users" u
+            WHERE u."workspace_id" = "mantle_narrow_message_ok"."ws"
+              AND u."login_id" = "mantle_narrow_message_ok"."login")
+         AND NOT EXISTS (
+           SELECT 1 FROM "auth"."users" l
+            WHERE l."id" = "mantle_narrow_message_ok"."login" AND l."is_owner")
+         AND NOT EXISTS (
+           SELECT 1 FROM "public"."workspace_users" x
+             JOIN "public"."workspaces" w ON w."id" = x."workspace_id" AND w."is_admin"
+            WHERE x."login_id" = "mantle_narrow_message_ok"."login")
+      THEN 'the login is not a user of the workspace'
+  END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_narrow_message_ok"(uuid, uuid, uuid, uuid) FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_guard"()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  why text;
 BEGIN
-  -- A definer (to read workspace_users and auth.users, which the narrow
-  -- role may not read whole); it checks only the narrow role's rows.
-  IF session_user <> 'mantle_system_narrow'
-     AND coalesce(current_setting('role'), 'none') <> 'mantle_system_narrow' THEN
+  -- As the caller: only the narrow role's own inserts are checked.
+  IF current_user <> 'mantle_system_narrow' THEN
     RETURN NEW;
   END IF;
   IF NEW."direction" IS NULL OR NEW."direction" NOT IN ('inbound', 'outbound') THEN
     RAISE EXCEPTION 'assistant_messages: the direction is inbound or outbound' USING ERRCODE = '42501';
   END IF;
-  IF NEW."owner_id" IS DISTINCT FROM "public"."mantle_brain_id"() THEN
-    RAISE EXCEPTION 'assistant_messages: only this brain''s' USING ERRCODE = '42501';
-  END IF;
-  IF NEW."agent_id" IS NOT NULL AND NOT EXISTS (
-       SELECT 1 FROM "public"."agents" a
-        WHERE a."id" = NEW."agent_id" AND a."owner_id" = NEW."owner_id") THEN
-    RAISE EXCEPTION 'assistant_messages: only this brain''s assistant' USING ERRCODE = '42501';
-  END IF;
-  IF NEW."login_id" IS NOT NULL AND NEW."workspace_id" IS NOT NULL AND NOT EXISTS (
-       SELECT 1 FROM "public"."workspace_users" u
-        WHERE u."workspace_id" = NEW."workspace_id" AND u."login_id" = NEW."login_id")
-     AND NOT EXISTS (
-       SELECT 1 FROM "auth"."users" l
-        WHERE l."id" = NEW."login_id" AND l."is_owner")
-     AND NOT EXISTS (
-       SELECT 1 FROM "public"."workspace_users" a
-         JOIN "public"."workspaces" w ON w."id" = a."workspace_id" AND w."is_admin"
-        WHERE a."login_id" = NEW."login_id") THEN
-    RAISE EXCEPTION 'assistant_messages: the login is not a user of the workspace' USING ERRCODE = '42501';
+  why := "public"."mantle_narrow_message_ok"(NEW."owner_id", NEW."agent_id", NEW."login_id", NEW."workspace_id");
+  IF why IS NOT NULL THEN
+    RAISE EXCEPTION 'assistant_messages: %', why USING ERRCODE = '42501';
   END IF;
   RETURN NEW;
 END

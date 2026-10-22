@@ -425,6 +425,8 @@ describe('the narrow system role rights', () => {
       'public.mantle_connector_state(uuid,text)',
       'public.mantle_login_areas(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
+      // 0320: the assistant_messages guard's read definer.
+      'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
       'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)',
       'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)',

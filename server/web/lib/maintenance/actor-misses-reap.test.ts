@@ -67,7 +67,7 @@ describe('actor-misses-reap', () => {
     expect(h.statements).toHaveLength(2);
     for (const s of h.statements) {
       expect(s.sql).toMatch(
-        /^delete from "actor_check_misses" where "actor_check_misses"\."id" in \( select id from actor_check_misses where at < \$1::timestamptz limit \$2\) returning "id"$/,
+        /^delete from "actor_check_misses" where "actor_check_misses"\."id" in \( select id from actor_check_misses where at < \$1::timestamptz and check_name not like 'narrow-%' limit \$2\) returning "id"$/,
       );
       expect(s.params).toEqual([CUTOFF, 10_000]);
     }

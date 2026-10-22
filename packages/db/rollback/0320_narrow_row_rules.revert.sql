@@ -29,6 +29,8 @@ DROP TRIGGER IF EXISTS "mantle_narrow_message_guard_trg" ON "public"."assistant_
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_message_guard"();
 --> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_narrow_message_ok"(uuid, uuid, uuid, uuid);
+--> statement-breakpoint
 -- 0319's body (no DELETE rules, no fwd, fwdn, nofrom, off or keepif).
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
   RETURNS trigger LANGUAGE plpgsql

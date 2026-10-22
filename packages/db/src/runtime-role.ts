@@ -159,14 +159,6 @@ const ACL_MARKER_BODY = `
  * so this list is not what keeps a function from it: it is what is taken
  * from PUBLIC and the viewer roles, and what the allowlist may never hold.
  */
-/** The definers PUBLIC keeps EXECUTE on, each with why (every other
- *  definer's is taken from PUBLIC on every migrate, applyRuntimeGrants).
- *  Measured on a fresh migrate (the forge proof): this one only. */
-export const PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
-  'public.mantle_actor_check_mode()':
-    "the actor check's mode, read by the actor check's own triggers, which run as whichever role wrote: every role must reach it; it answers a setting and writes nothing",
-};
-
 export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_set_check(text,text,integer,text)': 'sets a check mode (ALTER DATABASE)',
   'public.mantle_set_actor_check(text,integer,text)': 'sets mantle.actor_check',
@@ -201,6 +193,8 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
  * app runs it as the migrator (mantle_ws_migrate_locked, executeAsMigrator).
  */
 export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)':
+    "0320's assistant_messages guard: the trigger, as the narrow role, asks it whether a row it inserts is consistent (a read definer)",
   'public.mantle_actor_miss_log(text,text,text,text)':
     'gateway/pools.ts logActorMiss: an actor check miss row, as system(actor-check)',
   'public.mantle_bridge_login(uuid)':
@@ -275,6 +269,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
  * spot (viewer.ts FULL_ROUTE_SPOTS).
  */
 export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)':
+    "0320's assistant_messages guard on the narrow role's insert (the turn's message rows): a read definer that answers whether the row is consistent",
   'public.mantle_brain_id()':
     "the brain's anchor, read by narrow statements (resolve-owner.ts, the tree's kind roots, workspace-ticks.ts)",
   'public.mantle_area_rule(uuid,text)':
@@ -1291,11 +1287,11 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       }
       await tx.unsafe(`GRANT CONNECT ON DATABASE ${dbName} TO ${rt}`);
       // PUBLIC holds nothing on the app's tables, and EXECUTE on no
-      // definer but PUBLIC_DEFINERS (a hand
-      // grant the full re-audit found: a hand GRANT ... TO PUBLIC on a table or a
-      // definer survived two migrates; every role is a member of PUBLIC,
-      // the narrow login too). A fresh migrate grants PUBLIC neither, so
-      // this changes nothing there.
+      // definer but NARROW_PUBLIC_DEFINERS (the only one a fresh migrate
+      // leaves PUBLIC's). The full re-audit found a hand GRANT ... TO PUBLIC
+      // on a table and on a definer surviving two migrates; every role is a
+      // member of PUBLIC, the narrow login too. A fresh migrate grants
+      // PUBLIC neither, so this changes nothing there.
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM PUBLIC`);
       const publicDefiners = await tx<{ fn: string }[]>`
         select p.oid::regprocedure::text as fn
@@ -1303,7 +1299,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
          where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and p.prosecdef
            and has_function_privilege('public', p.oid, 'EXECUTE')
            and p.oid not in (select to_regprocedure(x)
-                               from unnest(${Object.keys(PUBLIC_DEFINERS)}::text[]) x
+                               from unnest(${Object.keys(NARROW_PUBLIC_DEFINERS)}::text[]) x
                               where to_regprocedure(x) is not null)`;
       for (const { fn } of publicDefiners) {
         await tx.unsafe(`REVOKE EXECUTE ON FUNCTION ${fn} FROM PUBLIC`);
