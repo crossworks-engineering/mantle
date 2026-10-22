@@ -266,7 +266,9 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     ).toBe('ok');
     const [t] = await su<{ n: number }[]>`
       select count(*)::int as n from pg_trigger where tgname = 'mantle_narrow_one_way_trg'`;
-    expect(t!.n).toBe(9);
+    // 0318's nine, and 0320's heartbeats, tool_groups, channels and
+    // telegram_accounts.
+    expect(t!.n).toBe(13);
     await su`update auth.users set disabled_at = null where id = ${member}`;
   });
 

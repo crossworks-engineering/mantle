@@ -29,7 +29,7 @@ const FIXTURES = [
   `insert into tool_groups (id, owner_id, slug, name, enabled)
   values ('f0000000-0000-4000-8000-000000000001', @BRAIN@, 'forge-group', 'Forge group', false)`,
   `insert into channels (id, owner_id, agent_id, type, display_name, enabled, credentials_enc)
-  values ('f1000000-0000-4000-8000-000000000001', @BRAIN@, 'c0000000-0000-4000-8000-000000000001', 'telegram', '@forge', false, '\x00')`,
+  values ('f1000000-0000-4000-8000-000000000001', @BRAIN@, 'c0000000-0000-4000-8000-000000000001', 'telegram', '@forge', false, decode('00', 'hex'))`,
   `insert into telegram_accounts (id, user_id, bot_username, branch_path, enabled)
   values ('f2000000-0000-4000-8000-000000000001', @BRAIN@, 'forgebot', 'inbox.telegram_forgebot', false)`,
 ];

@@ -1279,6 +1279,17 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       const [db] = await tx<{ name: string; me: string }[]>`
         select current_database() as name, current_user as me`;
       await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
+      const dbName = quotedIdent(db!.name);
+      await tx.unsafe(`REVOKE TEMPORARY ON DATABASE ${dbName} FROM PUBLIC, "${NARROW_ROLE}"`);
+      const [temp] = await tx<{ held: boolean }[]>`
+        select has_database_privilege(${NARROW_ROLE}, current_database(), 'TEMP') as held`;
+      if (temp!.held) {
+        throw new Error(
+          `${NARROW_ROLE} still holds TEMPORARY on database ${dbName} after the REVOKE: ` +
+            'run migrate as the database owner or a superuser',
+        );
+      }
+      await tx.unsafe(`GRANT CONNECT ON DATABASE ${dbName} TO ${rt}`);
       // PUBLIC holds nothing on the app's tables, and EXECUTE on no
       // definer but PUBLIC_DEFINERS (a hand
       // grant the full re-audit found: a hand GRANT ... TO PUBLIC on a table or a
@@ -1305,17 +1316,6 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       // superuser. Here and not in a migration: the database's name is the
       // box's own, and a restore into a fresh database (no --create) starts
       // with PUBLIC's default again, which the next migrate takes back.
-      const dbName = quotedIdent(db!.name);
-      await tx.unsafe(`REVOKE TEMPORARY ON DATABASE ${dbName} FROM PUBLIC, "${NARROW_ROLE}"`);
-      const [temp] = await tx<{ held: boolean }[]>`
-        select has_database_privilege(${NARROW_ROLE}, current_database(), 'TEMP') as held`;
-      if (temp!.held) {
-        throw new Error(
-          `${NARROW_ROLE} still holds TEMPORARY on database ${dbName} after the REVOKE: ` +
-            'run migrate as the database owner or a superuser',
-        );
-      }
-      await tx.unsafe(`GRANT CONNECT ON DATABASE ${dbName} TO ${rt}`);
       const ow = `"${OWNER_ROLE}"`;
       await tx.unsafe(`GRANT USAGE ON SCHEMA ${schemas} TO ${ow}`);
       await tx.unsafe(`GRANT ALL ON ALL TABLES IN SCHEMA ${schemas} TO ${ow}`);

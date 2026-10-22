@@ -675,10 +675,40 @@ misses (at most one per check, actor and table an hour).
 
 `scripts/arch-scoreboard-box.sh` prints `narrow_misses:content-write`,
 `narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
-actor and table rows in the fail-open rows' window; numbers only), and
-`narrow_misses:would-refuse` and `narrow_misses:would-refuse-tables`
-(migration 0319: the writes the role would refuse, made with the switch
-off).
+actor and table rows, all time: every row since the count began, which the
+maintenance reaper keeps; numbers only), and `narrow_misses:would-refuse`
+and `narrow_misses:would-refuse-tables` (migration 0319: the writes the
+role would refuse, made with the switch off; like 0317's counts it asks
+for the session's own role, so a definer's own writes are not counted on
+a superuser's pool, and 0320's row rules (a heartbeat's books, an enable,
+the owner's and an Admin user's row) count through 0319's report branch).
+
+What the counts do not see, and which the switch-on suites measure
+instead (the DB vitest shards, actor-off, actor-on, edit-on, runtime-role
+and the area-route sweep, each with `MANTLE_NARROW_SYSTEM=1`; a refusal
+there fails the run): a function the narrow role may not EXECUTE (outside
+`NARROW_SYSTEM_FUNCTIONS`), a read of a table or column it may not SELECT,
+and a TRUNCATE (no role the app runs as holds it). The static narrow
+write scan (`packages/db/src/narrow-write-scan.test.ts`) reads the source
+for every drizzle write of a table that is not a content table and holds
+it against the allowlist: at a spot, in a system-only file, or pinned open
+(a list that only shrinks).
+
+The narrow switch going off (`MANTLE_NARROW_SYSTEM=0` and a migrate) makes
+the role NOLOGIN; Postgres does not end a session already logged in. The
+app's narrow pool closes when the process restarts with the switch off
+(`docker compose up -d` recreates the container), so a box flipped off has
+no narrow session left once its app is up again; a hand session as the
+role ends when its client disconnects, or by
+`select pg_terminate_backend(pid) from pg_stat_activity where usename = 'mantle_system_narrow'`
+as the superuser.
+
+Reverting the narrow migrations by hand (before pinning an older image;
+one image back needs none): newest first, each file in its own
+transaction, `0320_narrow_row_rules` then `0319_narrow_would_refuse`,
+`0318`, `0317`, `0316`, `0315`, `0314` (each in
+`packages/db/rollback/`): 0319's revert puts 0318's
+`mantle_narrow_one_way` back, so 0320's must run before it.
 
 Every one of these counts needs the actor check in warn or on (the
 process's `MANTLE_ACTOR_CHECK` or the box's mode, the higher). The counts

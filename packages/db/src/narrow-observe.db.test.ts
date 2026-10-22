@@ -242,7 +242,15 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     expect(
       await inTx(su, [actorSql(who), `select public.narrow_observe_delete('${await login()}')`]),
     ).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
+    // The same named limit: the superuser's definer is its own session's
+    // role, so 0319's would-refuse count (the narrow role holds no delete of
+    // a login) counts it too.
+    expect(counted().sort()).toEqual(
+      [
+        `${PREFIX}narrow-cascade-delete ${who} users DELETE`,
+        `${PREFIX}narrow-would-refuse ${who} auth.users DELETE`,
+      ].sort(),
+    );
   });
 
   it('counts a delete from auth.users by a narrow reason once, on either route, never its cascade', async () => {
@@ -311,7 +319,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     rr.setNarrowSystemForTests(null);
   });
 
-  it('the box count reads distinct check, actor and table rows in its window', async () => {
+  it('the box count reads distinct check, actor and table rows, all time', async () => {
     const script = readFileSync(join(ROOT, 'scripts', 'arch-scoreboard-box.sh'), 'utf8');
     const query = /^narrow=\$\(q <<SQL \|\| true\n([\s\S]*?)\nSQL$/m
       .exec(script)?.[1]
@@ -326,13 +334,14 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     await row('narrow-content-write', 'system:http:admin-area', 'nodes INSERT');
     await row('narrow-cascade-delete', 'system:http:admin-area', 'users DELETE');
     await row('narrow-denied', 'system:admin-area', 'permission denied for table nodes');
+    // Days old: counted too (the counts are the flip's evidence: all time).
     await row('narrow-content-write', 'system:admin-area', 'facts DELETE', '3 days');
     // The would-refuse count (0319): its rows, and the tables they name.
     await row('narrow-would-refuse', 'system:admin-area', 'public.audit_log DELETE');
     await row('narrow-would-refuse', 'system:http:admin-area', 'public.audit_log DELETE');
     await row('narrow-would-refuse', 'system:admin-area', 'public.agents UPDATE');
     const [out] = await su.unsafe<{ '?column?': string }[]>(query!);
-    expect(Object.values(out!)[0]).toBe('2 1 1 3 2');
+    expect(Object.values(out!)[0]).toBe('3 1 1 3 2');
   });
 });
 
