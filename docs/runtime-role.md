@@ -641,6 +641,58 @@ ask about; `mantle_ws_private_workspace` and `mantle_ws_remove_user` take
 the scope's login and refuse with none. A cell each: none writes for the
 login it is given.
 
+### The identity gateway
+
+A session sets the `mantle.*` identity settings itself with `set_config`:
+the login (`mantle.login_id`, `mantle.scope_login`), the workspaces
+(`mantle.ws`, `mantle.mod_ws`), the create-stamp workspaces
+(`mantle.create_ws`, `mantle.private_ws`), the acting login
+(`mantle.acting_login`) and the actor (`mantle.actor`). A function that read
+one of them directly trusted whatever the session said: the re-audits made a
+member Moderator through a self-set login and workspace, and deleted an
+assistant through a self-set acting login, both as the narrow login. The
+rule (migration 0321) closes the class in the database, not one function at
+a time:
+
+- One gateway. Only the readers read an identity setting:
+  `mantle_login_id()`, `mantle_scope_login_id()`, `mantle_scope_ws()`,
+  `mantle_scope_mod_ws()`, `mantle_scope_active()`, `mantle_setting_uuid()`,
+  `mantle_identity_acting_login()` (and `_required()`, which refuses with
+  42501 when there is none) and `mantle_identity_actor()`. The eleven
+  functions that read the acting login or the actor directly were rewritten
+  through them (the bodies otherwise unchanged; the revert puts the reads
+  back the same way).
+- Fail closed on the narrow role. When the session's own role (the role it
+  SET, else its login: a definer changes `current_user`, never this) is
+  `mantle_system_narrow`, the readers answer no login, no scope, no
+  workspaces, no acting login and no create-stamp workspace, and the actor
+  `system:narrow` (the role's own name, never a reason the session set: the
+  actor check still sees system work). Every definer that needs a login
+  refuses the narrow role by construction. The four that a narrow exit
+  called with an acting login (`mantle_ws_set_moderator`,
+  `mantle_tg_chat_set`, `mantle_structure_item`, `mantle_agent_delete`) left
+  its EXECUTE list and run at the full-route spot `acting-login`, where the
+  gateway's own SET carries the acting login (a spot keeps the exit's acting
+  login). A signed acting login, which the narrow role cannot forge, later
+  lets the readers trust a signed value and removes the spot.
+- The catalog check. `mantle_identity_leaks()` lists every function body,
+  policy, trigger condition, column default, check constraint and view of
+  the app's schemas that reads a `mantle.*` setting outside the readers.
+  Keys that name no identity are on its list, each with why (the route,
+  `write_mode`, `acl_internal`, the heads keys, `keep_updated_at`, the
+  workspace switch's keys, the notify toggles, `role`); an unknown key
+  counts as an identity key; a body that builds a key at run time must be
+  named with why (the check modes, the once-per-transaction markers).
+  migrate fails on any leak (`afterMigrations`), so a new function is
+  covered with no list to keep.
+- The live cell (`packages/db/src/identity-gateway.db.test.ts`, and the
+  workstation's forge proof): as the real narrow login, every identity
+  setting forged to the owner and the Admin workspace (scoped, and with no
+  scope), every function the narrow role may EXECUTE, generated from the
+  catalog, is called with owner-shaped arguments; each refuses or changes
+  no row (a transaction that changed a row has a transaction id). A write
+  the narrow login may make shows as one (the control).
+
 ### The narrow write count
 
 Report only (migration 0312): what the role would refuse once it is on by
@@ -705,10 +757,11 @@ as the superuser.
 
 Reverting the narrow migrations by hand (before pinning an older image;
 one image back needs none): newest first, each file in its own
-transaction, `0320_narrow_row_rules` then `0319_narrow_would_refuse`,
-`0318`, `0317`, `0316`, `0315`, `0314` (each in
-`packages/db/rollback/`): 0319's revert puts 0318's
-`mantle_narrow_one_way` back, so 0320's must run before it.
+transaction, `0321_identity_gateway`, `0320_narrow_row_rules`, then
+`0319_narrow_would_refuse`, `0318`, `0317`, `0316`, `0315`, `0314` (each in
+`packages/db/rollback/`): 0321's revert puts the direct reads back into the
+bodies 0320 and 0319 wrote, and 0319's revert puts 0318's
+`mantle_narrow_one_way` back, so each must run before the next.
 
 Every one of these counts needs the actor check in warn or on (the
 process's `MANTLE_ACTOR_CHECK` or the box's mode, the higher). The counts
