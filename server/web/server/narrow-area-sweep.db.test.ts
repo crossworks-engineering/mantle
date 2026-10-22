@@ -21,8 +21,10 @@
  * Round 10 (D 1, D 2): each row's record of what the narrow login itself
  * wrote (installNarrowWrote: never on the off pass) and of the full-route
  * spots it entered (pinned: SPOT_ROWS), and the login-self rows
- * (LOGIN_SELF_ROWS: the profile, push Connect, Reset and preferences, as
- * the owner and as a member).
+ * (LOGIN_SELF_ENTRIES: since round 14b every writing `self` row of the
+ * route table, as the owner or as a member). Round 14b (item 0): every GET
+ * of an area row or a `self` row too (sweepReadRows), with the switch on
+ * and off: none refused by the narrow role, the same status both ways.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/narrow-area-sweep.db.test.ts
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -34,7 +36,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   KEY_OR,
   LANDED_NODE,
-  LOGIN_SELF_ROWS,
+  LOGIN_SELF_ENTRIES,
+  READ_SWEEP_SKIP,
+  SELF_CHAT,
   MAIL_NODE,
   NARROW_SWEEP_ENTRIES,
   PEER_NODE,
@@ -42,6 +46,8 @@ import {
   SANDBOXD,
   WORKER,
   WORKER_KINDS,
+  selfWriteRows,
+  sweepReadRows,
   writingAreaRows,
 } from './narrow-area-sweep.entries';
 import { SAMPLE_ID } from './a10-body-sweep.samples';
@@ -129,7 +135,8 @@ async function seedFixture(su: postgres.Sql): Promise<void> {
   await su`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
            values (${S}, ${OWNER}, 'sweep_bot', 'inbox.telegram_sweep_bot', ${S})`;
   await su`insert into telegram_chats (id, account_id, user_id, telegram_chat_id, chat_type, login_id)
-           values (${S}, ${S}, ${OWNER}, '1', 'private', ${OWNER})`;
+           values (${S}, ${S}, ${OWNER}, '1', 'private', ${OWNER}),
+                  (${SELF_CHAT}, ${S}, ${OWNER}, '2', 'private', ${OWNER})`;
   // AI workers: one at the sample id, one per kind the test rows probe.
   await su`insert into ai_workers (id, owner_id, slug, name, kind, provider, model, api_key_id)
            values (${S}, ${OWNER}, 'sweep-worker', 'Sweep worker', 'reflector', 'openrouter', 'x/m', ${KEY_OR})`;
@@ -190,7 +197,8 @@ async function seedFixture(su: postgres.Sql): Promise<void> {
   await su`insert into oauth_clients (id, client_name, redirect_uris)
            values (${S}, 'Sweep client', '{https://claude.ai/cb}')`;
   await su`insert into oauth_access_tokens (token_hash, owner_id, actor_id, client_id, expires_at)
-           values ('sweep-token-hash', ${OWNER}, ${OWNER}, ${S}, now() + interval '1 hour')`;
+           values ('sweep-token-hash', ${OWNER}, ${OWNER}, ${S}, now() + interval '1 hour'),
+                  ('sweep-member-token-hash', ${OWNER}, ${S}, ${S}, now() + interval '1 hour')`;
   await su`insert into tools (id, owner_id, slug, name, description, handler)
            values (${S}, ${OWNER}, 'sweep-tool', 'Sweep tool', 'd',
                    ${su.json({ kind: 'http', url: 'https://203.0.113.10/x', method: 'GET' })})`;
@@ -270,6 +278,13 @@ describe.skipIf(!URL)(
     let m: typeof import('@mantle/db');
     let app: { request: (path: string, init: RequestInit) => Response | Promise<Response> };
     let rows: { key: string }[] = [];
+    let selfRows: { key: string }[] = [];
+    let readRows: { key: string }[] = [];
+    /** Per pass: each read row's status (round 14b, item 0). */
+    const readAnswers: Record<'on' | 'off', Map<string, string>> = {
+      on: new Map(),
+      off: new Map(),
+    };
     let dir = '';
     const realFetch = globalThis.fetch;
     const answers: Record<'on' | 'off', Map<string, string>> = { on: new Map(), off: new Map() };
@@ -349,7 +364,10 @@ describe.skipIf(!URL)(
       }) as typeof fetch;
       const { routeManifest } = await import('./route-manifest.gen');
       const { buildRoutePolicy } = await import('../lib/auth/route-policy');
-      rows = writingAreaRows(buildRoutePolicy(routeManifest));
+      const policy = buildRoutePolicy(routeManifest);
+      rows = writingAreaRows(policy);
+      selfRows = selfWriteRows(policy);
+      readRows = sweepReadRows(policy).filter((r) => !(r.key in READ_SWEEP_SKIP));
       for (const pass of ['on', 'off'] as const) await runPass(pass);
     }, 900_000);
 
@@ -405,12 +423,26 @@ describe.skipIf(!URL)(
         ts.takeNarrowWrites();
         ts.takeSpotUses();
         ts.takeNarrowDenials();
-        // The login-self rows first: the area rows' DELETEs remove the member.
-        for (const row of LOGIN_SELF_ROWS) {
-          const [method, path] = row.key.split(' ') as [string, string];
-          const r = await send(method, path, row.body, row.as === 'owner' ? cookie : memberCookie);
-          selfAnswers[pass].set(row.key, `${r.status} ${normalize(r.text)}`);
-          record(`self ${row.key}`);
+        // The read rows first (round 14b, item 0), on the untouched
+        // fixture: each GET of an area or `self` row, a member row as the
+        // member login. A read writes nothing the next row reads.
+        for (const row of readRows) {
+          const [, pattern] = row.key.split(' ') as [string, string];
+          const path = pattern.replace(/:[A-Za-z0-9_]+\??/g, SAMPLE_ID).replace(/\*$/, 'a/b');
+          const as = pattern.startsWith('/api/member/') ? memberCookie : cookie;
+          const r = await send('GET', path, null, as);
+          readAnswers[pass].set(row.key, String(r.status));
+          record(`read ${row.key}`);
+        }
+        // The login-self rows next: the area rows' DELETEs remove the member.
+        for (const [key, entry] of Object.entries(LOGIN_SELF_ENTRIES)) {
+          if ('skip' in entry) continue;
+          const [method, pattern] = key.split(' ') as [string, string];
+          const path = entry.path ?? pattern.replace(/:[A-Za-z0-9_]+\??/g, SAMPLE_ID);
+          const as = entry.as === 'owner' ? cookie : memberCookie;
+          const r = await send(method, path, entry.body ?? null, as);
+          selfAnswers[pass].set(key, `${r.status} ${normalize(r.text)}`);
+          record(`self ${key}`);
         }
         // The Microsoft sign-in, a token refresh and a drive discovery, with
         // Graph stubbed (round 13c, G): the callback with its state and PKCE
@@ -568,11 +600,29 @@ describe.skipIf(!URL)(
       expect(differ).toEqual([]);
     });
 
-    it('the login-self rows (profile, push connect, reset, preferences): 2xx and the same both ways', () => {
-      expect(selfAnswers.on.size).toBe(LOGIN_SELF_ROWS.length);
+    it('the login-self rows (every writing self row of the table): the same both ways, 2xx but the named ones', () => {
+      const sent = Object.entries(LOGIN_SELF_ENTRIES).filter(([, e]) => !('skip' in e));
+      expect(selfAnswers.on.size).toBe(sent.length);
+      expect(selfRows.length).toBe(Object.keys(LOGIN_SELF_ENTRIES).length);
       const differ = [...selfAnswers.on]
-        .filter(([k, a]) => selfAnswers.off.get(k) !== a || !a.startsWith('2'))
+        .filter(([k, a]) => {
+          const e = LOGIN_SELF_ENTRIES[k]!;
+          const named = !('skip' in e) && e.answers !== undefined;
+          return selfAnswers.off.get(k) !== a || (!named && !a.startsWith('2'));
+        })
         .map(([k, a]) => ({ row: k, on: a, off: selfAnswers.off.get(k) }));
+      expect(differ).toEqual([]);
+    });
+
+    it('the read rows (every GET of an area or self row): sent both ways, none refused by the narrow role, the same status', () => {
+      expect(readAnswers.on.size).toBe(readRows.length);
+      expect(readAnswers.off.size).toBe(readRows.length);
+      expect(readRows.length).toBeGreaterThan(100);
+      const refused = [...denials].filter(([k, d]) => k.startsWith('read ') && d.length > 0);
+      expect(refused).toEqual([]);
+      const differ = [...readAnswers.on]
+        .filter(([k, a]) => readAnswers.off.get(k) !== a)
+        .map(([k, a]) => ({ row: k, on: a, off: readAnswers.off.get(k) }));
       expect(differ).toEqual([]);
     });
 
@@ -882,6 +932,9 @@ describe.skipIf(!URL)(
         for (const [k, a] of answers.on) out[k] = { on: a, off: answers.off.get(k), ...more(k) };
         for (const [k, a] of selfAnswers.on) {
           out[`self ${k}`] = { on: a, off: selfAnswers.off.get(k), ...more(`self ${k}`) };
+        }
+        for (const [k, a] of readAnswers.on) {
+          out[`read ${k}`] = { on: a, off: readAnswers.off.get(k), ...more(`read ${k}`) };
         }
         writeFileSync(report, JSON.stringify({ rows: out, docs }, null, 1));
       }

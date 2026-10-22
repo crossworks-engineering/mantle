@@ -20,6 +20,8 @@ export const KEY_OR = '55555555-5555-4555-8555-555555555555';
 export const PEER_NODE = '33333333-3333-4333-8333-333333333301';
 export const MAIL_NODE = '33333333-3333-4333-8333-333333333302';
 export const LANDED_NODE = '33333333-3333-4333-8333-333333333303';
+/** The owner's second Telegram chat, for the login's own chat rows. */
+export const SELF_CHAT = '77777777-7777-4777-8777-777777777771';
 export const WORKER_KINDS = [
   'summarizer',
   'decider',
@@ -264,47 +266,145 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
 export const RELAY = 'http://relay.sweep';
 
 /**
- * The login-self rows: the writes a
- * login makes to its own profile and push devices, on the login-self exit
- * (not area rows, so not in the route table's area list). Each is sent as
- * the owner (`owner`) or the fixture's member login (`member`), on both
- * passes, in this order (Connect before Reset: the first Connect registers
- * the brain with the relay at push-device). The device enrol rows
- * (POST .../push/subscriptions and their DELETE) take a mobile bearer, not
- * a session: push-device's own cells drive them (device-cap.db.test.ts,
- * narrow-allowlist.db.test.ts); the image uploads (avatar, photo, logo PUT)
- * take a file body: profile-assets cells.
+ * The login's own rows (round 14b, item 9: generated from the route table,
+ * not a hand list): one entry per writing row whose class is `self` (the
+ * profile, push, member push, member MCP, assistant thread and Telegram
+ * pairing rows), checked against the table by
+ * narrow-area-sweep.entries.test.ts, so a new one cannot land without an
+ * entry. Each is sent as the owner (`owner`) or the fixture's member login
+ * (`member`), on both passes, in this order (Connect before Reset: the
+ * first Connect registers the brain with the relay at push-device). A PUT
+ * sends a body that names a field (the entries test): an empty one reaches
+ * no write. `answers` says why a row answers other than 2xx (the same both
+ * ways still); `skip` why the sweep does not send it.
  */
-export const LOGIN_SELF_ROWS: readonly {
-  readonly key: string;
-  readonly as: 'owner' | 'member';
-  readonly body: unknown;
-}[] = [
-  { key: 'PUT /api/profile', as: 'owner', body: { timezone: 'UTC' } },
-  { key: 'PUT /api/profile/backgrounds', as: 'owner', body: { backgrounds: 'sweep' } },
-  { key: 'PUT /api/profile/color-theme', as: 'owner', body: { colorTheme: 'sweep' } },
-  { key: 'PUT /api/profile/default-mode', as: 'owner', body: { defaultMode: 'light' } },
-  { key: 'PUT /api/profile/fonts', as: 'owner', body: {} },
-  { key: 'PUT /api/profile/nav-favorites', as: 'owner', body: { navFavorites: [] } },
-  { key: 'PUT /api/profile/neat-background', as: 'owner', body: { neatBackground: 'sweep' } },
-  { key: 'PUT /api/profile/reminder-channel', as: 'owner', body: { reminderChannel: 'telegram' } },
-  { key: 'PUT /api/profile/share-neat', as: 'owner', body: { shareNeat: true } },
-  { key: 'DELETE /api/profile/logo', as: 'owner', body: null },
-  { key: 'DELETE /api/profile/photo', as: 'owner', body: null },
-  { key: 'PUT /api/push/preferences', as: 'owner', body: {} },
-  {
-    key: 'POST /api/push/connect',
+export type SelfSweepEntry =
+  | Readonly<{ as: 'owner' | 'member'; body?: unknown; path?: string; answers?: string }>
+  | Readonly<{ skip: string }>;
+
+const DEVICE_BEARER =
+  "takes a mobile device bearer, not a session: push-device's own cells drive it (device-cap.db.test.ts, narrow-allowlist.db.test.ts)";
+const FILE_BODY = 'takes a file body, not JSON: the profile-assets cells drive it';
+
+export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Object.freeze({
+  'PUT /api/profile': { as: 'owner', body: { timezone: 'UTC' } },
+  'PUT /api/profile/backgrounds': { as: 'owner', body: { backgrounds: 'sweep' } },
+  'PUT /api/profile/color-theme': { as: 'owner', body: { colorTheme: 'sweep' } },
+  'PUT /api/profile/default-mode': { as: 'owner', body: { defaultMode: 'light' } },
+  'PUT /api/profile/fonts': { as: 'owner', body: { fontUi: 'sweep', fontSize: 'md' } },
+  'PUT /api/profile/nav-favorites': { as: 'owner', body: { navFavorites: [] } },
+  'PUT /api/profile/neat-background': { as: 'owner', body: { neatBackground: 'sweep' } },
+  'PUT /api/profile/reminder-channel': { as: 'owner', body: { reminderChannel: 'telegram' } },
+  'PUT /api/profile/share-neat': { as: 'owner', body: { shareNeat: true } },
+  'DELETE /api/profile/logo': { as: 'owner' },
+  'DELETE /api/profile/photo': { as: 'owner' },
+  'PUT /api/profile/avatar': { skip: FILE_BODY },
+  'PUT /api/profile/logo': { skip: FILE_BODY },
+  'PUT /api/profile/photo': { skip: FILE_BODY },
+  'PUT /api/push/preferences': {
+    as: 'owner',
+    body: { assistantMessages: false, approvals: true },
+  },
+  'POST /api/push/connect': {
     as: 'owner',
     body: { platform: 'ios', osPushToken: 'sweep-os-token' },
   },
-  {
-    key: 'POST /api/member/push/connect',
+  'POST /api/member/push/connect': {
     as: 'member',
     body: { platform: 'android', osPushToken: 'sweep-os-token-2' },
   },
-  { key: 'PUT /api/member/push/preferences', as: 'member', body: {} },
-  { key: 'POST /api/push/reset', as: 'owner', body: null },
-];
+  'PUT /api/member/push/preferences': {
+    as: 'member',
+    body: { chatReplies: false, reviewResults: true },
+  },
+  'POST /api/push/reset': { as: 'owner' },
+  'POST /api/push/subscriptions': { skip: DEVICE_BEARER },
+  'DELETE /api/push/subscriptions/:id': { skip: DEVICE_BEARER },
+  'POST /api/member/push/subscriptions': { skip: DEVICE_BEARER },
+  'DELETE /api/member/push/subscriptions/:id': { skip: DEVICE_BEARER },
+  // The member's own grant on the fixture's MCP client (seedFixture).
+  'DELETE /api/member/mcp/clients/:id': { as: 'member' },
+  'POST /api/assistant/read': { as: 'owner' },
+  'POST /api/assistant/threads': { as: 'owner' },
+  'POST /api/assistant/threads/:id/continue': { as: 'owner' },
+  'POST /api/assistant/threads/:id/summarize': {
+    skip: "an LLM summary of a thread (no network here): the chat archive's own cells drive it",
+  },
+  'POST /api/assistant/turn': {
+    skip: 'a turn (an LLM call, no network here): the turn suites drive it with the switch on (actor-on, runtime-role)',
+  },
+  'POST /api/assistant/turn/:turnId/cancel': { as: 'owner' },
+  'POST /api/assistant/transcribe': {
+    skip: 'an audio upload to a speech model (a file body, no network here): the voice cells drive it',
+  },
+  'POST /api/telegram/pair': { as: 'owner' },
+  // The owner's second chat (SELF_CHAT): the area rows keep the first.
+  'POST /api/telegram/chats/:id/block': {
+    as: 'owner',
+    path: `/api/telegram/chats/${SELF_CHAT}/block`,
+  },
+  'POST /api/telegram/chats/:id/unpair': {
+    as: 'owner',
+    path: `/api/telegram/chats/${SELF_CHAT}/unpair`,
+  },
+  'DELETE /api/telegram/my-chats/:id': { as: 'owner', path: `/api/telegram/my-chats/${SELF_CHAT}` },
+});
+
+/**
+ * The read rows the sweep sends as well (round 14b, item 0: a narrow exit's
+ * read of a definer it may not run, mantle_agent_experience on GET
+ * /api/agents, was found live on dev, not by a test): every GET of an Admin
+ * area row and of a `self` row runs on the narrow exit with the switch on
+ * (the guard's 'area' and 'login-self' exits) or in the login's scope, so
+ * each is sent with the switch on and off, and none may be refused by the
+ * narrow role. These are the GETs not sent, each with why. A HEAD row is
+ * its GET's twin (not sent). The member rows (/api/member/...) are sent as
+ * the member login.
+ */
+export const READ_SWEEP_SKIP: Readonly<Record<string, string>> = Object.freeze({
+  'GET /api/assistant/stream': 'a server-sent event stream that stays open (no end to read)',
+  'GET /api/assistant/turn/:turnId/stream':
+    'a server-sent event stream of a turn (none runs here; it waits for one)',
+  'GET /api/realtime': 'a server-sent event stream that stays open (no end to read)',
+  'GET /api/member/realtime': 'a server-sent event stream that stays open (no end to read)',
+});
+
+/** The writing rows of a route table whose class is `self` (not a retired
+ *  route's stub, not public): LOGIN_SELF_ENTRIES' keys. */
+export function selfWriteRows<
+  R extends { key: string; scope: unknown; effect: string; gone?: boolean; public: boolean },
+>(policy: ReadonlyMap<string, R>): R[] {
+  return [...policy.values()].filter(
+    (r) =>
+      (r.scope as { kind?: string } | null)?.kind === 'self' &&
+      r.effect === 'write' &&
+      !r.gone &&
+      !r.public,
+  );
+}
+
+/** The GET rows of a route table on an Admin area or of class `self` (not a
+ *  retired route's stub, not public): what the read sweep sends, less
+ *  READ_SWEEP_SKIP. */
+export function sweepReadRows<
+  R extends {
+    key: string;
+    scope: unknown;
+    area: unknown;
+    effect: string;
+    gone?: boolean;
+    public: boolean;
+  },
+>(policy: ReadonlyMap<string, R>): R[] {
+  return [...policy.values()].filter(
+    (r) =>
+      r.key.startsWith('GET ') &&
+      r.effect !== 'write' &&
+      (r.area || (r.scope as { kind?: string } | null)?.kind === 'self') &&
+      !r.gone &&
+      !r.public,
+  );
+}
 
 /** The writing area rows of a route table: an Admin area, effect write,
  *  not a retired route's stub, not public. */

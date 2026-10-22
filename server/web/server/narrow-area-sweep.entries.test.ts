@@ -9,7 +9,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildRoutePolicy } from '../lib/auth/route-policy';
 import { routeManifest } from './route-manifest.gen';
-import { NARROW_SWEEP_ENTRIES, writingAreaRows } from './narrow-area-sweep.entries';
+import {
+  LOGIN_SELF_ENTRIES,
+  NARROW_SWEEP_ENTRIES,
+  READ_SWEEP_SKIP,
+  selfWriteRows,
+  sweepReadRows,
+  writingAreaRows,
+} from './narrow-area-sweep.entries';
 
 describe('the narrow area-route sweep table', () => {
   const rows = writingAreaRows(buildRoutePolicy(routeManifest));
@@ -46,6 +53,50 @@ describe('the narrow area-route sweep table', () => {
       })
       .map(([key]) => key);
     expect(empty).toEqual([]);
+  });
+
+  // Round 14b, item 9: the login's own rows come from the table too.
+  it('has a login-self entry for every writing self row, and no other', () => {
+    const policy = buildRoutePolicy(routeManifest);
+    const keys = selfWriteRows(policy)
+      .map((r) => r.key)
+      .sort();
+    expect(Object.keys(LOGIN_SELF_ENTRIES).sort()).toEqual(keys);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        'PUT /api/profile/fonts',
+        'PUT /api/push/preferences',
+        'PUT /api/member/push/preferences',
+        'DELETE /api/member/mcp/clients/:id',
+      ]),
+    );
+  });
+
+  it('sends every login-self PUT a body that names a field, and says why for a row not sent', () => {
+    const empty = Object.entries(LOGIN_SELF_ENTRIES)
+      .filter(([key, e]) => /^(PATCH|PUT) /.test(key) && !('skip' in e))
+      .filter(([, e]) => {
+        const b = 'body' in e ? e.body : undefined;
+        return b == null || (typeof b === 'object' && Object.keys(b).length === 0);
+      })
+      .map(([key]) => key);
+    expect(empty).toEqual([]);
+    for (const [key, e] of Object.entries(LOGIN_SELF_ENTRIES)) {
+      if ('skip' in e) expect(e.skip.length, key).toBeGreaterThan(20);
+      else if (e.answers !== undefined) expect(e.answers.length, key).toBeGreaterThan(20);
+    }
+  });
+
+  // Round 14b, item 0: every GET of an area or self row is sent, but the
+  // streams, each named with why.
+  it('sends every read row of an area or self but the named streams', () => {
+    const reads = sweepReadRows(buildRoutePolicy(routeManifest)).map((r) => r.key);
+    expect(reads).toContain('GET /api/agents');
+    expect(reads.length).toBeGreaterThan(100);
+    for (const [key, why] of Object.entries(READ_SWEEP_SKIP)) {
+      expect(reads, key).toContain(key);
+      expect(why.length, key).toBeGreaterThan(20);
+    }
   });
 
   it('a new writing area row without an entry is caught', () => {
