@@ -910,3 +910,134 @@ them): end() can resolve with one backend live when a plain statement is
 queued behind a full pool at end(); end() never resolves when an in-use
 reservation's connection dies after end() began. closeDb waits for every
 pipeline first, so neither is reached today.
+
+## Part b2, round 1: the definers and the user pool's limit (handed over)
+
+Branch feat/s7b-b2, from main at 7f2d12292 (v0.300.130, b1 merged). This
+round lands the brief's first commits (the definers and the pool limit),
+measures what the spots and the area routes need, and hands over before
+the spot moves: each move is a design choice with changed answers to
+record first (below), and the round's budget would not hold them, their
+cells and the full suites. The switch's default is unchanged (prod off).
+
+### What changed
+
+- Migration `0314_acting_login_definers` (`when` 1790198160000, 60000
+  above 0313's; renumber at merge): `mantle_tg_chat_set` and
+  `mantle_access_key_revoke` with no scope refuse unless `session_user` is
+  the runtime role, the narrow role or a superuser (the system pool's login
+  with the runtime role on or off, and the narrow route's), then take only
+  `mantle.acting_login` (42501 otherwise, nothing changes). In a scope the
+  scope's own login rules, as before. The bodies are cafa14530's plus the
+  session check (the b1 audit's LOW-1). Revert:
+  rollback/0314_acting_login_definers.revert.sql, needed only for an image
+  older than v0.300.130 (b1 already sends the acting login).
+- The harness changes of b1 (5cfdc673b, dda5c68d6, 8e7a57b44) to
+  admin-membership, file-home-chat-0313 and w7d-telegram: the handlers run
+  inside a request exit, as the gate runs them, and the direct calls set the
+  acting login.
+- packages/db/src/acting-login-definers.db.test.ts (new): a system session
+  (the narrow login; the superuser; the app's system pool, which is
+  `mantle_runtime` under test:runtime-role) refuses none and another acting
+  login and runs its own; the write role clearing its scope and setting the
+  acting login itself is refused, "no scope, and not a system session"
+  (E4), and with no setting at all; the user role refused; in a scope the
+  scope's own login rules. The other definers that take a login with no
+  scope (0314's header), each called with no scope and a login that is not
+  this brain's, the counts of written rows read before and after in the
+  call's transaction: 17 run and write 0 rows, `mantle_ws_private_workspace`
+  and `mantle_ws_remove_user` refuse (42501); the narrow role may run none
+  of the 8 readers. (A first shape read `pg_stat_xact_*` once and counted
+  an earlier transaction's unflushed rows: 3 for `mantle_personal_space`, a
+  plain SELECT. The before and after delta fixed the cell, not the code.)
+- The user role's limit (b1 open item): `ROLE_CONNECTION_LIMIT.user` 30 to
+  54 (viewer-roles.ts), sized as the narrow role's: 12 compose processes x
+  3 (`VIEWER_POOL_MAX`) = 36, 4 stdio MCP servers x 3 = 12, 2 operator runs
+  x 3 = 6. connection-ceiling.test.ts drops min() for both scoped roles and
+  a new cell holds the sum to the limit, the total to 90% of
+  max_connections and the total plus every headroom to max_connections;
+  narrow-login.db.test.ts reads `rolconnlimit` 54 off the migrated role.
+  Ceiling, measured: full shape 379 of 405 (was 373 with the user line held
+  at 30), full with runs off 339, core 193 (unchanged); 417 of 450 with
+  the stdio servers' write connections and the narrow and user headroom.
+- docs/runtime-role.md "The acting login": the rule as it now holds;
+  pairing.ts's comment.
+
+### Changed answers
+
+None for any member, client, key, peer or public link. At the definer
+level: `mantle_tg_chat_set` and `mantle_access_key_revoke` with no scope
+refuse a caller that is no system session, and one with no or another
+acting login (42501), where they acted for the login passed. Every product
+caller passes the request's own login from the narrow or system pool (the
+assistants area's Telegram routes), or runs in the login's scope (the key
+revoke). The user role may hold 54 connections where it held 30.
+
+### The spots, measured and assessed (for the next round)
+
+Every spot is a narrow exit's write of a content table (`writer:
+'content'`, narrow 'read'). Each has a row in
+server/web/server/narrow-area-routes.db.test.ts (the route with the switch
+on) and the full DB run with the switch off; none moved this round.
+
+| Spot               | What it writes                                                            | Move                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| profile-row        | profiles: a login's own row (login-self), the brain's (settings, backups) | write role in the login's own scope (the own-login rule); the brain's row needs a scope holding Admin |
+| peer-item          | nodes `mantle_peer` + heads, the peers area                               | definer or the Admin login's scope (decision A below)                                                 |
+| secrets-root       | nodes `branch` (the Secrets root) + heads                                 | decision A                                                                                            |
+| secret-item        | nodes `secret` + sealed row, the keys area                                | decision A                                                                                            |
+| sender-contact     | nodes `contact` (and the Contacts root), the email area                   | decision A                                                                                            |
+| docs-collection    | nodes (documentation items) made and removed by a collection              | decision A; a resync is brain-wide maintenance                                                        |
+| promotion-space    | space_items of the promoted login's personal space                        | a definer beside the role change (one transaction), the acting login holding the users area           |
+| agent-conversation | assistant_messages and digest nodes of a deleted assistant                | a definer, or stays (brain-wide)                                                                      |
+| calendar-events    | nodes the calendar synced (events), on unsubscribe                        | stays, or the delete moves to the calendar worker (system work): a changed timing                     |
+| integrity-delete   | any node and its traces, brain-wide (the integrity screen)                | stays for S7c: the operator's delete is brain-wide by design                                          |
+| reembed            | every vector of the brain                                                 | stays for S7c (or system work): brain-wide maintenance                                                |
+| console-tool       | whatever the tool writes (LOW-5)                                          | the tool runs as the Admin login's turn in its scope (as its assistant would), then drop              |
+| pending-call       | whatever the approved tool writes (LOW-5)                                 | the same, as the approving Admin login                                                                |
+
+Decision A (for the CEO): a structure item an area makes (the Secrets and
+Contacts roots, a peer, a secret, a contact, a documentation item) either
+(1) moves to the write role in the acting Admin login's scope, where its
+create home becomes that scope's (the Admin workspace: a changed answer for
+where it lands and who reads it), or (2) goes through one definer that
+inserts a structure item of a listed type with its heads, from a system
+session with the acting login holding the area (the 0314 rule), the
+narrow role granted EXECUTE on it and no table. (2) keeps every answer;
+the safer option, and the one the next round should build unless the CEO
+picks (1).
+
+### The area routes (measured, for the next round)
+
+The route table (buildRoutePolicy over the manifest) holds 142 area rows
+that write (effect 'write'): settings 57, connectors 38, assistants 26,
+keys 11, users 10. A static sweep of every `*.db.test.ts` (a request path
+matching the row, or an import of its route module) finds 76 no DB test
+names: assistants 6, connectors 23, keys 6, settings 36, users 5. The
+switch is on in every DB suite but the switch-off run, so a row a test
+drives already runs narrow. The 76 include the brief's POST /api/calendar,
+POST /api/email/accounts, PATCH /api/email/messages/:id, PUT
+/api/email/accounts/:id/folders, POST /api/secrets/:id/reveal and POST
+/api/pdf-passwords; POST /api/secrets, POST /api/docs/collections and
+DELETE /api/calendar/:id are driven (narrow-area-routes.db.test.ts). The
+mail tables are `writer: 'admin'` (narrow 'all'), so the mail routes
+cannot meet a content refusal; the rows to drive first are those whose
+handler writes a `writer: 'content'` table. The next round: a cell per
+undriven row, switch on and off, answers equal (the brief's item 2), and a
+unit sweep pinning the undriven list (down only).
+
+### Left for the next round, in the brief's order
+
+1. The spot moves (decision A, then each row of the table above), the
+   list only shrinking; LOW-5's two spots after the tool writes move.
+2. The area-route cells (above).
+3. The default on everywhere (`narrowSystemOn()` true unless
+   `MANTLE_NARROW_SYSTEM=0|off|false`, read once at boot and logged), the
+   kill switch in docs/runtime-role.md and docs/update-prod.md, fresh
+   installs and per-database mode named.
+4. Pins: asSystemFull floor, fullRouteSpots and fullRouteSpotCalls down,
+   systemWholeOnFull 0, requestSystemExits on narrow.
+5. The box counts the CEO must see at 0 before the fleet flip (rule 2,
+   risk 8): `narrow_misses` narrow-content-write, narrow-cascade-delete
+   and narrow-denied, and `fail_open_misses`, on every box
+   (scripts/arch-scoreboard-box.sh).
