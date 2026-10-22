@@ -424,6 +424,20 @@ export function noteTestNarrowUse(actor: string): void {
   narrowUses.set(actor, (narrowUses.get(actor) ?? 0) + 1);
 }
 
+/** Tests only (viewer.ts onFullSystemRoute): the full-route spots entered,
+ *  in order (the area sweep pins each row's). */
+const spotUses: string[] = [];
+
+/** Tests only: note a full-route spot entered. */
+export function noteTestSpotUse(spot: string): void {
+  if (env('NODE_ENV') === 'test') spotUses.push(spot);
+}
+
+/** Tests: the full-route spots entered since the last call, cleared. */
+export function takeSpotUses(): string[] {
+  return spotUses.splice(0, spotUses.length);
+}
+
 /** Tests: the narrow route's denials since the last call, cleared. */
 export function takeNarrowDenials(): { actor: string; what: string }[] {
   return narrowDenials.splice(0, narrowDenials.length);

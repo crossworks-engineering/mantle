@@ -15,7 +15,14 @@
  * markdown file: made (the docs-item insert through the structure
  * definer), then the file edited and the collection re-read (its update).
  * No network (fetch throws), no updater, no sandbox daemon: those rows
- * answer their own refusal, the same both ways.
+ * answer their own refusal, the same both ways (the push relay and the
+ * sandbox daemon answer here).
+ *
+ * Round 10 (D 1, D 2): each row's record of what the narrow login itself
+ * wrote (installNarrowWrote: never on the off pass) and of the full-route
+ * spots it entered (pinned: SPOT_ROWS), and the login-self rows
+ * (LOGIN_SELF_ROWS: the profile, push Connect, Reset and preferences, as
+ * the owner and as a member).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/narrow-area-sweep.db.test.ts
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -27,9 +34,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   KEY_OR,
   LANDED_NODE,
+  LOGIN_SELF_ROWS,
   MAIL_NODE,
   NARROW_SWEEP_ENTRIES,
   PEER_NODE,
+  RELAY,
   SANDBOXD,
   WORKER,
   WORKER_KINDS,
@@ -196,6 +205,37 @@ async function seedFixture(su: postgres.Sql): Promise<void> {
   await su`insert into mobile_tokens (id, user_id, expires_at) values (${S}, ${S}, now() + interval '30 days')`;
 }
 
+/**
+ * The per-row record of the narrow login's own writes (round 10, D 1): a
+ * row trigger on every table of public and auth that, when the statement
+ * runs as the narrow role (current_user: a definer's own writes are its
+ * owner's, never counted), says the table and operation once per
+ * transaction, as the narrow write counts do (a NOTICE the app's pools turn
+ * into takeNarrowWrites). This scratch only.
+ */
+async function installNarrowWrote(su: postgres.Sql): Promise<void> {
+  await su.unsafe(`create or replace function public.sweep_narrow_wrote() returns trigger
+    language plpgsql set search_path = pg_catalog, pg_temp as $$
+    declare k text := 'sweep.wrote_' || TG_TABLE_SCHEMA || '_' || TG_TABLE_NAME;
+    begin
+      if current_user = 'mantle_system_narrow'
+         and position(TG_OP in coalesce(current_setting(k, true), '')) = 0 then
+        perform set_config(k, coalesce(current_setting(k, true), '') || TG_OP || ' ', true);
+        raise notice 'mantle narrow write: sweep-narrow-wrote % %.% %',
+          coalesce(nullif(current_setting('mantle.actor', true), ''), 'none'),
+          TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
+      end if;
+      return null;
+    end $$`);
+  const tables = await su<{ t: string }[]>`
+    select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p') and not c.relispartition`;
+  for (const { t } of tables) {
+    await su.unsafe(`create trigger sweep_narrow_wrote after insert or update or delete on ${t}
+      for each row execute function public.sweep_narrow_wrote()`);
+  }
+}
+
 /** An answer less what is fresh each run: ids, stamps, minted tokens. */
 function normalize(text: string): string {
   return text
@@ -223,6 +263,14 @@ describe.skipIf(!URL)(
     const realFetch = globalThis.fetch;
     const answers: Record<'on' | 'off', Map<string, string>> = { on: new Map(), off: new Map() };
     const denials = new Map<string, unknown[]>();
+    /** Per row and pass: the tables and operations the narrow login wrote
+     *  (installNarrowWrote), and the full-route spots it entered. */
+    const wrote: Record<'on' | 'off', Map<string, string[]>> = { on: new Map(), off: new Map() };
+    const spots: Record<'on' | 'off', Map<string, string[]>> = { on: new Map(), off: new Map() };
+    const selfAnswers: Record<'on' | 'off', Map<string, string>> = {
+      on: new Map(),
+      off: new Map(),
+    };
     const docs: Record<string, Record<string, number | boolean>> = {};
 
     beforeAll(async () => {
@@ -233,12 +281,21 @@ describe.skipIf(!URL)(
       process.env.SESSION_SECRET = 'narrow-area-sweep-secret-at-least-32-characters';
       process.env.MANTLE_DOCS_ROOT = join(dir, 'docs');
       process.env.MANTLE_BACKUP_DIR = join(dir, 'backups');
+      process.env.MANTLE_PUSH_RELAY_URL = RELAY;
       process.env.MANTLE_TAILSCALE_SOCK = join(dir, 'tailscaled.sock');
       // No network, but the sandbox daemon (its own box service) answers.
       process.env.SANDBOXD_URL = SANDBOXD;
       process.env.SANDBOXD_TOKEN = 'sweep-token';
       globalThis.fetch = (async (input: string | URL | Request) => {
         const url = typeof input === 'string' ? input : 'url' in input ? input.url : input.href;
+        if (url.startsWith(RELAY)) {
+          // The relay registers the brain (its instance id) and takes the rest.
+          const out = url.endsWith('/instances') ? { instanceId: 'sweep-instance' } : {};
+          return new Response(JSON.stringify(out), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         if (url.startsWith(SANDBOXD)) {
           return new Response('{}', {
             status: 200,
@@ -273,6 +330,7 @@ describe.skipIf(!URL)(
         await ts.runWorkspacesSwitch(scratch.url);
         await su`insert into profiles (user_id) values (${OWNER}) on conflict do nothing`;
         await seedFixture(su);
+        await installNarrowWrote(su);
         const col = join(dir, `docs-${pass}`, 'sweep-docs');
         mkdirSync(col, { recursive: true });
         writeFileSync(join(col, 'a.md'), '# Sweep guide\n\nThe first text.\n');
@@ -280,15 +338,37 @@ describe.skipIf(!URL)(
         const cookie = `mantle_session=${tokens.buildSessionCookie(OWNER).value}`;
         const { createApp } = await import('./app');
         app = await createApp();
-        const send = async (method: string, path: string, body: unknown) => {
+        const memberCookie = `mantle_session=${tokens.buildSessionCookie(S).value}`;
+        const send = async (method: string, path: string, body: unknown, as = cookie) => {
           const res = await app.request(path, {
             method,
-            headers: { 'content-type': 'application/json', cookie },
+            headers: { 'content-type': 'application/json', cookie: as },
             ...(body === null || body === undefined ? {} : { body: JSON.stringify(body) }),
           });
           return { status: res.status, text: await res.text().catch(() => '') };
         };
         const sample = bodies;
+        /** What the row just sent made the narrow login write, and the
+         *  spots it entered (each taken, so the next row starts empty). */
+        const record = (key: string) => {
+          const w = ts
+            .takeNarrowWrites()
+            .filter((x) => x.check === 'sweep-narrow-wrote')
+            .map((x) => x.detail);
+          wrote[pass].set(key, [...new Set(w)].sort());
+          spots[pass].set(key, [...new Set(ts.takeSpotUses())].sort());
+          if (pass === 'on') denials.set(key, ts.takeNarrowDenials());
+        };
+        ts.takeNarrowWrites();
+        ts.takeSpotUses();
+        ts.takeNarrowDenials();
+        // The login-self rows first: the area rows' DELETEs remove the member.
+        for (const row of LOGIN_SELF_ROWS) {
+          const [method, path] = row.key.split(' ') as [string, string];
+          const r = await send(method, path, row.body, row.as === 'owner' ? cookie : memberCookie);
+          selfAnswers[pass].set(row.key, `${r.status} ${normalize(r.text)}`);
+          record(`self ${row.key}`);
+        }
         // The DELETE rows last, a sub-resource's before its parent's (the
         // table's own order otherwise), so a row that reads, edits or acts
         // on a fixture row meets it before a DELETE row removes it.
@@ -308,7 +388,7 @@ describe.skipIf(!URL)(
           const body = 'body' in entry ? entry.body : method === 'GET' ? null : sample[row.key];
           const r = await send(method, path, body);
           answers[pass].set(row.key, `${r.status} ${normalize(r.text)}`);
-          if (pass === 'on') denials.set(row.key, ts.takeNarrowDenials());
+          record(row.key);
         }
         // LOW-4: a documentation item made from a real markdown file, then
         // the file edited and the collection read again (its update).
@@ -367,6 +447,46 @@ describe.skipIf(!URL)(
         .filter(([k, a]) => answers.off.get(k) !== a)
         .map(([k, a]) => ({ row: k, on: a, off: answers.off.get(k) }));
       expect(differ).toEqual([]);
+    });
+
+    it('the login-self rows (profile, push connect, reset, preferences): 2xx and the same both ways', () => {
+      expect(selfAnswers.on.size).toBe(LOGIN_SELF_ROWS.length);
+      const differ = [...selfAnswers.on]
+        .filter(([k, a]) => selfAnswers.off.get(k) !== a || !a.startsWith('2'))
+        .map(([k, a]) => ({ row: k, on: a, off: selfAnswers.off.get(k) }));
+      expect(differ).toEqual([]);
+    });
+
+    it('records per row whether the narrow login wrote: never on the off pass; the scope set`s insert on the narrow route', () => {
+      expect([...wrote.off].filter(([, w]) => w.length > 0)).toEqual([]);
+      // ms_drive_scopes' narrow INSERT and DELETE (round 9, from the code):
+      // the product's scope set makes both as the narrow login.
+      expect(wrote.on.get('PUT /api/microsoft/drives/:id/scopes')).toEqual(
+        expect.arrayContaining(['public.ms_drive_scopes DELETE', 'public.ms_drive_scopes INSERT']),
+      );
+      const by = (pick: (w: string[]) => boolean) =>
+        [...wrote.on].filter(([, w]) => pick(w)).length;
+      console.log(
+        `narrow sweep: rows where the narrow login wrote ${by((w) => w.length > 0)}, wrote nothing ${by((w) => w.length === 0)}`,
+      );
+    });
+
+    /**
+     * The rows whose writes run at a full-route spot (onFullSystemRoute),
+     * each with the spots it enters, the same on both passes (round 10,
+     * D 1). A row that starts or stops using a spot fails here: name it.
+     */
+    const SPOT_ROWS: Readonly<Record<string, readonly string[]>> = {};
+
+    it('pins the rows whose write runs at a spot, and which spots, the same both ways', () => {
+      const of = (pass: 'on' | 'off') =>
+        Object.fromEntries([...spots[pass]].filter(([, s]) => s.length > 0));
+      const on = of('on');
+      if (JSON.stringify(on) !== JSON.stringify(SPOT_ROWS)) {
+        console.log(`narrow sweep: SPOT_ROWS now ${JSON.stringify(on, null, 1)}`);
+      }
+      expect(on).toEqual(SPOT_ROWS);
+      expect(of('off')).toEqual(on);
     });
 
     /**
@@ -471,8 +591,15 @@ describe.skipIf(!URL)(
       console.log(`narrow sweep: ${answers.on.size} rows driven; on-pass statuses`, counts);
       const report = process.env.MANTLE_SWEEP_REPORT;
       if (report) {
-        const out: Record<string, { on?: string; off?: string }> = {};
-        for (const [k, a] of answers.on) out[k] = { on: a, off: answers.off.get(k) };
+        const more = (k: string) => ({
+          wrote: wrote.on.get(k) ?? [],
+          spots: spots.on.get(k) ?? [],
+        });
+        const out: Record<string, unknown> = {};
+        for (const [k, a] of answers.on) out[k] = { on: a, off: answers.off.get(k), ...more(k) };
+        for (const [k, a] of selfAnswers.on) {
+          out[`self ${k}`] = { on: a, off: selfAnswers.off.get(k), ...more(`self ${k}`) };
+        }
         writeFileSync(report, JSON.stringify({ rows: out, docs }, null, 1));
       }
       expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(answers.on.size);

@@ -871,4 +871,4 @@ export function findPgTools(url: string, containerName?: string): PgTools | null
 
 /** The narrow denials a cell caused on purpose, drained so the run's check
  *  (vitest.setup.ts) does not count them. */
-export { takeNarrowDenials } from './actor';
+export { takeNarrowDenials, takeNarrowWrites, takeSpotUses } from './actor';

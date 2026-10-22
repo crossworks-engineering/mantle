@@ -155,7 +155,11 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PUT /api/microsoft/config': {},
   'DELETE /api/microsoft/config': {},
   'PATCH /api/microsoft/drives/:id': {},
-  'PUT /api/microsoft/drives/:id/scopes': {},
+  // One scope, so the scope set's insert is reached (ms_drive_scopes'
+  // narrow INSERT: the sweep's per-row record shows the narrow login makes it).
+  'PUT /api/microsoft/drives/:id/scopes': {
+    body: { scopes: [{ itemId: 'sweep-item', path: '/Sweep', isFolder: true, name: 'Sweep' }] },
+  },
   'GET /api/microsoft/oauth/callback': {},
   'HEAD /api/microsoft/oauth/callback': {
     skip: "the GET row's handler (Hono answers HEAD with GET's): driven as GET",
@@ -245,6 +249,52 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'DELETE /api/users/:id/devices/:jti': {},
   'POST /api/users/:id/password': {},
 });
+
+/** The push relay the sweep's fetch answers for (/api/push/connect, reset). */
+export const RELAY = 'http://relay.sweep';
+
+/**
+ * The login-self rows (plan v3.2 S7b part b2 round 10, D 2): the writes a
+ * login makes to its own profile and push devices, on the login-self exit
+ * (not area rows, so not in the route table's area list). Each is sent as
+ * the owner (`owner`) or the fixture's member login (`member`), on both
+ * passes, in this order (Connect before Reset: the first Connect registers
+ * the brain with the relay at push-device). The device enrol rows
+ * (POST .../push/subscriptions and their DELETE) take a mobile bearer, not
+ * a session: push-device's own cells drive them (device-cap.db.test.ts,
+ * narrow-allowlist.db.test.ts); the image uploads (avatar, photo, logo PUT)
+ * take a file body: profile-assets cells.
+ */
+export const LOGIN_SELF_ROWS: readonly {
+  readonly key: string;
+  readonly as: 'owner' | 'member';
+  readonly body: unknown;
+}[] = [
+  { key: 'PUT /api/profile', as: 'owner', body: { displayName: 'Sweep Owner' } },
+  { key: 'PUT /api/profile/backgrounds', as: 'owner', body: { backgrounds: 'sweep' } },
+  { key: 'PUT /api/profile/color-theme', as: 'owner', body: { colorTheme: 'sweep' } },
+  { key: 'PUT /api/profile/default-mode', as: 'owner', body: { defaultMode: 'light' } },
+  { key: 'PUT /api/profile/fonts', as: 'owner', body: {} },
+  { key: 'PUT /api/profile/nav-favorites', as: 'owner', body: { navFavorites: [] } },
+  { key: 'PUT /api/profile/neat-background', as: 'owner', body: { neatBackground: 'sweep' } },
+  { key: 'PUT /api/profile/reminder-channel', as: 'owner', body: { reminderChannel: 'telegram' } },
+  { key: 'PUT /api/profile/share-neat', as: 'owner', body: { shareNeat: true } },
+  { key: 'DELETE /api/profile/logo', as: 'owner', body: null },
+  { key: 'DELETE /api/profile/photo', as: 'owner', body: null },
+  { key: 'PUT /api/push/preferences', as: 'owner', body: {} },
+  {
+    key: 'POST /api/push/connect',
+    as: 'owner',
+    body: { platform: 'ios', osPushToken: 'sweep-os-token' },
+  },
+  {
+    key: 'POST /api/member/push/connect',
+    as: 'member',
+    body: { platform: 'android', osPushToken: 'sweep-os-token-2' },
+  },
+  { key: 'PUT /api/member/push/preferences', as: 'member', body: {} },
+  { key: 'POST /api/push/reset', as: 'owner', body: null },
+];
 
 /** The writing area rows of a route table: an Admin area, effect write,
  *  not a retired route's stub, not public. */

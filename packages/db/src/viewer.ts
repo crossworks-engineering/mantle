@@ -37,6 +37,7 @@ import {
   setSlotActor,
   slotActor,
   runOnFullRouteSpot,
+  noteTestSpotUse,
   type Actor,
 } from './actor';
 import { hkdfSync } from 'node:crypto';
@@ -1242,6 +1243,7 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
 export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
   const actor = currentActor();
   if (!FULL_ROUTE_SPOTS[spot]) return Promise.resolve(fn());
+  noteTestSpotUse(spot);
   if (actor?.kind !== 'system' || systemRouteNow() !== 'narrow') {
     // systemDb's infrastructure writes inside a turn or request scope take
     // the narrow route whatever the actor (gateway/handles.ts): a login's
