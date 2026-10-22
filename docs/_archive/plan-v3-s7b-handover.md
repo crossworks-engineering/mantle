@@ -3708,3 +3708,122 @@ against the cost caps); tool_results insert on the narrow login (the turn's
 own random handle, read back only by its turn); 0323's names-only class
 (a switch with another name, via_tailnet or provider_alerts.paused, is not
 in it); the COPY rule proven only by the proof's psql, not a vitest cell.
+
+## Part b2, round 13c: round 13b's red files, G's rest, J's doc (handed over)
+
+Same branch. Inputs: the round 13b handover's "Left (round 13c)" and the
+CEO's item 0 (the red files of 13b's gate set on 75631ebb0). One builder;
+commits 05e9c54f8 to the head of this section.
+
+### Item 0: the three red files
+
+1. ws-onboarding-attach (2 cells) and the sweep's Azure provision: a real
+   product bug. Onboarding's assistant attach (workspaces-migrate.ts
+   attachDefaultAssistants in the login's scope) called
+   mantle_ws_attach_assistants on the Admin area's narrow exit, where the
+   identity readers answer no login (0321), so the definer refused every
+   call (`mantle_ws:no_acting_login`, 42501) and, since 13b's H made the
+   rethrow see a 42501 through drizzle's cause, onboarding answered 500.
+   Round 13 moved four such definers to the spot acting-login and missed
+   this fifth. Fix: the attach runs at acting-login; the definer left
+   NARROW_SYSTEM_FUNCTIONS for NARROW_DENIED_FUNCTIONS (ten left on the
+   allowlist, no writer). The definer's own area refusal
+   (`mantle_ws:resources_admin_only`, also 42501) is an answer, not a bug:
+   wsRuleOf (pg-error.ts) tells it apart, so a login without the
+   assistants area is logged and attaches nothing, as the cell says; any
+   other 42501 is still rethrown.
+2. narrow-containment (3 cells): the test was wrong. 13b took display_name
+   (F), description (F), memory_config and params (C) off the narrow list
+   and made 0323's twelve one-way triggers; the cells still wrote those
+   columns as allowed and counted 13 triggers. They now refuse the
+   columns (and check the column rights) and count 25. Nothing widened.
+3. narrow-area-sweep "pins the rows": the Azure provision lost profile-row
+   because it failed before writing it (item 1); with the attach at its
+   spot the row is whole again. The off pass keeps the row's acting-login
+   (the attach enters the spot on every route), as the chat's.
+
+Also: a typecheck break in narrow-rules-13b.db.test.ts (a cast through
+unknown).
+
+### G, the rest
+
+- updateWorkerGroup: members, name or a turn-on at agent-group-grant (the
+  narrow login holds only the stamp; every PATCH was refused on the narrow
+  route before).
+- PATCH /api/model-pools/:id at model-route (the narrow login holds only
+  the stamp). curated_models.pricing traced: it ranks the combos' picks
+  only (model-combos.ts pickForPool); a cost cap reads the provider's own
+  usage cost on the trace (packages/tracing, extract facts.ts), never this
+  column. Insert and delete stay narrow (round 8's measured rule).
+- The sweep's PATCH and PUT rows: 8 of 31 were driven with an empty body;
+  each now names columns that reach 13b's choices (an assistant's limits,
+  description and a turn-on; a group's, a skill's, a tool's text; a
+  heartbeat; a pool entry; a worker group; a mail account's folders). A
+  unit cell (narrow-area-sweep.entries.test.ts) fails an empty body.
+- Microsoft: a new spot ms-account (spots 30 to 31): the OAuth callback's
+  account upsert and sealed tokens, a token refresh, and the drives found
+  (the narrow login never held an INSERT or a token column there). The
+  sweep's MS_CONNECT block drives the callback with its state and PKCE
+  cookies and the refresh and discover with the token endpoint and Graph
+  stubbed (the fixture's tokens sealed for real and expired), on both
+  passes: the account with its tokens, the fixture's expiry moved, one
+  drive found disabled, at ms-account, no denial.
+- The static scan's open list lost the six writes this closed.
+
+### J (part), and 13b's doubts decided
+
+- runtime-role.md: one rule for a definer's own writes in the counts
+  (left out on the narrow route and with the runtime role on, counted on a
+  system pool logged in as the superuser that owns the definers, as 0317
+  says); the contradicting sentence is gone. The epoch per release is not
+  built (Left).
+- curated_models.pricing: proven not to feed a cost cap (above).
+- 0323's names-only class: agents.via_tailnet and backup_via_tailnet stay
+  narrow-writable, accepted with reason: the switch chooses the path to the
+  base URL an Admin set at model-route, never a new destination, and
+  starts no work. provider_alerts.paused stays two-way, accepted with
+  reason: a pause holds the extract queue (availability only) and its
+  clear is the outage probe's own recovery from a login's turn; an
+  off-only rule would leave the queue held after an outage.
+
+### Pins
+
+fullRouteSpots 30 to 31 (ms-account), fullRouteSpotCalls 111 to 117
+(acting-login in workspaces-migrate.ts, agent-group-grant in
+worker-groups.ts, model-route in model-pools [id] route.ts, ms-account in
+token-store.ts 2 and discover.ts 1), each with its reason.
+FULL_ROUTE_SPOT_FILES lists the five files.
+
+### Targeted runs (workstation, two at a time)
+
+r13ct1/r13ct2 (05e9c54f8, on and actor-off: narrow-containment,
+ws-onboarding-attach, runtime-role, narrow-rules-13b passed; the sweep's
+off pass needed the attach's spot, fixed); r13ct3/r13ct4 (819b121ba: the
+SPOT_ROWS of G, the callback's Location, a tools body that turned the
+confirm flag on and so refused the external-access row; fixed);
+r13ct5/r13ct6 (161bf90c7, the sweep on and actor-off) 0 and 0. Mac:
+typecheck (db, web, microsoft), arch:check, format:check, docs:check and
+lint 0 on the working tree (lint: one old warning, an unused directive in
+contact-sharing-routes.db.test.ts).
+
+### Left (round 14), in order
+
+1. The full gate set's results on this section's head (see the round's
+   report), then the full re-audit if every gate is 0.
+2. J: the counter's epoch per release (a recorded epoch, a documented
+   reset; the box script's counts since it).
+3. K: the scan pins by occurrence count; tag each open entry
+   reaches-narrow or covered-across-files; the value rules visible.
+4. L: one narrowSpotFor(table, op, set) naming the spot per table (the
+   rules of agents.ts, ai-workers.ts, tool-groups.ts, heartbeats, skills,
+   crud.ts, the feeds, docs, worker groups, pools); the as-system-routes
+   lint must learn a spot named by that table, not a literal.
+5. M: run-maker, the Telegram readers, lint arrow functions.
+
+Doubts for the auditor: the sweep's assistant PATCH reaches
+assistant-grant (its turn-on wins), so its skill-text columns are proven
+at the spot by the column rights and narrow-containment, not by that row;
+the Microsoft refresh's failure note (last_sync_error) stays narrow, by
+design; curated_models insert and delete stay narrow while its update is
+at a spot (an insert of a new entry gives what an edit gives: round 8's
+reasoning, kept).
