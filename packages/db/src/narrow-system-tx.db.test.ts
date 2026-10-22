@@ -79,19 +79,32 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
       out.tx = await who(tx);
       out.db = await who(m.db);
       out.nested = await m.withSystemTx((t2) => who(t2));
+      // A statement on the pool itself and on the infrastructure handle,
+      // inside the system transaction (each a connection of its own).
+      out.pool = await who(pools.getAdminDb());
+      out.systemDb = await who(m.systemDb);
       out.route = v.systemRouteNow();
       out.acting = v.actingLoginNow();
       return out;
     });
 
   it('a narrow exit: withSystemTx runs as the narrow login with the acting login', async () => {
+    const seen: Record<string, Awaited<ReturnType<typeof probe>>> = {};
+    const heads: Record<string, Who> = {};
     for (const [name, exit] of [
       ['request exit', requestExit],
       ['asSystem exit', asSystemExit],
     ] as const) {
-      const out = await exit(probe);
-      console.log(`[probe] ${name}: ${JSON.stringify(out)}`);
-      for (const k of ['tx', 'db', 'nested'] as const) {
+      seen[name] = await exit(probe);
+      // The heads helper, a withSystemTx: the same.
+      heads[name] = await exit(() =>
+        m.withNodeInsertHeads(brain, [{ type: 'note', path: 'n' }], (tx) => who(tx)),
+      );
+      console.log(`[probe] ${name}: ${JSON.stringify(seen[name])} heads ${JSON.stringify(heads[name])}`);
+    }
+    for (const name of Object.keys(seen)) {
+      const out = seen[name]!;
+      for (const k of ['tx', 'db', 'nested', 'pool', 'systemDb'] as const) {
         const w = out[k] as Who;
         expect({ name, k, ...w }).toMatchObject({
           name,
@@ -106,18 +119,14 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
         route: 'narrow',
         acting: admin,
       });
-      // The heads helper, a withSystemTx: the same.
-      const heads = await exit(() =>
-        m.withNodeInsertHeads(brain, [{ type: 'note', path: 'n' }], (tx) => who(tx)),
-      );
-      expect({ name, ...heads }).toMatchObject({ name, su: rr.NARROW_ROLE, acting: admin });
+      expect({ name, ...heads[name]! }).toMatchObject({ name, su: rr.NARROW_ROLE, acting: admin });
     }
   });
 
   it('a full exit: withSystemTx stays on the system pool, the acting login still sent', async () => {
     const out = await requestExit(() => v.onFullSystemRoute('profile-row', probe));
     console.log(`[probe] full: ${JSON.stringify(out)}`);
-    for (const k of ['tx', 'db', 'nested'] as const) {
+    for (const k of ['tx', 'db', 'nested', 'pool', 'systemDb'] as const) {
       const w = out[k] as Who;
       expect({ k, ...w }).toMatchObject({ k, cu: systemLogin, su: systemLogin });
     }
