@@ -339,7 +339,9 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     // assistants, connectors and settings areas' edits), each allowed.
     for (const s of [
       // Its prompt, skill list and persona notes run at skill-text now.
-      `update agents set name = 'b', model = 'm2', thinking_effort = 'low',
+      // Its model and effort (where a turn's spend goes) run at
+      // model-route since the destination and cost class.
+      `update agents set name = 'b',
          avatar = null, priority = 5, enabled = false,
          tts_worker_id = null, updated_at = now() where id = '${agent}'`,
       `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,

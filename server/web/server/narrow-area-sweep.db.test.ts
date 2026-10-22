@@ -654,6 +654,12 @@ describe.skipIf(!URL)(
       'PUT /api/microsoft/config': ['tool-config'],
       'POST /api/microsoft/accounts/:id/drives': ['ms-account'],
       'POST /api/model-combos/apply': ['model-route'],
+      // The destination and cost class: a pool entry added or
+      // removed, the extraction concurrency; a new feed starts on (0324).
+      'POST /api/model-pools': ['model-route'],
+      'DELETE /api/model-pools/:id': ['model-route'],
+      'PATCH /api/embedding/extraction': ['model-route'],
+      'POST /api/calendar': ['feed-enable'],
       'POST /api/onboarding': ['profile-row'],
       'POST /api/openapi-connectors': ['tool-group-grant'],
       'PATCH /api/model-pools/:id': ['model-route'],

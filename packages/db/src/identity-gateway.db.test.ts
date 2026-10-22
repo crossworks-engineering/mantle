@@ -154,9 +154,8 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
 
   it('a migration that leaves a leak fails before its commit and leaves nothing', async () => {
     const { applyJournal } = await import('./migrate-runner');
-    const [top] = await su<{ at: string }[]>`
-      select max(created_at)::text as at from "drizzle"."__drizzle_migrations"`;
-    const when = Number(top!.at) + 1;
+    // Above every journal stamp (the scratch copy may keep no ledger).
+    const when = 9_000_000_000_000;
     const leak = {
       folderMillis: when,
       hash: 'r14-leak',
@@ -172,6 +171,7 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
     const [left] = await su<{ fn: string | null; ledger: number }[]>`
       select to_regprocedure('public.r14_migrated_leak()')::text as fn,
              (select count(*)::int from "drizzle"."__drizzle_migrations" where hash = 'r14-leak') as ledger`;
+    await su`delete from "drizzle"."__drizzle_migrations" where hash = 'r14-leak'`;
     expect(left).toEqual({ fn: null, ledger: 0 });
   });
 

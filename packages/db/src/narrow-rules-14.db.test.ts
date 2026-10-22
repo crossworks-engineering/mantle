@@ -89,7 +89,7 @@ const REFUSED: readonly [string, string][] = [
   [
     'a prompt version',
     `insert into prompt_versions (owner_id, entity_type, entity_id, field, version, body, author)
-       values (mantle_brain_id(), 'agent', '${AGENT}', 'system_prompt', 99, 'forged', 'owner')`,
+       values (mantle_brain_id(), 'agent', '${AGENT}', 'system_prompt', 99, 'forged', mantle_brain_id())`,
   ],
 ];
 
