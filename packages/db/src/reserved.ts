@@ -131,6 +131,19 @@ const DEFAULT_WAITS: Readonly<Record<ReservePool, number>> = Object.freeze({
 });
 const reserveWaits: Record<ReservePool, number> = { ...DEFAULT_WAITS };
 
+/** One reserve's wait: its pool, how long it waited, whether it ran out. */
+export type ReserveWaitRecord = { pool: ReservePool; ms: number; late: boolean };
+
+let reserveWaitLog: ReserveWaitRecord[] | null = null;
+
+/** Measurement and tests only (not in index.ts): keep every reserve's wait
+ *  from now (the array returned, filled as reserves are made), or stop
+ *  (`false`). Off, reserveLease keeps nothing. */
+export function recordReserveWaitsForTests(on: boolean): ReserveWaitRecord[] {
+  reserveWaitLog = on ? [] : null;
+  return reserveWaitLog ?? [];
+}
+
 /** The wait a reserve of `pool` takes now (reserveLease). */
 export function reserveWaitMs(pool: ReservePool): number {
   return reserveWaits[pool];
@@ -195,10 +208,14 @@ export async function reserveLease<S extends ReservedSql>(
     timer.unref?.();
   });
   let sql: S;
+  const asked = Date.now();
   try {
     sql = await Promise.race([reserved, waited]);
   } finally {
     clearTimeout(timer);
+    // A measurement's record of each reserve's wait (the narrow pool's
+    // queue under load, recordReserveWaitsForTests); nothing otherwise.
+    reserveWaitLog?.push({ pool: kind, ms: Date.now() - asked, late });
     if (late)
       void reserved.then(
         (c) => c.release(),
