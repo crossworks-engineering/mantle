@@ -163,33 +163,19 @@ above.
 
 ### Rollback (part b1)
 
+Migration 0314 left b1 in the fix round (its revert and its cells: the fix
+round's "For b2 (moved out of b1)"; the drill with 0314 is this file at
+cafa14530): b1 has no migration, so rolling it back needs no revert SQL.
+
 - Switch off (production default): the narrow pool never opens and the
   narrow role is `NOLOGIN` at the next migrate; the full route is as before
   but for the acting login it now sends for a request exit's actor.
-- Image N-1: run rollback/0314_acting_login_definers.revert.sql first (as
-  the superuser, one transaction): with 0314 in place the N-1 image's
-  assistants area Telegram block and unpair are refused (it sends no acting
-  login). N-1's migrate makes the narrow role `NOLOGIN` again (its own
-  attributes), so no session of it outlives the roll. Revert SQL: the
-  file's two CREATE OR REPLACE bodies (0313's and 0293's, md5 below) and
-  `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = 1790198160000`.
+- Image N-1: N-1's migrate makes the narrow role `NOLOGIN` again (its own
+  attributes), so no session of it outlives the roll. The fix round's drill
+  holds the N-1 steps; fix round 2 adds the large-object creators' revoke
+  (its "Rollback").
 - db-restore.sh already makes the role (`NOLOGIN`) before pg_restore
   (part a1); the next migrate sets its login from the switch.
-- The drill, workstation pg18, main d0a207d2a and the branch, each step's
-  narrow login / the 0314 ledger row / md5 (first 8) of mantle_tg_chat_set
-  and mantle_access_key_revoke:
-
-  | Step                                                  | Exit | State                     |
-  | ----------------------------------------------------- | ---- | ------------------------- |
-  | init and migrate with main                            | 0, 0 | f / 0 / b8266526 a8aa6dbb |
-  | migrate with the branch (N, switch on)                | 0    | t / 1 / 8c6bb848 4c0d41fe |
-  | migrate with main (N-1 boot)                          | 0    | f / 1 / 8c6bb848 4c0d41fe |
-  | the revert                                            | 0    | f / 0 / b8266526 a8aa6dbb |
-  | migrate with main                                     | 0    | f / 0 / b8266526 a8aa6dbb |
-  | migrate with the branch                               | 0    | t / 1 / 8c6bb848 4c0d41fe |
-  | the branch, production, switch unset                  | 0    | f / 1                     |
-  | the branch, production, switch on, runtime role unset | 0    | t / 1                     |
-  | the branch, production, switch on, per-database mode  | 0    | f / 1                     |
 
 ### Gates
 
@@ -460,4 +446,248 @@ cafa14530:packages/db/migrations/0314_acting_login_definers.sql` and its
    after lease.end, after an idle close and after a kill all returned).
    The narrow pool ends a connection only when its SET or RESET fails.
 3. N-1 keeps the limit at 36 and any setting stored while N ran (above).
+4. Per-database mode keeps the S7a route (no login for the role).
+
+## b1 fix round 2
+
+After the b1 re-audit at 33bbc0a8e (8/10, merge after fixes; MED-1, MED-2,
+LOW-1 to LOW-4 closed). Same branch, a fresh builder. Code head d0ff46dfd
+(the suites below ran on it); the commit after it is this file.
+
+### What changed, by audit item
+
+- MED-A, a reserve queued when a pooled connection closes never settled
+  (postgres.js 3.4.9: the close took the next queued request as the one to
+  open for, and a reserve is never a statement to run, so the connection's
+  ReadyForQuery dropped it; the caller hung and closeDb behind it). Both
+  parts:
+  1. One bounded reserve for every pool: reserved.ts `reserveLease` waits
+     at most `RESERVE_WAIT_MS` (15 s) unless the caller gives its own wait,
+     then fails as `PoolBusyError` (a `BusyError`: isBusy, 409) and hands
+     the late connection back when it comes. Every reserve goes through it:
+     the narrow pool and the system pool (actor-sql.ts `settingsPipeline`),
+     the per-database narrow route (narrow-route.ts), the turn scope's user
+     pool (scope.ts `withLease`), the index builds (concurrent-indexes.ts),
+     and the write pool, whose `boundedReserve` (role-tx.ts) is now that
+     helper with the write pool's wait and error. One log line for both
+     (`logPoolBusy`).
+  2. patches/postgres@3.4.9.patch, three more hunks in each of src, cjs and
+     cf: the close (index.js `onclose`) keeps a queued reserve queued while
+     it opens a connection for it (`queries.peek()`, a new Queue method), as
+     `reserve()` itself does, and onopen hands it the connection; a reserve
+     whose connect fails leaves the queue (else the close would connect it
+     again and again, and a later connection would go to a promise already
+     over); a reserve that opens a connection with fetch_types off takes it
+     (connection.js ReadyForQuery returned before onopen: a cold reserve
+     with fetch_types off never settled, which is why fetch_types off was
+     no fix). `pnpm install --frozen-lockfile` applies it (exit 0); the
+     lockfile's patch hash 33d55f56... to 740f22bb....
+- LOW-A. The narrow pool's startup parameters (pools.ts `narrowStartup`,
+  read at each connect): pinned at the app's own values (compose sets none,
+  so Postgres's defaults) `search_path`, `default_transaction_read_only`
+  off, `default_transaction_isolation` read committed, `row_security` on,
+  `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
+  `idle_session_timeout` 0, `transaction_timeout` 0 on Postgres 17 and later
+  (16 refuses a login with a startup parameter it does not know),
+  `bytea_output` hex, `extra_float_digits` 1. The list is the auditor's plus
+  the settings that would refuse narrow work or change the text drizzle
+  parses (isolation, row security, bytea, floats, intervals, string
+  literals). Any other stored setting holds until the next migrate (RESET
+  ALL each run) and the boot line names it. Large objects: no app code and
+  no dependency calls a server-side large-object creator (measured: a grep
+  of packages, server, scripts and pg-boss), so migrate takes EXECUTE on
+  `lo_create`, `lo_creat`, `lo_from_bytea` and `lo_import` (both) from
+  PUBLIC every run, in each database it runs in (runtime-role.ts
+  `revokeLargeObjectCreators`, in `applyRuntimeGrants` beside pg-boss's
+  revoke). The text check is no longer the only guard there.
+- LOW-B. The password cell: packages/db/src/narrow-password.serial.db.test.ts,
+  the auditor's P5 end to end (the narrow login changes its own password
+  and commits, the derived one gets 28P01, the other logs in, migrate's role
+  step `ensureRuntimeRoles` sets the derived one again, the other gets
+  28P01). A serial file: vitest.serial.config.ts (`pnpm test:serial`, one
+  file at a time), which the default config and every other config leave
+  out (`*.serial.db.test.ts`), and a CI step of its own after the matrix;
+  on the workstation it ran on a container of its own. The drill below does
+  the same through migrate.ts on a cluster of its own. The rolled-back cell
+  in narrow-login.db.test.ts now claims only what it shows (each run's
+  statement carries the derived password, the verifier after a run).
+- LOW-C. TimeZone and DateStyle (and IntervalStyle, standard_conforming_strings)
+  are the system pool's own: the values its connections last reported
+  (postgres.js `sql.parameters`), read at each narrow connect. A process's
+  first narrow statement waits for the system pool's first connect when it
+  has not happened yet (narrow-route.ts `systemReported`: one `select 1`,
+  then never again; no round trip otherwise, the measurement below).
+- Nits. migrator-steps.ts: the runtime and narrow role lines name the cause
+  that holds for NOLOGIN (the switch off, per-database mode, or the switch
+  on with no MANTLE_MASTER_KEY). This file's b1 "Rollback" points to the b2
+  note instead of describing 0314.
+
+### Cells
+
+reserve-queue.db.test.ts (new). Run with the branch's code on 33bbc0a8e's
+patch and lockfile (PATCH_FROM, a fresh clone): 7 of 18 failed (6 cells
+below and reserved.db.test.ts's type-lookup cell, each pending at
+its 5 s mark or the 15 s test timeout) and the file's afterAll timed out (closeDb hung); on the new
+patch every one passes:
+
+| Cell                                                                  | Old patch | New |
+| --------------------------------------------------------------------- | --------- | --- |
+| P2: narrow pool, held connection, failed-SET pipeline, queued one     | pending   | ok  |
+| the narrow pool: queued pipeline after a kill of a held connection    | pending   | ok  |
+| P3: real route, Admin-area exit, 4 at once, a backend killed, closeDb | pending   | ok  |
+| P6: system pool of one, failed-SET pipeline and a kill, closeDb       | pending   | ok  |
+| the write pool: boundedReserve queued behind every held one, a kill   | pending   | ok  |
+| fetch_types off: a cold reserve, and one queued after a kill          | pending   | ok  |
+| the bounded wait: pool held whole, busy, late connection handed back  | ok        | ok  |
+| a reserve whose connect is refused leaves the queue, the pool ends    | ok        | ok  |
+
+reserved.db.test.ts: the reservation whose new connection dies during its
+type lookup is now awaited and answers (it never settled before: pending
+on the old patch). narrow-login.db.test.ts: the pipeline cell runs every
+case on ONE pool of one connection (and a pipeline queued behind one whose
+SET fails), the pool ending without a timeout; "every setting that would
+refuse, cut short or change narrow work" (13 settings stored IN DATABASE by
+the narrow login: a raw session is read only and cut short at 50 ms, the
+pool's session has each at narrowStartup's value, migrate leaves 0 stored);
+"the narrow login may make no large object" (5 forms 42501, none made, no
+creator EXECUTE for PUBLIC); the startup cell reads narrowStartup over the
+system pool's report. narrow-route.db.test.ts: a large object sent
+unguarded is 42501 now (was: committed, owned by the narrow role). Unit:
+reserved.test.ts (busy at the wait, the late connection back, a reserve
+that never settles, the caller's own error), runtime-role.test.ts
+(narrowStartup on 16 and 18, and read at each connect).
+
+### Measured
+
+Round trips (a2a-round-trips.db.test.ts, MANTLE_RT_REPORT, workstation
+pg18, check off, statements / round trips): chat turn start 126 / 155, page
+save 17 / 21, member page save 21 / 27, tree load 13 / 17, item open 9 /
+12, search 23 / 30, MCP tool call 37 / 49: the same as the fix round.
+
+### The drill (N-1), workstation pg18, main 75a82e302 and the branch
+
+Each step: rolcanlogin / rolconnlimit / stored setting rows of the narrow
+role / ledger rows / whether PUBLIC may run `lo_from_bytea`. The narrow
+login's psql runs over the container's network (scram), not 127.0.0.1
+(trust in the image, where a password is never asked: the fix round's
+drill could not have seen a password change).
+
+| Step                                                             | Exit | State                        |
+| ---------------------------------------------------------------- | ---- | ---------------------------- |
+| init and migrate with main, production                           | 0    | false / -1 / 0 / 313 / true  |
+| migrate with the branch, production, switch on (N)               | 0    | true / 36 / 0 / 313 / false  |
+| the narrow login stores a setting on itself                      | 0    | true / 36 / 1 / 313 / false  |
+| migrate with main (N-1 boot)                                     | 0    | false / 36 / 1 / 313 / false |
+| the narrow login after N-1 (refused: NOLOGIN)                    | 2    | false / 36 / 1 / 313 / false |
+| migrate with the branch, production, switch on                   | 0    | true / 36 / 0 / 313 / false  |
+| the narrow login again: search_path `"$user", public`            | 0    | true / 36 / 0 / 313 / false  |
+| the narrow login changes its own password, committed             | 0    | true / 36 / 0 / 313 / false  |
+| the derived password after it (refused, password failed)         | 2    | true / 36 / 0 / 313 / false  |
+| migrate with the branch, switch on (the role step sets it again) | 0    | true / 36 / 0 / 313 / false  |
+| the derived password logs in again                               | 0    | true / 36 / 0 / 313 / false  |
+| the narrow login makes a large object (permission denied)        | 1    | true / 36 / 0 / 313 / false  |
+| the branch, production, switch unset                             | 0    | false / 36 / 0 / 313 / false |
+| the branch, production, switch on, runtime role unset            | 0    | true / 36 / 0 / 313 / false  |
+| the branch, production, switch on, per-database mode             | 0    | false / 36 / 0 / 313 / false |
+| the branch, development default (switch on)                      | 0    | true / 36 / 0 / 313 / false  |
+
+N-1's migrate leaves the large-object creators revoked (main grants
+nothing back; no main code calls one).
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Below them:
+
+- A server-side large object: refused (42501) to every role but the
+  superuser, at the first migrate (it was PUBLIC's; on the narrow route the
+  text check refused the plain calls already).
+- A reserve on the system, narrow or user pool that waits 15 s fails busy
+  (`PoolBusyError`, 409) where it waited for good; the write pool's wait and
+  error are unchanged.
+- A reserve queued when a connection of its pool closes is answered (it
+  never settled), on every pool.
+- The narrow pool's sessions start with the pinned settings, and TimeZone
+  and DateStyle are the system pool's reported ones (were `UTC` and `ISO,
+MDY` by hand).
+- migrate's role lines: NOLOGIN names its cause.
+
+### Pins
+
+No pin moved (arch:check 0). The console calls stay 476: the write pool's
+busy line and the new pool's one share `logPoolBusy` (reserved.ts).
+
+### Rollback (fix round 2)
+
+No migration. The revoke lives in migrate's grants step: an N-1 image's
+migrate leaves it in place (its app calls no large-object creator). To
+give it back by hand, in each database, as the superuser:
+`GRANT EXECUTE ON FUNCTION pg_catalog.lo_create(oid), pg_catalog.lo_creat(integer), pg_catalog.lo_from_bytea(oid, bytea) TO PUBLIC`
+(`lo_import` stays the superuser's, Postgres's own default). The patch
+and the bounded wait are code: an N-1 image runs its own.
+
+### Gates
+
+Mac, Node 26, DATABASE_URL unset: `pnpm format:check` 0, `pnpm docs:check`
+0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0, `pnpm
+boot:smoke` 0, `pnpm -C server/web build` 0, `vitest run server packages
+eslint-rules` 0 (870 files passed, 284 skipped; 11291 tests passed). The
+first unit run exited 1 on one cell (process-entries.test.ts: reserved.ts's
+new timer missing from docs/process-inventory.md, added in d0ff46dfd); the
+rerun is the count above. `pnpm install --frozen-lockfile` with the new
+patch: 0.
+
+Workstation, a fresh clone of the pushed d0ff46dfd per suite, one pgvector
+pg18 container each (label mantle.test=s7b-b1, max_connections=450, port
+checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                        | Exit | Counts                              |
+| -------------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                    | 0    | 577 files; 6371 passed, 1 skipped   |
+| full DB vitest, shard 2/2                    | 0    | 577 files; 7858 passed              |
+| test:actor-off                               | 0    | 141 files; 1424 passed, 1 skipped   |
+| test:actor-on                                | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                                 | 0    | 46 files; 583 passed                |
+| test:matrix                                  | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full                    | 0    | 294 files; 2924 passed, 1 skipped   |
+| test:serial (new)                            | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0       | 0    | 1154 files; 14229 passed, 1 skipped |
+| the drill (N-1, production, per-database)    | 0    | every migrate step 0 (above)        |
+| the narrow cells (5 files, targeted)         | 0    | 5 files; 78 passed (on 235bacf14)   |
+| the cells on the old patch (2 files)         | 1    | 7 failed, as above (on 8121ffc3c)   |
+| a2a-round-trips.db.test.ts, MANTLE_RT_REPORT | 0    | the numbers above (on 235bacf14)    |
+
+The first full round on d0ff46dfd had two failures, each a timing flake of
+the load (six lanes at once), each rerun 0: shard 1/2's
+turn-create-home.db.test.ts afterAll (closeDb and the scratch drop) over
+its 10 s hook budget (the file took 19 s under the load; alone, six runs
+on the branch and six on 33bbc0a8e, 10 s each, no timeout, no busy line in
+the log), and the switch-off run's spend-budget.db.test.ts "a narrated
+status line counts" (it waits 200 ms for the trace write; with the switch
+off, six runs alone all passed). Shard 1/2 and the switch-off run again,
+two lanes: the counts above. The targeted runs and the round trips ran on
+235bacf14 (d0ff46dfd less one line of docs/process-inventory.md); the
+old-patch run on 8121ffc3c, whose code outside the test files is
+d0ff46dfd's (its cells then ended two pools before their pipelines were
+done, which 235bacf14 fixed in the cells; the old patch's 7 failures are
+the queued reserves, each pending before that point).
+
+### Open items
+
+1. postgres.js: a reservation released after its pool's `end()` began goes
+   back to the open queue and is never ended, so that `end()` never
+   finishes (seen once here: a cell ended a pool while a pipeline's RESET
+   was still out; the cells now wait for the pipelines first). closeDb
+   waits for every pipeline before it ends a pool (`actorPipelinesDone`),
+   and every other lease goes back before its caller has its answer, so
+   closeDb does not meet it. Not patched (outside MED-A); one line in
+   `reserve()`'s release (terminate when the pool is ending) if the CEO
+   wants it.
+2. A box whose postgresql.conf sets one of the pinned settings would not
+   see it on the narrow pool (the startup parameter wins). Compose sets
+   none.
+3. The user role's pool limit (the fix round's open item 1) is still for
+   the CEO to place.
 4. Per-database mode keeps the S7a route (no login for the role).
