@@ -266,7 +266,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
 export const RELAY = 'http://relay.sweep';
 
 /**
- * The login's own rows (round 14b, item 9: generated from the route table,
+ * The login's own rows (generated from the route table,
  * not a hand list): one entry per writing row whose class is `self` (the
  * profile, push, member push, member MCP, assistant thread and Telegram
  * pairing rows), checked against the table by
@@ -359,7 +359,7 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
 });
 
 /**
- * The read rows the sweep sends as well (round 14b, item 0: a narrow exit's
+ * The read rows the sweep sends as well (a narrow exit's
  * read of a definer it may not run, mantle_agent_experience on GET
  * /api/agents, was found live on dev, not by a test): every GET of an Admin
  * area row and of a `self` row runs on the narrow exit with the switch on

@@ -129,6 +129,9 @@ describe('the matrix declarations', () => {
     const allowed = new Set([
       'packages/tools/src/tool-policy.ts',
       'packages/db/src/matrix/test-support/a8-tool-cells.ts',
+      // The narrow call scan's pins: a key that is a path ending in
+      // access-matrix.ts reads as a destructuring here (test support, no read).
+      'packages/db/src/test-support/narrow-write-scan.pins.ts',
     ]);
     const hits: string[] = [];
     const walk = (dir: string) => {

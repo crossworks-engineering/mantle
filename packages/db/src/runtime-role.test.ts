@@ -419,7 +419,7 @@ describe('the narrow system role rights', () => {
     // The allowlist (plan v3.2 S7a part a3): what narrow statements call, by
     // name, measured with the switch on. Only goes down, or a reviewed line.
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
-      // Round 14b: an assistant's level counts (GET /api/agents on the
+      // An assistant's level counts (GET /api/agents on the
       // assistants area's narrow exit), a read of counts only.
       'public.mantle_agent_experience(uuid,uuid[])',
       'public.mantle_area_rule(uuid,text)',

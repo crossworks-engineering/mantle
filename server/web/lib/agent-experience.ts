@@ -65,7 +65,7 @@ export function zeroExperience(): AgentExperienceDTO {
 /**
  * Experience for the owner's agents, keyed by agent id. One definer
  * (mantle_agent_experience, 0293) counts it everywhere: on the system pool
- * and the assistants area's narrow exit (NARROW_SYSTEM_FUNCTIONS, round 14b)
+ * and the assistants area's narrow exit (NARROW_SYSTEM_FUNCTIONS)
  * every assistant's, in a scope only for a scope that holds Admin and the
  * assistants it reads (the chat bundle's badge; A6b: it left the scope by
  * 'rule-in-query' before). Agents with no recorded work are absent: callers

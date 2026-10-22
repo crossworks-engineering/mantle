@@ -55,7 +55,7 @@ describe('the narrow area-route sweep table', () => {
     expect(empty).toEqual([]);
   });
 
-  // Round 14b, item 9: the login's own rows come from the table too.
+  // The login's own rows come from the table too.
   it('has a login-self entry for every writing self row, and no other', () => {
     const policy = buildRoutePolicy(routeManifest);
     const keys = selfWriteRows(policy)
@@ -87,7 +87,7 @@ describe('the narrow area-route sweep table', () => {
     }
   });
 
-  // Round 14b, item 0: every GET of an area or self row is sent, but the
+  // Every GET of an area or self row is sent, but the
   // streams, each named with why.
   it('sends every read row of an area or self but the named streams', () => {
     const reads = sweepReadRows(buildRoutePolicy(routeManifest)).map((r) => r.key);

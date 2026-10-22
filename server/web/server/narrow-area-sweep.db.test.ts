@@ -21,8 +21,8 @@
  * Round 10 (D 1, D 2): each row's record of what the narrow login itself
  * wrote (installNarrowWrote: never on the off pass) and of the full-route
  * spots it entered (pinned: SPOT_ROWS), and the login-self rows
- * (LOGIN_SELF_ENTRIES: since round 14b every writing `self` row of the
- * route table, as the owner or as a member). Round 14b (item 0): every GET
+ * (LOGIN_SELF_ENTRIES: every writing `self` row of the
+ * route table, as the owner or as a member). Every GET
  * of an area row or a `self` row too (sweepReadRows), with the switch on
  * and off: none refused by the narrow role, the same status both ways.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/narrow-area-sweep.db.test.ts
@@ -280,7 +280,7 @@ describe.skipIf(!URL)(
     let rows: { key: string }[] = [];
     let selfRows: { key: string }[] = [];
     let readRows: { key: string }[] = [];
-    /** Per pass: each read row's status (round 14b, item 0). */
+    /** Per pass: each read row's status. */
     const readAnswers: Record<'on' | 'off', Map<string, string>> = {
       on: new Map(),
       off: new Map(),
@@ -423,7 +423,7 @@ describe.skipIf(!URL)(
         ts.takeNarrowWrites();
         ts.takeSpotUses();
         ts.takeNarrowDenials();
-        // The read rows first (round 14b, item 0), on the untouched
+        // The read rows first, on the untouched
         // fixture: each GET of an area or `self` row, a member row as the
         // member login. A read writes nothing the next row reads.
         for (const row of readRows) {
@@ -668,7 +668,7 @@ describe.skipIf(!URL)(
       'self DELETE /api/profile/photo': ['profile-row'],
       'self POST /api/push/connect': ['push-device'],
       'self POST /api/push/reset': ['push-device'],
-      // Round 14b: the login's own chat rows (pairing.ts setChatPairing,
+      // The login's own chat rows (pairing.ts setChatPairing,
       // its definer at acting-login on every route) and the reads that
       // write at a spot (a collection's index settled, a drive's token
       // refreshed, the onboarding row made on first read).
