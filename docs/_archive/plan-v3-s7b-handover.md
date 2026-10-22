@@ -3090,8 +3090,9 @@ fullRouteSpots and fullRouteSpotCalls unchanged.
 
 Mac, Node 26, DATABASE_URL unset, on 0e81fec1d: `pnpm -r typecheck` 0,
 `pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm
-arch:check` 0; `pnpm -C server/web build` and the full unit vitest were
-running at hand-over ($TMPDIR/macgates/summary on the Mac).
+arch:check` 0, `pnpm -C server/web build` 0, full unit vitest 0 (874
+files, 11315 tests). On 3feafa7a5 (the handover, docs only): format, docs
+and arch 0.
 
 Workstation, every suite on 0e81fec1d, launched at hand-over
 (`UNITR=11 ~/s7b-b2/launch9.sh 0e81fec1d f`: fs1 fs2 faoff faon feon frrole
@@ -3106,7 +3107,6 @@ a2a on 8f8a84ebc), frr1 0, fmeas 0.
 ### Left (round 12)
 
 0. Read the f runs and the drill; the matrix alone if only its time budget
-   fails; eoff and erroff (797f8e29e) too. The Mac build and unit vitest
-   on 0e81fec1d (the summary file above), or run them again.
+   fails; eoff and erroff (797f8e29e) too.
 1. If every gate reads 0 on 0e81fec1d (this handover is docs only), that
    head goes to the full re-audit of b2, both sides.
