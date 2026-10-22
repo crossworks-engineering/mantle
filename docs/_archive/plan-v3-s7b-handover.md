@@ -2816,11 +2816,12 @@ MANTLE_CHECK_FLOOR=keep (results in ~/s7b-b2/x-<name>.exit and .log;
   passing: the three suites that timed out so (workspaces-live too) take
   60 s since 9cee2ef27. The rest (shards, runtime-role, off, runtime role
   off, matrix) were running at hand-over.
-- c0d68ad0e, more: shard 2/2 1 (a2b2b-write-gateway's afterAll over
-  10 s, every test passing), test:matrix 1 (only its time budget, 272.6 s
+- c0d68ad0e, more: shard 1/2 1 (a5-mcp-writes-smoke's and
+  precheck-removal's afterAll over 10 s, all 6419 tests passing), shard
+  2/2 1 (a2b2b-write-gateway's afterAll over 10 s, all 7881 passing), test:matrix 1 (only its time budget, 272.6 s
   of 210 s with six lanes busy; the noted lines as round 7's).
 - vitest.config.ts: `hookTimeout` 60 s for every config (an afterAll ends
-  pools and drops a scratch database; four suites passed 10 s in one
+  pools and drops a scratch database; six suites passed 10 s in one
   round with six lanes busy, every test green).
 - on the final head (prefix c, `~/s7b-b2/launch9.sh <sha> c`): every suite
   and the forge proof (cproof: round 8's forge.sql) launched at hand-over;
