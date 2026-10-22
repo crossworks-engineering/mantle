@@ -685,7 +685,8 @@ run the green PUBLISHED build only and never edit it from there.
   `table_commit` publishes the draft. An app's commit keeps no history
   entry of the version it replaces, so the Table's history has no restore
   point for it. A commit that has the Table indexed again with a model
-  (the Table has no summary yet, or its columns changed) waits: while a
+  (the Table has no summary yet, its columns or tabs changed, or its row
+  count passed a power of ten) waits: while a
   pass is pending or running, and for 10 minutes after the last one,
   `table_commit` answers "This table is still being indexed; try the
   commit again in a few minutes." and the draft stays as it is. A commit

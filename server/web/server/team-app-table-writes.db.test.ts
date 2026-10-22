@@ -709,9 +709,17 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(await indexWork(tables.own)).toBe('extract');
 
     // A summarised Table a minute after its pass: a cell-only commit (a
-    // re-embed, no model call) is not held.
+    // re-embed, no model call) is not held. A cell set, not a row add: the
+    // shape hash buckets the row count, so a row add across a power of ten
+    // is a whole pass, and held.
     await setData(tables.own, { summary: 'Rows by name.', extract_completed_at: minutesAgo(1) });
-    await draft('wait cells');
+    const set = await memberCall(writer, 'table_cell_set', {
+      table_id: tables.own,
+      row_id: rowIds.own,
+      column: 'Name',
+      value: `${tag} wait cells`,
+    });
+    expect(set.body.ok, JSON.stringify(set.body)).toBe(true);
     const cells = await commit();
     expect(cells.body.ok, JSON.stringify(cells.body)).toBe(true);
     expect(await hasDraft(tables.own)).toBe(false);
