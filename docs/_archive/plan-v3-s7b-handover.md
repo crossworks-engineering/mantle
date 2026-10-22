@@ -4101,3 +4101,154 @@ call; the turn and tool paths rest on the switch-on suites. Each of the
 seven new allowlist entries is a read; the two that read rows with no
 scope on the narrow role (access log names, contact sharing dates) read
 no more than the narrow role's own SELECT already does.
+
+## Part b2, round 14c: one spot list per table, one acting-login helper, the scan per call (handed over)
+
+Same branch. Inputs: the brief's "b2 round 14c inputs". One builder (two
+helpers for J and the open list's tags); commits 25cc7688e and ea38c5f0a.
+
+### Item 1: round 14b's gate set on 3978510ed
+
+All 0 but two, each load only: test:actor-off 1 (reserve-queue's CLI cell:
+the child's tsx cold start passed 20 s with six lanes busy, stdout empty, 0
+backends; alone, r14crq1, it passed in 4.5 s: its bound is now 60 s, a hang
+is still caught) and test:matrix 1 (the tool cells' time budget only, 309 s
+against 210 s). shard 1/2 0, shard 2/2 0, actor-on 0, edit-on 0,
+runtime-role 0, serial 0, the drill 0, round 8's proof 0, the forge proof
+0: 84 forges refused (all 42501), 21 product writes wrote. The switch-off
+and runtime-role-off full runs on 3978510ed were stopped as superseded.
+
+### Item 2: J, K, L, M and the INFO note
+
+- L. `narrowSpotFor(table, op, set)` and `onNarrowSpots`
+  (packages/db/src/narrow-spots.ts): `NARROW_TABLE_SPOTS` names per table
+  the spots a write may need (agents: assistant-grant, skill-text,
+  model-route; ai_workers: skill-text, model-route; tool_groups:
+  tool-group-grant, tool-config; one each for tools, heartbeats, skills,
+  the feeds, doc_collections, agent_groups, curated_models). The rules
+  claim props; what is left goes through `narrowNeedsSpot` to the table's
+  rest spot. A set that needs two spots enters both, nested (a worker's
+  vault key and params edit: skill-text and model-route; it entered
+  skill-text only before). The 12 callers (17 literal calls) are one call
+  each. The lint (as-system-routes.mjs) reads the list: a call names its
+  spots by its table (a schema export resolved from the schema files), each
+  must be listed for the calling file; an unlisted table, an alias or a
+  passed reference fails arch:check. Cells: narrow-spots.test.ts,
+  as-system-exits.test.ts.
+- The five acting-login callers go through `atActingLogin`
+  (gateway/acting-login.ts, a listed spot holder): structure-item's three
+  definer calls, the assistant delete, the chat pairing set, the
+  onboarding attach, the Moderator set.
+- INFO: `insertStructureItem` takes the sealed value (a function of the
+  new row returning ciphertext and key version), not a callback with the
+  transaction: the structure helper writes the secrets row itself, so no
+  caller's statement runs at the acting-login spot. The two DB cells that
+  used the callback changed (the containment cell reads the session through
+  a scratch trigger on secrets).
+- M, lint arrows: a spot holder written as an arrow or a function
+  expression bound to a name is now found. It found two:
+  `asCallActorOrSpot` (pending.ts, was asActor) and `atCredentialSpot`
+  (login-update.ts, was run), both listed, own file only. With that,
+  login-update's bridge call reads as at its spot (it runs only when the
+  role changes, which is a credential change): its call pin went.
+- M, run-maker: a run that names no login runs as the owner, so an
+  assistant assigned to a login may not make one (`no_maker`); a gone
+  assistant and one outside Admin keep their own answers (agent_missing,
+  below_admin). Cell in execute-item.db.test.ts.
+- M, Telegram readers: the event reminder's chosen sender reads the bot's
+  assistant through `botAgentIdSql`; the other channel reads are the
+  reverse way (an assistant's own bot), named in chat-assistant.ts.
+- K: the write scan covers per call (a function passed to onNarrowSpots
+  covers only that table's write; the file-wide narrowNeedsSpot cover is
+  gone). The value rules are visible: a literal turn-on, a new row whose
+  switch starts on by default, a heartbeat resume make a write not the
+  narrow login's (literals only; a variable is read at run time). The open
+  list is pinned by occurrence and each entry tagged reaches-narrow or
+  covered-across-files with its path (traced call site by call site).
+- J: migrate writes one `narrow-epoch` row per release version
+  (actor_check_misses, through mantle_actor_miss_log, never twice for a
+  version); the box script counts the narrow rows since the latest epoch
+  and prints it (`narrow_misses_since_epoch`); the reset is a hand insert
+  (docs/runtime-role.md). The reaper keeps it (`narrow-%`). Cells:
+  narrow-epoch.test.ts, narrow-epoch.db.test.ts,
+  actor-misses-reap.db.test.ts.
+
+### The scan's trace found real gaps
+
+Six open writes reach a narrow route outside a spot. Three are fixed here
+on NARROW_WRITES (no migration: migrate's grants follow the list): the
+member access log's insert (team_access_log, insert only, its detail a
+decided JSON column), the embedder's failover stamp (last_failover_at),
+and the settings area's network key row (tailscale_config insert and
+last_activated_at; held in NARROW_REINSERT_HELD: every column was already
+the narrow login's to update). Left for a decision (cost class):
+member_turn_ledger insert and delete (claimMemberTurn and its release,
+through systemDb inside a member's chat request). Read from the code, not
+yet proven by a cell: with the switch on a limited member's chat turn
+would meet 42501 there; the would-refuse count sees it with the switch
+off. A narrow DELETE there would let a forged session clear a member's
+daily cap, so it wants a spot (a new one, the CEO told) or a definer, not
+the list.
+
+### Item 3: the phone sign-out on the narrow route
+
+The area sweep now sends POST /api/auth/mobile-logout with a live device
+bearer (no cookie) on both passes: 200, the token revoked, nothing refused
+by the narrow role, the same both ways.
+
+### Item 4: turn and tool paths the sweep cannot reach
+
+The sweep sends HTTP rows only. A turn and a tool run are proven by:
+a8-tool-cells.matrix (every tool through a turn and the MCP surface, warn
+and on, the matrix lane, switch on); w7a-area-system-sweep (every
+systemWhole tool in an Admin turn); the turn-scope files (heartbeat fire,
+team turns, turn gates, member connectors, team groups) and
+a2a-round-trips (the chat turn start), all in the shards with the switch
+on. Not reached by any HTTP row: Telegram turns (runtime.ts, offline in
+tests), heartbeat fires (worker), the runs worker step, the MCP surface's
+own calls, a member's limited chat turn (the ledger gap above).
+
+### Pins
+
+fullRouteSpotCalls 129 to 121 (the table helper and the acting-login
+helper); historyCodeComments 2350 to 2348; NARROW_SCAN_OPEN now a record
+(n, tag, why), 86 keys; NARROW_SCAN_FN_OPEN loses login-update's bridge
+call; NARROW_SCAN_FN_SYSTEM_FILES gains migrator-steps.ts;
+FULL_ROUTE_SPOT_CALLBACKS: narrowTx out, atActingLogin, asCallActorOrSpot,
+atCredentialSpot in. No migration.
+
+### Gates
+
+Mac on 25cc7688e: typecheck 0, lint 0 (the one old warning), format 0,
+docs 0, arch 0, web build 0, unit 1 (two pins this round moved, fixed in
+ea38c5f0a). Mac on ea38c5f0a: all 0 (unit 879 files, 11357 tests).
+
+Workstation on ea38c5f0a (r14ci*, ~/s7b-b2/r14ci-launch.sh; the suite
+clones from ~/s7b-b2/mirror.git, which fetches from ~/s7b-b1/mirror.git,
+which fetches from GitHub: fetch both before a launch, or every suite
+exits 90 as r14cf and r14cg did): shard 1/2 0, actor-on 0, edit-on 0,
+serial 0, the drill 0, round 8's proof 0, the forge proof 0 (84 refused,
+all 42501; 21 product writes wrote). Red:
+
+- shard 2/2 1: (a) execute-item's new run-maker cell inserted a login with
+  no id (fixed after, in the handover commit; not yet run); (b) the
+  sweep's "pins the rows whose write runs at a spot": rows whose set now
+  enters two spots record the second one too (skill-text, model-route
+  added), as this round meant: update SPOT_ROWS for those rows from the
+  run's diff (x-r14cis2.log); (c) gate-caller.test.ts, POST
+  /api/grants/move limited-bearer: the bearer's touches 1 where 2 was
+  pinned (a fire-and-forget touch; this round changed no bearer code:
+  rerun alone before calling it real).
+- actor-off 1: the same sweep pin, and a6b-exit-sweep client-sourced's
+  15 s timeout (seen in 14b under load: rerun alone).
+- Still running at hand over: runtime-role, switch off, runtime-role off,
+  the matrix.
+
+### Left (round 14d), in order
+
+1. The sweep's SPOT_ROWS for the rows that now enter two spots; rerun
+   execute-item, gate-caller and a6b alone; read the four r14ci runs left
+   (x-r14ci*.exit); the matrix alone if only its budget fails. Then every
+   gate 0 on one head.
+2. The member turn ledger decision (spot or definer) and its cell.
+3. The full re-audit, both sides, once every gate is 0 on one head.

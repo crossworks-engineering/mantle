@@ -250,8 +250,8 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
 
   it("a run of an assistant assigned to a login that names no login runs nothing (it would run as the owner); the owner's own assistant's still runs", async () => {
     const [u] = await rows<{ id: string }>(sqlTag`
-      insert into auth.users (email, password_hash, role, is_owner)
-      values (${`${tag}-assigned@example.invalid`}, 'x', 'member', false) returning id`);
+      insert into auth.users (id, email, password_hash, role, is_owner)
+      values (gen_random_uuid(), ${`${tag}-assigned@example.invalid`}, 'x', 'member', false) returning id`);
     const [a] = await rows<{ id: string }>(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, assigned_user_id)
       values (${anchor}, 'assigned', 'a', 'm', 'p', ARRAY['g-access'], ${u!.id}) returning id`);
