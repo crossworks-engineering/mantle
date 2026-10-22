@@ -286,6 +286,8 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "a connector's rows (the Admin area's approval of an elevated call): a read definer",
   'public.mantle_pending_card_route(uuid,uuid)':
     "a pending approval card's route (the Admin area's run of an item): a read definer",
+  'public.mantle_connector_beyond_admin(uuid,text)':
+    "whether a connector is held beyond Admin (the Admin area's connector sync, move and key rotate: external-access.ts connectorBeyondAdmin): a read definer with no identity read (0293: an inactive scope reads the owner's rows; round 14, the re-audit's app MED-1: refused on the narrow exit before)",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
 };
@@ -1270,6 +1272,51 @@ export async function narrowFunctionAllowlist(sql: Sql): Promise<string[]> {
  * tables these ran as the superuser, so the owner must reach what they
  * reach (auth's tables, the functions taken from PUBLIC). One transaction.
  */
+/** The LIKE pattern of the system schemas (pg_catalog, pg_toast, ...): an
+ *  escaped underscore, so `pgboss` is not one (round 14, the re-audit's DB
+ *  LOW-3: written 'pg\_%' inside a JS template it reached Postgres as
+ *  'pg_%', where `_` is any one character, and pg-boss's schema kept
+ *  PUBLIC's CREATE). Sent as a parameter: the text is exactly this. */
+export const SYSTEM_SCHEMA_LIKE = 'pg\\_%';
+
+/** The default-privilege entries that name PUBLIC (grantee 0) or the narrow
+ *  role, but Postgres's own defaults restated in a global entry. */
+export const DEFAULT_ACL_SQL = `
+  select pg_get_userbyid(d.defaclrole) as owner, n.nspname as schema,
+         d.defaclobjtype::text as objtype,
+         case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+    from pg_default_acl d
+    left join pg_namespace n on n.oid = d.defaclnamespace
+    cross join lateral aclexplode(d.defaclacl) a
+   where (a.grantee = 0 or a.grantee = (select oid from pg_roles where rolname = '${NARROW_ROLE}'))
+     and not (a.grantee = 0 and d.defaclnamespace = 0
+              and ((d.defaclobjtype = 'f' and a.privilege_type = 'EXECUTE')
+                or (d.defaclobjtype = 'T' and a.privilege_type = 'USAGE')))
+   group by 1, 2, 3, 4`;
+
+export type DefaultAclRow = {
+  owner: string;
+  schema: string | null;
+  objtype: string;
+  grantee: string;
+};
+
+/** The REVOKE of one default-privilege entry (DEFAULT_ACL_SQL's row). */
+export function defaultAclRevoke(r: DefaultAclRow): string {
+  const kinds: Record<string, string> = {
+    r: 'TABLES',
+    S: 'SEQUENCES',
+    f: 'FUNCTIONS',
+    T: 'TYPES',
+    n: 'SCHEMAS',
+  };
+  const kind = kinds[r.objtype];
+  if (!kind) throw new Error(`unknown default ACL object type ${r.objtype}`);
+  const where = r.schema && kind !== 'SCHEMAS' ? ` IN SCHEMA ${quotedIdent(r.schema)}` : '';
+  const who = r.grantee === 'PUBLIC' ? 'PUBLIC' : quotedIdent(r.grantee);
+  return `ALTER DEFAULT PRIVILEGES FOR ROLE ${quotedIdent(r.owner)}${where} REVOKE ALL ON ${kind} FROM ${who}`;
+}
+
 export async function applyRuntimeGrants(sql: Sql): Promise<void> {
   const rt = `"${RUNTIME_ROLE}"`;
   const schemas = APP_SCHEMAS.join(', ');
@@ -1308,10 +1355,19 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schemas} FROM PUBLIC`);
       const createSchemas = await tx<{ s: string }[]>`
         select quote_ident(n.nspname) as s from pg_namespace n
-         where n.nspname not like 'pg\_%' and n.nspname <> 'information_schema'
+         where n.nspname not like ${SYSTEM_SCHEMA_LIKE} and n.nspname <> 'information_schema'
            and has_schema_privilege('public', n.oid, 'CREATE')`;
       for (const { s } of createSchemas)
         await tx.unsafe(`REVOKE CREATE ON SCHEMA ${s} FROM PUBLIC`);
+      // Default privileges naming PUBLIC or the narrow role (round 14, the
+      // re-audit's DB LOW-3): a hand ALTER DEFAULT PRIVILEGES ... TO PUBLIC
+      // would hand every object a later migration makes to every role
+      // before this step takes it back. Each such entry is revoked; the
+      // built-in defaults restated in a global entry (EXECUTE on functions,
+      // USAGE on types, to PUBLIC) are Postgres's own and stay.
+      for (const r of await tx.unsafe<DefaultAclRow[]>(DEFAULT_ACL_SQL)) {
+        await tx.unsafe(defaultAclRevoke(r));
+      }
       const publicDefiners = await tx<{ fn: string }[]>`
         select p.oid::regprocedure::text as fn
           from pg_proc p join pg_namespace n on n.oid = p.pronamespace

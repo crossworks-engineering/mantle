@@ -8,15 +8,35 @@
 import { describe, expect, it } from 'vitest';
 import * as schema from './schema';
 import {
+  NARROW_DENIED_FUNCTIONS,
+  NARROW_PUBLIC_DEFINERS,
+  NARROW_SYSTEM_FUNCTIONS,
+  RUNTIME_DENIED_FUNCTIONS,
+} from './runtime-role';
+import {
+  migrationFunctions,
   narrowAllows,
+  narrowRunnable,
+  scanCalls,
   scanRepo,
+  scanRepoCalls,
   scanSource,
   tablesOf,
   writeKey,
 } from './test-support/narrow-write-scan';
-import { NARROW_SCAN_OPEN, NARROW_SCAN_SYSTEM_FILES } from './test-support/narrow-write-scan.pins';
+import {
+  NARROW_SCAN_FN_DECIDED,
+  NARROW_SCAN_FN_OPEN,
+  NARROW_SCAN_FN_SYSTEM_FILES,
+  NARROW_SCAN_OPEN,
+  NARROW_SCAN_SYSTEM_FILES,
+} from './test-support/narrow-write-scan.pins';
 
 const repo = new URL('../../..', import.meta.url).pathname;
+// The spot helpers' lists (a .mjs with no types: read by URL).
+const { FULL_ROUTE_SPOT_WRAPPERS, FULL_ROUTE_SPOT_CALLBACKS } = (await import(
+  new URL('../../../eslint-rules/as-system-routes.mjs', import.meta.url).href
+)) as Record<'FULL_ROUTE_SPOT_WRAPPERS' | 'FULL_ROUTE_SPOT_CALLBACKS', Record<string, unknown>>;
 const tables = tablesOf(schema as Record<string, unknown>);
 /** onFullSystemRoute and the one-spot helpers (as-system-routes.mjs
  *  FULL_ROUTE_SPOT_WRAPPERS). */
@@ -80,5 +100,64 @@ describe('the static narrow write scan', () => {
         keys.filter((k) => k.startsWith(`${f} `)),
         f,
       ).toEqual([]);
+  });
+});
+
+describe('the static narrow call scan (round 14: an EXECUTE refusal is no write)', () => {
+  const fns = migrationFunctions(repo);
+  const runnable = narrowRunnable(
+    fns,
+    [...Object.keys(NARROW_SYSTEM_FUNCTIONS), ...Object.keys(NARROW_PUBLIC_DEFINERS)],
+    [...Object.keys(NARROW_DENIED_FUNCTIONS), ...Object.keys(RUNTIME_DENIED_FUNCTIONS)],
+  );
+  const spotCalls = [
+    'onFullSystemRoute',
+    ...Object.keys(FULL_ROUTE_SPOT_WRAPPERS),
+    ...Object.keys(FULL_ROUTE_SPOT_CALLBACKS),
+  ];
+  const found = scanRepoCalls(
+    repo,
+    ['server', 'packages'],
+    runnable,
+    { ...NARROW_SCAN_SYSTEM_FILES, ...NARROW_SCAN_FN_SYSTEM_FILES },
+    spotCalls,
+  );
+
+  it('every call the narrow role may not run is at a spot, in a system file, or of a decided function', () => {
+    const undecided = [...found.keys()].filter((k) => !NARROW_SCAN_FN_DECIDED[k.split(' ')[1]!]);
+    expect(undecided).toEqual([]);
+  });
+
+  it('the pins are exact per call: each file and function with its count (a new call fails)', () => {
+    expect(Object.fromEntries([...found].sort())).toEqual(
+      Object.fromEntries(Object.entries(NARROW_SCAN_FN_OPEN).sort()),
+    );
+    const used = new Set([...found.keys()].map((k) => k.split(' ')[1]!));
+    expect(Object.keys(NARROW_SCAN_FN_DECIDED).filter((f) => !used.has(f))).toEqual([]);
+    for (const why of Object.values(NARROW_SCAN_FN_DECIDED)) expect(why.length).toBeGreaterThan(30);
+    // Never a function the narrow role may run (it would not be found).
+    for (const f of Object.keys(NARROW_SCAN_FN_DECIDED)) expect(runnable.has(f), f).toBe(false);
+  });
+
+  it("reads the migrations' definers: the connector read is the narrow role's, a viewer definer is not", () => {
+    expect(fns.get('mantle_connector_beyond_admin')?.definer).toBe(true);
+    expect(runnable.has('mantle_connector_beyond_admin')).toBe(true);
+    expect(runnable.has('mantle_app_holders')).toBe(false);
+    expect(runnable.has('mantle_tg_chat_set')).toBe(false);
+  });
+
+  it('reads SQL text only: a call in a template at a spot, outside one, in a comment or a quoted list', () => {
+    const src = `
+      // db.execute(sql\`select mantle_app_holders(x)\`) in a comment
+      const listed = 'public.mantle_app_holders(uuid,uuid)';
+      await db.execute(sql\`select "public"."mantle_app_holders"(\${a}::uuid, \${b}::uuid)\`);
+      await onFullSystemRoute('tool-config', () => db.execute(sql\`select mantle_tg_replay(\${a})\`));
+      await db.execute(sql\`select x.mantle_not_a_call(1), mantle_brain_id()\`);
+    `;
+    expect(scanCalls('x.ts', src, spotCalls).map((c) => [c.fn, c.atSpot])).toEqual([
+      ['mantle_app_holders', false],
+      ['mantle_tg_replay', true],
+      ['mantle_brain_id', false],
+    ]);
   });
 });

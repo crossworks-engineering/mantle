@@ -352,3 +352,127 @@ export function scanRepo(
 export function writeKey(w: ScannedWrite): string {
   return `${w.file} ${w.op} ${w.table}${w.op === 'update' || w.columns.length ? ` [${w.columns.join(',')}]` : ''}`;
 }
+
+/* ------------------------------------------------------------------------ *
+ * The function calls (round 14, the re-audit's app MED-1 class fix): an
+ * EXECUTE refusal is no write, so neither the counter nor the write scan
+ * above saw a narrow exit call a definer the narrow role may not run (a
+ * connector's sync, move and key rotate called mantle_connector_beyond_admin
+ * on the Admin area's narrow exit, refused, after the marks were voided).
+ * Every `mantle_<name>(` call in the SQL text of the source (a template
+ * literal: the sql`...` the app sends) is held against what the narrow role
+ * may run: its EXECUTE allowlist and PUBLIC definers (runtime-role.ts), or
+ * a function that runs as its caller (no SECURITY DEFINER in its newest
+ * definition among the migrations) not taken from PUBLIC. Any other call
+ * must sit at a full-route spot, in a system file, or be pinned with its
+ * function's decision (narrow-write-scan.pins.ts NARROW_SCAN_FN_DECIDED)
+ * and its exact count per file (NARROW_SCAN_FN_OPEN): a new call of a
+ * definer the narrow role may not run, in any file, fails the unit suite.
+ * runtime-role.db.test.ts checks the "runs as its caller" reading against
+ * the catalog (the narrow role's real EXECUTE rights).
+ * ------------------------------------------------------------------------ */
+
+export type ScannedCall = { file: string; line: number; fn: string; atSpot: boolean };
+
+/** The spans of the template literals' text in `src` (their `${...}`
+ *  parts included: a nested call in one is SQL text too). */
+export function templateSpans(src: string): [number, number][] {
+  const code = codeOnly(src);
+  const out: [number, number][] = [];
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== '`' || code[i] !== '`') continue;
+    let j = i + 1;
+    while (j < src.length && !(src[j] === '`' && code[j] === '`')) j++;
+    out.push([i + 1, j]);
+    i = j;
+  }
+  return out;
+}
+
+/** The `mantle_<name>(` calls in the SQL text of one file. */
+export function scanCalls(
+  file: string,
+  src: string,
+  spotCalls: readonly string[] = SPOT_CALLS,
+): ScannedCall[] {
+  const code = codeOnly(src);
+  const { spans, names, passed } = spotSpans(code, spotCalls);
+  const covered = spotOnly(code, names, spans);
+  if (/\bnarrowNeedsSpot\s*\(/.test(code)) for (const n of passed) covered.add(n);
+  const all = [...spans, ...namedSpans(code, covered)];
+  const inSpot = (at: number) => all.some(([a, b]) => at > a && at < b);
+  const lineOf = (at: number) => src.slice(0, at).split('\n').length;
+  const out: ScannedCall[] = [];
+  const re = /(?<![\w.$])(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/g;
+  for (const [a, b] of templateSpans(src)) {
+    const text = src.slice(a, b);
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      out.push({ file, line: lineOf(a + m.index), fn: m[1]!, atSpot: inSpot(a + m.index) });
+    }
+    re.lastIndex = 0;
+  }
+  return out;
+}
+
+/** Each `public.mantle_*` function's newest definition among the
+ *  migrations: whether it is SECURITY DEFINER (false: runs as its caller),
+ *  and whether a later migration took EXECUTE on it from PUBLIC. */
+export function migrationFunctions(
+  repo: string,
+): Map<string, { definer: boolean; fromPublic: boolean }> {
+  const dir = join(repo, 'packages/db/migrations');
+  const out = new Map<string, { definer: boolean; fromPublic: boolean }>();
+  for (const f of readdirSync(dir)
+    .filter((x) => x.endsWith('.sql'))
+    .sort()) {
+    const s = readFileSync(join(dir, f), 'utf8');
+    const def =
+      /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\s*\.\s*)?"?(mantle_\w+)"?\s*\(([\s\S]*?)\$(\w*)\$/gi;
+    for (let m = def.exec(s); m; m = def.exec(s))
+      out.set(m[1]!, { definer: /SECURITY\s+DEFINER/i.test(m[2]!), fromPublic: false });
+    const rev =
+      /REVOKE\s+(?:ALL|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\s*\.\s*)?"?(mantle_\w+)"?[^;]*FROM\s+PUBLIC/gi;
+    for (let m = rev.exec(s); m; m = rev.exec(s)) {
+      const e = out.get(m[1]!);
+      if (e) e.fromPublic = true;
+    }
+  }
+  return out;
+}
+
+/** The names the narrow role may run: its allowlists (by name) and the
+ *  functions that run as their caller and stay PUBLIC's. */
+export function narrowRunnable(
+  fns: Map<string, { definer: boolean; fromPublic: boolean }>,
+  allowed: readonly string[],
+  denied: readonly string[],
+): Set<string> {
+  const name = (sig: string) => sig.replace(/^public\./, '').replace(/\(.*$/, '');
+  const deniedNames = new Set(denied.map(name));
+  const out = new Set(allowed.map(name));
+  for (const [fn, d] of fns) if (!d.definer && !d.fromPublic && !deniedNames.has(fn)) out.add(fn);
+  return out;
+}
+
+/** Every call the narrow role may not run outside a spot, by `file fn`
+ *  with its count (system files left out). */
+export function scanRepoCalls(
+  repo: string,
+  roots: readonly string[],
+  runnable: Set<string>,
+  systemFiles: Readonly<Record<string, string>>,
+  spotCalls: readonly string[] = SPOT_CALLS,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const f of sourceFiles(repo, roots)) {
+    // Test helpers (test-support.ts and the test-support folders) run in
+    // tests only.
+    if (systemFiles[f] || /(^|\/)test-support(\/|\.ts$)/.test(f)) continue;
+    for (const c of scanCalls(f, readFileSync(join(repo, f), 'utf8'), spotCalls)) {
+      if (c.atSpot || runnable.has(c.fn)) continue;
+      const k = `${c.file} ${c.fn}`;
+      out.set(k, (out.get(k) ?? 0) + 1);
+    }
+  }
+  return out;
+}

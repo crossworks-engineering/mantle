@@ -30,6 +30,7 @@ import { afterMigrations } from './migrator-steps';
 import {
   ACL_MARKER_FUNCTION,
   APP_SCHEMAS,
+  DEFAULT_ACL_SQL,
   DB_ROLE_SQL,
   NARROW_DENIED_FUNCTIONS,
   NARROW_PUBLIC_DEFINERS,
@@ -57,6 +58,8 @@ import {
 import { viewerDatabaseUrl, viewerRoleName, viewerRolePassword } from './viewer';
 import { POOL_ROLES } from './viewer-roles';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_WRITES, narrowFor } from './access-matrix';
+import { migrationFunctions, narrowRunnable } from './test-support/narrow-write-scan';
+import { NARROW_SCAN_FN_DECIDED } from './test-support/narrow-write-scan.pins';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
@@ -463,6 +466,52 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
         from pg_class c join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'pgboss' and c.relkind in ('r', 'p')`;
     for (const b of boss) expect(b.privs, b.t).toEqual(['SELECT']);
+  });
+
+  it("the call scan's reading matches the catalog: what it holds the narrow role may run, it may; what it decided, it may not (round 14)", async () => {
+    const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const fns = migrationFunctions(repo);
+    const runnable = narrowRunnable(
+      fns,
+      [...Object.keys(NARROW_SYSTEM_FUNCTIONS), ...Object.keys(NARROW_PUBLIC_DEFINERS)],
+      [...Object.keys(NARROW_DENIED_FUNCTIONS), ...Object.keys(RUNTIME_DENIED_FUNCTIONS)],
+    );
+    const rows = await admin<{ fn: string; may: boolean }[]>`
+      select p.proname as fn, bool_and(has_function_privilege(${NARROW_ROLE}, p.oid, 'EXECUTE')) as may
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname like 'mantle\\_%'
+       group by p.proname`;
+    const may = new Map(rows.map((r) => [r.fn, r.may]));
+    const wrong: string[] = [];
+    for (const f of runnable) if (may.has(f) && !may.get(f)) wrong.push(`held runnable: ${f}`);
+    for (const f of Object.keys(NARROW_SCAN_FN_DECIDED))
+      if (may.get(f) !== false) wrong.push(`decided but the narrow role may run it: ${f}`);
+    expect(wrong).toEqual([]);
+  });
+
+  it('a hand CREATE on pgboss and default privileges naming PUBLIC or the narrow role are taken back by migrate (round 14)', async () => {
+    const [had] = await admin<{ n: number }[]>`
+      select count(*)::int as n from pg_namespace where nspname = 'pgboss'`;
+    await admin.unsafe('CREATE SCHEMA IF NOT EXISTS pgboss');
+    try {
+      await admin.unsafe('GRANT CREATE ON SCHEMA pgboss TO PUBLIC');
+      await admin.unsafe('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC');
+      await admin.unsafe(`ALTER DEFAULT PRIVILEGES GRANT ALL ON SEQUENCES TO "${NARROW_ROLE}"`);
+      await admin.unsafe('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC');
+      const left = async () =>
+        (await admin.unsafe(DEFAULT_ACL_SQL)).length +
+        Number(
+          (
+            await admin<{ c: boolean }[]>`
+              select has_schema_privilege('public', 'pgboss', 'CREATE') as c`
+          )[0]!.c,
+        );
+      expect(await left()).toBeGreaterThanOrEqual(4);
+      await applyRuntimeGrants(admin);
+      expect(await left()).toBe(0);
+    } finally {
+      if (had!.n === 0) await admin.unsafe('DROP SCHEMA pgboss');
+    }
   });
 
   it("the narrow role runs exactly NARROW_SYSTEM_FUNCTIONS, each the runtime role's, and what its tables' defaults and checks call", async () => {

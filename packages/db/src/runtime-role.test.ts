@@ -3,6 +3,7 @@
  * make it a lock, the URL the app's pools use, and the mode report.
  * runtime-role.db.test.ts proves the lock on a real Postgres.
  */
+import { readFileSync } from 'node:fs';
 import * as schema from './schema';
 import { tablesOf } from './test-support/narrow-write-scan';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -420,6 +421,9 @@ describe('the narrow system role rights', () => {
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_brain_id()',
+      // Round 14: a connector held beyond Admin (its sync, move and key
+      // rotate on the Admin area's narrow exit), a structure read.
+      'public.mantle_connector_beyond_admin(uuid,text)',
       'public.mantle_connector_rows(uuid,text,uuid[])',
       'public.mantle_connector_state(uuid,text)',
       'public.mantle_login_areas(uuid)',
@@ -671,5 +675,35 @@ describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class f
     expect(narrowMayWrite('public.audit_log', 'insert')).toBe(true);
     expect(narrowMayWrite('public.audit_log', 'delete')).toBe(false);
     expect(narrowMayWrite('public.audit_log', 'update', ['detail'])).toBe(false);
+  });
+});
+
+describe('the system schemas pattern and the default ACL revoke (round 14, DB LOW-3)', () => {
+  it("sends 'pg\\_%' (an escaped underscore), so pgboss is not a system schema", async () => {
+    const { SYSTEM_SCHEMA_LIKE } = await import('./runtime-role');
+    expect(SYSTEM_SCHEMA_LIKE).toBe('pg' + String.fromCharCode(92) + '_%');
+    // LIKE with `\_` as a literal underscore, as Postgres reads it.
+    const like = (s: string) => /^pg_/.test(s);
+    expect(like('pg_catalog')).toBe(true);
+    expect(like('pgboss')).toBe(false);
+  });
+
+  it('the source sends the pattern as a parameter, never a literal in the SQL text', () => {
+    const src = readFileSync(new URL('./runtime-role.ts', import.meta.url), 'utf8');
+    expect(src).toContain('n.nspname not like ${SYSTEM_SCHEMA_LIKE}');
+    expect(src).not.toMatch(/not like 'pg/);
+  });
+
+  it('revokes each entry with its owner, schema, kind and grantee', async () => {
+    const { defaultAclRevoke } = await import('./runtime-role');
+    expect(
+      defaultAclRevoke({ owner: 'postgres', schema: 'public', objtype: 'r', grantee: 'PUBLIC' }),
+    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE ALL ON TABLES FROM PUBLIC');
+    expect(
+      defaultAclRevoke({ owner: 'postgres', schema: null, objtype: 'S', grantee: 'mantle_system_narrow' }),
+    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" REVOKE ALL ON SEQUENCES FROM "mantle_system_narrow"');
+    expect(
+      defaultAclRevoke({ owner: 'a', schema: 'x', objtype: 'n', grantee: 'PUBLIC' }),
+    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "a" REVOKE ALL ON SCHEMAS FROM PUBLIC');
   });
 });

@@ -379,7 +379,10 @@ async function connectorBeyondAdmin(
   groupSlug: string,
 ): Promise<{ write: boolean } | null> {
   // By its definer (mantle_connector_beyond_admin, 0293; A6b: on the system
-  // pool before, 'workspace-resources').
+  // pool before, 'workspace-resources'). A structure read with no identity:
+  // the narrow role runs it too (NARROW_SYSTEM_FUNCTIONS, round 14), since
+  // a connector's sync, move and key rotate ask it on the Admin area's
+  // narrow exit.
   const [row] = (await db.execute(
     sql`select "public"."mantle_connector_beyond_admin"(${ownerId}::uuid, ${groupSlug}) as write`,
   )) as unknown as { write: boolean | null }[];
@@ -895,20 +898,24 @@ export async function clearConnectorExternalAccess(
     sql`${tools.handler}->>'kind' = 'mcp'`,
     sql`${tools.handler}->>'group' = ${groupSlug}`,
   );
-  await onFullSystemRoute('tool-config', () =>
-    db
+  // Both writes at the spot (round 14, the re-audit's app MED-1): the
+  // disable of the unmarked write tools beyond Admin is a tool's config as
+  // much as the voided marks, and on the narrow route it was refused before
+  // (outside a spot), after the marks were already voided.
+  await onFullSystemRoute('tool-config', async () => {
+    await db
       .update(tools)
       .set({
         externalAccess: sql`jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text))`,
       })
-      .where(and(ofConnector, sql`${tools.externalAccess} is not null`)),
-  );
-  if (await connectorOpensBeyondAdmin(ownerId, groupSlug)) {
-    await db
-      .update(tools)
-      .set({ enabled: false, updatedAt: new Date() })
-      .where(and(ofConnector, sql`${tools.externalAccess} is null`));
-  }
+      .where(and(ofConnector, sql`${tools.externalAccess} is not null`));
+    if (await connectorOpensBeyondAdmin(ownerId, groupSlug)) {
+      await db
+        .update(tools)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(and(ofConnector, sql`${tools.externalAccess} is null`));
+    }
+  });
 }
 
 /**
