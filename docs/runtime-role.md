@@ -208,7 +208,10 @@ Its rights, made equal to the access matrix at every migrate inside
   or column not listed is read only, so a new one is closed by default.
   Measured with the switch on over the full DB suite, actor-off, actor-on,
   edit-on, runtime-role and the area-route sweep (a row trigger on every
-  table and the statement log). Never on it (`NARROW_NEVER_UPDATE`,
+  table and the statement log; an `INSERT ... ON CONFLICT DO UPDATE` needs
+  `UPDATE` on every column its `SET` names even when no row conflicts, so
+  the statement log's columns count, not only the rows a trigger saw).
+  Never on it (`NARROW_NEVER_UPDATE`,
   `NARROW_NEVER_INSERT`): a maker, owner, login, workspace or agent column,
   a destination (base URLs, vault key ids, a handler, an integration, a
   redirect URI, a root path), what runs (a run's status, a run item's
@@ -217,14 +220,23 @@ Its rights, made equal to the access matrix at every migrate inside
   insert into a table whose row is executed, decided or grants (runs, run
   items, pending calls, heartbeats, skills, tools, tool groups, agents,
   channels, AI workers, the embedding row and the rest of the list). Those
-  writes run at a full-route spot, one per job (`run-control`,
-  `model-route`, `tool-config`, `heartbeat-maker`, `skill-text`,
-  `pending-park`, `docs-root`, `agent-group-grant`), where `systemDb`
+  writes run at a full-route spot, one per job (`run-control`: a run made,
+  appended, answered, its budget decided or cancelled; `model-route`,
+  `tool-config`, `heartbeat-maker`, `skill-text`, `pending-park`,
+  `docs-root`, `agent-group-grant`, `push-device`: a phone subscribed and
+  the push relay), where `systemDb`
   takes the system pool too; a caller asks `narrowNeedsSpot` (one helper
   reading the allowlist) whether its write needs one. A narrow session can
   therefore no longer forge a run the sweep executes, a heartbeat that
   fires as the anchor, a skill's text, a parked call, or point a vault key
-  at another host (narrow-allowlist.db.test.ts);
+  at another host (narrow-allowlist.db.test.ts). The runs worker checks a
+  run's maker too: an item of a run that names neither its assistant nor
+  its login, or a login that is gone, never runs. With the switch off,
+  migration 0319 counts, report only, each write a narrow reason makes on
+  the full route that the role would refuse (a table or column privilege,
+  0318's one-way rules): `narrow-would-refuse` miss rows, read by
+  scripts/arch-scoreboard-box.sh; its triggers are derived from the role's
+  live grants on every migrate, so an allowed write fires none;
 - the credential and rights tables within it: `auth.users`:
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);

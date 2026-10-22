@@ -2696,3 +2696,145 @@ tool loop's unit cells mock `@mantle/db` without `onFullSystemRoute`.
 5. The measurement again with the switch on, on this head, to show no
    narrow write outside the allowlist (the suites below say none failed).
 6. A full re-audit of b2 (both sides).
+
+## Part b2, round 9: the statement log's writes, the would-refuse count, the runs' maker (handed over)
+
+Same branch. Inputs: round 8's "Left (round 9)" list, item 0 first. One
+builder; commits c0d68ad0e, 2517acae3, 9cee2ef27 and this handover.
+
+### Item 0: the red suites
+
+- The round 8 runs left at hand-over (x-r8rrole, x-r8off) never wrote an
+  exit file (their units ended with the session); drill7.log reads as
+  round 7's (the N-1 rows refused as before).
+- The allowlist from the statement log (p-all.txt's statement section,
+  diffed against NARROW_WRITES by a script, less the never lists). The
+  statement log also names every forge a test sends (a statement is
+  logged before it fails), so the gate runs' own `permission denied`
+  lines decided what the product needs: `provider_alerts` UPDATE of its
+  upsert's SET and its probe stamps (15 columns, no owner);
+  `ms_drive_scopes` INSERT and DELETE (setDriveScopes: no trigger row saw
+  it, its delete failed first); `push_subscriptions` UPDATE of
+  `last_push_at` (markPushed, which swallows its error); `audit_log` was a
+  test cell's delete (the cells moved to `traces`' delete, audit_log stays
+  INSERT only); `tool_groups` was the sandbox's republish writing the
+  group's integration: now at `tool-config`.
+- `push-device` (new spot): push/store.ts insertSubscription (the whole
+  transaction with the token check and the cap) and savePushInstance (the
+  relay's URL and token: no narrow write of push_instance either, which
+  /api/push/connect and /api/push/reset write on the login-self exit).
+  NARROW_MOVES_LEFT is empty; runtime-role.test.ts holds it at 0.
+- The cells: narrow-allowlist.db.test.ts sends each refused form as the
+  superuser first (it must run, or stop only at a 23xxx row constraint)
+  and collects every mismatch; the wrong forms fixed (elevated is jsonb, a
+  schedule is jsonb, brain_identity has no updated_at, audit_log needs
+  actor_email, a trace's status is an enum). New cells: push-device's
+  forms and the push stamp; the upsert and the scope set. The containment
+  cell moved to round 8's columns (agents' key and configuring login,
+  tool_groups' integration and configuring login: refused, and no column
+  grant). narrow-route and runtime-role's "a system table: written" use
+  `traces`' delete. The tool loop's `@mantle/db` mock passes
+  onFullSystemRoute through.
+- Targeted run of the 13 files that failed in round 8, c0d68ad0e, the
+  switch on: exit 0, 155 tests.
+
+### Item 1: the would-refuse count (C), report only
+
+Migration 0319_narrow_would_refuse (revert:
+packages/db/rollback/0319_narrow_would_refuse.revert.sql):
+
+- `mantle_narrow_would_refuse_stmt()`: with the actor a narrow reason's
+  (0312's mantle_narrow_actor), current_user = session_user (the full
+  route) and mantle.route not 'full', a NOTICE `narrow-would-refuse <actor>
+  <schema.table> <op>`, once per table and operation per transaction; the
+  app's pool writes the miss row (actor.ts onPgNotice, unchanged).
+- Its triggers are derived from the narrow role's live grants on every
+  migrate (runtime-role.ts applyNarrowWouldRefuse, right after
+  applyNarrowGrants): statement-level AFTER INSERT where the role holds no
+  INSERT, AFTER DELETE where no DELETE, AFTER UPDATE OF the columns it may
+  not update (Postgres fires an UPDATE OF trigger when the statement names
+  the column, as the privilege check does, so an upsert's SET counts). Not
+  on a table the actor check covers (0312 counts content). Made or dropped
+  only when they differ from the grants, so a migrate with no grant change
+  locks nothing. A write the role may make fires nothing (traces,
+  audit_log's insert): no per-row cost on the hot tables.
+- 0318's mantle_narrow_one_way takes a report branch: the same rule broken
+  by a narrow reason off the narrow route is counted and the row written;
+  on the narrow role it still raises 42501 (the rules now run in a
+  sub-block that re-raises).
+- scripts/arch-scoreboard-box.sh prints `narrow_misses:would-refuse`
+  (distinct actor, table and operation rows) and
+  `narrow_misses:would-refuse-tables`, numbers only. Both must read 0 on
+  every box before b3's flip.
+- Known limit, named: a systemDb write inside a login's turn or request
+  scope carries the login's actor, so it is not counted (the narrow route
+  takes it with the switch on whatever the actor: provider_alerts was this
+  class). The suites with the switch on are its measurement. A fix would
+  mark the route the statement would take in the actor's SET.
+- Cells: narrow-would-refuse.db.test.ts (the triggers equal the grants;
+  counted, once; not counted when allowed, at a spot or by another actor;
+  0318's report branch and its refusal on the role); narrow-observe's box
+  count cell reads the two new numbers.
+
+### Items 2 and 3: the runs
+
+- `run-control` now covers a run made (run_plan's createRun), items
+  appended (run_append), a question answered and a budget decided
+  (pending.ts applyHumanAnswer, applyBudgetDecision: completeItem, the
+  run's status and the next question parked in the same transaction). The
+  engine's two parks run inside those transactions, so they are at the
+  spot whenever a narrow exit starts them; from the worker they are system
+  work (the system pool).
+- run-maker.ts, called by executeRunItem and the worker step before
+  anything runs: a run that names neither its assistant nor its login
+  fails its item `no_maker`; a login it names that is gone, `login_missing`.
+  A disabled or demoted login's run still runs as that login now, in its
+  own scope (arch A2a, the a8 matrix's demote cells). execute-item's cell
+  for a run with no agent now names its login (the owner's MCP client
+  does); a new cell: a run with no maker runs nothing.
+
+### Pins
+
+fullRouteSpots 24 to 25 (push-device), fullRouteSpotCalls 79 to 86
+(push-device 2, tool-config in the sandbox 1, run-control 4), reasons in
+arch-scoreboard.pins.json. historyCodeComments unchanged (2341).
+
+### Gates (round 9)
+
+Mac, Node 26, DATABASE_URL unset, on 9cee2ef27 (the docs commit after
+it): `pnpm -r typecheck` 0, `pnpm lint` 0 (the one old warning),
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, full unit vitest 0 (873 files, 11308 tests).
+
+Workstation, fresh clone and pg18 per suite, test lanes,
+MANTLE_CHECK_FLOOR=keep (results in ~/s7b-b2/x-<name>.exit and .log;
+~/s7b-b2/grab3.sh <names> prints the failures):
+
+- on c0d68ad0e (prefix a): test:actor-on 0, test:serial 0;
+  test:actor-off 1 and test:edit-on 1, each one afterAll hook over 10 s
+  (sql-grid, s13-folder-trail-sweep) with six lanes busy, every test
+  passing: the three suites that timed out so (workspaces-live too) take
+  60 s since 9cee2ef27. The rest (shards, runtime-role, off, runtime role
+  off, matrix) were running at hand-over.
+- on 9cee2ef27 (prefix b, launch9.sh): every suite and the forge proof
+  (bproof: round 8's forge.sql) queued at hand-over.
+
+### Left (round 10)
+
+0. Read the b runs (`bash ~/s7b-b2/grab3.sh bs1 bs2 baoff baon beon
+   brrole bserial boff brroff bmatrix`, bproof's log): every exit 0 and
+   every forge 42501 with the needed writes allowed. The matrix: rerun it
+   alone (`~/s7b-b2/launch9.sh` names it last) before calling it red. A
+   failure on the new run-maker check or the run-control moves: the runs
+   suites (execute-item, worker-write-role, a8-surfaces).
+1. D (1) the sweep's per-row "narrow login wrote" record and the pin of
+   rows that write at a spot; D (2) the login-self rows (/api/member/*,
+   /api/push/*, /api/profile/*) and POST /api/push/reset, connect in the
+   sweep (push-device should make them pass); D (4) callbacks into spot
+   functions (applyLoginChange inTx/firstInTx, applyManifest) seen by the
+   lint or refused; the Telegram assistant choice in one place; B's sweep
+   row for the provision with a key (Azure-only).
+2. The would-refuse count's limit above (a route mark in the actor SET),
+   if the CEO wants systemDb's in-scope writes counted before b3.
+3. The measurement again with the switch on, on the final head.
+4. The full re-audit of b2, both sides.
