@@ -45,7 +45,12 @@ export const TOOL_LIST_PINS = {
  *  names the same seven routes as ITEM_READ_WRITES did, for
  *  route-policy's makesItems only (no item check). Plan v3.2 S6 c3: 5 to
  *  4, ADMIN_ACT_WRITES is gone (the four Admin acts run in the login's
- *  scope, each asking its definer). */
+ *  scope, each asking its definer).
+ *  The narrow area sweep, one in narrow-area-sweep.entries.ts, reviewed:
+ *  LOGIN_SELF_ROWS names the login-self write rows the narrow area sweep
+ *  drives (profile, push Connect, Reset, preferences) with the login each
+ *  is sent as; a test table of the sweep, read by no route, not a policy
+ *  beside ROUTE_POLICY. */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
@@ -55,5 +60,6 @@ export const ROUTE_LIST_PINS = {
   'server/web/lib/auth/route-scope.ts': 4,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,
+  'server/web/server/narrow-area-sweep.entries.ts': 1,
   'server/web/server/public-session-routes.ts': 1,
 };
