@@ -195,12 +195,20 @@ export class PoolBusyError extends BusyError {
  * reads differently than before it.
  */
 export function busyMessage(err: unknown, fallback: string = BUSY_MESSAGE): string {
+  return isPoolBusy(err) ? POOL_BUSY_MESSAGE : fallback;
+}
+
+/** A pool's bounded wait ran out (a PoolBusyError on the error or its cause
+ *  chain). Never run again on it: the second run would wait the whole bound
+ *  again (120 s on the system and user pools), and nothing rolled back that a
+ *  second run could get past. */
+export function isPoolBusy(err: unknown): boolean {
   let e: unknown = err;
   for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
-    if (e instanceof PoolBusyError) return POOL_BUSY_MESSAGE;
+    if (e instanceof PoolBusyError) return true;
     e = (e as PgLike).cause;
   }
-  return fallback;
+  return false;
 }
 
 /**
@@ -208,7 +216,8 @@ export function busyMessage(err: unknown, fallback: string = BUSY_MESSAGE): stri
  * by Postgres, or a lock timeout): its transaction rolled back whole, so the
  * second run starts clean. Busy again: a BusyError. Item saves take row
  * locks in the embed triggers (migration 0208) that a folder unshare may
- * hold in the other order.
+ * hold in the other order. A pool's wait run out is not run again
+ * (isPoolBusy).
  */
 export async function withBusyRetry<T>(
   run: () => Promise<T>,
@@ -218,6 +227,7 @@ export async function withBusyRetry<T>(
     return await run();
   } catch (first) {
     if (!isBusy(first)) throw first;
+    if (isPoolBusy(first)) throw new BusyError(POOL_BUSY_MESSAGE);
     try {
       return await run();
     } catch (err) {

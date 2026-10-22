@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BusyError,
+  POOL_BUSY_MESSAGE,
+  PoolBusyError,
+  isPoolBusy,
   isBusy,
   isHeadsCheckError,
   isPermissionGap,
@@ -111,6 +114,21 @@ describe('withBusyRetry', () => {
     expect(err).toBeInstanceOf(BusyError);
     expect((err as Error).message).not.toMatch(/deadlock|insert/i);
     expect(isBusy(err)).toBe(true);
+  });
+
+  it("a pool's wait run out is not run again, even wrapped by drizzle", async () => {
+    for (const make of [() => new PoolBusyError(), () => drizzleQueryError(new PoolBusyError())]) {
+      let calls = 0;
+      const err = await withBusyRetry(async () => {
+        calls += 1;
+        throw make();
+      }).catch((e: unknown) => e);
+      expect(calls).toBe(1);
+      expect(err).toBeInstanceOf(BusyError);
+      expect((err as Error).message).toBe(POOL_BUSY_MESSAGE);
+      expect(isPoolBusy(make())).toBe(true);
+    }
+    expect(isPoolBusy(deadlock())).toBe(false);
   });
 
   it('passes any other error through at once', async () => {

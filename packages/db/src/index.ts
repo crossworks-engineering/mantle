@@ -349,6 +349,7 @@ export {
   SAVE_BUSY_MESSAGE,
   withBusyRetry,
   isBusy,
+  isPoolBusy,
   isHeadsCheckError,
   isCheckViolation,
   isUniqueViolation,

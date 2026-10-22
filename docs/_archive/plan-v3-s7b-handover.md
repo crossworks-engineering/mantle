@@ -890,3 +890,23 @@ CONNECTION_CLOSED, not 57014); fae48ca2d takes either.
 3. The user role's pool limit (fix round 1's open item) is still for the
    CEO to place.
 4. Per-database mode keeps the S7a route (no login for the role).
+
+## b1 delta audit and the last fix
+
+The delta audit of fix round 3 (a76241a46 to 448848f1d) scored 9/10, merge.
+Its LOW-A, fixed before the merge: withBusyRetry (pg-error.ts) and the
+tree's refusing (packages/content tree/write.ts) ran a write once more on
+any busy error, a pool's wait run out too, so a save or a tree op could
+wait the whole 120 s bound twice. isPoolBusy (pg-error.ts, the cause chain
+as busyMessage reads it) now answers busy on the first run out, with
+POOL_BUSY_MESSAGE; the second run stays for deadlocks and lock timeouts.
+Changed answer: the write pool's run out (15 s) is also not run again, so
+a save that waited 30 s on main before busy now waits 15 s. Cell:
+pg-error.test.ts "a pool's wait run out is not run again, even wrapped by
+drizzle".
+
+Left for later (upstream postgres.js, unchanged by b1, no caller reaches
+them): end() can resolve with one backend live when a plain statement is
+queued behind a full pool at end(); end() never resolves when an in-use
+reservation's connection dies after end() began. closeDb waits for every
+pipeline first, so neither is reached today.

@@ -21,6 +21,7 @@ import {
   db,
   executeWrite,
   isBusy,
+  isPoolBusy,
   isScopeWriteRefusal,
   itemWriteVerdicts,
   nodes,
@@ -171,6 +172,8 @@ async function refusing<T>(run: () => Promise<T>): Promise<T> {
     // timeout): its transaction rolled back, so once more, then a plain
     // "busy" (review F7). Never the SQL text.
     if (!isBusy(first)) return refusingError(first);
+    // A pool's wait run out: not again (it would wait the whole bound twice).
+    if (isPoolBusy(first)) throw new TreeError('conflict', busyMessage(first));
     try {
       return await run();
     } catch (err) {
