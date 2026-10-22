@@ -269,10 +269,13 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await t`set local session_replication_role = replica`;
       await t`insert into agents (id, owner_id, slug, name, model, system_prompt)
               values (${agent}, ${brain}, ${`ag-${agent.slice(0, 8)}`}, 'a', 'test/model', 'p')`;
+      const acct = randomUUID();
+      await t`insert into telegram_accounts (id, user_id, bot_username, branch_path)
+              values (${acct}, ${brain}, ${`bot_${acct.slice(0, 8)}`}, 'telegram')`;
       await t`insert into telegram_chats (id, account_id, user_id, telegram_chat_id, chat_type,
                                           login_id, allowlist_status)
-              values (${chat}, ${randomUUID()}, ${brain}, ${`c-${chat}`}, 'private', ${admin}, 'allowed'),
-                     (${pinned}, ${randomUUID()}, ${brain}, ${`c-${pinned}`}, 'private', null, 'allowed')`;
+              values (${chat}, ${acct}, ${brain}, ${`c-${chat}`}, 'private', ${admin}, 'allowed'),
+                     (${pinned}, ${acct}, ${brain}, ${`c-${pinned}`}, 'private', null, 'allowed')`;
       await t`update telegram_chats set responder_agent_id = ${agent} where id = ${pinned}`;
       await t`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
               values (${keyId}, 'k', ${admin}, 'abcd1234', ${'a'.repeat(64)}, 'read')`;
