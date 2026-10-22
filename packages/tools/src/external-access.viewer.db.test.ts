@@ -574,6 +574,32 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
+  it("the same on the Admin area's narrow exit (round 14, app MED-1): the beyond-Admin read runs, the disable runs at its spot, and the sync's new tools arrive off", async () => {
+    // An Admin area request's system exit: the narrow route when the switch
+    // is on (the suites run it on), where the read definer was refused
+    // before, after the marks were voided.
+    const exitArea = <T>(fn: () => Promise<T>) =>
+      m.runInRequestSlot(async () => {
+        m.setRequestActor(m.loginActor(anchor, 'rw'));
+        m.noteRequestSystem('area');
+        return fn();
+      });
+    expect((await switchOn('site_query')).ok).toBe(true);
+    await exitArea(async () => {
+      expect(await ta.connectorOpensBeyondAdmin(anchor, 'mcp-site')).toBe(true);
+      await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
+    });
+    expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
+      on: false,
+    });
+    const [confirmRow] = (await exec(
+      sqlTag`select enabled from tools where id = ${ids.site_confirm!}`,
+    )) as unknown as { enabled: boolean }[];
+    expect(confirmRow?.enabled).toBe(false);
+    await exec(sqlTag`update tools set enabled = true where id = ${ids.site_confirm!}`);
+    expect((await switchOn('site_query')).ok).toBe(true);
+  });
+
   it('the author warnings follow the workspaces that hold the connector (app_tools_set)', async () => {
     const def = toolDef('app_tools_set');
     const warn = async () => {
