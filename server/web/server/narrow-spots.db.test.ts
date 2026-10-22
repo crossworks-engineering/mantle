@@ -20,6 +20,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let rr: typeof import('@mantle/db/runtime-role');
   let m: typeof import('@mantle/db');
+  let v: typeof import('@mantle/db/viewer');
   let content: typeof import('@mantle/content');
   let agents: typeof import('../lib/agents');
   let su: ReturnType<typeof postgres>;
@@ -49,6 +50,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     // The narrow route whatever the run's switch: the cells are about it.
     rr.setNarrowSystemForTests(true);
     m = await import('@mantle/db');
+    v = await import('@mantle/db/viewer');
     content = await import('@mantle/content');
     agents = await import('../lib/agents');
     nl = postgres(
@@ -80,12 +82,16 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     const id = randomUUID();
     await su`insert into auth.users (id, email, password_hash, role)
              values (${id}, ${`${id}@example.test`}, 'x', 'member')`;
-    const space = randomUUID();
     const items = [randomUUID(), randomUUID(), randomUUID()];
     await su.begin(async (t) => {
       // Setup rows only: the space's triggers are not what is measured.
       await t`set local session_replication_role = replica`;
-      await t`insert into spaces (id, kind, login_id) values (${space}, 'personal', ${id})`;
+      // Every login has its personal space (made with the login, or here).
+      await t`insert into spaces (kind, login_id) values ('personal', ${id})
+                on conflict do nothing`;
+      const [sp] = await t<{ id: string }[]>`
+        select id::text as id from spaces where kind = 'personal' and login_id = ${id}`;
+      const space = sp!.id;
       for (const [i, n] of items.entries()) {
         await t`insert into nodes (id, owner_id, type, title, path)
                 values (${n}, ${space}, 'note', ${`i${i}`}, 'notes')`;
@@ -158,7 +164,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     expect(m.pgErrorCode(err)).toBe('42501');
     const [g] = await su<{ w: boolean; u: boolean; n: boolean; p: boolean }[]>`
       select has_function_privilege('mantle_write_user', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as w,
-             has_function_privilege('mantle_user', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as u,
+             has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as n,
              has_function_privilege('public', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as p`;
     expect(g).toEqual({ w: false, u: false, n: true, p: false });
@@ -202,8 +208,8 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
       expect({ conversation, ...resOn }).toEqual({ conversation, ...resFull });
       expect({ conversation, ...stateOn }).toEqual({ conversation, ...stateFull });
       expect(stateOn.a).toBe(0);
-      expect(stateOn.digests).toBe(conversation === 'delete' ? 0 : 2);
-      expect(stateOn.orphaned).toBe(conversation === 'delete' ? 0 : 2);
+      if (conversation === 'delete') expect([stateOn.msgs, stateOn.digests]).toEqual([0, 0]);
+      else expect(stateOn.orphaned).toBe(2);
     }
     // No such assistant: null on both routes.
     expect(await exit(() => agents.deleteAgent(brain, randomUUID()))).toBeNull();
@@ -230,7 +236,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     expect((await agentState(a)).a).toBe(1);
     const [g] = await su<{ w: boolean; u: boolean; n: boolean }[]>`
       select has_function_privilege('mantle_write_user', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as w,
-             has_function_privilege('mantle_user', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as u,
+             has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as n`;
     expect(g).toEqual({ w: false, u: false, n: true });
     expect(await code(call(admin))).toBe('ran');
