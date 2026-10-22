@@ -666,12 +666,31 @@ export const OUTSIDE_WRITE_LOG_INPUT_MAX = 2048;
 
 /** What an app's tool-call log row adds for an allowed outside call: its
  *  kind, and for a write, that it writes and its input (capped). The input
- *  can hold what the runner typed: the log is for admins only. */
+ *  can hold what the runner typed: the log is for admins only. A team
+ *  app's Table write (`tableArg`: the argument it names its Table in,
+ *  app-tool-level.ts appRunTableWrite) logs that it writes, the Table and
+ *  how many rows the call sends (a commit: that it commits), never the
+ *  cells (task 2178377a fix round 1, LOW-1). */
 export function outsideCallLogDetail(
   verdict: { tool: Tool; write?: boolean },
   input: unknown,
+  tableArg?: string | null,
 ): Record<string, unknown> {
-  const kind = (verdict.tool?.handler as ToolHandler | undefined)?.kind;
+  const handler = verdict.tool?.handler as ToolHandler | undefined;
+  const kind = handler?.kind;
+  if (kind === 'builtin' && tableArg) {
+    const args = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const table = args[tableArg];
+    const tableId = typeof table === 'string' ? table.trim().slice(0, 64) : null;
+    if (handler?.kind === 'builtin' && handler.ref === 'table_commit') {
+      return { write: true, table_id: tableId, commit: true };
+    }
+    return {
+      write: true,
+      table_id: tableId,
+      rows: Array.isArray(args.rows) ? args.rows.length : 1,
+    };
+  }
   if (!kind || kind === 'builtin') return {};
   if (!verdict.write) return { handler: kind };
   let text: string;

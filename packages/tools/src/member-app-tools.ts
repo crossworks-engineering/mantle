@@ -19,15 +19,17 @@
  *      writing or spending builtin an admin put in a system-wide group for
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
  *      `spends` since audit F17, as a read can spend too). One exception
- *      (task 2178377a, 2026-10-22): a row write the policy marks
+ *      (task 2178377a, 2026-10-22): a Table write the policy marks
  *      `table-rows` (add a row or rows, upsert rows, update a row, set a
- *      cell), on a Table homed in a workspace that holds the app (rule 6);
+ *      cell, and since its fix round 1 commit the draft, table_commit),
+ *      on a Table homed in the workspace that holds the app (rule 6);
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
  *      those run only in the Admin workspace; tool-group levels went in
  *      workspaces W7b, plan 5.4);
- *   6. a row write names, in `table_id`, a Table homed in a workspace that
- *      holds the app (appHolderHomes in @mantle/db: the holders beyond Admin
- *      an app run reads through, AppRunFor). It then runs as the running
+ *   6. a Table write names, in its item argument (`table_id`, or `id` for
+ *      table_commit), a Table homed in the workspace that holds the app
+ *      (appHolderHomes in @mantle/db: the one holder beyond Admin an app
+ *      run reads through, AppRunFor). It then runs as the running
  *      login in the app's scope, so the database decides whether that user
  *      may write the Table (its Write switch, a Moderator of its home, the
  *      actor and edit checks): a user who may not writes nothing.
@@ -126,28 +128,26 @@ async function inSystemWideGroup(ownerId: string, slug: string): Promise<boolean
  *  names the Table a row write changes (rule 6). */
 export type AppToolCheck = OutsideToolCheck & { input?: Readonly<Record<string, unknown>> };
 
-/** The argument a row write names its Table in (every `table-rows` tool's
- *  only item argument, policy itemArgs). */
-const TABLE_ROWS_ARG = 'table_id';
-
-/** Why a team app's row write may not change the Table its call names, or
- *  null (rule 6). The rules alone (an author's warning) name no call: null.
- *  No app or no Table named: refused (fail closed). */
+/** Why a team app's Table write may not change the Table its call names in
+ *  `arg` (the tool's item argument, registry teamTableWriteArg), or null
+ *  (rule 6). The rules alone (an author's warning) name no call: null. No
+ *  app, no argument or no Table named: refused (fail closed). */
 async function tableRowsTargetRefusal(
   ownerId: string,
   slug: string,
+  arg: string | null,
   check: AppToolCheck | undefined,
 ): Promise<string | null> {
   if (check?.rulesOnly) return null;
-  const raw = check?.input?.[TABLE_ROWS_ARG];
+  const raw = arg ? check?.input?.[arg] : undefined;
   const tableId = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
   const homed =
     !!check?.appId && !!tableId && (await appHolderHomes(ownerId, check.appId, tableId));
   if (homed) return null;
   const which = tableId
     ? `the Table '${tableId}' is not one (or does not exist)`
-    : `the call names no Table in '${TABLE_ROWS_ARG}'`;
-  return `The tool '${slug}' may only change rows of a Table homed in a workspace that holds this app, and ${which}. Pass the id of a Table that lives in this app's workspace (table_list shows the Tables this app reads). A team app's data is shared by everyone who runs it, so it writes only where they all work.`;
+    : `the call names no Table in '${arg ?? 'table_id'}'`;
+  return `The tool '${slug}' may only change a Table homed in the workspace that holds this app, and ${which}. Pass the id of a Table that lives in this app's workspace (table_list shows the Tables this app reads). On its own workspace's Tables a team app may do what the user running it may do there; a team app's data is shared by everyone who runs it, so it writes nowhere else.`;
 }
 
 /** May a member's run of an app that declares `declared` call `slug`?
@@ -182,7 +182,7 @@ export async function memberAppToolVerdict(
     return outsideToolVerdict(ownerId, tool, slug, 'member', loginId, check);
   }
   // Lazy: the registry imports every builtin, app_tools_set among them.
-  const { isBuiltinReadOnly, isBuiltinSpending, isBuiltinTeamTableRowWrite } =
+  const { isBuiltinReadOnly, isBuiltinSpending, isBuiltinTeamTableRowWrite, teamTableWriteArg } =
     await import('./registry');
   const builtin: AppBuiltinFacts = {
     readOnly: isBuiltinReadOnly(tool.handler.ref),
@@ -201,10 +201,11 @@ export async function memberAppToolVerdict(
       reason: `The tool '${slug}' is only in Admin-only tool groups, so this app can't use it outside the Admin workspace.`,
     };
   }
-  // Rule 6: a write rules 2 to 4 let through (only a `table-rows` row
-  // write) changes only a Table homed in a holder of the app.
+  // Rule 6: a write rules 2 to 4 let through (only a `table-rows` Table
+  // write) changes only a Table homed in the holder of the app.
   if (!builtin.readOnly) {
-    const target = await tableRowsTargetRefusal(ownerId, slug, check);
+    const arg = teamTableWriteArg(tool.handler.ref);
+    const target = await tableRowsTargetRefusal(ownerId, slug, arg, check);
     if (target) return { ok: false, status: 403, reason: target };
   }
   return { ok: true, tool };

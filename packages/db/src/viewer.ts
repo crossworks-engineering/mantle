@@ -673,8 +673,11 @@ function inScope<T>(scope: Scope, fn: () => T): T {
  * app's Table row write, task 2178377a): the scope writes as the login's
  * mutating request does, through the login write gateway with this scope
  * on each short write transaction, so the database checks the write
- * against it (requestWriteScope). It reads published columns only, as any
- * workspace scope below an editor does. Without it the scope only reads.
+ * against it (requestWriteScope). With `drafts` it reads the draft of an
+ * item the scope may edit, as the login's editor does (the rule is in each
+ * query, draft-read.ts: mantle_may_edit_in over this scope), so a second
+ * write before a commit builds on the first. Without it the scope only
+ * reads, published columns only.
  */
 export function runInViewerScope<T>(
   ws: WorkspaceScope,

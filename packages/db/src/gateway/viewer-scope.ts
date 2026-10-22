@@ -5,14 +5,17 @@
  * seedLoginScope, loginScopeFor) and createHomeFallback, a login's private
  * create home.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql as sqlTag } from 'drizzle-orm';
 import { type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
+import { currentActor } from '../actor';
 import {
   boundLoginId,
   currentRequestMode,
   currentWorkspaceScope,
   requestScopeMemo,
+  requestWriteScope,
   runInViewerScope,
   type AppRunFor,
   type ViewerFor,
@@ -42,20 +45,33 @@ import { systemPoolTxInScope } from './system-tx';
  * `writes`: only a login running an app (`{ login, app }`), for a write its
  * app rule allowed (a team app's Table row write, @mantle/tools
  * member-app-tools.ts rule 6): the app's scope writes as that login, so the
- * database decides whether the login may (runInViewerScope). Any other
- * caller asking it is refused: an assistant, a link or a login's whole
- * union never write through here.
+ * database decides whether the login may (runInViewerScope), and reads the
+ * drafts of the items it may edit, as the login's editor does (a second
+ * write before a commit sees the first). It takes the AppRunWriter
+ * appRunWriter read in the request itself, before any asSystem: the same
+ * login, a mutating request, never a read-only login. Any other caller
+ * asking it is refused: an assistant, a link or a login's whole union never
+ * write through here.
  */
 export async function withViewer<T>(
   actsFor: ViewerFor,
   fn: () => Promise<T>,
-  opts: { writes?: boolean } = {},
+  opts: { writes?: AppRunWriter } = {},
 ): Promise<T> {
   if (opts.writes) {
     if (!('login' in actsFor) || !actsFor.app) {
       throw new RuntimeFaultError('withViewer: only a login running an app writes through here');
     }
-    return runInViewerScope(await memoScopeFor(actsFor), fn, { writes: true, drafts: false });
+    const writer = opts.writes;
+    if (!appRunWriters.has(writer) || writer.loginId !== actsFor.login.toLowerCase()) {
+      throw new RuntimeFaultError(
+        "withViewer: an app run writes only as its request's own login (appRunWriter)",
+      );
+    }
+    const scope = await memoScopeFor(actsFor);
+    return appRunWrite.run(writer, () =>
+      runInViewerScope(scope, fn, { writes: true, drafts: true }),
+    );
   }
   // Inside the request scope of this very login (W6a): that scope is the
   // one withViewer would build, read once by the session guard. No second
@@ -71,6 +87,46 @@ export async function withViewer<T>(
     return fn();
   }
   return runInViewerScope(await memoScopeFor(actsFor), fn);
+}
+
+/** The login a team app's allowed write runs as (withViewer `writes`):
+ *  only appRunWriter makes one. */
+export type AppRunWriter = Readonly<{ loginId: string }>;
+
+/** The writers appRunWriter made: a hand-built object is none. */
+const appRunWriters = new WeakSet<AppRunWriter>();
+
+/** The writer of the app write running now (withViewer `writes`). */
+const appRunWrite = new AsyncLocalStorage<AppRunWriter>();
+
+/**
+ * The writer of a team app's allowed write, read in the request itself,
+ * before any asSystem (which masks the request's scope and actor; the app
+ * broker enters the app's scope from outside the login's): the request's
+ * bound login when the request is a mutating one in that login's write
+ * scope (requestWriteScope) and the login writes (not a read-only login,
+ * login(ro): a read key, a peer with Write off). Null otherwise: the app's
+ * write is then refused (task 2178377a fix round 1, LOW-2 and LOW-3).
+ */
+export function appRunWriter(): AppRunWriter | null {
+  const scope = requestWriteScope();
+  const actor = currentActor();
+  if (!scope?.loginId || actor?.kind !== 'login' || actor.mode === 'ro') return null;
+  const loginId = actor.loginId.toLowerCase();
+  if (scope.loginId.toLowerCase() !== loginId) return null;
+  const writer: AppRunWriter = Object.freeze({ loginId });
+  appRunWriters.add(writer);
+  return writer;
+}
+
+/** Whether the current code is a team app's allowed write in the app's
+ *  own scope (withViewer `writes`): its login's scope, not system work
+ *  inside it. applyTableOps holds such a write to its ceilings and to a
+ *  Table homed in the scope (appRunWriteTarget). */
+export function inAppRunWrite(): boolean {
+  const writer = appRunWrite.getStore();
+  const scope = currentWorkspaceScope();
+  return !!writer && scope?.kind === 'user' && scope.loginId === writer.loginId;
 }
 
 /** viewerScopeFor, once per request for the same login (and app) or agent:

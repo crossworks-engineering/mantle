@@ -29,6 +29,7 @@
  * `team` is memberAppToolVerdict; `none` refuses every tool.
  */
 import {
+  appRunHolders,
   currentActor,
   gateCallRefusal,
   type AppAuthorLevel,
@@ -195,30 +196,46 @@ export function appToolScope(
 }
 
 /**
- * Whether an allowed call of an app run below admin writes in the app's
- * scope (withViewer's `writes`, task 2178377a): a built-in write, which the
- * team rules let through only for a Table row write on a Table homed in a
- * holder of the app (member-app-tools.ts rule 6). It writes as the running
- * login in the app's scope, so the database's checks decide (the item's
- * Write switch, a Moderator of its home, the actor and edit checks). A read,
- * or an outside tool (it writes outside the brain, if at all), keeps the
- * read-only scope.
+ * Whether an allowed call of an app run writes in the app's scope
+ * (withViewer's `writes`, task 2178377a): only a Table row write the policy
+ * marks `table-rows` (isBuiltinTeamTableRowWrite), which the team rules let
+ * through only on a Table homed in the holder of the app (member-app-tools.ts
+ * rule 6). It writes as the running login in the app's scope, so the
+ * database's checks decide (the item's Write switch, a Moderator of its
+ * home, the actor and edit checks). Any other call, a read, another
+ * built-in write an admin's run allows, or an outside tool (it writes
+ * outside the brain, if at all), keeps the read-only scope.
  */
 export async function appRunWrites(verdict: AppToolVerdict): Promise<boolean> {
-  if (!verdict.ok) return false;
+  return (await appRunTableWrite(verdict)) !== null;
+}
+
+/** The argument an allowed call names its Table in when it is a Table
+ *  write the policy marks `table-rows` (registry teamTableWriteArg:
+ *  `table_id`, or `id` for table_commit), else null: appRunWrites' one
+ *  reading, and what the broker's log row names (outsideCallLogDetail). */
+export async function appRunTableWrite(verdict: AppToolVerdict): Promise<string | null> {
+  if (!verdict.ok) return null;
   // A row with no handler (none should be) never writes.
   const h = verdict.tool.handler as Tool['handler'] | undefined;
-  if (h?.kind !== 'builtin') return false;
+  if (h?.kind !== 'builtin') return null;
   // Lazy: the registry imports every builtin, app_tools_set among them.
-  const { isBuiltinReadOnly } = await import('./registry');
-  return !isBuiltinReadOnly(h.ref);
+  const { teamTableWriteArg } = await import('./registry');
+  return teamTableWriteArg(h.ref);
 }
+
+/** The largest input a team app's Table write takes, bytes (task 2178377a
+ *  fix round 1, MED-2): a few thousand rows a call, well under the broker's
+ *  body ceiling; the draft's own ceiling is applyTableOps'. */
+export const APP_TABLE_WRITE_MAX_BYTES = 1024 * 1024;
 
 /**
  * For an app a workspace other than Admin holds: one warning per declared
  * tool its runs would refuse, in the broker's own words (the team rules run
  * for every runner, R2), and one per row write it declares, saying the only
- * Tables it runs on (member-app-tools.ts rule 6). An app the Admin workspace alone holds gets none,
+ * Tables it runs on (member-app-tools.ts rule 6: homed in the one workspace
+ * beyond Admin that holds the app; none when no one or several hold it, as
+ * the app's scope reads). An app the Admin workspace alone holds gets none,
  * unless a member built it (the author ceiling runs it at team rules for its
  * admins too). Given back by every author move that can change the answer:
  * `app_tools_set`, `app_publish`, a grant change and moving it into another
@@ -235,6 +252,8 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     // Lazy: the registry imports every builtin, app_tools_set among them.
     const { isBuiltinTeamTableRowWrite } = await import('./registry');
     const warnings: string[] = [];
+    /** How many live workspaces beyond Admin hold the app, once asked. */
+    let holders: number | undefined;
     for (const slug of declared) {
       // No run here, so no runner login: the rules alone, against the
       // workspaces that hold this app (they read the built-in Team's until
@@ -248,8 +267,11 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         // holds the app, for a user who may write it there (rule 6).
         const h = verdict.tool.handler;
         if (h.kind === 'builtin' && isBuiltinTeamTableRowWrite(h.ref)) {
+          holders ??= (await appRunHolders({ id: appId })).length;
           warnings.push(
-            `The tool '${slug}' runs here only on a Table homed in a workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace); its rows land in the Table's draft. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`,
+            holders === 1
+              ? `The tool '${slug}' runs here only on a Table homed in the workspace that holds this app, as the user running it, who needs Write on that Table (or to be a Moderator of its workspace): on its own workspace's Tables the app does what that user may do there. Row changes land in the Table's draft; table_commit publishes it. Any other Table is refused: an app a workspace other than Admin holds runs the team rules.`
+              : `The tool '${slug}' writes no Table here: a team app's row writes run only when exactly one workspace beyond Admin holds the app (${holders} do), on a Table homed in that workspace. Keep the app in one workspace (beside Admin) for its row writes to run.`,
           );
         }
         continue;

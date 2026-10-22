@@ -48,7 +48,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { withViewer, type AppAuthorLevel, type ViewerFor } from '@mantle/db';
+import { appRunWriter, withViewer, type AppAuthorLevel, type ViewerFor } from '@mantle/db';
 import {
   recordAppAccess,
   recordAppError,
@@ -56,8 +56,9 @@ import {
   type AppToolRules,
 } from '@mantle/content';
 import {
+  APP_TABLE_WRITE_MAX_BYTES,
   appBrokerCaller,
-  appRunWrites,
+  appRunTableWrite,
   appToolLevel,
   appToolRefusal,
   appToolScope,
@@ -241,6 +242,10 @@ export async function runAppToolBroker(
   const app = found;
   const { slug, input, confirmToken } = parsed.data;
   const system = config.via === 'member' ? config.system : <T>(fn: () => Promise<T>) => fn();
+  // Who a team app's Table write would run as: read here, in the request,
+  // before `system` masks its scope and actor (a mutating request of this
+  // login, never a read-only login; withViewer checks it again).
+  const writer = config.via === 'contact' ? null : appRunWriter();
 
   const run = runOf(config, app, slug, input);
   const verdict = await system(run.verdict);
@@ -316,9 +321,30 @@ export async function runAppToolBroker(
     }
   }
 
+  // A Table write the team rules allowed (a row write or table_commit on
+  // the app's own workspace's Table): the argument naming its Table.
+  const tableArg = await appRunTableWrite(verdict);
+  const scope = { actsFor: await run.actsFor() };
+  // It runs in the app's scope as a write, as the running login, only for
+  // a login that may write in this request (appRunWriter); a read keeps
+  // the read-only scope.
+  const writes = scope.actsFor !== null && tableArg !== null;
+  const tableRefusal = !writes
+    ? null
+    : !writer
+      ? 'This run cannot change data: a team app writes a Table only in a request that may write, as a login that writes (not a read-only key).'
+      : Buffer.byteLength(JSON.stringify(input)) > APP_TABLE_WRITE_MAX_BYTES
+        ? `The call is larger than ${APP_TABLE_WRITE_MAX_BYTES / (1024 * 1024)} MB, the most a team app's Table write takes. Split the rows into smaller calls.`
+        : null;
+  if (tableRefusal) {
+    logCall({ ...tagged, refused: tableRefusal }, false);
+    logError(tableRefusal, 403);
+    return NextResponse.json({ ok: false, error: tableRefusal }, { status: 403 });
+  }
   // An outside call names its kind, so the log shows which calls reached
-  // outside the brain; a write keeps its input too (M2 audit, low 4).
-  logCall({ ...tagged, ...outsideCallLogDetail(verdict, input) }, true);
+  // outside the brain; a write keeps its input too (M2 audit, low 4); a
+  // Table write names its Table and its row count.
+  logCall({ ...tagged, ...outsideCallLogDetail(verdict, input, tableArg) }, true);
   // Through the one gate as the app's broker (A5 step 3b).
   const dispatch = () =>
     dispatchTool(verdict.tool, input, {
@@ -326,13 +352,10 @@ export async function runAppToolBroker(
       surface: run.surface,
       caller: appBrokerCaller(run.surface, verdict),
     });
-  const scope = { actsFor: await run.actsFor() };
-  // A built-in write the team rules allowed (a Table row write) runs in the
-  // app's scope as a write, as the running login (appRunWrites); a read
-  // keeps the read-only scope.
-  const writes = scope.actsFor !== null && (await appRunWrites(verdict));
   const result = await system(() =>
-    scope.actsFor ? withViewer(scope.actsFor, dispatch, { writes }) : dispatch(),
+    scope.actsFor
+      ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
+      : dispatch(),
   );
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);

@@ -88,7 +88,13 @@ export {
   EDIT_CHECK_DRIFT_SQL,
   type Db,
 } from './client';
-export { appHolderHomes } from './app-holder-homes';
+export { appHolderHomes, assertAppRunWriteHome } from './app-holder-homes';
+export {
+  appRunHolders,
+  appRunWriter,
+  inAppRunWrite,
+  type AppRunWriter,
+} from './gateway/viewer-scope';
 export { CHECK_FLOOR_SQL, checkFloorWarning, type CheckFloorRow } from './check-floor';
 export { readSql, NotReadSqlError } from './read-sql';
 export { readOnlyTransaction } from './read-only-tx';

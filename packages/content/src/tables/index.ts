@@ -51,6 +51,9 @@ export {
 } from './write';
 
 export {
+  APP_DRAFT_MAX_BYTES,
+  APP_DRAFT_MAX_ROWS,
+  appDraftCeilingRefusal,
   applyTableOps,
   saveTableDraft,
   discardTableDraft,

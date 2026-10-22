@@ -93,6 +93,15 @@ export function isBuiltinTeamTableRowWrite(slug: string): boolean {
   return tableBuiltin(slug)?.policy.memberApp === 'table-rows';
 }
 
+/** The argument a `table-rows` write names its Table in (its only item
+ *  argument, policy itemArgs: `table_id` for the row writes, `id` for
+ *  table_commit), or null for any other builtin. */
+export function teamTableWriteArg(slug: string): string | null {
+  const policy = tableBuiltin(slug)?.policy;
+  if (policy?.memberApp !== 'table-rows') return null;
+  return policy.itemArgs?.[0]?.param ?? null;
+}
+
 /** Does this builtin start paid model work on a call (`policy.startsModelWork`)? Unknown
  *  slugs answer false; the callers that refuse spenders (the member app
  *  broker) also refuse anything that is not a known read-only builtin. */

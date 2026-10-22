@@ -14,11 +14,13 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import {
+  assertAppRunWriteHome,
   assertItemRight,
   db,
   nodes,
   tables,
   hasSummary,
+  inAppRunWrite,
   markContentChanged,
   oneRow,
   removeSqliteFile,
@@ -96,6 +98,48 @@ function draftMirror(draftAbs: string): TableDoc | null {
   return clipped.clipped || multiTab ? null : ensureTableDoc(clipped.doc);
 }
 
+/** A team app's write (task 2178377a fix round 1, MED-2): the most rows
+ *  its Table's draft may hold after the batch. The box's table ceiling
+ *  (TABLE_IMPORT_MAX_ROWS) when lower: an app loop at 60 calls a minute
+ *  never grows a draft past what a person would load. */
+export const APP_DRAFT_MAX_ROWS = 50_000;
+
+/** A team app's write: the largest Table file (its draft, else the
+ *  published workbook) it still writes to, bytes. */
+export const APP_DRAFT_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Why a team app's batch may not land, or null: the draft would pass
+ * `maxRows` rows (`rows` there now, `adding` more), or its file is already
+ * past APP_DRAFT_MAX_BYTES. Pure (the numbers in); applyTableOps asks it
+ * for an app's write (inAppRunWrite) before anything is staged.
+ */
+export function appDraftCeilingRefusal(
+  rows: number,
+  adding: number,
+  bytes: number,
+  maxRows = Math.min(APP_DRAFT_MAX_ROWS, importMaxRows()),
+): string | null {
+  if (rows + adding > maxRows) {
+    return `This Table would hold ${(rows + adding).toLocaleString('en-US')} rows, past the ${maxRows.toLocaleString('en-US')}-row ceiling of a team app's writes. Nothing was written: commit or trim the Table first, or have an admin load the rows.`;
+  }
+  if (bytes > APP_DRAFT_MAX_BYTES) {
+    return `This Table's file is past the ${APP_DRAFT_MAX_BYTES / (1024 * 1024)} MB ceiling of a team app's writes. Nothing was written: commit or trim the Table first, or have an admin load the rows.`;
+  }
+  return null;
+}
+
+/** applyTableOps' ceiling for a team app's write: the rows and bytes of the
+ *  file the batch lands on (the draft, else the published workbook it is
+ *  copied from). Throws the refusal; nothing else is checked here. */
+function assertAppDraftCeiling(file: string, ops: readonly TableOp[]): void {
+  // No file (gone under a race): the store refuses the write itself.
+  if (!existsSync(file)) return;
+  const adding = ops.filter((o) => o.op === 'row_add').length;
+  const refused = appDraftCeilingRefusal(fileStats(file).totalRows, adding, statSync(file).size);
+  if (refused) throw new InputError(refused);
+}
+
 /**
  * Apply an op batch to a table's DRAFT (P3): the whole batch lands atomically
  * on the draft workbook; `draft_rev` is the etag: a caller presenting a stale
@@ -124,6 +168,11 @@ export async function applyTableOps(
   // staged on disk, and the same refusal whether a draft is there or not.
   await assertItemRight(id, 'edit');
   await assertTableWritable(id);
+  // A team app's write (inAppRunWrite): only on a Table homed in the app's
+  // scope, asked again here where the write runs (a move since the verdict
+  // takes none), and within the app's ceilings below.
+  const appWrite = inAppRunWrite();
+  if (appWrite) await assertAppRunWriteHome(id);
   try {
     for (let attempt = 1; ; attempt++) {
       const row = await readTableRow(id);
@@ -140,6 +189,10 @@ export async function applyTableOps(
       // A draft on disk takes the batch in place; a row naming a draft file
       // that is gone (A3b fix round 1, L1) gets a new draft below.
       const draftAbs = draftAbsOf(row.draftPath);
+      if (appWrite) {
+        const onDisk = draftAbs && existsSync(draftAbs);
+        assertAppDraftCeiling(onDisk ? draftAbs : resolveStoragePath(row.storagePath), ops);
+      }
       if (draftAbs && existsSync(draftAbs)) {
         const done = await opsInPlace(id, opts.ifRev, async (tx, draftAbs, rev) => {
           const res = stageOps(draftAbs, ops, coerceCell);
@@ -394,6 +447,9 @@ export async function commitTable(
   // or not. An app's sync is the brain's own (the app's data door asked).
   if (!opts.appSync) await assertItemRight(id, 'edit');
   await assertTableWritable(id, opts.appSync);
+  // A team app's commit (inAppRunWrite): only a Table homed in the app's
+  // scope, asked again where the write runs (applyTableOps' rule).
+  if (inAppRunWrite()) await assertAppRunWriteHome(id);
 
   const workbook = data && isWorkbook(data) ? ensureWorkbookDoc(data) : null;
   const doc = data === undefined || workbook ? null : ensureTableDoc(data as TableDoc);

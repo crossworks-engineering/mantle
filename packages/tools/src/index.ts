@@ -308,6 +308,8 @@ export {
   appToolScope,
   appToolVerdict,
   appRunWrites,
+  appRunTableWrite,
+  APP_TABLE_WRITE_MAX_BYTES,
   appToolWarnings,
   movedAppToolWarnings,
   APP_NO_TOOLS,
