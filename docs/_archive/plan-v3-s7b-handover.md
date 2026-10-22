@@ -2384,3 +2384,94 @@ image (b1's) reads the switch as b1 did (off in production when unset):
 its migrate takes the role's login away and it runs the full route (the
 drill's N-1 step). On this image, the kill switch is `MANTLE_NARROW_SYSTEM=0`
 and `docker compose up -d`.
+
+### Gates (round 7)
+
+Mac, Node 26, DATABASE_URL unset, on 69cef8e89 (the flip; the commits
+after it change the handover and one cell of narrow-containment.db.test.ts):
+`pnpm format:check` 0, `pnpm docs:check` 0 (1 before the handover named
+its heading), `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0,
+`pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm test:serial` 0,
+`vitest run server packages eslint-rules` 0 (873 files passed, 290
+skipped; 11306 tests passed). On the head a89341af3: prettier, eslint and
+the db package's typecheck of the changed cell 0.
+
+Workstation, a fresh clone of the pushed commit per suite (label
+mantle.test=s7b-b2, max_connections=450, containers removed by exact name
+with their volumes), init-scratch and migrate with MANTLE_CHECK_FLOOR=keep,
+systemd-run --user, test lanes, --maxWorkers=3. The switch is UNSET in
+every suite but the switch-off run (the default now: on), and
+MANTLE_DB_RUNTIME_ROLE unset (the fresh-install shape).
+
+On the head a89341af3:
+
+| Suite                                  | Exit | Counts                                                             |
+| -------------------------------------- | ---- | ------------------------------------------------------------------ |
+| full DB vitest, shard 1/2              | 0    | 582 files; 6413 passed, 1 skipped                                  |
+| full DB vitest, shard 2/2              | 0    | 581 files; 7876 passed                                             |
+| test:actor-off                         | 0    | 148 files; 1475 passed, 1 skipped                                  |
+| test:actor-on (beside five lanes)      | 1, 1 | 413 passed both runs; afterAll hooks over 10 s (see below)         |
+| test:actor-on (two lanes)              | 0    | 34 files; 413 passed, 1 skipped                                    |
+| test:edit-on                           | 0    | 46 files; 583 passed                                               |
+| test:matrix                            | 0    | 4 files; 8 passed                                                  |
+| test:runtime-role in full              | 1    | 1 of 2970: a2a-round-trips "off is not stable" (126 then 127)      |
+| a2a-round-trips.db.test.ts, its config | 0    | 2 passed (alone)                                                   |
+| test:serial                            | 0    | 1 passed                                                           |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0 | 0    | 1163 files; 14289 passed, 1 skipped                                |
+| the narrow cells (4 files, targeted)   | 0, 1 | 52 of 52 passed; the containment file's afterAll over 10 s; alone 0 |
+| the drill (N-1, the kill switch)       | 0    | every migrate step 0 (below; on 69cef8e89, the same migrate)        |
+
+On 69cef8e89 (the flip, before the cell fix) the same set ran first:
+shard 2/2, edit-on hooks aside, serial and the drill 0; shard 1/2,
+actor-off, runtime-role and the switch-off run each failed the new
+`delegate_to` cell, which read the moved key after `run` had rolled it
+back (the cell's own error, fixed in a89341af3; a first fix, df2c0f0f7,
+used a `1 / 0` the planner folds, and is superseded); actor-on and edit-on
+failed afterAll hooks only (every test passed); matrix only its budget
+(227.1 s of 210 s beside five lanes; 0 on the head). The hook failures
+(workspaces-review-off, write-grid, a6-grant-sweep, a2b-nested-tx,
+workspaces-check, the containment file) are closeDb and the scratch drop
+over 10 s with six lanes at once (load 13 to 18); each file passed alone or
+in a quieter rerun. The round-trip cell: one more statement in one of two
+switch-off counts of the turn start, the pipeline's RESET after the answer
+counted or not by when the window closes (b1 fix round 3 met the same);
+the file alone in its config passed.
+
+The drill (main 7f2d12292 = b1, and the branch), each migrate step:
+ledger rows / md5 of mantle_tg_chat_set's body / the user role's
+rolconnlimit / the narrow role's rolcanlogin:
+
+| Step                                                     | Exit | State                          |
+| -------------------------------------------------------- | ---- | ------------------------------ |
+| init and migrate with main (b1), production, switch on   | 0    | 313 / b8266526... / 30 / true  |
+| migrate with the branch (b2), production, switch on      | 0    | 318 / 11f59603... / 54 / true  |
+| migrate with main (N-1 boot on the b2 schema)            | 0    | 318 / 11f59603... / 30 / true  |
+| N-1: the narrow login and the superuser, own / another   | 0, 1 | runs / 42501 only the acting login |
+| migrate with the branch again                            | 0    | 318 / 11f59603... / 54 / true  |
+| the branch, production, switch unset (the default)       | 0    | 318 / 11f59603... / 54 / true  |
+| the branch, production, kill switch 0                    | 0    | 318 / 11f59603... / 54 / false |
+| the branch, production, kill switch off                  | 0    | 318 / 11f59603... / 54 / false |
+| the branch, production, kill switch false                | 0    | 318 / 11f59603... / 54 / false |
+| migrate with main (N-1), production, switch unset        | 0    | 318 / 11f59603... / 30 / false |
+| the branch again, production, switch unset               | 0    | 318 / 11f59603... / 54 / true  |
+| the branch, production, per-database mode                | 0    | 318 / 11f59603... / 54 / false |
+
+Rolling back to b1 with nothing set: b1's migrate reads the switch off in
+production and takes the login away; the branch's next migrate gives it
+back. 0318's md5 is unchanged by the fold in the drill's column (the
+column is mantle_tg_chat_set's body, 0314).
+
+### Left (for the audit)
+
+1. A full audit of b2 (the CEO's list). The branch is ready for it: the
+   spots (16, each with its why), the column rights and one-way rules, the
+   sweep (every row named), the flip with its kill switch.
+2. asSystemFull ends at 34, one over the plan's 33 (the pin's note): for
+   S7c with the six full reasons.
+3. The 22 rows the sweep does not take to 2xx (the table above); the
+   maintenance run's row has no cell of its own (its table is narrow
+   `all`, writer system).
+4. The box counts list above, read on every box before the fleet flip.
+5. S7c (unchanged): the signed acting login, which removes the rights
+   spots; profile-row, console-tool and pending-call with the content
+   reads; integrity-delete and reembed.
