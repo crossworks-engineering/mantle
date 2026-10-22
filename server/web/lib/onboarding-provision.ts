@@ -73,8 +73,8 @@ async function seedSpecialistStack(ownerId: string): Promise<string[]> {
     return seededAgents;
   } catch (err) {
     // A refused right (42501: a write the narrow login may not make off its
-    // spot) is a bug to see, never a quiet empty stack (round 12, app
-    // LOW-3).
+    // spot) is a bug to see, never a quiet empty stack.
+    //
     if ((err as { code?: string } | null)?.code === '42501') throw err;
     console.error('[onboarding] applyManifest failed:', err);
     return [];

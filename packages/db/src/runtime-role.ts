@@ -161,7 +161,7 @@ const ACL_MARKER_BODY = `
  */
 /** The definers PUBLIC keeps EXECUTE on, each with why (every other
  *  definer's is taken from PUBLIC on every migrate, applyRuntimeGrants).
- *  Measured on a fresh migrate (round 12's forge proof): this one only. */
+ *  Measured on a fresh migrate (the forge proof): this one only. */
 export const PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
   'public.mantle_actor_check_mode()':
     "the actor check's mode, read by the actor check's own triggers, which run as whichever role wrote: every role must reach it; it answers a setting and writes nothing",
@@ -1280,8 +1280,8 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
         select current_database() as name, current_user as me`;
       await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
       // PUBLIC holds nothing on the app's tables, and EXECUTE on no
-      // definer but PUBLIC_DEFINERS (plan v3.2 S7b part b2 round 12, the
-      // full audit's DB LOW-5: a hand GRANT ... TO PUBLIC on a table or a
+      // definer but PUBLIC_DEFINERS (a hand
+      // grant the full re-audit found: a hand GRANT ... TO PUBLIC on a table or a
       // definer survived two migrates; every role is a member of PUBLIC,
       // the narrow login too). A fresh migrate grants PUBLIC neither, so
       // this changes nothing there.

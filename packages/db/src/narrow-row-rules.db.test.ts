@@ -1,9 +1,9 @@
 /**
- * Round 12's forges (plan v3.2 S7b part b2, the full re-audit at 0e81fec1d),
+ * The re-audit's forges (the full re-audit at 0e81fec1d),
  * each as the REAL narrow login (its derived password; session_user is
  * mantle_system_narrow): refused with 42501 and no row changed, while the
  * product's own narrow writes on the same rows still run. The same forms
- * are the workstation's forge proof (~/s7b-b2/r12/forge12.sql).
+ * are the workstation's forge proof (on the workstation).
  */
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

@@ -1,6 +1,5 @@
 /**
- * The static narrow write scan's pins (plan v3.2 S7b part b2 round 12,
- * narrow-write-scan.ts): the writes of the source the narrow role's
+ * The static narrow write scan's pins (narrow-write-scan.ts): the writes of the source the narrow role's
  * allowlist does not hold, outside every full-route spot.
  */
 
@@ -39,7 +38,7 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
  * move to its spot, a definer or the allowlist (with a measured cell), or
  * its file be shown system only. This list only shrinks: a new write on it
  * fails narrow-write-scan.test.ts, and so does an entry the scan no longer
- * finds (keep it exact). TODO(S7b): empty it.
+ * finds (keep it exact). TODO(narrow): empty it.
  */
 export const NARROW_SCAN_OPEN: readonly string[] = Object.freeze([
   'packages/content/src/app-access-log.ts delete public.app_access_log',

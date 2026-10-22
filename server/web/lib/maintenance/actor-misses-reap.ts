@@ -16,7 +16,7 @@ export const ACTOR_MISSES_RETENTION_DAYS = 14;
 
 /** The narrow role's counts (check names narrow-*) are kept: they are the
  *  evidence for the narrow switch's default flip, read all time by
- *  scripts/arch-scoreboard-box.sh (plan v3.2 S7b part b2 round 12). Their
+ *  scripts/arch-scoreboard-box.sh (the narrow switch's flip). Their
  *  rows are capped per hour and distinct, so they stay small. */
 const KEEP = sql`check_name not like 'narrow-%'`;
 

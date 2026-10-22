@@ -4,7 +4,7 @@
  * runtime-role.db.test.ts proves the lock on a real Postgres.
  */
 import * as schema from './schema';
-import { tablesOf } from './narrow-write-scan';
+import { tablesOf } from './test-support/narrow-write-scan';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ACCESS_MATRIX,

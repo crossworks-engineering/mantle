@@ -1,6 +1,6 @@
 /**
- * The narrow login's writes read from the source (plan v3.2 S7b part b2
- * round 12, the full audit's app MED-1: the measured allowlist is only as
+ * The narrow login's writes read from the source (the full re-audit's
+ * finding: the measured allowlist is only as
  * good as the suites that drive it; Telegram connect, a mail account's add
  * and edit and the Microsoft mailbox were never driven, so their writes
  * were never measured and would fail, or worse be granted by a guess).
@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
-import { ACCESS_MATRIX, narrowMayWrite } from './access-matrix';
+import { ACCESS_MATRIX, narrowMayWrite } from '../access-matrix';
 
 export type ScannedWrite = {
   file: string;
@@ -130,7 +130,10 @@ function objectKeys(code: string, open: number): string[] {
 
 /** The spans of every `onFullSystemRoute(...)` call's arguments, and the
  *  names of functions a file passes to one. */
-function spotSpans(code: string): {
+function spotSpans(
+  code: string,
+  calls: readonly string[],
+): {
   spans: [number, number][];
   names: Set<string>;
   passed: Set<string>;
@@ -138,7 +141,7 @@ function spotSpans(code: string): {
   const spans: [number, number][] = [];
   const names = new Set<string>();
   const passed = new Set<string>();
-  const re = /\b(onFullSystemRoute|profileWrite)\s*\(/g;
+  const re = new RegExp(`\\b(${calls.join('|')})\\s*\\(`, 'g');
   for (let m = re.exec(code); m; m = re.exec(code)) {
     const open = m.index + m[0].length - 1;
     const end = closing(code, open);
@@ -202,6 +205,11 @@ function namedSpans(code: string, names: Set<string>): [number, number][] {
   return out;
 }
 
+/** The calls that run their function at a full-route spot: onFullSystemRoute
+ *  and the one-spot helpers (as-system-routes.mjs FULL_ROUTE_SPOT_WRAPPERS);
+ *  the test passes the helpers' names. */
+export const SPOT_CALLS: readonly string[] = ['onFullSystemRoute'];
+
 export type TableInfo = { name: string; columns: Record<string, string>; content: boolean };
 
 /** Every schema table by its export name. */
@@ -228,9 +236,10 @@ export function scanSource(
   file: string,
   src: string,
   tables: Map<string, TableInfo>,
+  spotCalls: readonly string[] = SPOT_CALLS,
 ): ScannedWrite[] {
   const code = codeOnly(src);
-  const { spans, names, passed } = spotSpans(code);
+  const { spans, names, passed } = spotSpans(code, spotCalls);
   // A function passed to a spot whose other call the file guards with
   // narrowNeedsSpot (the same allowlist, at run time) counts as at the spot.
   const covered = spotOnly(code, names, spans);
@@ -328,10 +337,11 @@ export function scanRepo(
   repo: string,
   roots: readonly string[],
   tables: Map<string, TableInfo>,
+  spotCalls: readonly string[] = SPOT_CALLS,
 ): ScannedWrite[] {
   const out: ScannedWrite[] = [];
   for (const f of sourceFiles(repo, roots)) {
-    for (const w of scanSource(f, readFileSync(join(repo, f), 'utf8'), tables)) {
+    for (const w of scanSource(f, readFileSync(join(repo, f), 'utf8'), tables, spotCalls)) {
       if (!w.atSpot && !narrowAllows(w)) out.push(w);
     }
   }

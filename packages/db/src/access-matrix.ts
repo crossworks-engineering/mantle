@@ -757,11 +757,11 @@ export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[
       'surface',
       'state',
     ],
-    // What an assistant or AI worker runs (round 12): its prompt, persona
+    // What an assistant or AI worker runs: its prompt, persona
     // notes and skill list, as a skill's instructions (skill-text).
     'public.agents': ['system_prompt', 'persona_notes', 'skill_slugs'],
     'public.ai_workers': ['system_prompt'],
-    // Where an account's mail comes from and goes (round 12): mail-account.
+    // Where an account's mail comes from and goes: mail-account.
     'public.email_accounts': [
       'ms_account_id',
       'provider',
@@ -821,7 +821,7 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
   'public.mantle_peers',
   'public.peer_shares',
   'public.peer_share_scopes',
-  // Round 12: an account made (its branch path and ingest policy), a
+  // An account made (its branch path and ingest policy), a
   // sandbox made (its maker) and a vault key made (its service: a delete
   // and reinsert of the same id under another service reused the seal,
   // which binds the id only; model-route).
@@ -834,7 +834,7 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * Tables the narrow role may INSERT into and DELETE from whose rows carry
  * a column NARROW_NEVER_UPDATE names (a maker, a login, a destination, a
  * sealed value): a delete then an insert of the same id would change that
- * column without an UPDATE (plan v3.2 S7b part b2 round 12, the
+ * column without an UPDATE (the
  * delete-then-reinsert class). Each is listed with why it gives nothing;
  * runtime-role.test.ts fails on one not listed.
  */

@@ -223,11 +223,11 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
       await inTx(su, [asNarrow, `select public.narrow_observe_delete('${await login()}')`]),
     ).toBeNull();
     expect(counted()).toEqual([]);
-    // The narrow role holds no delete of a login now (round 12: a login's
+    // The narrow role holds no delete of a login now (a login's
     // delete runs at the spot login-credential): refused, nothing counted.
-    expect(
-      await inTx(su, [asNarrow, `delete from auth.users where id = '${await login()}'`]),
-    ).toBe('42501');
+    expect(await inTx(su, [asNarrow, `delete from auth.users where id = '${await login()}'`])).toBe(
+      '42501',
+    );
     expect(counted()).toEqual([]);
     // With the runtime role on, a definer's delete is never counted (its
     // owner is not the session's login); as the superuser with no role
@@ -258,7 +258,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     counted();
     const who = 'system:http:admin-area';
     // The full route, as the runtime role: the cascade count, and (round
-    // 12: the narrow role holds no delete of a login) the would-refuse
+    // the narrow role holds no delete of a login) the would-refuse
     // count of 0319's derived trigger.
     expect(await inTx(rt, [actorSql(who), del(await login())])).toBeNull();
     expect(counted().sort()).toEqual(
@@ -267,7 +267,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
         `${PREFIX}narrow-would-refuse ${who} auth.users DELETE`,
       ].sort(),
     );
-    // The narrow role: refused (round 12), nothing deleted, nothing counted.
+    // The narrow role: refused, nothing deleted, nothing counted.
     expect(
       await inTx(rt, [
         `${actorSql(who)}, set_config('role', '${NARROW_ROLE}', true)`,

@@ -7,7 +7,7 @@
  * drizzle table and, for an UPDATE, the set it sends (its keys are the
  * table's property names; their column names are what Postgres checks).
  *
- * Round 12: some rules hold a value, not a column (migration 0320): an
+ * Some rules hold a value, not a column (migration 0320): an
  * enable on the tables whose `enabled` the narrow role may only switch
  * off, and a heartbeat's resume or a next fire set by an edit (the
  * narrow role keeps a fire's books only one way). Such a set needs the

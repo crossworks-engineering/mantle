@@ -723,13 +723,18 @@ async function mutatePersonaNotes(
     .limit(1);
   if (!row) return null;
   const next = transform((row.personaNotes ?? []) as PersonaNote[]);
-  // Part of what the assistant runs (its prompt): the full-route spot
-  // skill-text (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
+  return writePersonaNotes(row.id, next);
+}
+
+/** An assistant's persona notes written: part of what it runs (its
+ *  prompt), so at the full-route spot skill-text (access-matrix.ts
+ *  NARROW_NEVER_UPDATE_TABLE). */
+async function writePersonaNotes(id: string, next: PersonaNote[]): Promise<AgentSummary | null> {
   const [updated] = await onFullSystemRoute('skill-text', () =>
     db
       .update(agents)
       .set({ personaNotes: next, updatedAt: new Date() })
-      .where(eq(agents.id, row.id))
+      .where(eq(agents.id, id))
       .returning(),
   );
   return updated ? toSummary(updated) : null;

@@ -1,4 +1,4 @@
--- Plan v3.2 S7b part b2 round 12: the rules a column right cannot hold,
+-- The narrow login's rules a column right cannot hold,
 -- proven open as the real narrow login (session_user mantle_system_narrow)
 -- by the full re-audit of the database side.
 --
@@ -30,10 +30,11 @@
 --    telegram_accounts: an enable (a group's tools, an assistant, a bot
 --    answering again) runs at the full-route spot that grants it.
 -- 5. assistant_messages: a row the narrow role inserts must be this
---    brain's, its login a user of its workspace (or an Admin user), its
+--    brain's, its login a user of its workspace (or of the Admin
+--    workspace, or the owner), its
 --    assistant this brain's, its direction inbound or outbound. A cheap
 --    consistency guard; the narrow INSERT stays (the turn's hot path) and
---    the real fix is the signed acting login (S7c).
+--    the real fix is the signed acting login (the next step).
 -- 6. mantle_ws_system_work (0313) trusted a setting the session sets
 --    itself (mantle.actor): the narrow login, and a session under the
 --    write role, made a member a Moderator through mantle_ws_set_moderator.
@@ -225,7 +226,11 @@ BEGIN
         WHERE u."workspace_id" = NEW."workspace_id" AND u."login_id" = NEW."login_id")
      AND NOT EXISTS (
        SELECT 1 FROM "auth"."users" l
-        WHERE l."id" = NEW."login_id" AND (l."is_owner" OR l."role" = 'admin')) THEN
+        WHERE l."id" = NEW."login_id" AND l."is_owner")
+     AND NOT EXISTS (
+       SELECT 1 FROM "public"."workspace_users" a
+         JOIN "public"."workspaces" w ON w."id" = a."workspace_id" AND w."is_admin"
+        WHERE a."login_id" = NEW."login_id") THEN
     RAISE EXCEPTION 'assistant_messages: the login is not a user of the workspace' USING ERRCODE = '42501';
   END IF;
   RETURN NEW;

@@ -1,20 +1,29 @@
 /**
- * The static narrow write scan (plan v3.2 S7b part b2 round 12, the full
- * audit's app MED-1): every drizzle write of the source on a table that is
+ * The static narrow write scan (the full re-audit's
+ * finding): every drizzle write of the source on a table that is
  * not a content table is allowed by the narrow role's allowlist, sits at a
  * full-route spot, is in a file that never runs on a narrow exit, or is
  * pinned open (a list that only shrinks).
  */
 import { describe, expect, it } from 'vitest';
 import * as schema from './schema';
-import { narrowAllows, scanRepo, scanSource, tablesOf, writeKey } from './narrow-write-scan';
-import { NARROW_SCAN_OPEN, NARROW_SCAN_SYSTEM_FILES } from './narrow-write-scan.pins';
+import {
+  narrowAllows,
+  scanRepo,
+  scanSource,
+  tablesOf,
+  writeKey,
+} from './test-support/narrow-write-scan';
+import { NARROW_SCAN_OPEN, NARROW_SCAN_SYSTEM_FILES } from './test-support/narrow-write-scan.pins';
 
 const repo = new URL('../../..', import.meta.url).pathname;
 const tables = tablesOf(schema as Record<string, unknown>);
+/** onFullSystemRoute and the one-spot helpers (as-system-routes.mjs
+ *  FULL_ROUTE_SPOT_WRAPPERS). */
+const CALLS = ['onFullSystemRoute', 'profileWrite'];
 
 describe('the static narrow write scan', () => {
-  const found = scanRepo(repo, ['server', 'packages'], tables);
+  const found = scanRepo(repo, ['server', 'packages'], tables, CALLS);
   const keys = [...new Set(found.map(writeKey))].sort();
 
   it('every write the allowlist does not hold is at a spot, system only, or pinned open', () => {
@@ -30,7 +39,7 @@ describe('the static narrow write scan', () => {
     expect(Object.keys(NARROW_SCAN_SYSTEM_FILES).filter((f) => !files.has(f))).toEqual([]);
     for (const why of Object.values(NARROW_SCAN_SYSTEM_FILES))
       expect(why.length).toBeGreaterThan(15);
-    // Round 12's count: down only.
+    // The count when the scan began: down only.
     expect(NARROW_SCAN_OPEN.length).toBeLessThanOrEqual(103);
   });
 
@@ -46,7 +55,7 @@ describe('the static narrow write scan', () => {
       await db.update(agents).set({ ...patch, updatedAt: now });
       await db.update(nodes).set({ title: 'x' });
     `;
-    const w = scanSource('x.ts', src, tables);
+    const w = scanSource('x.ts', src, tables, CALLS);
     expect(w.map((x) => [x.table, x.op, x.columns.join(','), x.atSpot])).toEqual([
       ['public.heartbeats', 'update', 'created_by,updated_at', false],
       ['public.heartbeats', 'update', 'schedule', true],

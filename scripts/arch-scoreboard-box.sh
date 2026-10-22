@@ -188,8 +188,7 @@ SQL
 # second number is the tables they name. Both must read 0 on every box
 # before the default flip (S7b part b3). Numbers only: the table names
 # are read on the box itself (select detail from actor_check_misses where
-# check_name = 'narrow-would-refuse'). All time, not the last 24 hours (S7b
-# part b2 round 12): the counts are the flip's evidence, so every row since
+# check_name = 'narrow-would-refuse'). All time, not the last 24 hours: the counts are the flip's evidence, so every row since
 # the count began counts (the maintenance reaper keeps the narrow rows).
 narrow=$(q <<SQL || true
 select count(*) filter (where check_name = 'narrow-content-write')
