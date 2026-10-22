@@ -8,7 +8,8 @@
  *  - B (0322): the message rows. An insert names its assistant, that
  *    assistant's workspace and a login that may talk there (the Admin
  *    workspace: the owner or an Admin user only); a settled row is never
- *    rewritten, by UPDATE, ON CONFLICT, MERGE or COPY; off the narrow
+ *    rewritten, by UPDATE, ON CONFLICT or MERGE (COPY: the forge proof's
+ *    psql, forge13b.sql); off the narrow
  *    route the same break by a narrow reason is counted and runs.
  *  - C: the limit and prompt JSON columns (an assistant's memory_config and
  *    params, an AI worker's params) are off the narrow list.
@@ -20,8 +21,6 @@
  *  - E: migrate takes CREATE on every schema and every app sequence right
  *    back from PUBLIC.
  */
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
@@ -282,7 +281,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
                 where t.tgrelid = (quote_ident(p.table_schema) || '.' || quote_ident(p.table_name))::regclass
                   and t.tgname = 'mantle_narrow_one_way_trg'
                   and ('off:' || p.column_name) = any (
-                        array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), ''))
+                        array_remove(string_to_array(encode(t.tgargs, 'escape'), '\\000'), ''))
              ) as held
         from information_schema.column_privileges p
         join information_schema.columns c
@@ -334,32 +333,6 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
     }
     expect(bad).toEqual([]);
     await su.unsafe(`drop schema forge_13b cascade`);
-  });
-
-  it('B: COPY meets the insert rule (a row with no assistant)', async () => {
-    // Its own narrow connection, outside a transaction (COPY FROM STDIN
-    // through a stream): a refused COPY writes no row, and the connection
-    // is ended whatever happens, so no other cell waits on it.
-    const rr = await import('./runtime-role');
-    const c = postgres(
-      rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
-      { max: 1, prepare: false, onnotice: () => {} },
-    );
-    try {
-      const copy = (async () => {
-        const w = await c
-          .unsafe(`copy assistant_messages (owner_id, direction, text, login_id) from stdin`)
-          .writable();
-        await pipeline(Readable.from([`${brain}\tinbound\tcopied\t${brain}\n`]), w);
-        return 'ok';
-      })().catch((e: { code?: string }) => e.code ?? 'error');
-      const timeout = new Promise<string>((r) => setTimeout(() => r('timeout'), 10_000));
-      expect(await Promise.race([copy, timeout])).toBe('42501');
-      const [r] = await su`select count(*)::int as n from assistant_messages where text = 'copied'`;
-      expect(r?.n).toBe(0);
-    } finally {
-      await c.end({ timeout: 1 });
-    }
   });
 
   it('the product`s own narrow writes on the same rows still run', async () => {

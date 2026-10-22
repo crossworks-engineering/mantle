@@ -554,6 +554,7 @@ describe.skipIf(!URL)(
         'assistant-grant',
         'heartbeat-maker',
         'model-route',
+        'skill-text',
         'tool-config',
         'tool-group-grant',
       ],
@@ -613,6 +614,12 @@ describe.skipIf(!URL)(
       'DELETE /api/agents/:id': ['acting-login'],
       'DELETE /api/peers/:id': ['acting-login'],
       'DELETE /api/secrets/:id': ['acting-login'],
+      // A switch turned on (0323: enabled, is_default and backup_enabled
+      // only off on the narrow login): its spot.
+      'POST /api/ai-workers/:id/default': ['model-route'],
+      'PATCH /api/calendar/:id': ['feed-enable'],
+      'PATCH /api/docs/collections/:id': ['docs-root'],
+      'PATCH /api/microsoft/drives/:id': ['feed-enable'],
       'POST /api/users/:id/password': ['login-credential'],
       'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
