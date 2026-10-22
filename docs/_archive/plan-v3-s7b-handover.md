@@ -2746,7 +2746,7 @@ packages/db/rollback/0319_narrow_would_refuse.revert.sql):
 - `mantle_narrow_would_refuse_stmt()`: with the actor a narrow reason's
   (0312's mantle_narrow_actor), current_user = session_user (the full
   route) and mantle.route not 'full', a NOTICE `narrow-would-refuse <actor>
-  <schema.table> <op>`, once per table and operation per transaction; the
+<schema.table> <op>`, once per table and operation per transaction; the
   app's pool writes the miss row (actor.ts onPgNotice, unchanged).
 - Its triggers are derived from the narrow role's live grants on every
   migrate (runtime-role.ts applyNarrowWouldRefuse, right after
@@ -2830,14 +2830,14 @@ MANTLE_CHECK_FLOOR=keep (results in ~/s7b-b2/x-<name>.exit and .log;
 ### Left (round 10)
 
 0. Read the c runs (`bash ~/s7b-b2/grab3.sh cs1 cs2 caoff caon ceon
-   crrole cserial coff crroff cmatrix`, cproof's log): every exit 0 and
+crrole cserial coff crroff cmatrix`, cproof's log): every exit 0 and
    every forge 42501 with the needed writes allowed. The matrix: rerun it
    alone (`~/s7b-b2/launch9.sh` names it last) before calling it red. A
    failure on the new run-maker check or the run-control moves: the runs
    suites (execute-item, worker-write-role, a8-surfaces).
 1. D (1) the sweep's per-row "narrow login wrote" record and the pin of
-   rows that write at a spot; D (2) the login-self rows (/api/member/*,
-   /api/push/*, /api/profile/*) and POST /api/push/reset, connect in the
+   rows that write at a spot; D (2) the login-self rows (/api/member/_,
+   /api/push/_, /api/profile/*) and POST /api/push/reset, connect in the
    sweep (push-device should make them pass); D (4) callbacks into spot
    functions (applyLoginChange inTx/firstInTx, applyManifest) seen by the
    lint or refused; the Telegram assistant choice in one place; B's sweep
@@ -2846,3 +2846,136 @@ MANTLE_CHECK_FLOOR=keep (results in ~/s7b-b2/x-<name>.exit and .log;
    if the CEO wants systemDb's in-scope writes counted before b3.
 3. The measurement again with the switch on, on the final head.
 4. The full re-audit of b2, both sides.
+
+## Part b2, round 10: the would-refuse count's blind spot closed, the sweep's per-row record (handed over)
+
+Same branch. Inputs: the brief's "b2 round 10 inputs" and round 9's "Left
+(round 10)". One builder; commits e1fb485f5 to 797f8e29e and this handover.
+
+### The CEO's reruns on a0ee00361
+
+Matrix alone 0, the rollback drill 0. spend-budget.db.test.ts with the
+runtime role off: 2 of 3 (a different cell failed than in the round 9 run).
+
+### The spend-budget flake
+
+Not a denial: the cells read the trace row 200 ms after the turn, and the
+trace's close write and a late charge's increment are sent unawaited by
+design (tracing store.ts startTrace, addToTotals: recording never holds a
+result back). On a busy box the close write landed later (a failed run
+read `tokens_embed` 0; a passing one took 2.7 s for its second cell).
+Counts, the runtime role off, MANTLE_NARROW_SYSTEM=1, each a fresh clone
+and pg18: main 7f2d12292 19 of 19 passed (4 single runs, 15 in a loop),
+a0ee00361 3 failures in about 19 (round 9's run, the CEO's 3, a loop of
+15 with 1), the hardened cells (e1fb485f5) 19 of 19. The tracing code and
+the test are the same on main and the branch; why the branch's close write
+is slower more often is not pinned (a timing diagnosis script broke on its
+own patch: ~/s7b-b2/espendtime.sh, its runs etfix/etmain read "no tests").
+The fix: the cells wait, bounded (expect.poll, 15 s), for the trace rows'
+`finished_at` and for the late increment instead of a fixed pause.
+
+### Item 1: the count's blind spot (the CEO's decision: close it)
+
+- A systemDb statement inside a login's turn or request scope, the switch
+  off, runs on a new handle (gateway/pools.ts getScopeMarkedDb, chosen in
+  gateway/handles.ts systemDb) whose actor settings carry
+  `mantle.route = 'narrow'` (actor-sql.ts scopeMarkedParams; the route
+  setting takes 'full' or 'narrow' now). Only on a SET the gateway already
+  sends: with the actor check off nothing new is sent (a2a-round-trips
+  holds that; the first version sent the actor with the check off and
+  failed it). So the count is exact while the check is warn or on, as
+  0312's content count always was.
+- 0319 (edited in place: b2's own file, no box ran it):
+  `mantle_narrow_counted(who)` = a narrow reason's actor, or the route
+  marked 'narrow'. 0319's statement trigger and 0318's report branch use
+  it, and 0319 now also redefines 0317's content and cascade counts to use
+  it (otherwise 0317's bodies). The revert puts 0317's two bodies back and
+  drops the helper.
+- Cell (narrow-would-refuse.db.test.ts, "the app's path"): in a login's
+  turn scope with the switch off, the product's own provider_alerts upsert
+  (recordProviderFailure, every column granted) counts nothing; an upsert
+  whose SET names owner_id and an audit_log delete count, under the
+  login's actor; the same at a spot in the scope, or outside every scope
+  with the login's actor, count nothing. Run in warn and in off (the
+  second loop's first statement sets the mode). Targeted run et1 on
+  85f3e373c (switch on): 8 files, 90 tests, exit 0; et2off on 6ea6e065d
+  (switch off): would-refuse and a2a 0.
+- Open doubt: et1off on 85f3e373c had narrow-observe's cascade cell
+  ("counts a delete from auth.users ... on either route") answer 42501 on
+  the narrow role's delete; on 6ea6e065d it passed. Not explained; watch
+  it in the e runs (eoff).
+
+### Item 2: the D LOWs
+
+- D (1) done: narrow-area-sweep.db.test.ts installs, on each pass's
+  scratch, a row trigger on every table of public and auth that notes once
+  per transaction each table and operation the narrow role itself writes
+  (current_user, so a definer's writes are left out), read per row with
+  takeNarrowWrites; and the full-route spots each row entered (viewer.ts
+  onFullSystemRoute notes them in tests: takeSpotUses). Off pass: the
+  narrow login writes nothing (pinned). On pass: 149 rows wrote, 5 wrote
+  nothing (of 138 area rows and 16 login-self rows). SPOT_ROWS pins the
+  60 rows that enter a spot and which spots, equal on both passes (stable
+  over two runs, esweep1/esweep2). MANTLE_SWEEP_REPORT now carries each
+  row's `wrote` and `spots`.
+- D (2) done: LOGIN_SELF_ROWS (narrow-area-sweep.entries.ts): the
+  profile writes, PUT /api/push/preferences, POST /api/push/connect
+  (registers the brain with the relay at push-device), POST
+  /api/member/push/connect and PUT /api/member/push/preferences as the
+  member, POST /api/push/reset; the sweep's fetch answers the relay. Not
+  driven, with why in the table's comment: the device enrol rows (a
+  mobile bearer, push-device's own cells) and the image uploads. FOUND: PUT
+  /api/push/preferences failed on the narrow route (500, permission denied
+  for push_prefs, the owner's toggles upsert): never measured, as no row
+  drove it. push_prefs is on the allowlist now (INSERT, UPDATE of
+  assistant_messages and approvals: no rights column).
+- Not done: D (4) the spot-callback lint, the Telegram assistant choice in
+  one place, B's Azure-only onboarding sweep row (Left).
+
+### Item 3: ms_drive_scopes
+
+Proven: the sweep's scope-set row (one scope already set in the fixture,
+a body with one) records `public.ms_drive_scopes DELETE` and `INSERT` by
+the narrow login, with no denial (esweep2). It stays on the allowlist.
+
+### Pins
+
+routePolicyLists 15 to 16 (LOGIN_SELF_ROWS, with why in the pins' notes).
+historyCodeComments unchanged (2341: the new comments name no step code).
+fullRouteSpots and fullRouteSpotCalls unchanged.
+
+### Gates (round 10)
+
+Mac, Node 26, DATABASE_URL unset, on f368a5bea (the arch pin after it, then
+797f8e29e): `pnpm -r typecheck` 0, `pnpm lint` 0, `pnpm format:check` 0,
+`pnpm docs:check` 0; `pnpm arch:check` 1 there (routePolicyLists 15 to 16,
+historyCodeComments 2341 to 2344), 0 on 797f8e29e after the re-pin and
+the codes taken out of the new comments (format and docs 0 again).
+packages/db unit vitest 0 (60 files). Not run this round on the Mac:
+`pnpm -C server/web build` and the full unit vitest.
+
+Workstation: every suite and the forge proof launched on 797f8e29e at
+hand-over (`~/s7b-b2/launch9.sh 797f8e29e e`: es1 es2 eaoff eaon eeon
+errole eserial eoff erroff ematrix eproof; results in
+~/s7b-b2/x-e<name>.exit and .log, `bash ~/s7b-b2/grab3.sh es1 es2 eaoff
+eaon eeon errole eserial eoff erroff ematrix`). Not launched: the rollback
+drill (~/s7b-b2/drill7.sh, as the CEO ran it).
+
+### Left (round 11)
+
+0. Read the e runs above; the matrix alone if only its time budget fails;
+   the drill on 797f8e29e; the Mac build and full unit vitest. Watch
+   narrow-observe's cascade cell in eoff (the doubt above).
+1. D (4): callbacks into spot functions (applyLoginChange inTx/firstInTx,
+   applyManifest) seen by the lint or refused.
+2. The Telegram assistant choice in one place: the bot's assistant
+   (channels.agent_id through telegram_accounts.channel_id) and a chat's
+   override (telegram_chats.responder_agent_id) are read together in
+   chat-login.ts chatLoginRefusal's SQL and separately elsewhere
+   (agents.ts, agent-telegram.ts, events-reminders.ts, channels.ts): one
+   helper.
+3. B: the sweep row for onboarding's provision with a key (Azure only).
+4. The measurement again with the switch on, on the final head (round 8's
+   machinery); the sweep's per-row record now covers the area and
+   login-self rows.
+5. The full re-audit of b2, both sides.
