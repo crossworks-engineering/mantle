@@ -29,7 +29,7 @@ import {
   type ActorMiss,
 } from '../actor';
 import { ACTOR_SQL_TAG, forgetActorCheckModePool, refreshActorCheckMode } from './check-mode';
-import { actorClient, actorPipelinesDone } from './actor-sql';
+import { actorClient, actorPipelinesDone, scopeMarkedParams } from './actor-sql';
 import { narrowRouteClient, systemStartupOf } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
@@ -307,6 +307,32 @@ export function getNarrowDb(): PostgresJsDatabase<typeof schema> {
   ));
 }
 
+/** The system pool's handle that marks the narrow route (getScopeMarkedDb). */
+let scopeMarkedDb: PostgresJsDatabase<typeof schema> | null = null;
+
+/**
+ * The system pool's drizzle handle for a statement the narrow route would
+ * take were the switch on, while it is off (plan v3.2 S7b part b2 round 10):
+ * systemDb's inside a turn or request scope (gateway/handles.ts). It runs
+ * exactly as getAdminDb's, its actor's settings carrying mantle.route =
+ * 'narrow' (actor-sql.ts scopeMarkedParams), so the would-refuse count sees
+ * the write whatever the actor: the evidence for the switch's flip has no
+ * blind spot there.
+ */
+export function getScopeMarkedDb(): PostgresJsDatabase<typeof schema> {
+  getAdminDb();
+  const sql = globalThis.__mantleSql!;
+  return (scopeMarkedDb ??= drizzle(
+    narrowRouteClient(
+      actorClient(sql, scopeMarkedParams),
+      sql,
+      () => (poolNarrow ?? false) && systemRouteNow() === 'narrow',
+      narrowPoolSql,
+    ),
+    { schema },
+  ));
+}
+
 /**
  * The narrow route's own pool (plan v3.2 S7b, the design that closes the
  * class of plan 2.1 MED-A): every connection logs in as
@@ -513,6 +539,7 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleTurnDb = undefined;
   adminActorSql = null;
   narrowDb = null;
+  scopeMarkedDb = null;
   for (const reset of closeResets) reset();
   // The next pool reads its database's actor check mode afresh.
   forgetActorCheckModePool();

@@ -100,26 +100,30 @@ export function setActorSql(
     if (v.includes('\0')) throw new Error('actor setting: NUL');
     return `'${v.replace(/'/g, "''")}'`;
   };
-  if (route !== undefined && route !== 'full') throw new Error('actor setting: route');
+  if (route !== undefined && route !== 'full' && route !== 'narrow') {
+    throw new Error('actor setting: route');
+  }
   if (acting !== undefined && !UUID_RE.test(acting)) throw new Error('actor setting: acting login');
   return (
     `select set_config('mantle.actor', ${lit(actor)}, ${local}), ` +
     `set_config('mantle.write_mode', ${lit(writeMode)}, ${local}), ` +
     `set_config('mantle.actor_check', ${lit(mode)}, ${local})` +
-    (route ? `, set_config('mantle.route', 'full', ${local})` : '') +
+    (route ? `, set_config('mantle.route', ${lit(route)}, ${local})` : '') +
     (acting ? `, set_config('mantle.acting_login', ${lit(acting)}, ${local})` : '')
   );
 }
 
 /** The actor's settings (setActorSql): its value, write mode, the box's
- *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow), and
+ *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow) or
+ *  'narrow' on a statement the narrow route would take were the switch on
+ *  (scopeMarkedParams: the would-refuse count, 0319), and
  *  the acting login of the exit it runs in (actingLoginNow, plan v3.2 S7b:
  *  mantle.acting_login, which only the gateway's own SET may name). */
 export type ActorParams = readonly [
   string,
   string,
   string,
-  ('full' | undefined)?,
+  ('full' | 'narrow' | undefined)?,
   (string | undefined)?,
 ];
 
@@ -234,6 +238,33 @@ export function actorParams(): ActorParams | null {
     mode,
     fullRouteSpotNow() ? 'full' : undefined,
     acting,
+  ] as const;
+}
+
+/**
+ * actorParams for a statement the narrow route would take were the switch
+ * on, sent with the switch off (plan v3.2 S7b part b2 round 10: systemDb
+ * inside a login's turn or request scope, gateway/handles.ts): the route
+ * marked 'narrow', so 0319's would-refuse count (and 0312's content and
+ * cascade counts) sees it whatever the actor. Its actor is the login's,
+ * which no narrow reason names, so without the mark the count was blind
+ * to it. With the actor check off the actor is sent anyway (its mode
+ * 'off', as workspace system work sends it): the mark must reach the
+ * statement on every box. At a full-route spot the spot's 'full' stays.
+ */
+export function scopeMarkedParams(): ActorParams | null {
+  const params = actorParams();
+  if (params)
+    return params[3] === 'full' ? params : [params[0], params[1], params[2], 'narrow', params[4]];
+  const actor = currentActor();
+  if (!actor) return null;
+  if (fullRouteSpotNow()) return null;
+  return [
+    actorSetting(actor),
+    writeModeOf(actor),
+    actorCheckMode(),
+    'narrow',
+    actingLoginNow() ?? undefined,
   ] as const;
 }
 
@@ -463,7 +494,7 @@ export function settingsPipeline(
  * transaction block (runsOutsideTransaction) always run as they are.
  * Exported for actor-client.test.ts only (not in index.ts).
  */
-export function actorClient(base: PgSql): PgSql {
+export function actorClient(base: PgSql, paramsOf: () => ActorParams | null = actorParams): PgSql {
   /** Run `query` as the actor bound now (decided when it runs). */
   const run = (
     query: string,
@@ -474,7 +505,7 @@ export function actorClient(base: PgSql): PgSql {
     // A pool being closed (closeDb) takes no new reserved connection: one
     // that comes back after its end began keeps postgres.js from ending.
     const open = globalThis.__mantleSql === base;
-    const params = open ? actorParams() : null;
+    const params = open ? paramsOf() : null;
     if (params && !runsOutsideTransaction(query) && wrapsStatement(query)) {
       // A write outside a transaction, as the actor (A2b1 audit, Q1): the
       // caller waits exactly as long as with the check off.
@@ -500,11 +531,7 @@ export function actorClient(base: PgSql): PgSql {
           // with an actor waits for it and then decides (run).
           const waitFor = firstModeReadNow();
           const wait = !actorParams() && waitFor !== null && currentActor() !== null;
-          if (
-            (!wait && !actorParams()) ||
-            runsOutsideTransaction(query) ||
-            !wrapsStatement(query)
-          ) {
+          if ((!wait && !paramsOf()) || runsOutsideTransaction(query) || !wrapsStatement(query)) {
             return target.unsafe(query, args as never[], opts as never);
           }
           const go = (mode: 'rows' | 'values' | 'simple') =>
@@ -531,7 +558,7 @@ export function actorClient(base: PgSql): PgSql {
             // The startup race: wait for the pool's first mode read once.
             const waitFor = firstModeReadNow();
             if (waitFor && currentActor() && !actorParams()) await waitFor;
-            const params = actorParams();
+            const params = paramsOf();
             return workResult(fn(params ? actorInTransaction(t, params) : t));
           };
           return (target.begin as (...a: unknown[]) => unknown)(...args.slice(0, -1), wrapped);

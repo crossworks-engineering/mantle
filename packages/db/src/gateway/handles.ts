@@ -28,7 +28,7 @@ import { sqlCode } from '../sql-text';
 import { withMigratorConnection } from '../migrator-connection';
 import { ACTOR_SQL_TAG } from './check-mode';
 import { actorParams, setActorSql } from './actor-sql';
-import { getAdminDb, getNarrowDb } from './pools';
+import { getAdminDb, getNarrowDb, getScopeMarkedDb } from './pools';
 import { loginWritesMayRoute, systemWriteDb, typedWrite } from './write-route';
 import { systemPoolTxInScope } from './system-tx';
 import { getDb } from './scope';
@@ -190,8 +190,15 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // the switch is on; outside every scope (workers, boot) it is system
     // work and runs full.
     // At a full-route spot (onFullSystemRoute) the system pool, as the
-    // spot's other statements.
-    const handle = inScope && narrowSystemOn() && !systemDbOnSpot() ? getNarrowDb() : getAdminDb();
+    // spot's other statements. With the switch off the same statements run
+    // on the system pool with the narrow route marked (getScopeMarkedDb),
+    // so the would-refuse count (0319) counts what the role would refuse.
+    const narrowed = inScope && !systemDbOnSpot();
+    const handle = narrowed
+      ? narrowSystemOn()
+        ? getNarrowDb()
+        : getScopeMarkedDb()
+      : getAdminDb();
     return Reflect.get(handle as object, prop);
   },
 });

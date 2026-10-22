@@ -3,11 +3,12 @@
 -- count gone. Not a migration: nothing runs it on its own.
 --
 -- 0319 adds a report-only trigger function (its triggers are derived on
--- every migrate by runtime-role.ts applyNarrowWouldRefuse) and gives
--- 0318's mantle_narrow_one_way a report branch. An older image runs with
+-- every migrate by runtime-role.ts applyNarrowWouldRefuse), gives 0318's
+-- mantle_narrow_one_way a report branch, and lets 0317's content and
+-- cascade counts take the route mark (mantle_narrow_counted). An older image runs with
 -- both in place (they only raise a NOTICE it prints): a rollback of one
 -- image needs NOT this file. This file drops the derived triggers and the
--- function, puts 0318's function back and takes 0319 off the ledger, so a
+-- function, puts 0318's and 0317's functions back and takes 0319 off the ledger, so a
 -- later roll forward applies it again (it is re-runnable).
 --
 -- Run it as the superuser, in one transaction:
@@ -81,5 +82,75 @@ END
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_one_way"() FROM PUBLIC;
+--> statement-breakpoint
+-- 0317's content and cascade counts, as 0317 made them (no route mark).
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME;
+  narrow_key text := 'mantle.narrow_missed_' || TG_TABLE_NAME;
+  who text := coalesce(current_setting('mantle.actor', true), '');
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+  mode text;
+BEGIN
+  IF who <> '' THEN
+    IF who LIKE 'system:%' THEN
+      IF "public"."mantle_narrow_actor"(who)
+         AND current_user::text = own_role
+         AND coalesce(current_setting('mantle.route', true), '') <> 'full'
+         AND coalesce(current_setting(narrow_key, true), '') <> TG_OP THEN
+        PERFORM set_config(narrow_key, TG_OP, true);
+        RAISE NOTICE 'mantle narrow write: narrow-content-write % % %', who, TG_TABLE_NAME, TG_OP;
+      END IF;
+    END IF;
+    RETURN NULL;
+  END IF;
+  IF pg_trigger_depth() > 1 THEN
+    RETURN NULL;
+  END IF;
+  mode := "public"."mantle_actor_check_mode"();
+  IF mode = 'off' THEN RETURN NULL; END IF;
+  IF mode = 'on' THEN
+    RAISE EXCEPTION 'mantle actor check: % on % with no actor', TG_OP, TG_TABLE_NAME
+      USING ERRCODE = '42501', DETAIL = 'no_actor';
+  END IF;
+  IF coalesce(current_setting(seen_key, true), '') = TG_OP THEN RETURN NULL; END IF;
+  PERFORM set_config(seen_key, TG_OP, true);
+  RAISE NOTICE 'mantle actor miss: % on %', TG_OP, TG_TABLE_NAME;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_cascade_stmt"()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  who text := coalesce(current_setting('mantle.actor', true), '');
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+BEGIN
+  IF pg_trigger_depth() = 1 AND who LIKE 'system:%' THEN
+    IF "public"."mantle_narrow_actor"(who)
+       AND current_user::text = own_role
+       AND coalesce(current_setting('mantle.route', true), '') <> 'full'
+       AND EXISTS (SELECT 1 FROM gone) THEN
+      RAISE NOTICE 'mantle narrow write: narrow-cascade-delete % % DELETE', who, TG_TABLE_NAME;
+    END IF;
+  END IF;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_narrow_cascade_stmt"() FROM PUBLIC;
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_narrow_counted"(text);
 --> statement-breakpoint
 DELETE FROM "drizzle"."__drizzle_migrations" WHERE created_at = 1790198460000;

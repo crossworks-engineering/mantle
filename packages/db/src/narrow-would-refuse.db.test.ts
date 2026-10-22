@@ -14,13 +14,22 @@
  *  - 0318's one-way rules (mantle_narrow_one_way's report branch): the row
  *    is written, and counted;
  *  - never at a spot, by another actor, or on the narrow role itself
- *    (refused there, as before).
+ *    (refused there, as before);
+ *  - the app's own path (round 10, the counter's blind spot closed): a
+ *    systemDb write inside a login's turn scope with the switch off, whose
+ *    actor is the login's, is counted by the narrow route's mark
+ *    (mantle.route = 'narrow', gateway/pools.ts getScopeMarkedDb) when the
+ *    role would refuse it, with the actor check off and in warn; an
+ *    allowed write (the product's own provider_alerts upsert) is not; the
+ *    same write outside a scope or at a spot is not.
  *
  * The runtime role's login (current_user = session_user), as on every
  * fleet box.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/narrow-would-refuse.db.test.ts
  */
+import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
@@ -180,5 +189,84 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
     // refusal is narrow-denied).
     expect(await inTx(su, [actorSql(who), `set local role ${NARROW_ROLE}`, lower])).toBe('42501');
     expect(counted()).toEqual([]);
+  });
+
+  it("the app's path: systemDb in a login's turn scope, the switch off, is counted by the route mark when the role would refuse it", async () => {
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= KEY;
+    const m = await import('./index');
+    const v = await import('./viewer');
+    const rr = await import('./runtime-role');
+    const actor = await import('./actor');
+    const alerts = await import('./provider-alerts');
+    const pa = m.providerAlerts;
+    const scope = {
+      kind: 'assistant' as const,
+      loginId: anchor,
+      ws: [randomUUID()],
+      modWs: [] as string[],
+    };
+    /** provider_alerts' upsert, its SET naming the owner (the narrow role
+     *  updates 15 of its columns, never owner_id): the class round 8's
+     *  allowlist missed. Rolled back after (only the count is read). */
+    const refusedUpsert = () =>
+      m.systemDb
+        .transaction(async (tx) => {
+          await tx
+            .insert(pa)
+            .values({
+              ownerId: anchor,
+              subject: 'extraction',
+              code: 'x',
+              permanent: false,
+              reason: 'x',
+            })
+            .onConflictDoUpdate({
+              target: [pa.ownerId, pa.subject],
+              set: { ownerId: sql`excluded.owner_id` },
+            });
+          await tx.execute(sql`delete from public.audit_log where false`);
+          throw Object.assign(new Error('rollback'), { rollback: true });
+        })
+        .catch((e: { rollback?: boolean }) => {
+          if (!e.rollback) throw e;
+        });
+    const pick = () =>
+      actor
+        .takeNarrowWrites()
+        .filter((w) => w.check === 'narrow-would-refuse')
+        .map((w) => `${w.actor.split(':')[0]} ${w.detail}`)
+        .sort();
+    try {
+      for (const mode of ['off', 'warn'] as const) {
+        await m.closeDb();
+        await su`select mantle_set_actor_check(${mode}, 50, 'test')`;
+        rr.setNarrowSystemForTests(false);
+        actor.takeNarrowWrites();
+        // The product's own upsert (every column it names granted): nothing.
+        await m.withTurnScope(scope, async () => {
+          await alerts.recordProviderFailure(anchor, 'embedding', {
+            code: 'c',
+            permanent: false,
+            reason: 'r',
+          });
+        });
+        expect(pick(), mode).toEqual([]);
+        // A write the role would refuse: counted, the login's actor.
+        await m.withTurnScope(scope, refusedUpsert);
+        expect(pick(), mode).toEqual(
+          ['login public.audit_log DELETE', 'login public.provider_alerts UPDATE'].sort(),
+        );
+        // The same at a spot inside the scope, or outside every scope with
+        // the login's actor: not counted (no mark).
+        await m.withTurnScope(scope, () => v.onFullSystemRoute('profile-row', refusedUpsert));
+        await m.runAsActor(m.loginActor(anchor, 'rw'), refusedUpsert);
+        expect(pick(), mode).toEqual([]);
+      }
+    } finally {
+      await m.closeDb();
+      rr.setNarrowSystemForTests(null);
+      await su`delete from public.provider_alerts where owner_id = ${anchor}`;
+    }
   });
 });
