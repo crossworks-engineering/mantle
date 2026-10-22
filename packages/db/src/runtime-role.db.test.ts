@@ -702,7 +702,41 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(broken[0]?.detail).toMatch(/may become mantle_owner/);
     const [mode] = (await rt.unsafe(DB_ROLE_SQL)) as unknown as DbRoleRow[];
     expect(dbRoleMode(mode!)).toBe('other');
-    expect(await ensureRuntimeRoles(admin, KEY, { login: true, narrowLogin: true })).toBe('ok');
+    // While migrate puts the wanted memberships right, the runtime role
+    // never stops being able to become the narrow and the system role: a
+    // wanted membership with the wrong options is set right in place, never
+    // taken back and granted again (that left a moment, cluster-wide, in
+    // which every database's SET ROLE failed 42501: the narrow write
+    // count's cascade cell met it once beside this file).
+    let migrating = true;
+    const refused: string[] = [];
+    let tries = 0;
+    const becomes = (async () => {
+      while (migrating) {
+        for (const role of [NARROW_ROLE, SYSTEM_ROLE]) {
+          tries += 1;
+          await rt
+            .begin((tx) => tx.unsafe(`select set_config('role', '${role}', true)`))
+            .catch((err: { code?: string }) => refused.push(`${role} ${err.code}`));
+        }
+      }
+    })();
+    const warned: string[] = [];
+    try {
+      expect(
+        await ensureRuntimeRoles(admin, KEY, {
+          login: true,
+          narrowLogin: true,
+          warn: (l) => warned.push(l),
+        }),
+      ).toBe('ok');
+    } finally {
+      migrating = false;
+      await becomes;
+    }
+    expect(refused).toEqual([]);
+    expect(tries).toBeGreaterThan(2);
+    expect(warned.filter((l) => l.includes(`from ${RUNTIME_ROLE} `))).toEqual([]);
     await afterMigrations(admin, 'ok', { info: () => {}, warn: () => {} });
     const ms = await admin<{ role: string; inherit: boolean; set: boolean }[]>`
       select r.rolname as role, m.inherit_option as inherit, m.set_option as set

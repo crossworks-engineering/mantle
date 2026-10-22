@@ -786,13 +786,16 @@ export function runtimeRoleStatements(
     const pw = role === RUNTIME_ROLE ? password : role === NARROW_ROLE ? narrowPassword : null;
     out.push(`${verb} ROLE "${role}" WITH ${roleAttrs(role, pw)}`);
   }
-  for (const m of wantedMemberships()) {
-    out.push(
-      `GRANT "${m.role}" TO "${m.member}" WITH INHERIT ${m.inherit ? 'TRUE' : 'FALSE'}, ` +
-        `SET ${m.set ? 'TRUE' : 'FALSE'}, ADMIN FALSE`,
-    );
-  }
+  for (const m of wantedMemberships()) out.push(membershipGrant(m));
   return out;
+}
+
+/** The GRANT that makes one wanted membership, with its options. */
+function membershipGrant(m: Membership): string {
+  return (
+    `GRANT "${m.role}" TO "${m.member}" WITH INHERIT ${m.inherit ? 'TRUE' : 'FALSE'}, ` +
+    `SET ${m.set ? 'TRUE' : 'FALSE'}, ADMIN FALSE`
+  );
 }
 
 export type RuntimeRolesOutcome = 'ok' | 'not-superuser' | 'old-server';
@@ -964,15 +967,39 @@ export async function ensureRuntimeRoles(
     opts.login && masterKey && !opts.perDatabase ? runtimeRolePassword(masterKey) : null;
   const narrowPassword =
     opts.narrowLogin && masterKey && !opts.perDatabase ? narrowRolePassword(masterKey) : null;
-  // Wrong memberships first, so the GRANTs below land on a clean slate (a
-  // membership is one row per grantor: a GRANT does not change another
-  // grantor's row).
-  await takeBackMemberships(sql, opts.warn ?? ((line) => console.warn(line)));
-  for (const stmt of runtimeRoleStatements(
+  const statements = runtimeRoleStatements(
     new Set(rows.map((r) => r.rolname)),
     password,
     narrowPassword,
-  )) {
+  );
+  // The wanted memberships first: a GRANT sets the options of its own row
+  // in place, so a wanted membership held with the wrong options (a hand
+  // GRANT ... WITH INHERIT TRUE) is put right without ever being taken
+  // away. Taking it back first left a moment in which the runtime role
+  // could not become the narrow or the system role, cluster-wide: every
+  // database's SET ROLE then failed with 42501 while the old app served
+  // (and a test file beside a migrating one met it).
+  // Each one whose two roles exist (a first run makes the runtime roles
+  // below, with no membership yet to put right).
+  const wanted = wantedMemberships();
+  const named = [...new Set(wanted.flatMap((m) => [m.member, m.role]))];
+  const present = new Set(
+    (
+      await sql<{ rolname: string }[]>`
+        select rolname from pg_roles where rolname = any(${named}::text[])`
+    ).map((r) => r.rolname),
+  );
+  for (const m of wanted) {
+    if (present.has(m.member) && present.has(m.role)) {
+      await runRoleStatement(sql, membershipGrant(m), true);
+    }
+  }
+  // Then every membership still wrong (another grantor's row, an ADMIN
+  // option, a role the runtime roles should not hold or be held by), and
+  // the roles and the wanted memberships again: a row the take-back had
+  // to remove is made again at once.
+  await takeBackMemberships(sql, opts.warn ?? ((line) => console.warn(line)));
+  for (const stmt of statements) {
     await runRoleStatement(sql, stmt, true);
   }
   await resetNarrowRoleSettings(sql);
