@@ -1466,3 +1466,83 @@ scripts/arch-scoreboard.pins.json).
 
 0316 adds two functions; an older image never calls them (no revert
 needed). The viewer.ts change is code only.
+
+### Gates
+
+Mac, Node 26, DATABASE_URL unset: `pnpm format:check` 0, `pnpm docs:check`
+0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0, `pnpm
+boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm test:serial` 0 (1 file
+skipped: no database), `vitest run server packages eslint-rules` 0 on the
+code head (871 files passed, 288 skipped; 11299 tests passed). The first
+unit run exited 1 on runtime-role.test.ts (the allowlist cell did not yet
+name the two 0316 definers); fixed, then 0. The head after the code head
+changes the handover and comments only (format, docs and arch again 0).
+
+Workstation, a fresh clone of the pushed 6644a4a00 per suite, one pgvector
+pg18 container each (label mantle.test=s7b-b2, max_connections=450, port
+checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                           | Exit | Counts                              |
+| ----------------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                       | 0    | 580 files; 6392 passed, 1 skipped   |
+| full DB vitest, shard 2/2                       | 0    | 579 files; 7868 passed              |
+| test:actor-off                                  | 0    | 144 files; 1448 passed, 1 skipped   |
+| test:actor-on                                   | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on (rerun, see below)                 | 0    | 46 files; 583 passed                |
+| test:matrix (rerun beside main, see below)      | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full                       | 0    | 298 files; 2947 passed, 1 skipped   |
+| test:serial                                     | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0          | 0    | 1159 files; 14260 passed, 1 skipped |
+| the drill (N-1: b1 against the b2 schema)       | 0    | every migrate step 0 (below)        |
+| the dump runs (full DB vitest, before / after)  | 1, 0 | above (before: the probe file only) |
+| the 0316 cells and the role readers (866778e9c) | 0    | 2 files; 7 passed                   |
+
+test:edit-on first failed one file's afterAll hook (w6b-fix2.db.test.ts,
+closeDb and the drop over 10 s beside five lanes; every test passed); the
+rerun in a lane of its own passed. test:matrix failed only its time budget
+twice (211.9 s, then 232.8 s, against 210 s, beside other lanes; every
+cell the oracle's answer, as earlier rounds met); main 7f2d12292 and the
+branch then ran side by side, two lanes: both 0.
+
+The drill (main 7f2d12292 = b1, and the branch), each migrate step:
+ledger rows / md5 of mantle_tg_chat_set's body / the user role's
+rolconnlimit / the narrow role's rolcanlogin: main 313 / b8266526... / 30 /
+true; the branch 316 / c1ab8138... / 54 / true; main again (N-1 boot on
+the b2 schema) 0, 316 / c1ab8138... / 30 / true, the narrow login and the
+superuser each running their own acting login and refused another (42501);
+the branch again 0, switch unset 0 (rolcanlogin false), per-database mode
+0 (false). N-1 never calls the 0316 functions: rolling b2 back to b1 needs
+no revert.
+
+### Left for the next round
+
+1. The interim audit's two MEDs on 0314 and 0315 (the CEO's list, a fresh
+   builder), BEFORE the default flip.
+2. The spots left: profile-row (the login-self routes, the settings and
+   backups areas: five write forms in profile-preferences.ts and two in
+   backup.ts, the jsonb merge, the revisioned save and the counter bump;
+   the write role in the login's own scope if byte-equal, else a definer),
+   console-tool and pending-call (the tool run as the Admin login's turn in
+   its scope, only if every answer is equal; else keep with why),
+   integrity-delete and reembed (stay for S7c; their area-route rows are
+   the cells).
+3. The ONE table-driven area-route sweep (round 2 inputs): not started.
+4. The default flip, LAST, after item 1 (not in this round, CEO).
+5. Pins: asSystemFull floor, fullRouteSpots and fullRouteSpotCalls down,
+   systemWholeOnFull 0, requestSystemExits on narrow; the box counts list.
+
+### Open items
+
+1. The dump runs counted 0 narrow write counts (narrow-content-write) in
+   both runs, before and after; the counts need the actor check at warn or
+   on in the scratch database, which this report did not confirm per file.
+   The denials (0 in both, and a denial fails its test) do not depend on
+   it.
+2. mantle_agent_delete's Telegram chat deny is not celled (above).
+3. A full exit (a spot inside a request exit) sends no acting login
+   (`acting` empty in the probe's full column): onFullSystemRoute's own
+   entry carries none. Unchanged by this round; the definers never run
+   there.
