@@ -110,6 +110,10 @@ const REFUSED: readonly [string, string][] = [
     'B: settled row back to pending',
     `update assistant_messages set status = 'pending' where id = '${SETTLED}'`,
   ],
+  [
+    'B: settled error rewritten',
+    `update assistant_messages set error = 'forged' where id = '${SETTLED}'`,
+  ],
   ['B: settled model changed', `update assistant_messages set model = 'x' where id = '${SETTLED}'`],
   [
     'B: settled data rewritten',
@@ -210,6 +214,25 @@ const ALLOWED: readonly [string, string][] = [
     'ok: a late fire`s books (an older time) keep the newer last fire',
     `update heartbeats set last_fired_at = greatest(last_fired_at, now() - interval '2 hours'),
        fire_count = fire_count + 1 where id = '${HEARTBEAT}'`,
+  ],
+  [
+    // Item G: the turn's narrow writes, measured onto the allowlist.
+    'ok G: a turn stream event',
+    `insert into turn_stream_buffer (turn_id, seq, owner_id, event)
+       values (gen_random_uuid()::text, 1, mantle_brain_id(), '{"type":"turn-start"}')`,
+  ],
+  [
+    'ok G: the expired stream events cleared',
+    `delete from turn_stream_buffer where created_at < now() - interval '15 minutes'`,
+  ],
+  [
+    'ok G: a spilled tool result',
+    `insert into tool_results (id, owner_id, tool_slug, content, bytes)
+       values ('r13b-' || gen_random_uuid()::text, mantle_brain_id(), 'x', 'y', 1)`,
+  ],
+  [
+    'ok G: a pending turn fails with its error and attachments',
+    `update assistant_messages set status = 'failed', error = 'boom', attachments = '[]' where id = '${PENDING}'`,
   ],
   ['ok: an AI worker renamed', `update ai_workers set name = 'renamed' where id = '${WORKER}'`],
   [
