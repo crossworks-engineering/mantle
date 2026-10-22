@@ -254,7 +254,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
 export const RELAY = 'http://relay.sweep';
 
 /**
- * The login-self rows (plan v3.2 S7b part b2 round 10, D 2): the writes a
+ * The login-self rows: the writes a
  * login makes to its own profile and push devices, on the login-self exit
  * (not area rows, so not in the route table's area list). Each is sent as
  * the owner (`owner`) or the fixture's member login (`member`), on both

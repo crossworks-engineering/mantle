@@ -312,7 +312,7 @@ let scopeMarkedDb: PostgresJsDatabase<typeof schema> | null = null;
 
 /**
  * The system pool's drizzle handle for a statement the narrow route would
- * take were the switch on, while it is off (plan v3.2 S7b part b2 round 10):
+ * take were the switch on, while it is off:
  * systemDb's inside a turn or request scope (gateway/handles.ts). It runs
  * exactly as getAdminDb's, its actor's settings carrying mantle.route =
  * 'narrow' (actor-sql.ts scopeMarkedParams), so the would-refuse count sees

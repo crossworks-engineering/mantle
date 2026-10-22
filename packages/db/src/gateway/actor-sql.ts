@@ -243,7 +243,7 @@ export function actorParams(): ActorParams | null {
 
 /**
  * actorParams for a statement the narrow route would take were the switch
- * on, sent with the switch off (plan v3.2 S7b part b2 round 10: systemDb
+ * on, sent with the switch off (systemDb
  * inside a login's turn or request scope, gateway/handles.ts): the route
  * marked 'narrow', so 0319's would-refuse count (and 0312's content and
  * cascade counts) sees it whatever the actor. Its actor is the login's,
