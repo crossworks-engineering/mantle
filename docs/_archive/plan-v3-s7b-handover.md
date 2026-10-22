@@ -1762,20 +1762,20 @@ migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
 --maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
 the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
 
-| Suite                                   | Commit    | Exit | Counts                             |
-| --------------------------------------- | --------- | ---- | ---------------------------------- |
-| full DB vitest, shard 1/2               | 748c6ec71 | 0    | 581 files; 6402 passed, 1 skipped  |
-| full DB vitest, shard 2/2               | 36ffbb4ae | 0    | 580 files; 7870 passed             |
-| test:actor-off                          | 748c6ec71 | 0    | 146 files; 1460 passed, 1 skipped  |
-| test:actor-on                           | 36ffbb4ae | 0    | 34 files; 413 passed, 1 skipped    |
-| test:edit-on                            | 36ffbb4ae | 0    | 46 files; 583 passed               |
-| test:matrix                             | 36ffbb4ae | 0    | 4 files; 8 passed                  |
-| test:runtime-role in full               | 748c6ec71 | 0    | 299 files; 2958 passed, 1 skipped  |
-| test:serial                             | 36ffbb4ae | 0    | 1 file; 1 passed                   |
-| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 36ffbb4ae | 1    | 1 of 14273: the fixture below      |
-| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 748c6ec71 | see  | running at handover (x-off2)       |
-| the drill (N-1: b1 against b2's schema) | 36ffbb4ae | 0    | every migrate step 0 (below)       |
-| the measurement (both shards, logged)   | 7b17a1d3f | 1, 0 | above; shard 1's one failure below |
+| Suite                                   | Commit    | Exit | Counts                              |
+| --------------------------------------- | --------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2               | 748c6ec71 | 0    | 581 files; 6402 passed, 1 skipped   |
+| full DB vitest, shard 2/2               | 36ffbb4ae | 0    | 580 files; 7870 passed              |
+| test:actor-off                          | 748c6ec71 | 0    | 146 files; 1460 passed, 1 skipped   |
+| test:actor-on                           | 36ffbb4ae | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                            | 36ffbb4ae | 0    | 46 files; 583 passed                |
+| test:matrix                             | 36ffbb4ae | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full               | 748c6ec71 | 0    | 299 files; 2958 passed, 1 skipped   |
+| test:serial                             | 36ffbb4ae | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 36ffbb4ae | 1    | 1 of 14273: the fixture below       |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 748c6ec71 | 0    | 1161 files; 14272 passed, 1 skipped |
+| the drill (N-1: b1 against b2's schema) | 36ffbb4ae | 0    | every migrate step 0 (below)        |
+| the measurement (both shards, logged)   | 7b17a1d3f | 1, 0 | above; shard 1's one failure below  |
 
 On 36ffbb4ae shard 1/2, test:runtime-role, test:actor-off and the
 switch-off run each failed one cell, the same one: narrow-containment's
