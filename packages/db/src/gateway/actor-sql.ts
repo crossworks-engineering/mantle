@@ -248,24 +248,14 @@ export function actorParams(): ActorParams | null {
  * marked 'narrow', so 0319's would-refuse count (and 0312's content and
  * cascade counts) sees it whatever the actor. Its actor is the login's,
  * which no narrow reason names, so without the mark the count was blind
- * to it. With the actor check off the actor is sent anyway (its mode
- * 'off', as workspace system work sends it): the mark must reach the
- * statement on every box. At a full-route spot the spot's 'full' stays.
+ * to it. With the actor check off nothing is sent, as before (A2a: off
+ * adds no statement): the count needs the check in warn or on, as 0312's
+ * content count always has. At a full-route spot the spot's 'full' stays.
  */
 export function scopeMarkedParams(): ActorParams | null {
   const params = actorParams();
-  if (params)
-    return params[3] === 'full' ? params : [params[0], params[1], params[2], 'narrow', params[4]];
-  const actor = currentActor();
-  if (!actor) return null;
-  if (fullRouteSpotNow()) return null;
-  return [
-    actorSetting(actor),
-    writeModeOf(actor),
-    actorCheckMode(),
-    'narrow',
-    actingLoginNow() ?? undefined,
-  ] as const;
+  if (!params || params[3] === 'full') return params;
+  return [params[0], params[1], params[2], 'narrow', params[4]] as const;
 }
 
 /** SET TRANSACTION (drizzle's transaction config): Postgres takes it only
