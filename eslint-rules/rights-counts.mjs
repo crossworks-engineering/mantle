@@ -32,6 +32,7 @@ import {
   asSystemReasons,
   asSystemRouteCounts,
   asSystemRouteMap,
+  fullRouteSpotCallbacks,
   fullRouteSpots,
   requestSystemRouteMap,
 } from './as-system-routes.mjs';
@@ -610,6 +611,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
   });
   const requestRoutes = requestSystemRouteMap(root);
   const spots = fullRouteSpots(root, texts);
+  const spotCallbacks = fullRouteSpotCallbacks(texts);
   const wholeOnFull =
     routeMap.routes['admin-area'] === 'narrow' ? 0 : admin.numbers.systemWholeTools;
   return {
@@ -649,7 +651,7 @@ export function rightsCounts(root, texts, asSystem = asSystemExits(texts)) {
     detail: {
       sqlRoleReaderFns: roleReaders.map((f) => f.name),
       asSystemRoutes: { source: routeMap.source, byReason: routes.byReason },
-      asSystemRouteProblems: [...routes.problems, ...spots.problems],
+      asSystemRouteProblems: [...routes.problems, ...spots.problems, ...spotCallbacks.problems],
       ...admin.detail,
       adminCountProblems: admin.problems,
       requestSystemExits: exits,

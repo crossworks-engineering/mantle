@@ -11,6 +11,8 @@ import {
   asSystemReasons,
   asSystemRouteCounts,
   asSystemRouteMap,
+  FULL_ROUTE_SPOT_CALLBACKS as FULL_ROUTE_SPOT_CALLBACKS_REPO,
+  fullRouteSpotCallbacks,
   fullRouteSpots,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './as-system-routes.mjs';
@@ -345,5 +347,75 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
     );
     expect(generic.wrapperCalls).toBe(1);
     expect(generic.problems.filter((p) => p.startsWith('server/web/lib/x.ts'))).toEqual([]);
+  });
+});
+
+describe('a function passed into a spot holder runs at its spot: only listed callers may pass one', () => {
+  const allowed = { 'server/web/lib/x.ts': ['login-credential'] };
+  const holders = {
+    change: {
+      spot: 'login-credential',
+      from: 'server/web/lib/x.ts',
+      callers: ['server/web/lib/w.ts'],
+    },
+  };
+  const home =
+    "import { onFullSystemRoute } from '@mantle/db';\n" +
+    'export async function change(a: string, inTx?: (tx: Tx) => Promise<void>): Promise<R> {\n' +
+    "  return onFullSystemRoute('login-credential', async () => { if (inTx) await inTx(t); });\n}";
+  const of = (texts: { path: string; text: string }[], list: object = holders) =>
+    fullRouteSpotCallbacks(texts, allowed, list, {}) as { calls: number; problems: string[] };
+  const at = (path: string, text: string) => ({ path, text });
+
+  it('the listed caller passes a function; a plain call passes none', () => {
+    const r = of([
+      at('server/web/lib/x.ts', home),
+      at('server/web/lib/w.ts', "import { change } from './x';\nchange('a', async (tx) => {});"),
+      at(
+        'server/web/lib/v.ts',
+        "import { change } from './x';\nchange('a');\nchange('b', undefined);",
+      ),
+    ]);
+    expect(r.problems).toEqual([]);
+    expect(r.calls).toBe(1);
+  });
+  it('another file passing a function, or a reference, is refused', () => {
+    const r = of([
+      at('server/web/lib/x.ts', home),
+      at('server/web/lib/v.ts', "import { change } from './x';\nchange('a', write);"),
+    ]);
+    expect(r.problems).toEqual([
+      "server/web/lib/v.ts: passes a function to change (runs at 'login-credential') but is not its caller",
+    ]);
+  });
+  it('an alias or a passed reference of the holder is refused', () => {
+    const r = of([
+      at('server/web/lib/x.ts', home),
+      at('server/web/lib/v.ts', "import { change } from './x';\nconst c = change;\nc('a', w);"),
+    ]);
+    expect(r.problems.join('\n')).toMatch(/names change other than by its definition/);
+    const renamed = of([
+      at('server/web/lib/x.ts', home),
+      at('server/web/lib/v.ts', "import { change as c } from './x';\nc('a', w);"),
+    ]);
+    expect(renamed.problems.join('\n')).toMatch(/imports change under another name/);
+  });
+  it('a holder not listed, and a listed name that holds no function at a spot, are problems', () => {
+    expect(of([at('server/web/lib/x.ts', home)], {}).problems).toEqual([
+      "server/web/lib/x.ts: change runs a caller's function at a full-route spot and is not in FULL_ROUTE_SPOT_CALLBACKS",
+    ]);
+    const data =
+      "import { onFullSystemRoute } from '@mantle/db';\nexport async function change(a: string, b: Opts) {\n  return onFullSystemRoute('login-credential', () => go(a, b));\n}";
+    expect(of([at('server/web/lib/x.ts', data)]).problems).toEqual([
+      'server/web/lib/x.ts: change is listed in FULL_ROUTE_SPOT_CALLBACKS but takes no function at a spot',
+    ]);
+  });
+  it('the repo: every holder listed, every caller allowed', () => {
+    // applyManifest takes data only; applyLoginChange's callbacks come from
+    // the workspace screen alone.
+    expect(Object.keys(FULL_ROUTE_SPOT_CALLBACKS_REPO).sort()).toEqual([
+      'applyLoginChange',
+      'onSpot',
+    ]);
   });
 });

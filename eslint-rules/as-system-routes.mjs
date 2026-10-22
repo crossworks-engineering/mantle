@@ -214,6 +214,166 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
 });
 
 /**
+ * The spot holders that run a caller's function inside their spot: what
+ * the function writes runs on the full route too, though its file holds no
+ * onFullSystemRoute call. Each with its spot, its file and the files that
+ * may pass it a function. A function in FULL_ROUTE_SPOT_FILES that calls
+ * onFullSystemRoute and takes a function-typed parameter (`=>` in its
+ * type) is a holder: one not listed here (nor a FULL_ROUTE_SPOT_WRAPPERS
+ * helper) is a problem; so is a call that passes something other than
+ * `undefined` at a function parameter from a file not listed, and the
+ * holder named other than by its definition, its import and a call.
+ * applyManifest takes data only (slugs and modes), so it is no holder.
+ */
+export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
+  applyLoginChange: {
+    spot: 'login-credential',
+    from: 'server/web/lib/login-update.ts',
+    // The workspace screen's role change: its firstInTx locks the
+    // workspace and checks its rules (reads; a refusal throws).
+    callers: ['server/web/lib/workspaces.ts'],
+  },
+  onSpot: {
+    spot: 'structure-no-login',
+    from: 'packages/db/src/gateway/structure-item.ts',
+    // Its own file's three writes of a structure item (not exported).
+    callers: ['packages/db/src/gateway/structure-item.ts'],
+  },
+});
+
+/** `text` (the inside of a bracket pair) split at its top-level commas. */
+function topLevelParts(text) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    else if ('([{<'.includes(c)) depth += 1;
+    else if (')]}'.includes(c) || (c === '>' && text[i - 1] !== '=')) depth -= 1;
+    else if (c === ',' && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  if (text.slice(start).trim()) parts.push(text.slice(start));
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/** The functions declared in `body` (`function name(...)`) whose own body
+ *  calls onFullSystemRoute, each with the indexes of its function-typed
+ *  parameters: `[{ name, fnParams }]`. */
+function spotHolders(body) {
+  const out = [];
+  for (const m of body.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)\s*(?:<[^>()]*>)?\s*\(/g)) {
+    const open = m.index + m[0].length - 1;
+    const params = balanced(body, open);
+    // The body: the first `{` after the parameters outside a type's `<>`.
+    let i = open + params.length;
+    let angle = 0;
+    for (; i < body.length; i += 1) {
+      const c = body[i];
+      if (c === '<') angle += 1;
+      else if (c === '>' && body[i - 1] !== '=') angle -= 1;
+      else if (c === '{' && angle === 0) break;
+    }
+    if (i >= body.length) continue;
+    const own = balanced(body, i);
+    if (!/\bonFullSystemRoute\s*\(/.test(own)) continue;
+    const fnParams = topLevelParts(params.slice(1, -1))
+      .map((p, idx) => (/=>/.test(p) ? idx : -1))
+      .filter((idx) => idx >= 0);
+    out.push({ name: m[1], fnParams });
+  }
+  return out;
+}
+
+/**
+ * The callbacks into spot holders (FULL_ROUTE_SPOT_CALLBACKS): `{ calls,
+ * problems }`, `calls` the calls that pass a function. `texts` as
+ * fullRouteSpots takes them.
+ */
+export function fullRouteSpotCallbacks(
+  texts,
+  allowed = FULL_ROUTE_SPOT_FILES,
+  holders = FULL_ROUTE_SPOT_CALLBACKS,
+  wrappers = FULL_ROUTE_SPOT_WRAPPERS,
+) {
+  const problems = [];
+  const found = {};
+  let calls = 0;
+  const live = texts.filter(({ path }) => !/\.test\.tsx?$/.test(path));
+  for (const { path, text } of live) {
+    if (!allowed[path]) continue;
+    for (const h of spotHolders(stripComments(text))) {
+      if (h.fnParams.length === 0 || Object.hasOwn(wrappers, h.name)) continue;
+      found[h.name] = { path, fnParams: h.fnParams };
+      const listed = holders[h.name];
+      if (!listed)
+        problems.push(
+          `${path}: ${h.name} runs a caller's function at a full-route spot and is not in FULL_ROUTE_SPOT_CALLBACKS`,
+        );
+      else if (listed.from !== path)
+        problems.push(`${path}: ${h.name} is listed from ${listed.from}`);
+    }
+  }
+  for (const [name, h] of Object.entries(holders)) {
+    if (!found[name]) {
+      problems.push(
+        `${h.from}: ${name} is listed in FULL_ROUTE_SPOT_CALLBACKS but takes no function at a spot`,
+      );
+      continue;
+    }
+    if (!(allowed[h.from] ?? []).includes(h.spot))
+      problems.push(`${h.from}: ${name} runs at '${h.spot}', not listed for it`);
+    const { fnParams } = found[name];
+    for (const { path, text } of live) {
+      const body = stripComments(text);
+      const named = new RegExp(`\\b${name}\\b`, 'g');
+      const mentions = body.match(named)?.length ?? 0;
+      if (mentions === 0) continue;
+      if (new RegExp(`\\b${name}\\s+as\\b`).test(body))
+        problems.push(`${path}: imports ${name} under another name`);
+      const defined =
+        path === h.from
+          ? (body.match(new RegExp(`\\bfunction\\s+${name}\\b`, 'g'))?.length ?? 0)
+          : 0;
+      let imported = 0;
+      for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']+'/g)) {
+        for (const part of m[1].split(',')) {
+          if (new RegExp(`^\\s*(?:type\\s+)?${name}\\s*$`).test(part)) imported += 1;
+        }
+      }
+      let called = 0;
+      for (const m of body.matchAll(
+        new RegExp(`(?<!function\\s+)\\b${name}\\s*(?:<[^>()]*>)?\\s*\\(`, 'g'),
+      )) {
+        called += 1;
+        const args = topLevelParts(balanced(body, m.index + m[0].length - 1).slice(1, -1));
+        const passes = fnParams.some((i) => args[i] !== undefined && args[i] !== 'undefined');
+        if (!passes) continue;
+        calls += 1;
+        if (!h.callers.includes(path))
+          problems.push(
+            `${path}: passes a function to ${name} (runs at '${h.spot}') but is not its caller`,
+          );
+      }
+      if (mentions !== defined + imported + called)
+        problems.push(
+          `${path}: names ${name} other than by its definition, its import and a call (an alias or a passed reference the check misses)`,
+        );
+    }
+  }
+  return { calls, problems };
+}
+
+/**
  * The full-route spots (plan v3.2 S7a): the entries of viewer.ts's
  * FULL_ROUTE_SPOTS (where a narrow exit's own work writes a content table),
  * the onFullSystemRoute calls outside tests (packages/db included, where
