@@ -220,13 +220,18 @@ async function settleAskHuman(
   try {
     // ownerId from the ROW (owner-scoped by the approve/reject CAS);
     // applyHumanAnswer verifies the item's run belongs to that owner (F2).
-    res = await applyHumanAnswer(db, {
-      itemId,
-      ownerId: row.ownerId,
-      decision,
-      answer,
-      ...(answers?.length ? { answers } : {}),
-    });
+    // The item's state and the run's next park (completeItem, promote) at
+    // the full-route spot run-control: the narrow login holds no write of
+    // either (a pending approval is a narrow reason).
+    res = await onFullSystemRoute('run-control', () =>
+      applyHumanAnswer(db, {
+        itemId,
+        ownerId: row.ownerId,
+        decision,
+        answer,
+        ...(answers?.length ? { answers } : {}),
+      }),
+    );
   } catch (err) {
     const msg = errorMessage(err);
     return revertToPending(
@@ -288,7 +293,10 @@ async function settleBudget(
   let res: Awaited<ReturnType<typeof applyBudgetDecision>>;
   try {
     // ownerId from the ROW; applyBudgetDecision verifies run ownership (F2).
-    res = await applyBudgetDecision(db, { runId, ownerId: row.ownerId, decision });
+    // A run's status (resume or cancel) at the full-route spot run-control.
+    res = await onFullSystemRoute('run-control', () =>
+      applyBudgetDecision(db, { runId, ownerId: row.ownerId, decision }),
+    );
   } catch (err) {
     // Same recovery as settleAskHuman: revert so the operator can retry —
     // a stranded 'approved' on a run_budget row would leave the run paused

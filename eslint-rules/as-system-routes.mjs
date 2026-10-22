@@ -149,7 +149,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/auth/session.ts': ['login-credential'],
   'server/web/lib/login-create.ts': ['login-credential'],
   'server/web/lib/login-update.ts': ['login-credential'],
-  'packages/tools/src/pending.ts': ['pending-call'],
+  'packages/tools/src/pending.ts': ['pending-call', 'run-control'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
   'server/web/lib/pair-code.ts': ['pair-code'],

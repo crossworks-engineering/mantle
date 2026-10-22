@@ -96,10 +96,16 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   }, 60_000);
 
   /** Plan one tool_call item, make it ready, run it, return its row. */
-  async function runOne(tool: string, args: Record<string, unknown>, agent?: string) {
+  async function runOne(
+    tool: string,
+    args: Record<string, unknown>,
+    agent?: string,
+    login?: string,
+  ) {
     const { runId } = await runs.createRun(m.db, {
       ownerId: anchor,
       ...(agent ? { agentId: agent } : {}),
+      ...(login ? { loginId: login } : {}),
       title: `${tag} run`,
       plan: { kind: 'seq', children: [{ kind: 'tool_call', payload: { tool, args } }] } as never,
     });
@@ -222,7 +228,8 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt)
       values (${anchor}, 'run', 'r', 'm', 'p') on conflict do nothing`);
-    await runOne('tool_group_ensure', ENSURE);
+    // The owner's own MCP client planned it: it names the login it serves.
+    await runOne('tool_group_ensure', ENSURE, undefined, anchor);
     expect(await heldTools()).toEqual([]);
     expect(await pendingCount()).toBe(before + 1);
     // No agent planned it: the Pending row names no requester.
@@ -230,5 +237,14 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
       select agent_id from pending_tool_calls where owner_id = ${anchor}
       order by created_at desc limit 1`);
     expect(last!.agent_id).toBeNull();
+  });
+
+  it('a run that names no maker (no assistant, no login: no product path makes one) runs nothing (S7b part b2 round 9)', async () => {
+    const before = await pendingCount();
+    const item = await runOne('tool_group_ensure', ENSURE);
+    expect(item.state).toBe('failed');
+    expect(item.failure?.type).toBe('no_maker');
+    expect(await heldTools()).toEqual([]);
+    expect(await pendingCount()).toBe(before);
   });
 });

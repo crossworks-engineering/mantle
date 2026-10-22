@@ -139,7 +139,7 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
   afterAll(async () => {
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 60_000);
 
   it('skips a brain with a client login and writes nothing; migrates once it is gone; runs once', async () => {
     // Since 0272 the role CHECK admits admin and member only; a brain from

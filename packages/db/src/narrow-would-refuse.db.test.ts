@@ -1,5 +1,5 @@
 /**
- * The would-refuse count (plan v3.2 S7b part b2 round 9, migration 0319),
+ * The would-refuse count (migration 0319),
  * report only, on a real, migrated Postgres: with the switch off a narrow
  * reason's writes run on the full route, and each one the narrow role
  * would refuse once the switch is on is counted (a NOTICE the app's pool
@@ -126,7 +126,7 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
         'update public.agents set api_key_id = api_key_id where false',
         // An upsert's SET needs UPDATE on what it names, a conflict or not.
         `insert into public.provider_alerts (owner_id, subject, code, permanent, reason)
-           values ('${anchor}', 'r9-would', 'x', false, 'x')
+           values ('${anchor}', 'embedding', 'x', false, 'x')
            on conflict (owner_id, subject) do update set owner_id = excluded.owner_id`,
       ]),
     ).toBeNull();

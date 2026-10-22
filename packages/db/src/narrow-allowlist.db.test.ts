@@ -14,8 +14,8 @@
  * measured ones run. Each refused form is sent as the superuser first and
  * must run there (or stop only at a row's constraint, 23xxx): a form that
  * names a missing column or a wrong type would answer before the privilege
- * check and prove nothing (round 9). A device subscribed (push-device) was
- * the last move left and is refused since round 9.
+ * check and prove nothing. A device subscribed (push-device) was the last
+ * move left and is refused now.
  */
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

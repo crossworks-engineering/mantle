@@ -1417,9 +1417,8 @@ export const NARROW_WOULD_REFUSE_TRIGGERS = Object.freeze({
 } as const);
 
 /**
- * The narrow role's would-refuse count (plan v3.2 S7b part b2 round 9,
- * migration 0319, report only), derived from its live grants right after
- * applyNarrowGrants: on every table of the app's schemas that the actor
+ * The narrow role's would-refuse count (migration 0319, report only),
+ * derived from its live grants right after applyNarrowGrants: on every table of the app's schemas that the actor
  * check does not cover (0312 counts the content tables), a statement-level
  * AFTER INSERT where the role holds no INSERT, AFTER DELETE where it holds
  * no DELETE, and AFTER UPDATE OF the columns it may not update. A write

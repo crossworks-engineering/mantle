@@ -1199,7 +1199,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'telegram-pair':
     'a Telegram chat paired to a login (telegram_chats allowlist_status and login_id, the login-telegram reason, packages/telegram pairing.ts pairChatWithCode): the chat then talks to the assistant as that login; the narrow login holds no write of either column',
   'run-control':
-    "a run cancelled (runs status and its items' state: the area's POST /api/runs/:id and run_cancel): a run's status decides what the runs sweep executes, so the narrow login holds no write of it (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE_TABLE)",
+    "a run made, its items appended, a question answered, its budget decided or the run cancelled (runs INSERT and status, run_items INSERT and state, and the next question parked in the same transaction: run_plan, run_append, the pending approval of ask_human and run_budget, the area's POST /api/runs/:id and run_cancel): a run's rows decide what the runs sweep executes, so the narrow login holds no write of them (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_INSERT and NARROW_NEVER_UPDATE_TABLE; round 9: made, appended and answered too)",
   'model-route':
     "an assistant's, an AI worker's or the embedding routes' vault key, base URL or configuring login (agents, ai_workers, embedding_config; an AI worker or the embedding row made): where a vault key is sent, so the narrow login holds no write of those columns and no INSERT of either row (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE)",
   'tool-config':

@@ -27,6 +27,7 @@ import { claimWorkerItem, completeItem } from '@mantle/runs';
 import { loadAgentGrant } from '@mantle/tools';
 
 import { enqueueRunsWorkerTurn } from './dbos-enqueue';
+import { runMakerRefusal } from './run-maker';
 import type { ExecuteItemOutcome } from './execute-item';
 import { errorMessage } from '@mantle/std';
 
@@ -38,9 +39,19 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
   // for a tool_call item (execute-item.ts): another workspace's agent would
   // hand its work to a worker that reads past its scope (audit A3, B3).
   const [run] = await db
-    .select({ ownerId: runsTable.ownerId, agentId: runsTable.agentId })
+    .select({ ownerId: runsTable.ownerId, agentId: runsTable.agentId, loginId: runsTable.loginId })
     .from(runsTable)
     .where(eq(runsTable.id, item.runId));
+  // Who made the run, before anything runs on its behalf (run-maker.ts).
+  const refused = run ? await runMakerRefusal(run) : null;
+  if (refused) {
+    const { actions } = await completeItem(db, {
+      itemId: item.id,
+      state: 'failed',
+      failure: { ...refused, itemId: item.id },
+    });
+    return { claimed: true, actions };
+  }
   const planner = run?.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
   if (run?.agentId && !planner) {
     // The planning agent is gone: nothing runs on its behalf (audit C2), as

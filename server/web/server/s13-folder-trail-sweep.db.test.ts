@@ -182,7 +182,7 @@ describe.skipIf(!URL)('S13: the folders above what a login reads, as structure',
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
-  });
+  }, 60_000);
 
   it('the member reads its note, its file and the folder Visible, and nothing else made here (the fixture)', async () => {
     const seen = await m.withViewer(

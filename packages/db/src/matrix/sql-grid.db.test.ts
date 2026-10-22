@@ -208,7 +208,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
   afterAll(async () => {
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 60_000);
 
   it("the registry's workspace class is the guide's list", () => {
     expect([...kinds].sort()).toEqual(guideWorkspaceKinds().sort());

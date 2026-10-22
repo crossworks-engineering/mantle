@@ -317,8 +317,12 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     await row('narrow-cascade-delete', 'system:http:admin-area', 'users DELETE');
     await row('narrow-denied', 'system:admin-area', 'permission denied for table nodes');
     await row('narrow-content-write', 'system:admin-area', 'facts DELETE', '3 days');
+    // The would-refuse count (0319): its rows, and the tables they name.
+    await row('narrow-would-refuse', 'system:admin-area', 'public.audit_log DELETE');
+    await row('narrow-would-refuse', 'system:http:admin-area', 'public.audit_log DELETE');
+    await row('narrow-would-refuse', 'system:admin-area', 'public.agents UPDATE');
     const [out] = await su.unsafe<{ '?column?': string }[]>(query!);
-    expect(Object.values(out!)[0]).toBe('2 1 1');
+    expect(Object.values(out!)[0]).toBe('2 1 1 3 2');
   });
 });
 

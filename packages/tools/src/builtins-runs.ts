@@ -726,25 +726,29 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       }
       let created: Awaited<ReturnType<typeof createRun>>;
       try {
-        created = await createRun(db, {
-          ownerId: ctx.ownerId,
-          agentId,
-          // The login the planning turn serves (R3), from its trace; a call
-          // with no trace (MCP) names it on its surface (A0 fix round 2,
-          // L-1). The 0250 stamp falls back to mantle.login_id, which a
-          // typed write on the system pool does not carry.
-          loginId: runLogin,
-          title,
-          plan: parsed.plan,
-          ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),
-          // Channel-routed resumes (0134): remember where the run came from
-          // so the final report is delivered back there. A workspace
-          // assistant's Telegram turn runs on a team surface that carries
-          // its chat (W7d+e).
-          ...(originChat
-            ? { originChannel: { kind: 'telegram' as const, chat_id: originChat } }
-            : {}),
-        });
+        // A run made (what the runs sweep executes) at the full-route spot
+        // run-control: the narrow login holds no INSERT of a run or an item.
+        created = await onFullSystemRoute('run-control', () =>
+          createRun(db, {
+            ownerId: ctx.ownerId,
+            agentId,
+            // The login the planning turn serves (R3), from its trace; a call
+            // with no trace (MCP) names it on its surface (A0 fix round 2,
+            // L-1). The 0250 stamp falls back to mantle.login_id, which a
+            // typed write on the system pool does not carry.
+            loginId: runLogin,
+            title,
+            plan: parsed.plan,
+            ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),
+            // Channel-routed resumes (0134): remember where the run came from
+            // so the final report is delivered back there. A workspace
+            // assistant's Telegram turn runs on a team surface that carries
+            // its chat (W7d+e).
+            ...(originChat
+              ? { originChannel: { kind: 'telegram' as const, chat_id: originChat } }
+              : {}),
+          }),
+        );
       } catch (err) {
         if (err instanceof ItemCapError) return { ok: false, error: err.message };
         throw err;
@@ -853,10 +857,14 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         };
       }
       try {
-        const { itemIds, actions } = await appendChildren(db, {
-          groupId,
-          children: (parsed.plan as PlanGroup).children as PlanNode[],
-        });
+        // Items appended at the full-route spot run-control (no narrow
+        // INSERT of a run item).
+        const { itemIds, actions } = await onFullSystemRoute('run-control', () =>
+          appendChildren(db, {
+            groupId,
+            children: (parsed.plan as PlanGroup).children as PlanNode[],
+          }),
+        );
         await enqueueRunActionsSafe(actions);
         return { ok: true, output: { item_ids: itemIds } };
       } catch (err) {

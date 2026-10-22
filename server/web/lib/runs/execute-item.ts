@@ -41,6 +41,7 @@ import { currentTrace, startTrace, step } from '@mantle/tracing';
 import { withRunScope } from '@mantle/runtime/agent';
 
 import { executeWorkerInvoke } from './execute-worker';
+import { runMakerRefusal } from './run-maker';
 import { errorMessage } from '@mantle/std';
 
 /** Cap what lands in `run_items.result.output` — the compiled state wants
@@ -158,6 +159,9 @@ async function runResolved(
 
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, item.runId));
   if (!run) return fail({ type: 'internal_error', message: 'run row vanished' });
+  // Who made the run, before anything runs on its behalf (run-maker.ts).
+  const refused = await runMakerRefusal(run);
+  if (refused) return fail(refused);
 
   // The item runs on the planning agent's behalf, never as the bare owner:
   // it carries that agent's context, so every agent gate (the N5 Pending
