@@ -288,6 +288,8 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "a pending approval card's route (the Admin area's run of an item): a read definer",
   'public.mantle_connector_beyond_admin(uuid,text)':
     "whether a connector is held beyond Admin (the Admin area's connector sync, move and key rotate: external-access.ts connectorBeyondAdmin): a read definer with no identity read (0293: an inactive scope reads the owner's rows; round 14, the re-audit's app MED-1: refused on the narrow exit before)",
+  'public.mantle_agent_experience(uuid,uuid[])':
+    "an assistant's level counts (the assistants area's GET /api/agents: agents.ts listAgents withExperience): a read definer of counts only, no content; on the narrow role the identity readers answer no scope, so it counts the owner's assistants as on the system pool (0293). Round 14b: refused on the narrow exit before (dev's narrow-denied miss of 2026-10-22)",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
 };

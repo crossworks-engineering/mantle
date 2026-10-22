@@ -147,8 +147,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_access_log_names:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_agent_experience:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_holders:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_trash_act:
@@ -434,7 +432,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/tools/src/shared-item.ts mantle_item_others_read': 1,
   'server/web/app/api/access-keys/[id]/route.ts mantle_access_key_revoke': 1,
   'server/web/lib/access-keys-admin.ts mantle_access_keys_seen': 1,
-  'server/web/lib/agent-experience.ts mantle_agent_experience': 1,
   'server/web/lib/agent-telegram.ts mantle_tg_moderated_chats': 1,
   'server/web/lib/agent-telegram.ts mantle_tg_my_chats': 1,
   'server/web/lib/assistant-inbox.ts mantle_read_cursor_mark': 1,
