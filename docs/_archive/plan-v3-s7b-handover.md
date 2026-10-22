@@ -1104,3 +1104,165 @@ No pin moved (arch:check 0). The spots' pins move with the spots.
    risk 8): `narrow_misses` narrow-content-write, narrow-cascade-delete
    and narrow-denied, and `fail_open_misses`, on every box
    (scripts/arch-scoreboard-box.sh).
+
+## Part b2, round 2: the structure definer (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round lands the first item of the CEO's order (decision A: one definer for
+the structure items, and its spots), plus the calendar's synced events
+through the same definer. The other spots, the area-route sweep and the
+default flip are left (below). The switch's default is unchanged.
+
+### What changed
+
+- Migration `0315_structure_item_definer` (`when` 1790198220000, 60000
+  above 0314's; a second file, not folded into 0314, so each has its own
+  revert; renumber at merge): `mantle_structure_item(kind, op, login,
+owner, items, fields)`. KIND is one of a fixed list that fixes the item's
+  type, the area its writer must hold, the operations open to it and where
+  a new one lands:
+
+  | kind           | type          | area       | ops                  | lands at                  |
+  | -------------- | ------------- | ---------- | -------------------- | ------------------------- |
+  | secrets-root   | branch        | keys       | insert               | secrets                   |
+  | secret-item    | secret        | keys       | insert update delete | secrets                   |
+  | peer-item      | mantle_peer   | connectors | insert delete        | peers                     |
+  | contact-item   | contact       | connectors | insert               | contacts                  |
+  | docs-folder    | branch        | settings   | insert               | documentation or under it |
+  | docs-item      | documentation | settings   | insert update delete | documentation or under it |
+  | calendar-event | event         | connectors | delete               | (a synced event only)     |
+
+  The caller: no scope, a system session (0314's session_user rule),
+  `login` equal to `mantle.acting_login` (none or another refused), that
+  login holding the kind's area (`mantle_area_rule`), `owner` this brain,
+  not read-only. Insert takes the folder's heads (share), one row, a branch
+  kind doing nothing on a branch already there; update sets title and tags
+  when given, data, updated_at, then markContentChanged's extract reset and
+  `node_ingested` (the two kinds that edit index no field for embed work
+  only, so no other reset is open; the gateway throws on one); delete takes
+  the heads of each item and its folder (update) and removes rows of the
+  kind's type (for calendar-event only a synced one, `data ?
+'external_account_id'`). Heads through `mantle_lock_heads_nested`. EXECUTE
+  from PUBLIC revoked; migrate grants it to the runtime role
+  (RUNTIME_SYSTEM_FUNCTIONS) and the narrow role (NARROW_SYSTEM_FUNCTIONS).
+  Revert: rollback/0315_structure_item_definer.revert.sql (drops it; not
+  needed for any rollback: no older image calls it).
+
+- packages/db/src/gateway/structure-item.ts (exported from index.ts, not
+  client.ts: content-changed.ts's notify.ts imports client.ts):
+  `insertStructureItem`, `updateStructureItem`, `deleteStructureItems`. On
+  the narrow route (`narrowRouteNow()`, pools.ts: the switch the system
+  pool read when it opened and the exit's pick) one definer call in the
+  system pool's own transaction (a savepoint inside an open system
+  transaction); anywhere else the app's own statements as before (heads
+  helper, insert or update with markContentChanged, delete). Not
+  withSystemTx outside one: its scope hides a request exit's route and
+  acting login from the statements inside (viewer.ts boundExitEntry), so
+  the first run of the cells answered "only the acting login" from the
+  system pool. The acting login is read outside the transaction and passed.
+- The callers: server/web/lib/secrets.ts (root, create with the sealed row
+  in the definer's transaction, edit, delete), packages/tools
+  builtins-secrets.ts (secret_create's root), packages/content
+  peers/registry.ts (create, delete), contacts.ts createContact,
+  packages/email discover.ts (no wrapper), packages/files docs.ts (folders,
+  insert, edit, delete, purge; no wrapper), packages/content events.ts
+  deleteAllExternalEvents and packages/calendar manage.ts (no wrapper).
+- FULL_ROUTE_SPOTS 13 to 7: peer-item, secrets-root, secret-item,
+  sender-contact, docs-collection, calendar-events gone (viewer.ts,
+  eslint-rules/as-system-routes.mjs FULL_ROUTE_SPOT_FILES). Left:
+  profile-row, integrity-delete, promotion-space, reembed,
+  agent-conversation, console-tool, pending-call.
+- docs/runtime-role.md: the definer under the narrow role's spots.
+
+### Cells (packages/db/src/structure-item.db.test.ts)
+
+Each in an Admin area request exit of an Admin login (narrowRouteNow true),
+against the same exit on the full route (the app's own statements):
+
+- every listed kind made both ways: the row equal as the database holds it
+  (`to_jsonb(n)` less id and timestamps: type, owner, title, slug, path,
+  data, tags, embedding, home_ws, read_ws, write_ws); the roots made once,
+  then a no-op on both routes; the narrow role holds no INSERT on nodes.
+- a secret with its sealed row in the definer's transaction; an edit that
+  feeds the index (summary, entities and a vector stamp dropped, `extract`
+  stamped, embedding null) and one that does not, equal both ways; no such
+  item null both ways; delete removes the item and its sealed row and
+  leaves an id of another type.
+- a calendar's synced events: removed on the narrow route, an event made
+  by hand left though named; the full route as before; connectors held by
+  a login with keys taken away, not by a login in no Admin workspace;
+  insert refused for the kind.
+- refused (42501): an unlisted kind (`note`, `branch`), an operation not
+  open to the kind, a place the kind does not land at, another brain, a
+  read-only caller; with no acting login and with another, on the narrow
+  login and the superuser; a login with no Admin workspace and one with
+  keys taken away (connectors still held); a scope login set; the write
+  role and the user role with their scope cleared and the acting login set
+  (no EXECUTE); the gateway on an exit of a login without the area. EXECUTE:
+  narrow role yes, write role, user role and PUBLIC no.
+- The area routes of the six spots (narrow-area-routes.db.test.ts rows:
+  secrets POST, PATCH, DELETE; peers; docs collections; email discover
+  contacts; calendar unsubscribe) pass with the switch on, through the
+  definer.
+
+### Changed answers
+
+None for any member, client, key, peer or public link: the definer runs
+only on the narrow route, where it writes what the full route wrote (the
+cells). Below them: on an Admin area's narrow exit these writes are one
+definer call per item (the session is the narrow login, not the system
+pool's); a calendar unsubscribe on the narrow route removes only events a
+calendar synced (it already named only those); off the narrow route the
+update and delete statements also name owner and type (the ids were read
+with them, so the same rows).
+
+### Pins
+
+fullRouteSpots 13 to 7, fullRouteSpotCalls 15 to 8 (reasons in
+scripts/arch-scoreboard.pins.json). No other pin moved (arch:check 0; the
+hand kind list count stays 0: the kinds are named apart from node types).
+
+### The other spots, assessed (not moved this round)
+
+| Spot               | Decision for the next round                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| profile-row        | the write role in the login's own scope if answers are byte-equal, else a definer (round 1's table)                                            |
+| promotion-space    | a definer beside the role change (one transaction), the acting login holding the users area                                                    |
+| agent-conversation | a kind of the structure definer is the natural home (delete of the assistant's digests by agent id) plus assistant_messages; or stays with why |
+| integrity-delete   | stays for S7c: the operator's delete is brain-wide by design (cell: narrow-area-routes.db.test.ts row)                                         |
+| reembed            | stays for S7c: brain-wide maintenance writing every vector (cell: its row)                                                                     |
+| console-tool       | run the tool as the Admin login's turn in its scope, then drop, only if every answer stays equal                                               |
+| pending-call       | the same, as the approving Admin login                                                                                                         |
+
+calendar-events moved (above) rather than to the calendar worker: the
+worker would change when the events go (a changed answer), the definer
+keeps it in the request.
+
+### Gates
+
+GATES_PLACEHOLDER
+
+### Left for the next round, in the CEO's order
+
+1. The other spots (the table above); LOW-5's two after the tool writes
+   move.
+2. The area-route sweep: ONE table-driven sweep over the route table's
+   writing area rows (round 1: 142, 76 undriven), each driven as an Admin
+   user with the switch on and off, equal answers, no narrow refusal; a
+   route it cannot drive listed with why; failing when a new writing area
+   route has no entry.
+3. The default flip as the last commit (`narrowSystemOn()` true unless
+   `MANTLE_NARROW_SYSTEM=0|off|false`, read once at boot and logged; the
+   kill switch in docs/runtime-role.md and docs/update-prod.md; fresh
+   installs and per-database mode named).
+4. Pins: asSystemFull floor, fullRouteSpots and fullRouteSpotCalls down,
+   systemWholeOnFull 0, requestSystemExits on narrow.
+5. The box counts the CEO must see at 0 before the fleet flip (round 1's
+   list).
+
+Open: a request exit's system transaction (withSystemTx) runs on the
+system pool, not the narrow route, and without the acting login
+(boundExitEntry hides the request exit inside the system transaction's
+scope). Found by this round's first cell run; the structure gateway avoids
+it. Whether other narrow request exits' transactions should take the
+narrow route is for the CEO (it would widen what the narrow role meets).

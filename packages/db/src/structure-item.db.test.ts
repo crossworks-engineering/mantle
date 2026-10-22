@@ -10,7 +10,6 @@
  * another acting login, a login without the kind's area, a scope.
  */
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase, ensureAdminUsers, ensureTestAnchor } from './test-support';

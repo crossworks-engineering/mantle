@@ -35,7 +35,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   const db = {
     ...actual.db,
-    insert: vi.fn(() => ({ values: valuesFn })),
+    insert: vi.fn((_table?: unknown) => ({ values: valuesFn })),
     execute: (q: unknown) => executeFn(q),
   };
   return {
