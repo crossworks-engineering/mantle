@@ -3540,3 +3540,171 @@ role (a decision, not NULL: see item A.2); the trigger condition allowance
 for the edit check's contact rule (it reads the raw actor to add a check);
 the non-identity key list (mantle.human and mantle.ws_former_clients
 named on it from their readers' bodies).
+
+## Part b2, round 13b: round 13's fallout, items B to I and part of G and L (handed over)
+
+Same branch. Inputs: the round 13 handover's "Left (round 13b)" and the
+brief's "b2 round 13 inputs" B to M. One builder; commits b464fc97c to the
+head of this section.
+
+### Item 0: the red gates of round 13
+
+1. The acting login with the actor check off. Cause confirmed in r13aoff's
+   log (structure-item and narrow-containment: mantle_structure_item met no
+   acting login). A spot's systemRoutes entry carries no request flag, so
+   even a request exit lost it there with the check off, and a turn's exit
+   never had it. Fix: gateway/actor-sql.ts actorParams sends the SET at the
+   acting-login spot in every check mode (viewer.ts actingLoginAtSpot). The
+   "off adds no statements" rule of a2a-round-trips holds: none of its seven
+   paths reaches the spot (rerun: r13bt2 0, the file passed). The sweep's
+   SPOT_ROWS gained the acting-login rows (the secrets, peers and email
+   contact structure items, a chat's block or unpair, an assistant's
+   delete, the Azure provision); its off pass enters the spot only where
+   the definer runs on every route (the chat's), since the structure items'
+   and the delete's definers run only on the narrow route.
+2. The old-migration cells (0261, 0264, 0269, 0273): each failed on
+   `function mantle_identity_leaks() does not exist` (read in r13aoff, r13aon
+   and r13eon). migrate's leak check now skips, and says so, on a database
+   that has not reached 0321 (identity-gateway.ts identityGatewayPresent).
+   Rerun: r13bt2 0 (bridge-off, review-off, user-threads, orphan), r13bt1
+   (0273 under actor-off) passed.
+3. Lint and unit: identity-sweep.ts pinned in scope-settings.mjs (6, a
+   forge of the narrow login); the forged actor is built from
+   WORKSPACE_SYSTEM_REASONS (FORGED_ACTOR), not named; narrowTx in the
+   holder list of as-system-exits.test.ts. deploy-scripts.test.ts passes
+   alone on the Mac (102 s against its 120 s execFile limit): a load
+   timeout in the full run, not a code failure; watch it in the final run.
+4. The proof's sweep parse: errors now read from stderr after a `\warn`
+   marker and the WROTE answers from stdout after an `\echo` marker
+   (~/s7b-b2/r13/sweep13.sh; the round 13 copy kept as sweep13.r13.sh).
+   277 of 277 rows parse (260 no change, 17 refused).
+
+CEO notes written down: the actor's `system:narrow` on the narrow role is
+in runtime-role.md (the identity gateway); the rollback notes are below.
+
+### Items B to I
+
+- B (0322_narrow_message_rules, new): the message guard is BEFORE INSERT
+  OR UPDATE (so ON CONFLICT, MERGE and COPY meet it): a row names its
+  assistant (never none), that assistant's workspace (NULL only for an
+  Admin workspace assistant), and a login that may talk there (the Admin
+  workspace: the owner or an Admin user only); a row not pending is never
+  rewritten but for the follow-up suggestion keys in data, and never goes
+  back to pending; off the narrow route the same break by a narrow reason
+  is counted (0319's notice) and runs (cell).
+- C: an assistant's memory_config and params and an AI worker's params
+  left the narrow list (nearly every key is a limit or a prompt, so a kept-
+  key list would leave a new key open); their edits run at skill-text.
+  packages/db src/narrow-json-columns.test.ts lists every narrow-writable
+  JSON column with its decision; a new one fails it.
+- D (0323_narrow_enable_off, new): every boolean enabled, is_default or
+  backup_enabled column of public and auth gets 'off:<col>' in its
+  mantle_narrow_one_way trigger, generated from the catalog (12 triggers
+  made or merged). The turn-ons go to spots: feed-enable (new: a calendar
+  feed, a Microsoft drive), docs-root (a collection), model-route (a worker
+  enabled, default or backup; an assistant's backup route), through
+  narrow-writes.ts turnsOn for every table. A DB cell reads the narrow
+  role's UPDATE rights from information_schema and fails on a switch no
+  'off:' rule holds.
+- E: migrate (applyRuntimeGrants) takes CREATE on every non-system schema
+  and every right on the app sequences back from PUBLIC (cell: hand grants
+  given, migrate run, the narrow login refused).
+- F: a tool group's description (tool-config), an assistant's description
+  (skill-text) and a login's display name (login-credential) left the
+  narrow list: each reaches the prompts.
+- G (part): turn_stream_buffer insert and delete, tool_results insert,
+  assistant_messages error and attachments are on NARROW_WRITES (0322
+  holds the message columns to a pending row); the publish.ts exemption
+  and three open scan entries and turns-reap's system file left the scan
+  pins; the manifest's delegate wiring runs at assistant-grant.
+- H and L (the detector): isRefusedRight (pg-error.ts, through drizzle's
+  cause) at onboarding-provision.ts (2) and workspaces-migrate.ts; sqlState
+  (gateway/heads.ts) is pgErrorCode: one walk.
+- I: a heartbeat fire's books in SQL (fire_count + 1, greatest of the last
+  fire), cell as the real narrow login.
+
+Cells: packages/db src/narrow-rules-13b.db.test.ts (B to I as the real
+narrow login, the catalog cell for D, the E takeback, the report branch).
+
+### The forge proof (the real narrow login)
+
+`~/s7b-b2/r13b/proof13b.sh` (round 13's 39 forms plus round 13b's 28,
+forge13b.sql, COPY included; setup13b.sql; sweep13b.sh; the catalog
+check). Before = b7d13228a (x-r13bpb.log), after = 72a68348f (x-r13bpa.log).
+
+| Forge (round 13b)                                                                           | Before                                         | After |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----- |
+| B: a message with no assistant (INSERT, MERGE, COPY)                                        | wrote                                          | 42501 |
+| B: a message in the Admin workspace for a member                                            | wrote                                          | 42501 |
+| B: a message naming a workspace not its assistant's                                         | wrote                                          | 42501 |
+| B: a settled row rewritten (text, status, data; ON CONFLICT, MERGE)                         | wrote                                          | 42501 |
+| C: an assistant's cost cap, tool call limit, follow-up switch                               | wrote                                          | 42501 |
+| C: an AI worker's extraction prompt                                                         | wrote                                          | 42501 |
+| D: a worker on, default, backup; an assistant's backup; a feed, collection, mail account on | wrote                                          | 42501 |
+| E: a table in public or auth, a sequence moved                                              | 42501                                          | 42501 |
+| F: a tool group's and an assistant's description, the owner's name                          | wrote                                          | 42501 |
+| round 12 and 13's 39 forms                                                                  | 42501 (the 5 round 13 ones wrote at e108f0f78) | 42501 |
+| the product writes (round 13's 8 and round 13b's 8, COPY included)                          | wrote                                          | wrote |
+| the sweep: functions that changed a row (277 called)                                        | 0                                              | 0     |
+| the catalog check: leaks                                                                    | 0                                              | 0     |
+
+After: 67 refused all 42501, 16 allowed all wrote. Round 13's "ok: message
+in the members workspace" now names its assistant (0322 refuses none).
+
+### The drill (drill13b.sh on 604182ee9)
+
+x-r13bdrill.exit 0; drill13b.log: b1 init, the branch, b1 again (N-1),
+the reverts 0323, 0322, 0321 down to 0314 each 0, N-1 after the reverts
+0, roll forward 0 (323 ledger rows, 27 one-way, keep and guard triggers).
+
+Rollback notes (the CEO's acceptance written down): an older image (b1) on
+this schema with the narrow switch on loses the chat block and unpair (0321)
+and its narrow turn-ons are refused (0323: a feed, a collection, a worker
+switched on through the old code on the narrow route); b1's production
+default is off, where neither happens. A box that rolls back with the
+switch on runs 0323's revert or flips the switch off.
+
+### Pins
+
+fullRouteSpots 29 to 30 (feed-enable), fullRouteSpotCalls 106 to 111,
+historyCodeComments 2341 to 2350, each with its reason in
+arch-scoreboard.pins.json. FULL_ROUTE_SPOT_FILES lists calendar
+manage.ts and microsoft drives manage.ts.
+
+### Gates
+
+Targeted runs on the workstation (two at a time): r13bt1 (actor-off:
+structure-item, narrow-containment, the sweep, 0273) passed but the pin,
+fixed since; r13bt2 0; r13bt3 (B) the COPY cell hung (moved to the proof),
+the rest passed; r13bt4 0 (13 files that write messages); r13bt7 0; r13bt9
+0 (the sweep on 72a68348f). Mac on the working tree: pnpm -r typecheck 0
+(b464fc97c), arch:check 0 after the re-pin, the unit files touched pass.
+The full gate set was not run in this round (see Left).
+
+### Left (round 13c), in order
+
+1. The full gate set on one head (the brief's list), then a fix round on
+   what it shows. Watch: the sweep's SPOT_ROWS (G's model-pools and
+   Microsoft rows will move it), actor-on and edit-on (0322's report branch
+   and 0323's notices off the narrow route), the matrix's time budget.
+2. G, the rest: updateWorkerGroup to agent-group-grant; the model-pools
+   PATCH to a spot; non-empty sweep bodies for the 28 area PATCH/PUT rows
+   (they will reach C, D and F's new spot choices: SPOT_ROWS moves);
+   the Microsoft callback, token refresh and drive discovery at a spot,
+   reached by the sweep with Graph stubbed.
+3. J: the counter's epoch per release; a definer's own writes on a
+   superuser pool, or the doc contradiction (runtime-role.md, the count).
+4. K: the scan pins by occurrence count; tag each open entry
+   reaches-narrow or covered-across-files; the value rules visible.
+5. L: one narrowSpotFor(table, op, set) replacing the per-caller branches
+   (agents.ts, ai-workers.ts, tool-groups.ts, login-update.ts, the four
+   switch writers of D).
+6. M: run-maker, the Telegram readers, lint arrow functions (forge12's
+   quoting was done in round 13).
+
+Doubts for the auditor: the curated_models pricing column (an insert-only
+picker estimate, decided "shown, not a cap" from the code read, not proven
+against the cost caps); tool_results insert on the narrow login (the turn's
+own random handle, read back only by its turn); 0323's names-only class
+(a switch with another name, via_tailnet or provider_alerts.paused, is not
+in it); the COPY rule proven only by the proof's psql, not a vitest cell.
