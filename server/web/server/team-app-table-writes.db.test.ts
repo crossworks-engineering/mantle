@@ -117,13 +117,16 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
    *  POST (requestMode(true): it reads drafts). */
   const inRequest = async <T>(login: string, fn: () => Promise<T>, req: Req = {}): Promise<T> => {
     const scope = await m.viewerScopeFor({ login });
-    return m.runAsActor(m.loginActor(login, req.mode ?? 'rw'), () =>
-      m.runInRequestSlot(async () => {
+    // The gate starts the slot as the login it found, a read key's login
+    // read only (startsAs); the guard keeps that mode (nameRequestLogin).
+    return m.runInRequestSlot(
+      async () => {
         if (!m.enterRequestScope(scope, { writes: req.writes ?? true, drafts: true })) {
           throw new Error('the request scope was not entered');
         }
         return fn();
-      }),
+      },
+      { startsAs: m.loginActor(login, req.mode ?? 'rw') },
     ) as Promise<T>;
   };
 
