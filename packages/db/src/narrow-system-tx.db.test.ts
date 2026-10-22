@@ -22,6 +22,7 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
   let v: typeof import('./viewer');
   let m: typeof import('./index');
   let pools: typeof import('./gateway/pools');
+  let actor: typeof import('./actor');
   let su: ReturnType<typeof postgres>;
   let brain = '';
   let systemLogin = '';
@@ -42,6 +43,7 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
     v = await import('./viewer');
     m = await import('./index');
     pools = await import('./gateway/pools');
+    actor = await import('./actor');
     const [r] = await pools.getAdminDb().execute<{ u: string }>(sql`select current_user as u`);
     systemLogin = r!.u;
   }, 120_000);
@@ -90,17 +92,12 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
 
   it('a narrow exit: withSystemTx runs as the narrow login with the acting login', async () => {
     const seen: Record<string, Awaited<ReturnType<typeof probe>>> = {};
-    const heads: Record<string, Who> = {};
     for (const [name, exit] of [
       ['request exit', requestExit],
       ['asSystem exit', asSystemExit],
     ] as const) {
       seen[name] = await exit(probe);
-      // The heads helper, a withSystemTx: the same.
-      heads[name] = await exit(() =>
-        m.withNodeInsertHeads(brain, [{ type: 'note', path: 'n' }], (tx) => who(tx)),
-      );
-      console.log(`[probe] ${name}: ${JSON.stringify(seen[name])} heads ${JSON.stringify(heads[name])}`);
+      console.log(`[probe] ${name}: ${JSON.stringify(seen[name])}`);
     }
     for (const name of Object.keys(seen)) {
       const out = seen[name]!;
@@ -119,7 +116,19 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
         route: 'narrow',
         acting: admin,
       });
-      expect({ name, ...heads[name]! }).toMatchObject({ name, su: rr.NARROW_ROLE, acting: admin });
+    }
+  });
+
+  it('a narrow exit: a content write through the heads (a withSystemTx) is refused, nothing written', async () => {
+    for (const exit of [requestExit, asSystemExit]) {
+      const err = await exit(() =>
+        m.withNodeInsertHeads(brain, [{ type: 'note', path: 'n' }], (tx) => who(tx)),
+      ).catch((e: unknown) => e);
+      expect(m.pgErrorCode(err)).toBe('42501');
+      const denied = actor.takeNarrowDenials();
+      expect(denied.map((d) => d.what)).toEqual([
+        expect.stringContaining('permission denied for function mantle_lock_heads'),
+      ]);
     }
   });
 
