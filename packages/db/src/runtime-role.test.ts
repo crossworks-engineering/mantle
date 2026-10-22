@@ -34,7 +34,9 @@ import {
   NARROW_CONNECTION_LIMIT,
   NARROW_LOGIN_FIX,
   narrowLoginNote,
+  narrowSystemOn,
   revokeOrder,
+  setNarrowSystemForTests,
   systemDatabaseUrl,
   type HeldMembership,
 } from './runtime-role';
@@ -176,6 +178,47 @@ describe('the runtime role statements', () => {
 
   it('refuses a password that would need quoting', () => {
     expect(() => runtimeRoleStatements(new Set(), "x'y")).toThrow(/base64url/);
+  });
+});
+
+describe('the narrow route switch (S7b part b2: on by default everywhere)', () => {
+  const read = (value: string | undefined, nodeEnv: string): boolean => {
+    const env = { v: process.env.MANTLE_NARROW_SYSTEM, n: process.env.NODE_ENV };
+    if (value === undefined) delete process.env.MANTLE_NARROW_SYSTEM;
+    else process.env.MANTLE_NARROW_SYSTEM = value;
+    process.env.NODE_ENV = nodeEnv;
+    setNarrowSystemForTests(null);
+    try {
+      return narrowSystemOn();
+    } finally {
+      if (env.v === undefined) delete process.env.MANTLE_NARROW_SYSTEM;
+      else process.env.MANTLE_NARROW_SYSTEM = env.v;
+      process.env.NODE_ENV = env.n;
+      setNarrowSystemForTests(null);
+    }
+  };
+
+  it('is on when unset, in production, development and tests', () => {
+    for (const n of ['production', 'development', 'test']) expect(read(undefined, n), n).toBe(true);
+    expect(read('', 'production')).toBe(true);
+  });
+
+  it('the kill switch: 0, off and false turn it off, in production too', () => {
+    for (const v of ['0', 'off', 'false', 'OFF', ' False ']) {
+      expect(read(v, 'production'), v).toBe(false);
+      expect(read(v, 'development'), v).toBe(false);
+    }
+    for (const v of ['1', 'on', 'true']) expect(read(v, 'production'), v).toBe(true);
+  });
+
+  it('is read once per process: a later change of the variable is not seen', () => {
+    delete process.env.MANTLE_NARROW_SYSTEM;
+    setNarrowSystemForTests(null);
+    expect(narrowSystemOn()).toBe(true);
+    process.env.MANTLE_NARROW_SYSTEM = '0';
+    expect(narrowSystemOn()).toBe(true);
+    delete process.env.MANTLE_NARROW_SYSTEM;
+    setNarrowSystemForTests(null);
   });
 });
 

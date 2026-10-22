@@ -101,8 +101,8 @@ export const FEATURES = {
   // Environment switch whose default the caller knows.
   narrowSystem: {
     env: 'MANTLE_NARROW_SYSTEM',
-    default: 'context',
-    doc: 'the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow (default: on in tests and development, off in production; plan v3.2 S7a)',
+    default: true,
+    doc: 'the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow (default: on everywhere since plan v3.2 S7b; 0, off or false is the per-box kill switch)',
   },
   mcpTerminal: {
     env: 'MANTLE_MCP_TERMINAL',
