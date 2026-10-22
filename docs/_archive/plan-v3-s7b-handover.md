@@ -1740,3 +1740,80 @@ revert drops `mantle_system_session` after 0316's and 0315's). 0317: an
 older image runs with either trigger body; its revert puts 0312's back.
 The column rights are migrate's: an older image's migrate grants its own
 matrix back.
+
+### Gates
+
+Mac, Node 26, DATABASE_URL unset, on 36ffbb4ae (the code of the head but
+for one test fixture): `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm
+arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0, `pnpm boot:smoke` 0,
+`pnpm -C server/web build` 0, `pnpm test:serial` 0 (1 file skipped: no
+database), `vitest run server packages eslint-rules` 0 (872 files passed,
+289 skipped; 11300 tests passed). The first arch:check exited 1 on the two
+raised spot pins and one history-code comment line (fixed: the pins raised
+with reasons, the code taken out of the comment) and on the spot lint not
+reading an import from the viewer module inside packages/db (the rule now
+reads it). On the head 748c6ec71 (one test fixture changed): format 0,
+typecheck of packages/db 0.
+
+Workstation, a fresh clone of the pushed commit per suite, one pgvector
+pg18 container each (label mantle.test=s7b-b2, max_connections=450, port
+checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                   | Commit    | Exit | Counts                             |
+| --------------------------------------- | --------- | ---- | ---------------------------------- |
+| full DB vitest, shard 1/2               | 748c6ec71 | 0    | 581 files; 6402 passed, 1 skipped  |
+| full DB vitest, shard 2/2               | 36ffbb4ae | 0    | 580 files; 7870 passed             |
+| test:actor-off                          | 748c6ec71 | 0    | 146 files; 1460 passed, 1 skipped  |
+| test:actor-on                           | 36ffbb4ae | 0    | 34 files; 413 passed, 1 skipped    |
+| test:edit-on                            | 36ffbb4ae | 0    | 46 files; 583 passed               |
+| test:matrix                             | 36ffbb4ae | 0    | 4 files; 8 passed                  |
+| test:runtime-role in full               | 748c6ec71 | 0    | 299 files; 2958 passed, 1 skipped  |
+| test:serial                             | 36ffbb4ae | 0    | 1 file; 1 passed                   |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 36ffbb4ae | 1    | 1 of 14273: the fixture below      |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 748c6ec71 | see  | running at handover (x-off2)       |
+| the drill (N-1: b1 against b2's schema) | 36ffbb4ae | 0    | every migrate step 0 (below)       |
+| the measurement (both shards, logged)   | 7b17a1d3f | 1, 0 | above; shard 1's one failure below |
+
+On 36ffbb4ae shard 1/2, test:runtime-role, test:actor-off and the
+switch-off run each failed one cell, the same one: narrow-containment's
+writers' cell put its Telegram chats on a bot account that did not exist
+(set up with replication off), and the assistant delete's update of the
+pinned chat met the account's foreign key. 748c6ec71 makes the bot
+account; shard 1/2, runtime-role and actor-off then passed in full (above),
+and the cell alone (with grant-reads.db.test.ts, whose afterAll had timed
+out under six lanes in the first actor-off run) passed: 2 files, 15 tests.
+The measurement's shard 1 failed one cell of spend-budget.db.test.ts (a
+narrated status line, the 200 ms trace wait, met in round 2 as a load
+flake) under statement logging; its measurement is unaffected.
+
+The drill (main 7f2d12292 = b1, and the branch), each migrate step:
+ledger rows / md5 of mantle_tg_chat_set's body / the user role's
+rolconnlimit / the narrow role's rolcanlogin: main 313 / b8266526... / 30
+/ true; the branch 317 / 11f59603... / 54 / true; main again (N-1 boot on
+the b2 schema) 0, 317 / 11f59603... / 30 / true, the narrow login and the
+superuser each running their own acting login and refused another (42501);
+the branch again 0; switch unset 0 (false); per-database mode 0 (false).
+N-1 never calls the new functions; its migrate grants its own matrix back
+(the narrow role's full rights on the four tables).
+
+### Left for round 5
+
+1. The switch-off full run on 748c6ec71 (x-off2 on the workstation, running
+   at handover): read its exit.
+2. The credential tables the column rights cannot split (MED-1 list above):
+   pairing_codes INSERT, oauth_auth_codes, member_invites, mantle_peers with
+   peer_shares and peer_share_scopes, telegram_chats.login_id; and agents
+   and tool_groups (assistants' grants) for the CEO. Each needs a spot or
+   the login's own scope, or a signed acting login (a gateway HMAC the
+   narrow login cannot read) if the CEO wants the narrow route to keep them.
+3. `mantle_space_settle_promotion` on NARROW_SYSTEM_FUNCTIONS with no narrow
+   caller (above): drop, or keep for a signed acting login.
+4. LOW-4's docs-item insert and update at route level with a real markdown
+   file (with the sweep).
+5. The remaining spots (profile-row, console-tool, pending-call;
+   integrity-delete and reembed stay for S7c), the ONE area-route sweep,
+   the default flip last, the pins and the box counts list (round 3's
+   "Left for the next round" 2 to 5).
