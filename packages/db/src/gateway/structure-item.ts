@@ -1,9 +1,10 @@
 /**
  * The structure items an Admin area's narrow exit makes, edits and removes
  * (plan v3.2 S7b part b2): the Secrets root, a secret, a peer, a sender's
- * contact, a documentation item and the folders above one. One gateway for
- * the five writers that ran at a full-route spot before (secrets-root,
- * secret-item, peer-item, sender-contact, docs-collection).
+ * contact, a documentation item and the folders above one, and the events a
+ * calendar synced (removed only). One gateway for the six writers that ran
+ * at a full-route spot before (secrets-root, secret-item, peer-item,
+ * sender-contact, docs-collection, calendar-events).
  *
  * On the narrow route (narrowRouteNow: the switch on and the exit's pick)
  * each write is one call of the definer mantle_structure_item (migration
@@ -21,10 +22,10 @@ import { RuntimeFaultError } from '@mantle/std';
 import type * as schema from '../schema/index';
 import { nodes, type Node } from '../schema/nodes';
 import { markContentChanged } from '../content-changed';
-import { actingLoginNow, currentCreateHome, currentSpaceScope } from '../viewer';
+import { actingLoginNow, currentCreateHome, currentSpaceScope, currentSystemTx } from '../viewer';
 import { db } from './handles';
 import { withNodeDeleteHeads, withNodeInsertHeads } from './heads';
-import { narrowRouteNow } from './pools';
+import { getAdminDb, narrowRouteNow } from './pools';
 import { withSystemTx } from './system-tx';
 import { uuidArrayLiteral } from './write-route';
 
@@ -38,6 +39,7 @@ export const STRUCTURE_KINDS = Object.freeze({
   'contact-item': 'contact',
   'docs-folder': 'branch',
   'docs-item': 'documentation',
+  'calendar-event': 'event',
 } as const);
 
 export type StructureKind = keyof typeof STRUCTURE_KINDS;
@@ -53,9 +55,25 @@ export type StructureInsert = {
   tags?: string[];
 };
 
+/**
+ * The narrow route's transaction for a definer call: the system pool's own
+ * (the narrow route takes it, as the exit's pick), or a savepoint of the
+ * system transaction already open. Not withSystemTx outside one: its scope
+ * hides a request exit's route and acting login from the statements inside
+ * (viewer.ts boundExitEntry), so they would leave the narrow route. The
+ * acting login is read here, outside, and passed to the definer, which
+ * also checks it against the setting the gateway sends.
+ */
+function narrowTx<T>(fn: (tx: Tx, login: string | null) => Promise<T>): Promise<T> {
+  const login = actingLoginNow();
+  if (currentSystemTx()) return withSystemTx((tx) => fn(tx, login));
+  return getAdminDb().transaction((tx) => fn(tx, login));
+}
+
 /** The definer, one call; its ids. */
 async function callDefiner(
   q: Pick<Tx, 'execute'>,
+  login: string | null,
   kind: StructureKind,
   op: 'insert' | 'update' | 'delete',
   ownerId: string,
@@ -65,7 +83,7 @@ async function callDefiner(
   const list: SQL =
     items === null ? sql`null` : sql`${uuidArrayLiteral(items, 'mantle_structure_item')}::uuid[]`;
   const rows = (await q.execute(
-    sql`select x as id from mantle_structure_item(${kind}, ${op}, ${actingLoginNow()}::uuid,
+    sql`select x as id from mantle_structure_item(${kind}, ${op}, ${login}::uuid,
           ${ownerId}::uuid, ${list}, ${fields === null ? null : JSON.stringify(fields)}::jsonb) x`,
   )) as unknown as { id: string }[];
   return rows.map((r) => r.id);
@@ -85,7 +103,7 @@ export async function insertStructureItem(
   const type = STRUCTURE_KINDS[kind];
   const branch = type === 'branch';
   if (narrowRouteNow()) {
-    return withSystemTx(async (tx) => {
+    return narrowTx(async (tx, login) => {
       const fields: Record<string, unknown> = {
         title: values.title,
         slug: values.slug ?? null,
@@ -93,7 +111,7 @@ export async function insertStructureItem(
       };
       if (values.data !== undefined) fields.data = values.data;
       if (values.tags !== undefined) fields.tags = values.tags;
-      const [id] = await callDefiner(tx, kind, 'insert', values.ownerId, null, fields);
+      const [id] = await callDefiner(tx, login, kind, 'insert', values.ownerId, null, fields);
       if (!id) return null;
       const [row] = await tx.select().from(nodes).where(eq(nodes.id, id));
       if (!row) throw new Error('insertStructureItem: the new row is not readable');
@@ -164,8 +182,8 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
       // quiet create.
       fields.announce = !currentSpaceScope() && !currentCreateHome()?.quiet;
     }
-    return withSystemTx(async (tx) => {
-      const [done] = await callDefiner(tx, kind, 'update', ownerId, [id], fields);
+    return narrowTx(async (tx, login) => {
+      const [done] = await callDefiner(tx, login, kind, 'update', ownerId, [id], fields);
       if (!done) return null;
       const [row] = await tx.select().from(nodes).where(eq(nodes.id, done));
       return row ?? null;
@@ -199,14 +217,14 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
  * removed. Wrap in withDeadlockRetry, as the heads helpers.
  */
 export async function deleteStructureItems(
-  kind: 'secret-item' | 'peer-item' | 'docs-item',
+  kind: 'secret-item' | 'peer-item' | 'docs-item' | 'calendar-event',
   ownerId: string,
   ids: readonly string[],
 ): Promise<string[]> {
   if (ids.length === 0) return [];
   const type = STRUCTURE_KINDS[kind];
   if (narrowRouteNow()) {
-    return withSystemTx((tx) => callDefiner(tx, kind, 'delete', ownerId, ids, null));
+    return narrowTx((tx, login) => callDefiner(tx, login, kind, 'delete', ownerId, ids, null));
   }
   const rows = await withNodeDeleteHeads(ids, (tx) =>
     tx

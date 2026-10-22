@@ -1,8 +1,10 @@
 -- One definer for the structure items a narrow exit makes, edits and
 -- removes (plan v3.2 S7b part b2): the Secrets root, a secret, a peer, a
--- contact, a documentation item and the folders above one. Before this, each
+-- contact, a documentation item and the folders above one, and the events a
+-- calendar synced. Before this, each
 -- ran at a full-route spot (packages/db viewer.ts FULL_ROUTE_SPOTS
--- secrets-root, secret-item, peer-item, sender-contact, docs-collection):
+-- secrets-root, secret-item, peer-item, sender-contact, docs-collection,
+-- calendar-events):
 -- the area's narrow exit wrote nodes on the system pool's own login. Now the
 -- narrow role runs this function and holds no right on nodes; the function
 -- writes nodes as its owner, under its own check.
@@ -19,6 +21,7 @@
 --   contact-item   contact        connectors  insert                 contacts
 --   docs-folder    branch         settings    insert                 documentation or under it
 --   docs-item      documentation  settings    insert update delete   documentation or under it
+--   calendar-event event          connectors  delete                 (a synced event only)
 --
 -- Any other kind or operation is refused (42501). The caller: no scope
 -- (a scope's own writes go through the write role), a system session
@@ -45,7 +48,8 @@
 --    true. The two kinds that edit (secret-item, docs-item) index no field
 --    for embed work only (the kind registry), so no other reset is open.
 --    No heads, as the app's update took none. Returns the id, or nothing.
---  - delete (items of the kind's type): the heads of each and of the folder
+--  - delete (items of the kind's type; for calendar-event only an event a
+--    calendar synced, data.external_account_id set): the heads of each and of the folder
 --    it sits in, for update (as withNodeDeleteHeads), then the rows; their
 --    foreign keys cascade as before. Returns the ids removed.
 -- The heads go through mantle_lock_heads_nested: the first lock of the
@@ -88,6 +92,7 @@ BEGIN
     WHEN 'docs-folder' THEN t := 'branch'; need_area := 'settings'; ops := ARRAY['insert'];
     WHEN 'docs-item' THEN
       t := 'documentation'; need_area := 'settings'; ops := ARRAY['insert', 'update', 'delete'];
+    WHEN 'calendar-event' THEN t := 'event'; need_area := 'connectors'; ops := ARRAY['delete'];
     ELSE
       RAISE EXCEPTION 'mantle_structure_item: not a listed kind' USING ERRCODE = '42501';
   END CASE;
@@ -195,16 +200,19 @@ BEGIN
     SELECT n."id" FROM "public"."nodes" n
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
+       AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
     UNION
     SELECT "public"."mantle_parent_folder"(n."owner_id", n."type", n."path") FROM "public"."nodes" n
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
+       AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
   ) x WHERE x."id" IS NOT NULL;
   PERFORM "public"."mantle_lock_heads_nested"(heads, 'update');
   RETURN QUERY
     DELETE FROM "public"."nodes" n
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
+       AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
     RETURNING n."id";
 END
 $$;

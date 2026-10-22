@@ -407,7 +407,8 @@ nothing.
 
 The structure items an Admin area's narrow exit makes, edits and removes
 (the Secrets root, a secret, a peer, a sender's contact, a documentation
-item and the folders above one) left the spots in S7b part b2: on the
+item and the folders above one, and the events a calendar synced, which
+its unsubscribe removes) left the spots in S7b part b2: on the
 narrow route each write is one call of `mantle_structure_item` (migration
 0315, `gateway/structure-item.ts`). Its KIND is one of a fixed list that
 fixes the item's type, the area its writer must hold (keys, connectors or

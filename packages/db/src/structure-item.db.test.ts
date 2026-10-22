@@ -242,6 +242,37 @@ describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
     ]);
   });
 
+  it("a calendar's synced events removed on the narrow route as on the full route; another event left", async () => {
+    const acct = randomUUID();
+    const ev = () => randomUUID();
+    const [s1, s2, own] = [ev(), ev(), ev()];
+    await su`insert into nodes (id, owner_id, type, title, path, data) values
+      (${s1}, ${brain}, 'event', 'synced 1', 'events', ${su.json({ external_account_id: acct })}),
+      (${s2}, ${brain}, 'event', 'synced 2', 'events', ${su.json({ external_account_id: acct })}),
+      (${own}, ${brain}, 'event', 'made by hand', 'events', '{}'::jsonb)`;
+    // The narrow route removes a synced event and leaves one made by hand,
+    // though both are named; the full route (the app's own delete) removes
+    // what it is given, as before.
+    expect(await exit(() => m.deleteStructureItems('calendar-event', brain, [s1, own]))).toEqual([
+      s1,
+    ]);
+    expect((await su`select id from nodes where id in (${s1}, ${own})`).map((r) => r.id)).toEqual([
+      own,
+    ]);
+    expect(await exitFull(() => m.deleteStructureItems('calendar-event', brain, [s2]))).toEqual([
+      s2,
+    ]);
+    // The area is connectors: a login with keys taken away still holds it;
+    // a login in no Admin workspace does not.
+    expect(await call(su, def('calendar-event', 'delete', noKeys), [acting(noKeys)])).toBe('ok');
+    expect(await call(su, def('calendar-event', 'delete', plain), [acting(plain)])).toMatch(
+      /^42501: .*does not hold the area/,
+    );
+    expect(await call(su, def('calendar-event', 'insert', admin), [acting(admin)])).toMatch(
+      /^42501: .*not an operation of this kind/,
+    );
+  });
+
   /** The definer sent raw on `on` in a transaction that rolls back, after
    *  `pre`: 'ok' or 'code: message'. */
   const call = async (on: ReturnType<typeof postgres>, text: string, pre: string[] = []) =>

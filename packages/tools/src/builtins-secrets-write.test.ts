@@ -47,6 +47,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withDeadlockRetry: async (fn: () => unknown) => fn(),
+    // The structure gateway (the Secrets root): its row through the mocked
+    // insert, as the full route's statement would send it.
+    insertStructureItem: async (kind: keyof typeof actual.STRUCTURE_KINDS, values: object) => {
+      db.insert(actual.nodes).values({ ...values, type: actual.STRUCTURE_KINDS[kind] });
+      return null;
+    },
   };
 });
 vi.mock('@mantle/crypto', () => ({ seal: vi.fn() }));

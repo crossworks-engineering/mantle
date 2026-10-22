@@ -1141,7 +1141,8 @@ function exitLogin(outer: Actor | null): string | undefined {
  * TODO(S7b): move each to the write role in the caller's scope, or to a
  * definer, and delete its spot; the list only shrinks. The structure items
  * (the Secrets root, a secret, a peer, a sender's contact, a documentation
- * item) moved to one definer (gateway/structure-item.ts, migration 0315).
+ * item, a calendar's synced events) moved to one definer
+ * (gateway/structure-item.ts, migration 0315).
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
@@ -1152,8 +1153,6 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "a login's promotion turns its personal space's shared and submitted items (space_items) back into private drafts, in the role change's transaction",
   reembed:
     'the embedding rebuild (the AI workers and embedding areas) writes every stored vector of the brain (nodes, facts, entities, chunks, windows, recall nodes) on the system pool',
-  'calendar-events':
-    "the calendar area's unsubscribe removes the events the calendar synced (nodes) on the system pool",
   'agent-conversation':
     "the assistants area's delete with its conversation removes the assistant's messages (assistant_messages) and digests (nodes) on the system pool",
   'console-tool':

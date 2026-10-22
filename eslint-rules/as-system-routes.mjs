@@ -143,7 +143,6 @@ export function requestSystemRouteMap(root) {
  * definer).
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
-  'packages/calendar/src/manage.ts': ['calendar-events'],
   'packages/content/src/profile-preferences.ts': ['profile-row'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
   'packages/tools/src/pending.ts': ['pending-call'],

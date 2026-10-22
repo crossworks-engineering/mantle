@@ -27,6 +27,7 @@ import {
   markContentChanged,
   withDeadlockRetry,
   withNodeDeleteHeads,
+  deleteStructureItems,
   withNodeInsertHeads,
   withViewer,
   type Node,
@@ -688,13 +689,9 @@ export async function deleteAllExternalEvents(
   const found = await db.select({ id: nodes.id }).from(nodes).where(where);
   if (found.length === 0) return 0;
   const ids = found.map((r) => r.id);
-  const rows = await withDeadlockRetry(() =>
-    withNodeDeleteHeads(ids, (tx) =>
-      tx
-        .delete(nodes)
-        .where(and(where, inArray(nodes.id, ids)))
-        .returning({ id: nodes.id }),
-    ),
-  );
+  // A structure item (packages/db gateway/structure-item.ts): on the
+  // calendar area's narrow exit, the definer removes them (a synced event
+  // only).
+  const rows = await withDeadlockRetry(() => deleteStructureItems('calendar-event', ownerId, ids));
   return rows.length;
 }
