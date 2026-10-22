@@ -2234,6 +2234,13 @@
       "when": 1790198400000,
       "tag": "0318_narrow_one_way_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1790198460000,
+      "tag": "0319_narrow_would_refuse",
+      "breakpoints": true
     }
   ]
 }

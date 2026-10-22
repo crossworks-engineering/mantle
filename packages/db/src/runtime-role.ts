@@ -1309,6 +1309,7 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
         `ALTER DEFAULT PRIVILEGES FOR ROLE "${db!.me}" IN SCHEMA pgboss GRANT SELECT ON TABLES TO ${rt}`,
       );
       await applyNarrowGrants(tx as unknown as Sql);
+      await applyNarrowWouldRefuse(tx as unknown as Sql);
       // Objects a later migration makes (as this role, or as mantle_owner)
       // are the runtime role's at once; the next run applies the denials.
       await tx.unsafe(
@@ -1406,4 +1407,81 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`GRANT USAGE ON SCHEMA pgboss TO ${nr}`);
   await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM ${nr}`);
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
+}
+
+/** The derived triggers of the would-refuse count (migration 0319). */
+export const NARROW_WOULD_REFUSE_TRIGGERS = Object.freeze({
+  INSERT: 'mantle_narrow_would_refuse_ins',
+  DELETE: 'mantle_narrow_would_refuse_del',
+  UPDATE: 'mantle_narrow_would_refuse_upd',
+} as const);
+
+/**
+ * The narrow role's would-refuse count (plan v3.2 S7b part b2 round 9,
+ * migration 0319, report only), derived from its live grants right after
+ * applyNarrowGrants: on every table of the app's schemas that the actor
+ * check does not cover (0312 counts the content tables), a statement-level
+ * AFTER INSERT where the role holds no INSERT, AFTER DELETE where it holds
+ * no DELETE, and AFTER UPDATE OF the columns it may not update. A write
+ * the role may make fires nothing; mantle_narrow_would_refuse_stmt counts
+ * the rest when a narrow reason makes them off the narrow route. A
+ * trigger is made, changed or dropped only when it differs from the
+ * grants (the next migrate after a grant moves follows it), so a migrate
+ * with no grant change takes no table lock. Partitions follow their
+ * parent's trigger. Skipped on a schema before 0319.
+ */
+async function applyNarrowWouldRefuse(tx: Sql): Promise<void> {
+  const [fn] = await tx<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is not null as ok`;
+  if (!fn?.ok) return;
+  const names = Object.values(NARROW_WOULD_REFUSE_TRIGGERS);
+  const rows = await tx<
+    { t: string; ins: boolean; del: boolean; cols: string[]; have: string[]; haveCols: string[] }[]
+  >`
+    select c.oid::regclass::text as t,
+           not has_table_privilege(${NARROW_ROLE}, c.oid, 'INSERT') as ins,
+           not has_table_privilege(${NARROW_ROLE}, c.oid, 'DELETE') as del,
+           array(select a.attname::text from pg_attribute a
+                  where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+                    and not has_column_privilege(${NARROW_ROLE}, c.oid, a.attnum, 'UPDATE')
+                  order by a.attnum) as cols,
+           array(select g.tgname::text from pg_trigger g
+                  where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
+                  order by 1) as have,
+           coalesce((select array(select a.attname::text from unnest(g.tgattr::int2[]) k(n)
+                                   join pg_attribute a on a.attrelid = c.oid and a.attnum = k.n
+                                  order by a.attnum)
+                       from pg_trigger g
+                      where g.tgrelid = c.oid and g.tgname = ${NARROW_WOULD_REFUSE_TRIGGERS.UPDATE}),
+                    '{}') as "haveCols"
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and c.relkind in ('r', 'p')
+       and not c.relispartition
+       and not exists (select 1 from pg_trigger g
+                        where g.tgrelid = c.oid and g.tgname = 'mantle_actor_check'
+                          and not g.tgisinternal)
+     order by 1`;
+  const fire = 'FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()';
+  for (const r of rows) {
+    const want = new Map<string, string>();
+    if (r.ins) want.set(NARROW_WOULD_REFUSE_TRIGGERS.INSERT, 'INSERT');
+    if (r.del) want.set(NARROW_WOULD_REFUSE_TRIGGERS.DELETE, 'DELETE');
+    if (r.cols.length > 0) {
+      want.set(
+        NARROW_WOULD_REFUSE_TRIGGERS.UPDATE,
+        `UPDATE OF ${r.cols.map((c) => quotedIdent(c)).join(', ')}`,
+      );
+    }
+    for (const name of names) {
+      const has = r.have.includes(name);
+      const on = want.get(name);
+      const same =
+        has &&
+        on !== undefined &&
+        (name !== NARROW_WOULD_REFUSE_TRIGGERS.UPDATE || r.haveCols.join() === r.cols.join());
+      if (same) continue;
+      if (has) await tx.unsafe(`DROP TRIGGER "${name}" ON ${r.t}`);
+      if (on) await tx.unsafe(`CREATE TRIGGER "${name}" AFTER ${on} ON ${r.t} ${fire}`);
+    }
+  }
 }

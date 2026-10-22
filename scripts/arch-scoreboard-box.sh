@@ -35,8 +35,10 @@
 #     a brain reaches either only with no Admin workspace;
 #   - the narrow system role's counts (plan v3.2 S7a, report only): the
 #     distinct check, actor and table rows checked narrow-content-write,
-#     narrow-cascade-delete (migration 0312) and narrow-denied, in the
-#     fail-open rows' window;
+#     narrow-cascade-delete (migration 0312), narrow-denied and
+#     narrow-would-refuse (migration 0319: what the role would refuse once
+#     the switch is on), and the tables the last names, in the fail-open
+#     rows' window;
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -179,13 +181,23 @@ SQL
 # either route; a sign of content going away under narrow work, not a
 # refusal to come: the cascade runs as the table's owner, so the role's
 # rights never stop it. narrow-denied: a right the role does not hold, met
-# on the narrow route. Numbers only.
+# on the narrow route. narrow-would-refuse (migration 0319, S7b part b2
+# round 9): a write by a narrow reason off the narrow route that the role
+# would refuse once the switch is on (a table or column privilege it does
+# not hold, or 0318's one-way rules), per actor, table and operation; the
+# second number is the tables they name. Both must read 0 on every box
+# before the default flip (S7b part b3). Numbers only: the table names
+# are read on the box itself (select detail from actor_check_misses where
+# check_name = 'narrow-would-refuse').
 narrow=$(q <<SQL || true
 select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
     || ' ' || count(*) filter (where check_name = 'narrow-denied')
+    || ' ' || count(*) filter (where check_name = 'narrow-would-refuse')
+    || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
   from (select distinct check_name, actor, detail from public.actor_check_misses
-         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied')
+         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
+                              'narrow-would-refuse')
            and at >= greatest(now() - interval '24 hours',
                               least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
                                     now() - interval '1 hour'))) m;
@@ -252,7 +264,7 @@ for site in all scope-holds-admin scope-has-area typed-write raw-write turn-exit
   shift || true
 done
 set -- $narrow
-for check in content-write cascade-delete denied; do
+for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
   shift || true
 done
