@@ -326,7 +326,11 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
   'DELETE /api/member/mcp/clients/:id': { as: 'member' },
   'POST /api/assistant/read': { as: 'owner' },
   'POST /api/assistant/threads': { as: 'owner' },
-  'POST /api/assistant/threads/:id/continue': { as: 'owner' },
+  'POST /api/assistant/threads/:id/continue': {
+    as: 'owner',
+    answers:
+      '404: the fixture holds no archived chat at the sample id (the archive cells drive one)',
+  },
   'POST /api/assistant/threads/:id/summarize': {
     skip: "an LLM summary of a thread (no network here): the chat archive's own cells drive it",
   },
@@ -337,7 +341,11 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
   'POST /api/assistant/transcribe': {
     skip: 'an audio upload to a speech model (a file body, no network here): the voice cells drive it',
   },
-  'POST /api/telegram/pair': { as: 'owner' },
+  'POST /api/telegram/pair': {
+    as: 'owner',
+    answers:
+      "400: a pairing code is minted by the bot's /start (no bot here); the pairing cells drive a real code",
+  },
   // The owner's second chat (SELF_CHAT): the area rows keep the first.
   'POST /api/telegram/chats/:id/block': {
     as: 'owner',

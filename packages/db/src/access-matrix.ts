@@ -488,6 +488,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route. Round 14 (DB LOW-4): its providers, model and dimensions (where every embed goes and what it costs) and its knobs (extraction concurrency and time budget, local batch and timeout: the spend rate) off the list, at model-route; its labels (display only) and a backup switched off stay',
   },
+  'public.maintenance_runs': {
+    insert: false,
+    update: ['state', 'finished_at', 'summary'],
+    delete: false,
+    why: "measured (round 14b, the read sweep): UPDATE by system:http:admin-area. GET /api/debug/maintenance settles a run whose process died (reapStaleRuns: a 'running' row older than every surface's timeout to 'failed', its finish and summary); refused on the narrow exit before (a read row no sweep sent). A run row is made by the maintenance CLI on its own pool, never by narrow work; the cron guard (hasRecentCronRun) reads any state, so a settle cannot re-arm a run",
+  },
   'public.heartbeat_fires': {
     insert: true,
     update: [],

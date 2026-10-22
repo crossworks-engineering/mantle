@@ -668,6 +668,16 @@ describe.skipIf(!URL)(
       'self DELETE /api/profile/photo': ['profile-row'],
       'self POST /api/push/connect': ['push-device'],
       'self POST /api/push/reset': ['push-device'],
+      // Round 14b: the login's own chat rows (pairing.ts setChatPairing,
+      // its definer at acting-login on every route) and the reads that
+      // write at a spot (a collection's index settled, a drive's token
+      // refreshed, the onboarding row made on first read).
+      'self POST /api/telegram/chats/:id/block': ['acting-login'],
+      'self POST /api/telegram/chats/:id/unpair': ['acting-login'],
+      'self DELETE /api/telegram/my-chats/:id': ['acting-login'],
+      'read GET /api/docs/collections': ['docs-root'],
+      'read GET /api/microsoft/drives/:id/browse': ['ms-account'],
+      'read GET /api/onboarding': ['profile-row'],
       'POST /api/agents': ['assistant-grant'],
       'POST /api/agents/:id/persona': ['skill-text'],
       'POST /api/ai-workers': ['model-route'],
@@ -793,6 +803,9 @@ describe.skipIf(!URL)(
       // (workspaces-migrate.ts attachDefaultAssistants).
       const everyRoute = new Set([
         'POST /api/agents/:id/telegram/chats',
+        'self POST /api/telegram/chats/:id/block',
+        'self POST /api/telegram/chats/:id/unpair',
+        'self DELETE /api/telegram/my-chats/:id',
         'onboarding provision (Azure only)',
       ]);
       const offOf = (rows: Record<string, string[]>) =>
