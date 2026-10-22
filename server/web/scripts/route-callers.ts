@@ -958,7 +958,7 @@ function readsFirst(fn: Fn, readsIn: ts.CallExpression[], wrapsIn: ts.CallExpres
 const DECLARATION_MODULE = '@/lib/auth/route-declaration';
 
 /**
- * The policy a route file declares (plan v3.2 S9; lib/auth/route-declaration.ts):
+ * The policy a route file declares (lib/auth/route-declaration.ts):
  *
  *     export const policy = routePolicy({ GET: { class: 'content', effect: 'read' } });
  *

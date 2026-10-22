@@ -376,12 +376,12 @@ const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', '
 export const ROUTE_POLICY_EXPORT = 'policy';
 
 /**
- * route-policy-declared (plan v3.2 S9): every route file declares its
+ * route-policy-declared (the route declarations, plan v3.2): every route file declares its
  * policy beside its handlers, `export const policy = routePolicy({ ... })`
  * (server/web/lib/auth/route-declaration.ts), naming each method it exports
  * and no other (a HEAD the GET handler answers takes its GET's). The boot
  * refuses the same (route-policy.ts buildRoutePolicy) once the rows are
- * read from the declarations; this says it at the line. Off until S9 part
+ * read from the declarations; this says it at the line. Off until part
  * 1's codemod has written every declaration (eslint.config.mjs).
  */
 export const routePolicyDeclared = {
@@ -389,7 +389,7 @@ export const routePolicyDeclared = {
     type: 'problem',
     docs: {
       description:
-        'A route file declares its policy (export const policy = routePolicy({ ... })) for each method it exports (plan v3.2 S9).',
+        'A route file declares its policy (export const policy = routePolicy({ ... })) for each method it exports (the route declarations, plan v3.2).',
     },
     messages: {
       missing:

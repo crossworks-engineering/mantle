@@ -1,5 +1,5 @@
 /**
- * The route policy codemod (plan v3.2 S9 part 1, built in part 0): writes
+ * The route policy codemod (plan v3.2, run in part 1 of the route declarations): writes
  * each route file's policy declaration (`export const policy =
  * routePolicy({ ... })`, lib/auth/route-declaration.ts) from today's lists
  * (route-scope.ts, route-policy.ts, any-login-routes.ts, member-routes.ts,

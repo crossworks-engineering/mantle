@@ -53,7 +53,7 @@ type Entry = {
    *  lib/auth/route-switches.ts; A4 hand batch A): its rows' switch. */
   switches: HandlerSwitches;
   /** The policy the route file declares (`policy`,
-   *  lib/auth/route-declaration.ts; plan v3.2 S9), or null: none. */
+   *  lib/auth/route-declaration.ts), or null: none. */
   policy: RoutePolicyDeclaration | null;
   /** Name of the catch-all param when the pattern ends in /*, else null. */
   catchAll: string | null;

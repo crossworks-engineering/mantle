@@ -1,5 +1,5 @@
 /**
- * A route's policy, declared in its own file (plan v3.2 S9): what each
+ * A route's policy, declared in its own file (plan v3.2, the route declarations): what each
  * method of the route is, beside its handler, so the declaration moves with
  * the file and no list elsewhere has to name the route.
  *
@@ -12,7 +12,7 @@
  * (scripts/route-callers.ts handlerPolicy) into the manifest (`policy`), so
  * the loader has it when it registers the route, without loading the
  * module; a declaration is data, literals only. buildRouteRow reads it in
- * place of the lists once ROUTE_POLICY_SOURCE says so (S9 part 2). Until
+ * place of the lists once ROUTE_POLICY_SOURCE says so (part 2). Until
  * then the rows come from the lists, and route-policy-declarations.test.ts
  * proves the declarations the codemod (scripts/route-policy-codemod.ts)
  * derives from them build every row equal.

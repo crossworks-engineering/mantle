@@ -74,7 +74,7 @@ export type RouteEntry = {
    *  lib/auth/route-switches.ts; A4 hand batch A): their rows' switch. */
   switches?: Readonly<Record<string, RouteSwitch>>;
   /** The policy the route file declares (`policy`,
-   *  lib/auth/route-declaration.ts; plan v3.2 S9), as the generator read it
+   *  lib/auth/route-declaration.ts), as the generator read it
    *  from the code: the rows are built from it where the source is
    *  'declarations' (ROUTE_POLICY_SOURCE). */
   policy?: RoutePolicyDeclaration;
@@ -107,7 +107,7 @@ function sameData(a: unknown, b: unknown): boolean {
 
 /**
  * Whether a loaded route module's `policy` is the one its rows were built
- * from (S9): the generator reads the declaration from the code, the module
+ * from (the route declarations): the generator reads the declaration from the code, the module
  * exports its value, and the two must be one (a manifest older than the
  * file would answer for a policy the file no longer holds). Asked when the
  * module is first loaded, where the rows are read from the declarations; a

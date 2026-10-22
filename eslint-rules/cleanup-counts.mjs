@@ -691,6 +691,7 @@ export const HISTORY_HEADING_CODES = Object.freeze([
  *  entry) lowers historyCodeComments, so it is reviewed like a pin. */
 export const HEADING_CODES_LEFT_OUT = Object.freeze({
   D1: 'plan v3.2 D1 (the spec cut) shares its label with owner decision D1 and the D findings of the apps audit, the apps plan and plan v2 (D1 to D8); no counted comment names the step, each D1 there is a decision or a finding',
+  S9: 'plan v3.2 S9 (the route declarations) shares its label with finding S9 of an earlier audit (the private thumbnails fix, packages/files space-disk.ts and thumbnail.ts: "audit S9"); no counted comment names the step (its code says "the route declarations"), each S9 there is that finding',
 });
 
 /** Each heading code in neither HISTORY_HEADING_CODES nor

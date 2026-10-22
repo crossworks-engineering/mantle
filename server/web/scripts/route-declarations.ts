@@ -1,5 +1,5 @@
 /**
- * The route policy codemod's core (plan v3.2 S9 part 0; the CLI is
+ * The route policy codemod's core (plan v3.2, the route declarations; the CLI is
  * scripts/route-policy-codemod.ts): the declaration a route file's methods
  * get from today's lists (rowDeclaration, entryDeclaration), its text
  * (renderDeclaration), and that text written into the file

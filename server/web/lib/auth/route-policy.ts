@@ -614,7 +614,7 @@ function callerServes(
 }
 
 /**
- * Where the rows' policy comes from (plan v3.2 S9): the lists (today), or
+ * Where the rows' policy comes from (plan v3.2, the route declarations): the lists (today), or
  * the declaration each route file exports (`policy`, route-declaration.ts),
  * which the manifest carries. Part 2 flips this to 'declarations', once
  * part 1's codemod has written every route file's declaration and
@@ -730,7 +730,7 @@ const DECLARED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The facts of a row from its route file's declaration (S9 part 2), the
+ * The facts of a row from its route file's declaration (part 2), the
  * declaration of the method whose handler answers (`answeredAs`: a HEAD the
  * GET handler answers takes its GET's). Every value is checked here, at
  * boot: a declaration that cannot hold is refused, never read as a pass.
@@ -837,7 +837,7 @@ function declaredFacts(
 
 /**
  * The row of `method pattern`, from the lists (step 1), or, with
- * `declared` (S9 part 2, ROUTE_POLICY_SOURCE), from the route file's
+ * `declared` (part 2, ROUTE_POLICY_SOURCE), from the route file's
  * declaration for the method. `served` says which `METHOD pattern` keys the
  * manifest serves (the v1 aliases).
  */
@@ -862,7 +862,7 @@ export function buildRouteRow(
      *  passes it (arch-lints.test.ts pins it). */
     standIn?: boolean;
     /** The route file's declaration for the method whose handler answers
-     *  (S9; a HEAD the GET handler answers: its GET's): the row's policy
+     *  (a HEAD the GET handler answers: its GET's): the row's policy
      *  is read from it, not from the lists. */
     declared?: MethodPolicy;
   } = {},
@@ -1013,7 +1013,7 @@ export type RouteManifestEntry = Readonly<{
    *  route-switches.ts): its rows' `switch`. */
   switches?: Readonly<Record<string, RouteSwitch>>;
   /** The route file's policy declaration (`policy`, route-declaration.ts;
-   *  S9), read from the code by the generator: each method to its policy.
+   *  the route declarations), read from the code by the generator: each method to its policy.
    *  Its rows are built from it where the source is 'declarations'. */
   policy?: RoutePolicyDeclaration;
 }>;
@@ -1063,7 +1063,7 @@ export function buildRoutePolicy(
       // HEAD is answered by the GET handler: it reads what GET reads.
       const as = m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m;
       const read = reads[as] ?? null;
-      // S9 part 2: every method a route file exports declares its policy;
+      // Part 2: every method a route file exports declares its policy;
       // one that does not is refused at boot (and by lint,
       // route-plumbing.mjs route-policy-declared).
       const policy = declared ? entry.policy?.[as as keyof RoutePolicyDeclaration] : undefined;
