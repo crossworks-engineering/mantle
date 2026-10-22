@@ -567,10 +567,9 @@ describe.skipIf(!URL)(
       'POST /api/onboarding': ['profile-row'],
       [AZURE_PROVISION]: [
         'assistant-grant',
-        'heartbeat-maker',
+        'docs-root',
         'model-route',
         'profile-row',
-        'tool-config',
         'tool-group-grant',
       ],
       'POST /api/openapi-connectors': ['tool-group-grant'],
