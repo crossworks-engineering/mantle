@@ -461,8 +461,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     const unread = rows.filter((r) => !r.caller && !r.public && !r.page).map((r) => r.key);
     expect(unread).toEqual([]);
     // The pins: rows with a caller, of all the rows.
-    expect(rows.filter((r) => r.caller).length).toBe(759);
-    expect(rows.length).toBe(817);
+    expect(rows.filter((r) => r.caller).length).toBe(761);
+    expect(rows.length).toBe(819);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
