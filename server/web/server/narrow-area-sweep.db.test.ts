@@ -577,7 +577,7 @@ describe.skipIf(!URL)(
       'POST /api/onboarding': ['profile-row'],
       'POST /api/openapi-connectors': ['tool-group-grant'],
       'PATCH /api/openapi-connectors/:slug': ['tool-config'],
-      'POST /api/peers': ['peer-access'],
+      'POST /api/peers': ['acting-login', 'peer-access'],
       'PATCH /api/peers/:id': ['peer-access'],
       'POST /api/peers/:id/rotate': ['peer-access'],
       'POST /api/peers/:id/shares': ['peer-share'],
@@ -602,12 +602,24 @@ describe.skipIf(!URL)(
       'POST /api/users': ['login-credential'],
       'PATCH /api/users/:id': ['login-credential'],
       'PUT /api/users/:id/agent': ['assistant-grant'],
+      // The acting-login spot (0321): the definers that need the exit's
+      // acting login (the structure items of the secrets, peers and email
+      // contact routes, a Telegram chat's block or unpair, an assistant's
+      // delete) run on the full route, where the gateway's SET carries it.
+      'POST /api/agents/:id/telegram/chats': ['acting-login'],
+      'POST /api/email/discover/contacts': ['acting-login'],
+      'POST /api/secrets': ['acting-login'],
+      'PATCH /api/secrets/:id': ['acting-login'],
+      'DELETE /api/agents/:id': ['acting-login'],
+      'DELETE /api/peers/:id': ['acting-login'],
+      'DELETE /api/secrets/:id': ['acting-login'],
       'POST /api/users/:id/password': ['login-credential'],
       'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/tool-groups/:id': ['tool-group-grant'],
       'DELETE /api/users/:id': ['login-credential'],
       [AZURE_PROVISION]: [
+        'acting-login',
         'assistant-grant',
         'docs-root',
         'model-route',

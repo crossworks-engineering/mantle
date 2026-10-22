@@ -673,8 +673,17 @@ a time:
   `mantle_tg_chat_set`, `mantle_structure_item`, `mantle_agent_delete`) left
   its EXECUTE list and run at the full-route spot `acting-login`, where the
   gateway's own SET carries the acting login (a spot keeps the exit's acting
-  login). A signed acting login, which the narrow role cannot forge, later
-  lets the readers trust a signed value and removes the spot.
+  login; the gateway sends it there in every check mode, since a turn's
+  exit is no request exit and with the check off nothing else would). A
+  signed acting login, which the narrow role cannot forge, later lets the
+  readers trust a signed value and removes the spot.
+- Why the actor reads `system:narrow` on the narrow role, not NULL (a
+  decision the CEO accepted, round 13b): the actor check refuses a write
+  with no actor on an actor-checked table when it is on, so NULL would
+  refuse every narrow write of those tables; `system:narrow` is the role's
+  own name, which no list trusts (`mantle_ws_system_work`'s three reasons,
+  the counts' narrow reasons), so the session's own actor is never
+  trusted and the check still sees system work.
 - The catalog check. `mantle_identity_leaks()` lists every function body,
   policy, trigger condition, column default, check constraint and view of
   the app's schemas that reads a `mantle.*` setting outside the readers.
@@ -692,6 +701,21 @@ a time:
   catalog, is called with owner-shaped arguments; each refuses or changes
   no row (a transaction that changed a row has a transaction id). A write
   the narrow login may make shows as one (the control).
+
+### The narrow role's message rows
+
+The turn writes its message rows (`assistant_messages`) on the narrow
+route, so the narrow role keeps INSERT and an UPDATE of `text`, `model`,
+`status` and `data`. Migration 0322's guard (a BEFORE INSERT OR UPDATE row
+trigger, so ON CONFLICT, MERGE and COPY meet it too) holds the shape: a row
+names this brain, an assistant of this brain (never none), that
+assistant's workspace (NULL only for an Admin workspace assistant) and a
+login that may talk there (a user of the workspace, the owner or an Admin
+user; for the Admin workspace the owner or an Admin user only). A row
+whose status is not `pending` is never rewritten (a finished turn's text is
+what later turns read as history), but for the follow-up suggestion in its
+data; a settled row never goes back to pending. Off the narrow route the
+same break by a narrow reason is counted (0319's notice) and runs.
 
 ### The narrow write count
 
@@ -757,9 +781,11 @@ as the superuser.
 
 Reverting the narrow migrations by hand (before pinning an older image;
 one image back needs none): newest first, each file in its own
-transaction, `0321_identity_gateway`, `0320_narrow_row_rules`, then
+transaction, `0322_narrow_message_rules`, `0321_identity_gateway`,
+`0320_narrow_row_rules`, then
 `0319_narrow_would_refuse`, `0318`, `0317`, `0316`, `0315`, `0314` (each in
-`packages/db/rollback/`): 0321's revert puts the direct reads back into the
+`packages/db/rollback/`): 0322's revert puts 0320's message guard back
+(which 0320's revert then drops), 0321's revert puts the direct reads back into the
 bodies 0320 and 0319 wrote, and 0319's revert puts 0318's
 `mantle_narrow_one_way` back, so each must run before the next.
 

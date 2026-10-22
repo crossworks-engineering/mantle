@@ -2255,6 +2255,13 @@
       "when": 1790198580000,
       "tag": "0321_identity_gateway",
       "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1790198640000,
+      "tag": "0322_narrow_message_rules",
+      "breakpoints": true
     }
   ]
 }
