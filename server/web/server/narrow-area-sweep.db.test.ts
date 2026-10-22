@@ -62,6 +62,7 @@ function normalize(text: string): string {
   return text
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, 'U')
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g, 'T')
+    .replace(/"durationMs":\d+/g, '"durationMs":N')
     .replace(/\b\d{10,}\b/g, 'N')
     .replace(/[A-Za-z0-9_\-+/=]{24,}/g, 'K')
     .replace(/\/tmp\/[^"\s]*/g, 'P')
@@ -81,7 +82,7 @@ describe.skipIf(!URL)(
     const realFetch = globalThis.fetch;
     const answers: Record<'on' | 'off', Map<string, string>> = { on: new Map(), off: new Map() };
     const denials = new Map<string, unknown[]>();
-    const docs: Record<string, { made: number; updated: number }> = {};
+    const docs: Record<string, Record<string, number | boolean>> = {};
 
     beforeAll(async () => {
       ts = await import('@mantle/db/test-support');
@@ -160,25 +161,33 @@ describe.skipIf(!URL)(
         }
         // LOW-4: a documentation item made from a real markdown file, then
         // the file edited and the collection read again (its update).
-        const docCount = async (text: string) =>
+        const docIds = async (text: string) =>
           (
-            await su<{ n: number }[]>`
-          select count(*)::int as n from nodes where owner_id = ${OWNER}
-             and type = 'documentation' and data::text like ${`%${text}%`}`
-          )[0]!.n;
+            await su<{ id: string }[]>`
+    select id::text as id from nodes where owner_id = ${OWNER}
+       and type = 'documentation' and data::text like ${`%${text}%`} order by id`
+          ).map((r) => r.id);
         const made = await send('POST', '/api/docs/collections', {
           label: `Sweep ${pass}`,
           key: `sweep-${pass}`,
           rootPath: col,
           brainDepth: 'retrieval',
         });
-        expect(made.status, made.text).toBe(200);
+        const first = await docIds('first text');
         const [c] = await su<{ id: string }[]>`
-        select id::text as id from doc_collections where key = ${`sweep-${pass}`}`;
+  select id::text as id from doc_collections where key = ${`sweep-${pass}`}`;
         writeFileSync(join(col, 'a.md'), '# Sweep guide\n\nThe second text.\n');
-        await send('PATCH', `/api/docs/collections/${c!.id}`, { enabled: false });
-        await send('PATCH', `/api/docs/collections/${c!.id}`, { enabled: true });
-        docs[pass] = { made: made.status, updated: await docCount('second text') };
+        // Enabling an enabled collection reconciles it: the changed file is an
+        // update of its item (upsertDocFromDisk), the same id.
+        const reread = await send('PATCH', `/api/docs/collections/${c!.id}`, { enabled: true });
+        const second = await docIds('second text');
+        docs[pass] = {
+          made: made.status,
+          reread: reread.status,
+          first: first.length,
+          left: (await docIds('first text')).length,
+          sameIds: first.length > 0 && first.every((id) => second.includes(id)),
+        };
         if (pass === 'on') denials.set('docs-item', ts.takeNarrowDenials());
       } finally {
         await m?.closeDb();
@@ -205,13 +214,23 @@ describe.skipIf(!URL)(
       expect(differ).toEqual([]);
     });
 
-    it('no row answers 500 on the narrow pass', () => {
-      const failed = [...answers.on].filter(([, a]) => a.startsWith('500 '));
-      expect(failed).toEqual([]);
+    /** The rows that answer 500 both ways in this harness, each because the
+     *  call it exists for leaves the box (no network here: fetch throws). */
+    const OFFLINE_500: Readonly<Record<string, string>> = {
+      'POST /api/ai-workers/models': "lists a provider's models over the network",
+      'POST /api/keys/test': "tests a key against its provider's API",
+      'POST /api/runners/:id': "starts a runner's work through its daemon",
+    };
+
+    it('no row answers 500 on the narrow pass but the named offline ones (500 off too)', () => {
+      const failed = [...answers.on].filter(([, a]) => a.startsWith('500 ')).map(([k]) => k);
+      expect(failed.sort()).toEqual(Object.keys(OFFLINE_500).sort());
+      for (const k of failed) expect(answers.off.get(k)?.startsWith('500 '), k).toBe(true);
     });
 
     it('a documentation item from a real markdown file: made and updated, the same both ways', () => {
-      expect(docs.on).toEqual({ made: 200, updated: 1 });
+      expect(docs.on).toMatchObject({ made: 200, reread: 200, left: 0, sameIds: true });
+      expect(docs.on!.first).toBeGreaterThan(0);
       expect(docs.off).toEqual(docs.on);
     });
 
