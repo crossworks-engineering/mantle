@@ -485,21 +485,26 @@ export async function setChatPairing(args: {
   const notFound = { ok: false as const, error: 'chat not found.', code: 'not_found' as const };
   // Not a login: nobody's chat (the rule never names one).
   if (!UUID_RE.test(actorLoginId)) return notFound;
-  const rows = await db.transaction(
-    async (tx) =>
-      (await tx.execute(
-        sql`select id::text as id, telegram_chat_id as "telegramChatId", title, username,
+  // The definer needs the acting login, which the identity readers answer
+  // only off the narrow role (0321): the full-route spot acting-login on the
+  // assistants area's narrow exit; in a login's scope it runs as it is.
+  const rows = await onFullSystemRoute('acting-login', () =>
+    db.transaction(
+      async (tx) =>
+        (await tx.execute(
+          sql`select id::text as id, telegram_chat_id as "telegramChatId", title, username,
                    agent_name as "agentName"
               from "public"."mantle_tg_chat_set"(${ownerId}::uuid, ${actorLoginId}::uuid,
                                                  ${chatId}::uuid, ${action},
                                                  ${args.accountId ?? null}::uuid)`,
-      )) as unknown as {
-        id: string;
-        telegramChatId: string;
-        title: string | null;
-        username: string | null;
-        agentName: string | null;
-      }[],
+        )) as unknown as {
+          id: string;
+          telegramChatId: string;
+          title: string | null;
+          username: string | null;
+          agentName: string | null;
+        }[],
+    ),
   );
   const chat = rows[0];
   if (!chat) return notFound;

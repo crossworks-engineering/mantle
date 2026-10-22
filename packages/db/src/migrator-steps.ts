@@ -13,6 +13,7 @@
  * caller that is not one gets a warning for the runtime role and the
  * LEAKPROOF flag, and the box runs as before.
  */
+import { assertNoIdentityLeaks } from './identity-gateway';
 import type postgres from 'postgres';
 import { applyViewerGrants } from './access-matrix';
 import { ensureTsMatchLeakproof } from './leakproof';
@@ -99,6 +100,11 @@ export async function afterMigrations(
   runtime: RuntimeRolesOutcome,
   log: StepLog = consoleLog,
 ): Promise<void> {
+  // The identity gateway's catalog check (0321): no function, policy or
+  // trigger condition reads an identity setting outside the readers. Fatal:
+  // a definer that trusts a session's own login is a hole on every role.
+  await assertNoIdentityLeaks(sql);
+
   // The viewer roles' grants come from the access matrix, re-applied every
   // run so the live grants always equal the checked-in list.
   await applyViewerGrants(sql);

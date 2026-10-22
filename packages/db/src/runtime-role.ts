@@ -290,14 +290,6 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "the default assistants attached at onboarding (the assistants area's exit): the definer's own rule, workspace_resources only",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
-  'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
-    "the workspaces area's Moderator tick (workspaces.ts setModerator) on an Admin area exit: the definer checks the acting login",
-  'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
-    "the assistants area's block or unpair of a chat of the assistant's bot (agent-telegram.ts setAgentTelegramChat) on an Admin area exit: the definer holds the rule, telegram_chats only (0313)",
-  'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
-    "the keys, connectors and settings areas' structure items (gateway/structure-item.ts: the Secrets root, a secret, a peer, a sender's contact, a documentation item) on an Admin area exit or in a turn's area exit: the definer holds the rule, the listed kinds of nodes only (0315)",
-  'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
-    "the assistants area's delete of an assistant (agents.ts deleteAgent): the definer holds the rule, the agent, its messages and digests (0316)",
 };
 
 /**
@@ -325,6 +317,18 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
  * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
+  // The four definers that need the exit's acting login (0321): the
+  // identity readers answer none on the narrow role, so each would refuse
+  // it; their callers run at the full-route spot acting-login until S7c's
+  // signed acting login lets the readers trust a signed value.
+  'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
+    "the workspaces area's Moderator tick (workspaces.ts setModerator): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set login and workspace made a member Moderator on the narrow role before",
+  'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
+    "a chat's block or unpair (telegram pairing.ts setChatPairing): needs the acting login, so it runs at the full-route spot acting-login (0321)",
+  'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
+    "the keys, connectors and settings areas' structure items (gateway/structure-item.ts): need the acting login, so they run at the full-route spot acting-login (0321)",
+  'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
+    "an assistant's delete (gateway/spot-definers.ts deleteAgentOnNarrow): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set acting login deleted an assistant on the narrow role before",
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
   'public.mantle_bridge_login(uuid)':
@@ -356,7 +360,8 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "an app's trash restore or purge (content tables): the app-trash reason, routed full",
   // The workspace and share writers: a login's act in its own scope, or
   // system work, never a narrow statement (measured; the one measured,
-  // mantle_ws_set_moderator, is in NARROW_SYSTEM_FUNCTIONS).
+  // mantle_ws_set_moderator, runs at the full-route spot acting-login since
+  // 0321, listed above).
   'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)': 'workspace_users: never a narrow statement',
   'public.mantle_ws_remove_user(uuid,uuid,uuid)': 'workspace_users: never a narrow statement',
   'public.mantle_ws_create(uuid,uuid,text,text)': 'workspaces: never a narrow statement',

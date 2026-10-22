@@ -13,7 +13,7 @@
 import { sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema/index';
-import { actingLoginNow } from '../viewer';
+import { actingLoginNow, onFullSystemRoute } from '../viewer';
 import { narrowRouteNow } from './pools';
 import { withSystemTx } from './system-tx';
 
@@ -50,12 +50,16 @@ export async function deleteAgentOnNarrow(
   conversation: boolean,
 ): Promise<AgentDeleteCounts | undefined> {
   if (!narrowRouteNow()) return undefined;
-  return withSystemTx(async (tx) => {
-    const rows = (await tx.execute(
-      sql`select found, messages, digests from mantle_agent_delete(${actingLoginNow()}::uuid,
+  // The definer needs the acting login, which the identity readers answer
+  // only off the narrow role (0321): the full-route spot acting-login.
+  return onFullSystemRoute('acting-login', () =>
+    withSystemTx(async (tx) => {
+      const rows = (await tx.execute(
+        sql`select found, messages, digests from mantle_agent_delete(${actingLoginNow()}::uuid,
             ${ownerId}::uuid, ${agentId}::uuid, ${conversation})`,
-    )) as unknown as { found: boolean; messages: number; digests: number }[];
-    const r = rows[0];
-    return r?.found ? { messages: Number(r.messages), digests: Number(r.digests) } : null;
-  });
+      )) as unknown as { found: boolean; messages: number; digests: number }[];
+      const r = rows[0];
+      return r?.found ? { messages: Number(r.messages), digests: Number(r.digests) } : null;
+    }),
+  );
 }

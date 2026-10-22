@@ -64,7 +64,9 @@ export type StructureInsert = {
  * gateway sends.
  */
 function narrowTx<T>(fn: (tx: Tx, login: string | null) => Promise<T>): Promise<T> {
-  return withSystemTx((tx) => fn(tx, actingLoginNow()));
+  // The definer needs the acting login, which the identity readers answer
+  // only off the narrow role (0321): the full-route spot acting-login.
+  return onFullSystemRoute('acting-login', () => withSystemTx((tx) => fn(tx, actingLoginNow())));
 }
 
 /**

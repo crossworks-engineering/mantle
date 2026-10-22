@@ -52,6 +52,7 @@ import {
   liveWorkspaceSql,
   loginAreas,
   loginHasArea,
+  onFullSystemRoute,
   pgConstraint,
   pgErrorCode,
   scopeHasArea,
@@ -1120,11 +1121,16 @@ export async function setModerator(
   // The workspace read in the caller's scope first (its 404), as addUser
   // and removeUser read it; the definer checks again under its lock.
   const wid = (await seeWorkspace(caller, id)).row.id;
-  await db.transaction((tx) =>
-    wsDefiner(
-      tx,
-      sql`select "public"."mantle_ws_set_moderator"(${caller.anchorId}::uuid, ${wid}::uuid,
-                   ${loginParam(loginId)}::uuid, ${moderator}, null)`,
+  // The definer needs the acting login, which the identity readers answer
+  // only off the narrow role (0321): the full-route spot acting-login on an
+  // Admin area's narrow exit; in a login's scope it runs as it is.
+  await onFullSystemRoute('acting-login', () =>
+    db.transaction((tx) =>
+      wsDefiner(
+        tx,
+        sql`select "public"."mantle_ws_set_moderator"(${caller.anchorId}::uuid, ${wid}::uuid,
+                     ${loginParam(loginId)}::uuid, ${moderator}, null)`,
+      ),
     ),
   );
   return reread(caller, wid);
