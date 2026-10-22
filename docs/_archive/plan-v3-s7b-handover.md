@@ -1240,7 +1240,61 @@ keeps it in the request.
 
 ### Gates
 
-GATES_PLACEHOLDER
+Mac, Node 26, DATABASE_URL unset: `pnpm format:check` 0, `pnpm docs:check`
+0, `pnpm arch:check` 0, `pnpm lint` 0 (one warning, an unused disable in
+contact-sharing-routes.db.test.ts, not this round's), `pnpm -r typecheck`
+0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm test:serial` 0
+(1 file skipped: no database), `vitest run server packages eslint-rules` 0
+on the head (871 files passed, 286 skipped; 11299 tests passed). The first
+gate run had format 1 (docs.ts), lint 1 (two unused imports in the new
+cell file) and typecheck 2 (the secret_create test's mocked insert took no
+argument); each fixed, then 0.
+
+Workstation, a fresh clone of the pushed commit per suite (c2fd9c4a6; the
+head ffa45666a changes only structure-item.db.test.ts, see below), one
+pgvector pg18 container each (label mantle.test=s7b-b2, max_connections=450,
+port checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                         | Exit | Counts                              |
+| --------------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                     | 0    | 579 files; 6388 passed, 1 skipped   |
+| full DB vitest, shard 2/2                     | 0    | 578 files; 7864 passed              |
+| test:actor-off                                | 0    | 143 files; 1445 passed, 1 skipped   |
+| test:actor-on                                 | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                                  | 0    | 46 files; 583 passed                |
+| test:matrix (rerun beside main, see below)    | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full                     | 0    | 296 files; 2939 passed, 1 skipped   |
+| test:serial                                   | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0 (head) | 0    | 1157 files; 14252 passed, 1 skipped |
+| structure-item.db.test.ts (head)              | 0    | 6 passed                            |
+| the touched files, targeted (10, d84fbd886)   | 0    | 85 passed                           |
+| the drill (N-1: b1 against the b2 schema)     | 0    | every migrate step 0 (below)        |
+
+test:matrix first ran beside five other lanes and failed only its time
+budget (the tool cells 212.3 s against 210 s), as rounds before it met;
+main 7f2d12292 and the branch c2fd9c4a6 then ran side by side, two lanes:
+both 0, the tool cells 145.1 s and 145.2 s, and the same 46 known cell
+lines (a8-known-failures.ts) in both logs. The first switch-off run on
+c2fd9c4a6 failed only the new file's three gateway cells (1 file, 3 of
+14253): they assumed the switch on. The file now forces the narrow route
+(setNarrowSystemForTests, as narrow-login.db.test.ts does) and the
+switch-off run on the head is the row above. The first targeted run (on
+beee04297) failed six cells, every one "only the acting login": the
+definer calls ran inside withSystemTx, which hides a request exit's route
+and acting login (above); d84fbd886 fixed it in the gateway.
+
+The drill (main 7f2d12292 = b1, and the branch), each migrate step: ledger
+rows / md5 of mantle_tg_chat_set's body / the user role's rolconnlimit /
+the narrow role's rolcanlogin: init and migrate with main 313 / b8266526...
+/ 30 / true; the branch 315 / c1ab8138... / 54 / true; main again (N-1
+boot on the b2 schema) 0, 315 / c1ab8138... / 30 / true, the narrow login
+and the superuser each running their own acting login and refused another
+(42501); the branch again, switch unset and per-database mode each 0, as
+round 1's. N-1 never calls mantle_structure_item, so rolling b2 back to
+b1 needs no revert.
 
 ### Left for the next round, in the CEO's order
 
