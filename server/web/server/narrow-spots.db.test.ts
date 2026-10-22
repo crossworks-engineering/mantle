@@ -134,6 +134,10 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     const err = await exit(() => settle(a.id)).catch((e: unknown) => e);
     expect(m.pgErrorCode(err)).toBe('42501');
     expect(await spaceState(a.items)).toBe(before);
+    // The refusal is this cell's own: drained, so the run's denial check
+    // (vitest.setup.ts) does not count it.
+    const ts = await import('@mantle/db/test-support');
+    expect(ts.takeNarrowDenials().length).toBeGreaterThan(0);
     // The product path: the role change's transaction at login-credential.
     const nSpot = await atSpot(() => settle(a.id));
     const nFull = await exitFull(() => settle(b.id));
@@ -260,7 +264,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     const shape = (o: object) =>
       Object.fromEntries(
         Object.entries(o).filter(
-          ([k]) => !/(^id$|Id$|At$|hash|code|token|email|displayName|nodeId|title)/i.test(k),
+          ([k]) => !/(^id$|Id$|At$|hash|code|token|email|displayName|nodeId|title|url)/i.test(k),
         ),
       );
     // A phone pairing code (login-self in the product; the same spot).

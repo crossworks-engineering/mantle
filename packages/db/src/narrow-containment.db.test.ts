@@ -220,8 +220,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
              values (${device}, ${member}, now() + interval '1 day', now())`;
     await su`insert into member_invites (id, owner_id, email, code_hash, expires_at, revoked_at)
              values (${invite}, ${brain}, ${`${invite}@example.test`}, ${invite}, now() + interval '1 day', now())`;
-    await su`insert into mantle_peers (id, owner_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
-             values (${peer}, ${brain}, 'p', 'https://p.example.test', ${peer}, ${admin})`;
+    const [pn] = await su<{ id: string }[]>`
+      insert into nodes (owner_id, type, title, path) values (${brain}, 'note', 'peer', 'notes')
+      returning id::text as id`;
+    await su`insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
+             values (${peer}, ${brain}, ${pn!.id}, 'p', 'https://p.example.test', ${peer}, ${admin})`;
     const state = async () =>
       (
         await su<{ h: string }[]>`
