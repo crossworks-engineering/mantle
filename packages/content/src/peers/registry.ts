@@ -16,6 +16,7 @@ import {
   db,
   mantlePeers,
   nodes,
+  onFullSystemRoute,
   type MantlePeer,
   deleteStructureItems,
   insertStructureItem,
@@ -154,22 +155,28 @@ export async function createPeer(
   const sealed = outbound ? seal(outbound, peerId) : null;
   const inboundToken = mintInboundToken();
 
-  const [row] = await db
-    .insert(mantlePeers)
-    .values({
-      id: peerId,
-      ownerId,
-      nodeId: node.id,
-      displayName,
-      baseUrl,
-      outboundTokenEnc: sealed?.ciphertext ?? null,
-      outboundTokenVersion: sealed?.keyVersion ?? 1,
-      inboundTokenHash: hashToken(inboundToken),
-      status: outbound ? 'active' : 'pending',
-      enabled: true,
-      createdBy: input.createdBy ?? null,
-    })
-    .returning();
+  // The peer's row holds its way in (the inbound token's hash, enabled,
+  // status): the narrow login may not make one (no INSERT on mantle_peers),
+  // so on the connectors area's exit it runs at the full-route spot
+  // peer-access, as every write of those columns does (docs/runtime-role.md).
+  const [row] = await onFullSystemRoute('peer-access', () =>
+    db
+      .insert(mantlePeers)
+      .values({
+        id: peerId,
+        ownerId,
+        nodeId: node.id,
+        displayName,
+        baseUrl,
+        outboundTokenEnc: sealed?.ciphertext ?? null,
+        outboundTokenVersion: sealed?.keyVersion ?? 1,
+        inboundTokenHash: hashToken(inboundToken),
+        status: outbound ? 'active' : 'pending',
+        enabled: true,
+        createdBy: input.createdBy ?? null,
+      })
+      .returning(),
+  );
   if (!row) throw new Error('createPeer: peer insert returned no row');
   return { peer: rowOf(row), inboundToken };
 }
@@ -217,19 +224,21 @@ export async function rotateInboundToken(
   opts: { unlessBoundTo?: string } = {},
 ): Promise<string | null> {
   const token = mintInboundToken();
-  const [row] = await db
-    .update(mantlePeers)
-    .set({ inboundTokenHash: hashToken(token), updatedAt: new Date() })
-    .where(
-      and(
-        eq(mantlePeers.id, id),
-        eq(mantlePeers.ownerId, ownerId),
-        opts.unlessBoundTo
-          ? sql`${mantlePeers.actsAsLoginId} is distinct from ${opts.unlessBoundTo}::uuid`
-          : undefined,
-      ),
-    )
-    .returning({ id: mantlePeers.id });
+  const [row] = await onFullSystemRoute('peer-access', () =>
+    db
+      .update(mantlePeers)
+      .set({ inboundTokenHash: hashToken(token), updatedAt: new Date() })
+      .where(
+        and(
+          eq(mantlePeers.id, id),
+          eq(mantlePeers.ownerId, ownerId),
+          opts.unlessBoundTo
+            ? sql`${mantlePeers.actsAsLoginId} is distinct from ${opts.unlessBoundTo}::uuid`
+            : undefined,
+        ),
+      )
+      .returning({ id: mantlePeers.id }),
+  );
   return row ? token : null;
 }
 
@@ -245,16 +254,19 @@ export async function setOutboundToken(
   const token = outboundToken.trim();
   if (!token) throw new InputError('outboundToken required');
   const { ciphertext, keyVersion } = seal(token, id);
-  const [row] = await db
-    .update(mantlePeers)
-    .set({
-      outboundTokenEnc: ciphertext,
-      outboundTokenVersion: keyVersion,
-      status: sql`case when ${mantlePeers.status} = 'pending' then 'active' else ${mantlePeers.status} end`,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
-    .returning({ id: mantlePeers.id });
+  // status (pending to active) is part of the way in: peer-access.
+  const [row] = await onFullSystemRoute('peer-access', () =>
+    db
+      .update(mantlePeers)
+      .set({
+        outboundTokenEnc: ciphertext,
+        outboundTokenVersion: keyVersion,
+        status: sql`case when ${mantlePeers.status} = 'pending' then 'active' else ${mantlePeers.status} end`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+      .returning({ id: mantlePeers.id }),
+  );
   return !!row;
 }
 
@@ -263,19 +275,21 @@ export async function setPeerEnabled(
   id: string,
   enabled: boolean,
 ): Promise<boolean> {
-  const [row] = await db
-    .update(mantlePeers)
-    .set({
-      enabled,
-      // Re-enabling restores 'pending' (not 'active') while the outbound token
-      // is still missing, so the "paste their token" affordance comes back.
-      status: enabled
-        ? sql`case when ${mantlePeers.outboundTokenEnc} is null then 'pending' else 'active' end`
-        : 'revoked',
-      updatedAt: new Date(),
-    })
-    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
-    .returning({ id: mantlePeers.id });
+  const [row] = await onFullSystemRoute('peer-access', () =>
+    db
+      .update(mantlePeers)
+      .set({
+        enabled,
+        // Re-enabling restores 'pending' (not 'active') while the outbound token
+        // is still missing, so the "paste their token" affordance comes back.
+        status: enabled
+          ? sql`case when ${mantlePeers.outboundTokenEnc} is null then 'pending' else 'active' end`
+          : 'revoked',
+        updatedAt: new Date(),
+      })
+      .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+      .returning({ id: mantlePeers.id }),
+  );
   return !!row;
 }
 
@@ -361,19 +375,22 @@ export async function setPeerAccess(
                 then ${minted.hash} else ${mantlePeers.inboundTokenHash} end)` as unknown as string;
     set.createdBy = access.adoptBy;
   }
-  const [row] = await db
-    .update(mantlePeers)
-    .set(set)
-    .where(
-      and(
-        eq(mantlePeers.id, id),
-        eq(mantlePeers.ownerId, ownerId),
-        access.unlessBoundTo
-          ? sql`${mantlePeers.actsAsLoginId} is distinct from ${access.unlessBoundTo}::uuid`
-          : undefined,
-      ),
-    )
-    .returning();
+  // Who the peer acts as, its Write switch, risky tools and token: peer-access.
+  const [row] = await onFullSystemRoute('peer-access', () =>
+    db
+      .update(mantlePeers)
+      .set(set)
+      .where(
+        and(
+          eq(mantlePeers.id, id),
+          eq(mantlePeers.ownerId, ownerId),
+          access.unlessBoundTo
+            ? sql`${mantlePeers.actsAsLoginId} is distinct from ${access.unlessBoundTo}::uuid`
+            : undefined,
+        ),
+      )
+      .returning(),
+  );
   if (!row) return null;
   const rekeyed = !!minted && row.inboundTokenHash === minted.hash;
   return { peer: rowOf(row), inboundToken: rekeyed ? minted!.token : null };

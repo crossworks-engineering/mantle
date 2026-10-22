@@ -116,7 +116,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
         from space_items si where si.node_id = any(${items}::uuid[])`
     )[0]!.s;
 
-  it('a promotion settles the personal space through the definer, equal to the full route', async () => {
+  it("a promotion settles the personal space at the role change's spot, never on the narrow login", async () => {
     const a = await promotedMember();
     const b = await promotedMember();
     const settle = (target: string) =>
@@ -124,50 +124,61 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     const sessionOf = async () =>
       ((await m.db.execute(sql`select session_user::text as u`)) as unknown as { u: string }[])[0]!
         .u;
+    const atSpot = <T>(fn: () => Promise<T>) =>
+      exit(() => m.onFullSystemRoute('login-credential', fn));
     expect(await exit(sessionOf)).toBe(rr.NARROW_ROLE);
-    expect(await exitFull(sessionOf)).not.toBe(rr.NARROW_ROLE);
-    const nOn = await exit(() => settle(a.id));
+    expect(await atSpot(sessionOf)).not.toBe(rr.NARROW_ROLE);
+    const before = await spaceState(a.items);
+    // The narrow login may not run the definer (dropped from the narrow
+    // allowlist): refused whole, nothing settled.
+    const err = await exit(() => settle(a.id)).catch((e: unknown) => e);
+    expect(m.pgErrorCode(err)).toBe('42501');
+    expect(await spaceState(a.items)).toBe(before);
+    // The product path: the role change's transaction at login-credential.
+    const nSpot = await atSpot(() => settle(a.id));
     const nFull = await exitFull(() => settle(b.id));
-    expect(nOn).toBe(2);
+    expect(nSpot).toBe(2);
     expect(nFull).toBe(2);
     const on = await spaceState(a.items);
     expect(on).toBe('private/draft/true/0,private/draft/true/0,private/draft/true/0');
     expect(await spaceState(b.items)).toBe(on);
     // Again: nothing left to settle, on both.
-    expect(await exit(() => settle(a.id))).toBe(0);
+    expect(await atSpot(() => settle(a.id))).toBe(0);
     expect(await exitFull(() => settle(b.id))).toBe(0);
   });
 
-  it('the promotion definer refuses a target that is no admin, another or no acting login, a login without the area', async () => {
+  it('the promotion definer: the narrow login may not run it; a system session keeps its rule', async () => {
     const member = await promotedMember();
-    await su`update auth.users set role = 'member' where id = ${member.id}`;
-    const call = (login: string | null, target: string) =>
-      nl.begin(async (t) => {
-        await t`select set_config('mantle.acting_login', ${admin}, true)`;
-        return t`select mantle_space_settle_promotion(${login}::uuid, ${target}::uuid)`;
-      });
     const code = (p: Promise<unknown>) =>
       p.then(
         () => 'ran',
         (e: { code?: string }) => e.code,
       );
+    // As the narrow login: no EXECUTE, whatever the acting login.
+    const narrowCall = (login: string | null) =>
+      nl.begin(async (t) => {
+        await t`select set_config('mantle.acting_login', ${admin}, true)`;
+        return t`select mantle_space_settle_promotion(${login}::uuid, ${member.id}::uuid)`;
+      });
+    for (const login of [admin, limited, null]) expect(await code(narrowCall(login))).toBe('42501');
+    // A system session (the superuser): the definer's own rule, unchanged.
+    await su`update auth.users set role = 'member' where id = ${member.id}`;
+    const call = (login: string | null, target: string) =>
+      su.begin(async (t) => {
+        await t`select set_config('mantle.acting_login', ${admin}, true)`;
+        return t`select mantle_space_settle_promotion(${login}::uuid, ${target}::uuid)`;
+      });
     expect(await code(call(admin, member.id))).toBe('42501');
     await su`update auth.users set role = 'admin' where id = ${member.id}`;
     expect(await code(call(limited, member.id))).toBe('42501');
     expect(await code(call(null, member.id))).toBe('42501');
     expect(await code(call(admin, member.id))).toBe('ran');
-    // A login without the users area, through the app's exit.
-    const err = await exit(
-      () => m.db.transaction((tx) => content.settleSpaceOnPromotion(tx, member.id)),
-      limited,
-    ).catch((e: unknown) => e);
-    expect(m.pgErrorCode(err)).toBe('42501');
     const [g] = await su<{ w: boolean; u: boolean; n: boolean; p: boolean }[]>`
       select has_function_privilege('mantle_write_user', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as w,
              has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as n,
              has_function_privilege('public', 'public.mantle_space_settle_promotion(uuid,uuid)', 'EXECUTE') as p`;
-    expect(g).toEqual({ w: false, u: false, n: true, p: false });
+    expect(g).toEqual({ w: false, u: false, n: false, p: false });
   });
 
   /** An assistant with two messages, a digest and a chat archive summary. */
@@ -241,5 +252,71 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     expect(g).toEqual({ w: false, u: false, n: true });
     expect(await code(call(admin))).toBe('ran');
     expect((await agentState(a)).a).toBe(0);
+  });
+
+  it('round 5: the rights writes run at their spots on the narrow exit, each answer equal to the full route', async () => {
+    const pair = await import('../lib/pair-code');
+    /** A row less what is minted fresh each call (ids, stamps, hashes, codes, names). */
+    const shape = (o: object) =>
+      Object.fromEntries(
+        Object.entries(o).filter(
+          ([k]) => !/(^id$|Id$|At$|hash|code|token|email|displayName|nodeId|title)/i.test(k),
+        ),
+      );
+    // A phone pairing code (login-self in the product; the same spot).
+    const pOn = await exit(() => pair.issuePairCode(admin));
+    const pFull = await exitFull(() => pair.issuePairCode(admin));
+    expect(Object.keys(pOn).sort()).toEqual(Object.keys(pFull).sort());
+    const [pc] = await su<{ n: number }[]>`
+      select count(*)::int as n from pairing_codes where id = any(${[pOn.id, pFull.id]}::uuid[])`;
+    expect(pc!.n).toBe(2);
+    // A member invite, then its revoke on the narrow login.
+    const tag = randomUUID().slice(0, 8);
+    const iOn = await exit(() =>
+      content.createMemberInvite(brain, { email: `on-${tag}@example.test`, createdBy: admin }),
+    );
+    const iFull = await exitFull(() =>
+      content.createMemberInvite(brain, { email: `full-${tag}@example.test`, createdBy: admin }),
+    );
+    expect(shape(iOn.invite)).toEqual(shape(iFull.invite));
+    expect(await exit(() => content.revokeMemberInvite(brain, iOn.invite.id))).toBe(true);
+    expect(await exitFull(() => content.revokeMemberInvite(brain, iFull.invite.id))).toBe(true);
+    // A peer: made, bound to the admin with Write on, its item shared, the
+    // share revoked (narrow), the binding ended by a session end's unbind.
+    const peerFlow = async (run: <T>(fn: () => Promise<T>) => Promise<T>, name: string) => {
+      const made = await run(() =>
+        content.createPeer(brain, {
+          displayName: name,
+          baseUrl: `https://${name}.example.test`,
+          createdBy: admin,
+        }),
+      );
+      const bound = await run(() =>
+        content.setPeerAccess(brain, made.peer.id, {
+          actsAs: { loginId: admin },
+          writeEnabled: true,
+        }),
+      );
+      const share = await run(() => content.grantPeerShare(brain, made.peer.id, made.peer.nodeId));
+      const revoked = await run(() =>
+        content.revokePeerShare(brain, made.peer.id, made.peer.nodeId),
+      );
+      const rotated = await run(() => content.rotateInboundToken(brain, made.peer.id));
+      const enabled = await run(() => content.setPeerEnabled(brain, made.peer.id, false));
+      return {
+        made: shape(made.peer),
+        token: typeof made.inboundToken,
+        bound: shape(bound!.peer),
+        share: share ? shape(share) : null,
+        revoked,
+        rotated: typeof rotated,
+        enabled,
+      };
+    };
+    const on = await peerFlow(exit, `on-${tag}`);
+    const full = await peerFlow(exitFull, `full-${tag}`);
+    expect(on).toEqual(full);
+    expect(on.bound).toMatchObject({ writeEnabled: true });
+    expect(on.revoked).toBe(true);
   });
 });

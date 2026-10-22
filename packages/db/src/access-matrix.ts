@@ -312,6 +312,41 @@ export const NARROW_COLUMN_RIGHTS: Readonly<
     delete: false,
     why: 'the users area revokes a device and ends sessions. A device token is minted at sign-in or pairing, never by narrow work',
   },
+  'public.pairing_codes': {
+    update: [],
+    delete: true,
+    why: "the users area's lockout removes a login's unclaimed codes (login-update.ts). A code is minted at the full-route spot pair-code: it signs a phone in as its login",
+  },
+  'public.oauth_auth_codes': {
+    update: [],
+    delete: true,
+    why: "the users area ends a login's sessions: its codes removed (endLoginSessions, login-update.ts). A code is minted at the full-route spot oauth-code: it exchanges for the login's token",
+  },
+  'public.member_invites': {
+    update: ['revoked_at'],
+    delete: false,
+    why: 'the users area revokes an invite (revokeMemberInvite; 0318: never cleared). An invite is minted at the full-route spot member-invite: its code redeems into a login',
+  },
+  'public.mantle_peers': {
+    update: ['acts_as_login_id', 'ended_acts_as_login_id', 'last_contacted_at', 'updated_at'],
+    delete: false,
+    why: "peer_call (admin-area) stamps a peer contacted; the users area's session end unbinds the peers acting as the login (peer-unbind.ts; 0318: acts_as_login_id only to NULL, ended_acts_as_login_id only from it). A peer's row, inbound token, enable, status, binding, Write switch and risky tools run at the full-route spot peer-access; its delete is the structure definer's cascade",
+  },
+  'public.peer_shares': {
+    update: ['revoked_at'],
+    delete: false,
+    why: 'the connectors area revokes a share (revokePeerShare; 0318: never cleared). A share is granted at the full-route spot peer-share',
+  },
+  'public.peer_share_scopes': {
+    update: ['revoked_at'],
+    delete: false,
+    why: 'the connectors area revokes a type share (revokePeerTypeShare; 0318: never cleared). A type share is granted at the full-route spot peer-share',
+  },
+  'public.telegram_chats': {
+    update: [],
+    delete: false,
+    why: "no narrow statement writes a chat itself (measured): a block, an unpair and an assistant's delete go through their definers (mantle_tg_chat_set, mantle_agent_delete); a chat paired to a login (allowlist_status, login_id) runs at the full-route spot telegram-pair",
+  },
 });
 
 /** A table name that reads as a credential or a right: it must be in

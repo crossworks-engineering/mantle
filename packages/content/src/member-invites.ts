@@ -26,6 +26,7 @@ import {
   db,
   memberInvites,
   nodeComments,
+  onFullSystemRoute,
   nodes,
   teamAccessLog,
 } from '@mantle/db';
@@ -230,36 +231,42 @@ export async function createMemberInvite(
 
   const code = generateInviteCode();
   const expiresAt = new Date(now.getTime() + MEMBER_INVITE_TTL_MS);
-  const row = await db.transaction(async (tx) => {
-    const sameTarget = input.contactId
-      ? or(eq(memberInvites.contactId, input.contactId), eq(memberInvites.email, email))
-      : eq(memberInvites.email, email);
-    await tx
-      .update(memberInvites)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(memberInvites.ownerId, ownerId),
-          isNull(memberInvites.redeemedAt),
-          isNull(memberInvites.revokedAt),
-          sameTarget,
-        ),
-      );
-    const [inserted] = await tx
-      .insert(memberInvites)
-      .values({
-        ownerId,
-        contactId: input.contactId ?? null,
-        email,
-        displayName,
-        codeHash: hashInviteCode(code),
-        createdBy: input.createdBy,
-        createdAt: now,
-        expiresAt,
-      })
-      .returning();
-    return inserted!;
-  });
+  // An invite is a way in (its code redeems into a login): the narrow
+  // login may not mint one (no INSERT on member_invites), so on the users
+  // area's exit the transaction runs at the full-route spot member-invite
+  // (docs/runtime-role.md).
+  const row = await onFullSystemRoute('member-invite', () =>
+    db.transaction(async (tx) => {
+      const sameTarget = input.contactId
+        ? or(eq(memberInvites.contactId, input.contactId), eq(memberInvites.email, email))
+        : eq(memberInvites.email, email);
+      await tx
+        .update(memberInvites)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(memberInvites.ownerId, ownerId),
+            isNull(memberInvites.redeemedAt),
+            isNull(memberInvites.revokedAt),
+            sameTarget,
+          ),
+        );
+      const [inserted] = await tx
+        .insert(memberInvites)
+        .values({
+          ownerId,
+          contactId: input.contactId ?? null,
+          email,
+          displayName,
+          codeHash: hashInviteCode(code),
+          createdBy: input.createdBy,
+          createdAt: now,
+          expiresAt,
+        })
+        .returning();
+      return inserted!;
+    }),
+  );
   return { invite: rowOf(row, contactName, now), code };
 }
 

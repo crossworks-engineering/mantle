@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   db,
+  onFullSystemRoute,
   authUsers,
   mobileTokens,
   pairingCodes,
@@ -62,13 +63,19 @@ export async function issuePairCode(userId: string, now = new Date()): Promise<I
   const code = generatePairCode();
   const expiresAt = new Date(now.getTime() + PAIR_CODE_TTL_SEC * 1000);
   const staleBefore = new Date(now.getTime() - 60 * 60 * 1000);
-  await db
-    .delete(pairingCodes)
-    .where(and(eq(pairingCodes.userId, userId), lt(pairingCodes.expiresAt, staleBefore)));
-  const [row] = await db
-    .insert(pairingCodes)
-    .values({ codeHash: hashPairCode(code), userId, expiresAt })
-    .returning({ id: pairingCodes.id });
+  // A code signs a phone in as the login: a way in, which the narrow login
+  // may not mint (it holds no INSERT on pairing_codes); on the login-self
+  // exit it runs at the full-route spot pair-code (docs/runtime-role.md).
+  const row = await onFullSystemRoute('pair-code', async () => {
+    await db
+      .delete(pairingCodes)
+      .where(and(eq(pairingCodes.userId, userId), lt(pairingCodes.expiresAt, staleBefore)));
+    const [r] = await db
+      .insert(pairingCodes)
+      .values({ codeHash: hashPairCode(code), userId, expiresAt })
+      .returning({ id: pairingCodes.id });
+    return r;
+  });
   return { id: row!.id, code, expiresAt };
 }
 

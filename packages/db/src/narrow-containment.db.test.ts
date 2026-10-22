@@ -151,6 +151,122 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     expect(await rights()).toBe(before);
   });
 
+  it('the open rights tables (round 5): every right and every insert refused, the measured columns allowed', async () => {
+    const before = await rights();
+    const refused = [
+      `insert into pairing_codes default values`,
+      `update pairing_codes set claimed_at = now() where false`,
+      `update pairing_codes set user_id = '${member}' where false`,
+      `insert into oauth_auth_codes default values`,
+      `update oauth_auth_codes set actor_id = '${member}' where false`,
+      `insert into member_invites default values`,
+      `update member_invites set redeemed_login_id = '${member}' where false`,
+      `update member_invites set expires_at = now() where false`,
+      `delete from member_invites where false`,
+      `insert into mantle_peers default values`,
+      `update mantle_peers set inbound_token_hash = 'x' where false`,
+      `update mantle_peers set enabled = true where false`,
+      `update mantle_peers set status = 'active' where false`,
+      `update mantle_peers set write_enabled = true where false`,
+      `update mantle_peers set allowed_risky_tools = '{}' where false`,
+      `update mantle_peers set created_by = '${member}' where false`,
+      `update mantle_peers set base_url = 'https://x.example.test' where false`,
+      `delete from mantle_peers where false`,
+      `insert into peer_shares default values`,
+      `update peer_shares set node_id = null where false`,
+      `insert into peer_share_scopes default values`,
+      `update peer_share_scopes set node_type = 'note' where false`,
+      `insert into telegram_chats default values`,
+      `update telegram_chats set login_id = '${member}' where false`,
+      `update telegram_chats set allowlist_status = 'allowed' where false`,
+      `delete from telegram_chats where false`,
+    ];
+    for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
+    for (const s of [
+      `delete from pairing_codes where false`,
+      `delete from oauth_auth_codes where false`,
+      `update member_invites set revoked_at = now() where false`,
+      `update mantle_peers set last_contacted_at = now(), updated_at = now() where false`,
+      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where false`,
+      `update peer_shares set revoked_at = now() where false`,
+      `update peer_share_scopes set revoked_at = now() where false`,
+    ]) {
+      expect(await run(nl, [s]), s).toBe('ok');
+    }
+    // No INSERT on any of them, at the table or a column.
+    for (const t of [
+      'pairing_codes',
+      'oauth_auth_codes',
+      'member_invites',
+      'mantle_peers',
+      'peer_shares',
+      'peer_share_scopes',
+      'telegram_chats',
+    ]) {
+      const [g] = await su<{ i: boolean }[]>`
+        select has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')
+            or has_any_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT') as i`;
+      expect(g!.i, t).toBe(false);
+    }
+    expect(await rights()).toBe(before);
+  });
+
+  it('0318: a revoke, a disable and a session end only go one way on the narrow login; the system pool is not held', async () => {
+    const peer = randomUUID();
+    const invite = randomUUID();
+    const device = randomUUID();
+    await su`update auth.users set disabled_at = now() where id = ${member}`;
+    await su`insert into mobile_tokens (id, user_id, expires_at, revoked_at)
+             values (${device}, ${member}, now() + interval '1 day', now())`;
+    await su`insert into member_invites (id, owner_id, email, code_hash, expires_at, revoked_at)
+             values (${invite}, ${brain}, ${`${invite}@example.test`}, ${invite}, now() + interval '1 day', now())`;
+    await su`insert into mantle_peers (id, owner_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
+             values (${peer}, ${brain}, 'p', 'https://p.example.test', ${peer}, ${admin})`;
+    const state = async () =>
+      (
+        await su<{ h: string }[]>`
+        select md5(concat_ws('#',
+          (select disabled_at::text || session_epoch::text from auth.users where id = ${member}),
+          (select revoked_at::text from mobile_tokens where id = ${device}),
+          (select revoked_at::text from member_invites where id = ${invite}),
+          (select coalesce(acts_as_login_id::text, '-') || coalesce(ended_acts_as_login_id::text, '-')
+             from mantle_peers where id = ${peer}))) as h`
+      )[0]!.h;
+    const before = await state();
+    for (const s of [
+      `update auth.users set disabled_at = null where id = '${member}'`,
+      `update auth.users set session_epoch = session_epoch - 1 where id = '${member}'`,
+      `update mobile_tokens set revoked_at = null where id = '${device}'`,
+      `update member_invites set revoked_at = null where id = '${invite}'`,
+      `update mantle_peers set acts_as_login_id = '${member}' where id = '${peer}'`,
+      `update mantle_peers set ended_acts_as_login_id = '${member}' where id = '${peer}'`,
+    ]) {
+      expect(await run(nl, [s]), s).toBe('42501');
+    }
+    expect(await state()).toBe(before);
+    // The directions narrow work takes, each allowed.
+    for (const s of [
+      `update auth.users set disabled_at = now() where id = '${member}'`,
+      `update auth.users set session_epoch = session_epoch + 1 where id = '${member}'`,
+      `update mobile_tokens set revoked_at = now() where id = '${device}'`,
+      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where id = '${peer}'`,
+    ]) {
+      expect(await run(nl, [s]), s).toBe('ok');
+    }
+    // The system pool (here the superuser) is not held by the rules.
+    expect(
+      await run(su, [
+        `update auth.users set disabled_at = null, session_epoch = 0 where id = '${member}'`,
+        `update mobile_tokens set revoked_at = null where id = '${device}'`,
+        `update mantle_peers set acts_as_login_id = '${member}' where id = '${peer}'`,
+      ]),
+    ).toBe('ok');
+    const [t] = await su<{ n: number }[]>`
+      select count(*)::int as n from pg_trigger where tgname = 'mantle_narrow_one_way_trg'`;
+    expect(t!.n).toBe(8);
+    await su`update auth.users set disabled_at = null where id = ${member}`;
+  });
+
   it("the audit's chain: a member raised, bridged into Admin, then a structure item as it: refused at each step", async () => {
     const before = await rights();
     // A raw narrow session may name any acting login: a mistake guard only.

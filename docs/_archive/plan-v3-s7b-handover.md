@@ -1815,3 +1815,138 @@ N-1 never calls the new functions; its migrate grants its own matrix back
    integrity-delete and reembed stay for S7c), the ONE area-route sweep,
    the default flip last, the pins and the box counts list (round 3's
    "Left for the next round" 2 to 5).
+
+## Part b2, round 5: the open rights tables (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round does the CEO's round 5 items 1 to 3 for every open table but agents
+and tool_groups (measured, below; their move is left). The area-route
+sweep and the default flip are left. The switch's default is unchanged.
+
+### The measurement (CEO item 1)
+
+The full DB vitest (both shards) and test:actor-off, switch on, on
+748c6ec71, each on a pg18 container whose template1 and main database
+carried an event trigger that put a row trigger on each open table
+(~/s7b-b2/audit.sql, ~/s7b-b2/asuite.sh): every row the narrow login
+wrote, with its changed columns, current_user (the narrow role itself, or
+a definer's owner) and its actor. Direct writes by the narrow role, per
+table and reason:
+
+| Table               | Reason (actor)                   | Rows | Writes                                                                                                                    |
+| ------------------- | -------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------- |
+| pairing_codes       | system:http:login-self           | 4    | INSERT (issuePairCode)                                                                                                    |
+| oauth_auth_codes    | (none this run; round 4: DELETE) | 0    | the users area's session end deletes codes (round 4's 38)                                                                 |
+| member_invites      | (none driven narrow)             | 0    | code path: the users area's invite (INSERT) and revoke (revoked_at)                                                       |
+| mantle_peers        | system:http:admin-area           | 32   | INSERT (10); inbound_token_hash, acts_as_login_id, write_enabled, allowed_risky_tools, created_by, status, outbound token |
+| mantle_peers        | system:admin-area (peer_call)    | 26   | last_contacted_at                                                                                                         |
+| peer_shares, scopes | (none driven narrow)             | 0    | code path: the connectors area's grant (INSERT) and revoke (revoked_at)                                                   |
+| telegram_chats      | system:login-telegram            | 5    | allowlist_status, login_id, pairing_code, pairing_expires_at (pairChatWithCode)                                           |
+| telegram_chats      | definers only otherwise          | 12   | mantle_tg_chat_set and mantle_agent_delete (current_user the owner): no direct narrow write                               |
+| agents              | system:http:admin-area           | 1    | INSERT (the assistants area's create)                                                                                     |
+| agents              | system:admin-area                | 1    | tool_group_slugs (agent_grant_tool_group)                                                                                 |
+| agents              | definers (attach, delete)        | 8    | workspace_id, DELETE                                                                                                      |
+| tool_groups         | system:admin-area                | 15   | INSERT (5), tool_slugs (5), updated_at (5) (the toolsmith and connector syncs)                                            |
+
+### What changed
+
+- One spot per job (viewer.ts FULL_ROUTE_SPOTS, as-system-routes.mjs
+  FULL_ROUTE_SPOT_FILES), 7 to 13: `pair-code` (pair-code.ts
+  issuePairCode), `oauth-code` (mcp-oauth.ts mintAuthCode), `member-invite`
+  (member-invites.ts createMemberInvite), `peer-access` (peers/registry.ts:
+  the peer row's insert, rotateInboundToken, setOutboundToken,
+  setPeerEnabled, setPeerAccess), `peer-share` (peers/grants.ts
+  grantPeerShare, grantPeerTypeShare), `telegram-pair` (packages/telegram
+  pairing.ts pairChatWithCode's flip). `login-credential` also takes an
+  enable (disabled_at back to NULL; login-update.ts).
+- Column rights (access-matrix.ts NARROW_COLUMN_RIGHTS, applied by migrate;
+  never INSERT): pairing_codes DELETE; oauth_auth_codes DELETE;
+  member_invites UPDATE (revoked_at); mantle_peers UPDATE
+  (acts_as_login_id, ended_acts_as_login_id, last_contacted_at,
+  updated_at); peer_shares and peer_share_scopes UPDATE (revoked_at);
+  telegram_chats nothing (SELECT only). The rest of each table's writes
+  are the spots above or definers.
+- A gap the round 4 column rights left, found in this round's review: a
+  column right cannot tell a narrowing write from a widening one. The
+  narrow role could set `access_keys.revoked_at` (and the token, device,
+  invite and share revokes) back to NULL, clear a login's `disabled_at`, or
+  lower its `session_epoch`: each brings a way in back. Migration
+  `0318_narrow_one_way_columns` (new; `when` 1790198400000, 60000 above
+  0317's; renumber at merge), `mantle_narrow_one_way()`: a BEFORE UPDATE
+  trigger, as the caller, that holds only current_user = the narrow role:
+  `clear:` (never cleared), `up:` (never lowered), `drop:` (only to NULL),
+  `from:` (only to the old value of another column). On auth.users
+  (disabled_at, session_epoch), access_keys, oauth_access_tokens,
+  mobile_tokens, member_invites, peer_shares, peer_share_scopes
+  (revoked_at) and mantle_peers (acts_as_login_id only to NULL,
+  ended_acts_as_login_id only from it: the session end's unbind stays
+  narrow). Revert: rollback/0318_narrow_one_way_columns.revert.sql (not
+  needed for a rollback: no product write meets a refused direction).
+- CEO item 2: `mantle_space_settle_promotion` left NARROW_SYSTEM_FUNCTIONS
+  and is denied by name (NARROW_DENIED_FUNCTIONS): the role change runs at
+  login-credential with its settle, so no narrow reason calls it. The
+  runtime role keeps it. settlePromotionOnNarrow stays: on a narrow route
+  it would now be refused (fail closed); the product never reaches it
+  there.
+- docs/runtime-role.md: the rights list, the one-way rules, the allowlist.
+
+### Cells
+
+- narrow-containment.db.test.ts "the open rights tables (round 5)": on the
+  switched brain, as the narrow login: 26 statements refused 42501 (every
+  INSERT, every rights column, the deletes not granted, telegram_chats'
+  login_id and allowlist_status), the measured ones allowed, no INSERT at
+  table or column level on any of the seven, the rights digest unchanged.
+- narrow-containment.db.test.ts "0318": real rows (a disabled member, a
+  revoked device token, a revoked invite, a peer bound to the admin): a
+  clear, a lower, a peer rebound and a forged ended binding each 42501 and
+  the rows unchanged; the narrowing directions allowed; the superuser not
+  held; 8 triggers.
+- narrow-spots.db.test.ts "round 5": on the narrow exit against the full
+  route, equal answers: a pairing code, a member invite and its revoke (the
+  revoke on the narrow login), a peer made, bound with Write on, its item
+  shared and the share revoked, rotated and disabled.
+- narrow-spots.db.test.ts, the promotion: on the narrow exit the settle is
+  refused (42501, nothing settled), at login-credential equal to the full
+  route; the definer's rule on a system session unchanged; EXECUTE narrow
+  false (was true).
+
+### The spots left from round 2, decided (CEO item 3)
+
+- profile-row: kept. The write role needs a scope; the login-self and
+  settings exits have none, and the brain's row (settings, backups) needs
+  a scope holding Admin. Not byte-equal without a scope per exit (S7c,
+  with the content reads).
+- console-tool and pending-call: kept. Running the tool as the Admin
+  login's turn changes the recorded actor (system to login) in the audit
+  and approval rows and the actor check's misses: not byte-equal.
+- integrity-delete and reembed: kept for S7c, brain-wide by design (their
+  area-route rows are the cells).
+
+### A signed acting login, the next step's fix (design note, not built)
+
+The six new spots and login-credential exist because on the narrow login
+the acting login is a mistake guard: any narrow statement can name one.
+S7c: the gateway sends `mantle.acting_login` with an HMAC over (login,
+backend pid, a per-boot nonce) under a key the narrow role cannot read
+(a definer-only table, as mantle_heads_key); the rights definers verify
+it, so a narrow session cannot act for a login it was not handed. Then each
+spot's job can become a definer that checks the signed login's area, and
+the spots go.
+
+### Left (round 6)
+
+1. agents and tool_groups (measured above): the grant columns are
+   agents.tool_group_slugs, workspace_id, role, owner_id, slug and
+   tool_groups.tool_slugs, slug, admin_only, owner_id. Plan: column rights
+   on the rest, no INSERT, and two spots, `assistant-grant` (an assistant
+   made or cloned, its tool groups set or removed: agents.ts create,
+   update, clone; tool-groups.ts delete; builtins agent_grant_tool_group;
+   toolsmith groups.ts; mcp-sync.ts and openapi-sync.ts) and
+   `tool-group-grant` (a group made or its tools changed: toolsmith
+   groups.ts and common.ts, mcp-sync.ts, openapi-sync.ts, mcp-oauth.ts,
+   integration.ts, sandbox files.ts, /api/tools). About 20 call sites: not
+   started this round.
+2. The ONE area-route sweep (with LOW-4's docs-item at route level): not
+   started.
+3. The default flip, last, with the pins and the box counts list.

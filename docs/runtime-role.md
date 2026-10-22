@@ -207,21 +207,38 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);
   `access_keys`: `revoked_at`, `revoked_by`; `oauth_access_tokens` and
-  `mobile_tokens`: `revoked_at`. Measured with the switch on (every
-  statement the narrow login sent in the full DB suite, `log_statement =
-mod`). A new login, a role change, a contact link and a password run at
-  the full-route spot `login-credential`;
+  `mobile_tokens`: `revoked_at`; `pairing_codes` and `oauth_auth_codes`:
+  `DELETE` only; `member_invites`, `peer_shares` and `peer_share_scopes`:
+  `revoked_at`; `mantle_peers`: `last_contacted_at`, `updated_at`, and the
+  unbind of a session end (`acts_as_login_id`, `ended_acts_as_login_id`);
+  `telegram_chats`: no write. Measured with the switch on (every statement
+  the narrow login sent in the full DB suite, `log_statement = mod`; then a
+  trigger logging each row the narrow login wrote on these tables with its
+  actor, S7b part b2 round 5). A new login, a role change, an enable, a
+  contact link and a password run at the full-route spot
+  `login-credential`; a pairing code, an MCP authorization code, a member
+  invite, a peer's way in, a peer share and a Telegram chat's pairing each
+  at its own spot (`pair-code`, `oauth-code`, `member-invite`,
+  `peer-access`, `peer-share`, `telegram-pair`);
+- one way on the columns a right is taken back by (migration 0318,
+  `mantle_narrow_one_way`, a BEFORE UPDATE trigger that holds only the
+  narrow role): a revoke (`revoked_at` of access keys, OAuth tokens, device
+  tokens, invites and peer shares) and a disable are never cleared, a
+  session epoch is never lowered, a peer's `acts_as_login_id` changes only
+  to NULL and `ended_acts_as_login_id` only to the old binding. A column
+  right alone would let the narrow role bring a revoked credential back;
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
   (`packages/db/src/runtime-role.ts`), measured with the switch on (the full
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
-  what narrow statements call by name, thirteen today (the read definers
+  what narrow statements call by name, fourteen today (the read definers
   of the login-self routes, the Admin area's approvals and the email
   discover; `mantle_brain_id`; the writers on an area exit, each its own
   rule: `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
-  `mantle_tg_chat_set`, the structure, promotion and assistant delete
-  definers; `mantle_bridge_login` left it with the role change, and is
+  `mantle_tg_chat_set`, the structure and assistant delete definers;
+  `mantle_bridge_login` left it with the role change, and the promotion
+  definer `mantle_space_settle_promotion` in S7b part b2 round 5, both
   denied by name), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime role's.

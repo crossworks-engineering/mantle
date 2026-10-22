@@ -225,8 +225,11 @@ export async function applyLoginChange(
     // mantle_bridge_login keeps in step; a contact's shares reach the
     // login linked to it): the whole transaction then runs at the full-route spot
     // login-credential (docs/runtime-role.md); any other change stays on
-    // the exit's own route.
-    const credential = changes.role !== undefined || changes.contactId !== undefined;
+    // the exit's own route. An enable (disabled_at back to NULL) lets the
+    // login in again: the narrow login may only set disabled_at (0318), so
+    // an enable runs at the spot too.
+    const credential =
+      changes.role !== undefined || changes.contactId !== undefined || changes.disabledAt === null;
     const run = (fn: () => Promise<void>) =>
       credential ? onFullSystemRoute('login-credential', fn) : fn();
     await run(() =>

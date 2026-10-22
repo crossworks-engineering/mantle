@@ -2227,6 +2227,13 @@
       "when": 1790198340000,
       "tag": "0317_narrow_observe_definer_frames",
       "breakpoints": true
+    },
+    {
+      "idx": 318,
+      "version": "7",
+      "when": 1790198400000,
+      "tag": "0318_narrow_one_way_columns",
+      "breakpoints": true
     }
   ]
 }

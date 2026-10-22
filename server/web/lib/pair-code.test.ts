@@ -71,6 +71,8 @@ vi.mock('@mantle/db', () => {
   };
   const cols = (names: string[]) => Object.fromEntries(names.map((n) => [n, `col:${n}`]));
   return {
+    // The spot (viewer.ts): no system exit here, so it runs `fn` as it is.
+    onFullSystemRoute: (_spot: string, fn: () => Promise<unknown>) => fn(),
     db: {
       select: () => selectChain(),
       insert: () => insertChain(),

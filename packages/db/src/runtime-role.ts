@@ -292,8 +292,6 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "the assistants area's block or unpair of a chat of the assistant's bot (agent-telegram.ts setAgentTelegramChat) on an Admin area exit: the definer holds the rule, telegram_chats only (0313)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
     "the keys, connectors and settings areas' structure items (gateway/structure-item.ts: the Secrets root, a secret, a peer, a sender's contact, a documentation item) on an Admin area exit or in a turn's area exit: the definer holds the rule, the listed kinds of nodes only (0315)",
-  'public.mantle_space_settle_promotion(uuid,uuid)':
-    "the users area's role change to admin (login-update.ts): the promoted login's personal space settled; the definer holds the rule, space_items and their bundles only (0316). The role change now runs at the spot login-credential, so no narrow statement calls it; on a narrow session it can only take an admin's own personal items back to private drafts (the target's role it reads is one no narrow column sets): kept for the CEO's call",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
     "the assistants area's delete of an assistant (agents.ts deleteAgent): the definer holds the rule, the agent, its messages and digests (0316)",
 };
@@ -323,6 +321,8 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
  * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_space_settle_promotion(uuid,uuid)':
+    "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
   'public.mantle_bridge_login(uuid)':
     "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':

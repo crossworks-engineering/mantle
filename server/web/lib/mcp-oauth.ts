@@ -19,6 +19,7 @@ import { adminLogin } from './auth/session';
 import {
   authUsers,
   db,
+  onFullSystemRoute,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -167,17 +168,22 @@ export async function mintAuthCode(input: {
   const code = randomToken(CODE_PREFIX);
   // Under the login's OAuth lock, the one endLoginSessions takes before it
   // deletes codes: a code minted here is either deleted by it or refused.
-  return db.transaction(async (tx) => {
-    await lockOauthActor(tx, input.actorId);
-    const [login] = await tx
-      .select({ epoch: authUsers.sessionEpoch })
-      .from(authUsers)
-      .where(eq(authUsers.id, input.actorId))
-      .limit(1);
-    if (!login || login.epoch !== input.consentEpoch) return null;
-    await mintCodeRow(tx, code, input);
-    return code;
-  });
+  // A code is a way in (it exchanges for the login's token): the narrow
+  // login may not mint one, so on a system exit it runs at the full-route
+  // spot oauth-code (docs/runtime-role.md).
+  return onFullSystemRoute('oauth-code', () =>
+    db.transaction(async (tx) => {
+      await lockOauthActor(tx, input.actorId);
+      const [login] = await tx
+        .select({ epoch: authUsers.sessionEpoch })
+        .from(authUsers)
+        .where(eq(authUsers.id, input.actorId))
+        .limit(1);
+      if (!login || login.epoch !== input.consentEpoch) return null;
+      await mintCodeRow(tx, code, input);
+      return code;
+    }),
+  );
 }
 
 async function mintCodeRow(

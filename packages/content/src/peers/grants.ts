@@ -11,7 +11,7 @@
  * the audit trail, so rows are stamped, not removed.
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { db, mantlePeers, nodes, peerShares, peerShareScopes } from '@mantle/db';
+import { db, mantlePeers, nodes, onFullSystemRoute, peerShares, peerShareScopes } from '@mantle/db';
 import { kindsWhere, type PeerShareKind } from '@mantle/client-types/kinds';
 
 export type PeerShareRow = {
@@ -43,14 +43,19 @@ export async function grantPeerShare(
     .limit(1);
   if (!node) return null;
 
-  const [row] = await db
-    .insert(peerShares)
-    .values({ ownerId, peerId, nodeId, nodeType: node.type })
-    .onConflictDoNothing({
-      target: [peerShares.peerId, peerShares.nodeId],
-      where: isNull(peerShares.revokedAt),
-    })
-    .returning();
+  // A share lets the peer read the item: a right the narrow login may not
+  // grant (no INSERT on peer_shares), so on the connectors area's exit it
+  // runs at the full-route spot peer-share (docs/runtime-role.md).
+  const [row] = await onFullSystemRoute('peer-share', () =>
+    db
+      .insert(peerShares)
+      .values({ ownerId, peerId, nodeId, nodeType: node.type })
+      .onConflictDoNothing({
+        target: [peerShares.peerId, peerShares.nodeId],
+        where: isNull(peerShares.revokedAt),
+      })
+      .returning(),
+  );
   // onConflictDoNothing returns nothing when the active grant already exists —
   // fetch it so callers always get the row.
   const existing =
@@ -187,14 +192,17 @@ export async function grantPeerTypeShare(
     .limit(1);
   if (!peer) return null;
 
-  const [row] = await db
-    .insert(peerShareScopes)
-    .values({ ownerId, peerId, nodeType })
-    .onConflictDoNothing({
-      target: [peerShareScopes.peerId, peerShareScopes.nodeType],
-      where: isNull(peerShareScopes.revokedAt),
-    })
-    .returning();
+  // A type share: the same right for every item of the type (peer-share).
+  const [row] = await onFullSystemRoute('peer-share', () =>
+    db
+      .insert(peerShareScopes)
+      .values({ ownerId, peerId, nodeType })
+      .onConflictDoNothing({
+        target: [peerShareScopes.peerId, peerShareScopes.nodeType],
+        where: isNull(peerShareScopes.revokedAt),
+      })
+      .returning(),
+  );
   const existing =
     row ??
     (

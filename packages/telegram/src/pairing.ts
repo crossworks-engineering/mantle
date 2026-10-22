@@ -22,6 +22,7 @@ import {
   authUsers,
   channels,
   db,
+  onFullSystemRoute,
   telegramAccounts,
   telegramChats,
   type TelegramChat,
@@ -379,25 +380,30 @@ export async function pairChatWithCode(args: {
     }
     if (t.already) return { ok: true as const, already: true, chat: summary };
     // Only a pending chat whose code is still this one flips: two logins
-    // racing for one code cannot both win.
-    const flipped = await db
-      .update(telegramChats)
-      .set({
-        allowlistStatus: 'allowed',
-        loginId,
-        pairingCode: null,
-        pairingExpiresAt: null,
-        pairingReplies: 0,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(telegramChats.id, chat.id),
-          eq(telegramChats.allowlistStatus, 'pending'),
-          eq(telegramChats.pairingCode, code),
-        ),
-      )
-      .returning({ id: telegramChats.id });
+    // racing for one code cannot both win. The flip lets the chat talk to
+    // the assistant as the login (allowlist_status, login_id): a right the
+    // narrow login may not write, so it runs at the full-route spot
+    // telegram-pair (docs/runtime-role.md).
+    const flipped = await onFullSystemRoute('telegram-pair', () =>
+      db
+        .update(telegramChats)
+        .set({
+          allowlistStatus: 'allowed',
+          loginId,
+          pairingCode: null,
+          pairingExpiresAt: null,
+          pairingReplies: 0,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(telegramChats.id, chat.id),
+            eq(telegramChats.allowlistStatus, 'pending'),
+            eq(telegramChats.pairingCode, code),
+          ),
+        )
+        .returning({ id: telegramChats.id }),
+    );
     if (flipped.length === 0) return NO_SUCH_CODE;
     const [account] = await db
       .select()

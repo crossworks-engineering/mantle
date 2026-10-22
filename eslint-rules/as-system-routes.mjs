@@ -152,6 +152,12 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/pending.ts': ['pending-call'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
+  'server/web/lib/pair-code.ts': ['pair-code'],
+  'server/web/lib/mcp-oauth.ts': ['oauth-code'],
+  'packages/content/src/member-invites.ts': ['member-invite'],
+  'packages/content/src/peers/registry.ts': ['peer-access'],
+  'packages/content/src/peers/grants.ts': ['peer-share'],
+  'packages/telegram/src/pairing.ts': ['telegram-pair'],
 });
 
 /**
