@@ -14,11 +14,11 @@
 --
 --   kind           type           area        ops                    lands at
 --   secrets-root   branch         keys        insert                 secrets
---   secret         secret         keys        insert update delete   secrets
---   peer           mantle_peer    connectors  insert delete          peers
---   contact        contact        connectors  insert                 contacts
---   docs-branch    branch         settings    insert                 documentation or under it
---   documentation  documentation  settings    insert update delete   documentation or under it
+--   secret-item    secret         keys        insert update delete   secrets
+--   peer-item      mantle_peer    connectors  insert delete          peers
+--   contact-item   contact        connectors  insert                 contacts
+--   docs-folder    branch         settings    insert                 documentation or under it
+--   docs-item      documentation  settings    insert update delete   documentation or under it
 --
 -- Any other kind or operation is refused (42501). The caller: no scope
 -- (a scope's own writes go through the write role), a system session
@@ -42,7 +42,7 @@
 --    the index reset markContentChanged sends (packages/db
 --    content-changed.ts and index-work.ts stampIndexWork, kept equal by
 --    structure-item.db.test.ts), and node_ingested when FIELDS' announce is
---    true. The two kinds that edit (secret, documentation) index no field
+--    true. The two kinds that edit (secret-item, docs-item) index no field
 --    for embed work only (the kind registry), so no other reset is open.
 --    No heads, as the app's update took none. Returns the id, or nothing.
 --  - delete (items of the kind's type): the heads of each and of the folder
@@ -71,6 +71,7 @@ DECLARE
   need_area text;
   ops text[];
   place ltree;
+  lands boolean;
   folder uuid;
   heads uuid[];
   new_id uuid;
@@ -81,11 +82,11 @@ BEGIN
   END IF;
   CASE "mantle_structure_item"."kind"
     WHEN 'secrets-root' THEN t := 'branch'; need_area := 'keys'; ops := ARRAY['insert'];
-    WHEN 'secret' THEN t := 'secret'; need_area := 'keys'; ops := ARRAY['insert', 'update', 'delete'];
-    WHEN 'peer' THEN t := 'mantle_peer'; need_area := 'connectors'; ops := ARRAY['insert', 'delete'];
-    WHEN 'contact' THEN t := 'contact'; need_area := 'connectors'; ops := ARRAY['insert'];
-    WHEN 'docs-branch' THEN t := 'branch'; need_area := 'settings'; ops := ARRAY['insert'];
-    WHEN 'documentation' THEN
+    WHEN 'secret-item' THEN t := 'secret'; need_area := 'keys'; ops := ARRAY['insert', 'update', 'delete'];
+    WHEN 'peer-item' THEN t := 'mantle_peer'; need_area := 'connectors'; ops := ARRAY['insert', 'delete'];
+    WHEN 'contact-item' THEN t := 'contact'; need_area := 'connectors'; ops := ARRAY['insert'];
+    WHEN 'docs-folder' THEN t := 'branch'; need_area := 'settings'; ops := ARRAY['insert'];
+    WHEN 'docs-item' THEN
       t := 'documentation'; need_area := 'settings'; ops := ARRAY['insert', 'update', 'delete'];
     ELSE
       RAISE EXCEPTION 'mantle_structure_item: not a listed kind' USING ERRCODE = '42501';
@@ -112,13 +113,16 @@ BEGIN
 
   IF "mantle_structure_item"."op" = 'insert' THEN
     place := ("mantle_structure_item"."fields" ->> 'path')::ltree;
-    IF place IS NULL OR NOT CASE "mantle_structure_item"."kind"
-         WHEN 'secrets-root' THEN place = 'secrets'::ltree
-         WHEN 'secret' THEN place = 'secrets'::ltree
-         WHEN 'peer' THEN place = 'peers'::ltree
-         WHEN 'contact' THEN place = 'contacts'::ltree
-         ELSE place <@ 'documentation'::ltree
-       END THEN
+    -- An assignment, not the IF's own test: plpgsql ends an IF's test at
+    -- its first THEN, a CASE's included.
+    lands := CASE "mantle_structure_item"."kind"
+               WHEN 'secrets-root' THEN place = 'secrets'::ltree
+               WHEN 'secret-item' THEN place = 'secrets'::ltree
+               WHEN 'peer-item' THEN place = 'peers'::ltree
+               WHEN 'contact-item' THEN place = 'contacts'::ltree
+               ELSE place <@ 'documentation'::ltree
+             END;
+    IF place IS NULL OR NOT coalesce(lands, false) THEN
       RAISE EXCEPTION 'mantle_structure_item: not where this kind lands' USING ERRCODE = '42501';
     END IF;
     folder := "public"."mantle_parent_folder"("mantle_structure_item"."owner", t, place);

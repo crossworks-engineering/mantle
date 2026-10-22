@@ -141,7 +141,7 @@ async function ensureDocBranchChain(ownerId: string, ltreePath: string): Promise
     // Heads first (workspaces plan U1): the folder it lands in, shared. A
     // structure item (packages/db gateway/structure-item.ts).
     await withDeadlockRetry(() =>
-      insertStructureItem('docs-branch', {
+      insertStructureItem('docs-folder', {
         ownerId,
         title: i === 1 ? 'Documentation' : slug,
         slug: null,
@@ -210,7 +210,7 @@ export async function upsertDocFromDisk(args: {
     // New text: the whole index again (the kind registry's `indexed`),
     // announced when this transaction commits.
     const updated = await updateStructureItem(
-      'documentation',
+      'docs-item',
       ownerId,
       existing.id,
       { title: loc.relPath, data: newData },
@@ -223,7 +223,7 @@ export async function upsertDocFromDisk(args: {
   await ensureDocBranchChain(ownerId, loc.parentPath);
   // Heads first (workspaces plan U1): the folder it lands in, shared.
   const inserted = await withDeadlockRetry(() =>
-    insertStructureItem('documentation', {
+    insertStructureItem('docs-item', {
       ownerId,
       title: loc.relPath,
       slug: null,
@@ -258,7 +258,7 @@ export async function deleteDocByRelPath(args: {
   if (!node) return { ok: false };
   // Heads first (workspaces plan U1).
   // content_chunks cascade via FK.
-  await withDeadlockRetry(() => deleteStructureItems('documentation', args.ownerId, [node.id]));
+  await withDeadlockRetry(() => deleteStructureItems('docs-item', args.ownerId, [node.id]));
   return { ok: true };
 }
 
@@ -464,7 +464,7 @@ export async function purgeCollection(ownerId: string, collectionKey: string): P
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return 0;
   const deleted = await withDeadlockRetry(() =>
-    deleteStructureItems('documentation', ownerId, ids),
+    deleteStructureItems('docs-item', ownerId, ids),
   );
   return deleted.length;
 }

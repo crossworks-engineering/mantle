@@ -33,11 +33,11 @@ type Tx = PostgresJsDatabase<typeof schema>;
 /** The listed kinds, each with its item type (the definer's own list). */
 export const STRUCTURE_KINDS = Object.freeze({
   'secrets-root': 'branch',
-  secret: 'secret',
-  peer: 'mantle_peer',
-  contact: 'contact',
-  'docs-branch': 'branch',
-  documentation: 'documentation',
+  'secret-item': 'secret',
+  'peer-item': 'mantle_peer',
+  'contact-item': 'contact',
+  'docs-folder': 'branch',
+  'docs-item': 'documentation',
 } as const);
 
 export type StructureKind = keyof typeof STRUCTURE_KINDS;
@@ -140,7 +140,7 @@ export type StructureUpdate = {
  * fields `changed` names (markContentChanged), in one transaction. Its row
  * after, or null when no such item.
  */
-export async function updateStructureItem<K extends 'secret' | 'documentation'>(
+export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>(
   kind: K,
   ownerId: string,
   id: string,
@@ -199,7 +199,7 @@ export async function updateStructureItem<K extends 'secret' | 'documentation'>(
  * removed. Wrap in withDeadlockRetry, as the heads helpers.
  */
 export async function deleteStructureItems(
-  kind: 'secret' | 'peer' | 'documentation',
+  kind: 'secret-item' | 'peer-item' | 'docs-item',
   ownerId: string,
   ids: readonly string[],
 ): Promise<string[]> {

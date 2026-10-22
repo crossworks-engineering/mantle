@@ -218,7 +218,7 @@ export async function createSecret(ownerId: string, input: CreateSecretInput): P
   // head first (plan U1). No outside effects, so a retry is safe.
   const inserted = await withDeadlockRetry(() =>
     insertStructureItem(
-      'secret',
+      'secret-item',
       {
         ownerId,
         title: input.title.trim().slice(0, 200) || 'Untitled secret',
@@ -296,7 +296,7 @@ export async function updateSecret(
   });
 
   const updated = await updateStructureItem(
-    'secret',
+    'secret-item',
     ownerId,
     id,
     {
@@ -331,7 +331,7 @@ export async function deleteSecret(ownerId: string, id: string): Promise<boolean
     .limit(1);
   if (!node) return false;
   // Cascade drops the `secrets` row too. Heads first (plan V4).
-  await withDeadlockRetry(() => deleteStructureItems('secret', ownerId, [id]));
+  await withDeadlockRetry(() => deleteStructureItems('secret-item', ownerId, [id]));
   return true;
 }
 

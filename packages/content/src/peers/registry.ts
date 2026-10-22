@@ -139,7 +139,7 @@ export async function createPeer(
   // The peer's item, a structure item (packages/db gateway/structure-item.ts):
   // on the peers area's narrow exit, the definer makes it.
   const node = await withDeadlockRetry(() =>
-    insertStructureItem('peer', {
+    insertStructureItem('peer-item', {
       ownerId,
       title: displayName,
       path: PEERS_ROOT_LABEL,
@@ -389,7 +389,7 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
   if (!row) return false;
   // One statement: mantle_peers and peer_shares both cascade from the node
   // (schema/mantle-peers.ts), so deleting it is the whole operation, atomically.
-  await withDeadlockRetry(() => deleteStructureItems('peer', ownerId, [row.nodeId]));
+  await withDeadlockRetry(() => deleteStructureItems('peer-item', ownerId, [row.nodeId]));
   return true;
 }
 

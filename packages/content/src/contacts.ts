@@ -450,7 +450,7 @@ export async function createContact(
   // scope as before; on the email area's narrow exit (a sender made a
   // contact), the definer makes it.
   const row = await withDeadlockRetry(() =>
-    insertStructureItem('contact', {
+    insertStructureItem('contact-item', {
       ownerId,
       title: deriveContactTitle({
         firstName: fields.firstName,

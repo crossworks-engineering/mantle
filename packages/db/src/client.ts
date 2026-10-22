@@ -73,15 +73,6 @@ export {
   withWriterHeads,
 } from './gateway/heads';
 export {
-  deleteStructureItems,
-  insertStructureItem,
-  STRUCTURE_KINDS,
-  updateStructureItem,
-  type StructureInsert,
-  type StructureKind,
-  type StructureUpdate,
-} from './gateway/structure-item';
-export {
   loginActorNow,
   loginAreas,
   loginHasArea,

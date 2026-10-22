@@ -67,13 +67,6 @@ export {
   onSpaceRows,
   lockMoreHeads,
   withDeadlockRetry,
-  insertStructureItem,
-  updateStructureItem,
-  deleteStructureItems,
-  STRUCTURE_KINDS,
-  type StructureInsert,
-  type StructureKind,
-  type StructureUpdate,
   loginScopeFor,
   moderatorSeatsNow,
   loginScopeColumns,
@@ -518,3 +511,14 @@ export {
   type SweepRow,
   type SweepSpec,
 } from './store-broker';
+// The structure items (gateway/structure-item.ts). Not through client.ts:
+// it imports content-changed.ts, whose notify.ts imports client.ts.
+export {
+  deleteStructureItems,
+  insertStructureItem,
+  STRUCTURE_KINDS,
+  updateStructureItem,
+  type StructureInsert,
+  type StructureKind,
+  type StructureUpdate,
+} from './gateway/structure-item';
