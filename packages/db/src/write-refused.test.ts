@@ -105,3 +105,20 @@ describe('bestEffortWrite', () => {
     expect(console.warn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('isWriteRefused on the narrow route', () => {
+  it("a narrow exit's 42501 is the narrow role's refusal: thrown, never skipped as a read-only database", async () => {
+    const viewer = await import('./viewer');
+    const pools = await import('./gateway/pools');
+    const route = vi.spyOn(viewer, 'systemRouteNow').mockReturnValue('narrow');
+    const narrow = vi.spyOn(pools, 'narrowRouteNow').mockReturnValue(true);
+    try {
+      expect(isWriteRefused({ code: '42501' })).toBe(false);
+      // A read-only transaction is still one (no role refuses it).
+      expect(isWriteRefused({ code: '25006' })).toBe(true);
+    } finally {
+      route.mockRestore();
+      narrow.mockRestore();
+    }
+  });
+});

@@ -18,15 +18,24 @@
  * which is a worse bug than the one this exists to fix. Drizzle wraps the
  * driver error, so the code can sit on the cause rather than the top object.
  */
+import { narrowRouteNow } from './gateway/pools';
+import { pgErrorCode } from './pg-error';
+import { systemRouteNow } from './viewer';
+
 const WRITE_REFUSED_CODES = new Set(['42501', '25006']);
 
+/**
+ * On the narrow route a 42501 is the narrow role's own refusal (its
+ * allowlist, a one-way rule, a definer it may not run), never a read-only
+ * database: it is not skipped but thrown, so the suites and the counter see
+ * it (the re-audit's app LOW-1). The code is read by the one walk
+ * (pgErrorCode, through drizzle's cause).
+ */
 export function isWriteRefused(err: unknown): boolean {
-  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && WRITE_REFUSED_CODES.has(code)) return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
+  const code = pgErrorCode(err);
+  if (code === null || !WRITE_REFUSED_CODES.has(code)) return false;
+  // Outside a narrow exit no pool is asked (systemRouteNow first).
+  return !(code === '42501' && systemRouteNow() === 'narrow' && narrowRouteNow());
 }
 
 /**

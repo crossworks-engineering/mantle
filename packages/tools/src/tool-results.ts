@@ -306,9 +306,9 @@ export async function processToolResultForModel(args: {
     originalBytes,
     handling: args.handling,
   });
-  // Opportunistic, throttled cleanup so the store self-prunes even if the
-  // periodic sweep isn't running — never blocks or throws.
-  maybeSweep();
+  // No sweep here: the turn's own exit runs on the narrow route, which
+  // deletes no one's results (the periodic events-reminders tick prunes the
+  // store, system work).
   return { payload: JSON.stringify(envelope), spilled: true, handle, bytes: originalBytes };
 }
 
@@ -513,10 +513,9 @@ export async function cleanupToolResults(maxAgeMs = TOOL_RESULT_TTL_MS): Promise
   return rows.length;
 }
 
-/** Throttled, fire-and-forget sweep. Called both opportunistically from the
- *  spill path (so the store self-prunes while it's being written) and from
- *  the periodic events-reminders tick (so it runs even when idle). Shares one
- *  hourly throttle across callers; never blocks the caller or throws. */
+/** Throttled, fire-and-forget sweep, from the periodic events-reminders
+ *  tick (system work; never from a turn, whose exit is the narrow route).
+ *  An hourly throttle; never blocks the caller or throws. */
 let lastSweepAt = 0;
 export function maybeSweep(): void {
   const now = Date.now();

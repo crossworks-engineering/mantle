@@ -13,6 +13,7 @@
  * pulls in the DBOS client through the `@/` alias, which the test runner does
  * not resolve.
  */
+import { findDatabaseError } from '@mantle/std';
 
 /**
  * Narrow on purpose. Only the ways Postgres says "the engine's journal is not
@@ -40,10 +41,8 @@
 const ENGINE_ABSENT_CODES = new Set(['42501', '3F000', '42P01', '3D000']);
 
 export function isRunnerEngineAbsent(err: unknown): boolean {
-  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && ENGINE_ABSENT_CODES.has(code)) return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
+  // The one walk to the database error (findDatabaseError, through
+  // drizzle's cause).
+  const code = findDatabaseError(err)?.code;
+  return typeof code === 'string' && ENGINE_ABSENT_CODES.has(code);
 }
