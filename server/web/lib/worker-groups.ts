@@ -1,5 +1,12 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { agentGroups, agents, db, type AgentGroup, onFullSystemRoute } from '@mantle/db';
+import {
+  agentGroups,
+  agents,
+  db,
+  type AgentGroup,
+  narrowNeedsSpot,
+  onFullSystemRoute,
+} from '@mantle/db';
 
 /**
  * Worker groups (panels) — the web-side data + validation layer behind
@@ -93,11 +100,20 @@ export async function updateWorkerGroup(
   id: string,
   patch: { name?: string; memberSlugs?: string[]; enabled?: boolean },
 ): Promise<AgentGroup | null> {
-  const [row] = await db
-    .update(agentGroups)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.id, id)))
-    .returning();
+  const set = { ...patch, updatedAt: new Date() };
+  const write = () =>
+    db
+      .update(agentGroups)
+      .set(set)
+      .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.id, id)))
+      .returning();
+  // Who answers together (its members), its name or a turn-on is the
+  // group's grant, not the narrow login's (it keeps only the stamp and the
+  // delete: access-matrix.ts NARROW_WRITES): the full-route spot
+  // agent-group-grant, as a group made.
+  const [row] = narrowNeedsSpot(agentGroups, 'update', set)
+    ? await onFullSystemRoute('agent-group-grant', write)
+    : await write();
   return row ?? null;
 }
 

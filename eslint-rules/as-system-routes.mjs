@@ -206,6 +206,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/agent-telegram.ts': ['telegram-connect'],
   'server/web/lib/workspaces.ts': ['acting-login'],
   'server/web/lib/workspaces-migrate.ts': ['acting-login'],
+  'server/web/app/api/model-pools/[id]/route.ts': ['model-route'],
   'packages/db/src/gateway/spot-definers.ts': ['acting-login'],
   'server/web/lib/studio/prompt-versions.ts': ['skill-text'],
   'server/web/lib/mcp-connectors.ts': ['tool-config'],

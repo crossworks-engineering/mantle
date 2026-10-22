@@ -405,7 +405,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.agent_groups': {
     update: ['updated_at'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A group made (who answers together) runs at the full-route spot agent-group-grant',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A group made (who answers together), or its members, name or enable changed (round 13c: updateWorkerGroup), runs at the full-route spot agent-group-grant',
   },
   'public.ai_workers': {
     update: [
@@ -470,7 +470,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     insert: true,
     update: ['updated_at'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+    why: "measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. An entry's edit (its model, routes, price snapshot, place) runs at the full-route spot model-route (round 13c: PATCH /api/model-pools/:id). Its price snapshot ranks the combos' picks only (model-combos.ts); a cost cap reads the provider's own usage cost (packages/tracing), never this column",
   },
   'public.doc_collections': {
     update: ['enabled', 'last_reconciled_at', 'updated_at'],

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { db, curatedModels } from '@mantle/db';
+import { db, curatedModels, narrowNeedsSpot, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -50,21 +50,30 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
-  const [row] = await db
-    .update(curatedModels)
-    .set({
-      ...(b.pool !== undefined ? { pool: b.pool } : {}),
-      ...(b.name !== undefined ? { name: b.name } : {}),
-      ...(b.vendor !== undefined ? { vendor: b.vendor } : {}),
-      ...(b.routes !== undefined ? { routes: b.routes } : {}),
-      ...(b.pricing !== undefined ? { pricing: b.pricing } : {}),
-      ...(b.rating !== undefined ? { rating: b.rating } : {}),
-      ...(b.note !== undefined ? { note: b.note } : {}),
-      ...(b.position !== undefined ? { position: b.position } : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(curatedModels.id, idParsed.data.id), eq(curatedModels.ownerId, user.id)))
-    .returning();
+  const set = {
+    ...(b.pool !== undefined ? { pool: b.pool } : {}),
+    ...(b.name !== undefined ? { name: b.name } : {}),
+    ...(b.vendor !== undefined ? { vendor: b.vendor } : {}),
+    ...(b.routes !== undefined ? { routes: b.routes } : {}),
+    ...(b.pricing !== undefined ? { pricing: b.pricing } : {}),
+    ...(b.rating !== undefined ? { rating: b.rating } : {}),
+    ...(b.note !== undefined ? { note: b.note } : {}),
+    ...(b.position !== undefined ? { position: b.position } : {}),
+    updatedAt: new Date(),
+  };
+  const write = () =>
+    db
+      .update(curatedModels)
+      .set(set)
+      .where(and(eq(curatedModels.id, idParsed.data.id), eq(curatedModels.ownerId, user.id)))
+      .returning();
+  // An entry's model, routes, price or place (what the picker offers and a
+  // combo applies) is not the narrow login's to change (it keeps the stamp,
+  // the insert and the delete: access-matrix.ts NARROW_WRITES): the
+  // full-route spot model-route.
+  const [row] = narrowNeedsSpot(curatedModels, 'update', set)
+    ? await onFullSystemRoute('model-route', write)
+    : await write();
   if (!row) return NextResponse.json({ error: 'Entry not found.' }, { status: 404 });
   return NextResponse.json({ entry: row });
 }
