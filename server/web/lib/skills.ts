@@ -8,7 +8,7 @@
  */
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { db, heartbeats, skills, type Skill } from '@mantle/db';
+import { db, heartbeats, skills, type Skill, onFullSystemRoute, narrowNeedsSpot } from '@mantle/db';
 import type { SkillDTO } from '@mantle/client-types';
 import { restampHeartbeatMakers } from '@mantle/tools';
 
@@ -106,18 +106,20 @@ export async function createSkill(
   input: CreateSkillInput,
   login: string | null = null,
 ): Promise<SkillSummary> {
-  const [row] = await db
-    .insert(skills)
-    .values({
-      ownerId,
-      slug: input.slug,
-      name: input.name,
-      description: input.description,
-      instructions: input.instructions ?? '',
-      defaultState: input.defaultState ?? {},
-      enabled: input.enabled ?? true,
-    })
-    .returning();
+  const [row] = await onFullSystemRoute('skill-text', () =>
+    db
+      .insert(skills)
+      .values({
+        ownerId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description,
+        instructions: input.instructions ?? '',
+        defaultState: input.defaultState ?? {},
+        enabled: input.enabled ?? true,
+      })
+      .returning(),
+  );
   if (!row) throw new Error('failed to insert skill');
   await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
   return toSummary(row);
@@ -137,11 +139,18 @@ export async function updateSkill(
   if (patch.instructions !== undefined) next.instructions = patch.instructions;
   if (patch.defaultState !== undefined) next.defaultState = patch.defaultState;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
-  const [row] = await db
-    .update(skills)
-    .set(next)
-    .where(and(eq(skills.id, id), eq(skills.ownerId, ownerId)))
-    .returning();
+  const write = () =>
+    db
+      .update(skills)
+      .set(next)
+      .where(and(eq(skills.id, id), eq(skills.ownerId, ownerId)))
+      .returning();
+  // Its instructions (what every heartbeat and assistant that runs it does)
+  // or any column the narrow login was not measured to write: the full-route
+  // spot skill-text (access-matrix.ts NARROW_WRITES).
+  const [row] = narrowNeedsSpot(skills, 'update', next)
+    ? await onFullSystemRoute('skill-text', write)
+    : await write();
   if (row) await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
   return row ? toSummary(row) : null;
 }

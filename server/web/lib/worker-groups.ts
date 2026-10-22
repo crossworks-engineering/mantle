@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { agentGroups, agents, db, type AgentGroup } from '@mantle/db';
+import { agentGroups, agents, db, type AgentGroup, onFullSystemRoute } from '@mantle/db';
 
 /**
  * Worker groups (panels) — the web-side data + validation layer behind
@@ -77,10 +77,12 @@ export async function createWorkerGroup(
   ownerId: string,
   input: { slug: string; name: string },
 ): Promise<AgentGroup> {
-  const [row] = await db
-    .insert(agentGroups)
-    .values({ ownerId, slug: input.slug, name: input.name, memberSlugs: [], enabled: true })
-    .returning();
+  const [row] = await onFullSystemRoute('agent-group-grant', () =>
+    db
+      .insert(agentGroups)
+      .values({ ownerId, slug: input.slug, name: input.name, memberSlugs: [], enabled: true })
+      .returning(),
+  );
   return row!;
 }
 

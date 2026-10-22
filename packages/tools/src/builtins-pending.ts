@@ -11,7 +11,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { agentGroups, agents, db } from '@mantle/db';
+import { agentGroups, agents, db, onFullSystemRoute } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { ASK_HUMAN_FORM_LIMITS as FORM_LIMITS } from '@mantle/client-types';
 import { type BuiltinToolDef } from './types';
@@ -270,10 +270,12 @@ export const worker_group_ensure: BuiltinToolDef = {
     };
     const [row] = existing
       ? await db.update(agentGroups).set(values).where(eq(agentGroups.id, existing.id)).returning()
-      : await db
-          .insert(agentGroups)
-          .values({ ownerId: ctx.ownerId, slug, ...values })
-          .returning();
+      : await onFullSystemRoute('agent-group-grant', () =>
+          db
+            .insert(agentGroups)
+            .values({ ownerId: ctx.ownerId, slug, ...values })
+            .returning(),
+        );
     return { ok: true, output: row };
   },
 };

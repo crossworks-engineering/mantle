@@ -54,6 +54,7 @@ import {
   type ToolGroupMcpBinding,
   type ToolGroupMcpOAuth,
   type ToolGroupMcpOAuthClient,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { deleteApiKey, getApiKey, listApiKeys, setApiKey } from '@mantle/api-keys';
 import { microsoftAuthority, resolveOAuthConfig } from '@mantle/microsoft';
@@ -102,10 +103,14 @@ export function dbMcpOAuthStore(ownerId: string, groupSlug: string): McpOAuthSto
     saveMcp: async (next) => {
       const row = await loadRow();
       if (!row?.integration?.mcp) return; // connector deleted mid-flight — drop the write
-      await db
-        .update(toolGroups)
-        .set({ integration: { ...row.integration, mcp: next }, updatedAt: new Date() })
-        .where(eq(toolGroups.id, row.id));
+      const integration = row.integration;
+      // The group's integration (its token and server): tool-config.
+      await onFullSystemRoute('tool-config', () =>
+        db
+          .update(toolGroups)
+          .set({ integration: { ...integration, mcp: next }, updatedAt: new Date() })
+          .where(eq(toolGroups.id, row.id)),
+      );
     },
     getSecret: async (label) => (await getApiKey(ownerId, groupSlug, label))?.apiKey ?? null,
     setSecret: async (label, value) => {

@@ -42,6 +42,7 @@ import {
   scopeHoldsAdmin,
   withTurnScope,
   type Heartbeat,
+  onFullSystemRoute,
 } from '@mantle/db';
 import {
   currentRequestMode,
@@ -285,11 +286,14 @@ const heartbeat_update_state: BuiltinToolDef = {
       if (v === null) delete next[k];
       else next[k] = v;
     }
-    await heartbeatRow(() =>
+    const write = () =>
       db
         .update(heartbeats)
         .set({ state: next, updatedAt: new Date(), ...maker })
-        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    // A new maker (whom it fires as): the full-route spot heartbeat-maker.
+    await heartbeatRow(() =>
+      'createdBy' in maker ? onFullSystemRoute('heartbeat-maker', write) : write(),
     );
     const patchedKeys = Object.keys(patch);
     ctx.step?.setMeta({

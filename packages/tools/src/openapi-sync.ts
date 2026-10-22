@@ -417,32 +417,35 @@ export async function syncOpenapiConnector(
   // round 4): their refs resolve while that login holds the keys area
   // (secretRefsRunRefusal), whoever runs the sync. Null: the brain owner's.
   const createdBy = group.configuredBy ?? null;
-  for (const ins of plan.inserts) {
-    await db.insert(tools).values({
-      ownerId,
-      slug: ins.slug,
-      name: ins.name,
-      description: ins.description,
-      inputSchema: ins.inputSchema,
-      handler: ins.handler,
-      requiresConfirm: false,
-      enabled: true,
-      createdBy,
-    });
-  }
-  for (const upd of plan.updates) {
-    const { slug, ...fields } = upd;
-    await db
-      .update(tools)
-      .set({ ...fields, createdBy, updatedAt: now })
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
-  }
-  for (const d of plan.disables) {
-    await db
-      .update(tools)
-      .set({ enabled: false, handler: d.handler, createdBy, updatedAt: now })
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
-  }
+  // The connector's tools made, changed or disabled carry their handler (where a call and its vault key go): the narrow login holds no INSERT of a tool nor its handler (access-matrix.ts NARROW_NEVER_INSERT), so they run at the full-route spot tool-config.
+  await onFullSystemRoute('tool-config', async () => {
+    for (const ins of plan.inserts) {
+      await db.insert(tools).values({
+        ownerId,
+        slug: ins.slug,
+        name: ins.name,
+        description: ins.description,
+        inputSchema: ins.inputSchema,
+        handler: ins.handler,
+        requiresConfirm: false,
+        enabled: true,
+        createdBy,
+      });
+    }
+    for (const upd of plan.updates) {
+      const { slug, ...fields } = upd;
+      await db
+        .update(tools)
+        .set({ ...fields, createdBy, updatedAt: now })
+        .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
+    }
+    for (const d of plan.disables) {
+      await db
+        .update(tools)
+        .set({ enabled: false, handler: d.handler, createdBy, updatedAt: now })
+        .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
+    }
+  });
 
   const nextIntegration: ToolGroupIntegration = {
     ...integration,

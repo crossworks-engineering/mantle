@@ -10,7 +10,7 @@
  * The anchor's own saves leave every maker as it is.
  */
 import { and, arrayContains, arrayOverlaps, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { agents, db, heartbeats, toolGroups } from '@mantle/db';
+import { agents, db, heartbeats, toolGroups, onFullSystemRoute } from '@mantle/db';
 
 export type HeartbeatPromptSource = {
   /** A skill saved: the heartbeats that run it, those of every agent that
@@ -85,10 +85,12 @@ export async function restampHeartbeatMakers(
   if (source.skillSlug) runs.push(eq(heartbeats.skillSlug, source.skillSlug));
   if (agentSlugs.size > 0) runs.push(inArray(heartbeats.agentSlug, [...agentSlugs]));
   if (runs.length === 0) return 0;
-  const changed = await db
-    .update(heartbeats)
-    .set(makerChangeSet(login))
-    .where(and(eq(heartbeats.ownerId, ownerId), or(...runs)))
-    .returning({ id: heartbeats.id });
+  const changed = await onFullSystemRoute('heartbeat-maker', () =>
+    db
+      .update(heartbeats)
+      .set(makerChangeSet(login))
+      .where(and(eq(heartbeats.ownerId, ownerId), or(...runs)))
+      .returning({ id: heartbeats.id }),
+  );
   return changed.length;
 }

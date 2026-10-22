@@ -5,7 +5,7 @@
  * the change applies. The caller has validated the call already.
  */
 import { and, eq } from 'drizzle-orm';
-import { agents, db, pendingToolCalls } from '@mantle/db';
+import { agents, db, pendingToolCalls, onFullSystemRoute } from '@mantle/db';
 import { notifyPendingCreated } from './pending-notify';
 import { pendingOriginNow } from './pending-origin';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
@@ -21,17 +21,19 @@ export async function queueAgentCallForApproval(
     .from(agents)
     .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
     .limit(1);
-  const [pending] = await db
-    .insert(pendingToolCalls)
-    .values({
-      ownerId: ctx.ownerId,
-      agentId: requester?.id ?? null,
-      toolSlug,
-      args,
-      // The scope the asking turn runs in (A5 step 6c, 0288).
-      origin: await pendingOriginNow(ctx.surface),
-    })
-    .returning({ id: pendingToolCalls.id });
+  const [pending] = await onFullSystemRoute('pending-park', async () =>
+    db
+      .insert(pendingToolCalls)
+      .values({
+        ownerId: ctx.ownerId,
+        agentId: requester?.id ?? null,
+        toolSlug,
+        args,
+        // The scope the asking turn runs in (A5 step 6c, 0288).
+        origin: await pendingOriginNow(ctx.surface),
+      })
+      .returning({ id: pendingToolCalls.id }),
+  );
   if (pending?.id) {
     void notifyPendingCreated({
       ownerId: ctx.ownerId,

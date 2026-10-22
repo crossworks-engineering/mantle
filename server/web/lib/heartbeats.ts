@@ -30,6 +30,8 @@ import {
   type HeartbeatQuietHours,
   type HeartbeatScheduleSpec,
   type HeartbeatSurface,
+  onFullSystemRoute,
+  narrowNeedsSpot,
 } from '@mantle/db';
 import {
   computeNextFireAt,
@@ -240,28 +242,30 @@ export async function createHeartbeat(
     if (skillRow) initialState = skillRow.defaultState ?? {};
   }
 
-  const [row] = await db
-    .insert(heartbeats)
-    .values({
-      ownerId,
-      slug: input.slug,
-      name: input.name,
-      description: input.description ?? null,
-      agentSlug: input.agentSlug,
-      skillSlug: input.skillSlug,
-      scheduleKind: input.schedule.kind,
-      schedule: input.schedule,
-      surface: input.surface,
-      nextFireAt,
-      minIdleMinutes: input.minIdleMinutes ?? null,
-      quietHours: input.quietHours ?? null,
-      earliestAt: input.earliestAt ?? null,
-      cooldownMinutes: input.cooldownMinutes ?? null,
-      maxFires: input.maxFires ?? null,
-      state: initialState,
-      createdBy: heartbeatMaker(ownerId, loginId),
-    })
-    .returning();
+  const [row] = await onFullSystemRoute('heartbeat-maker', () =>
+    db
+      .insert(heartbeats)
+      .values({
+        ownerId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description ?? null,
+        agentSlug: input.agentSlug,
+        skillSlug: input.skillSlug,
+        scheduleKind: input.schedule.kind,
+        schedule: input.schedule,
+        surface: input.surface,
+        nextFireAt,
+        minIdleMinutes: input.minIdleMinutes ?? null,
+        quietHours: input.quietHours ?? null,
+        earliestAt: input.earliestAt ?? null,
+        cooldownMinutes: input.cooldownMinutes ?? null,
+        maxFires: input.maxFires ?? null,
+        state: initialState,
+        createdBy: heartbeatMaker(ownerId, loginId),
+      })
+      .returning(),
+  );
   if (!row) throw new Error('failed to insert heartbeat');
   // Wake the agent's tick loop so a near-term next_fire_at lands
   // within seconds, not up to 60. Soft-fail; the next regular tick
@@ -345,11 +349,18 @@ export async function updateHeartbeat(
     }
   }
 
-  const [row] = await db
-    .update(heartbeats)
-    .set(next)
-    .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
-    .returning();
+  const write = () =>
+    db
+      .update(heartbeats)
+      .set(next)
+      .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
+      .returning();
+  // Its schedule, assistant, skill or maker (whom and when it fires as) is
+  // not the narrow login's: the full-route spot heartbeat-maker
+  // (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
+  const [row] = narrowNeedsSpot(heartbeats, 'update', next)
+    ? await onFullSystemRoute('heartbeat-maker', write)
+    : await write();
   // Wake the tick — covers schedule edits, resume-from-paused, and
   // explicit state changes that might have re-armed the row. Soft-
   // fail; the regular tick recovers. (NEW-7.)

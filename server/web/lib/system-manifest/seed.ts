@@ -457,10 +457,18 @@ async function syncPersonaSkills(
  * seeds this before the persona so a group grant never dangles (resolves to 0
  * tools) even if a later step fails. applyManifest runs it as its first step.
  */
+/** The builtin tool rows and the tool groups (onboarding's provision, plan
+ *  v3.2 S7b part b2 round 8 B): a tool made names its handler and a group
+ *  its tools, neither the narrow login's to write, so the seed runs at the
+ *  full-route spot tool-group-grant. */
 export async function seedToolCapabilities(
   ownerId: string,
   mode: ApplyMode = 'gap-fill',
 ): Promise<void> {
+  return onFullSystemRoute('tool-group-grant', () => seedToolCapabilitiesHere(ownerId, mode));
+}
+
+async function seedToolCapabilitiesHere(ownerId: string, mode: ApplyMode): Promise<void> {
   // Builtin tool rows must exist for the slugs the groups/agents reference.
   await seedBuiltinTools(ownerId);
   // Seeded HTTP tools (e.g. Mapbox geocoding) — referenced by tool groups too,
@@ -496,7 +504,13 @@ export async function seedToolCapabilities(
  * `assistant` — a brain whose persona was renamed still gets a working
  * heartbeat instead of a dangling `agent_slug`.
  */
+/** The manifest's heartbeats made (their schedule, assistant, skill and
+ *  maker): the full-route spot heartbeat-maker. */
 export async function seedManifestHeartbeats(ownerId: string): Promise<string[]> {
+  return onFullSystemRoute('heartbeat-maker', () => seedManifestHeartbeatsHere(ownerId));
+}
+
+async function seedManifestHeartbeatsHere(ownerId: string): Promise<string[]> {
   if (MANIFEST_HEARTBEATS.length === 0) return [];
 
   const personaRows = await db

@@ -19,6 +19,7 @@ import {
   type AgentParams,
   type PersonaNote,
   deleteAgentOnNarrow,
+  narrowNeedsSpot,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
 import {
@@ -394,7 +395,14 @@ export async function updateAgent(
     patch.role !== undefined ||
     patch.toolGroupSlugs !== undefined ||
     (patch.memoryConfig != null && 'delegate_to' in patch.memoryConfig);
-  const [row] = grants ? await onFullSystemRoute('assistant-grant', write) : await write();
+  // Which vault key an assistant sends and where (api_key_id, base_url,
+  // configured_by and their backups) is not the narrow login's either
+  // (access-matrix.ts NARROW_NEVER_UPDATE): such an edit runs at model-route.
+  const [row] = grants
+    ? await onFullSystemRoute('assistant-grant', write)
+    : narrowNeedsSpot(agents, 'update', next)
+      ? await onFullSystemRoute('model-route', write)
+      : await write();
   return row ? toSummary(row) : null;
 }
 

@@ -59,6 +59,7 @@ import {
   type ToolHandler,
   type ToolExternalAccess,
   wsArraySql,
+  onFullSystemRoute,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
@@ -829,11 +830,15 @@ export async function setToolExternalAccess(
       handlerSig: externalAccessToolSig(row),
     };
   }
-  const [updated] = await db
-    .update(tools)
-    .set({ externalAccess: value, updatedAt: new Date() })
-    .where(and(eq(tools.ownerId, ownerId), eq(tools.id, toolId)))
-    .returning();
+  // Whether a tool reaches outside is the Admin's mark: the full-route spot
+  // tool-config (no narrow write of external_access).
+  const [updated] = await onFullSystemRoute('tool-config', () =>
+    db
+      .update(tools)
+      .set({ externalAccess: value, updatedAt: new Date() })
+      .where(and(eq(tools.ownerId, ownerId), eq(tools.id, toolId)))
+      .returning(),
+  );
   if (!updated) return { ok: false, status: 404, error: 'tool not found' };
   // The audit trail: who opened or closed which tool. Only admin paths call
   // this (no viewer scope), so `db` is the admin pool. Best-effort: it never
@@ -890,12 +895,14 @@ export async function clearConnectorExternalAccess(
     sql`${tools.handler}->>'kind' = 'mcp'`,
     sql`${tools.handler}->>'group' = ${groupSlug}`,
   );
-  await db
-    .update(tools)
-    .set({
-      externalAccess: sql`jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text))`,
-    })
-    .where(and(ofConnector, sql`${tools.externalAccess} is not null`));
+  await onFullSystemRoute('tool-config', () =>
+    db
+      .update(tools)
+      .set({
+        externalAccess: sql`jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text))`,
+      })
+      .where(and(ofConnector, sql`${tools.externalAccess} is not null`)),
+  );
   if (await connectorOpensBeyondAdmin(ownerId, groupSlug)) {
     await db
       .update(tools)

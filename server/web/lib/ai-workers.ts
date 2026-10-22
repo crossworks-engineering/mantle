@@ -26,6 +26,8 @@ import {
   type AiWorkerKind,
   type AiWorkerParams,
   type NewAiWorker,
+  narrowNeedsSpot,
+  onFullSystemRoute,
 } from '@mantle/db';
 import type { AiWorkerDTO } from '@mantle/client-types';
 import { slugify } from '@mantle/client-types/slugify';
@@ -131,30 +133,35 @@ export async function createAiWorker(input: CreateAiWorkerInput): Promise<AiWork
     backupViaTailnet: input.backupViaTailnet ?? false,
     configuredBy: input.configuredBy ?? null,
   };
-  return await db.transaction(async (tx) => {
-    const [inserted] = await tx.insert(aiWorkers).values(row).returning();
-    if (!inserted) throw new Error('createAiWorker: insert returned no row');
-    if (input.isDefault) {
-      // Clear any existing default for this kind, then set this one.
-      await tx
-        .update(aiWorkers)
-        .set({ isDefault: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(aiWorkers.ownerId, inserted.ownerId),
-            eq(aiWorkers.kind, inserted.kind),
-            eq(aiWorkers.isDefault, true),
-          ),
-        );
-      const [updated] = await tx
-        .update(aiWorkers)
-        .set({ isDefault: true, updatedAt: new Date() })
-        .where(eq(aiWorkers.id, inserted.id))
-        .returning();
-      return updated ?? inserted;
-    }
-    return inserted;
-  });
+  // A worker made names its provider, base URL and vault key: the narrow
+  // login holds no INSERT (access-matrix.ts NARROW_NEVER_INSERT), so it is
+  // made at the full-route spot model-route.
+  return await onFullSystemRoute('model-route', () =>
+    db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(aiWorkers).values(row).returning();
+      if (!inserted) throw new Error('createAiWorker: insert returned no row');
+      if (input.isDefault) {
+        // Clear any existing default for this kind, then set this one.
+        await tx
+          .update(aiWorkers)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(aiWorkers.ownerId, inserted.ownerId),
+              eq(aiWorkers.kind, inserted.kind),
+              eq(aiWorkers.isDefault, true),
+            ),
+          );
+        const [updated] = await tx
+          .update(aiWorkers)
+          .set({ isDefault: true, updatedAt: new Date() })
+          .where(eq(aiWorkers.id, inserted.id))
+          .returning();
+        return updated ?? inserted;
+      }
+      return inserted;
+    }),
+  );
 }
 
 export type UpdateAiWorkerInput = Partial<
@@ -185,11 +192,18 @@ export async function updateAiWorker(
   id: string,
   patch: UpdateAiWorkerInput,
 ): Promise<AiWorker | null> {
-  const [row] = await db
-    .update(aiWorkers)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(aiWorkers.id, id), eq(aiWorkers.ownerId, ownerId)))
-    .returning();
+  const set = { ...patch, updatedAt: new Date() };
+  const write = () =>
+    db
+      .update(aiWorkers)
+      .set(set)
+      .where(and(eq(aiWorkers.id, id), eq(aiWorkers.ownerId, ownerId)))
+      .returning();
+  // Its vault key, base URL or configuring login (and their backups): the
+  // full-route spot model-route (access-matrix.ts NARROW_NEVER_UPDATE).
+  const [row] = narrowNeedsSpot(aiWorkers, 'update', set)
+    ? await onFullSystemRoute('model-route', write)
+    : await write();
   return row ?? null;
 }
 

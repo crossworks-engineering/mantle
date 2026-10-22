@@ -371,16 +371,11 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'description',
       'provider',
       'model',
-      'api_key_id',
       'backup_provider',
       'backup_model',
-      'backup_api_key_id',
       'backup_enabled',
-      'base_url',
       'via_tailnet',
-      'backup_base_url',
       'backup_via_tailnet',
-      'configured_by',
       'tts_worker_id',
       'system_prompt',
       'skill_slugs',
@@ -398,12 +393,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in)",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8)",
   },
   'public.tool_groups': {
-    update: ['name', 'description', 'integration', 'enabled', 'configured_by', 'updated_at'],
+    update: ['name', 'description', 'enabled', 'updated_at'],
     delete: false,
-    why: "the connectors and settings areas rename, describe, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'",
+    why: "the connectors and settings areas rename, describe, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'. Round 8: its integration and configuring login (where its calls, token and vault refs go) run at the full-route spot tool-config",
   },
   // The rest of the measured allowlist (round 8): every table the narrow
   // login wrote over the measured suites, its operations and its columns.
@@ -414,23 +409,16 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by system:admin-area',
   },
   'public.agent_groups': {
-    insert: true,
     update: ['updated_at'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A group made (who answers together) runs at the full-route spot agent-group-grant',
   },
   'public.ai_workers': {
-    insert: true,
     update: [
-      'api_key_id',
-      'backup_api_key_id',
-      'backup_base_url',
       'backup_enabled',
       'backup_model',
       'backup_provider',
       'backup_via_tailnet',
-      'base_url',
-      'configured_by',
       'enabled',
       'is_default',
       'model',
@@ -443,7 +431,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'via_tailnet',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route',
   },
   'public.api_keys': {
     insert: true,
@@ -494,10 +482,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
   },
   'public.doc_collections': {
-    insert: true,
     update: ['enabled', 'last_reconciled_at', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. A collection made (its root_path) runs at the full-route spot docs-root',
   },
   'public.email_accounts': {
     insert: true,
@@ -525,10 +512,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by system:http:admin-area',
   },
   'public.embedding_config': {
-    insert: true,
     update: [
-      'backup_api_key_id',
-      'backup_base_url',
       'backup_enabled',
       'backup_label',
       'backup_provider',
@@ -538,14 +522,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'local_embed_batch_size',
       'local_embed_request_timeout_ms',
       'model',
-      'primary_api_key_id',
-      'primary_base_url',
       'primary_label',
       'primary_provider',
       'updated_at',
     ],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route',
   },
   'public.heartbeat_fires': {
     insert: true,
@@ -554,10 +536,8 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by system:admin-area, system:http:admin-area',
   },
   'public.heartbeats': {
-    insert: true,
     update: [
       'completion_reason',
-      'created_by',
       'fire_count',
       'last_fired_at',
       'next_fire_at',
@@ -566,12 +546,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A heartbeat made, or its maker, schedule, assistant or skill changed, runs at the full-route spot heartbeat-maker; next_fire_at, fire_count, last_fired_at and status are the bookkeeping of a fire (its schedule, maker, cooldown and limit never)',
   },
   'public.microsoft_config': {
-    update: ['client_id', 'redirect_uri', 'tenant', 'updated_at'],
+    update: ['client_id', 'tenant', 'updated_at'],
     delete: true,
-    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area. Its redirect URI and the row made run at the full-route spot tool-config',
   },
   'public.ms_accounts': {
     update: ['last_sync_error', 'updated_at'],
@@ -595,10 +575,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT, DELETE by system:http:admin-area',
   },
   'public.pending_tool_calls': {
-    insert: true,
     update: ['decided_at', 'error', 'executed_at', 'result', 'status', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area. A call parked runs at the full-route spot pending-park: the narrow login may only decide one (status and result), never make or swap one',
   },
   'public.prompt_versions': {
     insert: true,
@@ -631,10 +610,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
   },
   'public.skills': {
-    insert: true,
     update: ['updated_at'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A skill made, or its instructions or any other column changed, runs at the full-route spot skill-text',
   },
   'public.tailscale_config': {
     update: ['auth_key_enc', 'hostname', 'key_version', 'masked', 'updated_at'],
@@ -658,10 +636,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): UPDATE by a login turn',
   },
   'public.tools': {
-    insert: true,
-    update: ['external_access', 'updated_at'],
+    update: ['updated_at'],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A tool made (its handler) and its external access run at the full-route spot tool-config',
   },
   'public.trace_steps': {
     insert: true,
@@ -759,7 +736,6 @@ export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[
     'public.heartbeats': [
       'schedule',
       'schedule_kind',
-      'next_fire_at',
       'earliest_at',
       'quiet_hours',
       'cooldown_minutes',
@@ -827,42 +803,8 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * to name nothing else the rules refuse.
  */
 export const NARROW_MOVES_LEFT: Readonly<Record<string, string>> = Object.freeze({
-  'public.agent_groups:insert':
-    'agent-group-grant: an assistant group names who answers together (member_slugs)',
-  'public.ai_workers:insert':
-    'model-route: an AI worker made with its provider, base URL and vault key',
-  'public.ai_workers.api_key_id': 'model-route: which vault key an AI worker sends',
-  'public.ai_workers.backup_api_key_id': 'model-route',
-  'public.ai_workers.base_url': 'model-route: where an AI worker sends its key',
-  'public.ai_workers.backup_base_url': 'model-route',
-  'public.ai_workers.configured_by': 'model-route: the login a vault pairing answers to',
-  'public.agents.api_key_id': 'model-route: which vault key an assistant sends',
-  'public.agents.backup_api_key_id': 'model-route',
-  'public.agents.base_url': 'model-route: where an assistant sends its key',
-  'public.agents.backup_base_url': 'model-route',
-  'public.agents.configured_by': 'model-route',
-  'public.embedding_config:insert': 'model-route: the embedding routes made',
-  'public.embedding_config.primary_api_key_id': 'model-route',
-  'public.embedding_config.backup_api_key_id': 'model-route',
-  'public.embedding_config.primary_base_url': 'model-route',
-  'public.embedding_config.backup_base_url': 'model-route',
-  'public.tool_groups.integration': 'tool-config: where a group sends its OAuth token and calls',
-  'public.tool_groups.configured_by': 'tool-config: the login a group vault refs answer to',
-  'public.tools:insert': 'tool-config: a tool made with its handler (where it sends a vault key)',
-  'public.tools.external_access': 'tool-config: whether a tool reaches outside',
-  'public.microsoft_config.redirect_uri':
-    'tool-config: where the Microsoft sign-in returns its code',
-  'public.doc_collections:insert':
-    'docs-root: a collection made with its root_path (which files the brain reads)',
-  'public.heartbeats:insert':
-    'heartbeat-maker: a heartbeat made with its maker, agent, skill and schedule',
-  'public.heartbeats.created_by': 'heartbeat-maker: whom a heartbeat fires as',
-  'public.heartbeats.next_fire_at': 'heartbeat-maker: when it fires',
-  'public.skills:insert': 'skill-text: a skill made with its instructions',
-  'public.pending_tool_calls:insert':
-    'pending-park: a call parked for an Admin decision (tool, args, origin)',
   'public.push_subscriptions:insert':
-    'push-device: a device subscribed (login-self) with its endpoint',
+    'push-device: a device subscribed (login-self) with its endpoint, in a transaction with its token check (server/web lib/push/store.ts): its move takes the transaction to the spot',
 });
 
 /** Whether the narrow role may do `op` on `table` (and, for an UPDATE, on

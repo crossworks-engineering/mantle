@@ -273,47 +273,50 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
   // until an admin looks at it and enables it (M2 audit, low 5). Held by
   // Admin alone it arrives enabled, as before.
   const openBelowAdmin = await connectorOpensBeyondAdmin(ownerId, groupSlug);
-  for (const ins of plan.inserts) {
-    await db.insert(tools).values({
-      ownerId,
-      slug: ins.slug,
-      name: ins.name,
-      description: ins.description,
-      inputSchema: ins.inputSchema,
-      handler: ins.handler,
-      requiresConfirm: false,
-      enabled: !openBelowAdmin,
-    });
-  }
-  for (const upd of plan.updates) {
-    const { slug, ...fields } = upd;
-    // The remote tool changed (its description or input schema), or it came
-    // back after it vanished (access matrix N4): a read-only mark was for
-    // the tool the admin looked at, so it is voided (kept, refused below the
-    // owner until marked again). Beyond Admin a returning tool also comes
-    // back DISABLED, as a new one arrives, until an admin looks at it.
-    const changed = fields.description !== undefined || fields.inputSchema !== undefined;
-    const returning = fields.enabled === true;
-    await db
-      .update(tools)
-      .set({
-        ...fields,
-        ...(returning && openBelowAdmin ? { enabled: false } : {}),
-        ...(changed || returning
-          ? {
-              externalAccess: sql`case when ${tools.externalAccess} is null then null else jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text)) end`,
-            }
-          : {}),
-        updatedAt: now,
-      })
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
-  }
-  for (const d of plan.disables) {
-    await db
-      .update(tools)
-      .set({ enabled: false, handler: d.handler, updatedAt: now })
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
-  }
+  // The connector's tools made, changed or disabled carry their handler (where a call and its vault key go): the narrow login holds no INSERT of a tool nor its handler (access-matrix.ts NARROW_NEVER_INSERT), so they run at the full-route spot tool-config.
+  await onFullSystemRoute('tool-config', async () => {
+    for (const ins of plan.inserts) {
+      await db.insert(tools).values({
+        ownerId,
+        slug: ins.slug,
+        name: ins.name,
+        description: ins.description,
+        inputSchema: ins.inputSchema,
+        handler: ins.handler,
+        requiresConfirm: false,
+        enabled: !openBelowAdmin,
+      });
+    }
+    for (const upd of plan.updates) {
+      const { slug, ...fields } = upd;
+      // The remote tool changed (its description or input schema), or it came
+      // back after it vanished (access matrix N4): a read-only mark was for
+      // the tool the admin looked at, so it is voided (kept, refused below the
+      // owner until marked again). Beyond Admin a returning tool also comes
+      // back DISABLED, as a new one arrives, until an admin looks at it.
+      const changed = fields.description !== undefined || fields.inputSchema !== undefined;
+      const returning = fields.enabled === true;
+      await db
+        .update(tools)
+        .set({
+          ...fields,
+          ...(returning && openBelowAdmin ? { enabled: false } : {}),
+          ...(changed || returning
+            ? {
+                externalAccess: sql`case when ${tools.externalAccess} is null then null else jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text)) end`,
+              }
+            : {}),
+          updatedAt: now,
+        })
+        .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
+    }
+    for (const d of plan.disables) {
+      await db
+        .update(tools)
+        .set({ enabled: false, handler: d.handler, updatedAt: now })
+        .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
+    }
+  });
 
   const nextIntegration: ToolGroupIntegration = {
     ...group.integration!,

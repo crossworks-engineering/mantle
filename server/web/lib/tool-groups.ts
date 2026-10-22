@@ -15,6 +15,7 @@ import {
   agents,
   type ToolGroup,
   type ToolGroupIntegration,
+  narrowNeedsSpot,
 } from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
@@ -140,10 +141,14 @@ export async function updateToolGroup(
   // call it): the full-route spot tool-group-grant on a narrow exit; any
   // other edit stays on the narrow login (access-matrix.ts
   // NARROW_WRITES).
+  // Its integration (where its calls and token go) or configuring login:
+  // the full-route spot tool-config.
   const [row] =
     patch.toolSlugs !== undefined
       ? await onFullSystemRoute('tool-group-grant', write)
-      : await write();
+      : narrowNeedsSpot(toolGroups, 'update', next)
+        ? await onFullSystemRoute('tool-config', write)
+        : await write();
   return row ? toSummary(row) : null;
 }
 

@@ -10,7 +10,14 @@
  */
 
 import { and, asc, eq } from 'drizzle-orm';
-import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
+import {
+  db,
+  tools,
+  type Tool,
+  type ToolHandler,
+  onFullSystemRoute,
+  narrowNeedsSpot,
+} from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
 import { InputError } from '@mantle/std';
 import {
@@ -85,20 +92,24 @@ export async function createTool(ownerId: string, input: CreateToolInput): Promi
       "cannot register a tool carrying openapi connector provenance by hand — such rows are materialised by an OpenAPI connector's sync (create the connector via POST /api/openapi-connectors)",
     );
   }
-  const [row] = await db
-    .insert(tools)
-    .values({
-      ownerId,
-      slug: input.slug,
-      name: input.name,
-      description: input.description,
-      inputSchema: input.inputSchema ?? { type: 'object', properties: {} },
-      handler: input.handler,
-      requiresConfirm: input.requiresConfirm ?? input.handler.kind === 'shell',
-      enabled: input.enabled ?? true,
-      createdBy: input.createdBy ?? null,
-    })
-    .returning();
+  // A tool made names its handler: the full-route spot tool-config (the
+  // narrow login holds no INSERT of a tool).
+  const [row] = await onFullSystemRoute('tool-config', () =>
+    db
+      .insert(tools)
+      .values({
+        ownerId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description,
+        inputSchema: input.inputSchema ?? { type: 'object', properties: {} },
+        handler: input.handler,
+        requiresConfirm: input.requiresConfirm ?? input.handler.kind === 'shell',
+        enabled: input.enabled ?? true,
+        createdBy: input.createdBy ?? null,
+      })
+      .returning(),
+  );
   if (!row) throw new Error('failed to insert tool');
   return toSummary(row);
 }
@@ -230,11 +241,17 @@ export async function updateTool(
   }
   if (patch.requiresConfirm !== undefined) next.requiresConfirm = patch.requiresConfirm;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
-  const [row] = await db
-    .update(tools)
-    .set(next)
-    .where(and(eq(tools.id, id), eq(tools.ownerId, ownerId)))
-    .returning();
+  const write = () =>
+    db
+      .update(tools)
+      .set(next)
+      .where(and(eq(tools.id, id), eq(tools.ownerId, ownerId)))
+      .returning();
+  // A handler, its confirm flag or its external access: the full-route spot
+  // tool-config (access-matrix.ts NARROW_NEVER_UPDATE).
+  const [row] = narrowNeedsSpot(tools, 'update', next)
+    ? await onFullSystemRoute('tool-config', write)
+    : await write();
   return row ? toSummary(row) : null;
 }
 

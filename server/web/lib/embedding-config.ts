@@ -11,6 +11,7 @@ import {
   embeddingConfig,
   executeWrite,
   requestProviderProbeNow,
+  onFullSystemRoute,
 } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
@@ -61,10 +62,15 @@ export async function upsertEmbeddingConfig(
 ): Promise<void> {
   const now = new Date();
   const row = { dimensions: EMBEDDING_DIMS, ...input, updatedAt: now };
-  await db
-    .insert(embeddingConfig)
-    .values({ ownerId, ...row })
-    .onConflictDoUpdate({ target: embeddingConfig.ownerId, set: row });
+  // An upsert that names the routes' vault keys and base URLs: the narrow
+  // login holds no INSERT of the row nor those columns, so it runs at the
+  // full-route spot model-route.
+  await onFullSystemRoute('model-route', () =>
+    db
+      .insert(embeddingConfig)
+      .values({ ownerId, ...row })
+      .onConflictDoUpdate({ target: embeddingConfig.ownerId, set: row }),
+  );
   clearEmbeddingModelCache(ownerId);
   await notifyProviderRecover(ownerId);
 }

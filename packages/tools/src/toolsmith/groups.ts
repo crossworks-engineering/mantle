@@ -281,17 +281,19 @@ export const tool_group_ensure: BuiltinToolDef = {
           .from(agents)
           .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
           .limit(1);
-        const [pending] = await db
-          .insert(pendingToolCalls)
-          .values({
-            ownerId: ctx.ownerId,
-            agentId: requester?.id ?? null,
-            toolSlug: 'tool_group_ensure',
-            args: input,
-            // The scope the asking turn runs in (A5 step 6c, 0288).
-            origin: await pendingOriginNow(ctx.surface),
-          })
-          .returning({ id: pendingToolCalls.id });
+        const [pending] = await onFullSystemRoute('pending-park', async () =>
+          db
+            .insert(pendingToolCalls)
+            .values({
+              ownerId: ctx.ownerId,
+              agentId: requester?.id ?? null,
+              toolSlug: 'tool_group_ensure',
+              args: input,
+              // The scope the asking turn runs in (A5 step 6c, 0288).
+              origin: await pendingOriginNow(ctx.surface),
+            })
+            .returning({ id: pendingToolCalls.id }),
+        );
         if (pending?.id) {
           void notifyPendingCreated({
             ownerId: ctx.ownerId,
@@ -605,17 +607,19 @@ export const agent_grant_tool_group: BuiltinToolDef = {
         .from(agents)
         .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
         .limit(1);
-      const [pending] = await db
-        .insert(pendingToolCalls)
-        .values({
-          ownerId: ctx.ownerId,
-          agentId: requester?.id ?? null,
-          toolSlug: 'agent_grant_tool_group',
-          args: grantArgs,
-          // The scope the asking turn runs in (A5 step 6c, 0288).
-          origin: await pendingOriginNow(ctx.surface),
-        })
-        .returning({ id: pendingToolCalls.id });
+      const [pending] = await onFullSystemRoute('pending-park', async () =>
+        db
+          .insert(pendingToolCalls)
+          .values({
+            ownerId: ctx.ownerId,
+            agentId: requester?.id ?? null,
+            toolSlug: 'agent_grant_tool_group',
+            args: grantArgs,
+            // The scope the asking turn runs in (A5 step 6c, 0288).
+            origin: await pendingOriginNow(ctx.surface),
+          })
+          .returning({ id: pendingToolCalls.id }),
+      );
       if (pending?.id) {
         void notifyPendingCreated({
           ownerId: ctx.ownerId,
@@ -728,17 +732,19 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
         .from(agents)
         .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
         .limit(1);
-      const [pending] = await db
-        .insert(pendingToolCalls)
-        .values({
-          ownerId: ctx.ownerId,
-          agentId: requester?.id ?? null,
-          toolSlug: 'agent_set_thinking_effort',
-          args,
-          // The scope the asking turn runs in (A5 step 6c, 0288).
-          origin: await pendingOriginNow(ctx.surface),
-        })
-        .returning({ id: pendingToolCalls.id });
+      const [pending] = await onFullSystemRoute('pending-park', async () =>
+        db
+          .insert(pendingToolCalls)
+          .values({
+            ownerId: ctx.ownerId,
+            agentId: requester?.id ?? null,
+            toolSlug: 'agent_set_thinking_effort',
+            args,
+            // The scope the asking turn runs in (A5 step 6c, 0288).
+            origin: await pendingOriginNow(ctx.surface),
+          })
+          .returning({ id: pendingToolCalls.id }),
+      );
       if (pending?.id) {
         void notifyPendingCreated({
           ownerId: ctx.ownerId,

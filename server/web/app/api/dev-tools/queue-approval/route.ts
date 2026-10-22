@@ -16,7 +16,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, pendingToolCalls } from '@mantle/db';
+import { db, pendingToolCalls, onFullSystemRoute } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
@@ -46,14 +46,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
-  const [pending] = await db
-    .insert(pendingToolCalls)
-    .values({
-      ownerId: user.id,
-      toolSlug: parsed.data.slug,
-      args: parsed.data.input,
-    })
-    .returning({ id: pendingToolCalls.id });
+  const [pending] = await onFullSystemRoute('pending-park', () =>
+    db
+      .insert(pendingToolCalls)
+      .values({
+        ownerId: user.id,
+        toolSlug: parsed.data.slug,
+        args: parsed.data.input,
+      })
+      .returning({ id: pendingToolCalls.id }),
+  );
   if (!pending) {
     return NextResponse.json({ error: 'failed to queue' }, { status: 500 });
   }

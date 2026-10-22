@@ -145,9 +145,13 @@ export async function provisionDefaults(
   // immediately and never dangles, even if the later specialist-stack seed fails.
   // applyManifest (in seedSpecialistStack) re-runs this idempotently.
   if (openrouter || azureRoute) {
-    await seedToolCapabilities(ownerId).catch((err) =>
-      console.error('[onboarding] seedToolCapabilities failed:', err),
-    );
+    // It runs at the full-route spot tool-group-grant (seed.ts). A refusal
+    // of the narrow login is a route bug, never a soft failure: it is thrown,
+    // not logged and swallowed (plan v3.2 S7b part b2 round 8 B).
+    await seedToolCapabilities(ownerId).catch((err) => {
+      if ((err as { code?: string } | null)?.code === '42501') throw err;
+      console.error('[onboarding] seedToolCapabilities failed:', err);
+    });
   }
 
   // The persona agent — created with the Warm/Saskia default; the personality

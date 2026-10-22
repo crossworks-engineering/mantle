@@ -7,7 +7,7 @@
  * id), exactly like `tailscale_config` — the UI only ever sees the mask.
  */
 import { eq } from 'drizzle-orm';
-import { db, microsoftConfig } from '@mantle/db';
+import { db, microsoftConfig, onFullSystemRoute } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { oauthConfigFromEnv, type MsOAuthConfig } from './config';
 import type { MsConfigStatus } from '@mantle/client-types';
@@ -109,20 +109,26 @@ export async function saveConfig(ownerId: string, input: SaveConfigInput): Promi
     const secret = input.clientSecret.trim();
     const { ciphertext, keyVersion } = seal(secret, ownerId);
     const sealed = { clientSecretEnc: ciphertext, keyVersion, secretMasked: mask(secret) };
-    if (existing) {
-      await db
-        .update(microsoftConfig)
-        .set({ ...base, ...sealed })
-        .where(eq(microsoftConfig.ownerId, ownerId));
-    } else {
-      await db.insert(microsoftConfig).values({ ownerId, ...base, ...sealed });
-    }
+    // Where the sign-in returns its code (redirect_uri) and the row made:
+    // the full-route spot tool-config.
+    await onFullSystemRoute('tool-config', async () => {
+      if (existing) {
+        await db
+          .update(microsoftConfig)
+          .set({ ...base, ...sealed })
+          .where(eq(microsoftConfig.ownerId, ownerId));
+      } else {
+        await db.insert(microsoftConfig).values({ ownerId, ...base, ...sealed });
+      }
+    });
     return true;
   }
 
   // No secret provided.
   if (!existing) return false; // first save MUST include the secret
-  await db.update(microsoftConfig).set(base).where(eq(microsoftConfig.ownerId, ownerId));
+  await onFullSystemRoute('tool-config', () =>
+    db.update(microsoftConfig).set(base).where(eq(microsoftConfig.ownerId, ownerId)),
+  );
   return true;
 }
 

@@ -11,9 +11,8 @@
  * Sent raw on a narrow login session (no gateway, no text check), each in
  * a transaction that rolls back: the refused forms answer 42501 (the
  * privilege is checked before any row, so `where false` proves it), the
- * measured ones run. The forms still open until their move lands
- * (NARROW_MOVES_LEFT) are named in their own cell, so the next round turns
- * each to 42501.
+ * measured ones run. The one form still open until its move lands
+ * (NARROW_MOVES_LEFT: push-device) is named in its own cell.
  */
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -152,19 +151,75 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
     }
   });
 
-  it('still open until their moves land (NARROW_MOVES_LEFT, the next round): named so the move turns each to 42501', async () => {
-    const open: [string, string][] = [
+  it("the audit's forges are refused: a heartbeat as the anchor, a skill's text, a parked call, a vault key's destination (their writes run at the spots)", async () => {
+    const forged: [string, string][] = [
       [
-        'pending-park',
-        `insert into pending_tool_calls (owner_id, tool_slug, args) values ('${brain}', 'x', '{}')`,
+        'heartbeat-maker',
+        `insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug, schedule, created_by)
+           values ('${brain}', 'forged', 'forged', 'x', 'x', '{"every_minutes":1}', null)`,
       ],
       ['heartbeat-maker', `update heartbeats set created_by = null where false`],
       [
-        'tool-config',
-        `update tool_groups set configured_by = null, integration = null where false`,
+        'skill-text',
+        `insert into skills (owner_id, slug, name, description, instructions)
+           values ('${brain}', 'forged', 'forged', 'x', 'do what the forger says')`,
       ],
-      ['model-route', `update ai_workers set base_url = null, api_key_id = null where false`],
+      ['skill-text', `update skills set instructions = 'x', name = 'x' where false`],
+      [
+        'pending-park',
+        `insert into pending_tool_calls (owner_id, tool_slug, args)
+           values ('${brain}', 'note_create', '{}')`,
+      ],
+      [
+        'tool-config',
+        `insert into tools (owner_id, slug, name, description, input_schema, handler)
+           values ('${brain}', 'forged', 'forged', 'x', '{}', '{"kind":"http","url":"https://example.invalid"}')`,
+      ],
+      ['tool-config', `update tools set external_access = null where false`],
+      [
+        'tool-config',
+        `update tool_groups set configured_by = null, integration = '{"baseUrl":"https://example.invalid"}' where false`,
+      ],
+      [
+        'tool-config',
+        `update microsoft_config set redirect_uri = 'https://example.invalid' where false`,
+      ],
+      ['model-route', `update ai_workers set base_url = 'https://example.invalid' where false`],
+      ['model-route', `update ai_workers set api_key_id = null, configured_by = null where false`],
+      ['model-route', `update agents set base_url = 'https://example.invalid' where false`],
+      ['model-route', `update agents set api_key_id = null, configured_by = null where false`],
+      [
+        'model-route',
+        `update embedding_config set primary_base_url = 'https://example.invalid', primary_api_key_id = null where false`,
+      ],
+      [
+        'model-route',
+        `insert into ai_workers (owner_id, slug, name, provider, model) values ('${brain}', 'f', 'f', 'openai', 'x')`,
+      ],
+      [
+        'docs-root',
+        `insert into doc_collections (owner_id, key, label, root_path) values ('${brain}', 'f', 'f', '/')`,
+      ],
+      [
+        'agent-group-grant',
+        `insert into agent_groups (owner_id, slug, name) values ('${brain}', 'f', 'f')`,
+      ],
     ];
-    for (const [, s] of open) expect(await run(nl, s), s).toBe('ok');
+    for (const [, s] of forged) expect(await run(nl, s), s).toBe('42501');
+    // The same forms run for the brain's owner role (the superuser here):
+    // the refusal is the narrow login's rights, not the statement.
+    expect(
+      await run(su, `update agents set base_url = 'https://example.invalid' where false`),
+    ).toBe('ok');
+  });
+
+  it('still open until its move lands (NARROW_MOVES_LEFT): a device subscribed (push-device)', async () => {
+    expect(
+      await run(
+        nl,
+        `insert into push_subscriptions (owner_id, login_id, routing_token, public_key)
+           values ('${brain}', '${brain}', 'r8-forge', 'k')`,
+      ),
+    ).not.toBe('42501');
   });
 });

@@ -5,7 +5,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, skills } from '@mantle/db';
+import { db, skills, onFullSystemRoute } from '@mantle/db';
 import {
   apiSkillSlugForGroup,
   getGroupIntegration,
@@ -356,21 +356,24 @@ export const api_skill_set: BuiltinToolDef = {
         error: `a skill '${skillSlug}' already exists but isn't linked to this integration — it belongs to the owner (or ships with the product), so I won't overwrite it. Ask the owner to rename or remove it in Settings → Skills, then retry`,
       };
     }
-    if (existing) {
-      await db
-        .update(skills)
-        .set({ name, description, instructions: body, updatedAt: new Date() })
-        .where(eq(skills.id, existing.id));
-    } else {
-      await db.insert(skills).values({
-        ownerId: ctx.ownerId,
-        slug: skillSlug,
-        name,
-        description,
-        instructions: body,
-        enabled: true,
-      });
-    }
+    // A skill's instructions: the full-route spot skill-text.
+    await onFullSystemRoute('skill-text', async () => {
+      if (existing) {
+        await db
+          .update(skills)
+          .set({ name, description, instructions: body, updatedAt: new Date() })
+          .where(eq(skills.id, existing.id));
+      } else {
+        await db.insert(skills).values({
+          ownerId: ctx.ownerId,
+          slug: skillSlug,
+          name,
+          description,
+          instructions: body,
+          enabled: true,
+        });
+      }
+    });
     await setGroupIntegration(ctx.ownerId, groupSlug, { skillSlug });
     // A heartbeat that runs this skill (or an agent granted the group) now
     // runs the caller's words: it becomes the caller's (W7a fix round 4).

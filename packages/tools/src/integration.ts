@@ -15,7 +15,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
+import { db, toolGroups, type ToolGroupIntegration, onFullSystemRoute } from '@mantle/db';
 import {
   autoFiledSourcePath,
   ensureAutoFiledFolder,
@@ -99,10 +99,13 @@ export async function setGroupIntegration(
     else if (v !== undefined) merged[k] = v;
   }
   const next = merged as unknown as ToolGroupIntegration;
-  await db
-    .update(toolGroups)
-    .set({ integration: next, updatedAt: new Date() })
-    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)));
+  // Where a group sends its calls and token: the full-route spot tool-config.
+  await onFullSystemRoute('tool-config', () =>
+    db
+      .update(toolGroups)
+      .set({ integration: next, updatedAt: new Date() })
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug))),
+  );
   return next;
 }
 

@@ -36,6 +36,7 @@ import {
   updateStructureItem,
   deleteStructureItems,
   runReadPathWrite,
+  onFullSystemRoute,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
@@ -530,18 +531,20 @@ export async function ensureDefaultCollections(ownerId: string): Promise<void> {
 async function ensureDefaultCollectionsNow(ownerId: string): Promise<void> {
   for (const c of BUILTIN_COLLECTIONS) {
     try {
-      await db
-        .insert(docCollections)
-        .values({
-          ownerId,
-          key: c.key,
-          label: c.label,
-          origin: c.origin,
-          rootPath: c.rootPath,
-          brainDepth: c.brainDepth,
-          enabled: false,
-        })
-        .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] });
+      await onFullSystemRoute('docs-root', () =>
+        db
+          .insert(docCollections)
+          .values({
+            ownerId,
+            key: c.key,
+            label: c.label,
+            origin: c.origin,
+            rootPath: c.rootPath,
+            brainDepth: c.brainDepth,
+            enabled: false,
+          })
+          .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] }),
+      );
     } catch (err) {
       // A database that refuses writes is not a fault on a read path. This
       // function is best-effort seeding — `listDocCollections` calls it before
@@ -642,18 +645,20 @@ export async function createDocCollection(
     enabled?: boolean;
   },
 ): Promise<{ collection: DocCollection; reconciled?: ReconcileResult }> {
-  const [row] = await db
-    .insert(docCollections)
-    .values({
-      ownerId,
-      key: input.key,
-      label: input.label,
-      origin: input.origin,
-      rootPath: input.rootPath,
-      brainDepth: input.brainDepth,
-      enabled: input.enabled ?? true,
-    })
-    .returning();
+  const [row] = await onFullSystemRoute('docs-root', () =>
+    db
+      .insert(docCollections)
+      .values({
+        ownerId,
+        key: input.key,
+        label: input.label,
+        origin: input.origin,
+        rootPath: input.rootPath,
+        brainDepth: input.brainDepth,
+        enabled: input.enabled ?? true,
+      })
+      .returning(),
+  );
   if (!row) throw new Error('createDocCollection: insert returned no row');
   if (row.enabled) {
     const reconciled = await reconcileCollection(ownerId, row);
