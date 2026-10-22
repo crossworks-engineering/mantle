@@ -2172,3 +2172,215 @@ drill.log) and the Mac gate list, and records them here.
    (scripts/arch-scoreboard-box.sh on every box): `narrow_misses`
    narrow-content-write, narrow-cascade-delete and narrow-denied, and
    `fail_open_misses`.
+
+## Part b2, round 7: the sweep reaches the writes, delegates, the default flip (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round records round 6's final suites, gives the area-route sweep the
+fixture each row needs to reach its write, closes round 6's open items 2
+(the docs item's update at route level) and 3 (`delegate_to`), and lands
+the default flip as the last code commit. Migrations: none new; the
+`delegate_to` rule is folded into 0318 (same class, no box has run it).
+
+### Round 6's final suites (61ad240eb)
+
+Read from ~/s7b-b2/x-f*.exit and x-f*.log on the workstation, every unit
+finished before this round's runs:
+
+| Suite                                   | Exit | What failed                                                         |
+| --------------------------------------- | ---- | ------------------------------------------------------------------- |
+| full DB vitest, shard 1/2               | 0    | 582 files; 6410 passed, 1 skipped                                   |
+| full DB vitest, shard 2/2               | 1    | 1 of 7876: the sweep's docs cell                                    |
+| test:actor-off                          | 1    | 1 of 1473: the sweep's docs cell                                    |
+| test:actor-on                           | 0    |                                                                     |
+| test:edit-on                            | 1    | 583 of 583 passed; w6b-fix3's afterAll hook over 10 s under load    |
+| test:matrix                             | 1    | every cell the oracle's; the tool cells' budget 248.8 s of 210 s    |
+| test:runtime-role in full               | 1    | 1 of 2970: the sweep's docs cell                                    |
+| test:serial                             | 0    |                                                                     |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0  | 1    | 1 of 14287: the sweep's docs cell                                   |
+| the drill (N-1: b1 against b2's schema) | 0    | 318 ledger rows; every migrate step 0                               |
+| (f243629c4) switch-off rerun            | 0    | 1161 files passed                                                   |
+
+One red is neither a budget nor a hook: the sweep's documentation cell
+on 61ad240eb (the stricter form, `left: 0` and the same ids), round 6's
+own open item 2. Its cause was the cell, not the product: the `all` row
+enables the default collections, one of whose roots holds the sweep's
+markdown file, so a second documentation item (another collection's)
+carried the first text. The item of the sweep's own collection was updated
+in place. The cell now reads the collection's own items (below).
+
+### Item 1: the sweep reaches each row's write
+
+server/web/server/narrow-area-sweep.db.test.ts `seedFixture`: a row of
+each table a path or body names, at the sample id or a fixed id the
+entries name (narrow-area-sweep.entries.ts): a member login, an Anthropic
+and an OpenRouter key, an assistant with its Telegram bot and a chat, AI
+workers (one per probed kind), a model pool entry, a calendar, a
+documentation collection, a mail account and a message, a heartbeat whose
+assistant is gone (its fire pauses it, no model call), the Microsoft
+config, account and drive, a run, a sandbox, an MCP connector with an
+authorization pending, an OpenAPI connector, an OAuth client and its
+token, an HTTP tool and the note_create builtin, a worker group, the
+tailnet config, a PDF password, a peer and its node, a pending call, a
+secret and its sealed row, a member invite, a device token. Each entry
+gives the body that passes the handler's schema and the path (a real slug,
+a query). The DELETE rows run last, a sub-resource's before its parent's.
+The fetch stub answers the sandbox daemon (its own box service) and
+throws for everything else; pg-boss is replaced (its own pool, which
+outlived the first pass's scratch database).
+
+Status breakdown on the narrow pass (the off pass equal row by row):
+
+| Statuses | Before (61ad240eb's sweep) | After (0a69e4a7a) |
+| -------- | -------------------------- | ----------------- |
+| 2xx      | 41                         | 116               |
+| 3xx      | 1                          | 1                 |
+| 4xx      | 91                         | 15                |
+| 5xx      | 5                          | 6                 |
+
+75 rows moved from 4xx/5xx to 2xx; several rows that answered 2xx before
+wrote nothing (a calendar edit, a message flag, a Microsoft account's
+delete matched no row) and now write. 0 narrow denials, 0 rows answering
+differently, the docs item made and updated in place both ways. A new
+cell, "every row answers 2xx both ways but the named ones, each with why",
+pins the 22 that do not (`NOT_2XX`):
+
+| Row                                                                             | Kind               | Why                                                                                  |
+| ------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| GET /api/mcp-connectors/oauth/callback                                          | refusal after write | the pending authorization abandoned (tool_groups written), then the denial page      |
+| POST /api/mcp-connectors/:slug/oauth/start                                      | refusal after write | the new pending state saved (tool_groups), then the discovery fetch fails            |
+| POST /api/agents/:id/telegram                                                   | offline            | Telegram's getMe checks the token before the bot is saved                            |
+| POST /api/email/accounts, PATCH /api/email/accounts/:id                         | offline            | the IMAP login is tried before the save                                              |
+| POST /api/mcp-connectors/:slug/sync, POST /api/openapi-connectors/:slug/sync    | offline            | the remote tool list or spec is fetched before any write                             |
+| GET /api/microsoft/oauth/callback                                               | offline            | Microsoft's code exchange comes before the account is saved                          |
+| POST /api/runners/:id                                                           | offline            | the runner engine's own system database (not this brain's) is not made in the test   |
+| POST /api/openapi-connectors/preview                                            | no write           | reads a spec over the network                                                        |
+| POST /api/dev-tools/mcp                                                         | no write           | spawns the MCP server as a child process (its own pool)                              |
+| POST /api/debug/maintenance/run, .../run/cancel                                 | no write           | spawns a maintenance CLI (its own process); no run started, none to cancel           |
+| the nine provider probes (agents and AI workers test/*, studio sandbox)         | no write           | a provider call (fetch throws), nothing written                                      |
+
+The narrower cells for the offline rows with a write behind them: the
+mail accounts are narrow `all` (`email_accounts`, written on the narrow
+route by PUT .../folders, 2xx in the sweep); the syncs' writes run at
+`tool-group-grant` (narrow-spots.db.test.ts round 6: a group made, its
+tools changed, equal both ways); the Telegram bot's tables (`channels`,
+`telegram_accounts`) are narrow `all` and DELETE /api/agents/:id/telegram
+writes them on the narrow route (2xx); the Microsoft account (`ms_accounts`,
+narrow `all`) is written on the narrow route by the drives and mail rows;
+the runner's writes go to its engine's database, not the brain's; the
+maintenance run's row (`maintenance_runs`, writer system, narrow `all`)
+has no cell of its own.
+
+What reaching the writes found: PATCH /api/telegram/chats/:id (the
+connectors area chooses a chat's assistant) answered 500 on the narrow
+pass and 200 off: the narrow login holds no write of `telegram_chats`
+since round 5, and no suite had driven the row to its write. Proven on
+3243754b3 (the head with the route as before, a probe commit on the
+mirror only): `update "telegram_chats" set "responder_agent_id"` 42501,
+the sweep's denial, difference and not-2xx cells red. Fixed: the update
+runs at a new full-route spot `telegram-responder` (which assistant
+answers a chat's login is a grant: its tool groups). 15 to 16 spots.
+
+### Item 2: the docs item's update at route level
+
+The sweep's collection (`sweep-docs`, the same key and label on both
+passes) is made from a real markdown file, the file changed, then PATCH
+/api/docs/collections/:id `{ enabled: true }`: "1 updated", one item, the
+same id, the new text, none of the first left, on both passes
+(upsertDocFromDisk through the structure definer on the narrow pass, the
+app's own statements off). Cell: "a documentation item from a real
+markdown file: made and updated, the same both ways".
+
+### Item 3: memory_config's delegate_to, measured and decided
+
+Measured from the code: `invoke_agent` (packages/tools builtins-delegation.ts)
+allows a target only when the parent's `memory_config.delegate_to` lists
+it, and the child runs with ITS OWN tool groups (packages/runtime
+invoke-agent.ts: `resolveAgentTools` over the target's
+`toolGroupSlugs`), narrowed only by the caller's level (`childSurface`).
+So naming a delegate gives an assistant's turns the delegate's tools: a
+grant, as `tool_group_slugs` is. Decision: a grant.
+
+- 0318 (folded): a new rule `keep:<col>:<key>` in `mantle_narrow_one_way`
+  (a jsonb column's key never changes on the narrow role) and the agents
+  trigger takes `keep:memory_config:delegate_to`. The rest of
+  `memory_config` (limits, the corpus map) stays the narrow login's.
+- server/web lib/agents.ts `updateAgent`: an edit whose `memoryConfig`
+  names `delegate_to` runs at `assistant-grant`. The other writers of the
+  key already do (the manifest's apply and adopt, clone); the boot
+  reconcile runs outside every scope.
+- Cells: narrow-containment.db.test.ts (as the narrow login on the
+  switched brain: a delegate added, replaced, the key dropped, the column
+  emptied or nulled, each 42501, the row unchanged; another key of
+  `memory_config` moved, `delegate_to` kept; the superuser not held);
+  narrow-spots.db.test.ts round 6 cell (a delegate named, then another
+  key alone, equal on the narrow exit and the full route).
+- docs/runtime-role.md, access-matrix.ts and viewer.ts name it.
+
+### Item 4: the default flip (the last code commit, 69cef8e89)
+
+- `narrowSystemOn()` reads `feature('narrowSystem')`, default true
+  (packages/config features.ts): on everywhere, production too; `0`,
+  `off` or `false` (any case, trimmed: parseFlag) is the kill switch. Read
+  once per process, when the system pool opens, and by migrate; the
+  production boot line names it (`narrow system route on ...` or `off`).
+- Kill switch documented: docs/runtime-role.md "The kill switch" (env flip
+  plus `docker compose up -d`: migrate first takes the role's login, the
+  app takes the full route), docs/update-prod.md "The narrow system route
+  on by default (S7b) and its kill switch", .env.example, compose's
+  comment, docs/configuration.md.
+- Fresh install: on (compose's variable empty; MANTLE_MASTER_KEY is
+  compulsory there, so the role's password is derived); with
+  MANTLE_DB_RUNTIME_ROLE off too (the narrow pool never depends on it).
+  Per-database mode: on, on the S7a route (the role per transaction on the
+  system pool; the role has no login).
+- Cells: runtime-role.test.ts "the narrow route switch": unset (and empty)
+  on in production, development and tests; 0, off, false, OFF, ` False `
+  off in production and development; 1, on, true on; read once per
+  process. The drill (below): production with the switch unset gives the
+  role its login; 0, off and false take it away.
+
+### The box counts the CEO must see at 0 before the fleet flip
+
+`scripts/arch-scoreboard-box.sh` on every box, the "rights counts" block:
+
+- `narrow_misses:content-write` (0312: a content write by a narrow reason
+  off the narrow role, what the role refuses once on),
+- `narrow_misses:cascade-delete`,
+- `narrow_misses:denied` (a right the role does not hold, met on the
+  narrow route),
+- `fail_open_misses:all` (and so each site: scope-holds-admin,
+  scope-has-area, typed-write, raw-write, turn-exit, system-db).
+
+`role_drift` 0 as before. A box with a nonzero count is not flipped: its
+reason names the spot or the row to fix first.
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Below them:
+
+- With the default flipped, every box that sets nothing runs its Admin
+  area exits on the narrow route (production was off).
+- PATCH /api/telegram/chats/:id on the narrow route: 200 (was 500, 42501;
+  it never reached a box: the switch was off in production) at
+  `telegram-responder`.
+- An assistant's `delegate_to`: changed only at `assistant-grant`; the
+  narrow login may not change the key (42501).
+
+### Pins
+
+fullRouteSpots 15 to 16, fullRouteSpotCalls 42 to 43 (telegram-responder;
+the CEO told). Held at their end with the reason noted: asSystemFull 34
+(one over the plan's at most 33: b2 moved request exits and spots, no
+asSystem reason; the six full reasons keep their why, for S7c),
+systemWholeOnFull 0, requestSystemExits_narrow 3 (every request exit but
+the first owner's). No other pin moved.
+
+### Rollback (round 7)
+
+0318 gains one rule kind and one argument on the agents trigger; its
+revert drops the triggers as before. The flip is code: rolling back one
+image (b1's) reads the switch as b1 did (off in production when unset):
+its migrate takes the role's login away and it runs the full route (the
+drill's N-1 step). On this image, the kill switch is `MANTLE_NARROW_SYSTEM=0`
+and `docker compose up -d`.
