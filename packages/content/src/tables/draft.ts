@@ -17,12 +17,14 @@ import {
   assertAppRunWriteHome,
   assertItemRight,
   db,
+  EXTRACT_SKIPPED_KEY,
   nodes,
   tables,
   hasSummary,
   inAppRunWrite,
   markContentChanged,
   oneRow,
+  readIndexWork,
   removeSqliteFile,
   StoreRefusedError,
 } from '@mantle/db';
@@ -419,6 +421,50 @@ export function committedChange(
     : 'schema';
 }
 
+/** A team app's commit (inAppRunWrite) waits this long after the
+ *  Table's last model pass before it may start another (delta audit
+ *  MED-1): at most one app-started pass per Table per window. */
+export const APP_COMMIT_PASS_GAP_MS = 10 * 60 * 1000;
+
+/** What a team app's refused commit is told. */
+export const APP_COMMIT_WAIT_MESSAGE =
+  'This table is still being indexed; try the commit again in a few minutes.';
+
+/** When the Table's last model pass ended, ms, or null: the latest of the
+ *  extractor's completion marker, its summary write and a terminal skip. */
+function lastPassAt(data: unknown): number | null {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const skipped = d[EXTRACT_SKIPPED_KEY] as { at?: unknown } | null | undefined;
+  let last: number | null = null;
+  for (const v of [d.extract_completed_at, d.summary_at, skipped?.at]) {
+    const t = typeof v === 'string' ? Date.parse(v) : NaN;
+    if (Number.isFinite(t) && (last === null || t > last)) last = t;
+  }
+  return last;
+}
+
+/**
+ * Whether a team app's commit must wait (delta audit MED-1), and why: a
+ * commit that runs the whole pass (`schema`) aborts a pass in flight (the
+ * extractor's index write is guarded on the row's xmin) and starts another,
+ * so an app committing on each submit could keep a model busy without end.
+ * Refused while a pass is pending or running (an 'extract' stamp), and a
+ * `schema` commit within APP_COMMIT_PASS_GAP_MS of the last pass. A
+ * cell-only commit on a summarised Table (a re-embed, no model call) is
+ * never held. `change` null: only the pending check. Admin and UI commits
+ * never ask.
+ */
+export function appCommitWait(
+  nodeData: unknown,
+  change: 'cells' | 'schema' | null,
+  now: number = Date.now(),
+): string | null {
+  if (readIndexWork(nodeData) === 'extract') return APP_COMMIT_WAIT_MESSAGE;
+  if (change !== 'schema') return null;
+  const last = lastPassAt(nodeData);
+  return last !== null && now - last < APP_COMMIT_PASS_GAP_MS ? APP_COMMIT_WAIT_MESSAGE : null;
+}
+
 /**
  * Commit: publish `data` (or, with none, the server draft) as canonical,
  * recompute `data_text`, clear the draft, bump the version, and fire the
@@ -449,7 +495,15 @@ export async function commitTable(
   await assertTableWritable(id, opts.appSync);
   // A team app's commit (inAppRunWrite): only a Table homed in the app's
   // scope, asked again where the write runs (applyTableOps' rule).
-  if (inAppRunWrite()) await assertAppRunWriteHome(id);
+  const appWrite = inAppRunWrite();
+  if (appWrite) {
+    await assertAppRunWriteHome(id);
+    // Asked early on what is known before the staging (a pass pending, or
+    // no summary: the commit is `schema`), and again in the flip on the
+    // locked row with the change the commit makes.
+    const wait = appCommitWait(node.data, hasSummary(node.data) ? null : 'schema');
+    if (wait) throw new InputError(wait);
+  }
 
   const workbook = data && isWorkbook(data) ? ensureWorkbookDoc(data) : null;
   const doc = data === undefined || workbook ? null : ensureTableDoc(data as TableDoc);
@@ -590,12 +644,15 @@ export async function commitTable(
                   .where(eq(nodes.id, id))
                   .returning();
                 const committed = oneRow('tables', updated ? [updated] : [], 'table');
+                const change = committedChange(row.shapeHash, s.shapeHash, committed.data);
+                // A team app's commit waits out a pass (MED-1): thrown here,
+                // the flip rolls back and its stage is removed.
+                const wait = appWrite ? appCommitWait(committed.data, change) : null;
+                if (wait) throw new InputError(wait);
                 // Announced when this transaction commits (the kind
                 // registry's `indexed`).
                 const nodeRow =
-                  (await markContentChanged(tx, { id, type: 'table' }, [
-                    committedChange(row.shapeHash, s.shapeHash, committed.data),
-                  ])) ?? committed;
+                  (await markContentChanged(tx, { id, type: 'table' }, [change])) ?? committed;
                 if (s.history) {
                   const [v] = await tx
                     .select({ version: tables.version })

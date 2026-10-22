@@ -34,6 +34,11 @@
  * writes nothing, and table_commit (Jason's yes) publishes the draft under
  * the same rule.
  *
+ * After the delta audit (MED-1): a team app's table_commit waits out a
+ * model pass (none while one is pending, none that runs a whole pass within
+ * ten minutes of the last), a cell-only commit on a summarised Table is not
+ * held, and an Admin app's or the owner's own commit is unchanged.
+ *
  * A team app's run scope only read before (withViewer); an allowed Table
  * write now enters it as a write scope (withViewer's `writes`, only for a
  * login running an app in its own mutating request), so the write goes
@@ -216,6 +221,25 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
         sql`select draft_path is not null as d from tables where node_id = ${id}`,
       )
     )[0]?.d === true;
+
+  /** An ISO time `n` minutes ago. */
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
+
+  /** Stand in for the extractor (none runs here): the Table's summary and
+   *  work stamps dropped, then `patch` merged onto its data. */
+  const setData = async (id: string, patch: Record<string, unknown>) =>
+    su(sql`update nodes set data = (coalesce(data, '{}'::jsonb)
+        - 'summary' - 'summary_at' - 'index_work' - 'index_work_had_vector'
+        - 'extract_completed_at' - 'extract_skipped') || ${JSON.stringify(patch)}::jsonb
+      where id = ${id}`);
+
+  /** The Table's work stamp (data.index_work), or null. */
+  const indexWork = async (id: string): Promise<string | null> =>
+    (
+      await x<{ w: string | null }>(
+        sql`select data->>'index_work' as w from nodes where id = ${id}`,
+      )
+    )[0]?.w ?? null;
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -640,12 +664,88 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(link.body.error).toContain('a shared link runs no built-in tools');
     expect(await hasDraft(tables.own)).toBe(true);
 
+    // No pass pending and the last long ago (no extractor runs here): the
+    // commit wait (MED-1) has nothing to hold.
+    await setData(tables.own, { extract_completed_at: minutesAgo(60) });
     const res = await memberCall(writer, 'table_commit', { id: tables.own });
     expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
     expect(await hasDraft(tables.own)).toBe(false);
     const published = await grid(tables.own);
     for (const v of ['one', 'two', 'upsert', 'app row set'])
       expect(published).toContain(`${tag} ${v}`);
+  });
+
+  it("a team app's commit waits out a model pass (MED-1)", async () => {
+    const draft = async (name: string) => {
+      const r = await memberCall(writer, 'table_row_add', {
+        table_id: tables.own,
+        cells: { Name: `${tag} ${name}` },
+      });
+      expect(r.body.ok, JSON.stringify(r.body)).toBe(true);
+    };
+    const commit = () => memberCall(writer, 'table_commit', { id: tables.own });
+
+    // The last commit had no summary: it stamped a whole pass, still pending.
+    expect(await indexWork(tables.own)).toBe('extract');
+    await draft('wait pending');
+    const pending = await commit();
+    expect(pending.body.ok).toBe(false);
+    expect(pending.body.error).toContain('still being indexed');
+    expect(await hasDraft(tables.own)).toBe(true);
+
+    // The pass done two minutes ago, no summary (a whole pass again): held.
+    await setData(tables.own, { extract_completed_at: minutesAgo(2) });
+    const recent = await commit();
+    expect(recent.body.ok).toBe(false);
+    expect(recent.body.error).toContain('still being indexed');
+    expect(await hasDraft(tables.own)).toBe(true);
+
+    // Eleven minutes on: the commit lands and stamps the next pass.
+    await setData(tables.own, { extract_completed_at: minutesAgo(11) });
+    const later = await commit();
+    expect(later.body.ok, JSON.stringify(later.body)).toBe(true);
+    expect(await hasDraft(tables.own)).toBe(false);
+    expect(await grid(tables.own)).toContain(`${tag} wait pending`);
+    expect(await indexWork(tables.own)).toBe('extract');
+
+    // A summarised Table a minute after its pass: a cell-only commit (a
+    // re-embed, no model call) is not held.
+    await setData(tables.own, { summary: 'Rows by name.', extract_completed_at: minutesAgo(1) });
+    await draft('wait cells');
+    const cells = await commit();
+    expect(cells.body.ok, JSON.stringify(cells.body)).toBe(true);
+    expect(await hasDraft(tables.own)).toBe(false);
+    expect(await indexWork(tables.own)).toBe('embed');
+  });
+
+  it('an Admin app or a UI commit in the same states: unchanged', async () => {
+    const c = await import('@mantle/content');
+    // The Admin app, a pass pending.
+    const add = await ownerCall(adminApp, 'table_row_add', {
+      table_id: tables.admin,
+      cells: { Name: `${tag} admin wait` },
+    });
+    expect(add.body.ok, JSON.stringify(add.body)).toBe(true);
+    await setData(tables.admin, { index_work: 'extract', extract_completed_at: minutesAgo(1) });
+    const admin = await ownerCall(adminApp, 'table_commit', { id: tables.admin });
+    expect(admin.body.ok, JSON.stringify(admin.body)).toBe(true);
+    expect(await hasDraft(tables.admin)).toBe(false);
+
+    // The owner's own commit (the UI's), a pass pending, then no summary
+    // and a pass a minute ago.
+    for (const data of [
+      { index_work: 'extract' },
+      { extract_completed_at: minutesAgo(1) },
+    ] as Record<string, unknown>[]) {
+      await inRequest(owner, () =>
+        c.applyTableOps(owner, tables.admin, [{ op: 'row_add', cells: {} }]),
+      );
+      expect(await hasDraft(tables.admin)).toBe(true);
+      await setData(tables.admin, data);
+      const out = await inRequest(owner, () => c.commitTable(owner, tables.admin));
+      expect(out).not.toBeNull();
+      expect(await hasDraft(tables.admin)).toBe(false);
+    }
   });
 
   it('the publish warning says where a declared row write runs, and refuses the rest', async () => {

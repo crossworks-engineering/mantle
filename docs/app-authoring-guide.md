@@ -682,7 +682,18 @@ run the green PUBLISHED build only and never edit it from there.
   the Table (its **Write** switch for their workspace, or a Moderator of
   its home). Row changes go to the Table's draft, and the app reads that
   draft back, so a second upsert before a commit updates the first's rows;
-  `table_commit` publishes the draft. A call takes at most 1 MB, and a
+  `table_commit` publishes the draft. An app's commit keeps no history
+  entry of the version it replaces, so the Table's history has no restore
+  point for it. A commit that has the Table indexed again with a model
+  (the Table has no summary yet, or its columns changed) waits: while a
+  pass is pending or running, and for 10 minutes after the last one,
+  `table_commit` answers "This table is still being indexed; try the
+  commit again in a few minutes." and the draft stays as it is. A commit
+  of cell changes on a Table that has a summary only refreshes its search
+  vector and is never held, so commit in batches rather than on every
+  submit. An app marked **Informational** (read only) still makes these
+  Table writes and commits: the Table's own rights decide them, not the
+  app's flag, which governs `host.db.exec`. A call takes at most 1 MB, and a
   Table whose draft would pass 50,000 rows (or the box's table ceiling,
   when lower) or whose file is past 20 MB takes no more rows from an app.
   The Activity row of each call names the Table and the row count. A
