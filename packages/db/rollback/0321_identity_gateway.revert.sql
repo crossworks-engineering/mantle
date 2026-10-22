@@ -86,3 +86,6 @@ DROP FUNCTION IF EXISTS "public"."mantle_identity_acting_login"();
 DROP FUNCTION IF EXISTS "public"."mantle_identity_actor"();
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_identity_narrow"();
+--> statement-breakpoint
+-- Off the ledger: the next roll forward applies 0321 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198580000;

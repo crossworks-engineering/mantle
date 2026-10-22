@@ -3325,3 +3325,147 @@ x-g12bdrill.exit, x-g12bpr.log.
    the Telegram channel-to-agent readers (app LOW-5); the spot-callback
    lint seeing arrow functions (INFO).
 4. The full re-audit of b2, both sides, on the head whose gates all read 0.
+
+## Part b2, round 13: the identity gateway, the class rule in the database (handed over)
+
+Same branch. Inputs: the brief's "b2 round 13: CLASS RULE" (the CEO's
+decision: "a database rule that blocks this for the restricted login
+everywhere, not one fix per function") and "b2 round 13 inputs" A to M.
+One builder; commits 700ec850b to the head of this section. Item A is
+done; B to M are left (below).
+
+### Item 0: the g12b runs on e108f0f78
+
+Read before starting: s1 0, actor-off 0, actor-on 0, edit-on 0,
+runtime-role 0, serial 0, switch off 0, runtime role off 0, the real-login
+proof 0, the drill 0. s2 1: one cell, a2a-round-trips "off is not stable"
+(127 against 126 statements between two switch-off runs of the chat turn
+start: the cell's own stability guard, not a narrow change). matrix: never
+ran (its container's port was taken: suite.sh's port pick raced another
+lane). Both rerun in this round's gates.
+
+### Item A: the identity gateway (migration 0321)
+
+Root cause of DB MED-1 (round 11) and MED-A (round 12): functions trusted
+the `mantle.*` identity settings a session sets itself. The class fix:
+
+1. One gateway in SQL. The readers: `mantle_login_id()`,
+   `mantle_scope_login_id()`, `mantle_scope_ws()`, `mantle_scope_mod_ws()`,
+   `mantle_scope_active()`, `mantle_setting_uuid()` (the create-stamp
+   workspaces), and the new `mantle_identity_acting_login()`,
+   `mantle_identity_acting_login_required()` (42501 on none) and
+   `mantle_identity_actor()`; `mantle_identity_narrow()` is 0317's own-role
+   test (the role the session SET, else its login; or session_user).
+   Measured on a migrated e108f0f78: of 613 functions in `public`, 48 read
+   a setting; the identity keys were read directly only by the six readers
+   and by eleven bodies (`mantle.acting_login` in five definers:
+   access_key_revoke, tg_chat_set, structure_item, space_settle_promotion,
+   agent_delete; `mantle.actor` in six: actor_check_stmt, edit_ro_stmt,
+   narrow_cascade_stmt, narrow_one_way, narrow_would_refuse_stmt,
+   ws_system_work). `mantle.login_id`, `mantle.ws`, `mantle.mod_ws`,
+   `mantle.scope_login` were already read only through the readers, which
+   now gate them. 0321 rewrites the eleven in place (pg_get_functiondef plus
+   one replace per form, the list asserted; the revert reverses the same
+   replaces, proven byte-identical on a round trip: every function's
+   prosrc, config and definition hash equal after forward plus revert).
+2. Fail closed on the narrow role: login, scope login, workspaces,
+   moderated workspaces, acting login and create-stamp workspace read none;
+   the scope reads inactive; the actor reads `system:narrow`. The actor's
+   decision: NULL would make the actor check refuse every narrow write of
+   an actor-checked table with the check on, so the reader answers the
+   role's own name, which no list trusts (ws_system_work's three reasons,
+   the counts' narrow reasons): a reason the session names is never
+   trusted, and the actor check still sees system work. The acting login
+   is now required where a definer read it: the old
+   `login IS DISTINCT FROM acting` let a NULL login argument through when
+   no acting login was sent (mantle_tg_chat_set with `login` null was
+   open on any system session).
+3. The four narrow exits that need an identity moved to the new full-route
+   spot `acting-login`: mantle_ws_set_moderator (workspaces.ts
+   setModerator: the brief's runtime-role.ts:293 item), mantle_tg_chat_set
+   (telegram pairing.ts setChatPairing), mantle_structure_item
+   (gateway/structure-item.ts narrowTx), mantle_agent_delete
+   (gateway/spot-definers.ts deleteAgentOnNarrow). Each left
+   NARROW_SYSTEM_FUNCTIONS for NARROW_DENIED_FUNCTIONS (with why), so the
+   narrow role holds no EXECUTE and the definer refuses it by its own rule
+   too (cell: EXECUTE granted back, every forge still 42501). A spot now
+   keeps the exit's acting login (viewer.ts onFullSystemRoute: it dropped
+   it before, so a definer at a spot would have seen none). A structure
+   write inside an already open narrow system transaction cannot leave it:
+   withSystemTx refuses the nested call (a different actor), fail closed;
+   no product caller nests one (the six callers are top level).
+4. The catalog check: `mantle_identity_leaks()` (0321) scans every
+   function body (extension members left out), policy, trigger condition,
+   column default, check constraint and view of every non-system schema.
+   A read of a `mantle.*` key outside the readers is a leak unless the key
+   is on its non-identity list (each with why in the function: role,
+   server_version_num, route, write_mode, actor_check, edit_check,
+   acl_internal, human, the five heads keys, keep_updated_at,
+   create_stamp, ingest_notify, conversation_notify, the four workspace
+   switch keys, ws_former_clients); an unknown key is an identity key; a
+   body that builds a key at run time must be named (mantle_check_mode,
+   the three marker writers); pg_settings and SHOW are leaks. Trigger
+   conditions may read an identity key only on a table the narrow role
+   cannot change, or to add a check (the edit check's contact rule).
+   migrate fails on any leak (migrator-steps.ts afterMigrations, through
+   packages/db src/identity-gateway.ts). Measured: 0 leaks on the head.
+5. The live cell: packages/db/src/identity-gateway.db.test.ts (helpers in
+   src/test-support/identity-sweep.ts), as the real narrow login: the
+   catalog check reads 0 and catches six planted forms (a function, a key
+   built at run time, pg_settings, an unknown key, a policy, a trigger
+   condition); the readers answer no identity on the narrow login and on a
+   SET ROLE to it, and what was set elsewhere; the sweep calls every
+   function the narrow role may EXECUTE (generated from pg_proc and
+   has_function_privilege: 281 on a migrated brain, extension functions
+   included, trigger and pseudo-type ones left out) twice, with every
+   identity setting forged to the owner and the Admin workspace and with
+   the unscoped forge (acting login and actor only), owner-shaped
+   arguments; each refuses or changes no row (no transaction id; the
+   control, a write the narrow login may make, shows one).
+
+Counts: 0321 rewrote 11 function bodies and redefined 6 readers (4 new
+functions plus the check); the catalog check covers 613 functions in
+public (every body with a setting read, 48) plus every policy, trigger,
+default, check and view; the live sweep covers 281 functions.
+
+Migration 0321_identity_gateway (new; revert
+packages/db/rollback/0321_identity_gateway.revert.sql: the direct reads
+back by the reverse replaces, the six readers' old bodies, the five new
+functions dropped). Revert order now: 0321, 0320, then 0319 down to 0314,
+each in its own transaction (runtime-role.md).
+
+N-1 note: an older image (b1) on this schema with the switch on would call
+mantle_tg_chat_set on the narrow route and be refused (no EXECUTE). b1's
+default is off on production boxes; a box that rolls back with the switch
+on loses the chat block and unpair until it moves forward or flips off.
+
+### The forge proof (the real narrow login)
+
+`~/s7b-b2/r13/proof13.sh` (round 12's plus round 13's forges, forge13.sql;
+the generated sweep, sweep13.sh; the catalog check), a fresh pg18 per sha,
+the narrow login by its derived password over a password-checked
+connection. Before = e108f0f78 (x-r13pb.log), after = f5088c1a9
+(x-r13pa.log); the head's run is x-r13pf.log.
+
+| Forge                                                             | Before | After |
+| ----------------------------------------------------------------- | ------ | ----- |
+| a member made Moderator, self-set owner login and Admin workspace | wrote  | 42501 |
+| a member made Moderator, ws-clear-ticks actor, no scope           | 42501  | 42501 |
+| an assistant deleted, self-set acting login                       | wrote  | 42501 |
+| a chat unpaired, self-set acting login, no login named            | 42501  | 42501 |
+| a secret removed, self-set acting login                           | wrote  | 42501 |
+| round 12's 34 forms                                               | 42501  | 42501 |
+| the 8 product writes                                              | wrote  | wrote |
+| the sweep: functions that changed a row (281 called)              | 1      | 0     |
+| the catalog check: leaks                                          | n/a    | 0     |
+
+The readers as the narrow login with every identity setting forged: login
+none, scope login none, workspaces {}, scope inactive, actor
+system:narrow. forge12.sql line 242's quoting (item M) fixed in forge13.
+
+### Pins
+
+fullRouteSpots 28 to 29 (acting-login), fullRouteSpotCalls 102 to 106 (the
+four callers), with reasons in arch-scoreboard.pins.json;
+FULL_ROUTE_SPOT_FILES and FULL_ROUTE_SPOT_CALLBACKS (narrowTx) list them.
+historyCodeComments unchanged (2341).
