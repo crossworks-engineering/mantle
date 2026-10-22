@@ -3,6 +3,7 @@ export { botFor, evictBot } from './client';
 export { gate, countPendingForAccount } from './gate';
 export { pollOnce } from './sync';
 export { upsertTelegramChannel, disableTelegramChannel } from './channels';
+export { botAgentId, botAgentIdSql, chatAnsweringAgentId } from './chat-assistant';
 export {
   chatLoginRefusal,
   loginModeratesBot,

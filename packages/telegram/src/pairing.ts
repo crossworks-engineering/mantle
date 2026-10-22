@@ -20,7 +20,6 @@ import {
   asSystem,
   assistantMessages,
   authUsers,
-  channels,
   db,
   onFullSystemRoute,
   telegramAccounts,
@@ -28,6 +27,7 @@ import {
   type TelegramChat,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { botAgentIdSql } from './chat-assistant';
 import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from './chat-login';
 import { sendMessage } from './outbound';
 
@@ -94,10 +94,8 @@ function labelOf(chat: { title: string | null; username: string | null; telegram
 async function botAgent(accountId: string): Promise<{ id: string; name: string } | null> {
   const [row] = await db
     .select({ id: agents.id, name: agents.name })
-    .from(telegramAccounts)
-    .innerJoin(channels, eq(channels.id, telegramAccounts.channelId))
-    .innerJoin(agents, eq(agents.id, channels.agentId))
-    .where(eq(telegramAccounts.id, accountId))
+    .from(agents)
+    .where(sql`${agents.id} in (${botAgentIdSql(accountId)})`)
     .limit(1);
   return row ?? null;
 }

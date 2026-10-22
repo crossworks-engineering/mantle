@@ -30,7 +30,6 @@ import {
   db,
   agents,
   toolGroups,
-  channels,
   nodes,
   telegramMessages,
   telegramChats,
@@ -53,6 +52,8 @@ import {
   chatLoginRefusal,
   TELEGRAM_UNPAIRED_REPLY,
   unpairRefusedChat,
+  botAgentIdSql,
+  chatAnsweringAgentId,
 } from '@mantle/telegram';
 
 import { sweepLegacyTables } from '@mantle/content/table-storage';
@@ -155,7 +156,7 @@ async function resolveResponderAgent(
   overrideAgentId: string | null,
   channelAgentId?: string | null,
 ): Promise<Agent | null> {
-  const pinnedId = overrideAgentId ?? channelAgentId ?? null;
+  const pinnedId = chatAnsweringAgentId(overrideAgentId, channelAgentId);
   if (!pinnedId) return null;
   const [pinned] = await db
     .select()
@@ -225,7 +226,9 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       fromName: telegramMessages.fromName,
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
-      channelAgentId: channels.agentId,
+      // The bot's assistant (one place: @mantle/telegram chat-assistant.ts);
+      // null when the account's channel was deleted with its agent.
+      channelAgentId: sql<string | null>`(${botAgentIdSql(telegramMessages.accountId)})`,
       chatLoginId: telegramChats.loginId,
       allowlistStatus: telegramChats.allowlistStatus,
       attachments: telegramMessages.attachments,
@@ -233,9 +236,9 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     .from(telegramMessages)
     .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
     .innerJoin(telegramAccounts, eq(telegramMessages.accountId, telegramAccounts.id))
-    // Left join: an account whose channel was deleted (with its agent) keeps
-    // its queued messages; resolveResponderAgent refuses them.
-    .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
+    // An account whose channel was deleted (with its agent) keeps its
+    // queued messages (channelAgentId null): resolveResponderAgent refuses
+    // them.
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 

@@ -27,6 +27,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, liveWorkspaceSql, systemWork, telegramChats } from '@mantle/db';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
+import { botAgentIdSql } from './chat-assistant';
 
 /**
  * A Telegram chat's login, its bot and the bot's assistant are read on the
@@ -71,10 +72,7 @@ export async function chatLoginRefusal(args: {
             from agents a
            where a.owner_id = ${ownerId}::uuid
              and (a.id = ${responderAgentId}::uuid
-                  or a.id in (select ch.agent_id
-                                from channels ch
-                                join telegram_accounts t on t.channel_id = ch.id
-                               where t.id = ${accountId}::uuid))
+                  or a.id in (${botAgentIdSql(accountId)}))
         ), admin_ws as (
           select w.id from workspaces w
            where w.owner_id = ${ownerId}::uuid and w.is_admin

@@ -190,6 +190,10 @@ vi.mock('../../../../packages/runtime/src/agent/agent-viewer', async (importOrig
 
 // ── Telegram HTTP boundary ────────────────────────────────────────────────
 vi.mock('@mantle/telegram', () => ({
+  // The chat's assistant (chat-assistant.ts): the select is mocked, so the
+  // bot's assistant subquery only has to render; the choice as it makes it.
+  botAgentIdSql: () => 'bot-agent',
+  chatAnsweringAgentId: (o: string | null, b: string | null) => o ?? b ?? null,
   chatLoginRefusal: vi.fn(async () => h.chatRefusal),
   unpairRefusedChat: (...a: unknown[]) => h.unpairRefusedChat(...a),
   TELEGRAM_UNPAIRED_REPLY: 'UNPAIRED',

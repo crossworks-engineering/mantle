@@ -13,6 +13,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { defineDomainError, UUID_RE } from '@mantle/std';
 import { systemWork, authUsers, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
 import {
+  botAgentId,
   disableTelegramChannel,
   pairChatWithCode,
   previewChatPairing,
@@ -119,17 +120,6 @@ async function accountForAgent(
   return row ? { account: row.account, channelEnabled: row.channelEnabled } : null;
 }
 
-/** The agent that owns the channel linked to an account, if any. */
-async function channelAgentForAccount(accountId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ agentId: channels.agentId })
-    .from(channels)
-    .innerJoin(telegramAccounts, eq(telegramAccounts.channelId, channels.id))
-    .where(eq(telegramAccounts.id, accountId))
-    .limit(1);
-  return row?.agentId ?? null;
-}
-
 /** The bot currently bound to this agent, or null. */
 export async function getAgentTelegram(
   ownerId: string,
@@ -167,7 +157,7 @@ export async function connectAgentTelegram(
 
   // The bot is already owned by a different agent's channel — refuse to steal it.
   if (byUsername) {
-    const owner = await channelAgentForAccount(byUsername.id);
+    const owner = await botAgentId(byUsername.id);
     if (owner && owner !== agentId) {
       throw new TelegramTokenError(`@${me.username} is already linked to another agent.`);
     }
