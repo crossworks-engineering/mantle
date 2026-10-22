@@ -2816,13 +2816,20 @@ MANTLE_CHECK_FLOOR=keep (results in ~/s7b-b2/x-<name>.exit and .log;
   passing: the three suites that timed out so (workspaces-live too) take
   60 s since 9cee2ef27. The rest (shards, runtime-role, off, runtime role
   off, matrix) were running at hand-over.
-- on 9cee2ef27 (prefix b, launch9.sh): every suite and the forge proof
-  (bproof: round 8's forge.sql) queued at hand-over.
+- c0d68ad0e, more: shard 2/2 1 (a2b2b-write-gateway's afterAll over
+  10 s, every test passing), test:matrix 1 (only its time budget, 272.6 s
+  of 210 s with six lanes busy; the noted lines as round 7's).
+- vitest.config.ts: `hookTimeout` 60 s for every config (an afterAll ends
+  pools and drops a scratch database; four suites passed 10 s in one
+  round with six lanes busy, every test green).
+- on the final head (prefix c, `~/s7b-b2/launch9.sh <sha> c`): every suite
+  and the forge proof (cproof: round 8's forge.sql) launched at hand-over;
+  the b runs on 9cee2ef27 were stopped for it.
 
 ### Left (round 10)
 
-0. Read the b runs (`bash ~/s7b-b2/grab3.sh bs1 bs2 baoff baon beon
-   brrole bserial boff brroff bmatrix`, bproof's log): every exit 0 and
+0. Read the c runs (`bash ~/s7b-b2/grab3.sh cs1 cs2 caoff caon ceon
+   crrole cserial coff crroff cmatrix`, cproof's log): every exit 0 and
    every forge 42501 with the needed writes allowed. The matrix: rerun it
    alone (`~/s7b-b2/launch9.sh` names it last) before calling it red. A
    failure on the new run-maker check or the run-control moves: the runs

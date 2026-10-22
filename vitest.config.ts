@@ -44,6 +44,11 @@ export default defineConfig({
     // failed the pre-push gate on a green tree, which is the expensive kind of
     // false alarm: it teaches people to retry rather than to read.
     testTimeout: 15_000,
+    // A DB suite's afterAll ends its pools and drops its scratch database;
+    // with six test lanes busy on the workstation that passed the 10 s
+    // default four times in one round (every test green, the hook red), so
+    // hooks take 60 s, as the suites that set their own already did.
+    hookTimeout: 60_000,
     // Workspace packages export raw TS — vitest's esbuild handles them.
     server: { deps: { inline: [/^@mantle\//] } },
   },
