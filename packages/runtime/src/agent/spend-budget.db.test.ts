@@ -81,7 +81,23 @@ describe.skipIf(!URL)('member token budget: completion tokens only', () => {
       () => tracing.step({ name: 'tool: query_result', kind: 'compute' }, fn),
     );
   const used = () => ledger.memberTokensSince(anchor, member, since);
-  const settle = () => new Promise((r) => setTimeout(r, 200));
+  /** The trace's close write and a late charge's increment are sent after
+   *  the turn returns, unawaited (recording never holds a result back), so
+   *  a fixed pause raced them on a busy box (round 10: 1 in 3 runs with the
+   *  runtime role off). Wait, bounded, for what each assertion reads. */
+  const closed = async (n: number) =>
+    expect
+      .poll(
+        async () =>
+          Number(
+            (
+              await admin`select count(*)::int as n from traces
+                where owner_id = ${anchor} and finished_at is not null`
+            )[0]!.n,
+          ),
+        { timeout: 15_000, interval: 50 },
+      )
+      .toBe(n);
 
   it('an embed of a spilled 1 MB result does not move it; a chat round does', async () => {
     expect(await used()).toBe(0);
@@ -93,7 +109,7 @@ describe.skipIf(!URL)('member token budget: completion tokens only', () => {
         input: Array.from({ length: CHUNKS }, (_, i) => `chunk ${i}`),
       }),
     );
-    await settle();
+    await closed(1);
     const [embedTrace] = await admin`select tokens_in, tokens_out, tokens_embed, cost_micro_usd
       from traces where owner_id = ${anchor} order by started_at desc limit 1`;
     expect(embedTrace).toMatchObject({ tokens_in: 0, tokens_out: 0, tokens_embed: 250_000 });
@@ -108,7 +124,7 @@ describe.skipIf(!URL)('member token budget: completion tokens only', () => {
         messages: [{ role: 'user', content: 'x' }],
       }),
     );
-    await settle();
+    await closed(2);
     expect(await used()).toBe(1200);
   });
 
@@ -126,7 +142,10 @@ describe.skipIf(!URL)('member token budget: completion tokens only', () => {
       });
     });
     await late;
-    await settle();
-    expect((await used()) - before).toBe(1200);
+    await closed(3);
+    // The late charge lands after the close, by an increment.
+    await expect
+      .poll(async () => (await used()) - before, { timeout: 15_000, interval: 50 })
+      .toBe(1200);
   });
 });
