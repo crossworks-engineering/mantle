@@ -643,7 +643,22 @@ describe.skipIf(!URL)(
         console.log(`narrow sweep: SPOT_ROWS now ${JSON.stringify(on, null, 1)}`);
       }
       expect(on).toEqual(SPOT_ROWS);
-      expect(of('off')).toEqual(on);
+      // The acting-login spot (0321) is where a definer runs. The structure
+      // items' and the assistant delete's definers run only on the narrow
+      // route: with the switch off the app's own statements run, as before
+      // 0321, at no spot. A chat's block or unpair calls its definer on
+      // every route (pairing.ts setChatPairing), so its row keeps the spot.
+      const everyRoute = new Set(['POST /api/agents/:id/telegram/chats']);
+      const offOf = (rows: Record<string, string[]>) =>
+        Object.fromEntries(
+          Object.entries(rows)
+            .map(
+              ([k, v]) =>
+                [k, everyRoute.has(k) ? v : v.filter((x) => x !== 'acting-login')] as const,
+            )
+            .filter(([, v]) => v.length > 0),
+        );
+      expect(of('off')).toEqual(offOf(on));
     });
 
     /**
