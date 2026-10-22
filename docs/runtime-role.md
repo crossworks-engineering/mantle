@@ -325,9 +325,10 @@ What the default means for each shape:
   password cannot be every brain's), so the system pool takes the role per
   transaction, with the hold check and the text check as the boundary.
 - An existing box rolled to this release: on at that roll, with nothing set
-  in its `.env`. Before the fleet flip the CEO reads the box counts
-  (`scripts/arch-scoreboard-box.sh`) at 0; the list is in
-  docs/_archive/plan-v3-s7b-handover.md, "Part b2, round 7". On, a statement the system pool sends
+  in its `.env`. Before the fleet flip the box counts of
+  `scripts/arch-scoreboard-box.sh` must read 0 on the box:
+  `narrow_misses:content-write`, `narrow_misses:cascade-delete`,
+  `narrow_misses:denied` and `fail_open_misses:all` (each site with it). On, a statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 

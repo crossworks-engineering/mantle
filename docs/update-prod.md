@@ -735,9 +735,9 @@ a fresh backup first: the steps, the checks and the rollback are in
 From the release that carries S7b part b2, `MANTLE_NARROW_SYSTEM` is on
 when unset: the system work of an Admin area exit runs as
 `mantle_system_narrow`, on a pool that logs in as it (migrate gives the role
-its login at the roll). Before the fleet flip, the box counts must read 0 on
-the box (`scripts/arch-scoreboard-box.sh`; the list is in
-docs/_archive/plan-v3-s7b-handover.md, "Part b2, round 7").
+its login at the roll). Before the fleet flip, the box counts of
+`scripts/arch-scoreboard-box.sh` must read 0 on the box (the list:
+[runtime-role.md](runtime-role.md), "The kill switch").
 
 The kill switch, per box, no image change:
 

@@ -2389,8 +2389,8 @@ and `docker compose up -d`.
 
 Mac, Node 26, DATABASE_URL unset, on 69cef8e89 (the flip; the commits
 after it change the handover and one cell of narrow-containment.db.test.ts):
-`pnpm format:check` 0, `pnpm docs:check` 0 (1 before the handover named
-its heading), `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0 (1 before the docs stopped quoting
+this handover), `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r typecheck` 0,
 `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm test:serial` 0,
 `vitest run server packages eslint-rules` 0 (873 files passed, 290
 skipped; 11306 tests passed). On the head a89341af3: prettier, eslint and
