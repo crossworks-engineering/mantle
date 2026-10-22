@@ -245,6 +245,10 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "packages/telegram chat-login.ts loginModeratesBot: a Telegram bot's Moderator rule about a login, a read definer (0313)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
     'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0315)',
+  'public.mantle_space_settle_promotion(uuid,uuid)':
+    "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0316)",
+  'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
+    "agents.ts deleteAgent: an assistant deleted, with or without its conversation, on the assistants area's narrow exit; the definer holds the rule (0316)",
 };
 
 /**
@@ -290,6 +294,10 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "the assistants area's block or unpair of a chat of the assistant's bot (agent-telegram.ts setAgentTelegramChat) on an Admin area exit: the definer holds the rule, telegram_chats only (0313)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
     "the keys, connectors and settings areas' structure items (gateway/structure-item.ts: the Secrets root, a secret, a peer, a sender's contact, a documentation item) on an Admin area exit or in a turn's area exit: the definer holds the rule, the listed kinds of nodes only (0315)",
+  'public.mantle_space_settle_promotion(uuid,uuid)':
+    "the users area's role change to admin (login-update.ts): the promoted login's personal space settled; the definer holds the rule, space_items and their bundles only (0316)",
+  'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
+    "the assistants area's delete of an assistant (agents.ts deleteAgent): the definer holds the rule, the agent, its messages and digests (0316)",
 };
 
 /**

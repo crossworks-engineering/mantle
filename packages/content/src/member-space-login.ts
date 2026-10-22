@@ -20,7 +20,14 @@
  * personal-space change event went in W8d (nothing listened to it).
  */
 import { and, eq, inArray, or } from 'drizzle-orm';
-import { db, nodes, spaceItemBundles, spaceItems, spaces } from '@mantle/db';
+import {
+  db,
+  nodes,
+  settlePromotionOnNarrow,
+  spaceItemBundles,
+  spaceItems,
+  spaces,
+} from '@mantle/db';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -30,6 +37,10 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * changed.
  */
 export async function settleSpaceOnPromotion(tx: Tx, loginId: string): Promise<number> {
+  // On the users area's narrow exit: the definer, the same statements
+  // (mantle_space_settle_promotion, 0316).
+  const settled = await settlePromotionOnNarrow(tx, loginId);
+  if (settled !== null) return settled;
   const rows = await tx
     .select({ id: spaceItems.nodeId })
     .from(spaceItems)

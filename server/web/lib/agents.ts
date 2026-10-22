@@ -17,7 +17,7 @@ import {
   type AgentAvatar,
   type AgentParams,
   type PersonaNote,
-  onFullSystemRoute,
+  deleteAgentOnNarrow,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
 import {
@@ -580,6 +580,16 @@ export async function deleteAgent(
   opts: { conversation?: AgentConversationMode } = {},
 ): Promise<DeleteAgentResult | null> {
   const conversation = opts.conversation ?? 'keep';
+  // On the assistants area's narrow exit: the definer, the same statements
+  // (mantle_agent_delete, 0316).
+  const onNarrow = await withDeadlockRetry(() =>
+    deleteAgentOnNarrow(userId, id, conversation === 'delete'),
+  );
+  if (onNarrow !== undefined) {
+    return onNarrow
+      ? { conversation, deletedMessages: onNarrow.messages, deletedDigests: onNarrow.digests }
+      : null;
+  }
   // The digests' heads first (plan V4): which notes go is read before the
   // transaction, so the heads can be its first lock.
   const digestWhere = and(
@@ -634,10 +644,7 @@ export async function deleteAgent(
         return { conversation, deletedMessages, deletedDigests };
       }),
     );
-  // With its conversation, the delete removes items and messages: on the
-  // full route from the assistants area's narrow exit (viewer.ts
-  // FULL_ROUTE_SPOTS 'agent-conversation').
-  return conversation === 'delete' ? onFullSystemRoute('agent-conversation', remove) : remove();
+  return remove();
 }
 
 /* ---------------------------------------------------------------------------

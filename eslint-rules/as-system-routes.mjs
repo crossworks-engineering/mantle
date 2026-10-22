@@ -147,9 +147,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/embeddings/src/reembed.ts': ['reembed'],
   'packages/tools/src/pending.ts': ['pending-call'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
-  'server/web/lib/agents.ts': ['agent-conversation'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
-  'server/web/lib/login-update.ts': ['promotion-space'],
 });
 
 /**

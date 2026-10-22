@@ -2213,6 +2213,13 @@
       "when": 1790198220000,
       "tag": "0315_structure_item_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1790198280000,
+      "tag": "0316_promotion_agent_definers",
+      "breakpoints": true
     }
   ]
 }

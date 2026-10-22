@@ -522,3 +522,9 @@ export {
   type StructureKind,
   type StructureUpdate,
 } from './gateway/structure-item';
+// The promotion and assistant delete definers (gateway/spot-definers.ts).
+export {
+  deleteAgentOnNarrow,
+  settlePromotionOnNarrow,
+  type AgentDeleteCounts,
+} from './gateway/spot-definers';

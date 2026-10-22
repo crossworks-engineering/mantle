@@ -399,9 +399,8 @@ work runs on the full route, keeping its actor, at a spot named in
 `FULL_ROUTE_SPOTS` (`viewer.ts`, `onFullSystemRoute`), each with its why;
 the rest of the exit stays narrow: `profile-row` (the login-self routes and
 the settings area write `profiles`, the write role's own-login table, with
-no scope to carry), `integrity-delete` (the landed delete),
-`promotion-space` (a promotion's personal-space settle), and the others
-the list names. The list only shrinks: S7b moves each to the write role in
+no scope to carry), `integrity-delete` (the landed delete), and the
+others the list names. The list only shrinks: S7b moves each to the write role in
 the caller's scope or to a definer. Outside a narrow exit a spot changes
 nothing.
 
@@ -419,6 +418,29 @@ narrow role runs it and holds no right on `nodes`. Anywhere else (a
 login's scope, a full reason, the switch off) the app's own statements run
 as before; the definer does what they did (the row, the heads, the index
 reset), so placement and readers are the same.
+
+Two more left the spots in part b2's third round, each for a definer of
+its own with the same caller rule (migration 0316,
+`gateway/spot-definers.ts`): a login made admin on the users area's exit
+gets its personal space's shared and submitted items back as private
+drafts (`mantle_space_settle_promotion`, the users area; it refuses a
+target that is no admin), and an assistant deleted on the assistants
+area's exit, with its conversation or not
+(`mantle_agent_delete`, the assistants area: the digests' heads, the agent
+row, its messages and digests, a pinned Telegram chat denied). Without
+its conversation the delete took the heads too (`mantle_lock_heads`, which
+the narrow role may not run), so it was refused on the narrow exit before.
+
+A system transaction (`withSystemTx`, and the heads helpers and the
+hidden-rows check built on it) opened in a request's own narrow exit
+keeps that exit for the work inside (`runInSystemTx` carries it on the
+transaction's scope): the transaction's statements took the narrow route
+already (it is chosen when the transaction begins), and since part b2's
+third round so does any statement inside it on the system pool itself or
+on `systemDb` (each a connection of its own), with the acting login. They
+had run as the system pool's own login with no actor (measured:
+`narrow-system-tx.db.test.ts`). An `asSystem` exit's route was never
+hidden there.
 
 The route's own statements carry `/* mantle:narrow */` (never the actor's
 tag): the round-trip test counts them as the path's in every mode. Its

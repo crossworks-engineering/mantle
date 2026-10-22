@@ -10,6 +10,7 @@
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
     "./viewer": "./src/viewer.ts",
+    "./runtime-role": "./src/runtime-role.ts",
     "./store-broker": "./src/store-broker.ts",
     "./sql-text": "./src/sql-text.ts",
     "./test-support": "./src/test-support.ts",

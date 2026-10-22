@@ -1166,19 +1166,17 @@ function exitLogin(outer: Actor | null): string | undefined {
  * definer, and delete its spot; the list only shrinks. The structure items
  * (the Secrets root, a secret, a peer, a sender's contact, a documentation
  * item, a calendar's synced events) moved to one definer
- * (gateway/structure-item.ts, migration 0315).
+ * (gateway/structure-item.ts, migration 0315); a promotion's personal
+ * space and an assistant's delete to theirs (gateway/spot-definers.ts,
+ * migration 0316).
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
     "profiles is a content table (the write role's own-login rule): the login-self routes write the login's own row and the settings and backups areas the brain's, on a system exit with no scope to carry to the write role",
   'integrity-delete':
     "the integrity screen's landed delete removes an item (nodes) and its traces on the system pool",
-  'promotion-space':
-    "a login's promotion turns its personal space's shared and submitted items (space_items) back into private drafts, in the role change's transaction",
   reembed:
     'the embedding rebuild (the AI workers and embedding areas) writes every stored vector of the brain (nodes, facts, entities, chunks, windows, recall nodes) on the system pool',
-  'agent-conversation':
-    "the assistants area's delete with its conversation removes the assistant's messages (assistant_messages) and digests (nodes) on the system pool",
   'console-tool':
     "the API console runs a tools-table tool through the agent dispatcher as the area's system actor: the tool writes what it writes (content tables)",
   'pending-call':

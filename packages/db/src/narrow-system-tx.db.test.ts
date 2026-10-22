@@ -140,9 +140,7 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
       expect({ k, ...w }).toMatchObject({ k, cu: systemLogin, su: systemLogin });
     }
     expect(out.route).toBe('full');
-    const full = await m.runAsActor(m.loginActor(admin, 'rw'), () =>
-      m.asSystem(probe, 'app-data'),
-    );
+    const full = await m.runAsActor(m.loginActor(admin, 'rw'), () => m.asSystem(probe, 'app-data'));
     expect((full.tx as Who).su).toBe(systemLogin);
     expect(full.route).toBe('full');
   });
