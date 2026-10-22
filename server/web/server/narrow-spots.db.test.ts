@@ -254,7 +254,11 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
              has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as n`;
     expect(g).toEqual({ w: false, u: false, n: false });
-    expect(await code(call(admin))).toBe('ran');
+    // Since 0321 the narrow login runs it for no one, its own acting login
+    // too; the assistants area's delete runs it at the spot acting-login.
+    expect(await code(call(admin))).toBe('42501');
+    expect((await agentState(a)).a).toBe(1);
+    await exit(() => agents.deleteAgent(brain, a), admin);
     expect((await agentState(a)).a).toBe(0);
   });
 

@@ -541,7 +541,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       { r: boolean }[]
     >`select revoked_at is not null as r from access_keys where id = ${keyId}`;
     expect(k!.r).toBe(true);
-    await nl.begin(async (t) => {
+    await su.begin(async (t) => {
       await t.unsafe(acting(admin));
       const [r] = await t`select found from mantle_agent_delete(${admin}::uuid, ${brain}::uuid,
                             ${agent}::uuid, false)`;
@@ -667,13 +667,17 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       Promise.resolve(m.runAsActor(actor, () => m.asSystem(fn, 'admin-area'))),
     );
 
+  // The structure definer runs at the full-route spot acting-login since
+  // 0321: the session is the system pool's, never the narrow login.
+  const FULL_SESSION = expect.not.stringMatching(/^mantle_system_narrow$/);
+
   it("a turn whose actor is no login (actor check off: a Telegram turn) takes the turn's login; on too; no login at all runs at the spot", async () => {
     // Off: the turn's actor is system(workflow:telegram-turn).
     const off = await turn(admin, m.systemActor('workflow:telegram-turn'), sawOf);
-    expect(off).toEqual({ s: rr.NARROW_ROLE, a: admin });
+    expect(off).toMatchObject({ s: FULL_SESSION, a: admin });
     // On: the turn's actor is the login.
     const on = await turn(admin, m.loginActor(admin, 'rw'), sawOf);
-    expect(on).toEqual({ s: rr.NARROW_ROLE, a: admin });
+    expect(on).toMatchObject({ s: FULL_SESSION, a: admin });
     // No login (a heartbeat's turn that answers none): the app's own
     // statements at the spot structure-no-login, on the system pool's login.
     const none = await turn(null, m.systemActor('heartbeat'), async () => {
