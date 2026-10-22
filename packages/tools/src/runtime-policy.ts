@@ -125,7 +125,7 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  them: memberAppToolVerdict and appToolPolicy both ask it.
  *
  *  A write is refused, but for a Table write the policy marks `table-rows`
- *  (task 2178377a, 2026-10-22; table_commit since its fix round 1): on its
+ *  (task 2178377a, 2026-10-22; table_commit since Jason's yes): on its
  *  own workspace's Tables a team app is held to what the running user may
  *  do there, no more. A team app's database is shared by every
  *  holder, so it changes only rows of a Table homed in a workspace that

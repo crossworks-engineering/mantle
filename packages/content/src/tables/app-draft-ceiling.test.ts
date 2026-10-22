@@ -1,5 +1,5 @@
 /**
- * A team app's Table write ceilings (task 2178377a fix round 1, MED-2): a
+ * A team app's Table write ceilings (task 2178377a, its audit): a
  * batch that would take the draft past its row ceiling, or a draft file
  * already past its byte ceiling, is refused before anything is staged
  * (applyTableOps asks appDraftCeilingRefusal for an app's write). The row

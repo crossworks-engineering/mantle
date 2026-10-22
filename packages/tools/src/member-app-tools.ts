@@ -21,7 +21,7 @@
  *      `spends` since audit F17, as a read can spend too). One exception
  *      (task 2178377a, 2026-10-22): a Table write the policy marks
  *      `table-rows` (add a row or rows, upsert rows, update a row, set a
- *      cell, and since its fix round 1 commit the draft, table_commit),
+ *      cell, and commit the draft, table_commit),
  *      on a Table homed in the workspace that holds the app (rule 6);
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
  *      those run only in the Admin workspace; tool-group levels went in

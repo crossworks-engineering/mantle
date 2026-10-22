@@ -98,7 +98,7 @@ function draftMirror(draftAbs: string): TableDoc | null {
   return clipped.clipped || multiTab ? null : ensureTableDoc(clipped.doc);
 }
 
-/** A team app's write (task 2178377a fix round 1, MED-2): the most rows
+/** A team app's write (task 2178377a, its cost audit): the most rows
  *  its Table's draft may hold after the batch. The box's table ceiling
  *  (TABLE_IMPORT_MAX_ROWS) when lower: an app loop at 60 calls a minute
  *  never grows a draft past what a person would load. */

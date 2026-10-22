@@ -24,7 +24,7 @@
  *  6. an app the Admin workspace alone holds, run by the owner: admin rules,
  *     as before (a schema write runs).
  *
- * Fix round 1 (the audit at ed3767f6d): the app's write scope reads the
+ * After the audit at ed3767f6d: the app's write scope reads the
  * drafts it may edit (an upsert twice leaves one row; an update and a cell
  * set reach a row the app added), a draft's row and byte ceilings and the
  * call's size ceiling, the Activity row names the Table and the row count,

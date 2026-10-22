@@ -106,7 +106,7 @@ const appRunWrite = new AsyncLocalStorage<AppRunWriter>();
  * bound login when the request is a mutating one in that login's write
  * scope (requestWriteScope) and the login writes (not a read-only login,
  * login(ro): a read key, a peer with Write off). Null otherwise: the app's
- * write is then refused (task 2178377a fix round 1, LOW-2 and LOW-3).
+ * write is then refused (task 2178377a, its audit).
  */
 export function appRunWriter(): AppRunWriter | null {
   const scope = requestWriteScope();

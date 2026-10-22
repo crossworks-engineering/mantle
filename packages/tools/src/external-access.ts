@@ -670,7 +670,7 @@ export const OUTSIDE_WRITE_LOG_INPUT_MAX = 2048;
  *  app's Table write (`tableArg`: the argument it names its Table in,
  *  app-tool-level.ts appRunTableWrite) logs that it writes, the Table and
  *  how many rows the call sends (a commit: that it commits), never the
- *  cells (task 2178377a fix round 1, LOW-1). */
+ *  cells (task 2178377a, its audit). */
 export function outsideCallLogDetail(
   verdict: { tool: Tool; write?: boolean },
   input: unknown,

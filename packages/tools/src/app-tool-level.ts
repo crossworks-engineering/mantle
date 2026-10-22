@@ -225,7 +225,7 @@ export async function appRunTableWrite(verdict: AppToolVerdict): Promise<string 
 }
 
 /** The largest input a team app's Table write takes, bytes (task 2178377a
- *  fix round 1, MED-2): a few thousand rows a call, well under the broker's
+ *  cost audit): a few thousand rows a call, well under the broker's
  *  body ceiling; the draft's own ceiling is applyTableOps'. */
 export const APP_TABLE_WRITE_MAX_BYTES = 1024 * 1024;
 
