@@ -691,3 +691,155 @@ the queued reserves, each pending before that point).
 3. The user role's pool limit (the fix round's open item 1) is still for
    the CEO to place.
 4. Per-database mode keeps the S7a route (no login for the role).
+
+## b1 fix round 3
+
+After the b1 re-audit 2 at a76241a46 (8.5/10, merge after fixes; MED-A
+closed and proven, LOW-A, LOW-B and LOW-C closed; no HIGH or MED). Same
+branch, a fresh builder, on d0a207d2a (main had not moved).
+
+### What changed, by audit item
+
+- LOW-1, the bound per pool (CEO decision). reserved.ts: `RESERVE_WAIT_MS`
+  is 120 s, the default wait of `reserveLease`, taken by the system pool
+  (the actor client's pipeline, actor-sql.ts `settingsPipeline`), the user
+  pool (scope.ts `withLease`, a turn's scoped statements), the
+  per-database narrow route (narrow-route.ts, the system pool's
+  connections) and the index builds (concurrent-indexes.ts): long, so it
+  only catches a reserve that never settles. `NARROW_RESERVE_WAIT_MS` is
+  15 s, taken only by the narrow login pool (`settingsPipeline` takes a
+  `wait`; narrowLoginStatement passes `{ pool: 'narrow' }`). The write
+  pool keeps its own 15 s and `WritePoolBusyError` (role-tx.ts
+  `boundedReserve`). The busy log line names the pool. The busy text:
+  `PoolBusyError` lives in pg-error.ts beside a new `POOL_BUSY_MESSAGE`
+  ("The server is busy; try again in a moment.", the text the write
+  pool's error already had; `WritePoolBusyError` now extends it), and
+  `busyMessage(err, fallback)` returns it when a pool's wait ran out
+  anywhere on the cause chain (drizzle wraps a read's error), else the
+  caller's text as before. Used by the app's 409 (server/web/server/app-error.ts),
+  the tools' refusal (packages/tools/src/visibility-refusal.ts), the tree's
+  conflict and move answers (packages/content/src/tree/write.ts) and
+  `withBusyRetry`. Before, a pool busy under drizzle's wrap answered the
+  folders text.
+- LOW-2, a late reserve after the end. patches/postgres@3.4.9.patch (src,
+  cjs and cf index.js): `reserve()` refuses while the pool is ending
+  (CONNECTION_ENDED); `end()` refuses every reserve still queued
+  (`endReserves`, the other queued requests kept in order), and the close
+  (`onclose`) does the same while ending instead of connecting for one; a
+  reservation handed back after `end()` began ends its connection
+  (`c.terminate()`, which settles that connection's end) instead of going
+  back to the pool (the builder's open item 1: `end()` never finished).
+  `pnpm install --frozen-lockfile` applies it (exit 0); the lockfile's
+  patch hash 740f22bb... to 5f9e8433....
+- LOW-3, more pins. pools.ts `NARROW_STARTUP_FIXED` adds `exit_on_error`
+  off (any error would end the session), `synchronous_commit` on (a commit
+  returns once durable), `array_nulls` on, `transform_null_equals` off,
+  `xmloption` content and `gin_fuzzy_search_limit` 0 (each changes what a
+  statement reads or writes). `timezone_abbreviations` is taken from the
+  system pool with TimeZone, DateStyle, IntervalStyle and
+  standard_conforming_strings (it changes how a date's zone is read, and
+  is a box-level setting like TimeZone). The comment and
+  docs/runtime-role.md now say what is true: a chosen list, not every
+  setting a session can carry; any other stored setting reaches narrow
+  sessions until the next migrate, and the boot line names it.
+- Nits. The system values: narrow-route.ts `systemStartup` reads
+  `pg_settings.reset_val` once per system pool (the value a session of it
+  starts with: server, database and role settings and the pool's own
+  startup, never a session or transaction SET; postgres.js's
+  `sql.parameters` followed every SET of any connection) and keeps it;
+  pools.ts `newNarrowPool` takes it at each connect (`systemStartupOf`).
+  Fail closed: a read that fails, or misses a name, fails the narrow
+  statement (`NarrowStartupError`) and nothing is sent on the narrow pool;
+  the next statement reads again. One statement per process, its first
+  narrow statement. `pnpm verify` runs `pnpm test:serial` last.
+
+### Cells
+
+| Cell                                                                                         | Where                                                 | Old patch | New |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------- | --- |
+| an ending pool reserves nothing, refuses a reserve queued as it ends, no backend left        | reserve-queue.db.test.ts                              | fails     | ok  |
+| a reservation handed back after the pool's end began ends, and the end returns               | reserve-queue.db.test.ts                              | fails     | ok  |
+| a CLI (child process): pipeline asked as closeDb begins, long statement holds the pool       | reserve-queue.db.test.ts                              | fails     | ok  |
+| the waits per pool on the real route: narrow busy at its wait, the system pool still waiting | reserve-queue.db.test.ts                              | ok        | ok  |
+| the waits: 120 s default (pending at 119.999 s), 15 s narrow; settingsPipeline both ways     | reserved.test.ts (fake timers)                        |           | ok  |
+| each reserve names its wait (only the narrow login pool the short one; write pool its own)   | reserved.test.ts                                      |           | ok  |
+| busy text: a pool's wait under drizzle's wrap is the plain text; others keep theirs          | reserved.test.ts, server/web/server/app-error.test.ts |           | ok  |
+| every pinned setting stored by the narrow login (20 names): raw session takes it, pool pins  | narrow-login.db.test.ts                               |           | ok  |
+| startup from the system pool's session-start values; a session SET timezone does not leak    | narrow-login.db.test.ts                               |           | ok  |
+| systemStartup fails closed (read fails, a name missing), reads once, then never again        | runtime-role.test.ts                                  |           | ok  |
+
+On 37a21a3b3's patch reverted to a76241a46's (PATCH_FROM, a fresh clone),
+the CLI cell is the auditor's shape exactly: closeDb returned, the late
+pipeline answered, 1 backend live and the process did not exit (killed by
+its pid at 20 s). The reserve asked of an ending pool was handed a
+connection, and the end with a reservation handed back late stayed
+pending.
+
+### Measured
+
+Round trips (a2a-round-trips.db.test.ts, MANTLE_RT_REPORT, workstation
+pg18, check off, statements / round trips, on 37a21a3b3): chat turn start
+126 / 155, page save 17 / 21, member page save 21 / 27, tree load 13 / 17,
+item open 9 / 12, search 23 / 30, MCP tool call 37 / 49: unchanged (the
+session-start read is one statement per process, before its first narrow
+statement).
+
+### Changed answers
+
+None for any member, client, key, peer or public link while every pool
+answers in time. Below them, every caller that can now see busy, and
+after how long (before b1 each of these but the write pool waited for
+good; fix round 2 bounded all at 15 s):
+
+| Caller                                                                                     | Pool, wait           | What it sees                                                                       |
+| ------------------------------------------------------------------------------------------ | -------------------- | ---------------------------------------------------------------------------------- |
+| a write as the actor outside a transaction, every process (web, workers, agent, MCP, CLIs) | system, 120 s        | PoolBusyError; a route 409 plain text; a worker's job fails and pg-boss retries it |
+| a narrow statement with an actor outside a transaction (login pool)                        | narrow, 15 s         | the same                                                                           |
+| a narrow statement in per-database mode (the role taken on the system pool)                | system, 120 s        | the same                                                                           |
+| a member's or client's turn: every scoped statement, reads too                             | user, 120 s          | the same; a read now says the plain text, never the folders one                    |
+| the index builds (migrate, maintenance)                                                    | system, 120 s        | the index counts as failed; the next run builds it                                 |
+| a write on the write pool                                                                  | write, 15 s (as was) | WritePoolBusyError, its text unchanged                                             |
+
+Narrow statements with no actor and narrow transactions take no reserve
+(no bound, as before). A worker job fails busy only after a reserve that
+never settled for 120 s, so a retry's repeated model work needs a pool
+that stopped answering for two minutes.
+
+- A pool's busy answer under drizzle's wrap: "The server is busy; try
+  again in a moment." (was the folders text). A deadlock or lock timeout
+  keeps its text.
+- postgres.js: a reserve of an ending pool fails CONNECTION_ENDED (was:
+  queued, then given a connection that outlived the end); a reservation
+  handed back after the end began ends its connection.
+- The narrow pool's sessions: six more pinned settings, and the system
+  values are its session-start ones (were the last reported, which a
+  session SET could change). A narrow statement fails closed when they
+  cannot be read (was: connected without them).
+
+### Pins
+
+PIN_PLACEHOLDER
+
+### Rollback (fix round 3)
+
+No migration. Code and the patch only: an N-1 image runs its own.
+
+### Gates
+
+GATES_PLACEHOLDER
+
+### Open items
+
+1. Plain statements (not reserves) queued behind a full pool when its
+   `end()` begins are still served by upstream's close (it connects for
+   the next one), and that connection then goes back to the open queue
+   instead of ending (the same class as LOW-2, upstream's own). No
+   caller of this package ends a pool with plain statements queued
+   (closeDb waits for every pipeline first); not patched, to keep the
+   graceful end. One line in `onclose` if the CEO wants it.
+2. A box whose postgresql.conf sets a fixed pin would not see it on the
+   narrow pool (the startup parameter wins; the system values follow the
+   box). Compose sets none.
+3. The user role's pool limit (fix round 1's open item) is still for the
+   CEO to place.
+4. Per-database mode keeps the S7a route (no login for the role).

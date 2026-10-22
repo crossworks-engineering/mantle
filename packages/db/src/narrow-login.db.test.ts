@@ -462,10 +462,17 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     const pool = pools.newNarrowPool(narrowUrlOf(), su);
     try {
       const [rawRow] = await raw.unsafe<Record<string, string>[]>(read);
-      expect(rawRow).toMatchObject({ default_transaction_read_only: 'on', ro: 'on' });
-      expect(await failure(raw.unsafe('select pg_sleep(0.2)'))).toMatchObject({ code: '57014' });
+      expect(rawRow).toMatchObject({
+        default_transaction_read_only: 'on',
+        ro: 'on',
+        exit_on_error: 'on',
+        array_nulls: 'off',
+      });
+      // Cut short at 50 ms, and with exit_on_error on the error ends the
+      // session too (the driver then answers the close).
+      const cut = (await failure(raw.unsafe('select pg_sleep(0.2)'))) as { code?: string };
+      expect(['57014', 'CONNECTION_CLOSED']).toContain(cut.code);
       // The pool's session: every one at the value the app runs with.
-      expect(rawRow).toMatchObject({ exit_on_error: 'on', array_nulls: 'off' });
       const [row] = await pool.unsafe<Record<string, string>[]>(read);
       const want = pools.narrowStartup(nr.systemStartupOf(su)!);
       for (const [name] of stored) {
