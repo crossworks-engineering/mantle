@@ -24,7 +24,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NARROW_SWEEP_ENTRIES, writingAreaRows } from './narrow-area-sweep.entries';
+import {
+  KEY_OR,
+  LANDED_NODE,
+  MAIL_NODE,
+  NARROW_SWEEP_ENTRIES,
+  PEER_NODE,
+  SANDBOXD,
+  WORKER,
+  WORKER_KINDS,
+  writingAreaRows,
+} from './narrow-area-sweep.entries';
 import { SAMPLE_ID } from './a10-body-sweep.samples';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -34,6 +44,22 @@ vi.mock('@mantle/crypto', async (importOriginal) => ({
   seal: vi.fn(() => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 })),
   open: vi.fn(() => JSON.stringify({ note: 'n', fields: [] })),
 }));
+
+// The mail rescan's queue (pg-boss, its own pool on DATABASE_URL, kept for
+// the process): replaced, so the first pass's client does not outlive its
+// scratch database. Not the narrow route (its own connection).
+vi.mock('pg-boss', () => {
+  class PgBoss {
+    async start() {}
+    async stop() {}
+    async createQueue() {}
+    async send() {
+      return 'job';
+    }
+    on() {}
+  }
+  return { PgBoss, default: PgBoss };
+});
 
 vi.mock('@mantle/voice', async (importOriginal) => {
   const orig = await importOriginal<Record<string, unknown>>();
@@ -57,6 +83,119 @@ const bodies = JSON.parse(
 
 const OWNER = '22222222-2222-4222-8222-222222222222';
 
+const S = SAMPLE_ID;
+
+/**
+ * The rows each route needs to reach its write: one per table at the
+ * sample id, plus a few the paths and bodies name (narrow-area-sweep
+ * entries). The same on both passes. Run as the superuser.
+ */
+async function seedFixture(su: postgres.Sql): Promise<void> {
+  const b = Buffer.from('sealed');
+  // A member login, an Anthropic key at the sample id (PATCH /api/keys
+  // takes only that service) and an OpenRouter one (the assistants, the
+  // manifest's adopt and reset, the workers).
+  await su`insert into auth.users (id, email, password_hash, role, display_name)
+           values (${S}, 'sweep-member@example.test', 'x', 'member', 'Sweep Member')`;
+  await su`insert into api_keys (id, user_id, service, label, key_enc)
+           values (${S}, ${OWNER}, 'anthropic', 'default', ${b}),
+                  (${KEY_OR}, ${OWNER}, 'openrouter', 'default', ${b})`;
+  await su`insert into tool_groups (id, owner_id, slug, name, tool_slugs)
+           values (${S}, ${OWNER}, 'sweep-group', 'Sweep group', '{search}')`;
+  await su`insert into agents (id, owner_id, slug, name, role, model, system_prompt, tool_group_slugs, api_key_id)
+           values (${S}, ${OWNER}, 'sweep-agent', 'Sweep agent', 'responder', 'm', 'p', '{sweep-group}', ${KEY_OR})`;
+  await su`insert into skills (id, owner_id, slug, name, description, instructions)
+           values (${S}, ${OWNER}, 'sweep-skill', 'Sweep skill', 'd', 'b')`;
+  // An assistant's Telegram bot and one chat of the owner's.
+  await su`insert into channels (id, owner_id, agent_id, type, display_name, credentials_enc)
+           values (${S}, ${OWNER}, ${S}, 'telegram', 'Sweep bot', ${b})`;
+  await su`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
+           values (${S}, ${OWNER}, 'sweep_bot', 'inbox.telegram_sweep_bot', ${S})`;
+  await su`insert into telegram_chats (id, account_id, user_id, telegram_chat_id, chat_type, login_id)
+           values (${S}, ${S}, ${OWNER}, '1', 'private', ${OWNER})`;
+  // AI workers: one at the sample id, one per kind the test rows probe.
+  await su`insert into ai_workers (id, owner_id, slug, name, kind, provider, model, api_key_id)
+           values (${S}, ${OWNER}, 'sweep-worker', 'Sweep worker', 'reflector', 'openrouter', 'x/m', ${KEY_OR})`;
+  for (const [i, kind] of WORKER_KINDS.entries()) {
+    await su`insert into ai_workers (id, owner_id, slug, name, kind, provider, model, api_key_id)
+             values (${WORKER(i + 1)}, ${OWNER}, ${`sweep-${kind}`}, ${kind}, ${kind}, 'openrouter', 'x/m', ${KEY_OR})`;
+  }
+  await su`insert into curated_models (id, owner_id, pool, name, routes)
+           values (${S}, ${OWNER}, 'agents', 'Sweep pool entry',
+                   ${su.json([{ provider: 'openrouter', model: 'sweep/model' }])})`;
+  await su`insert into calendar_accounts (id, owner_id, provider, display_name)
+           values (${S}, ${OWNER}, 'ics', 'Sweep cal')`;
+  await su`insert into doc_collections (id, owner_id, key, label, origin, root_path, enabled)
+           values (${S}, ${OWNER}, 'sweep-fixture', 'Sweep fixture', 'user', 'sweep-fixture', false)`;
+  await su`insert into email_accounts (id, user_id, provider, address, branch_path, imap_host, imap_port, imap_secure, imap_config_enc)
+           values (${S}, ${OWNER}, 'imap', 'sweep-box@example.invalid', 'inbox.sweep_box', '127.0.0.1', 1, false, ${b})`;
+  await su`insert into nodes (id, owner_id, type, title, path)
+           values (${MAIL_NODE}, ${OWNER}, 'email', 'Sweep mail', 'inbox.sweep_box'),
+                  (${LANDED_NODE}, ${OWNER}, 'note', 'Sweep landed', 'notes')`;
+  await su`insert into emails (id, node_id, account_id, provider_msg_id, from_addr, internal_date)
+           values (${S}, ${MAIL_NODE}, ${S}, 'sweep-1', 'a@example.invalid', now())`;
+  // A heartbeat whose assistant is gone: its fire pauses it, no model call.
+  await su`insert into heartbeats (id, owner_id, slug, name, agent_slug, skill_slug, schedule_kind, schedule, surface)
+           values (${S}, ${OWNER}, 'sweep-hb', 'Sweep hb', 'sweep-gone', 'sweep-skill', 'manual',
+                   ${su.json({ kind: 'manual' })}, ${su.json({ kind: 'web' })})`;
+  await su`insert into microsoft_config (owner_id, client_id, client_secret_enc, redirect_uri)
+           values (${OWNER}, 'sweep-client', ${b}, 'https://example.invalid/cb')`;
+  await su`insert into ms_accounts (id, user_id, upn, branch_path, access_token_enc, refresh_token_enc, token_expires_at)
+           values (${S}, ${OWNER}, 'sweep-ms@example.invalid', 'microsoft.sweep_ms', ${b}, ${b}, '2000-01-01Z')`;
+  await su`insert into ms_drives (id, account_id, drive_id, drive_type, name, branch_label)
+           values (${S}, ${S}, 'sweep-drive', 'personal', 'Sweep drive', 'sweep_drive')`;
+  await su`insert into runs (id, owner_id, title) values (${S}, ${OWNER}, 'Sweep run')`;
+  await su`insert into sandboxes (id, owner_id, name, image) values (${S}, ${OWNER}, 'sweep-box', 'sweep-image')`;
+  // The connectors: an MCP one with an authorization pending, an OpenAPI one.
+  await su`insert into tool_groups (owner_id, slug, name, integration)
+           values (${OWNER}, 'mcp-sweepfix', 'Sweep MCP', ${su.json({
+             service: 'sweepfix',
+             mcp: {
+               url: 'https://203.0.113.10/mcp',
+               oauth: {
+                 enabled: true,
+                 status: 'pending',
+                 pending: {
+                   state: 'sweep-state',
+                   redirectUri: 'http://localhost/api/mcp-connectors/oauth/callback',
+                   startedAt: '2026-01-01T00:00:00.000Z',
+                 },
+               },
+             },
+           })}),
+                  (${OWNER}, 'openapi-sweepfix', 'Sweep API', ${su.json({
+                    service: 'sweepfix',
+                    openapi: { specUrl: 'https://203.0.113.10/openapi.json' },
+                  })})`;
+  await su`insert into oauth_clients (id, client_name, redirect_uris)
+           values (${S}, 'Sweep client', '{https://claude.ai/cb}')`;
+  await su`insert into oauth_access_tokens (token_hash, owner_id, actor_id, client_id, expires_at)
+           values ('sweep-token-hash', ${OWNER}, ${OWNER}, ${S}, now() + interval '1 hour')`;
+  await su`insert into tools (id, owner_id, slug, name, description, handler)
+           values (${S}, ${OWNER}, 'sweep-tool', 'Sweep tool', 'd',
+                   ${su.json({ kind: 'http', url: 'https://203.0.113.10/x', method: 'GET' })})`;
+  await su`insert into tools (owner_id, slug, name, description, handler)
+           values (${OWNER}, 'note_create', 'Create a note', 'd', ${su.json({ kind: 'builtin', ref: 'note_create' })})`;
+  await su`insert into agent_groups (id, owner_id, slug, name)
+           values (${S}, ${OWNER}, 'sweep-workers', 'Sweep workers')`;
+  await su`insert into tailscale_config (owner_id, auth_key_enc, hostname) values (${OWNER}, ${b}, 'sweep')`;
+  await su`insert into pdf_passwords (id, owner_id, password_enc) values (${S}, ${OWNER}, ${b})`;
+  await su`insert into nodes (id, owner_id, type, title, path, data)
+           values (${PEER_NODE}, ${OWNER}, 'mantle_peer', 'Sweep peer', 'peers',
+                   ${su.json({ base_url: 'https://peer.example.test', description: '' })})`;
+  await su`insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash, status, created_by)
+           values (${S}, ${OWNER}, ${PEER_NODE}, 'Sweep peer', 'https://peer.example.test', 'sweep-peer-hash', 'pending', ${OWNER})`;
+  await su`insert into pending_tool_calls (id, owner_id, tool_slug, args)
+           values (${S}, ${OWNER}, 'calculate', ${su.json({ expression: '1+1' })})`;
+  await su`insert into nodes (id, owner_id, type, title, path, data)
+           values (${S}, ${OWNER}, 'secret', 'Sweep secret', 'secrets',
+                   ${su.json({ description: 'd', kind: 'password', has_note: true, field_count: 0 })})`;
+  await su`insert into secrets (node_id, ciphertext, key_version) values (${S}, ${b}, 1)`;
+  await su`insert into member_invites (id, owner_id, email, code_hash, expires_at)
+           values (${S}, ${OWNER}, 'sweep-invited@example.test', 'sweep-invite-hash', now() + interval '1 day')`;
+  await su`insert into mobile_tokens (id, user_id, expires_at) values (${S}, ${S}, now() + interval '30 days')`;
+}
+
 /** An answer less what is fresh each run: ids, stamps, minted tokens. */
 function normalize(text: string): string {
   return text
@@ -66,6 +205,8 @@ function normalize(text: string): string {
     .replace(/\b\d{10,}\b/g, 'N')
     .replace(/[A-Za-z0-9_\-+/=]{24,}/g, 'K')
     .replace(/\/tmp\/[^"\s]*/g, 'P')
+    .replace(/"code":"[^"]*"/g, '"code":"C"')
+    .replace(/code=[^"&\s]*/g, 'code=C')
     .slice(0, 400);
 }
 
@@ -93,7 +234,17 @@ describe.skipIf(!URL)(
       process.env.MANTLE_DOCS_ROOT = join(dir, 'docs');
       process.env.MANTLE_BACKUP_DIR = join(dir, 'backups');
       process.env.MANTLE_TAILSCALE_SOCK = join(dir, 'tailscaled.sock');
-      globalThis.fetch = (async () => {
+      // No network, but the sandbox daemon (its own box service) answers.
+      process.env.SANDBOXD_URL = SANDBOXD;
+      process.env.SANDBOXD_TOKEN = 'sweep-token';
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : 'url' in input ? input.url : input.href;
+        if (url.startsWith(SANDBOXD)) {
+          return new Response('{}', {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         throw new Error('sweep: no network');
       }) as typeof fetch;
       const { routeManifest } = await import('./route-manifest.gen');
@@ -121,18 +272,8 @@ describe.skipIf(!URL)(
                on conflict (id) do nothing`;
         await ts.runWorkspacesSwitch(scratch.url);
         await su`insert into profiles (user_id) values (${OWNER}) on conflict do nothing`;
-        // The rows the sample id names: a member login, an assistant, a tool
-        // group and a skill of this brain.
-        await su`insert into auth.users (id, email, password_hash, role, display_name)
-               values (${SAMPLE_ID}, 'sweep-member@example.test', 'x', 'member', 'Sweep Member')`;
-        await su`insert into tool_groups (id, owner_id, slug, name, tool_slugs)
-               values (${SAMPLE_ID}, ${OWNER}, 'sweep-group', 'Sweep group', '{search}')`;
-        await su`insert into agents (id, owner_id, slug, name, role, model, system_prompt, tool_group_slugs)
-               values (${SAMPLE_ID}, ${OWNER}, 'sweep-agent', 'Sweep agent', 'responder', 'm', 'p', '{sweep-group}')`;
-        await su`insert into skills (id, owner_id, slug, name, body)
-               values (${SAMPLE_ID}, ${OWNER}, 'sweep-skill', 'Sweep skill', 'b')
-               on conflict do nothing`.catch(() => undefined);
-        const col = join(dir, 'docs', `sweep-${pass}`);
+        await seedFixture(su);
+        const col = join(dir, `docs-${pass}`, 'sweep-docs');
         mkdirSync(col, { recursive: true });
         writeFileSync(join(col, 'a.md'), '# Sweep guide\n\nThe first text.\n');
         const tokens = await import('../lib/auth/tokens');
@@ -148,7 +289,17 @@ describe.skipIf(!URL)(
           return { status: res.status, text: await res.text().catch(() => '') };
         };
         const sample = bodies;
-        for (const row of rows) {
+        // The DELETE rows last, a sub-resource's before its parent's (the
+        // table's own order otherwise), so a row that reads, edits or acts
+        // on a fixture row meets it before a DELETE row removes it.
+        const depth = (k: string) => k.split('/').length;
+        const ordered = [
+          ...rows.filter((r) => !r.key.startsWith('DELETE ')),
+          ...rows
+            .filter((r) => r.key.startsWith('DELETE '))
+            .sort((x, y) => depth(y.key) - depth(x.key)),
+        ];
+        for (const row of ordered) {
           const entry = NARROW_SWEEP_ENTRIES[row.key];
           if (!entry || 'skip' in entry) continue;
           const [method, pattern] = row.key.split(' ') as [string, string];
@@ -161,21 +312,24 @@ describe.skipIf(!URL)(
         }
         // LOW-4: a documentation item made from a real markdown file, then
         // the file edited and the collection read again (its update).
+        // The collection's own items only: the default collections the
+        // `all` row enabled may index the same file under their own root.
         const docIds = async (text: string) =>
           (
             await su<{ id: string }[]>`
     select id::text as id from nodes where owner_id = ${OWNER}
-       and type = 'documentation' and data::text like ${`%${text}%`} order by id`
+       and type = 'documentation' and data->>'collection' = 'sweep-docs'
+       and data->>'content' like ${`%${text}%`} order by id`
           ).map((r) => r.id);
         const made = await send('POST', '/api/docs/collections', {
-          label: `Sweep ${pass}`,
-          key: `sweep-${pass}`,
+          label: 'Sweep docs',
+          key: 'sweep-docs',
           rootPath: col,
           brainDepth: 'retrieval',
         });
         const first = await docIds('first text');
         const [c] = await su<{ id: string }[]>`
-  select id::text as id from doc_collections where key = ${`sweep-${pass}`}`;
+  select id::text as id from doc_collections where key = 'sweep-docs'`;
         writeFileSync(join(col, 'a.md'), '# Sweep guide\n\nThe second text.\n');
         // Enabling an enabled collection reconciles it: the changed file is an
         // update of its item (upsertDocFromDisk), the same id.
@@ -184,6 +338,7 @@ describe.skipIf(!URL)(
         docs[pass] = {
           made: made.status,
           reread: reread.status,
+          rereadOk: reread.text.includes('1 updated'),
           first: first.length,
           left: (await docIds('first text')).length,
           sameIds: first.length > 0 && first.every((id) => second.includes(id)),
@@ -214,24 +369,95 @@ describe.skipIf(!URL)(
       expect(differ).toEqual([]);
     });
 
-    /** The rows that answer 500 both ways in this harness, each because the
-     *  call it exists for leaves the box (no network here: fetch throws). */
-    const OFFLINE_500: Readonly<Record<string, string>> = {
-      'POST /api/ai-workers/models': "lists a provider's models over the network",
-      'POST /api/keys/test': "tests a key against its provider's API",
-      'POST /api/runners/:id': "starts a runner's work through its daemon",
+    /**
+     * The rows that do not answer 2xx, each with why, the same on both
+     * passes. Every other row reaches its write and answers 2xx (the
+     * fixture holds the row each path and body names). `after`: a refusal
+     * the product answers once its write is done (the write is reached);
+     * `offline`: the network or a box service is called before any write
+     * (fetch throws here); `none`: the row has no database write of its own
+     * (a provider probe, a child process).
+     */
+    const NOT_2XX: Readonly<Record<string, readonly ['after' | 'offline' | 'none', string]>> = {
+      'GET /api/mcp-connectors/oauth/callback': [
+        'after',
+        'the pending authorization abandoned (tool_groups written), then the denial page',
+      ],
+      'POST /api/mcp-connectors/:slug/oauth/start': [
+        'after',
+        "the new pending state saved (tool_groups), then the provider's discovery fails",
+      ],
+      'POST /api/agents/:id/telegram': [
+        'offline',
+        "Telegram's getMe checks the bot token before the bot is saved",
+      ],
+      'POST /api/email/accounts': [
+        'offline',
+        'the IMAP login is tried before the account is saved (email_accounts is narrow all; PUT .../folders writes it on the narrow route)',
+      ],
+      'PATCH /api/email/accounts/:id': [
+        'offline',
+        'the IMAP login is tried before the change is saved',
+      ],
+      'POST /api/mcp-connectors/:slug/sync': [
+        'offline',
+        "the server's tool list is fetched before any write (the tool rows run at tool-group-grant)",
+      ],
+      'POST /api/openapi-connectors/:slug/sync': [
+        'offline',
+        'the spec is fetched before any write (the tool rows run at tool-group-grant)',
+      ],
+      'POST /api/openapi-connectors/preview': [
+        'none',
+        'reads a spec over the network, writes nothing',
+      ],
+      'GET /api/microsoft/oauth/callback': [
+        'offline',
+        "Microsoft's code exchange comes before the account is saved",
+      ],
+      'POST /api/runners/:id': [
+        'offline',
+        "the runner engine's own system database (not this brain's) is not made here",
+      ],
+      'POST /api/dev-tools/mcp': [
+        'none',
+        'spawns the MCP server as a child process (its own pool), MANTLE_MCP_DIR not set here',
+      ],
+      'POST /api/debug/maintenance/run': [
+        'none',
+        'spawns a maintenance CLI as a child process (its own pool); the run row (maintenance_runs, narrow all) is not sent here',
+      ],
+      'POST /api/debug/maintenance/run/cancel': ['none', 'no run started here, so none to cancel'],
+      'POST /api/agents/:id/test/chat': ['none', 'a provider probe (fetch throws), no write'],
+      'POST /api/ai-workers/:id/test/chat': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/decision': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/document': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/image': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/stt': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/tts': ['none', 'a provider probe, no write'],
+      'POST /api/ai-workers/:id/test/vision': ['none', 'a provider probe, no write'],
+      'POST /api/studio/sandbox': ['none', 'a no-persist sandbox turn: a provider call, no write'],
     };
 
-    it('no row answers 500 on the narrow pass but the named offline ones (500 off too)', () => {
-      const failed = [...answers.on].filter(([, a]) => a.startsWith('500 ')).map(([k]) => k);
-      expect(failed.sort()).toEqual(Object.keys(OFFLINE_500).sort());
-      for (const k of failed) expect(answers.off.get(k)?.startsWith('500 '), k).toBe(true);
+    it('every row answers 2xx both ways but the named ones, each with why', () => {
+      const not2xx = [...answers.on].filter(([, a]) => !a.startsWith('2')).map(([k]) => k);
+      expect(not2xx.sort()).toEqual(Object.keys(NOT_2XX).sort());
+      for (const k of not2xx)
+        expect(answers.off.get(k)?.slice(0, 3), k).toBe(answers.on.get(k)?.slice(0, 3));
     });
 
     it('a documentation item from a real markdown file: made and updated, the same both ways', () => {
-      // The reread's update in place is not yet shown at route level (round 6
-      // handover, open item): what it does is recorded, the same both ways.
-      expect(docs.on).toMatchObject({ made: 200, reread: 200 });
+      // The reread updates the item in place: the same id, the new text,
+      // none of the first left (upsertDocFromDisk through the definer on
+      // the narrow pass, the app's own statements off).
+      expect(docs.on).toEqual({
+        made: 200,
+        reread: 200,
+        rereadOk: true,
+        first: 1,
+        left: 0,
+        sameIds: true,
+      });
       expect(docs.on!.first).toBeGreaterThan(0);
       expect(docs.off).toEqual(docs.on);
     });
@@ -243,6 +469,12 @@ describe.skipIf(!URL)(
         counts[s] = (counts[s] ?? 0) + 1;
       }
       console.log(`narrow sweep: ${answers.on.size} rows driven; on-pass statuses`, counts);
+      const report = process.env.MANTLE_SWEEP_REPORT;
+      if (report) {
+        const out: Record<string, { on?: string; off?: string }> = {};
+        for (const [k, a] of answers.on) out[k] = { on: a, off: answers.off.get(k) };
+        writeFileSync(report, JSON.stringify({ rows: out, docs }, null, 1));
+      }
       expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(answers.on.size);
     });
   },
