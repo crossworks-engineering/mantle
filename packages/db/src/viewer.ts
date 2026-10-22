@@ -1200,6 +1200,20 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     'a Telegram chat paired to a login (telegram_chats allowlist_status and login_id, the login-telegram reason, packages/telegram pairing.ts pairChatWithCode): the chat then talks to the assistant as that login; the narrow login holds no write of either column',
   'run-control':
     "a run cancelled (runs status and its items' state: the area's POST /api/runs/:id and run_cancel): a run's status decides what the runs sweep executes, so the narrow login holds no write of it (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE_TABLE)",
+  'model-route':
+    "an assistant's, an AI worker's or the embedding routes' vault key, base URL or configuring login (agents, ai_workers, embedding_config; an AI worker or the embedding row made): where a vault key is sent, so the narrow login holds no write of those columns and no INSERT of either row (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE)",
+  'tool-config':
+    "a tool made (its handler: where a call and its vault key go), a tool's external access or confirm flag, a tool group's integration or configuring login, the Microsoft sign-in's redirect URI and its row (the connectors and settings areas, the MCP and OpenAPI syncs, the MCP token refresh): the narrow login holds none of them (S7b part b2 round 8)",
+  'heartbeat-maker':
+    "a heartbeat made, or its maker (created_by: whom it fires as), schedule, assistant or skill changed (the heartbeats area, heartbeat_state_set's move to a login, the maker restamp of a skill or tool group edit, the manifest's heartbeats): the narrow login keeps only the bookkeeping of a fire (S7b part b2 round 8)",
+  'skill-text':
+    "a skill made, or its instructions (what every assistant and heartbeat that runs it does) or another column changed (the skills area, the toolsmith's docs skill): the narrow login keeps only updated_at and the delete (S7b part b2 round 8)",
+  'pending-park':
+    "a tool call parked for an Admin's decision (pending_tool_calls INSERT: its tool, arguments, origin and maker; the turn's confirm gate, an agent's queued call, the toolsmith, the API console's queue): the narrow login may decide one (status, result), never make or swap one (S7b part b2 round 8)",
+  'docs-root':
+    'a documentation collection made (doc_collections INSERT with its root_path: which files the brain reads): the narrow login keeps its enable and reconcile stamps (S7b part b2 round 8)',
+  'agent-group-grant':
+    'an assistant group made (agent_groups INSERT: who answers together, member_slugs): the narrow login keeps its stamp and delete (S7b part b2 round 8)',
   'telegram-responder':
     "a Telegram chat's assistant chosen (telegram_chats responder_agent_id, the connectors area's PATCH /api/telegram/chats/:id): that assistant's tool groups then answer the chat's login; the narrow login holds no write of telegram_chats (S7b part b2 round 7: found by the area-route sweep reaching the write)",
   'assistant-grant':
@@ -1225,14 +1239,33 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
  */
 export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
   const actor = currentActor();
-  if (!FULL_ROUTE_SPOTS[spot] || actor?.kind !== 'system' || systemRouteNow() !== 'narrow') {
-    return Promise.resolve(fn());
+  if (!FULL_ROUTE_SPOTS[spot]) return Promise.resolve(fn());
+  if (actor?.kind !== 'system' || systemRouteNow() !== 'narrow') {
+    // systemDb's infrastructure writes inside a turn or request scope take
+    // the narrow route whatever the actor (gateway/handles.ts): a login's
+    // turn that parks a call does too. At a spot they take the system pool
+    // (systemDbOnSpot), keeping the actor; nothing else changes (S7b part
+    // b2 round 8: the measured allowlist leaves the narrow login no INSERT
+    // of a pending call).
+    return fullRouteSpotNow.run(spot, async () => await fn());
   }
   // Awaited inside: a drizzle query runs when it is awaited, so it must be
   // awaited where the route is set.
-  return systemRoutes.run(Object.freeze({ route: 'full' as const, reason: actor.reason }), () =>
-    runOnFullRouteSpot(actor.reason, async () => await fn()),
+  return fullRouteSpotNow.run(spot, () =>
+    systemRoutes.run(Object.freeze({ route: 'full' as const, reason: actor.reason }), () =>
+      runOnFullRouteSpot(actor.reason, async () => await fn()),
+    ),
   );
+}
+
+/** The full-route spot the current work runs at (onFullSystemRoute), or
+ *  none. */
+const fullRouteSpotNow = new AsyncLocalStorage<FullRouteSpot>();
+
+/** Whether the current work runs at a full-route spot: systemDb then takes
+ *  the system pool, not the narrow one (gateway/handles.ts). */
+export function systemDbOnSpot(): boolean {
+  return fullRouteSpotNow.getStore() !== undefined;
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   noteOwnRuleSystemRead,
   noteRequestSystemWrite,
   systemDbAccessChecked,
+  systemDbOnSpot,
   type WorkspaceScope,
 } from '../viewer';
 import { checkActorBound } from '../actor';
@@ -188,7 +189,9 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // writes (traces, spills, counters, logs) run on the narrow route while
     // the switch is on; outside every scope (workers, boot) it is system
     // work and runs full.
-    const handle = inScope && narrowSystemOn() ? getNarrowDb() : getAdminDb();
+    // At a full-route spot (onFullSystemRoute) the system pool, as the
+    // spot's other statements.
+    const handle = inScope && narrowSystemOn() && !systemDbOnSpot() ? getNarrowDb() : getAdminDb();
     return Reflect.get(handle as object, prop);
   },
 });

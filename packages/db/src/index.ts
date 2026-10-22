@@ -270,6 +270,7 @@ export {
   applyViewerGrants,
   type TableAccess,
 } from './access-matrix';
+export { narrowNeedsSpot } from './narrow-writes';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
