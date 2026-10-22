@@ -23,6 +23,7 @@ const DECIDED: Readonly<Record<string, string>> = {
     "insert only: the transport's ids of the turn's own new row (reply threading), no prompt",
   'public.app_access_log.detail': 'insert only: an access log line, read by no model',
   'public.audit_log.detail': 'insert only: an audit line, read by no model',
+  'public.team_access_log.detail': 'insert only: a member access log line, read by no model',
   'public.calendar_accounts.sync_state':
     "insert only: a new feed's sync cursor (the owner's feed, NARROW_REINSERT_HELD), no prompt",
   'public.heartbeat_fires.state_before': "insert only: a fire's log row, after the fire",

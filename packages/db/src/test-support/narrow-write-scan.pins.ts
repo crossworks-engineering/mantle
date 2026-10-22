@@ -143,12 +143,12 @@ export const NARROW_SCAN_OPEN: Readonly<
   'packages/content/src/tree/apps-nav.ts insert public.item_marks [open_count,opened_at]': {
     n: 1,
     tag: 'covered-across-files',
-    why: "copyAppMarks: only under runReadPathWrite('backfill:app-marks'), which binds its own system actor, so no exit's narrow route holds (full)",
+    why: "copyAppMarks: only under runReadPathWrite with the app marks backfill reason, which binds its own system actor, so no exit's narrow route holds (full)",
   },
   'packages/content/src/tree/apps-nav.ts insert public.item_marks [pinned_at]': {
     n: 1,
     tag: 'covered-across-files',
-    why: "copyAppMarks: only under runReadPathWrite('backfill:app-marks'), which binds its own system actor, so no exit's narrow route holds (full)",
+    why: "copyAppMarks: only under runReadPathWrite with the app marks backfill reason, which binds its own system actor, so no exit's narrow route holds (full)",
   },
   'packages/content/src/tree/marks.ts insert public.item_marks [open_count,opened_at]': {
     n: 1,
