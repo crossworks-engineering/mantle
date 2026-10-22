@@ -177,6 +177,9 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/pending-queue.ts': ['pending-park'],
   'server/web/app/api/dev-tools/queue-approval/route.ts': ['pending-park'],
   'packages/files/src/docs.ts': ['docs-root'],
+  // A content feed switched on (0323: enabled only off on the narrow login).
+  'packages/calendar/src/manage.ts': ['feed-enable'],
+  'packages/microsoft/src/drives/manage.ts': ['feed-enable'],
   'server/web/lib/worker-groups.ts': ['agent-group-grant'],
   'packages/tools/src/builtins-pending.ts': ['agent-group-grant'],
   'server/web/lib/agents.ts': ['assistant-grant', 'model-route', 'skill-text'],

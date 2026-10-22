@@ -17,15 +17,27 @@ import { getTableColumns, getTableName } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { narrowMayWrite } from './access-matrix';
 
-/** Per table, the sets (property names and values) the narrow role's row
- *  rules refuse whatever its column rights (0320's mantle_narrow_one_way). */
+/** The switches the narrow role may only turn off, on every table that has
+ *  one (0323, generated from the catalog by column name: enabled,
+ *  is_default, backup_enabled), as drizzle property names: a set that turns
+ *  one on needs the caller's spot. */
+export const NARROW_OFF_ONLY_PROPS: readonly string[] = Object.freeze([
+  'enabled',
+  'isDefault',
+  'backupEnabled',
+]);
+
+/** Whether `set` turns on a switch the narrow role may only turn off. */
+export function turnsOn(set: Record<string, unknown>): boolean {
+  return NARROW_OFF_ONLY_PROPS.some((p) => set[p] === true);
+}
+
+/** Per table, the other sets (property names and values) the narrow role's
+ *  row rules refuse whatever its column rights (0320's
+ *  mantle_narrow_one_way); a turn-on is every table's (turnsOn). */
 export const NARROW_VALUE_SPOTS: Readonly<
   Record<string, (set: Record<string, unknown>) => boolean>
 > = Object.freeze({
-  'public.agents': (set) => set.enabled === true,
-  'public.tool_groups': (set) => set.enabled === true,
-  'public.channels': (set) => set.enabled === true,
-  'public.telegram_accounts': (set) => set.enabled === true,
   'public.heartbeats': (set) =>
     set.status === 'active' || (set.nextFireAt !== undefined && set.nextFireAt !== null),
 });
@@ -38,6 +50,6 @@ export function narrowNeedsSpot(
   const name = `${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`;
   const columns = getTableColumns(table) as Record<string, { name: string } | undefined>;
   const names = op === 'update' ? Object.keys(set).map((k) => columns[k]?.name ?? k) : [];
-  if (op === 'update' && NARROW_VALUE_SPOTS[name]?.(set)) return true;
+  if (op === 'update' && (turnsOn(set) || NARROW_VALUE_SPOTS[name]?.(set))) return true;
   return !narrowMayWrite(name, op, names);
 }

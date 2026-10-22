@@ -36,6 +36,7 @@ import {
   updateStructureItem,
   deleteStructureItems,
   runReadPathWrite,
+  narrowNeedsSpot,
   onFullSystemRoute,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
@@ -612,11 +613,19 @@ export async function setCollectionEnabled(
   collectionId: string,
   enabled: boolean,
 ): Promise<{ collection: DocCollection; reconciled?: ReconcileResult; purged?: number } | null> {
-  const [updated] = await db
-    .update(docCollections)
-    .set({ enabled, updatedAt: new Date() })
-    .where(and(eq(docCollections.id, collectionId), eq(docCollections.ownerId, ownerId)))
-    .returning();
+  const set = { enabled, updatedAt: new Date() };
+  const write = () =>
+    db
+      .update(docCollections)
+      .set(set)
+      .where(and(eq(docCollections.id, collectionId), eq(docCollections.ownerId, ownerId)))
+      .returning();
+  // A turn-on (its files are read and indexed again) is the collection's
+  // root decision, not the narrow login's (0323: enabled only off): the
+  // full-route spot docs-root.
+  const [updated] = narrowNeedsSpot(docCollections, 'update', set)
+    ? await onFullSystemRoute('docs-root', write)
+    : await write();
   if (!updated) return null;
   if (enabled) {
     const reconciled = await reconcileCollection(ownerId, updated);

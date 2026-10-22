@@ -201,9 +201,10 @@ export async function updateAiWorker(
       .returning();
   // Its vault key, base URL or configuring login (and their backups): the
   // full-route spot model-route (access-matrix.ts NARROW_NEVER_UPDATE).
-  // Its prompt (what it runs): skill-text, as a skill's instructions.
+  // Its prompt (what it runs) and its params (a kind's extraction prompt
+  // and limits, round 13b): skill-text, as a skill's instructions.
   const [row] =
-    set.systemPrompt !== undefined
+    set.systemPrompt !== undefined || set.params !== undefined
       ? await onFullSystemRoute('skill-text', write)
       : narrowNeedsSpot(aiWorkers, 'update', set)
         ? await onFullSystemRoute('model-route', write)
@@ -216,6 +217,12 @@ export async function updateAiWorker(
  *  refuses the update. Returns the updated row or null if the id is
  *  not found / not owned. */
 export async function setDefaultWorker(ownerId: string, id: string): Promise<AiWorker | null> {
+  // The kind's default (which worker answers it) is not the narrow login's
+  // (0323: is_default only off): the full-route spot model-route.
+  return await onFullSystemRoute('model-route', () => setDefaultWorkerTx(ownerId, id));
+}
+
+async function setDefaultWorkerTx(ownerId: string, id: string): Promise<AiWorker | null> {
   return await db.transaction(async (tx) => {
     const [target] = await tx
       .select()

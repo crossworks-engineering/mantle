@@ -1,7 +1,13 @@
 /** Owner-scoped CRUD for subscribed calendars (the settings UI calls these). */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { calendarAccounts, db, type CalendarAccount } from '@mantle/db';
+import {
+  calendarAccounts,
+  db,
+  narrowNeedsSpot,
+  onFullSystemRoute,
+  type CalendarAccount,
+} from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { deleteAllExternalEvents } from '@mantle/content';
 
@@ -43,11 +49,19 @@ export async function setCalendarEnabled(
   id: string,
   enabled: boolean,
 ): Promise<boolean> {
-  const rows = await db
-    .update(calendarAccounts)
-    .set({ enabled, lastSyncError: null, updatedAt: new Date() })
-    .where(and(eq(calendarAccounts.id, id), eq(calendarAccounts.ownerId, ownerId)))
-    .returning({ id: calendarAccounts.id });
+  const set = { enabled, lastSyncError: null, updatedAt: new Date() };
+  const write = () =>
+    db
+      .update(calendarAccounts)
+      .set(set)
+      .where(and(eq(calendarAccounts.id, id), eq(calendarAccounts.ownerId, ownerId)))
+      .returning({ id: calendarAccounts.id });
+  // A turn-on (the feed syncs again, its events are ingested) is not the
+  // narrow login's (0323: enabled only off): the full-route spot
+  // feed-enable. A switch off stays on the narrow login.
+  const rows = narrowNeedsSpot(calendarAccounts, 'update', set)
+    ? await onFullSystemRoute('feed-enable', write)
+    : await write();
   return rows.length > 0;
 }
 

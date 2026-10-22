@@ -377,8 +377,6 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'via_tailnet',
       'backup_via_tailnet',
       'tts_worker_id',
-      'memory_config',
-      'params',
       'thinking_effort',
       'avatar',
       'assigned_user_id',
@@ -390,7 +388,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open",
   },
   'public.tool_groups': {
     update: ['name', 'description', 'enabled', 'updated_at'],
@@ -420,14 +418,13 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'is_default',
       'model',
       'name',
-      'params',
       'priority',
       'provider',
       'updated_at',
       'via_tailnet',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12)',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12). Round 13b (item C): params off the list, its edit at skill-text (the params of a kind carry its prompt, extraction_prompt, and its limits)',
   },
   'public.api_keys': {
     update: [
@@ -759,8 +756,10 @@ export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[
     ],
     // What an assistant or AI worker runs: its prompt, persona
     // notes and skill list, as a skill's instructions (skill-text).
-    'public.agents': ['system_prompt', 'persona_notes', 'skill_slugs'],
-    'public.ai_workers': ['system_prompt'],
+    // Round 13b (item C): and how far it runs, the JSON columns of its
+    // limits and an AI worker's extraction prompt (memory_config, params).
+    'public.agents': ['system_prompt', 'persona_notes', 'skill_slugs', 'memory_config', 'params'],
+    'public.ai_workers': ['system_prompt', 'params'],
     // Where an account's mail comes from and goes: mail-account.
     'public.email_accounts': [
       'ms_account_id',

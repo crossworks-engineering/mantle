@@ -1,6 +1,6 @@
 -- The narrow role's message rows (assistant_messages), the full guard
--- (plan v3.2 S7b part b2 round 13b, item B: the re-audit's DB MED-B, app
--- L2 and L4, DB LOW-1). 0320's guard checked only an insert, let a row
+-- (the narrow login part b2, round 13b, item B: the re-audit's DB MED-B, two app
+-- LOWs, DB LOW-1). 0320's guard checked only an insert, let a row
 -- with no assistant through, let a row name a workspace its assistant is
 -- not in, and read a NULL workspace (the Admin workspace) as no rule at
 -- all. The narrow role is the turn's hot path, so the INSERT stays; what

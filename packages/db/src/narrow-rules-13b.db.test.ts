@@ -10,7 +10,14 @@
  *    workspace: the owner or an Admin user only); a settled row is never
  *    rewritten, by UPDATE, ON CONFLICT, MERGE or COPY; off the narrow
  *    route the same break by a narrow reason is counted and runs.
+ *  - C: the limit and prompt JSON columns (an assistant's memory_config and
+ *    params, an AI worker's params) are off the narrow list.
+ *  - D (0323): every enabled, is_default and backup_enabled column the
+ *    narrow role may update is off-only, read from the catalog: a new one
+ *    fails here.
  */
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
@@ -27,6 +34,9 @@ const AGENT_ADMIN = 'c0000000-0000-4000-8000-000000000001';
 /** An assistant of the member's workspace. */
 const AGENT_WS = 'c0000000-0000-4000-8000-000000000002';
 const PENDING = '10000000-0000-4000-8000-000000000001';
+const WORKER = '20000000-0000-4000-8000-000000000001';
+const FEED = '20000000-0000-4000-8000-000000000002';
+const DOCS = '20000000-0000-4000-8000-000000000003';
 const SETTLED = '10000000-0000-4000-8000-000000000002';
 
 const FIXTURES = [
@@ -45,6 +55,13 @@ const FIXTURES = [
   `insert into agents (id, owner_id, slug, name, provider, model, enabled, system_prompt, workspace_id) values
   ('${AGENT_ADMIN}', @BRAIN@, 'forge-admin', 'Forge admin', 'openrouter', 'x/y', false, 'p', null),
   ('${AGENT_WS}', @BRAIN@, 'forge-ws', 'Forge ws', 'openrouter', 'x/y', false, 'p', '${WS}')`,
+  `insert into ai_workers (id, owner_id, slug, name, kind, provider, model, enabled, is_default, backup_enabled)
+   values ('${WORKER}', @BRAIN@, 'forge-worker', 'Forge worker', 'reflector', 'openrouter', 'x/y', false, false, false)`,
+  `insert into calendar_accounts (id, owner_id, provider, display_name, enabled)
+   values ('${FEED}', @BRAIN@, 'ics', 'Forge feed', false)`,
+  `insert into doc_collections (id, owner_id, key, label, enabled)
+   values ('${DOCS}', @BRAIN@, 'forge-docs', 'Forge docs', false)`,
+  `update agents set backup_enabled = false where id = '${AGENT_ADMIN}'`,
   `insert into assistant_messages (id, owner_id, agent_id, direction, text, status, login_id) values
   ('${PENDING}', @BRAIN@, '${AGENT_ADMIN}', 'outbound', '', 'pending', @BRAIN@),
   ('${SETTLED}', @BRAIN@, '${AGENT_ADMIN}', 'outbound', 'the answer', 'complete', @BRAIN@)`,
@@ -111,6 +128,46 @@ const REFUSED: readonly [string, string][] = [
   ],
 ];
 
+const REFUSED_CD: readonly [string, string][] = [
+  [
+    "C: an assistant's extraction cost cap raised",
+    `update agents set memory_config = memory_config || '{"extract_cost_cap_micro_usd": 999999999}' where id = '${AGENT_ADMIN}'`,
+  ],
+  [
+    "C: an assistant's tool call limit raised",
+    `update agents set memory_config = memory_config || '{"max_tool_calls": 9999, "max_iterations": 9999}' where id = '${AGENT_ADMIN}'`,
+  ],
+  [
+    "C: an assistant's follow-up suggestion switched on",
+    `update agents set params = params || '{"suggest_follow_up": true}' where id = '${AGENT_ADMIN}'`,
+  ],
+  [
+    "C: an AI worker's extraction prompt",
+    `update ai_workers set params = params || '{"extraction_prompt": "forged"}' where id = '${WORKER}'`,
+  ],
+  ['D: an AI worker switched on', `update ai_workers set enabled = true where id = '${WORKER}'`],
+  [
+    "D: an AI worker made its kind's default",
+    `update ai_workers set is_default = true where id = '${WORKER}'`,
+  ],
+  [
+    "D: an AI worker's backup route switched on",
+    `update ai_workers set backup_enabled = true where id = '${WORKER}'`,
+  ],
+  [
+    "D: an assistant's backup route switched on",
+    `update agents set backup_enabled = true where id = '${AGENT_ADMIN}'`,
+  ],
+  [
+    'D: a calendar feed switched on',
+    `update calendar_accounts set enabled = true where id = '${FEED}'`,
+  ],
+  [
+    'D: a documentation collection switched on',
+    `update doc_collections set enabled = true where id = '${DOCS}'`,
+  ],
+];
+
 const ALLOWED: readonly [string, string][] = [
   [
     "ok: a member's message to its workspace assistant",
@@ -128,6 +185,11 @@ const ALLOWED: readonly [string, string][] = [
     'ok: a pending turn settles (text, model, status, data)',
     `update assistant_messages set text = 'done', model = 'x/y', status = 'complete',
        data = data || '{"thoughts":"t"}' where id = '${PENDING}'`,
+  ],
+  ['ok: an AI worker renamed', `update ai_workers set name = 'renamed' where id = '${WORKER}'`],
+  [
+    'ok: a calendar feed switched off',
+    `update calendar_accounts set enabled = false where id = '${FEED}'`,
   ],
   [
     'ok: a settled turn gains its follow-up suggestion',
@@ -186,7 +248,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
   it('every forge is refused (42501) and changes no row', async () => {
     const before = await snapshot();
     const bad: string[] = [];
-    for (const [label, stmt] of REFUSED) {
+    for (const [label, stmt] of [...REFUSED, ...REFUSED_CD]) {
       const got = await run(stmt);
       if (got !== '42501') bad.push(`${label}: ${got}`);
     }
@@ -194,25 +256,54 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
     expect(await snapshot()).toEqual(before);
   });
 
+  it('D: every switch the narrow role may update is off-only (read from the catalog)', async () => {
+    // The narrow role's UPDATE rights on an enabled, is_default or
+    // backup_enabled column, and the rules of each table's one-way trigger.
+    const rows = await su<{ tbl: string; col: string; held: boolean }[]>`
+      select p.table_schema || '.' || p.table_name as tbl, p.column_name as col,
+             exists (
+               select 1 from pg_trigger t
+                where t.tgrelid = (quote_ident(p.table_schema) || '.' || quote_ident(p.table_name))::regclass
+                  and t.tgname = 'mantle_narrow_one_way_trg'
+                  and ('off:' || p.column_name) = any (
+                        array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), ''))
+             ) as held
+        from information_schema.column_privileges p
+        join information_schema.columns c
+          on c.table_schema = p.table_schema and c.table_name = p.table_name
+         and c.column_name = p.column_name
+       where p.grantee = 'mantle_system_narrow' and p.privilege_type = 'UPDATE'
+         and c.data_type = 'boolean'
+         and p.column_name in ('enabled', 'is_default', 'backup_enabled')
+       order by 1, 2`;
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.filter((r) => !r.held).map((r) => `${r.tbl}.${r.col}`)).toEqual([]);
+  });
+
   it('B: COPY meets the insert rule (a row with no assistant)', async () => {
-    const got = await nl
-      .begin(async (t) => {
-        const w = await t
+    // Its own narrow connection, outside a transaction (COPY FROM STDIN
+    // through a stream): a refused COPY writes no row, and the connection
+    // is ended whatever happens, so no other cell waits on it.
+    const rr = await import('./runtime-role');
+    const c = postgres(
+      rr.runtimeDatabaseUrl(scratch.url, rr.narrowRolePassword(KEY()), rr.NARROW_ROLE),
+      { max: 1, prepare: false, onnotice: () => {} },
+    );
+    try {
+      const copy = (async () => {
+        const w = await c
           .unsafe(`copy assistant_messages (owner_id, direction, text, login_id) from stdin`)
           .writable();
-        await new Promise<void>((resolve, reject) => {
-          w.on('error', reject);
-          w.on('finish', () => resolve());
-          w.write(`${brain}\tinbound\tx\t${brain}\n`);
-          w.end();
-        });
-        throw Object.assign(new Error('rollback'), { ok: true });
-      })
-      .then(
-        () => 'ok',
-        (e: { ok?: boolean; code?: string }) => (e.ok ? 'ok' : (e.code ?? 'error')),
-      );
-    expect(got).toBe('42501');
+        await pipeline(Readable.from([`${brain}\tinbound\tcopied\t${brain}\n`]), w);
+        return 'ok';
+      })().catch((e: { code?: string }) => e.code ?? 'error');
+      const timeout = new Promise<string>((r) => setTimeout(() => r('timeout'), 10_000));
+      expect(await Promise.race([copy, timeout])).toBe('42501');
+      const [r] = await su`select count(*)::int as n from assistant_messages where text = 'copied'`;
+      expect(r?.n).toBe(0);
+    } finally {
+      await c.end({ timeout: 1 });
+    }
   });
 
   it('the product`s own narrow writes on the same rows still run', async () => {

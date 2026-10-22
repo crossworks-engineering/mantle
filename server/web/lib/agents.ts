@@ -398,12 +398,15 @@ export async function updateAgent(
     patch.toolGroupSlugs !== undefined ||
     patch.enabled === true ||
     (patch.memoryConfig != null && 'delegate_to' in patch.memoryConfig);
-  // What it runs (its prompt, persona notes, skill list): skill-text, as a
+  // What it runs (its prompt, persona notes, skill list) and how far (its
+  // limits in memory_config and params, round 13b): skill-text, as a
   // skill's instructions (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
   const runs =
     next.systemPrompt !== undefined ||
     next.personaNotes !== undefined ||
-    next.skillSlugs !== undefined;
+    next.skillSlugs !== undefined ||
+    next.memoryConfig !== undefined ||
+    next.params !== undefined;
   // Which vault key an assistant sends and where (api_key_id, base_url,
   // configured_by and their backups) is not the narrow login's either
   // (access-matrix.ts NARROW_NEVER_UPDATE): such an edit runs at model-route.

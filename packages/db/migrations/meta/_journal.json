@@ -2262,6 +2262,13 @@
       "when": 1790198640000,
       "tag": "0322_narrow_message_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1790198700000,
+      "tag": "0323_narrow_enable_off",
+      "breakpoints": true
     }
   ]
 }
