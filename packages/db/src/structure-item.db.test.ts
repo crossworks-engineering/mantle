@@ -182,13 +182,7 @@ describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
             data: { description: 'old' },
             tags: ['t'],
           },
-          async (tx, row) => {
-            await tx.insert(m.secrets).values({
-              nodeId: row.id,
-              ciphertext: Buffer.from('sealed'),
-              keyVersion: 1,
-            });
-          },
+          () => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 }),
         ),
       );
     const a = (await make(exit))!;

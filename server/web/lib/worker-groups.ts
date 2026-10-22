@@ -4,7 +4,7 @@ import {
   agents,
   db,
   type AgentGroup,
-  narrowNeedsSpot,
+  onNarrowSpots,
   onFullSystemRoute,
 } from '@mantle/db';
 
@@ -111,9 +111,7 @@ export async function updateWorkerGroup(
   // group's grant, not the narrow login's (it keeps only the stamp and the
   // delete: access-matrix.ts NARROW_WRITES): the full-route spot
   // agent-group-grant, as a group made.
-  const [row] = narrowNeedsSpot(agentGroups, 'update', set)
-    ? await onFullSystemRoute('agent-group-grant', write)
-    : await write();
+  const [row] = await onNarrowSpots(agentGroups, 'update', set, write);
   return row ?? null;
 }
 

@@ -11,7 +11,7 @@
  * runs as the bare owner or as the system.
  */
 import { eq } from 'drizzle-orm';
-import { authUsers, db } from '@mantle/db';
+import { agents, authUsers, db } from '@mantle/db';
 import type { RunItemFailure } from '@mantle/db';
 
 export async function runMakerRefusal(run: {
@@ -25,7 +25,26 @@ export async function runMakerRefusal(run: {
         'this run names neither the assistant that planned it nor the login it serves, so none of its items may run. Plan it again with run_plan from a chat.',
     };
   }
-  if (!run.loginId) return null;
+  if (!run.loginId) {
+    // No login: the items run as the owner. Only an assistant that serves
+    // no login may make such a run (the owner's own); an assistant assigned
+    // to a login plans for that login (run_plan names it), so a run of its
+    // that names none would run its items above that login. A gone
+    // assistant is execute-item's agent_missing, an assistant outside Admin
+    // its below_admin: both answer as before.
+    const [agent] = await db
+      .select({ assignedUserId: agents.assignedUserId })
+      .from(agents)
+      .where(eq(agents.id, run.agentId!));
+    if (agent?.assignedUserId) {
+      return {
+        type: 'no_maker',
+        message:
+          "this run names an assistant that serves a login but not that login, so none of its items may run. Plan it again with run_plan from that login's chat.",
+      };
+    }
+    return null;
+  }
   const [login] = await db
     .select({ id: authUsers.id })
     .from(authUsers)

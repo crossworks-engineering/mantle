@@ -13,7 +13,8 @@
 import { sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema/index';
-import { actingLoginNow, onFullSystemRoute } from '../viewer';
+import { actingLoginNow } from '../viewer';
+import { atActingLogin } from './acting-login';
 import { narrowRouteNow } from './pools';
 import { withSystemTx } from './system-tx';
 
@@ -52,10 +53,10 @@ export async function deleteAgentOnNarrow(
   if (!narrowRouteNow()) return undefined;
   // The definer needs the acting login, which the identity readers answer
   // only off the narrow role (0321): the full-route spot acting-login.
-  return onFullSystemRoute('acting-login', () =>
+  return atActingLogin((login) =>
     withSystemTx(async (tx) => {
       const rows = (await tx.execute(
-        sql`select found, messages, digests from mantle_agent_delete(${actingLoginNow()}::uuid,
+        sql`select found, messages, digests from mantle_agent_delete(${login}::uuid,
             ${ownerId}::uuid, ${agentId}::uuid, ${conversation})`,
       )) as unknown as { found: boolean; messages: number; digests: number }[];
       const r = rows[0];

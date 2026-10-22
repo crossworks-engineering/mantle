@@ -26,7 +26,7 @@ import {
   type AiWorkerKind,
   type AiWorkerParams,
   type NewAiWorker,
-  narrowNeedsSpot,
+  onNarrowSpots,
   onFullSystemRoute,
 } from '@mantle/db';
 import type { AiWorkerDTO } from '@mantle/client-types';
@@ -199,16 +199,11 @@ export async function updateAiWorker(
       .set(set)
       .where(and(eq(aiWorkers.id, id), eq(aiWorkers.ownerId, ownerId)))
       .returning();
-  // Its vault key, base URL or configuring login (and their backups): the
-  // full-route spot model-route (access-matrix.ts NARROW_NEVER_UPDATE).
-  // Its prompt (what it runs) and its params (a kind's extraction prompt
-  // and limits, round 13b): skill-text, as a skill's instructions.
-  const [row] =
-    set.systemPrompt !== undefined || set.params !== undefined
-      ? await onFullSystemRoute('skill-text', write)
-      : narrowNeedsSpot(aiWorkers, 'update', set)
-        ? await onFullSystemRoute('model-route', write)
-        : await write();
+  // Its prompt and params (what it runs, a kind's extraction prompt and
+  // limits): skill-text; its vault key, base URL, configuring login,
+  // provider or model: model-route; an edit of both enters both
+  // (narrow-spots.ts NARROW_TABLE_SPOTS).
+  const [row] = await onNarrowSpots(aiWorkers, 'update', set, write);
   return row ?? null;
 }
 

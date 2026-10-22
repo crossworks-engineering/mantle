@@ -15,9 +15,12 @@ import { actorCheckMisses, db } from '@mantle/db';
 export const ACTOR_MISSES_RETENTION_DAYS = 14;
 
 /** The narrow role's counts (check names narrow-*) are kept: they are the
- *  evidence for the narrow switch's default flip, read all time by
- *  scripts/arch-scoreboard-box.sh (the narrow switch's flip). Their
- *  rows are capped per hour and distinct, so they stay small. */
+ *  evidence for the narrow switch's default flip, read by
+ *  scripts/arch-scoreboard-box.sh since the latest narrow-epoch row (one
+ *  per release, written by migrate: packages/db/src/migrator-steps.ts
+ *  ensureNarrowEpoch). The epoch rows match the same prefix, so they are
+ *  kept too. The count rows are capped per hour and distinct, so they
+ *  stay small. */
 const KEEP = sql`check_name not like 'narrow-%'`;
 
 const BATCH = 10_000;

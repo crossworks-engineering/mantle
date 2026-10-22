@@ -7,12 +7,17 @@
  *    objects a restore does not bring back; the migrations grant to them);
  *  - after: the access matrix's grants, the tables handed to mantle_owner
  *    and the runtime role's rights (runtime-role.ts), and ts_match_vq
- *    LEAKPROOF (leakproof.ts), which a pg_dump restore does not carry.
+ *    LEAKPROOF (leakproof.ts), which a pg_dump restore does not carry;
+ *  - migrate.ts only: the narrow counts' epoch row (ensureNarrowEpoch),
+ *    once per release.
  *
  * Each needs the superuser that runs the migrations (DATABASE_URL); a
  * caller that is not one gets a warning for the runtime role and the
  * LEAKPROOF flag, and the box runs as before.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { assertNoIdentityLeaks } from './identity-gateway';
 import type postgres from 'postgres';
 import { applyViewerGrants } from './access-matrix';
@@ -141,4 +146,74 @@ export async function afterMigrations(
   } catch (err) {
     log.warn(`  WARNING ts_match_vq LEAKPROOF not set (keyword arms scan): ${String(err)}`);
   }
+}
+
+/** The check name of the narrow counts' epoch row in actor_check_misses
+ *  (docs/runtime-role.md, "The narrow write count"). It starts with
+ *  narrow- so the maintenance reaper keeps it, as it keeps the counts. */
+export const NARROW_EPOCH_CHECK = 'narrow-epoch';
+
+/** A release version as the epoch row holds it: digits and dots, an
+ *  optional pre-release tag. Nothing else is written, so the box script
+ *  may print it. */
+const RELEASE_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/;
+
+/** The release's version from the root package.json's text, or null: no
+ *  text, not JSON, no version, the 0.0.0 placeholder, or a value that is
+ *  not a plain version. */
+export function releaseVersionOf(pkgText: string | null): string | null {
+  if (!pkgText) return null;
+  let version: unknown;
+  try {
+    version = (JSON.parse(pkgText) as { version?: unknown }).version;
+  } catch {
+    return null;
+  }
+  if (typeof version !== 'string' || version.length > 64) return null;
+  if (!RELEASE_VERSION.test(version) || version === '0.0.0') return null;
+  return version;
+}
+
+/** The root package.json, which holds the release's version (the server
+ *  reads the same file: server/web/server/main.ts). */
+const ROOT_PACKAGE_JSON = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'package.json',
+);
+
+/** The release's version as migrate reads it, or null (releaseVersionOf). */
+export function readReleaseVersion(path = ROOT_PACKAGE_JSON): string | null {
+  let text: string | null = null;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    /* no file: no version */
+  }
+  return releaseVersionOf(text);
+}
+
+/**
+ * The narrow counts' epoch: one row per release, check narrow-epoch,
+ * detail the version. The box script
+ * (scripts/arch-scoreboard-box.sh) counts the narrow rows written since the
+ * latest one, so a release that fixed a cause starts again from 0. Written
+ * once per version: a second migrate of the same version writes nothing,
+ * and neither does a version an epoch row already names (a roll back to an
+ * older release keeps the newer epoch). No version: nothing. The row is
+ * written as every miss row is, through mantle_actor_miss_log (0275: the
+ * same columns, its cap of 100 an hour per check far above one a release).
+ */
+export async function ensureNarrowEpoch(
+  sql: Sql,
+  version: string | null,
+): Promise<'written' | 'present' | 'no-version'> {
+  if (!version) return 'no-version';
+  const rows = await sql`
+    select "public"."mantle_actor_miss_log"('migrate', ${NARROW_EPOCH_CHECK}, '', ${version})
+     where not exists (select 1 from public.actor_check_misses
+                        where check_name = ${NARROW_EPOCH_CHECK} and detail = ${version})`;
+  return rows.length > 0 ? 'written' : 'present';
 }

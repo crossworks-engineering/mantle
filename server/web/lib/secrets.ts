@@ -227,14 +227,7 @@ export async function createSecret(ownerId: string, input: CreateSecretInput): P
         data,
         tags: dedupeTags(input.tags),
       },
-      async (tx, row) => {
-        const sealed = seal(JSON.stringify(payload), aadFor(row.id));
-        await tx.insert(secrets).values({
-          nodeId: row.id,
-          ciphertext: sealed.ciphertext,
-          keyVersion: sealed.keyVersion,
-        });
-      },
+      (row) => seal(JSON.stringify(payload), aadFor(row.id)),
     ),
   );
   if (!inserted) throw new Error('createSecret: insert returned no row');

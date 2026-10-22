@@ -63,7 +63,12 @@ import { bootSmokeExit, env, feature, isBootSmoke } from '@mantle/config';
 import { applyJournal } from './migrate-runner';
 import type { JournalEntry } from './migrate-plan';
 import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
-import { afterMigrations, beforeMigrations } from './migrator-steps';
+import {
+  afterMigrations,
+  beforeMigrations,
+  ensureNarrowEpoch,
+  readReleaseVersion,
+} from './migrator-steps';
 import { narrowSystemOn } from './runtime-role';
 import { checkFloorPolicy, raiseCheckFloor } from './check-floor';
 
@@ -110,13 +115,26 @@ async function main() {
     // their way.
     await afterMigrations(sql, runtime);
 
+    // The narrow counts' epoch (migrator-steps.ts ensureNarrowEpoch): one
+    // row per release, the version from the root package.json (as
+    // server/web/server/main.ts reads it). Report only, so never fatal.
+    const log = { info: console.log, warn: console.warn };
+    try {
+      const version = readReleaseVersion();
+      const epoch = await ensureNarrowEpoch(sql, version);
+      if (epoch === 'written') log.info(`  narrow counts' epoch written for ${version}`);
+      if (epoch === 'no-version')
+        log.warn("  WARNING no release version read: the narrow counts' epoch not written");
+    } catch (err) {
+      log.warn(`  WARNING the narrow counts' epoch not written (report only): ${String(err)}`);
+    }
+
     // The checks' floor (0301, check-floor.ts): a check below on that no
     // recorded lowering covers (a new database, a restore, a bare ALTER
     // DATABASE) is raised to on; one an operator lowered with a reason is
     // left, with a warning. MANTLE_CHECK_FLOOR=keep (a box kept below on on
     // purpose; CI and the test databases, whose suites switch the modes
     // themselves) leaves it, loudly, and records why. Never fatal.
-    const log = { info: console.log, warn: console.warn };
     await raiseCheckFloor(
       sql,
       log,

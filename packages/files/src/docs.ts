@@ -36,7 +36,7 @@ import {
   updateStructureItem,
   deleteStructureItems,
   runReadPathWrite,
-  narrowNeedsSpot,
+  onNarrowSpots,
   onFullSystemRoute,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
@@ -623,9 +623,7 @@ export async function setCollectionEnabled(
   // A turn-on (its files are read and indexed again) is the collection's
   // root decision, not the narrow login's (0323: enabled only off): the
   // full-route spot docs-root.
-  const [updated] = narrowNeedsSpot(docCollections, 'update', set)
-    ? await onFullSystemRoute('docs-root', write)
-    : await write();
+  const [updated] = await onNarrowSpots(docCollections, 'update', set, write);
   if (!updated) return null;
   if (enabled) {
     const reconciled = await reconcileCollection(ownerId, updated);

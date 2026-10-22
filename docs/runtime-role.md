@@ -225,8 +225,16 @@ Its rights, made equal to the access matrix at every migrate inside
   `tool-config`, `heartbeat-maker`, `skill-text`, `pending-park`,
   `docs-root`, `agent-group-grant`, `push-device`: a phone subscribed and
   the push relay), where `systemDb`
-  takes the system pool too; a caller asks `narrowNeedsSpot` (one helper
-  reading the allowlist) whether its write needs one. A narrow session can
+  takes the system pool too. The screens and tools that edit such a table
+  call `onNarrowSpots` (packages/db/src/narrow-spots.ts): one list,
+  `NARROW_TABLE_SPOTS`, names per table the spots a write may need (an
+  assistant's grant, its text, its vault key; a worker's prompt and its
+  route; a group's tools and its integration), `narrowSpotFor` reads it
+  with the allowlist (`narrowNeedsSpot`), and a write that needs two spots
+  enters both. The lint reads the same list: a call names its spots by its
+  table, each listed for the calling file. A run that names no login runs
+  as the owner, so only an assistant assigned to no login may make one. A
+  narrow session can
   therefore no longer forge a run the sweep executes, a heartbeat that
   fires as the anchor, a skill's text, a parked call, or point a vault key
   at another host (narrow-allowlist.db.test.ts). The runs worker checks a
@@ -295,8 +303,11 @@ Its rights, made equal to the access matrix at every migrate inside
   area exit is left on it: the five that need the exit's login
   (`mantle_ws_set_moderator`, `mantle_tg_chat_set`, the structure and
   assistant delete definers, and `mantle_ws_attach_assistants`, the
-  onboarding attach, round 13c) run at the full-route spot `acting-login`
-  (0321: the identity readers answer no login on the narrow role);
+  onboarding attach) run at the full-route spot `acting-login` through one
+  helper, `atActingLogin` (gateway/acting-login.ts), each caller's own
+  transaction inside it (0321: the identity readers answer no login on the
+  narrow role). A secret's sealed row is written by the structure helper
+  itself; its caller passes only the sealed value, no statement;
   `mantle_bridge_login` left it with the role change, and the promotion
   definer `mantle_space_settle_promotion` in S7b part b2 round 5, all
   denied by name), and what the column defaults and checks of the
@@ -761,9 +772,9 @@ misses (at most one per check, actor and table an hour).
 
 `scripts/arch-scoreboard-box.sh` prints `narrow_misses:content-write`,
 `narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
-actor and table rows, all time: every row since the count began, which the
-maintenance reaper keeps; numbers only), and `narrow_misses:would-refuse`
-and `narrow_misses:would-refuse-tables` (migration 0319: the writes the
+actor and table rows since the release's epoch, below; numbers only), and
+`narrow_misses:would-refuse` and `narrow_misses:would-refuse-tables`
+(migration 0319: the writes the
 role would refuse, made with the switch off; like 0317's counts it asks
 for the session's own role, so a definer's own writes are left out on the
 narrow route and with the runtime role on, and counted on a system pool
@@ -771,6 +782,39 @@ logged in as the superuser that owns the definers, where the two are one
 role (the "Exact with the runtime role on" note above: read those boxes'
 counts with that in mind), and 0320's row rules (a heartbeat's books, an enable,
 the owner's and an Admin user's row) count through 0319's report branch).
+
+The counts are read since the release's epoch, so a release that fixed a
+cause starts again from 0. The epoch is a row of `actor_check_misses`
+itself, check `narrow-epoch`, its detail the release's version (no
+migration and no new table): migrate writes one after the runtime role's
+grants (`ensureNarrowEpoch` in `packages/db/src/migrator-steps.ts`), the
+version read from the root `package.json` as the server reads it, once per
+version. A second migrate of the same version writes none, and neither
+does a roll back to a version an epoch row already names (the newer epoch
+holds). No version read: no row, and a warning. The box counts every
+narrow row whose `at` is at or after the latest epoch row's; a box with
+none reads all time, as before. The script prints the epoch it counts
+from as `narrow_misses_since_epoch` (the version and its time in UTC;
+`none` when there is none). The maintenance reaper keeps the epoch rows,
+as it keeps every `narrow-` row. Migrate runs before the new release's
+processes start, so a row the old processes write in that minute counts
+in the new epoch: one more reason a nonzero count is read on the box
+before it is acted on.
+
+The reset, by hand: write an epoch row with the reason in its detail, as
+the superuser that runs migrations (the counts start again from that
+moment; the script prints such an epoch's version as `reset`, since its
+detail is free text and only numbers leave a client box):
+
+```sql
+insert into public.actor_check_misses (source, check_name, actor, detail)
+values ('operator', 'narrow-epoch', '', 'reset: <why, no names>');
+```
+
+The next release's migrate writes its own epoch row after it, as usual.
+To go back to the release's epoch, delete the hand row
+(`delete from public.actor_check_misses where check_name = 'narrow-epoch'
+and source = 'operator'`).
 
 What the counts do not see, and which the switch-on suites measure
 instead (the DB vitest shards, actor-off, actor-on, edit-on, runtime-role
@@ -821,7 +865,11 @@ read the actor, and the route mark rides the actor's settings: with the
 check off on both, no actor is sent on the full route and nothing is
 counted, so a 0 then says nothing. The fleet boxes run the check on (the same
 script's `actor_check=` line reads `on`), so their 0s are the evidence the
-default flip waits for; read a box's `actor_check=` line before its 0s.
+default flip waits for; read a box's `actor_check=` line before its 0s. The
+default flip (S7b part b3) waits for 0 since the epoch of the release
+that will flip: every box rolled to that release (its
+`narrow_misses_since_epoch` names that version) and each count 0 since
+its epoch, not since some older one.
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so
 `current_user = session_user` is the pool login's), the box query and the
 revert (`packages/db/rollback/0312_narrow_write_observe.revert.sql`);

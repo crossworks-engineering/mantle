@@ -40,27 +40,43 @@ const { FULL_ROUTE_SPOT_WRAPPERS, FULL_ROUTE_SPOT_CALLBACKS } = (await import(
 const tables = tablesOf(schema as Record<string, unknown>);
 /** onFullSystemRoute and the one-spot helpers (as-system-routes.mjs
  *  FULL_ROUTE_SPOT_WRAPPERS). */
-const CALLS = ['onFullSystemRoute', 'profileWrite'];
+const CALLS = ['onFullSystemRoute', 'onNarrowSpots', 'profileWrite'];
 
 describe('the static narrow write scan', () => {
   const found = scanRepo(repo, ['server', 'packages'], tables, CALLS);
   const keys = [...new Set(found.map(writeKey))].sort();
+  const open = Object.keys(NARROW_SCAN_OPEN);
 
   it('every write the allowlist does not hold is at a spot, system only, or pinned open', () => {
     const unheld = keys.filter(
-      (k) => !NARROW_SCAN_SYSTEM_FILES[k.split(' ')[0]!] && !NARROW_SCAN_OPEN.includes(k),
+      (k) => !NARROW_SCAN_SYSTEM_FILES[k.split(' ')[0]!] && !open.includes(k),
     );
     expect(unheld).toEqual([]);
   });
 
+  it('the open pins are exact by occurrence: a new write of a pinned key fails too', () => {
+    const counts: Record<string, number> = {};
+    for (const w of found) {
+      const k = writeKey(w);
+      if (!NARROW_SCAN_SYSTEM_FILES[w.file]) counts[k] = (counts[k] ?? 0) + 1;
+    }
+    expect(counts).toEqual(
+      Object.fromEntries(Object.entries(NARROW_SCAN_OPEN).map(([k, v]) => [k, v.n])),
+    );
+    for (const [k, v] of Object.entries(NARROW_SCAN_OPEN)) {
+      expect(['reaches-narrow', 'covered-across-files'], k).toContain(v.tag);
+      expect(v.why.length, k).toBeGreaterThanOrEqual(20);
+    }
+  });
+
   it('the pins are exact: every open entry and system file is still found (the list only shrinks)', () => {
-    expect(NARROW_SCAN_OPEN.filter((k) => !keys.includes(k))).toEqual([]);
+    expect(open.filter((k) => !keys.includes(k))).toEqual([]);
     const files = new Set(keys.map((k) => k.split(' ')[0]!));
     expect(Object.keys(NARROW_SCAN_SYSTEM_FILES).filter((f) => !files.has(f))).toEqual([]);
     for (const why of Object.values(NARROW_SCAN_SYSTEM_FILES))
       expect(why.length).toBeGreaterThan(15);
     // The count when the scan began: down only.
-    expect(NARROW_SCAN_OPEN.length).toBeLessThanOrEqual(103);
+    expect(open.length).toBeLessThanOrEqual(103);
   });
 
   it('reads a chain: a spot, a function passed to one, an upsert, a spread, comments and strings', () => {
@@ -84,6 +100,45 @@ describe('the static narrow write scan', () => {
       ['public.agents', 'update', '*,updated_at', false],
     ]);
     expect(w.map(narrowAllows)).toEqual([false, false, false, true, false]);
+  });
+
+  it('onNarrowSpots covers its own table per call, never another; no file-wide cover', () => {
+    const src = `
+      const write = () => db.update(skills).set({ instructions: t });
+      await onNarrowSpots(skills, 'update', next, write);
+      const other = () => db.update(heartbeats).set({ createdBy: x });
+      await onNarrowSpots(skills, 'update', next, other);
+      const loose = () => db.update(tools).set({ handler: h });
+      await loose();
+      if (narrowNeedsSpot(tools, 'update', s)) await onFullSystemRoute('tool-config', loose);
+    `;
+    const w = scanSource('x.ts', src, tables, CALLS);
+    expect(w.map((x) => [x.table, x.atSpot])).toEqual([
+      ['public.skills', true],
+      ['public.heartbeats', false],
+      ['public.tools', false],
+    ]);
+  });
+
+  it('the value rules are visible: a switch turned on, a new row on by default, a resume', () => {
+    const src = `
+      await db.update(skills).set({ enabled: true, updatedAt: now });
+      await db.update(skills).set({ enabled: false, updatedAt: now });
+      await db.update(skills).set({ enabled: on, updatedAt: now });
+      await db.insert(calendarAccounts).values({ ownerId: o, url: u });
+      await db.insert(calendarAccounts).values({ ownerId: o, url: u, enabled: false });
+      await db.update(heartbeats).set({ status: 'active' });
+    `;
+    const w = scanSource('x.ts', src, tables, CALLS);
+    expect(w.map((x) => x.valueRule)).toEqual([
+      'a switch turned on (0323)',
+      null,
+      null,
+      'a switch starts on (0324)',
+      null,
+      'a value rule of its table (0320)',
+    ]);
+    expect(narrowAllows(w[0]!)).toBe(false);
   });
 
   it('round 12 found the Studio commit, the connectors edit and the reflector off their spot; they are at it now', () => {

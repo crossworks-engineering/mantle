@@ -442,7 +442,9 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
     child.stdout.on('data', (d: Buffer) => (out += d.toString()));
     child.stderr.on('data', (d: Buffer) => (errOut += d.toString()));
     const exited = new Promise<number | null>((r) => child.on('exit', (code) => r(code)));
-    const code = await within(exited, 20_000);
+    // A tsx cold start under six busy lanes took over 20 s once (it passed in
+    // 4.5 s alone): the bound catches a hang, not a slow start.
+    const code = await within(exited, 60_000);
     if (code === 'pending') {
       // Hung: count what it holds, then end that one process (its pid).
       const live = await backendsOf(app);
@@ -456,5 +458,5 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
     // connection that outlives the end; the long statement finished.
     expect(line).toEqual({ closed: true, late: 'CONNECTION_ENDED', long: 'ok' });
     expect(await backendsOf(app)).toBe(0);
-  }, 30_000);
+  }, 90_000);
 });

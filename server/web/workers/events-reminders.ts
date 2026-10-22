@@ -24,7 +24,7 @@
  * log — the next tick retries once the user pairs a chat. See
  * docs/reminder-delivery-routing.md.
  */
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -33,7 +33,7 @@ import {
   telegramChats,
   type TelegramAccount,
 } from '@mantle/db';
-import { sendMessage } from '@mantle/telegram';
+import { botAgentIdSql, sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/runtime/agent';
 import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
@@ -82,7 +82,11 @@ async function findReminderChat(
           eq(telegramChats.allowlistStatus, 'allowed'),
           eq(channels.type, 'telegram'),
           eq(channels.enabled, true),
-          ...(channelAgentId ? [eq(channels.agentId, channelAgentId)] : []),
+          // The bot's assistant, read where every chat-to-assistant reader
+          // reads it (chat-assistant.ts botAgentIdSql).
+          ...(channelAgentId
+            ? [sql`(${botAgentIdSql(telegramAccounts.id)}) = ${channelAgentId}::uuid`]
+            : []),
         ),
       )
       .orderBy(desc(telegramChats.lastMessageAt))

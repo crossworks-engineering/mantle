@@ -37,8 +37,10 @@
 #     distinct check, actor and table rows checked narrow-content-write,
 #     narrow-cascade-delete (migration 0312), narrow-denied and
 #     narrow-would-refuse (migration 0319: what the role would refuse once
-#     the switch is on), and the tables the last names, in the fail-open
-#     rows' window;
+#     the switch is on), and the tables the last names, since the
+#     release's epoch (the latest narrow-epoch row: migrate writes one per
+#     version; all time on a box with none), and that epoch's version and
+#     time;
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -188,8 +190,14 @@ SQL
 # second number is the tables they name. Both must read 0 on every box
 # before the default flip (S7b part b3). Numbers only: the table names
 # are read on the box itself (select detail from actor_check_misses where
-# check_name = 'narrow-would-refuse'). All time, not the last 24 hours: the counts are the flip's evidence, so every row since
-# the count began counts (the maintenance reaper keeps the narrow rows).
+# check_name = 'narrow-would-refuse'). Since the release's epoch, not the
+# last 24 hours: the counts are the flip's evidence, so every row since the
+# latest narrow-epoch row counts (migrate writes one per release, its
+# detail the version; an operator may write one by hand to start again,
+# docs/runtime-role.md "The narrow write count"). A box with no epoch row
+# reads all time. The maintenance reaper keeps the narrow rows, the epoch
+# rows too. The epoch row itself is never counted (its check is not one of
+# the four).
 narrow=$(q <<SQL || true
 select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
@@ -198,7 +206,22 @@ select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
   from (select distinct check_name, actor, detail from public.actor_check_misses
          where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
-                              'narrow-would-refuse')) m;
+                              'narrow-would-refuse')
+           and at >= coalesce((select max(at) from public.actor_check_misses
+                                where check_name = 'narrow-epoch'), '-infinity')) m;
+SQL
+)
+# The epoch the narrow counts start from: its version and time (UTC), or
+# none. A hand-written epoch's detail is the operator's reason, free text,
+# so only a plain version is printed and anything else reads "reset".
+narrow_epoch=$(q <<SQL || true
+select case when detail ~ '^[0-9]+[.][0-9]+[.][0-9]+' and detail !~ '[^0-9A-Za-z.-]'
+            then detail else 'reset' end
+       || ' ' || to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+  from public.actor_check_misses
+ where check_name = 'narrow-epoch'
+ order by at desc, id desc
+ limit 1;
 SQL
 )
 # Whether the stack's .env has the runtime role's line at all (S4a: the
@@ -261,6 +284,11 @@ for site in all scope-holds-admin scope-has-area typed-write raw-write turn-exit
   printf '  %-34s %s\n' "fail_open_misses:$site" "$(num "${1:-}")"
   shift || true
 done
+case "$narrow_epoch" in
+  '') narrow_epoch=none ;;
+  *[!0-9A-Za-z.:\ -]*) narrow_epoch='?' ;;
+esac
+printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"

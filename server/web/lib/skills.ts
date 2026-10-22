@@ -8,7 +8,7 @@
  */
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { db, heartbeats, skills, type Skill, onFullSystemRoute, narrowNeedsSpot } from '@mantle/db';
+import { db, heartbeats, skills, type Skill, onFullSystemRoute, onNarrowSpots } from '@mantle/db';
 import type { SkillDTO } from '@mantle/client-types';
 import { restampHeartbeatMakers } from '@mantle/tools';
 
@@ -148,9 +148,7 @@ export async function updateSkill(
   // Its instructions (what every heartbeat and assistant that runs it does)
   // or any column the narrow login was not measured to write: the full-route
   // spot skill-text (access-matrix.ts NARROW_WRITES).
-  const [row] = narrowNeedsSpot(skills, 'update', next)
-    ? await onFullSystemRoute('skill-text', write)
-    : await write();
+  const [row] = await onNarrowSpots(skills, 'update', next, write);
   if (row) await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
   return row ? toSummary(row) : null;
 }

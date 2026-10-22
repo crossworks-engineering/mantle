@@ -235,9 +235,9 @@ export async function applyLoginChange(
       changes.contactId !== undefined ||
       changes.disabledAt === null ||
       changes.displayName !== undefined;
-    const run = (fn: () => Promise<void>) =>
+    const atCredentialSpot = (fn: () => Promise<void>) =>
       credential ? onFullSystemRoute('login-credential', fn) : fn();
-    await run(() =>
+    await atCredentialSpot(() =>
       db.transaction(async (tx) => {
         if (firstInTx) await firstInTx(tx);
         if (Object.keys(changes).length > 0) {

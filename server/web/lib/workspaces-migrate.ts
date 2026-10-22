@@ -37,7 +37,7 @@ import {
   type FirstOwnerSwitchRow,
   hasRequestSlot,
   loginScopeFor,
-  onFullSystemRoute,
+  atActingLogin,
   systemPoolTxInScope,
   isRefusedRight,
   wsRuleOf,
@@ -73,7 +73,7 @@ export async function attachDefaultAssistants(loginId?: string): Promise<number>
     return Number(r?.n ?? 0);
   }
   const scope = await loginScopeFor(loginId);
-  const rows = (await onFullSystemRoute('acting-login', () =>
+  const rows = (await atActingLogin(() =>
     systemPoolTxInScope(scope, (tx) => tx.execute(call)),
   )) as unknown as { n: number }[];
   return Number(rows[0]?.n ?? 0);

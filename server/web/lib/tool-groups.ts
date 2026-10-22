@@ -15,7 +15,7 @@ import {
   agents,
   type ToolGroup,
   type ToolGroupIntegration,
-  narrowNeedsSpot,
+  onNarrowSpots,
 } from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
@@ -145,12 +145,9 @@ export async function updateToolGroup(
   // the full-route spot tool-config.
   // An enable (its tools answer again) is a grant too: 0320 lets the
   // narrow login only switch it off.
-  const [row] =
-    patch.toolSlugs !== undefined || patch.enabled === true
-      ? await onFullSystemRoute('tool-group-grant', write)
-      : narrowNeedsSpot(toolGroups, 'update', next)
-        ? await onFullSystemRoute('tool-config', write)
-        : await write();
+  // An edit of both kinds enters both spots (narrow-spots.ts
+  // NARROW_TABLE_SPOTS).
+  const [row] = await onNarrowSpots(toolGroups, 'update', next, write);
   return row ? toSummary(row) : null;
 }
 

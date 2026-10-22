@@ -19,7 +19,7 @@ import {
   type AgentParams,
   type PersonaNote,
   deleteAgentOnNarrow,
-  narrowNeedsSpot,
+  onNarrowSpots,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
 import {
@@ -386,38 +386,17 @@ export async function updateAgent(
       .set(next)
       .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
       .returning();
-  // A grant column (the tool groups, the role) is the narrow login's to
-  // write nowhere, nor memory_config's delegate_to (a delegate runs with its
-  // own tool groups: 0318 keeps the key on the narrow login): such an edit
-  // runs at the full-route spot assistant-grant; any other edit stays on the
-  // narrow login (column rights, access-matrix.ts NARROW_WRITES).
-  // An enable (the assistant answers again) is a grant too: 0320 lets the
-  // narrow login only switch it off.
-  const grants =
-    patch.role !== undefined ||
-    patch.toolGroupSlugs !== undefined ||
-    patch.enabled === true ||
-    (patch.memoryConfig != null && 'delegate_to' in patch.memoryConfig);
-  // What it runs (its prompt, persona notes, skill list) and how far (its
-  // limits in memory_config and params, round 13b): skill-text, as a
-  // skill's instructions (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
-  const runs =
-    next.systemPrompt !== undefined ||
-    next.personaNotes !== undefined ||
-    next.skillSlugs !== undefined ||
-    next.memoryConfig !== undefined ||
-    next.params !== undefined ||
-    next.description !== undefined;
-  // Which vault key an assistant sends and where (api_key_id, base_url,
-  // configured_by and their backups) is not the narrow login's either
-  // (access-matrix.ts NARROW_NEVER_UPDATE): such an edit runs at model-route.
-  const [row] = grants
-    ? await onFullSystemRoute('assistant-grant', write)
-    : runs
-      ? await onFullSystemRoute('skill-text', write)
-      : narrowNeedsSpot(agents, 'update', next)
-        ? await onFullSystemRoute('model-route', write)
-        : await write();
+  // A grant (the role, the tool groups, a turn-on, memory_config's
+  // delegate_to): assistant-grant. What it runs and how far (its prompt,
+  // persona notes, skills, limits in memory_config and params, its
+  // description): skill-text. Which vault key it sends and where, its
+  // provider and model: model-route. An edit of more than one kind enters
+  // each (narrow-spots.ts NARROW_TABLE_SPOTS); any other edit stays on the
+  // narrow login (access-matrix.ts NARROW_WRITES). The spots are read from
+  // the patch's memory_config object, not the SQL merge the write sends.
+  const decide =
+    patch.memoryConfig !== undefined ? { ...next, memoryConfig: patch.memoryConfig } : next;
+  const [row] = await onNarrowSpots(agents, 'update', decide, write);
   return row ? toSummary(row) : null;
 }
 

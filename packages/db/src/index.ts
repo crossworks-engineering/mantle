@@ -271,6 +271,7 @@ export {
   type TableAccess,
 } from './access-matrix';
 export { narrowNeedsSpot } from './narrow-writes';
+export { NARROW_TABLE_SPOTS, narrowSpotFor, onNarrowSpots } from './narrow-spots';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
@@ -531,3 +532,5 @@ export {
   settlePromotionOnNarrow,
   type AgentDeleteCounts,
 } from './gateway/spot-definers';
+// The acting-login spot (gateway/acting-login.ts).
+export { atActingLogin } from './gateway/acting-login';

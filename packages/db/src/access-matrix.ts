@@ -440,6 +440,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: "measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram. Round 13b (item G): a turn's outcome writes its error and attachments too (conversation.ts updateAssistantMessageOutcome, team-messages.ts updateThreadMessageOutcome); 0322 holds every one of them to a pending row",
   },
+  'public.team_access_log': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: "round 14c (the scan's open list traced): recordTeamAccess (systemDb, narrow in a scope) logs a member's chat refusal from the member's own request; insert only, a log as audit_log is",
+  },
   'public.audit_log': {
     insert: true,
     update: [],
@@ -484,9 +490,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by system:http:admin-area',
   },
   'public.embedding_config': {
-    update: ['backup_enabled', 'backup_label', 'primary_label', 'updated_at'],
+    update: ['backup_enabled', 'backup_label', 'last_failover_at', 'primary_label', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route. Round 14 (DB LOW-4): its providers, model and dimensions (where every embed goes and what it costs) and its knobs (extraction concurrency and time budget, local batch and timeout: the spend rate) off the list, at model-route; its labels (display only) and a backup switched off stay',
+    why: "measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route. Round 14 (DB LOW-4): its providers, model and dimensions (where every embed goes and what it costs) and its knobs (extraction concurrency and time budget, local batch and timeout: the spend rate) off the list, at model-route; its labels (display only) and a backup switched off stay. Round 14c (the scan's open list traced): last_failover_at, the stamp a search or recall in a login's turn sets when the backup answered (stampFailover through systemDb, narrow in a scope; its catch hid the refusal)",
   },
   'public.maintenance_runs': {
     update: ['state', 'finished_at', 'summary'],
@@ -598,9 +604,17 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A skill made, or its instructions or any other column changed, runs at the full-route spot skill-text',
   },
   'public.tailscale_config': {
-    update: ['auth_key_enc', 'hostname', 'key_version', 'masked', 'updated_at'],
+    insert: true,
+    update: [
+      'auth_key_enc',
+      'hostname',
+      'key_version',
+      'last_activated_at',
+      'masked',
+      'updated_at',
+    ],
     delete: true,
-    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+    why: "measured (round 8): UPDATE, DELETE by system:http:admin-area. Round 14c (the scan's open list traced): the first key saved (POST /api/network/key inserts the row) and an activation (POST /api/network/activate stamps last_activated_at) on the settings area's narrow exit; the insert names no column the update and delete did not already hold",
   },
   'public.telegram_accounts': {
     update: ['enabled', 'updated_at'],
@@ -820,6 +834,8 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * runtime-role.test.ts fails on one not listed.
  */
 export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.freeze({
+  'public.tailscale_config':
+    "its sealed auth key and every other column were already the narrow login's to update (the settings area sets the key); a delete and insert again gives nothing an update does not",
   'public.calendar_accounts':
     "the calendar area adds the owner's feed (INSERT measured), so a delete and reinsert gives the narrow login nothing a plain insert does not: a feed brings content in, never a right, and its owner_id is the brain's (named for S7c's signed acting login)",
   'public.turn_stream_buffer':

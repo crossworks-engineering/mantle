@@ -16,7 +16,7 @@ import {
   type Tool,
   type ToolHandler,
   onFullSystemRoute,
-  narrowNeedsSpot,
+  onNarrowSpots,
 } from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
 import { InputError } from '@mantle/std';
@@ -249,9 +249,7 @@ export async function updateTool(
       .returning();
   // A handler, its confirm flag or its external access: the full-route spot
   // tool-config (access-matrix.ts NARROW_NEVER_UPDATE).
-  const [row] = narrowNeedsSpot(tools, 'update', next)
-    ? await onFullSystemRoute('tool-config', write)
-    : await write();
+  const [row] = await onNarrowSpots(tools, 'update', next, write);
   return row ? toSummary(row) : null;
 }
 

@@ -14,8 +14,12 @@ import {
   FULL_ROUTE_SPOT_CALLBACKS as FULL_ROUTE_SPOT_CALLBACKS_REPO,
   fullRouteSpotCallbacks,
   fullRouteSpots,
+  narrowTableSpots,
+  schemaTableNames,
+  tableSpotCalls,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './as-system-routes.mjs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
@@ -410,14 +414,100 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
       'server/web/lib/x.ts: change is listed in FULL_ROUTE_SPOT_CALLBACKS but takes no function at a spot',
     ]);
   });
+  it('an arrow or a function expression bound to a name is a holder too', () => {
+    const arrow =
+      "import { onFullSystemRoute } from '@mantle/db';\n" +
+      'const change = <T>(fn: () => Promise<T>) =>\n' +
+      "  ok ? fn() : onFullSystemRoute('login-credential', fn);\n" +
+      'export const go = () => change(async () => 1);';
+    expect(of([at('server/web/lib/x.ts', arrow)], {}).problems).toEqual([
+      "server/web/lib/x.ts: change runs a caller's function at a full-route spot and is not in FULL_ROUTE_SPOT_CALLBACKS",
+    ]);
+    const listed = {
+      change: {
+        spot: 'login-credential',
+        from: 'server/web/lib/x.ts',
+        callers: ['server/web/lib/x.ts'],
+      },
+    };
+    expect(of([at('server/web/lib/x.ts', arrow)], listed).problems).toEqual([]);
+    const expr =
+      "import { onFullSystemRoute } from '@mantle/db';\n" +
+      'const change = async function (fn: () => Promise<void>) {\n' +
+      "  return onFullSystemRoute('login-credential', fn);\n};";
+    expect(of([at('server/web/lib/x.ts', expr)], {}).problems).toEqual([
+      "server/web/lib/x.ts: change runs a caller's function at a full-route spot and is not in FULL_ROUTE_SPOT_CALLBACKS",
+    ]);
+  });
   it('the repo: every holder listed, every caller allowed', () => {
     // applyManifest takes data only; applyLoginChange's callbacks come from
-    // the workspace screen alone; narrowTx (the acting-login spot, 0321)
-    // and onSpot (structure-no-login) from their own file alone.
+    // the workspace screen alone; atActingLogin (the acting-login spot,
+    // 0321) from its five callers; onSpot (structure-no-login) from its own
+    // file alone; the two
+    // arrows (asCallActorOrSpot, atCredentialSpot) run their own file's.
     expect(Object.keys(FULL_ROUTE_SPOT_CALLBACKS_REPO).sort()).toEqual([
       'applyLoginChange',
-      'narrowTx',
+      'asCallActorOrSpot',
+      'atActingLogin',
+      'atCredentialSpot',
       'onSpot',
     ]);
+  });
+});
+
+describe('a spot named by its table (onNarrowSpots, NARROW_TABLE_SPOTS)', () => {
+  const tables = { agents: 'public.agents', skills: 'public.skills' };
+  const spots = {
+    'public.agents': ['assistant-grant', 'skill-text', 'model-route'],
+    'public.skills': ['skill-text'],
+  };
+  const of = (text: string) =>
+    tableSpotCalls('server/web/lib/x.ts', text, tables, spots) as {
+      calls: { table: string; spots: string[] }[];
+      problems: string[];
+    };
+  it("a call names its table's spots", () => {
+    const r = of(
+      "import { onNarrowSpots } from '@mantle/db';\nawait onNarrowSpots(agents, 'update', next, write);",
+    );
+    expect(r.problems).toEqual([]);
+    expect(r.calls).toEqual([
+      { table: 'public.agents', spots: ['assistant-grant', 'skill-text', 'model-route'] },
+    ]);
+  });
+  it('a table with no entry, an alias and a passed reference are problems', () => {
+    expect(
+      of("import { onNarrowSpots } from '@mantle/db';\nonNarrowSpots(tools, 'update', s, w);")
+        .problems,
+    ).toEqual([
+      'server/web/lib/x.ts: an onNarrowSpots call whose table (tools) has no NARROW_TABLE_SPOTS entry',
+    ]);
+    expect(
+      of("import { onNarrowSpots as o } from '@mantle/db';\no(skills, 'update', s, w);").problems,
+    ).toContain('server/web/lib/x.ts: imports onNarrowSpots under another name');
+    expect(
+      of("import { onNarrowSpots } from '@mantle/db';\nconst o = onNarrowSpots;").problems,
+    ).toContain('server/web/lib/x.ts: onNarrowSpots named other than by its import and a call');
+  });
+  it('a spot its table names must be listed for the calling file', () => {
+    const text =
+      "import { onNarrowSpots } from '@mantle/db';\nawait onNarrowSpots(skills, 'update', next, write);";
+    const r = fullRouteSpots(ROOT, [{ path: 'server/web/lib/x.ts', text }], {
+      'server/web/lib/x.ts': [],
+    }) as { problems: string[]; tableCalls: number };
+    expect(r.problems).toContain(
+      "server/web/lib/x.ts: spot 'skill-text' (by its table public.skills) is not listed for it",
+    );
+    expect(r.tableCalls).toBe(1);
+  });
+  it('the repo: the list is read from narrow-spots.ts and the schema', () => {
+    const repo = narrowTableSpots(
+      readFileSync(join(ROOT, 'packages/db/src/narrow-spots.ts'), 'utf8'),
+    ) as Record<string, string[]>;
+    expect(repo['public.ai_workers']).toEqual(['skill-text', 'model-route']);
+    expect(Object.keys(repo).length).toBe(11);
+    const names = schemaTableNames(ROOT) as Record<string, string>;
+    expect(names.aiWorkers).toBe('public.ai_workers');
+    expect(names.calendarAccounts).toBe('public.calendar_accounts');
   });
 });

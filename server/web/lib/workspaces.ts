@@ -52,7 +52,7 @@ import {
   liveWorkspaceSql,
   loginAreas,
   loginHasArea,
-  onFullSystemRoute,
+  atActingLogin,
   pgConstraint,
   pgErrorCode,
   scopeHasArea,
@@ -1124,7 +1124,7 @@ export async function setModerator(
   // The definer needs the acting login, which the identity readers answer
   // only off the narrow role (0321): the full-route spot acting-login on an
   // Admin area's narrow exit; in a login's scope it runs as it is.
-  await onFullSystemRoute('acting-login', () =>
+  await atActingLogin(() =>
     db.transaction((tx) =>
       wsDefiner(
         tx,

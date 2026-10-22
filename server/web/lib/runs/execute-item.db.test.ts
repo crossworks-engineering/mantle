@@ -247,4 +247,25 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     expect(await heldTools()).toEqual([]);
     expect(await pendingCount()).toBe(before);
   });
+
+  it("a run of an assistant assigned to a login that names no login runs nothing (it would run as the owner); the owner's own assistant's still runs", async () => {
+    const [u] = await rows<{ id: string }>(sqlTag`
+      insert into auth.users (email, password_hash, role, is_owner)
+      values (${`${tag}-assigned@example.invalid`}, 'x', 'member', false) returning id`);
+    const [a] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, assigned_user_id)
+      values (${anchor}, 'assigned', 'a', 'm', 'p', ARRAY['g-access'], ${u!.id}) returning id`);
+    const before = await pendingCount();
+    const item = await runOne('tool_group_ensure', ENSURE, a!.id);
+    expect(item.state).toBe('failed');
+    expect(item.failure?.type).toBe('no_maker');
+    expect(await pendingCount()).toBe(before);
+    // The same run naming its login passes the maker check (what follows is
+    // the item's own answer, not no_maker).
+    const named = await runOne('tool_group_ensure', ENSURE, a!.id, u!.id);
+    expect(named.failure?.type).not.toBe('no_maker');
+    // The owner's assistant (assigned to no login) with no login: not no_maker.
+    const own = await runOne('note_list', {}, agentId);
+    expect(own.failure?.type ?? null).not.toBe('no_maker');
+  });
 });

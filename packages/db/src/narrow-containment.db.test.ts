@@ -28,7 +28,6 @@
  *    node_ingested announcement sent on both.
  */
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -644,22 +643,30 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     }
   });
 
-  /** The session and acting login a structure write's own transaction saw. */
+  /** The session and acting login a structure write's own transaction saw:
+   *  a scratch trigger on secrets records them as the sealed row lands (the
+   *  caller passes only the sealed value now, no statement). */
   const sawOf = async () => {
-    let saw: Record<string, string | null> = {};
+    await su.unsafe(`create table if not exists zz_saw (s text, a text, at timestamptz default clock_timestamp());
+      grant all on zz_saw to public;
+      create or replace function zz_saw_fn() returns trigger language plpgsql as $f$
+      begin
+        insert into zz_saw (s, a)
+          values (session_user::text, nullif(current_setting('mantle.acting_login', true), ''));
+        return new;
+      end $f$;
+      grant execute on function zz_saw_fn() to public;
+      drop trigger if exists zz_saw_t on secrets;
+      create trigger zz_saw_t before insert on secrets for each row execute function zz_saw_fn();`);
     const row = await m.insertStructureItem(
       'secret-item',
       { ownerId: brain, title: 't', path: 'secrets' },
-      async (tx) => {
-        const [r] = (await tx.execute(
-          sql`select session_user::text as s,
-                     nullif(current_setting('mantle.acting_login', true), '') as a`,
-        )) as unknown as { s: string; a: string | null }[];
-        saw = { s: r!.s, a: r!.a };
-      },
+      () => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 }),
     );
     expect(row).not.toBeNull();
-    return saw;
+    const [r] = await su<{ s: string; a: string | null }[]>`
+      select s, a from zz_saw order by at desc limit 1`;
+    return { s: r!.s, a: r!.a } as Record<string, string | null>;
   };
   const turn = <T>(
     loginId: string | null,

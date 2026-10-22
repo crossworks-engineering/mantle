@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
-import { db, curatedModels, narrowNeedsSpot, onFullSystemRoute } from '@mantle/db';
+import { db, curatedModels, onNarrowSpots, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -71,9 +71,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // combo applies) is not the narrow login's to change (it keeps the stamp,
   // the insert and the delete: access-matrix.ts NARROW_WRITES): the
   // full-route spot model-route.
-  const [row] = narrowNeedsSpot(curatedModels, 'update', set)
-    ? await onFullSystemRoute('model-route', write)
-    : await write();
+  const [row] = await onNarrowSpots(curatedModels, 'update', set, write);
   if (!row) return NextResponse.json({ error: 'Entry not found.' }, { status: 404 });
   return NextResponse.json({ entry: row });
 }

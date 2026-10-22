@@ -1,14 +1,6 @@
 /** Owner-scoped drive management for the settings UI. */
 import { and, count, eq } from 'drizzle-orm';
-import {
-  db,
-  msAccounts,
-  msDrives,
-  msDriveScopes,
-  narrowNeedsSpot,
-  onFullSystemRoute,
-  type MsDrive,
-} from '@mantle/db';
+import { db, msAccounts, msDrives, msDriveScopes, onNarrowSpots, type MsDrive } from '@mantle/db';
 import { graphGetAll } from '../client';
 import { discoverDrives } from './discover';
 import { itemPathAfterRoot, ownedDrive } from './scope';
@@ -47,8 +39,7 @@ export async function setDriveEnabled(
   const write = () => db.update(msDrives).set(set).where(eq(msDrives.id, driveDbId));
   // A turn-on (the drive syncs again, its files are ingested): the
   // full-route spot feed-enable (0323: enabled only off on the narrow login).
-  if (narrowNeedsSpot(msDrives, 'update', set)) await onFullSystemRoute('feed-enable', write);
-  else await write();
+  await onNarrowSpots(msDrives, 'update', set, write);
   return true;
 }
 

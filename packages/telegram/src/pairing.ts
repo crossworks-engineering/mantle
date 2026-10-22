@@ -21,6 +21,7 @@ import {
   assistantMessages,
   authUsers,
   db,
+  atActingLogin,
   onFullSystemRoute,
   telegramAccounts,
   telegramChats,
@@ -488,7 +489,7 @@ export async function setChatPairing(args: {
   // The definer needs the acting login, which the identity readers answer
   // only off the narrow role (0321): the full-route spot acting-login on the
   // assistants area's narrow exit; in a login's scope it runs as it is.
-  const rows = await onFullSystemRoute('acting-login', () =>
+  const rows = await atActingLogin(() =>
     db.transaction(
       async (tx) =>
         (await tx.execute(

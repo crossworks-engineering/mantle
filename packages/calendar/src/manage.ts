@@ -1,13 +1,7 @@
 /** Owner-scoped CRUD for subscribed calendars (the settings UI calls these). */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import {
-  calendarAccounts,
-  db,
-  narrowNeedsSpot,
-  onFullSystemRoute,
-  type CalendarAccount,
-} from '@mantle/db';
+import { calendarAccounts, db, onNarrowSpots, type CalendarAccount } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { deleteAllExternalEvents } from '@mantle/content';
 
@@ -32,9 +26,7 @@ export async function addIcsFeed(
   // A new feed starts on (it syncs, its events are ingested): not the
   // narrow login's (0324: the off-only rule meets an insert too), so the
   // full-route spot feed-enable, as a turn-on is.
-  const [row] = narrowNeedsSpot(calendarAccounts, 'insert', values)
-    ? await onFullSystemRoute('feed-enable', write)
-    : await write();
+  const [row] = await onNarrowSpots(calendarAccounts, 'insert', values, write);
   if (!row) throw new Error('addIcsFeed: insert returned no row');
   return row;
 }
@@ -63,9 +55,7 @@ export async function setCalendarEnabled(
   // A turn-on (the feed syncs again, its events are ingested) is not the
   // narrow login's (0323: enabled only off): the full-route spot
   // feed-enable. A switch off stays on the narrow login.
-  const rows = narrowNeedsSpot(calendarAccounts, 'update', set)
-    ? await onFullSystemRoute('feed-enable', write)
-    : await write();
+  const rows = await onNarrowSpots(calendarAccounts, 'update', set, write);
   return rows.length > 0;
 }
 

@@ -9,9 +9,11 @@
  * of every assistant it runs as, both (chat-login.ts chatLoginRefusal).
  *
  * The bot's assistant is read here only: botAgentIdSql as a subquery (the
- * turn's own row, the pairing rule's assistants) and botAgentId as a
- * statement. Each runs on whatever pool its caller is on; nothing here
- * writes.
+ * turn's own row, the pairing rule's assistants, the event reminder's
+ * chat for a chosen sender) and botAgentId as a statement. The other way
+ * (an assistant's own bot: its channel row) is the channel's, not a chat's,
+ * and is read where the channel is managed. Each runs on whatever pool
+ * its caller is on; nothing here writes.
  */
 import { eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { channels, db, telegramAccounts } from '@mantle/db';

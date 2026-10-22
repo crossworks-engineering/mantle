@@ -31,7 +31,7 @@ import {
   type HeartbeatScheduleSpec,
   type HeartbeatSurface,
   onFullSystemRoute,
-  narrowNeedsSpot,
+  onNarrowSpots,
 } from '@mantle/db';
 import {
   computeNextFireAt,
@@ -358,9 +358,7 @@ export async function updateHeartbeat(
   // Its schedule, assistant, skill or maker (whom and when it fires as) is
   // not the narrow login's: the full-route spot heartbeat-maker
   // (access-matrix.ts NARROW_NEVER_UPDATE_TABLE).
-  const [row] = narrowNeedsSpot(heartbeats, 'update', next)
-    ? await onFullSystemRoute('heartbeat-maker', write)
-    : await write();
+  const [row] = await onNarrowSpots(heartbeats, 'update', next, write);
   // Wake the tick — covers schedule edits, resume-from-paused, and
   // explicit state changes that might have re-armed the row. Soft-
   // fail; the regular tick recovers. (NEW-7.)

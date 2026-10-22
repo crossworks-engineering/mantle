@@ -13,6 +13,8 @@
  * wrapper) runs narrow only when every one of its reasons does; one whose
  * reason the count cannot read runs full.
  */
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { balanced, readRepoFile, stripComments } from './arch-counts.mjs';
 
 /** Every reason's route while the map is not in viewer.ts: all full. */
@@ -144,7 +146,10 @@ export function requestSystemRouteMap(root) {
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/profile-preferences.ts': ['profile-row'],
-  'packages/db/src/gateway/structure-item.ts': ['structure-no-login', 'acting-login'],
+  'packages/db/src/gateway/structure-item.ts': ['structure-no-login'],
+  // The five acting-login definers' callers enter the spot through one
+  // helper (atActingLogin, FULL_ROUTE_SPOT_CALLBACKS).
+  'packages/db/src/gateway/acting-login.ts': ['acting-login'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
   'server/web/lib/auth/session.ts': ['login-credential'],
   'server/web/lib/login-create.ts': ['login-credential'],
@@ -157,7 +162,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/member-invites.ts': ['member-invite'],
   'packages/content/src/peers/registry.ts': ['peer-access'],
   'packages/content/src/peers/grants.ts': ['peer-share'],
-  'packages/telegram/src/pairing.ts': ['telegram-pair', 'acting-login'],
+  'packages/telegram/src/pairing.ts': ['telegram-pair'],
   'server/web/app/api/telegram/chats/[id]/route.ts': ['telegram-responder'],
   'server/web/app/api/runs/[id]/route.ts': ['run-control'],
   'packages/tools/src/builtins-runs.ts': ['run-control'],
@@ -209,8 +214,6 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/microsoft/src/outlook/manage.ts': ['mail-account'],
   'packages/content/src/sandboxes.ts': ['sandbox-make'],
   'server/web/lib/agent-telegram.ts': ['telegram-connect'],
-  'server/web/lib/workspaces.ts': ['acting-login'],
-  'server/web/lib/workspaces-migrate.ts': ['acting-login'],
   'packages/microsoft/src/token-store.ts': ['ms-account'],
   'packages/microsoft/src/drives/discover.ts': ['ms-account'],
   'server/web/app/api/model-pools/[id]/route.ts': ['model-route'],
@@ -221,7 +224,6 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/app/api/embedding/extraction/route.ts': ['model-route'],
   'server/web/lib/maintenance/curate-pools-run.ts': ['model-route'],
   'server/web/lib/model-pools-seed.ts': ['model-route'],
-  'packages/db/src/gateway/spot-definers.ts': ['acting-login'],
   'server/web/lib/studio/prompt-versions.ts': ['skill-text'],
   'server/web/lib/mcp-connectors.ts': ['tool-config'],
   'server/web/lib/openapi-connectors.ts': ['tool-config'],
@@ -265,12 +267,34 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     // workspace and checks its rules (reads; a refusal throws).
     callers: ['server/web/lib/workspaces.ts'],
   },
-  narrowTx: {
+  atActingLogin: {
     spot: 'acting-login',
-    from: 'packages/db/src/gateway/structure-item.ts',
-    // Its own file's definer calls of a structure item (not exported): the
-    // definer needs the acting login (migration 0321).
-    callers: ['packages/db/src/gateway/structure-item.ts'],
+    from: 'packages/db/src/gateway/acting-login.ts',
+    // The five definers that need the exit's acting login (0321): each
+    // caller opens its own transaction and calls its one definer.
+    callers: [
+      'packages/db/src/gateway/structure-item.ts',
+      'packages/db/src/gateway/spot-definers.ts',
+      'packages/telegram/src/pairing.ts',
+      'server/web/lib/workspaces-migrate.ts',
+      'server/web/lib/workspaces.ts',
+    ],
+  },
+  // Two local arrows the check found once it read arrow functions: each
+  // runs its own file's functions only.
+  asCallActorOrSpot: {
+    spot: 'pending-call',
+    from: 'packages/tools/src/pending.ts',
+    // An approved call with no login and no origin runs its tool at the
+    // spot; with a login, as that login (runAsActor).
+    callers: ['packages/tools/src/pending.ts'],
+  },
+  atCredentialSpot: {
+    spot: 'login-credential',
+    from: 'server/web/lib/login-update.ts',
+    // applyLoginChange's own transaction, at the spot only when the change
+    // names a credential or a right.
+    callers: ['server/web/lib/login-update.ts'],
   },
   onSpot: {
     spot: 'structure-no-login',
@@ -330,6 +354,36 @@ function spotHolders(body) {
       .filter((idx) => idx >= 0);
     out.push({ name: m[1], fnParams });
   }
+  // The same as an arrow or a function expression bound to a name
+  // (`const name = async (a, b) => { ... }`, `const name = function (...)`):
+  // a holder written so must not slip past the check.
+  for (const m of body.matchAll(
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b\s*[A-Za-z_$]*\s*)?(?:<[^>()]*>)?\s*\(/g,
+  )) {
+    const open = m.index + m[0].length - 1;
+    const params = balanced(body, open);
+    let i = open + params.length;
+    // An arrow: `=>` next (after a return type); a function expression: its `{`.
+    const rest = body.slice(i);
+    const arrow = rest.match(/^\s*(?::[^=]*?)?=>\s*/);
+    let own;
+    if (arrow) {
+      i += arrow[0].length;
+      own =
+        body[i] === '{' || body[i] === '('
+          ? balanced(body, i)
+          : body.slice(i, body.indexOf(';', i) >>> 0);
+    } else if (/function\b/.test(m[0])) {
+      const brace = body.indexOf('{', i);
+      if (brace < 0) continue;
+      own = balanced(body, brace);
+    } else continue;
+    if (!/\bonFullSystemRoute\s*\(/.test(own)) continue;
+    const fnParams = topLevelParts(params.slice(1, -1))
+      .map((p, idx) => (/=>/.test(p) ? idx : -1))
+      .filter((idx) => idx >= 0);
+    out.push({ name: m[1], fnParams });
+  }
   return out;
 }
 
@@ -381,7 +435,12 @@ export function fullRouteSpotCallbacks(
         problems.push(`${path}: imports ${name} under another name`);
       const defined =
         path === h.from
-          ? (body.match(new RegExp(`\\bfunction\\s+${name}\\b`, 'g'))?.length ?? 0)
+          ? (body.match(
+              new RegExp(
+                `\\bfunction\\s+${name}\\b|\\b(?:const|let|var)\\s+${name}\\s*(?::[^=]*)?=(?!=)`,
+                'g',
+              ),
+            )?.length ?? 0)
           : 0;
       let imported = 0;
       for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']+'/g)) {
@@ -389,6 +448,12 @@ export function fullRouteSpotCallbacks(
           if (new RegExp(`^\\s*(?:type\\s+)?${name}\\s*$`).test(part)) imported += 1;
         }
       }
+      // The db barrel's bare re-export (`export { name } from './...'`) is
+      // an import for this count.
+      if (path === 'packages/db/src/index.ts')
+        for (const m of body.matchAll(/export\s*\{([^}]*)\}\s*from\s*'[^']+'/g))
+          for (const part of m[1].split(','))
+            if (new RegExp(`^\\s*${name}\\s*$`).test(part)) imported += 1;
       let called = 0;
       for (const m of body.matchAll(
         new RegExp(`(?<!function\\s+)\\b${name}\\s*(?:<[^>()]*>)?\\s*\\(`, 'g'),
@@ -409,6 +474,90 @@ export function fullRouteSpotCallbacks(
         );
     }
   }
+  return { calls, problems };
+}
+
+/** The one file that may call onFullSystemRoute with a spot that is no
+ *  literal: onNarrowSpots, which enters the spots its table names
+ *  (NARROW_TABLE_SPOTS). Its callers name the table; the spots are read
+ *  from that list, and each must be listed for the calling file. */
+export const NARROW_SPOTS_FILE = 'packages/db/src/narrow-spots.ts';
+const TABLE_SPOT_CALL = 'onNarrowSpots';
+
+/** NARROW_TABLE_SPOTS read from its source: `{ 'schema.table': [spots] }`. */
+export function narrowTableSpots(text) {
+  const code = stripComments(text ?? '');
+  const out = {};
+  for (const m of code.matchAll(/'([a-z_]+\.[a-z_]+)'\s*:\s*\{\s*spots\s*:\s*\[([^\]]*)\]/g)) {
+    out[m[1]] = [...m[2].matchAll(/'([^'\n]+)'/g)].map((x) => x[1]);
+  }
+  return out;
+}
+
+/** The schema's table exports by name: `{ exportName: 'schema.table' }`
+ *  (pgTable and a pgSchema's `.table`). */
+export function schemaTableNames(root) {
+  const out = {};
+  const dir = 'packages/db/src/schema';
+  let files;
+  try {
+    files = readdirSync(join(root, dir)).filter((f) => f.endsWith('.ts'));
+  } catch {
+    return out;
+  }
+  for (const f of files) {
+    const code = stripComments(readRepoFile(root, `${dir}/${f}`) ?? '');
+    const schemas = {};
+    for (const m of code.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*pgSchema\(\s*'([^']+)'/g))
+      schemas[m[1]] = m[2];
+    for (const m of code.matchAll(
+      /export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*(pgTable|[A-Za-z_$][\w$]*\.table)\s*\(\s*'([^']+)'/g,
+    )) {
+      const schema = m[2] === 'pgTable' ? 'public' : schemas[m[2].split('.')[0]];
+      if (schema) out[m[1]] = `${schema}.${m[3]}`;
+    }
+  }
+  return out;
+}
+
+/**
+ * The onNarrowSpots calls of one file (its code, comments stripped): each
+ * call's table (its first argument, a schema export) and the spots
+ * NARROW_TABLE_SPOTS names for it. `problems` for a table not listed there,
+ * the helper imported under another name, or named other than by its
+ * import and a call.
+ */
+export function tableSpotCalls(path, body, tables, tableSpots) {
+  const problems = [];
+  const calls = [];
+  const named = new RegExp(`\\b${TABLE_SPOT_CALL}\\b`, 'g');
+  const mentions = body.match(named)?.length ?? 0;
+  if (mentions === 0) return { calls, problems };
+  let imported = 0;
+  for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']+'/g)) {
+    for (const part of m[1].split(',')) {
+      if (!new RegExp(`\\b${TABLE_SPOT_CALL}\\b`).test(part)) continue;
+      if (new RegExp(`^\\s*${TABLE_SPOT_CALL}\\s*$`).test(part)) imported += 1;
+      else problems.push(`${path}: imports ${TABLE_SPOT_CALL} under another name`);
+    }
+  }
+  const found = [
+    ...body.matchAll(
+      new RegExp(`(?<!function\\s+)\\b${TABLE_SPOT_CALL}\\s*(?:<[^>()]*>)?\\s*\\(`, 'g'),
+    ),
+  ];
+  for (const m of found) {
+    const args = topLevelParts(balanced(body, m.index + m[0].length - 1).slice(1, -1));
+    const table = tables[args[0]];
+    const spots = table ? tableSpots[table] : undefined;
+    if (!spots)
+      problems.push(
+        `${path}: an ${TABLE_SPOT_CALL} call whose table (${args[0]}) has no NARROW_TABLE_SPOTS entry`,
+      );
+    else calls.push({ table, spots });
+  }
+  if (imported + found.length !== mentions)
+    problems.push(`${path}: ${TABLE_SPOT_CALL} named other than by its import and a call`);
   return { calls, problems };
 }
 
@@ -441,9 +590,33 @@ export function fullRouteSpots(
   let calls = 0;
   const seen = new Set();
   let wrapperCalls = 0;
+  const tableSpots = narrowTableSpots(readRepoFile(root, NARROW_SPOTS_FILE));
+  const tables = schemaTableNames(root);
+  let tableCalls = 0;
   for (const { path, text } of texts) {
     if (/\.test\.tsx?$/.test(path)) continue;
     const body = stripComments(text);
+    if (path === NARROW_SPOTS_FILE) {
+      // The helper's own call: one, its spot the loop's variable.
+      const own = [...body.matchAll(/(?<!function\s+)\bonFullSystemRoute\s*\(\s*([^,]*),/g)];
+      if (own.length !== 1 || !/^[A-Za-z_$][\w$]*$/.test(own[0][1].trim()))
+        problems.push(`${path}: holds one onFullSystemRoute call, its spot a variable`);
+      continue;
+    }
+    // The barrel's re-export and the test helpers' own name of it are no
+    // calls.
+    if (path !== 'packages/db/src/index.ts' && !/(^|\/)test-support\//.test(path)) {
+      const t = tableSpotCalls(path, body, tables, tableSpots);
+      problems.push(...t.problems);
+      for (const c of t.calls) {
+        tableCalls += 1;
+        for (const spot of c.spots) {
+          if (!(allowed[path] ?? []).includes(spot))
+            problems.push(`${path}: spot '${spot}' (by its table ${c.table}) is not listed for it`);
+          else seen.add(`${path}|${spot}`);
+        }
+      }
+    }
     for (const [name, w] of Object.entries(wrappers)) {
       const named = new RegExp(`\\b${name}\\b`, 'g');
       if (!named.test(body)) continue;
@@ -533,5 +706,5 @@ export function fullRouteSpots(
       problems.push(`${w.from}: ${name} wraps '${w.spot}', not listed for it`);
     }
   }
-  return { entries: names.length, calls, wrapperCalls, problems };
+  return { entries: names.length, calls: calls + tableCalls, tableCalls, wrapperCalls, problems };
 }

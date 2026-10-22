@@ -21,8 +21,10 @@ import { indexWorkFor, type IndexWork } from '@mantle/client-types/kinds';
 import { RuntimeFaultError } from '@mantle/std';
 import type * as schema from '../schema/index';
 import { nodes, type Node } from '../schema/nodes';
+import { secrets } from '../schema/secrets';
 import { markContentChanged } from '../content-changed';
 import { actingLoginNow, currentCreateHome, currentSpaceScope, onFullSystemRoute } from '../viewer';
+import { atActingLogin } from './acting-login';
 import { db } from './handles';
 import { withNodeDeleteHeads, withNodeInsertHeads } from './heads';
 import { narrowRouteNow } from './pools';
@@ -57,17 +59,13 @@ export type StructureInsert = {
 
 /**
  * The narrow route's transaction for a definer call: a system transaction
- * (withSystemTx), a savepoint of the one already open. Inside it the exit's
- * route and acting login hold (viewer.ts runInSystemTx keeps a request
- * exit's), so the transaction is the narrow login's. The acting login is
- * passed to the definer, which also checks it against the setting the
- * gateway sends.
+ * (withSystemTx), a savepoint of the one already open, at the acting-login
+ * spot (atActingLogin: the definer needs the acting login, which the
+ * identity readers answer only off the narrow role, 0321). The acting login
+ * is passed to the definer, which also checks it against the setting the
+ * gateway sends. Each caller below writes `atActingLogin((login) =>
+ * withSystemTx(...))` in place, so what runs at the spot is read there.
  */
-function narrowTx<T>(fn: (tx: Tx, login: string | null) => Promise<T>): Promise<T> {
-  // The definer needs the acting login, which the identity readers answer
-  // only off the narrow role (0321): the full-route spot acting-login.
-  return onFullSystemRoute('acting-login', () => withSystemTx((tx) => fn(tx, actingLoginNow())));
-}
 
 /**
  * Where a structure write runs: 'app' off the narrow route (the app's own
@@ -108,36 +106,52 @@ async function callDefiner(
   return rows.map((r) => r.id);
 }
 
+/** A secret's sealed value for its new row (the row's id is the seal's
+ *  associated data): data only, so no caller's statement runs at a spot. */
+export type SealedFor = (row: Node) => { ciphertext: Buffer; keyVersion: number };
+
 /**
- * Make one structure item with the heads of the folder it lands in, and run
- * `then` in the same transaction with its row (a secret's sealed value). A
- * branch kind already at its path makes nothing: null, `then` not run.
- * Wrap in withDeadlockRetry, as the heads helpers.
+ * Make one structure item with the heads of the folder it lands in, and
+ * insert its sealed value in the same transaction when `sealed` is given (a
+ * secret: its row in secrets). A branch kind already at its path makes
+ * nothing: null, no sealed row. Wrap in withDeadlockRetry, as the heads
+ * helpers. The sealed value is computed by the caller but written here:
+ * the caller passes no statement into the acting-login spot.
  */
 export async function insertStructureItem(
   kind: StructureKind,
   values: StructureInsert,
-  then?: (tx: Tx, row: Node) => Promise<void>,
+  sealed?: SealedFor,
 ): Promise<Node | null> {
+  const then = sealed
+    ? async (tx: Tx, row: Node) => {
+        const s = sealed(row);
+        await tx
+          .insert(secrets)
+          .values({ nodeId: row.id, ciphertext: s.ciphertext, keyVersion: s.keyVersion });
+      }
+    : undefined;
   const type = STRUCTURE_KINDS[kind];
   const branch = type === 'branch';
   const route = structureRoute();
   if (route === 'definer') {
-    return narrowTx(async (tx, login) => {
-      const fields: Record<string, unknown> = {
-        title: values.title,
-        slug: values.slug ?? null,
-        path: values.path,
-      };
-      if (values.data !== undefined) fields.data = values.data;
-      if (values.tags !== undefined) fields.tags = values.tags;
-      const [id] = await callDefiner(tx, login, kind, 'insert', values.ownerId, null, fields);
-      if (!id) return null;
-      const [row] = await tx.select().from(nodes).where(eq(nodes.id, id));
-      if (!row) throw new Error('insertStructureItem: the new row is not readable');
-      if (then) await then(tx, row);
-      return row;
-    });
+    return atActingLogin((login) =>
+      withSystemTx(async (tx) => {
+        const fields: Record<string, unknown> = {
+          title: values.title,
+          slug: values.slug ?? null,
+          path: values.path,
+        };
+        if (values.data !== undefined) fields.data = values.data;
+        if (values.tags !== undefined) fields.tags = values.tags;
+        const [id] = await callDefiner(tx, login, kind, 'insert', values.ownerId, null, fields);
+        if (!id) return null;
+        const [row] = await tx.select().from(nodes).where(eq(nodes.id, id));
+        if (!row) throw new Error('insertStructureItem: the new row is not readable');
+        if (then) await then(tx, row);
+        return row;
+      }),
+    );
   }
   return onSpot(route, () =>
     withNodeInsertHeads(values.ownerId, [{ type, path: values.path }], async (tx) => {
@@ -205,12 +219,14 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
       // quiet create.
       fields.announce = !currentSpaceScope() && !currentCreateHome()?.quiet;
     }
-    return narrowTx(async (tx, login) => {
-      const [done] = await callDefiner(tx, login, kind, 'update', ownerId, [id], fields);
-      if (!done) return null;
-      const [row] = await tx.select().from(nodes).where(eq(nodes.id, done));
-      return row ?? null;
-    });
+    return atActingLogin((login) =>
+      withSystemTx(async (tx) => {
+        const [done] = await callDefiner(tx, login, kind, 'update', ownerId, [id], fields);
+        if (!done) return null;
+        const [row] = await tx.select().from(nodes).where(eq(nodes.id, done));
+        return row ?? null;
+      }),
+    );
   }
   return onSpot(route, () =>
     db.transaction(async (tx) => {
@@ -255,8 +271,10 @@ export async function deleteStructureItems(
   const type = STRUCTURE_KINDS[kind];
   const route = structureRoute();
   if (route === 'definer') {
-    return narrowTx((tx, login) =>
-      callDefiner(tx, login, kind, 'delete', ownerId, ids, match ? { match } : null),
+    return atActingLogin((login) =>
+      withSystemTx((tx) =>
+        callDefiner(tx, login, kind, 'delete', ownerId, ids, match ? { match } : null),
+      ),
     );
   }
   return onSpot(route, async () => {

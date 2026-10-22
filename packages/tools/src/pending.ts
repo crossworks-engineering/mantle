@@ -580,10 +580,10 @@ export async function approvePendingCall(
   // A row with no login and no origin runs as the approving exit's system
   // actor: on the full route from a narrow exit (viewer.ts FULL_ROUTE_SPOTS
   // 'pending-call').
-  const asActor = <T>(fn: () => Promise<T>) =>
+  const asCallActorOrSpot = <T>(fn: () => Promise<T>) =>
     callActor ? runAsActor(callActor, fn) : onFullSystemRoute('pending-call', fn);
   const asCallLogin = <T>(fn: () => Promise<T>) =>
-    origin ? withOriginScope(origin.run, () => asActor(fn)) : asActor(fn);
+    origin ? withOriginScope(origin.run, () => asCallActorOrSpot(fn)) : asCallActorOrSpot(fn);
 
   // Execute under a fresh `manual` trace so the operator can audit the
   // run in /traces. The originating turn's trace is long closed by now.

@@ -103,6 +103,7 @@ const S = SAMPLE_ID;
 /** The Azure route's 'custom' key, and the provision row's record key. */
 const KEY_AZURE = '55555555-5555-4555-8555-5555555555a2';
 const AZURE_PROVISION = 'onboarding provision (Azure only)';
+const MOBILE_LOGOUT = 'POST /api/auth/mobile-logout (a device bearer)';
 /** The Microsoft sign-in, token refresh and drive discovery with Graph
  *  stubbed: the record key (the table's callback row carries no state
  *  cookie, so it never reaches the account write). */
@@ -317,6 +318,9 @@ describe.skipIf(!URL)(
     /** The Azure-only provision per pass: its answer, the persona's route
      *  and the tool groups after it. */
     const azure: Record<string, { answer: string; persona: string; groups: number }> = {};
+    /** The phone's sign-out per pass (a live device bearer, no cookie): its
+     *  answer and whether the token row was revoked. */
+    const mobileOut: Record<string, string> = {};
     /** The MS_CONNECT block per pass: the callback's redirect, the discover
      *  answer, and what landed (the new account with its tokens, the
      *  fixture account's refreshed expiry, the drive found). */
@@ -459,6 +463,25 @@ describe.skipIf(!URL)(
           const r = await send(method, path, entry.body ?? null, as);
           selfAnswers[pass].set(key, `${r.status} ${normalize(r.text)}`);
           record(`self ${key}`);
+        }
+        // The phone's sign-out with a live device bearer (the table's
+        // self rows skip device bearers): forgetRequestLogins drops the
+        // request's own login, and nothing after it may ask the narrow role
+        // for a right it lacks (a later guard read, the push devices, the
+        // audit row).
+        {
+          const jti = '00000000-0000-4000-8000-00000000a0be';
+          await su`insert into mobile_tokens (id, user_id, label, expires_at)
+                   values (${jti}, ${OWNER}, 'sweep phone', now() + interval '30 days')`;
+          const bearer = tokens.buildMobileToken(OWNER, jti).value;
+          const res = await app.request('/api/auth/mobile-logout', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${bearer}` },
+          });
+          const [row] = await su<{ revoked: boolean }[]>`
+            select revoked_at is not null as revoked from mobile_tokens where id = ${jti}`;
+          mobileOut[pass] = `${res.status} ${normalize(await res.text())} revoked=${row?.revoked}`;
+          record(MOBILE_LOGOUT);
         }
         // The Microsoft sign-in, a token refresh and a drive discovery, with
         // Graph stubbed (round 13c, G): the callback with its state and PKCE
@@ -640,6 +663,12 @@ describe.skipIf(!URL)(
         .filter(([k, a]) => readAnswers.off.get(k) !== a)
         .map(([k, a]) => ({ row: k, on: a, off: readAnswers.off.get(k) }));
       expect(differ).toEqual([]);
+    });
+
+    it('the phone sign-out with a live bearer: 200 and its token revoked, the same both ways, nothing refused by the narrow role', () => {
+      expect(mobileOut.on).toBe(mobileOut.off);
+      expect(mobileOut.on).toMatch(/^200 .*revoked=true$/);
+      expect(denials.get(MOBILE_LOGOUT) ?? []).toEqual([]);
     });
 
     it('the onboarding provision on the Azure route only: 2xx, the same both ways, the persona on the custom key', () => {
