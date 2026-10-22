@@ -252,10 +252,17 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
           });
         });
         expect(pick(), mode).toEqual([]);
-        // A write the role would refuse: counted, the login's actor.
+        // A write the role would refuse: counted, the login's actor, while
+        // the actor check is warn or on (the process's or the box's, the
+        // higher): only then is the actor, and so the mark, sent. With both
+        // off (the box off in test:actor-off) nothing is sent or counted.
+        const counts = actor.actorCheckMode() !== 'off';
+        if (mode === 'warn') expect(counts).toBe(true);
         await m.withTurnScope(scope, refusedUpsert);
         expect(pick(), mode).toEqual(
-          ['login public.audit_log DELETE', 'login public.provider_alerts UPDATE'].sort(),
+          counts
+            ? ['login public.audit_log DELETE', 'login public.provider_alerts UPDATE'].sort()
+            : [],
         );
         // The same at a spot inside the scope, or outside every scope with
         // the login's actor: not counted (no mark).
