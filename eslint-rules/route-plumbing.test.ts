@@ -194,11 +194,11 @@ describe('route-policy-declared', () => {
     tester.run('route-policy-declared', routePolicyDeclared, {
       valid: [
         {
-          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content', effect: 'read' }, POST: { class: 'content', effect: 'write' }")}`,
+          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content' }, POST: { class: 'content', item: { none: 'x' } }")}`,
           filename: route,
         },
         {
-          code: `export { GET } from '../../notes/route';\n${decl("GET: { class: 'content', effect: 'read' }")}`,
+          code: `export { GET } from '../../notes/route';\n${decl("GET: { class: 'content' }")}`,
           filename: route,
         },
         // Not a route file.
@@ -213,12 +213,12 @@ describe('route-policy-declared', () => {
           errors: [{ messageId: 'missing' }],
         },
         {
-          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content', effect: 'read' }")}`,
+          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content' }")}`,
           filename: route,
           errors: [{ messageId: 'undeclared' }],
         },
         {
-          code: `export async function GET() {}\n${decl("GET: { class: 'content', effect: 'read' }, PUT: { class: 'content', effect: 'write' }")}`,
+          code: `export async function GET() {}\n${decl("GET: { class: 'content' }, PUT: { class: 'content', item: { none: 'x' } }")}`,
           filename: route,
           errors: [{ messageId: 'stray' }],
         },

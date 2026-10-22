@@ -40,8 +40,6 @@ import type { WorkspaceArea } from '@mantle/client-types';
 import { env, feature } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
-import { isWorkspaceArea } from '@mantle/client-types/dto/workspaces';
-import { ACCESS_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
 import {
   RATE_LIMITS,
@@ -53,14 +51,19 @@ import {
 import type { RouteSwitch } from './route-switches';
 import {
   isDeclaredMethod,
+  methodEffect,
+  splitRouteKey,
+  validateMethodPolicy,
   type MethodPolicy,
+  type NamedCaller,
   type RoutePolicyDeclaration,
 } from './route-declaration';
 import { getRequestContext } from '../../server/request-context';
-import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
+import { isAssetPath, isAuditSelfLogged, isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
+  auditsAsWrite,
   CREATE_ROUTES,
   isReadRequest,
   itemWriteTarget,
@@ -325,6 +328,13 @@ export type RouteRow = Readonly<{
   /** A write that may make an item (its private workspace may be made). */
   makesItems: boolean;
   item: RouteItem | null;
+  /** The write logs its own audit event: the session guards' generic
+   *  `api.write` row is not written for it (session.ts auditMutation reads
+   *  isAuditSelfLogged today; part 2 of the route declarations reads this).
+   *  'own' only on a row that audits as a write (route-scope.ts
+   *  auditsAsWrite) under a path of AUDIT_SELF_LOGGED_PATHS, or its
+   *  declaration's `audit`; null elsewhere. */
+  audit: 'own' | null;
   /** The area an API key needs (an /api/v1 row of the key table): null
    *  for a route open only to a key with every area, or about the key
    *  itself (keySelf); absent off the key table. */
@@ -598,19 +608,40 @@ function callerServes(
     scope: RouteClass | null;
     classLogins: RouteLogins | null;
     gone: boolean;
+    /** Whether the row is named for `kind` (a kind of NAMED_CALLERS): its
+     *  list's entry (listNamed), or its declaration's `caller`. */
+    named: (kind: NamedCaller) => boolean;
   }>,
 ): boolean {
   if (PUBLIC_CALLERS.has(caller)) {
-    return row.isPublic && !row.gone && PUBLIC_LOGIN_ROWS.get(row.key) === caller;
+    return row.isPublic && !row.gone && row.named(caller as NamedCaller);
   }
   if (row.isPublic) return false;
   if (ASSET_CALLERS.has(caller) && !row.asset) return false;
-  if (caller === 'ownerAtRead' && !OWNER_AT_READ_ROWS.has(row.key)) return false;
+  if (caller === 'ownerAtRead' && !row.named('ownerAtRead')) return false;
   if (OWNER_GUARDED.has(caller) && row.scope === null) return false;
   if (caller === 'ownerAtRead' && row.scope?.kind === 'area') return false;
-  if (caller === 'session') return ADMIN_OPEN_ROWS.has(row.key);
-  if (caller === 'frame') return FRAME_ROWS.has(row.pattern);
+  if (caller === 'session') return row.named('session');
+  if (caller === 'frame') return row.named('frame');
   return row.gone || CALLER_LOGINS[caller].includes(row.classLogins);
+}
+
+/** Whether the lists name the row `key` (`METHOD pattern`, the method
+ *  whose handler answers) of `pattern` for the caller kind `kind`:
+ *  PUBLIC_LOGIN_ROWS, OWNER_AT_READ_ROWS, ADMIN_OPEN_ROWS, FRAME_ROWS (by
+ *  pattern). A declaration names it with `caller`. */
+function listNamed(kind: NamedCaller, key: string, pattern: string): boolean {
+  switch (kind) {
+    case 'publicLogin':
+    case 'cookieUpgrade':
+      return PUBLIC_LOGIN_ROWS.get(key) === kind;
+    case 'ownerAtRead':
+      return OWNER_AT_READ_ROWS.has(key);
+    case 'session':
+      return ADMIN_OPEN_ROWS.has(key);
+    case 'frame':
+      return FRAME_ROWS.has(pattern);
+  }
 }
 
 /**
@@ -641,6 +672,9 @@ type RowFacts = Readonly<{
   key: Readonly<{ keyArea: AccessKeyArea | null; keySelf: boolean }> | null;
   alias: string | null;
   gates: RouteGates;
+  audit: 'own' | null;
+  /** Whether the row is named for a caller kind (callerServes). */
+  named: (kind: NamedCaller) => boolean;
 }>;
 
 /** The facts of a row from the lists (step 1). `m` is the row's method,
@@ -702,136 +736,100 @@ function listedFacts(
       `${answeredAs} ${pattern}`,
       alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
     ),
+    // The path the request names spells the pattern: a marked path is under
+    // the same prefixes (route-policy-declarations.test.ts proves it for
+    // every pattern and the params that could spell a listed prefix).
+    audit: isAuditSelfLogged(path) && auditsAsWrite(m, effect) ? 'own' : null,
+    named: (kind) => listNamed(kind, `${answeredAs} ${pattern}`, pattern),
   };
 }
-
-const DECLARED_CLASSES: ReadonlySet<string> = new Set([
-  'public',
-  'link',
-  'self',
-  'area',
-  'content',
-]);
-const DECLARED_OPEN: ReadonlySet<string> = new Set(['owner', 'any', 'chat', 'telegram', 'member']);
-const ITEM_NEEDS: ReadonlySet<string> = new Set(['read', 'edit', 'manage']);
-const DECLARED_KEYS: ReadonlySet<string> = new Set([
-  'class',
-  'area',
-  'public',
-  'scope',
-  'effect',
-  'open',
-  'creates',
-  'makesItems',
-  'item',
-  'keyArea',
-  'limits',
-  'aliasOf',
-]);
 
 /**
  * The facts of a row from its route file's declaration (part 2), the
  * declaration of the method whose handler answers (`answeredAs`: a HEAD the
  * GET handler answers takes its GET's). Every value is checked here, at
- * boot: a declaration that cannot hold is refused, never read as a pass.
+ * boot (validateMethodPolicy, the generator's check too, and what needs the
+ * manifest: an alias's base is served and declared): a declaration that
+ * cannot hold is refused, never read as a pass. `declaredOf` finds the
+ * declaration of another row (`METHOD pattern`), for an alias's base.
  */
 function declaredFacts(
   m: string,
   answeredAs: string,
   pattern: string,
-  path: string,
   served: (key: string) => boolean,
-  d: MethodPolicy,
+  raw: MethodPolicy,
+  declaredOf: (key: string) => MethodPolicy | undefined,
 ): RowFacts {
   const key = `${m} ${pattern}`;
   const bad = (what: string): never => {
     throw new Error(`ROUTE_POLICY: ${key} declares ${what}`);
   };
-  const raw = d as Readonly<Record<string, unknown>>;
-  for (const k of Object.keys(raw)) if (!DECLARED_KEYS.has(k)) bad(`${k}, which no row has`);
-  if (!DECLARED_CLASSES.has(d.class)) bad(`the class ${String(d.class)}, which is none`);
-  if ((d.class === 'link') !== pattern.startsWith('/s/')) {
-    bad(`the class ${d.class}: a link row is an /s route, and every /s route is one`);
-  }
-  if (d.effect !== 'read' && d.effect !== 'write') bad(`the effect ${String(d.effect)}`);
-  if ((d.class === 'area') !== 'area' in raw) bad('an area on a row that is not of the class area');
-  if (d.class === 'area' && !isWorkspaceArea(d.area)) bad(`the area ${String(d.area)}, no area`);
-  if ('public' in raw && (raw.public !== true || (d.class !== 'self' && d.class !== 'area'))) {
-    bad("public: only a 'self' or 'area' row says it (true); a 'public' or 'link' row is");
-  }
-  if ('scope' in raw && (raw.scope !== null || d.class !== 'self')) {
-    bad("scope: only a 'self' row says it (null: no owner guard serves it)");
-  }
-  if (d.open !== undefined && !DECLARED_OPEN.has(d.open)) bad(`open ${String(d.open)}`);
+  const d = validateMethodPolicy(raw, pattern, answeredAs);
+  const own = (k: string) => Object.hasOwn(d, k);
   const scope: RouteClass | null =
     d.class === 'area'
       ? { kind: 'area', area: d.area }
       : d.class === 'content'
         ? { kind: 'content' }
-        : d.class === 'self' && raw.scope !== null
+        : d.class === 'self' && !own('scope')
           ? SELF_SCOPE
           : null;
+  // The effect is the method's, or the exception the declaration states.
+  const effect = d.effect ? (Object.hasOwn(d.effect, 'read') ? 'read' : 'write') : methodEffect(m);
+  // An alias (its base's handler) or a v1 row with a base: open, creates
+  // and, for an alias, limits are the base's declaration's, one source.
+  const baseKey = d.aliasOf ?? d.base;
+  let base: MethodPolicy | null = null;
+  if (baseKey !== undefined) {
+    const b = splitRouteKey(baseKey)!;
+    if (!served(`${m} ${b.pattern}`))
+      bad(`${baseKey} as its base, which the manifest does not serve`);
+    base = declaredOf(baseKey) ?? bad(`${baseKey} as its base, which declares no policy`);
+  }
+  const from = base ?? d;
+  // A v1 row admits a login as its base does: the owner lists only.
+  const logins: RouteLogins | null = base
+    ? base.open === 'owner'
+      ? 'owner'
+      : null
+    : (d.open ?? null);
   // A 'self' row no owner guard serves is a row of a login list.
-  if (d.class === 'self' && scope === null && !d.open) bad('scope null on a row no list opens');
-  if ('creates' in raw && (raw.creates !== true || d.effect !== 'write')) {
-    bad('creates: true, on a write only');
-  }
-  if ('makesItems' in raw && (raw.makesItems !== false || d.effect !== 'write')) {
-    bad('makesItems: false, on a write only');
-  }
+  if (d.class === 'self' && scope === null && !logins) bad('scope null on a row no list opens');
+  const ownMethod = m === answeredAs;
   let item: RouteItem | null = null;
-  if (d.item !== undefined) {
-    if ('none' in d.item) {
-      if (typeof d.item.none !== 'string' || !d.item.none) bad('item none with no reason');
-    } else {
-      const seg = pattern.split('/').indexOf(`:${d.item.param}`);
-      if (seg < 0) bad(`its item in ${String(d.item.param)}, which is no param of its pattern`);
-      if (!ITEM_NEEDS.has(d.item.need)) bad(`the item need ${String(d.item.need)}`);
-      item = Object.freeze({ need: d.item.need, ref: 'node', seg });
-    }
+  if (d.item?.param !== undefined && d.item.need !== undefined) {
+    item = Object.freeze({
+      need: d.item.need,
+      ref: 'node',
+      seg: pattern.split('/').indexOf(`:${d.item.param}`),
+    });
   }
-  let keyFacts: RowFacts['key'] = null;
-  if (d.keyArea !== undefined) {
-    if (!pattern.startsWith('/api/v1/')) bad('a key area off /api/v1');
-    const area = d.keyArea;
-    if (area !== null && area !== 'self' && !ACCESS_KEY_AREAS.includes(area)) {
-      bad(`the key area ${String(area)}, which is none`);
-    }
-    keyFacts = { keyArea: area === 'self' ? null : area, keySelf: area === 'self' };
-  }
-  let alias: string | null = null;
-  if (d.aliasOf !== undefined) {
-    const at = d.aliasOf.indexOf(' ');
-    const base = at < 0 ? '' : d.aliasOf.slice(at + 1);
-    if (!pattern.startsWith('/api/v1/') || d.aliasOf.slice(0, at) !== answeredAs) {
-      bad(`aliasOf ${d.aliasOf}: an /api/v1 row's alias is the same method of its base`);
-    }
-    alias = `${m} ${base}`;
-    if (!served(alias)) bad(`aliasOf ${d.aliasOf}, which the manifest does not serve`);
-  }
-  const limits = d.limits ?? {};
-  if (
-    limits.crossSite !== undefined &&
-    limits.crossSite !== 'json' &&
-    limits.crossSite !== 'origin'
-  ) {
-    bad(`the cross-site refusal ${String(limits.crossSite)}`);
-  }
-  const own = m === answeredAs;
+  const keyArea = d.keyArea;
   return {
     scope,
     listed: d.class,
-    isPublic: d.class === 'public' || d.class === 'link' || raw.public === true,
-    logins: d.open ?? null,
-    effect: d.effect,
+    isPublic:
+      d.class === 'public' ||
+      d.class === 'link' ||
+      (d as Readonly<{ public?: true }>).public === true,
+    logins,
+    effect,
     // A HEAD the GET handler answers creates nothing and makes what a read
     // makes: the method's own declaration says it, never its GET's.
-    creates: own && d.creates === true,
-    makesItems: !(m === 'DELETE' || (own && d.makesItems === false)),
+    creates: ownMethod && from.creates === true,
+    makesItems: !(m === 'DELETE' || (ownMethod && d.makesItems === false)),
     item,
-    key: keyFacts,
-    alias,
-    gates: limits,
+    key:
+      keyArea === undefined
+        ? null
+        : { keyArea: keyArea === 'self' ? null : keyArea, keySelf: keyArea === 'self' },
+    alias: d.aliasOf !== undefined ? `${m} ${splitRouteKey(d.aliasOf)!.pattern}` : null,
+    gates: (d.aliasOf !== undefined ? base!.limits : d.limits) ?? {},
+    // Only where the row audits as a write (a HEAD the GET handler answers:
+    // where that GET writes).
+    audit: d.audit === 'own' && auditsAsWrite(m, effect) ? 'own' : null,
+    named: (kind) => d.caller === kind,
   };
 }
 
@@ -865,6 +863,9 @@ export function buildRouteRow(
      *  (a HEAD the GET handler answers: its GET's): the row's policy
      *  is read from it, not from the lists. */
     declared?: MethodPolicy;
+    /** The declaration of another row (`METHOD pattern`; a HEAD the GET
+     *  handler answers: its GET's), for a declared alias's base. */
+    declaredOf?: (key: string) => MethodPolicy | undefined;
   } = {},
 ): RouteRow {
   const m = method.toUpperCase();
@@ -884,7 +885,14 @@ export function buildRouteRow(
   const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
   const path = markedPath(pattern);
   const facts = opts.declared
-    ? declaredFacts(m, answeredAs, pattern, path, served, opts.declared)
+    ? declaredFacts(
+        m,
+        answeredAs,
+        pattern,
+        served,
+        opts.declared,
+        opts.declaredOf ?? (() => undefined),
+      )
     : listedFacts(m, answeredAs, pattern, path, served);
   const { scope, listed, isPublic, logins, effect } = facts;
   const classLogins = logins;
@@ -916,6 +924,14 @@ export function buildRouteRow(
   // called, whatever list the row is in now (RouteRow.gone).
   const gone = opts.gone === true;
   if (gone && !caller) throw new Error(`ROUTE_POLICY: ${key} is a gone stub with no caller kind`);
+  // A declared named caller is the one the code reads (the generator's
+  // caller facts), both ways: callerServes refuses a named kind the row
+  // does not declare, and this a declared kind its handler does not read.
+  if (opts.declared?.caller !== undefined && opts.declared.caller !== caller) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} declares the caller ${opts.declared.caller}, but its handler reads ${caller ?? 'none'}`,
+    );
+  }
   const routeSwitch = opts.switch ?? null;
   if (routeSwitch !== null && !Object.hasOwn(SWITCHES, routeSwitch)) {
     throw new Error(`ROUTE_POLICY: ${key} is served under ${routeSwitch}, which is no switch`);
@@ -931,6 +947,7 @@ export function buildRouteRow(
         scope,
         classLogins,
         gone,
+        named: facts.named,
       }))
   ) {
     throw new Error(
@@ -985,6 +1002,7 @@ export function buildRouteRow(
     creates: facts.creates,
     makesItems: facts.makesItems,
     item: facts.item,
+    audit: facts.audit,
     ...(facts.key ? { keyArea: facts.key.keyArea, keySelf: facts.key.keySelf } : {}),
     aliasOf: alias,
     cors: linkCors(pattern),
@@ -1037,6 +1055,17 @@ export function buildRoutePolicy(
   const { source = ROUTE_POLICY_SOURCE, ...rowOpts } = opts;
   // A page has no route file, so no declaration: its row is the lists'.
   const declared = source === 'declarations' && !opts.page;
+  // Each row's declaration by `METHOD pattern` (a HEAD the GET handler
+  // answers: its GET's), for an alias's base.
+  const byKey = new Map<string, MethodPolicy>();
+  if (declared) {
+    for (const entry of manifest) {
+      for (const [m, p] of Object.entries(entry.policy ?? {})) {
+        if (p) byKey.set(`${m} ${entry.pattern}`, p as MethodPolicy);
+      }
+    }
+  }
+  const declaredOf = (key: string) => byKey.get(key);
   for (const entry of manifest) {
     const reads = entry.reads ?? {};
     const gone = new Set(entry.gone ?? []);
@@ -1076,7 +1105,7 @@ export function buildRoutePolicy(
         gone: gone.has(as),
         switch: switches[as] ?? null,
         ownHead: as === 'HEAD',
-        ...(policy ? { declared: policy } : {}),
+        ...(policy ? { declared: policy as MethodPolicy, declaredOf } : {}),
       });
       table.set(row.key, row);
     }

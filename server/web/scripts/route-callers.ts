@@ -56,6 +56,7 @@
  */
 import { posix } from 'node:path';
 import ts from 'typescript';
+import { errorMessage } from '@mantle/std';
 import {
   CALLER_READERS,
   READER_ANSWERS,
@@ -70,8 +71,9 @@ import {
   type RouteSwitch,
 } from '../lib/auth/route-switches';
 import {
+  DECLARED_METHODS,
   ROUTE_POLICY_EXPORT,
-  isDeclaredMethod,
+  validateRoutePolicy,
   type RoutePolicyDeclaration,
 } from '../lib/auth/route-declaration';
 
@@ -139,7 +141,7 @@ export const KINDS_AT_READ: ReadonlySet<RouteCaller> = new Set(
     .map((r) => r.caller),
 );
 
-const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+const HTTP_METHODS: ReadonlySet<string> = new Set(DECLARED_METHODS);
 const READERS = new Set(CALLER_READERS);
 const GUARDS = new Set(SESSION_GUARDS);
 
@@ -970,11 +972,17 @@ const DECLARATION_MODULE = '@/lib/auth/route-declaration';
  * var, not a call of routePolicy imported by its own name from
  * DECLARATION_MODULE with one object literal, `export { x as policy }`, a
  * re-export), a value that is not a literal (a name, a call, a spread, a
- * computed key, a template with a substitution), a key named twice, and a
- * method the file does not export. What each value may be is
- * buildRouteRow's to say (route-policy.ts declaredFacts), at boot.
+ * computed key, a template with a substitution), a key named twice or
+ * `__proto__`, and a value validateRoutePolicy refuses (route-declaration.ts:
+ * the one validator, the boot's too; a method the file does not export,
+ * `route.methods`, the manifest entry's). What needs the whole manifest
+ * (an alias's base) is the boot's (route-policy.ts declaredFacts).
  */
-export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration | null {
+export function handlerPolicy(
+  src: string,
+  file: string,
+  route: Readonly<{ pattern: string; methods: readonly string[] }>,
+): RoutePolicyDeclaration | null {
   const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
   const fail = (node: ts.Node, msg: string): never => {
@@ -982,7 +990,6 @@ export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration
     throw new Error(`${file}:${line + 1}: ${msg}`);
   };
   const NAME = ROUTE_POLICY_EXPORT;
-  const exported = new Set<string>();
   let declared: ts.VariableDeclaration | null = null;
   let call: ts.CallExpression | null = null;
   let importedAs: string | null = null;
@@ -1003,12 +1010,9 @@ export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration
       hasModifier(st, ts.SyntaxKind.ExportKeyword)
     ) {
       if (st.name.text === NAME) fail(st, `${NAME} is a function: declare it with routePolicy`);
-      if (HTTP_METHODS.has(st.name.text)) exported.add(st.name.text);
     } else if (ts.isVariableStatement(st) && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
       for (const d of st.declarationList.declarations) {
-        if (!ts.isIdentifier(d.name)) continue;
-        if (HTTP_METHODS.has(d.name.text)) exported.add(d.name.text);
-        if (d.name.text !== NAME) continue;
+        if (!ts.isIdentifier(d.name) || d.name.text !== NAME) continue;
         declared = d;
         if ((st.declarationList.flags & ts.NodeFlags.Const) === 0) {
           fail(d, `${NAME} is declared with let or var: declare it with const`);
@@ -1034,7 +1038,6 @@ export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration
         if (el.name.text === NAME) {
           fail(el, `${NAME} is exported by name: declare it here with routePolicy({ ... })`);
         }
-        if (HTTP_METHODS.has(el.name.text)) exported.add(el.name.text);
       }
     }
   }
@@ -1053,13 +1056,15 @@ export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration
       });
     }
     if (ts.isObjectLiteralExpression(b)) {
-      const out: Record<string, unknown> = {};
+      // No prototype: a key is only ever data (`__proto__` is refused too).
+      const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
       for (const p of b.properties) {
         if (!ts.isPropertyAssignment(p))
           fail(p, `${NAME}: each entry is a key to a literal, written out`);
         const a = p as ts.PropertyAssignment;
         const k = ts.isIdentifier(a.name) || ts.isStringLiteral(a.name) ? a.name.text : null;
         if (k === null) fail(a.name, `${NAME}: ${a.name.getText(sf)} is a computed key`);
+        if (k === '__proto__') fail(a.name, `${NAME}: __proto__ is no key of a declaration`);
         if (Object.hasOwn(out, k!)) fail(a.name, `${NAME}: ${k} is named twice`);
         out[k!] = value(a.initializer);
       }
@@ -1068,15 +1073,9 @@ export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration
     return fail(b, `${NAME}: ${b.getText(sf)} is not a literal: a declaration is data`);
   };
   const decl = value(call.arguments[0]!);
-  if (!decl || typeof decl !== 'object' || Array.isArray(decl)) {
-    fail(call, `${NAME}: routePolicy takes an object of methods`);
+  try {
+    return validateRoutePolicy(decl, route.pattern, route.methods);
+  } catch (e) {
+    return fail(call, errorMessage(e));
   }
-  const out: Record<string, unknown> = {};
-  for (const [m, v] of Object.entries(decl as Record<string, unknown>)) {
-    if (!isDeclaredMethod(m)) fail(call, `${NAME}: ${m} is no method`);
-    if (!exported.has(m)) fail(call, `${NAME}: ${m} is a method this file does not export`);
-    if (!v || typeof v !== 'object' || Array.isArray(v)) fail(call, `${NAME}.${m} is no policy`);
-    out[m] = v;
-  }
-  return out as RoutePolicyDeclaration;
 }

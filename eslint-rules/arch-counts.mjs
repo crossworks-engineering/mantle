@@ -401,10 +401,25 @@ export function routePolicyLists(text) {
     .filter((n) => n >= 3);
 }
 
+/** The files of the HTTP tier's own code that hold route lists that are
+ *  no policy, each with why. */
+const ROUTE_LISTS_NOT_POLICY = Object.freeze({
+  // The session sweep's expectations, each route's answer per role: test
+  // data under server/, read by the sweeps only (the route declarations,
+  // plan v3.2: the owner's decision of 2026-10-22).
+  'server/web/server/public-session-routes.ts': 'test data',
+});
+
 /** Whether route policy lists are looked for in `path`: the HTTP tier's
- *  own code, not its route handlers. */
+ *  own code, not its route handlers, nor a file of
+ *  ROUTE_LISTS_NOT_POLICY. */
 export function routePolicySwept(path) {
-  return isCounted(path) && /^server\/web\/(lib|server)\//.test(path) && !/\/route\.ts$/.test(path);
+  return (
+    isCounted(path) &&
+    /^server\/web\/(lib|server)\//.test(path) &&
+    !/\/route\.ts$/.test(path) &&
+    !Object.hasOwn(ROUTE_LISTS_NOT_POLICY, path)
+  );
 }
 
 // ── kinds ───────────────────────────────────────────────────────────────────

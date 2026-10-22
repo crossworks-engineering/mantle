@@ -107,22 +107,31 @@ function sameData(a: unknown, b: unknown): boolean {
 
 /**
  * Whether a loaded route module's `policy` is the one its rows were built
- * from (the route declarations): the generator reads the declaration from the code, the module
- * exports its value, and the two must be one (a manifest older than the
- * file would answer for a policy the file no longer holds). Asked when the
- * module is first loaded, where the rows are read from the declarations; a
- * module that exports another throws. A module that exports none is not
- * asked: a test's stand-in module (`load: async () => ({ GET })`) has no
- * file, and a route file without one is refused at boot already
- * (buildRoutePolicy). The lists' rows read no declaration (`source`).
+ * from (the route declarations): the generator reads the declaration from
+ * the code, the module exports its value, and the two must be one (a
+ * manifest older than the file would answer for a policy the file no longer
+ * holds). Asked when the module is first loaded, where the rows are read
+ * from the declarations: a module that exports another throws, and so does
+ * one that exports none where the manifest carries one. A test's stand-in
+ * routes (`load: async () => ({ GET })`, no file) opt out by name
+ * (`standIn`, registerRoutes' `{ standIn: true }`). The lists' rows read
+ * no declaration (`source`).
  */
 export function checkLoadedPolicy(
   entry: Pick<RouteEntry, 'pattern' | 'policy'>,
   mod: RouteModule,
   source: RoutePolicySource = ROUTE_POLICY_SOURCE,
+  opts: Readonly<{ standIn?: boolean }> = {},
 ): void {
-  if (source !== 'declarations' || !Object.hasOwn(mod, ROUTE_POLICY_EXPORT)) return;
-  if (!sameData(mod[ROUTE_POLICY_EXPORT], entry.policy ?? null)) {
+  if (source !== 'declarations' || opts.standIn === true) return;
+  const exported = Object.hasOwn(mod, ROUTE_POLICY_EXPORT) ? mod[ROUTE_POLICY_EXPORT] : undefined;
+  if (exported === undefined && entry.policy === undefined) return;
+  if (exported === undefined) {
+    throw new Error(
+      `${entry.pattern}: the manifest carries a ${ROUTE_POLICY_EXPORT} the module does not export (regenerate it)`,
+    );
+  }
+  if (!sameData(exported, entry.policy ?? null)) {
     throw new Error(
       `${entry.pattern}: the module's ${ROUTE_POLICY_EXPORT} is not the one the manifest read (regenerate it)`,
     );
@@ -194,6 +203,7 @@ export function registerRoutes(
   rows: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }> = buildRoutePolicy(manifest),
 ): void {
   const policy = 'standIn' in rows ? buildRoutePolicy(manifest, rows) : rows;
+  const standIn = 'standIn' in rows && rows.standIn === true;
   for (const entry of manifest) {
     const rowsFor = (methods: string[]): ReadonlyMap<string, RouteRow> =>
       new Map(
@@ -207,7 +217,7 @@ export function registerRoutes(
     compileSpelling(entry.pattern);
     const load = memoize(async () => {
       const mod = await entry.load();
-      checkLoadedPolicy(entry, mod);
+      checkLoadedPolicy(entry, mod, ROUTE_POLICY_SOURCE, { standIn });
       return mod;
     });
     const isCatchAll = entry.catchAll !== null;

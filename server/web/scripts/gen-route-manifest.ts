@@ -25,7 +25,7 @@ import {
   type RouteFileReads,
 } from './route-callers';
 import { ROUTE_SWITCH_NAMES } from '../lib/auth/route-switches';
-import type { RoutePolicyDeclaration } from '../lib/auth/route-declaration';
+import { DECLARED_METHODS, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { READER_ANSWERS } from '../../../eslint-rules/session-guards.mjs';
 
 /** Every caller kind a reader reads (the one list, session-guards.mjs), in
@@ -35,7 +35,8 @@ const CALLER_KINDS = [...new Set(Object.values(READER_ANSWERS).map((r) => r.call
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
 
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+/** The HTTP methods a route file exports (the declaration's own list). */
+const HTTP_METHODS = DECLARED_METHODS;
 
 type Entry = {
   /** Path relative to server/web (posix), e.g. app/api/health/route.ts */
@@ -163,14 +164,17 @@ function toEntry(absFile: string): Entry {
     }
   }
   const src = readFileSync(absFile, 'utf8');
+  const file = relative(webRoot, absFile).split('\\').join('/');
+  const pattern = '/' + segments.join('/');
+  const methods = exportedMethods(src);
   return {
-    file: relative(webRoot, absFile).split('\\').join('/'),
-    pattern: '/' + segments.join('/'),
-    methods: exportedMethods(src),
+    file,
+    pattern,
+    methods,
     reads: analysisOf(absFile).callers,
     gone: Object.keys(analysisOf(absFile).gone),
     switches: switchesOf(absFile),
-    policy: handlerPolicy(src, relative(webRoot, absFile).split('\\').join('/')),
+    policy: handlerPolicy(src, file, { pattern, methods }),
     catchAll,
     catchAllOptional,
     segments,

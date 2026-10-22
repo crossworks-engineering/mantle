@@ -18,6 +18,7 @@
  * `.body`, on the handler's request: a parameter typed `Request`, or one
  * named req, request or _req.
  */
+import { DECLARED_METHODS, ROUTE_POLICY_EXPORT } from '../server/web/lib/auth/route-declaration.ts';
 
 /** The route files that read their body another way, each with why. */
 export const BODY_READ_ALLOW = Object.freeze({
@@ -369,11 +370,11 @@ export const noRouteRateLimits = {
   },
 };
 
-const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
-
-/** The name of a route file's policy export (server/web/lib/auth/route-declaration.ts
- *  ROUTE_POLICY_EXPORT; plain JS here, pinned equal by route-plumbing.test.ts). */
-export const ROUTE_POLICY_EXPORT = 'policy';
+/** The HTTP methods a route file exports and the name of its policy
+ *  export: the declaration's own (route-declaration.ts, the one shape
+ *  source; Node loads the TypeScript file as it is). */
+const HTTP_METHODS = new Set(DECLARED_METHODS);
+export { ROUTE_POLICY_EXPORT };
 
 /**
  * route-policy-declared (the route declarations, plan v3.2): every route file declares its

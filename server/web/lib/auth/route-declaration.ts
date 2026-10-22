@@ -4,8 +4,8 @@
  * the file and no list elsewhere has to name the route.
  *
  *     export const policy = routePolicy({
- *       GET: { class: 'content', effect: 'read', open: 'owner' },
- *       POST: { class: 'content', effect: 'write', open: 'owner', creates: true },
+ *       GET: { class: 'content', open: 'owner' },
+ *       POST: { class: 'content', open: 'owner', creates: true, item: { none: '...' } },
  *     });
  *
  * The route manifest generator reads the declaration from the code
@@ -17,10 +17,16 @@
  * proves the declarations the codemod (scripts/route-policy-codemod.ts)
  * derives from them build every row equal.
  *
- * Only names and types here: no dependency on the app, so the generator
- * reads it without loading anything (as route-switches.ts).
+ * One shape source: the const arrays below give the type, the checks of
+ * validateMethodPolicy (the generator's, at pretypecheck, and the boot's,
+ * route-policy.ts declaredFacts) and the lint's constants
+ * (eslint-rules/route-plumbing.mjs imports this file). So it imports no
+ * module of the app at run time, only the client types' name lists (Node
+ * loads it as it is for the lint).
  */
 import type { WorkspaceArea } from '@mantle/client-types';
+import { isWorkspaceArea } from '@mantle/client-types/dto/workspaces';
+import { ACCESS_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import type { AccessKeyArea } from '../access-keys';
 import type { RateLimitName } from '../route-limits';
 
@@ -28,7 +34,8 @@ import type { RateLimitName } from '../route-limits';
 export const ROUTE_POLICY_EXPORT = 'policy';
 
 /** The methods a declaration names (a HEAD the GET handler answers takes
- *  its GET's; a route that exports its own HEAD declares it). */
+ *  its GET's; a route that exports its own HEAD declares it). The HTTP
+ *  methods a route file exports, for the generator and the lint too. */
 export const DECLARED_METHODS = [
   'GET',
   'POST',
@@ -41,66 +48,360 @@ export const DECLARED_METHODS = [
 
 export type DeclaredMethod = (typeof DECLARED_METHODS)[number];
 
+/** The methods that read (route-scope.ts isReadRequest): every other one
+ *  writes. A declaration states only an exception (`effect`). */
+export const READ_METHODS = ['GET', 'HEAD'] as const;
+type ReadMethod = (typeof READ_METHODS)[number];
+type WriteMethod = Exclude<DeclaredMethod, ReadMethod>;
+
+/** The effect of `method` when its declaration states no exception. */
+export function methodEffect(method: string): 'read' | 'write' {
+  return (READ_METHODS as readonly string[]).includes(method.toUpperCase()) ? 'read' : 'write';
+}
+
+/** The classes a row is declared with. */
+export const DECLARED_CLASSES = ['public', 'link', 'self', 'area', 'content'] as const;
+
 /** Which login list opens the route to a login outside Admin (RouteRow
  *  `logins`): the owner routes a member may call, the any-login routes,
  *  the chat routes, the Telegram pairing routes, the member routes. None:
  *  a user of Admin only. */
-export type DeclaredOpen = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
+export const DECLARED_OPEN = ['owner', 'any', 'chat', 'telegram', 'member'] as const;
+export type DeclaredOpen = (typeof DECLARED_OPEN)[number];
+
+/** What a write needs of the item its path names. */
+export const ITEM_NEEDS = ['read', 'edit', 'manage'] as const;
+/** The keys of an item a write names, and of an item it does not. */
+export const ITEM_KEYS = ['param', 'need'] as const;
+export const ITEM_NONE_KEYS = ['none'] as const;
+
+/** The reason the codemod writes where the facts give none: a write whose
+ *  path names an item no check reads yet. The lint can forbid it once
+ *  each is decided. */
+export const ITEM_NONE_PLACEHOLDER = 'not decided yet: the write names an item no check reads';
 
 /** The item a write names (RouteRow `item`): the path param that holds
- *  its id and what the write needs of it; or none, with the reason (plan
- *  v3.2 S11b: every write row says one). */
+ *  its id and what the write needs of it; or none, with the reason. Every
+ *  write says one (plan v3.2 S11b); a read says none. */
 export type DeclaredItem =
-  Readonly<{ param: string; need: 'read' | 'edit' | 'manage' }> | Readonly<{ none: string }>;
+  | Readonly<{ param: string; need: (typeof ITEM_NEEDS)[number]; none?: never }>
+  | Readonly<{ none: string; param?: never; need?: never }>;
 
-/** What the gate checks of the request before its handler (RouteRow
- *  `crossSite` and `rateLimit`; route-limits.ts RATE_LIMITS names each
- *  limit). */
+/** The keys of `limits` (RouteRow `crossSite` and `rateLimit`). */
+export const LIMIT_KEYS = ['crossSite', 'rateLimit'] as const;
+export const CROSS_SITE = ['json', 'origin'] as const;
+
+/** What the gate checks of the request before its handler (route-limits.ts
+ *  RATE_LIMITS names each limit). */
 export type DeclaredLimits = Readonly<{
-  crossSite?: 'json' | 'origin';
+  crossSite?: (typeof CROSS_SITE)[number];
   rateLimit?: readonly RateLimitName[];
 }>;
 
+/** The caller kinds read only on a row named for each (route-policy.ts
+ *  callerServes): the login a public row reads ('publicLogin',
+ *  'cookieUpgrade'), the owner taken at the read ('ownerAtRead'), the
+ *  session user of an Admin row open to every Admin user ('session'), the
+ *  frame ticket of a sandbox frame document ('frame'). A row names its
+ *  kind here; the generator reads the kind its handler reads from the
+ *  code, and the two must be one. */
+export const NAMED_CALLERS = [
+  'publicLogin',
+  'cookieUpgrade',
+  'ownerAtRead',
+  'session',
+  'frame',
+] as const;
+export type NamedCaller = (typeof NAMED_CALLERS)[number];
+
+/** The keys of an effect exception: the effect, to why. */
+export const EFFECT_KEYS = ['read', 'write'] as const;
+
+/** Every key a method's policy may have. */
+export const DECLARED_KEYS = [
+  'class',
+  'area',
+  'public',
+  'scope',
+  'effect',
+  'open',
+  'caller',
+  'creates',
+  'makesItems',
+  'item',
+  'keyArea',
+  'limits',
+  'aliasOf',
+  'base',
+  'audit',
+] as const;
+type DeclaredKey = (typeof DECLARED_KEYS)[number];
+
 type Common = Readonly<{
-  /** Whether the method only reads (a POST may, a GET may write). */
-  effect: 'read' | 'write';
   open?: DeclaredOpen;
-  /** It creates an item: ?ws= names where it lands. */
+  /** The named caller kind its handler reads (NAMED_CALLERS). */
+  caller?: NamedCaller;
+  /** It creates an item: ?ws= names where it lands. A write only. */
   creates?: true;
   /** A write that makes no item (the login's own marks, running an app):
    *  its private workspace is never made for it. A DELETE never makes one. */
   makesItems?: false;
-  item?: DeclaredItem;
   /** An /api/v1 row of the key table: the area a key needs (null: a key
    *  with every area), or 'self', about the key itself (whoami). */
   keyArea?: AccessKeyArea | null | 'self';
   limits?: DeclaredLimits;
   /** An /api/v1 alias: the base route whose handler the file re-exports
-   *  (`METHOD pattern`). */
+   *  (`METHOD pattern`). Its open, creates and limits are the base's
+   *  (open: 'owner' or none), so it declares none of them. */
   aliasOf?: string;
+  /** An /api/v1 row with a handler of its own that admits a login as a
+   *  base route does (`METHOD pattern`): its open and creates are the
+   *  base's (open: 'owner' or none), so it declares neither. */
+  base?: string;
+  /** The write logs its own audit event: the generic `api.write` row is
+   *  not written (was AUDIT_SELF_LOGGED_PATHS). A row that audits as a
+   *  write only. */
+  audit?: 'own';
 }>;
 
-/** One method's policy. `class` is the row's class; an `area` row names the
- *  Admin area it manages. `public`: the gate lets it in with no credential
- *  (a 'public' or 'link' row always is; a 'self' or 'area' row may be, as
- *  sign-in or the branding). `scope: null` on a 'self' row: no owner guard
- *  serves it (an any-login route outside every owner prefix). */
-export type MethodPolicy =
-  | (Common & Readonly<{ class: 'area'; area: WorkspaceArea; public?: true }>)
-  | (Common & Readonly<{ class: 'content' }>)
-  | (Common & Readonly<{ class: 'self'; public?: true; scope?: null }>)
-  | (Common & Readonly<{ class: 'public' | 'link' }>);
+/** `class` is the row's class; an `area` row names the Admin area it
+ *  manages. `public`: the gate lets it in with no credential (a 'public'
+ *  or 'link' row always is; a 'self' or 'area' row may be, as sign-in or
+ *  the branding). `scope: null` on a 'self' row: no owner guard serves it
+ *  (an any-login route outside every owner prefix). */
+type ClassPart =
+  | Readonly<{ class: 'area'; area: WorkspaceArea; public?: true }>
+  | Readonly<{ class: 'content' }>
+  | Readonly<{ class: 'self'; public?: true; scope?: null }>
+  | Readonly<{ class: 'public' | 'link' }>;
+
+/** A GET or HEAD reads, unless it states the write it is and why; then it
+ *  says its item, as every write does. */
+type ReadEffect =
+  | Readonly<{ effect?: never; item?: never }>
+  | Readonly<{ effect: Readonly<{ write: string }>; item: DeclaredItem }>;
+
+/** Any other method writes and says its item, unless it states the read
+ *  it is and why. */
+type WriteEffect =
+  | Readonly<{ effect?: never; item: DeclaredItem }>
+  | Readonly<{ effect: Readonly<{ read: string }>; item?: never }>;
+
+/** The policy of a GET or a HEAD. */
+export type ReadMethodPolicy = Common & ClassPart & ReadEffect;
+/** The policy of any other method. */
+export type WriteMethodPolicy = Common & ClassPart & WriteEffect;
+/** One method's policy. */
+export type MethodPolicy = ReadMethodPolicy | WriteMethodPolicy;
 
 /** A route file's declaration: each method it exports to its policy. */
-export type RoutePolicyDeclaration = Readonly<Partial<Record<DeclaredMethod, MethodPolicy>>>;
+export type RoutePolicyDeclaration = Readonly<
+  { [M in ReadMethod]?: ReadMethodPolicy } & { [M in WriteMethod]?: WriteMethodPolicy }
+>;
+
+// The keys the type allows are DECLARED_KEYS, no more and no fewer.
+type KeysOf<T> = T extends unknown ? keyof T : never;
+type Same<A, B> = [Exclude<A, B>, Exclude<B, A>] extends [never, never] ? true : false;
+const keysAreTheShape: Same<KeysOf<MethodPolicy>, DeclaredKey> = true;
+void keysAreTheShape;
 
 /** A route file's policy, as declared (the identity: the type checks the
- *  shape, buildRouteRow the values). */
-export function routePolicy<const T extends RoutePolicyDeclaration>(declaration: T): T {
+ *  shape at every level, validateMethodPolicy the values). Not generic,
+ *  so an excess key is an error wherever it is written. */
+export function routePolicy(declaration: RoutePolicyDeclaration): RoutePolicyDeclaration {
   return declaration;
 }
 
 /** Whether `name` is a method a declaration may name. */
 export function isDeclaredMethod(name: string): name is DeclaredMethod {
   return (DECLARED_METHODS as readonly string[]).includes(name);
+}
+
+const has = (list: readonly string[], v: unknown): boolean =>
+  typeof v === 'string' && list.includes(v);
+
+/** A plain object (not null, not an array) whose keys are each in `keys`
+ *  and none `__proto__`; else the reason it is not. */
+function exactObject(v: unknown, keys: readonly string[]): string | null {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return 'is no object';
+  for (const k of Object.keys(v)) {
+    if (k === '__proto__' || !keys.includes(k)) return `has the key ${k}, which it may not`;
+  }
+  return null;
+}
+
+/** What an alias takes from its base's declaration (it runs the base's
+ *  handler), and what a v1 row with a `base` takes (its own handler, its
+ *  own limits). Neither declares them. */
+export const ALIAS_COPIES = ['open', 'creates', 'limits'] as const;
+export const BASE_COPIES = ['open', 'creates'] as const;
+
+/** The base route an alias or `base` names: `METHOD pattern`. */
+export function splitRouteKey(key: string): { method: string; pattern: string } | null {
+  const at = key.indexOf(' ');
+  if (at < 1) return null;
+  return { method: key.slice(0, at), pattern: key.slice(at + 1) };
+}
+
+/**
+ * Check one method's declared policy: the one validator, run by the
+ * generator on each route file it reads (scripts/route-callers.ts
+ * handlerPolicy, at pretypecheck) and by the boot on each row it builds
+ * from a declaration (route-policy.ts declaredFacts). Pure: it reads only
+ * the value, the route's pattern and the method it is declared for. What
+ * needs the whole manifest (an alias's base is served and declared, the
+ * caller the code reads is the named one) and the rate limits' names
+ * (route-limits.ts, also the type's) are the boot's. Throws on the first
+ * thing that cannot hold; returns the value, typed.
+ */
+export function validateMethodPolicy(raw: unknown, pattern: string, method: string): MethodPolicy {
+  const bad = (what: string): never => {
+    throw new Error(`ROUTE_POLICY: ${method} ${pattern} declares ${what}`);
+  };
+  if (!isDeclaredMethod(method)) bad(`a policy for ${method}, which is no method`);
+  const shape = exactObject(raw, DECLARED_KEYS);
+  if (shape) bad(`a policy that ${shape}`);
+  const d = raw as Readonly<Record<string, unknown>>;
+  const own = (k: DeclaredKey) => Object.hasOwn(d, k);
+  if (!has(DECLARED_CLASSES, d.class)) bad(`the class ${String(d.class)}, which is none`);
+  const cls = d.class as (typeof DECLARED_CLASSES)[number];
+  if ((cls === 'link') !== pattern.startsWith('/s/')) {
+    bad(`the class ${cls}: a link row is an /s route, and every /s route is one`);
+  }
+  if ((cls === 'area') !== own('area')) bad('an area on a row that is not of the class area');
+  if (cls === 'area' && !isWorkspaceArea(d.area)) bad(`the area ${String(d.area)}, no area`);
+  if (own('public') && (d.public !== true || (cls !== 'self' && cls !== 'area'))) {
+    bad("public: only a 'self' or 'area' row says it (true); a 'public' or 'link' row is");
+  }
+  if (own('scope') && (d.scope !== null || cls !== 'self')) {
+    bad("scope: only a 'self' row says it (null: no owner guard serves it)");
+  }
+  const isPublic = cls === 'public' || cls === 'link' || d.public === true;
+
+  // The effect is the method's; a declaration states only an exception.
+  let effect = methodEffect(method);
+  if (own('effect')) {
+    const e = exactObject(d.effect, EFFECT_KEYS);
+    const keys = e ? [] : Object.keys(d.effect as object);
+    if (e || keys.length !== 1) bad('an effect that is not { read: why } or { write: why }');
+    const [k] = keys as Array<'read' | 'write'>;
+    const why = (d.effect as Record<string, unknown>)[k!];
+    if (typeof why !== 'string' || !why.trim()) bad(`the effect ${k} with no reason`);
+    if (k === effect) bad(`the effect ${k}, which a ${method} is: state only an exception`);
+    effect = k!;
+  }
+  const writes = effect === 'write';
+
+  if (own('open') && !has(DECLARED_OPEN, d.open)) bad(`open ${String(d.open)}`);
+  if (own('creates') && (d.creates !== true || !writes)) bad('creates: true, on a write only');
+  if (own('makesItems') && (d.makesItems !== false || !writes)) {
+    bad('makesItems: false, on a write only');
+  }
+
+  // Every write says its item; a read says none.
+  if (own('item') !== writes) {
+    bad(writes ? 'no item: a write says its item, or none and why' : 'an item on a read');
+  }
+  if (own('item')) {
+    const it = d.item as Readonly<Record<string, unknown>> | null;
+    if (it !== null && typeof it === 'object' && Object.hasOwn(it, 'none')) {
+      const e = exactObject(it, ITEM_NONE_KEYS);
+      if (e) bad(`an item that ${e}`);
+      if (typeof it.none !== 'string' || !it.none.trim()) bad('item none with no reason');
+    } else {
+      const e = exactObject(it, ITEM_KEYS);
+      if (e) bad(`an item that ${e}`);
+      const param = it!.param;
+      if (typeof param !== 'string' || !pattern.split('/').includes(`:${param}`)) {
+        bad(`its item in ${String(param)}, which is no param of its pattern`);
+      }
+      if (!has(ITEM_NEEDS, it!.need)) bad(`the item need ${String(it!.need)}`);
+    }
+  }
+
+  if (own('caller')) {
+    if (!has(NAMED_CALLERS, d.caller)) bad(`the caller ${String(d.caller)}, no named kind`);
+    const publicKind = d.caller === 'publicLogin' || d.caller === 'cookieUpgrade';
+    if (publicKind !== isPublic) {
+      bad(`the caller ${String(d.caller)}: a public row reads a public kind, and only it`);
+    }
+    if (d.caller === 'session' && (cls !== 'self' || own('open'))) {
+      bad("the caller session: a 'self' row open to every Admin user, and no list");
+    }
+    if (d.caller === 'ownerAtRead' && cls === 'area') {
+      bad('the caller ownerAtRead on an area row: the Admin step comes first');
+    }
+  }
+
+  const v1 = pattern.startsWith('/api/v1/');
+  if (own('keyArea')) {
+    if (!v1) bad('a key area off /api/v1');
+    const area = d.keyArea;
+    if (area !== null && area !== 'self' && !has(ACCESS_KEY_AREAS, area)) {
+      bad(`the key area ${String(area)}, which is none`);
+    }
+  }
+
+  for (const k of ['aliasOf', 'base'] as const) {
+    if (!own(k)) continue;
+    const base = typeof d[k] === 'string' ? splitRouteKey(d[k] as string) : null;
+    if (!v1 || !base || base.method !== method || base.pattern.startsWith('/api/v1/')) {
+      bad(`${k} ${String(d[k])}: an /api/v1 row's base is the same method of a route off it`);
+    }
+    // One source: the base's own declaration says them.
+    const copies = k === 'aliasOf' ? ALIAS_COPIES : BASE_COPIES;
+    for (const copied of copies) {
+      if (own(copied)) bad(`${copied} beside ${k}: the base route's declaration says it`);
+    }
+  }
+  if (own('aliasOf') && own('base')) bad('both aliasOf and base: an alias runs its base');
+
+  if (own('limits')) {
+    const e = exactObject(d.limits, LIMIT_KEYS);
+    if (e) bad(`limits that ${e}`);
+    const l = d.limits as Readonly<Record<string, unknown>>;
+    if (Object.hasOwn(l, 'crossSite') && !has(CROSS_SITE, l.crossSite)) {
+      bad(`the cross-site refusal ${String(l.crossSite)}`);
+    }
+    if (Object.hasOwn(l, 'rateLimit')) {
+      const r = l.rateLimit;
+      if (!Array.isArray(r) || !r.every((n) => typeof n === 'string' && n)) {
+        bad('a rate limit that is not a list of names');
+      }
+      if (new Set(r as string[]).size !== (r as string[]).length) bad('a rate limit named twice');
+    }
+  }
+
+  if (own('audit')) {
+    // The generic audit row is written for a mutating method or a row that
+    // writes (route-scope.ts auditsAsWrite): `audit` says something only
+    // there.
+    const audits =
+      writes || !(READ_METHODS as readonly string[]).concat('OPTIONS').includes(method);
+    if (d.audit !== 'own' || !audits) bad("audit: 'own', on a row that audits as a write only");
+  }
+  return d as MethodPolicy;
+}
+
+/**
+ * Check a route file's whole declaration: an object of methods, each one
+ * the file exports (`methods`, the manifest entry's), each method's policy
+ * valid (validateMethodPolicy). Returns it, typed.
+ */
+export function validateRoutePolicy(
+  raw: unknown,
+  pattern: string,
+  methods: readonly string[],
+): RoutePolicyDeclaration {
+  const shape = exactObject(raw, DECLARED_METHODS);
+  if (shape) throw new Error(`ROUTE_POLICY: ${pattern} declares a policy that ${shape}`);
+  for (const [m, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!methods.includes(m)) {
+      throw new Error(
+        `ROUTE_POLICY: ${pattern} declares a policy for ${m}, which it does not serve`,
+      );
+    }
+    validateMethodPolicy(v, pattern, m);
+  }
+  return raw as RoutePolicyDeclaration;
 }

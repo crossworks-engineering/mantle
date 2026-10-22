@@ -6,26 +6,29 @@
  * the declaration written (and refuses what is not data).
  */
 import { describe, expect, it } from 'vitest';
-import type { RoutePolicyDeclaration } from '../lib/auth/route-declaration';
+import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { buildRouteRow } from '../lib/auth/route-policy';
 import { handlerPolicy } from './route-callers';
 import {
   CannotExpress,
   applyDeclaration,
+  itemNoneReason,
   renderDeclaration,
   rowDeclaration,
 } from './route-declarations';
 
 const DECL: RoutePolicyDeclaration = {
-  GET: { class: 'content', effect: 'read', open: 'owner' },
+  GET: { class: 'content', open: 'owner' },
   POST: {
     class: 'content',
-    effect: 'write',
     open: 'owner',
     creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
     limits: { crossSite: 'json', rateLimit: ['authLogin'] },
   },
 };
+/** The route of `file`, as the manifest entry says it. */
+const ROUTE = { pattern: '/api/notes', methods: ['GET', 'POST'] };
 const IMPORT = "import { routePolicy } from '@/lib/auth/route-declaration';";
 const file = 'app/api/notes/route.ts';
 
@@ -34,8 +37,8 @@ describe('renderDeclaration', () => {
     expect(renderDeclaration({ POST: DECL.POST!, GET: DECL.GET! })).toBe(
       [
         'export const policy = routePolicy({',
-        "  GET: { class: 'content', effect: 'read', open: 'owner' },",
-        "  POST: { class: 'content', effect: 'write', open: 'owner', creates: true, limits: { crossSite: 'json', rateLimit: ['authLogin'] } },",
+        "  GET: { class: 'content', open: 'owner' },",
+        "  POST: { class: 'content', open: 'owner', creates: true, item: { none: 'creates an item: ?ws= names where it lands' }, limits: { crossSite: 'json', rateLimit: ['authLogin'] } },",
         '});',
       ].join('\n'),
     );
@@ -73,7 +76,7 @@ describe('applyDeclaration', () => {
       ].join('\n'),
     );
     expect(applyDeclaration(once, file, statement)).toBe(once);
-    expect(handlerPolicy(once, file)).toEqual(DECL);
+    expect(handlerPolicy(once, file, ROUTE)).toEqual(DECL);
   });
 
   it('goes after the imports when there is no routeParams, at the end when there is no import', () => {
@@ -91,17 +94,19 @@ describe('applyDeclaration', () => {
     const out = applyDeclaration(alias, file, renderDeclaration({ GET: DECL.GET! }));
     expect(out.startsWith(`${IMPORT}\n/** v1`)).toBe(true);
     expect(out.trimEnd().endsWith('});')).toBe(true);
-    expect(handlerPolicy(out, file)).toEqual({ GET: DECL.GET });
+    expect(handlerPolicy(out, file, { pattern: '/api/notes', methods: ['GET'] })).toEqual({
+      GET: DECL.GET,
+    });
   });
 
   it('replaces a declaration that is not what the lists say, and keeps the one import', () => {
     const old = applyDeclaration(
       'export async function GET() {}\nexport async function POST() {}\n',
       file,
-      renderDeclaration({ GET: DECL.GET!, POST: { class: 'content', effect: 'read' } }),
+      renderDeclaration({ GET: DECL.GET!, POST: { class: 'content', item: { none: 'x' } } }),
     );
     const now = applyDeclaration(old, file, renderDeclaration(DECL));
-    expect(handlerPolicy(now, file)).toEqual(DECL);
+    expect(handlerPolicy(now, file, ROUTE)).toEqual(DECL);
     expect(now.split(IMPORT).length).toBe(2);
   });
 });
@@ -109,64 +114,91 @@ describe('applyDeclaration', () => {
 describe('handlerPolicy', () => {
   const src = (decl: string, extra = '') =>
     `${IMPORT}\n${extra}export async function GET() {}\nexport async function POST() {}\n${decl}\n`;
+  const V1 = { pattern: '/api/v1/x', methods: ['GET', 'POST'] };
 
   it('reads none where the file declares none', () => {
-    expect(handlerPolicy('export async function GET() {}\n', file)).toBeNull();
+    expect(handlerPolicy('export async function GET() {}\n', file, ROUTE)).toBeNull();
   });
 
   it('reads the literals of a declaration, prettier-wrapped or not', () => {
     const text = `export const policy = routePolicy({
-  GET: { class: 'content', effect: 'read', keyArea: null, scope: null, aliasOf: \`GET /api/x\` },
+  GET: { class: 'content', keyArea: null, aliasOf: \`GET /api/x\` },
   POST: {
     class: 'area',
     area: 'settings',
-    effect: 'write',
+    item: { none: 'manages the settings area' },
     limits: { rateLimit: ['authLogin', 'authSignup'] },
   },
 });`;
-    expect(handlerPolicy(src(text), file)).toEqual({
-      GET: { class: 'content', effect: 'read', keyArea: null, scope: null, aliasOf: 'GET /api/x' },
+    const read = handlerPolicy(src(text), file, V1);
+    expect(read).toEqual({
+      GET: { class: 'content', keyArea: null, aliasOf: 'GET /api/x' },
       POST: {
         class: 'area',
         area: 'settings',
-        effect: 'write',
+        item: { none: 'manages the settings area' },
         limits: { rateLimit: ['authLogin', 'authSignup'] },
       },
     });
+    // Data with no prototype: a key is only ever a key.
+    expect(Object.getPrototypeOf(read!.POST)).toBeNull();
   });
 
   it('refuses what is not data, or not written out', () => {
     const refuses = (text: string, why: RegExp, extra = '') =>
-      expect(() => handlerPolicy(src(text, extra), file)).toThrow(why);
+      expect(() => handlerPolicy(src(text, extra), file, ROUTE)).toThrow(why);
     refuses("export let policy = routePolicy({ GET: { class: 'content' } });", /let or var/);
     refuses("export const policy = { GET: { class: 'content' } };", /not routePolicy/);
     refuses('export const policy = routePolicy({ GET: X });', /not a literal/);
     refuses(
-      "export const policy = routePolicy({ GET: { ...base, effect: 'read' } });",
+      "export const policy = routePolicy({ GET: { ...base, class: 'content' } });",
       /written out/,
     );
-    refuses("export const policy = routePolicy({ [m]: { effect: 'read' } });", /computed key/);
+    refuses("export const policy = routePolicy({ [m]: { class: 'content' } });", /computed key/);
     refuses(
-      "export const policy = routePolicy({ GET: { effect: 'read', effect: 'write' } });",
+      "export const policy = routePolicy({ GET: { class: 'content', class: 'self' } });",
       /named twice/,
     );
-    refuses("export const policy = routePolicy({ PUT: { effect: 'read' } });", /does not export/);
-    refuses("export const policy = routePolicy({ GOT: { effect: 'read' } });", /no method/);
+    refuses(
+      "export const policy = routePolicy({ GET: { class: 'content', __proto__: { open: 'any' } } });",
+      /__proto__ is no key/,
+    );
+    refuses(
+      "export const policy = routePolicy({ GET: { class: 'content', limits: { __proto__: null } } });",
+      /__proto__ is no key/,
+    );
+    refuses("export const policy = routePolicy({ PUT: { class: 'content' } });", /does not serve/);
+    refuses("export const policy = routePolicy({ GOT: { class: 'content' } });", /key GOT/);
     refuses(
       'export const policy = routePolicy({ GET: { limits: { rateLimit: [...names] } } });',
       /spread/,
     );
     refuses('const p = {};\nexport { p as policy };', /exported by name/);
+    // The one validator (route-declaration.ts validateMethodPolicy) runs here.
+    refuses(
+      "export const policy = routePolicy({ GET: { class: 'content', effect: 'read' } });",
+      /effect that is not/,
+    );
+    refuses(
+      "export const policy = routePolicy({ POST: { class: 'content' } });",
+      /no item: a write/,
+    );
+    refuses(
+      "export const policy = routePolicy({ POST: { class: 'content', item: { none: 'x' }, limits: null } });",
+      /limits that is no object/,
+    );
     expect(() =>
       handlerPolicy(
-        "export async function GET() {}\nexport const policy = routePolicy({ GET: { effect: 'read' } });\n",
+        "export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } });\n",
         file,
+        ROUTE,
       ),
     ).toThrow(/no import of it/);
     expect(() =>
       handlerPolicy(
         "import { routePolicy as rp } from '@/lib/auth/route-declaration';\nexport async function GET() {}\nexport const policy = rp({ GET: {} });\n",
         file,
+        ROUTE,
       ),
     ).toThrow(/by its own name/);
   });
@@ -175,12 +207,17 @@ describe('handlerPolicy', () => {
 describe('rowDeclaration', () => {
   it('says a row in the fields that are not its default', () => {
     const row = buildRouteRow('GET', '/api/workspaces', () => false, { reads: 'login' });
-    expect(rowDeclaration(row)).toEqual({
-      class: 'self',
-      scope: null,
-      effect: 'read',
-      open: 'any',
+    expect(rowDeclaration(row)).toEqual({ class: 'self', scope: null, open: 'any' });
+    // A write says its item, with the reason its facts give.
+    const write = buildRouteRow('POST', '/api/notes', () => false, { reads: 'owner' });
+    expect(rowDeclaration(write)).toMatchObject({
+      class: 'content',
+      creates: true,
+      item: { none: 'creates an item: ?ws= names where it lands' },
     });
+    expect(
+      itemNoneReason(buildRouteRow('PATCH', '/api/notes/:id', () => false, { reads: 'owner' })),
+    ).toBe(ITEM_NONE_PLACEHOLDER);
   });
 
   it('names a row it cannot say, and writes nothing for it', () => {

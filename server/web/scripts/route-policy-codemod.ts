@@ -30,7 +30,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
 import { buildRoutePolicy, type RouteManifestEntry, type RouteRow } from '../lib/auth/route-policy';
-import type { RoutePolicyDeclaration } from '../lib/auth/route-declaration';
+import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { handlerPolicy } from './route-callers';
 import {
   CannotExpress,
@@ -112,11 +112,17 @@ async function main(): Promise<void> {
   const out =
     mode === 'dry-run' && !blocked ? (dir ?? mkdtempSync(join(tmpdir(), 'route-policy-'))) : null;
   let declarations = 0;
-  const changed: string[] = [];
+  let placeholders = 0;
+  // Every file's new text first; nothing is written until each is built,
+  // proven idempotent and read back (a failure leaves no file half done).
+  const changed: Array<{ file: string; abs: string; next: string }> = [];
   for (const entry of routeManifest) {
     const decl = decls.get(entry.pattern);
     if (!decl) continue;
     declarations += Object.keys(decl).length;
+    for (const p of Object.values(decl)) {
+      if (p?.item && 'none' in p.item && p.item.none === ITEM_NONE_PLACEHOLDER) placeholders += 1;
+    }
     const abs = join(webRoot, entry.file);
     const src = readFileSync(abs, 'utf8');
     const statement = renderDeclaration(decl);
@@ -131,18 +137,22 @@ async function main(): Promise<void> {
       filepath: abs,
     });
     if (again !== next) throw new Error(`${entry.file}: a second run would change it again`);
-    const read = handlerPolicy(next, entry.file);
+    const read = handlerPolicy(next, entry.file, entry);
     if (JSON.stringify(read) !== JSON.stringify(decl)) {
       throw new Error(`${entry.file}: the generator reads another declaration back`);
     }
     if (next === src) continue;
-    changed.push(entry.file);
+    changed.push({ file: entry.file, abs, next });
     if (verbose) console.log(`${entry.file}\n${statement}\n`);
-    if (mode === 'write' && !blocked) writeFileSync(abs, next);
-    if (out) {
-      const to = join(out, 'server/web', entry.file);
-      mkdirSync(dirname(to), { recursive: true });
-      writeFileSync(to, next);
+  }
+  if (!blocked) {
+    for (const c of changed) {
+      if (mode === 'write') writeFileSync(c.abs, c.next);
+      if (out) {
+        const to = join(out, 'server/web', c.file);
+        mkdirSync(dirname(to), { recursive: true });
+        writeFileSync(to, c.next);
+      }
     }
   }
 
@@ -153,6 +163,7 @@ async function main(): Promise<void> {
       `  rows:          ${lists.size}`,
       `  declarations:  ${declarations} (methods declared; a HEAD the GET handler answers takes its GET's)`,
       `  rows equal:    ${equal} of ${lists.size}`,
+      `  item none, placeholder reason: ${placeholders} (methods; ITEM_NONE_PLACEHOLDER)`,
       `  files to write: ${changed.length}${mode === 'write' && !blocked ? ' (written)' : ''}`,
       ...(out ? [`  written under: ${out}`] : []),
       ...(cannot.length ? ['  cannot express:', ...cannot.map((c) => `    ${c}`)] : []),

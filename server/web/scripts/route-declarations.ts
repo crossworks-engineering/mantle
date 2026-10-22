@@ -10,11 +10,16 @@
 import ts from 'typescript';
 import {
   DECLARED_METHODS,
+  ITEM_NONE_PLACEHOLDER,
+  NAMED_CALLERS,
   ROUTE_POLICY_EXPORT,
+  methodEffect,
   type DeclaredMethod,
   type MethodPolicy,
   type RoutePolicyDeclaration,
 } from '../lib/auth/route-declaration';
+import { READ_POSTS, WRITE_GETS } from '../lib/auth/route-scope';
+import { API_V1_ROUTES } from '../lib/api-v1';
 import { servedMethods, type RouteManifestEntry, type RouteRow } from '../lib/auth/route-policy';
 
 /** The module a route file imports routePolicy from (its own name). */
@@ -38,13 +43,59 @@ function paramAt(pattern: string, seg: number): string | null {
   return s?.startsWith(':') ? s.slice(1) : null;
 }
 
+/** Why a row's effect is not its method's, by the list that says it
+ *  (route-scope.ts READ_POSTS, WRITE_GETS): the declaration states the
+ *  exception with its reason. */
+const EFFECT_REASONS: Readonly<Record<'read' | 'write', string>> = {
+  read: "a formula's calculator: it evaluates and stores nothing",
+  write: "a connector's OAuth callback: it stores the tokens it was given",
+};
+
+/**
+ * Why a write names no item (`item: { none }`), from the row's facts where
+ * they say it; else ITEM_NONE_PLACEHOLDER, which the lint can forbid once
+ * each is decided. No row of the lists has an item check today
+ * (route-scope.ts itemWriteTarget).
+ */
+export function itemNoneReason(row: RouteRow): string {
+  switch (row.class) {
+    case 'public':
+      return 'a public route: it judges its own credential';
+    case 'link':
+      return 'a link route: its share token names what it opens';
+    case 'self':
+      return "the login's own things, not an item";
+    case 'area':
+      return `manages the ${row.area} area: the Admin step checks it`;
+    default:
+      break;
+  }
+  const params = row.pattern.split('/').filter((s) => s.startsWith(':'));
+  if (params.length === 0) {
+    return row.creates ? 'creates an item: ?ws= names where it lands' : 'names no item in its path';
+  }
+  return ITEM_NONE_PLACEHOLDER;
+}
+
+/** The base a v1 row with a handler of its own admits a login as
+ *  (api-v1.ts API_V1_ROUTES `base`), where it is no alias. */
+function v1Base(row: RouteRow): string | null {
+  if (!row.pattern.startsWith('/api/v1/') || row.aliasOf) return null;
+  const m = row.method === 'HEAD' ? 'GET' : row.method;
+  return API_V1_ROUTES.find((r) => r.method === m && r.pattern === row.pattern)?.base ?? null;
+}
+
 /**
  * The declaration of one row's method: the fields of the row the lists
  * decide, each written only where it is not what the shape leaves out
- * (no `open`: Admin only; no `creates`; makesItems as a write makes; no
- * item, key area, limits or alias). What the manifest decides (the caller,
- * a gone stub, a switch) and what the row derives (cors, the render
- * cookie, startsAs, the actor) are not declared.
+ * (the effect is the method's; no `open`: Admin only; no `creates`;
+ * makesItems as a write makes; no key area, limits, alias or base; the
+ * item only on a write). What the manifest decides (the caller, a gone
+ * stub, a switch) and what the row derives (cors, the render cookie,
+ * startsAs, the actor) are not declared, but a named caller kind is
+ * (NAMED_CALLERS), and the boot checks it against the manifest's. An alias
+ * and a v1 row with a base take their open, creates (and an alias its
+ * limits) from the base's declaration, so they declare none of them.
  */
 export function rowDeclaration(row: RouteRow): MethodPolicy {
   const no = (why: string): never => {
@@ -76,27 +127,40 @@ export function rowDeclaration(row: RouteRow): MethodPolicy {
     default:
       no(`the class ${row.class}`);
   }
-  d.effect = row.effect;
-  if (row.logins) d.open = row.logins;
-  if (row.creates) d.creates = true;
+  if (row.effect !== methodEffect(row.method)) {
+    const listed =
+      row.effect === 'read' ? READ_POSTS.has(row.key) : WRITE_GETS.has(`GET ${row.pattern}`);
+    if (!listed) no(`the effect ${row.effect} on a ${row.method}, which no list says`);
+    d.effect = { [row.effect]: EFFECT_REASONS[row.effect] };
+  }
+  const base = row.aliasOf ?? v1Base(row);
+  if (row.logins && !base) d.open = row.logins;
+  if (row.caller && (NAMED_CALLERS as readonly string[]).includes(row.caller)) {
+    d.caller = row.caller;
+  }
+  if (row.creates && !base) d.creates = true;
   if (!row.makesItems && row.method !== 'DELETE') d.makesItems = false;
   if (row.item) {
     const param = paramAt(row.pattern, row.item.seg);
     if (!param) no('an item outside a path param');
     if (row.item.ref !== 'node') no(`an item named through ${row.item.ref}`);
     d.item = { param, need: row.item.need };
+  } else if (row.effect === 'write') {
+    d.item = { none: itemNoneReason(row) };
   }
   if (row.keyArea !== undefined) {
     if (row.keySelf && row.keyArea !== null) no('a key row about the key itself with an area');
     d.keyArea = row.keySelf ? 'self' : row.keyArea;
   }
-  if (row.crossSite || row.rateLimit.length) {
+  if ((row.crossSite || row.rateLimit.length) && !row.aliasOf) {
     d.limits = {
       ...(row.crossSite ? { crossSite: row.crossSite } : {}),
       ...(row.rateLimit.length ? { rateLimit: [...row.rateLimit] } : {}),
     };
   }
   if (row.aliasOf) d.aliasOf = row.aliasOf;
+  else if (base) d.base = base;
+  if (row.audit) d.audit = row.audit;
   return d as MethodPolicy;
 }
 
@@ -118,7 +182,7 @@ export function entryDeclaration(
     if (!row) throw new CannotExpress(`${m} ${entry.pattern}`, 'no row');
     out[m] = rowDeclaration(row);
   }
-  return out;
+  return out as RoutePolicyDeclaration;
 }
 
 /** A value of a declaration as source text (literals only, single quotes). */

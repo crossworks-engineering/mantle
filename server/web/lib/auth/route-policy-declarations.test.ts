@@ -19,12 +19,15 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { checkLoadedPolicy } from '../../server/route-loader';
+import { checkLoadedPolicy, type RouteModule } from '../../server/route-loader';
+import { isAuditSelfLogged, PUBLIC_PATHS } from '../auth-constants';
+import { auditsAsWrite } from './route-scope';
 import { entryDeclaration } from '../../scripts/route-declarations';
-import type { MethodPolicy, RoutePolicyDeclaration } from './route-declaration';
+import type { RoutePolicyDeclaration } from './route-declaration';
 import {
   ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
+  type RouteCaller,
   type RouteManifestEntry,
   type RouteRow,
 } from './route-policy';
@@ -43,6 +46,7 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   creates: false,
   makesItems: true,
   item: null,
+  audit: null,
   aliasOf: null,
   cors: false,
   renderCookie: false,
@@ -115,6 +119,84 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     );
   });
 
+  it("a row's audit is the request path's answer, for every path the pattern spells", () => {
+    // The guards ask isAuditSelfLogged of the path as sent (session.ts
+    // auditMutation); the row says it once (`audit`). Each param and the
+    // rest of a catch-all is spelled with every segment a listed path
+    // holds, so a param that could spell a listed prefix is tried.
+    const words = [
+      'x',
+      'users',
+      'team-admin',
+      'clients',
+      'services',
+      'access-keys',
+      'tools',
+      'external-access',
+    ];
+    const spell = (pattern: string): string[] =>
+      pattern
+        .split('/')
+        .reduce<string[]>(
+          (paths, seg) =>
+            paths.flatMap((p) =>
+              seg.startsWith(':')
+                ? words.map((w) => `${p}/${w}`)
+                : seg === '*'
+                  ? [...words.map((w) => `${p}/${w}`), `${p}/x/y`]
+                  : [`${p}/${seg}`],
+            ),
+          [''],
+        )
+        .map((p) => p.slice(1));
+    const differ: string[] = [];
+    let own = 0;
+    for (const row of lists.values()) {
+      if (row.audit === 'own') own += 1;
+      for (const path of spell(row.pattern)) {
+        const asked = auditsAsWrite(row.method, row.effect) && isAuditSelfLogged(path);
+        if (asked !== (row.audit === 'own')) differ.push(`${row.key} at ${path}`);
+      }
+    }
+    expect(differ).toEqual([]);
+    expect(own).toBeGreaterThan(0);
+  });
+
+  it('PUBLIC_PATHS: the paths no manifest pattern is under (the list part 3 keeps)', () => {
+    // The owner's decision of 2026-10-22: the rows' `public` is declared;
+    // the list keeps only what no row serves (the gate answers those raw
+    // paths itself: the sign-in page, the app runtime's assets). Pinned, so
+    // a route under one of them fails here first.
+    const under = (path: string, p: string) => path === p || path.startsWith(`${p}/`);
+    const routed = (p: string) =>
+      manifest.some((e) => {
+        const marked = e.pattern.replace(/:[A-Za-z0-9_]+/g, '{p}');
+        // A param could spell any segment of the prefix: compare by segment.
+        const segs = marked.split('/');
+        const want = p.split('/');
+        return (
+          under(marked, p) ||
+          (segs.length >= want.length &&
+            want.every((w, i) => segs[i] === w || segs[i] === '{p}' || segs[i] === '*'))
+        );
+      });
+    expect(PUBLIC_PATHS.filter((p) => !routed(p))).toEqual(['/login', '/app-runtime']);
+  });
+
+  it('every route module loads and exports the policy its manifest entry carries (L1)', async () => {
+    const refused: string[] = [];
+    for (const e of manifest as ReadonlyArray<
+      RouteManifestEntry & { load: () => Promise<RouteModule> }
+    >) {
+      try {
+        checkLoadedPolicy(e, await e.load(), 'declarations');
+      } catch (err) {
+        refused.push(`${e.pattern}: ${String(err)}`);
+      }
+    }
+    expect(refused).toEqual([]);
+  }, 120_000);
+
   it('every row, every field, as the snapshot says', async () => {
     const lines = [...lists.values()].map(snapshotLine).sort();
     await expect(`{\n${lines.join(',\n')}\n}\n`).toMatchFileSnapshot(
@@ -124,85 +206,226 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
 });
 
 describe('S9: a declaration that cannot hold is refused at boot', () => {
-  const entry = (pattern: string, methods: string[], policy: RoutePolicyDeclaration) => ({
-    pattern,
-    methods,
-    reads: Object.fromEntries(methods.map((m) => [m, 'owner' as const])),
-    policy,
-  });
+  const entry = (
+    pattern: string,
+    methods: string[],
+    policy: RoutePolicyDeclaration,
+    reads: Readonly<Record<string, RouteCaller>> = Object.fromEntries(
+      methods.map((m) => [m, 'owner' as const]),
+    ),
+  ) => ({ pattern, methods, reads, policy });
   const build = (...entries: RouteManifestEntry[]) =>
     buildRoutePolicy(entries, { source: 'declarations' });
-  const read: MethodPolicy = { class: 'content', effect: 'read' };
+  const none = { none: 'a test row' } as const;
 
-  it('builds the rows a declaration says; a HEAD takes its GET’s', () => {
+  it('builds the rows a declaration says; the effect is the method’s; a HEAD takes its GET’s', () => {
     const rows = build(
       entry('/api/notes', ['GET', 'POST'], {
-        GET: { ...read, open: 'owner' },
-        POST: { class: 'content', effect: 'write', open: 'owner', creates: true },
+        GET: { class: 'content', open: 'owner' },
+        POST: { class: 'content', open: 'owner', creates: true, item: none },
       }),
     );
     expect(rows.get('GET /api/notes')).toMatchObject({ class: 'content', logins: 'owner' });
     expect(rows.get('HEAD /api/notes')).toMatchObject({ effect: 'read', creates: false });
-    expect(rows.get('POST /api/notes')).toMatchObject({ creates: true, makesItems: true });
+    expect(rows.get('POST /api/notes')).toMatchObject({
+      effect: 'write',
+      creates: true,
+      makesItems: true,
+      item: null,
+    });
+  });
+
+  it('an effect exception, stated with its reason, is the row’s effect (and its HEAD’s)', () => {
+    const rows = build(
+      entry('/api/calc', ['POST'], {
+        POST: { class: 'content', effect: { read: 'evaluates only' } },
+      }),
+      entry('/api/cb', ['GET'], {
+        GET: { class: 'content', effect: { write: 'stores tokens' }, item: none },
+      }),
+    );
+    expect(rows.get('POST /api/calc')?.effect).toBe('read');
+    expect(rows.get('GET /api/cb')?.effect).toBe('write');
+    expect(rows.get('HEAD /api/cb')?.effect).toBe('write');
   });
 
   it('refuses a route file that declares no policy, or one for a method it does not serve', () => {
     expect(() =>
       build({ pattern: '/api/notes', methods: ['GET'], reads: { GET: 'owner' } }),
     ).toThrow(/declares no policy for GET/);
-    expect(() => build(entry('/api/notes', ['GET'], { GET: read, POST: read }))).toThrow(
+    const stray = { GET: { class: 'content' }, POST: { class: 'content', item: none } } as const;
+    expect(() => build(entry('/api/notes', ['GET'], stray))).toThrow(
       /policy for POST, which it does not serve/,
     );
     // The lists' rows read no declaration, but a stray one is still refused.
     expect(() =>
-      buildRoutePolicy([entry('/api/notes', ['GET'], { GET: read, PUT: read })], {
-        source: 'lists',
-      }),
-    ).toThrow(/policy for PUT/);
+      buildRoutePolicy([entry('/api/notes', ['GET'], stray)], { source: 'lists' }),
+    ).toThrow(/policy for POST/);
   });
 
-  it('refuses each value that cannot hold', () => {
-    const bad = (pattern: string, d: Record<string, unknown>, why: RegExp) =>
-      expect(() => build(entry(pattern, ['POST'], { POST: d as MethodPolicy }))).toThrow(why);
-    bad('/api/notes', { class: 'link', effect: 'read' }, /link row is an \/s route/);
-    bad('/api/notes', { class: 'nope', effect: 'read' }, /class nope/);
-    bad('/api/notes', { class: 'area', effect: 'write' }, /area on a row/);
-    bad('/api/notes', { class: 'area', area: 'bogus', effect: 'write' }, /area bogus/);
-    bad('/api/notes', { class: 'content', effect: 'write', public: true }, /public: only/);
-    bad('/api/notes', { class: 'content', effect: 'write', scope: null }, /scope: only/);
-    bad('/api/x', { class: 'self', effect: 'write', scope: null }, /no list opens/);
-    bad('/api/notes', { class: 'content', effect: 'read', creates: true }, /creates/);
-    bad('/api/notes', { class: 'content', effect: 'read', makesItems: false }, /makesItems/);
-    bad('/api/notes', { class: 'content', effect: 'write', open: 'all' }, /open all/);
-    bad('/api/notes', { class: 'content', effect: 'write', wat: 1 }, /wat, which no row has/);
+  it('refuses each value that cannot hold (validateMethodPolicy, at boot)', () => {
+    const bad = (pattern: string, d: Record<string, unknown>, why: RegExp, method = 'POST') =>
+      expect(() =>
+        build(entry(pattern, [method], { [method]: d } as RoutePolicyDeclaration)),
+      ).toThrow(why);
+    const w = { item: none };
+    bad('/api/notes', { class: 'link', ...w }, /link row is an \/s route/);
+    bad('/api/notes', { class: 'nope', ...w }, /class nope/);
+    bad('/api/notes', { class: 'area', ...w }, /area on a row/);
+    bad('/api/notes', { class: 'area', area: 'bogus', ...w }, /area bogus/);
+    bad('/api/notes', { class: 'content', public: true, ...w }, /public: only/);
+    bad('/api/notes', { class: 'content', scope: null, ...w }, /scope: only/);
+    bad('/api/x', { class: 'self', scope: null, ...w }, /no list opens/);
+    bad('/api/notes', { class: 'content', open: 'all', ...w }, /open all/);
+    bad('/api/notes', { class: 'content', wat: 1, ...w }, /the key wat/);
+    // M2: the effect is the method's; only an exception, with its reason.
+    bad('/api/notes', { class: 'content', effect: 'write', ...w }, /effect that is not/);
+    bad(
+      '/api/notes',
+      { class: 'content', effect: { write: 'x' }, ...w },
+      /state only an exception/,
+    );
+    bad('/api/notes', { class: 'content', effect: { read: '' } }, /with no reason/);
+    bad(
+      '/api/notes',
+      { class: 'content', effect: { read: 'x', write: 'y' } },
+      /effect that is not/,
+    );
+    bad('/api/notes', { class: 'content', effect: { write: 'x' } }, /no item: a write/, 'GET');
+    bad(
+      '/api/notes',
+      { class: 'content', effect: { read: 'x' } },
+      /effect that is not|state only/,
+      'GET',
+    );
+    // S11b: every write says its item; a read says none.
+    bad('/api/notes', { class: 'content' }, /no item: a write/);
+    bad('/api/notes', { class: 'content', item: none }, /an item on a read/, 'GET');
+    bad('/api/notes', { class: 'content', effect: { read: 'x' }, item: none }, /an item on a read/);
+    bad('/api/notes', { class: 'content', creates: true }, /creates/, 'GET');
+    bad('/api/notes', { class: 'content', makesItems: false }, /makesItems/, 'GET');
+    // M1: the item and the limits are exact, and objects.
     bad(
       '/api/notes/:id',
-      { class: 'content', effect: 'write', item: { param: 'nodeId', need: 'edit' } },
+      { class: 'content', item: { param: 'nodeId', need: 'edit' } },
       /no param/,
     );
-    bad('/api/notes', { class: 'content', effect: 'write', keyArea: 'notes' }, /off \/api\/v1/);
-    bad('/api/v1/notes', { class: 'content', effect: 'write', keyArea: 'bogus' }, /key area bogus/);
+    bad('/api/notes/:id', { class: 'content', item: { param: 'id', need: 'edit', x: 1 } }, /key x/);
+    bad('/api/notes/:id', { class: 'content', item: { none: 'x', param: 'id' } }, /key param/);
+    bad('/api/notes/:id', { class: 'content', item: { none: '' } }, /none with no reason/);
+    bad('/api/notes/:id', { class: 'content', item: null }, /item that is no object/);
+    bad('/api/notes/:id', { class: 'content', item: ['id'] }, /item that is no object/);
+    bad('/api/notes', { class: 'content', limits: null, ...w }, /limits that is no object/);
+    bad('/api/notes', { class: 'content', limits: { rateLimits: [] }, ...w }, /key rateLimits/);
+    bad('/api/notes', { class: 'content', limits: { crossSite: 'any' }, ...w }, /cross-site/);
     bad(
-      '/api/v1/notes',
-      { class: 'content', effect: 'write', aliasOf: 'POST /api/notes' },
-      /does not serve/,
-    );
-    bad(
-      '/api/v1/notes',
-      { class: 'content', effect: 'write', aliasOf: 'GET /api/notes' },
-      /same method of its base/,
+      '/api/notes',
+      { class: 'content', limits: { rateLimit: 'authLogin' }, ...w },
+      /list of names/,
     );
     bad(
       '/api/notes',
-      { class: 'content', effect: 'write', limits: { rateLimit: ['bogus'] } },
+      { class: 'content', limits: { rateLimit: ['bogus'] }, ...w },
       /takes bogus, no limit/,
     );
+    // L2: no prototype key, wherever it is.
+    bad(
+      '/api/notes',
+      JSON.parse('{"class":"content","item":{"none":"x"},"__proto__":{"open":"any"}}'),
+      /key __proto__/,
+    );
+    bad('/api/notes', { class: 'content', ...w, keyArea: 'notes' }, /off \/api\/v1/);
+    bad('/api/v1/notes', { class: 'content', ...w, keyArea: 'bogus' }, /key area bogus/);
+    bad('/api/notes', { class: 'content', audit: 'own' }, /audit/, 'GET');
+    bad('/api/notes', { class: 'content', ...w, audit: 'theirs' }, /audit/);
+    bad('/api/notes', { class: 'content', caller: 'owner' }, /no named kind/, 'GET');
+    bad('/api/notes', { class: 'content', caller: 'publicLogin' }, /public kind/, 'GET');
+    bad('/api/notes', { class: 'public', caller: 'session' }, /public kind/, 'GET');
+  });
+
+  it('M3: an alias and a v1 row with a base take open, creates (and limits) from the base', () => {
+    const base = entry('/api/notes', ['GET', 'POST'], {
+      GET: { class: 'content', open: 'owner' },
+      POST: {
+        class: 'content',
+        open: 'owner',
+        creates: true,
+        item: none,
+        limits: { rateLimit: ['memberBytes'] },
+      },
+    });
+    const rows = build(
+      base,
+      entry('/api/v1/notes', ['GET', 'POST'], {
+        GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' },
+        POST: { class: 'content', item: none, keyArea: 'notes', aliasOf: 'POST /api/notes' },
+      }),
+      entry('/api/v1/notes/x', ['POST'], {
+        POST: { class: 'content', item: none, keyArea: 'notes', base: 'POST /api/notes' },
+      }),
+    );
+    expect(rows.get('POST /api/v1/notes')).toMatchObject({
+      logins: 'owner',
+      creates: true,
+      aliasOf: 'POST /api/notes',
+      rateLimit: ['memberBytes'],
+    });
+    expect(rows.get('HEAD /api/v1/notes')).toMatchObject({
+      logins: 'owner',
+      aliasOf: 'HEAD /api/notes',
+    });
+    // A base: open and creates; its limits are its own handler's.
+    expect(rows.get('POST /api/v1/notes/x')).toMatchObject({
+      logins: 'owner',
+      creates: true,
+      aliasOf: null,
+      rateLimit: [],
+    });
+    const v1 = (d: Record<string, unknown>) =>
+      build(base, entry('/api/v1/notes', ['POST'], { POST: d } as RoutePolicyDeclaration));
+    const alias = { class: 'content', item: none, aliasOf: 'POST /api/notes' };
+    expect(() => v1({ ...alias, open: 'owner' })).toThrow(/open beside aliasOf/);
+    expect(() => v1({ ...alias, creates: true })).toThrow(/creates beside aliasOf/);
+    expect(() => v1({ ...alias, limits: {} })).toThrow(/limits beside aliasOf/);
+    expect(() =>
+      v1({ class: 'content', item: none, base: 'POST /api/notes', open: 'owner' }),
+    ).toThrow(/open beside base/);
+    expect(() => v1({ ...alias, aliasOf: 'GET /api/notes' })).toThrow(/same method/);
+    expect(() => v1({ ...alias, aliasOf: 'POST /api/v1/x' })).toThrow(
+      /same method of a route off it/,
+    );
+    expect(() => v1({ ...alias, base: 'POST /api/notes' })).toThrow(/beside aliasOf|both aliasOf/);
+    expect(() =>
+      build(entry('/api/v1/notes', ['POST'], { POST: alias } as RoutePolicyDeclaration)),
+    ).toThrow(/does not serve/);
+  });
+
+  it('a named caller is the one the code reads, both ways', () => {
+    const pub = (caller: RouteCaller | null, d: Record<string, unknown>) =>
+      build(
+        entry(
+          '/api/auth/x',
+          ['GET'],
+          { GET: d } as RoutePolicyDeclaration,
+          caller ? { GET: caller } : {},
+        ),
+      );
+    expect(
+      pub('publicLogin', { class: 'public', caller: 'publicLogin' }).get('GET /api/auth/x'),
+    ).toMatchObject({
+      caller: 'publicLogin',
+    });
+    expect(() => pub(null, { class: 'public', caller: 'publicLogin' })).toThrow(/reads none/);
+    expect(() => pub('cookieUpgrade', { class: 'public', caller: 'publicLogin' })).toThrow(
+      /reads cookieUpgrade/,
+    );
+    expect(() => pub('publicLogin', { class: 'public' })).toThrow(/does not serve its row/);
   });
 
   it('an item a write names: its param is the segment the gate reads', () => {
     const rows = build(
       entry('/api/notes/:id', ['PATCH'], {
-        PATCH: { class: 'content', effect: 'write', item: { param: 'id', need: 'edit' } },
+        PATCH: { class: 'content', item: { param: 'id', need: 'edit' } },
       }),
     );
     expect(rows.get('PATCH /api/notes/:id')?.item).toEqual({ need: 'edit', ref: 'node', seg: 3 });
@@ -210,25 +433,29 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
 });
 
 describe('S9: the loader asks a loaded module for the policy its rows were built from', () => {
-  const policy = { GET: { class: 'content', effect: 'read' } } as const;
-  it('passes the same declaration, refuses another, and asks nothing of the lists or a stand-in', () => {
+  const policy = { GET: { class: 'content' } } as const;
+  it('passes the same declaration, refuses another or none, and asks nothing of the lists or a stand-in', () => {
     const e = { pattern: '/api/notes', policy };
     expect(() =>
-      checkLoadedPolicy(
-        e,
-        { policy: { GET: { effect: 'read', class: 'content' } } },
-        'declarations',
-      ),
+      checkLoadedPolicy(e, { policy: { GET: { class: 'content' } } }, 'declarations'),
     ).not.toThrow();
-    expect(() => checkLoadedPolicy(e, { policy: { GET: read2() } }, 'declarations')).toThrow(
-      /not the one the manifest read/,
-    );
+    expect(() =>
+      checkLoadedPolicy(e, { policy: { GET: { class: 'self' } } }, 'declarations'),
+    ).toThrow(/not the one the manifest read/);
     expect(() => checkLoadedPolicy({ pattern: '/api/x' }, { policy }, 'declarations')).toThrow(
       /not the one/,
     );
-    // A stand-in module of a test exports none: not asked.
-    expect(() => checkLoadedPolicy(e, { GET: () => null }, 'declarations')).not.toThrow();
+    // L1: the manifest carries one the module does not export.
+    expect(() => checkLoadedPolicy(e, { GET: () => null }, 'declarations')).toThrow(
+      /does not export/,
+    );
+    // A test's stand-in routes opt out by name; neither carries one: nothing to ask.
+    expect(() =>
+      checkLoadedPolicy(e, { GET: () => null }, 'declarations', { standIn: true }),
+    ).not.toThrow();
+    expect(() =>
+      checkLoadedPolicy({ pattern: '/api/x' }, { GET: () => null }, 'declarations'),
+    ).not.toThrow();
     expect(() => checkLoadedPolicy(e, {}, 'lists')).not.toThrow();
   });
-  const read2 = () => ({ class: 'content', effect: 'write' });
 });
