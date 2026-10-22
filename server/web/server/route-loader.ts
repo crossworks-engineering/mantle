@@ -108,19 +108,21 @@ function sameData(a: unknown, b: unknown): boolean {
 /**
  * Whether a loaded route module's `policy` is the one its rows were built
  * from (S9): the generator reads the declaration from the code, the module
- * exports its value, and the two must be one. Asked when the module is
- * first loaded, where the rows are read from the declarations; a module
- * whose export is not the manifest's throws (the rows would answer for a
- * policy the file does not hold). The lists' rows read no declaration, so
- * nothing is asked there (`source`).
+ * exports its value, and the two must be one (a manifest older than the
+ * file would answer for a policy the file no longer holds). Asked when the
+ * module is first loaded, where the rows are read from the declarations; a
+ * module that exports another throws. A module that exports none is not
+ * asked: a test's stand-in module (`load: async () => ({ GET })`) has no
+ * file, and a route file without one is refused at boot already
+ * (buildRoutePolicy). The lists' rows read no declaration (`source`).
  */
 export function checkLoadedPolicy(
   entry: Pick<RouteEntry, 'pattern' | 'policy'>,
   mod: RouteModule,
   source: RoutePolicySource = ROUTE_POLICY_SOURCE,
 ): void {
-  if (source !== 'declarations') return;
-  if (!sameData(mod[ROUTE_POLICY_EXPORT] ?? null, entry.policy ?? null)) {
+  if (source !== 'declarations' || !Object.hasOwn(mod, ROUTE_POLICY_EXPORT)) return;
+  if (!sameData(mod[ROUTE_POLICY_EXPORT], entry.policy ?? null)) {
     throw new Error(
       `${entry.pattern}: the module's ${ROUTE_POLICY_EXPORT} is not the one the manifest read (regenerate it)`,
     );

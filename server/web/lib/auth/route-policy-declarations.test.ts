@@ -211,7 +211,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
 
 describe('S9: the loader asks a loaded module for the policy its rows were built from', () => {
   const policy = { GET: { class: 'content', effect: 'read' } } as const;
-  it('passes the same declaration, refuses another, and asks nothing of the lists', () => {
+  it('passes the same declaration, refuses another, and asks nothing of the lists or a stand-in', () => {
     const e = { pattern: '/api/notes', policy };
     expect(() =>
       checkLoadedPolicy(
@@ -223,7 +223,11 @@ describe('S9: the loader asks a loaded module for the policy its rows were built
     expect(() => checkLoadedPolicy(e, { policy: { GET: read2() } }, 'declarations')).toThrow(
       /not the one the manifest read/,
     );
-    expect(() => checkLoadedPolicy(e, {}, 'declarations')).toThrow(/not the one/);
+    expect(() => checkLoadedPolicy({ pattern: '/api/x' }, { policy }, 'declarations')).toThrow(
+      /not the one/,
+    );
+    // A stand-in module of a test exports none: not asked.
+    expect(() => checkLoadedPolicy(e, { GET: () => null }, 'declarations')).not.toThrow();
     expect(() => checkLoadedPolicy(e, {}, 'lists')).not.toThrow();
   });
   const read2 = () => ({ class: 'content', effect: 'write' });
