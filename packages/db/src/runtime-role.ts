@@ -64,7 +64,7 @@ import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
 import { env, feature, isProduction } from '@mantle/config';
 import { backoffMs, errorMessage, withRetry } from '@mantle/std';
-import { ACCESS_MATRIX, GAP_WRITER_ROLE, narrowFor } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_COLUMN_RIGHTS, narrowFor } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
 
@@ -280,8 +280,6 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "whether a workspace is a login's private one (the login-self routes' whoami): a read definer",
   'public.mantle_connector_rows(uuid,text,uuid[])':
     "a connector's rows (the Admin area's approval of an elevated call): a read definer",
-  'public.mantle_bridge_login(uuid)':
-    "a login into its workspaces (the users area's role change, login-update.ts; a no-op from S8b)",
   'public.mantle_pending_card_route(uuid,uuid)':
     "a pending approval card's route (the Admin area's run of an item): a read definer",
   'public.mantle_ws_attach_assistants()':
@@ -295,7 +293,7 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
     "the keys, connectors and settings areas' structure items (gateway/structure-item.ts: the Secrets root, a secret, a peer, a sender's contact, a documentation item) on an Admin area exit or in a turn's area exit: the definer holds the rule, the listed kinds of nodes only (0315)",
   'public.mantle_space_settle_promotion(uuid,uuid)':
-    "the users area's role change to admin (login-update.ts): the promoted login's personal space settled; the definer holds the rule, space_items and their bundles only (0316)",
+    "the users area's role change to admin (login-update.ts): the promoted login's personal space settled; the definer holds the rule, space_items and their bundles only (0316). Since S7b b2 round 4 the role change runs at the spot login-credential, so no narrow statement calls it; on a narrow session it can only take an admin's own personal items back to private drafts (the target's role it reads is one no narrow column sets): kept for the CEO's call",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
     "the assistants area's delete of an assistant (agents.ts deleteAgent): the definer holds the rule, the agent, its messages and digests (0316)",
 };
@@ -325,6 +323,8 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
  * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_bridge_login(uuid)':
+    "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller since S7b b2 round 4)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
     "an owner's sharing switch with no Admin check: tests only, never a narrow reason",
   'public.mantle_contact_shares_revoke_rows(uuid,uuid)':
@@ -1342,16 +1342,25 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM ${nr}`);
   await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${schemas} FROM ${nr}`);
   await tx.unsafe(`REVOKE ALL ON ALL ROUTINES IN SCHEMA ${schemas} FROM ${nr}`);
-  const present = async (tables: string[]) =>
-    (
-      await tx<{ t: string }[]>`
-        select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
-         where n.nspname || '.' || c.relname = any(${tables}::text[]) order by 1`
-    ).map((r) => r.t);
-  for (const t of await present(narrowWriteTables())) {
+  const presentNamed = async (tables: string[]) =>
+    await tx<{ t: string; name: string }[]>`
+        select c.oid::regclass::text as t, n.nspname || '.' || c.relname as name
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname || '.' || c.relname = any(${tables}::text[]) order by 1`;
+  for (const { t, name } of await presentNamed(narrowWriteTables())) {
+    // A credential or rights table with column-level rights
+    // (NARROW_COLUMN_RIGHTS): SELECT, UPDATE of the listed columns, DELETE
+    // where it says, never INSERT.
+    const cols = NARROW_COLUMN_RIGHTS[name];
+    if (cols) {
+      await tx.unsafe(`GRANT SELECT${cols.delete ? ', DELETE' : ''} ON ${t} TO ${nr}`);
+      const list = cols.update.map((c) => `"${c}"`).join(', ');
+      if (list) await tx.unsafe(`GRANT UPDATE (${list}) ON ${t} TO ${nr}`);
+      continue;
+    }
     await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO ${nr}`);
   }
-  for (const t of await present(narrowReadOnlyTables())) {
+  for (const { t } of await presentNamed(narrowReadOnlyTables())) {
     await tx.unsafe(`GRANT SELECT ON ${t} TO ${nr}`);
   }
   const seqs = await tx<{ seq: string }[]>`

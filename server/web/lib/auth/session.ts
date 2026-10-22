@@ -13,6 +13,7 @@ import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import {
   db,
+  onFullSystemRoute,
   mayEditSql,
   mayManageSql,
   accessKeys,
@@ -2506,10 +2507,14 @@ export function setSessionCookie(
   });
 }
 
-/** Update password hash. Caller is responsible for verifying the old password first. */
+/** Update password hash. Caller is responsible for verifying the old password first.
+ *  A credential column: never the narrow login's (the full-route spot
+ *  login-credential on a narrow exit; docs/runtime-role.md). */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
   const hash = await hashLoginPassword(newPassword);
-  await db.update(authUsers).set({ passwordHash: hash }).where(eq(authUsers.id, userId));
+  await onFullSystemRoute('login-credential', () =>
+    db.update(authUsers).set({ passwordHash: hash }).where(eq(authUsers.id, userId)),
+  );
 }
 
 export async function verifyPassword(userId: string, password: string): Promise<boolean> {

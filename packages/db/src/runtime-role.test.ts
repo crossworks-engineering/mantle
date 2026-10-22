@@ -411,7 +411,6 @@ describe('the narrow system role rights', () => {
       'public.mantle_agent_delete(uuid,uuid,uuid,boolean)',
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_brain_id()',
-      'public.mantle_bridge_login(uuid)',
       'public.mantle_connector_rows(uuid,text,uuid[])',
       'public.mantle_connector_state(uuid,text)',
       'public.mantle_login_areas(uuid)',
@@ -432,10 +431,12 @@ describe('the narrow system role rights', () => {
       expect(why.length, fn).toBeGreaterThan(10);
     }
     // The content and workspace writers among the definers (the a2
-    // re-audit's 17 less the two measured: mantle_ws_attach_assistants, the
-    // onboarding attach on the assistants area's exit, and
-    // mantle_bridge_login, the users area's role change), each denied by name.
+    // re-audit's 17 less mantle_ws_attach_assistants, the onboarding attach
+    // on the assistants area's exit, measured), each denied by name;
+    // mantle_bridge_login since S7b b2 round 4 (it runs at the spot
+    // login-credential with the role change).
     const writers = [
+      'mantle_bridge_login',
       'mantle_ws_add_user',
       'mantle_ws_remove_user',
       'mantle_ws_create',
@@ -452,7 +453,7 @@ describe('the narrow system role rights', () => {
       'mantle_share_close_admin',
       'mantle_share_contact_write_set',
     ];
-    expect(writers).toHaveLength(15);
+    expect(writers).toHaveLength(16);
     for (const body of writers) {
       expect(
         Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),

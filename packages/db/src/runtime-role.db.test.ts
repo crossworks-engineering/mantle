@@ -56,7 +56,7 @@ import {
 } from './runtime-role';
 import { viewerDatabaseUrl, viewerRoleName, viewerRolePassword } from './viewer';
 import { POOL_ROLES } from './viewer-roles';
-import { ACCESS_MATRIX, GAP_WRITER_ROLE, narrowFor } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_COLUMN_RIGHTS, narrowFor } from './access-matrix';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
@@ -397,6 +397,8 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     const want = (table: string): string[] => {
       const t = byTable.get(table);
       const n = t ? narrowFor(t) : 'none';
+      const cols = NARROW_COLUMN_RIGHTS[table];
+      if (n === 'all' && cols) return cols.delete ? ['DELETE', 'SELECT'] : ['SELECT'];
       if (n === 'all') return ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
       if (n === 'read') return ['SELECT'];
       return [];
@@ -407,11 +409,24 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     // Every matrix table is in this database.
     const tables = new Set(live.map((r) => r.t));
     expect(ACCESS_MATRIX.filter((t) => !tables.has(t.table)).map((t) => t.table)).toEqual([]);
-    // No column grant anywhere.
-    const [cols] = await admin<{ n: number }[]>`
-      select count(*)::int as n from pg_attribute att, aclexplode(att.attacl) a
-       where a.grantee = to_regrole(${NARROW_ROLE})`;
-    expect(cols?.n).toBe(0);
+    // Column grants: exactly NARROW_COLUMN_RIGHTS' UPDATE columns, never
+    // INSERT, and never a credential or rights column of auth.users.
+    const cols = await admin<{ c: string }[]>`
+      select n.nspname || '.' || c.relname || '.' || att.attname || ':' || a.privilege_type as c
+        from pg_attribute att join pg_class c on c.oid = att.attrelid
+        join pg_namespace n on n.oid = c.relnamespace, aclexplode(att.attacl) a
+       where a.grantee = to_regrole(${NARROW_ROLE}) order by 1`;
+    expect(cols.map((r) => r.c)).toEqual(
+      Object.entries(NARROW_COLUMN_RIGHTS)
+        .flatMap(([t, r]) => r.update.map((col) => `${t}.${col}:UPDATE`))
+        .sort(),
+    );
+    for (const col of ['role', 'password_hash', 'email', 'is_owner', 'contact_id', 'id']) {
+      const [p] = await admin<{ u: boolean; i: boolean }[]>`
+        select has_column_privilege(${NARROW_ROLE}, 'auth.users', ${col}, 'UPDATE') as u,
+               has_column_privilege(${NARROW_ROLE}, 'auth.users', ${col}, 'INSERT') as i`;
+      expect(p, col).toEqual({ u: false, i: false });
+    }
     // Sequences: only those its write tables draw from, never UPDATE (setval).
     const seqs = await admin<{ s: string; privs: string[] }[]>`
       select c.oid::regclass::text as s,

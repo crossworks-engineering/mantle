@@ -6,6 +6,7 @@ import {
   db,
   and,
   authUsers,
+  onFullSystemRoute,
   eq,
   isNull,
   mobileTokens,
@@ -219,60 +220,73 @@ export async function applyLoginChange(
     // table) in this transaction: on the narrow exit through its definer
     // (settleSpaceOnPromotion, migration 0316).
     const promotes = change.role === 'admin';
-    await db.transaction(async (tx) => {
-      if (firstInTx) await firstInTx(tx);
-      if (Object.keys(changes).length > 0) {
-        await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
-        // The role still names who is an Admin user (until W5c): keep the
-        // Admin row in step, as the login bridge's trigger did before W5b2
-        // turned it off (the function stays, 0261; Admin only since 0286:
-        // a role change never touches another workspace's rows).
-        if (changes.role !== undefined) {
-          await tx.execute(sql`select "public"."mantle_bridge_login"(${targetId}::uuid)`);
+    // A role change or a contact link writes a rights column the narrow
+    // login may not (auth.users role and contact_id, and the Admin rows
+    // mantle_bridge_login keeps in step; a contact's shares reach the
+    // login linked to it): the whole transaction then runs at the full-route spot
+    // login-credential (docs/runtime-role.md); any other change stays on
+    // the exit's own route.
+    const credential = changes.role !== undefined || changes.contactId !== undefined;
+    const run = (fn: () => Promise<void>) =>
+      credential ? onFullSystemRoute('login-credential', fn) : fn();
+    await run(() =>
+      db.transaction(async (tx) => {
+        if (firstInTx) await firstInTx(tx);
+        if (Object.keys(changes).length > 0) {
+          await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
+          // The role still names who is an Admin user (until W5c): keep the
+          // Admin row in step, as the login bridge's trigger did before W5b2
+          // turned it off (the function stays, 0261; Admin only since 0286:
+          // a role change never touches another workspace's rows).
+          if (changes.role !== undefined) {
+            await tx.execute(sql`select "public"."mantle_bridge_login"(${targetId}::uuid)`);
+          }
         }
-      }
-      if (endSessions) {
-        // The login's push devices go with its sessions; the relay is told
-        // after the commit (pushTokens).
-        await endLoginSessions(targetId, {
-          tx,
-          removedRoutingTokens: pushTokens,
-          endKeys: true,
-          actorId: actor.actor.id,
-          revokedKeyIds: endedKeyIds,
-          unboundPeerIds,
-        });
-      }
-      // A member made admin: what they shared or submitted as a member goes
-      // back to private drafts (audit F21). An admin's items are never team
-      // drafts or reviewed, and a later demotion must not bring them back.
-      if (promotes) await settleSpaceOnPromotion(tx, targetId);
-      // Cookies re-read the row every request, so they stop at once. Bearers
-      // and connector (OAuth) grants would too (both re-check the login), but
-      // revoke them so the device and connector lists tell the truth. Unclaimed
-      // pairing codes die too, so a QR shown before the lockout cannot pair.
-      // The login's push devices go (0173): nothing else would stop the brain
-      // pushing to its phone. Its personal assistant is released (kept, never
-      // deleted): a member chats only with team-level agents.
-      if (lockingOut) {
-        pushTokens.push(...(await deleteLoginSubscriptions(targetId, tx)));
-        releasedAgentId = (await releaseAssignedAgent(actor.id, targetId, tx))?.id ?? null;
-        const now = new Date();
-        await tx
-          .update(mobileTokens)
-          .set({ revokedAt: now })
-          .where(and(eq(mobileTokens.userId, targetId), isNull(mobileTokens.revokedAt)));
-        await tx
-          .update(oauthAccessTokens)
-          .set({ revokedAt: now })
-          .where(and(eq(oauthAccessTokens.actorId, targetId), isNull(oauthAccessTokens.revokedAt)));
-        await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, targetId));
-        await tx
-          .delete(pairingCodes)
-          .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
-      }
-      if (inTx) await inTx(tx);
-    });
+        if (endSessions) {
+          // The login's push devices go with its sessions; the relay is told
+          // after the commit (pushTokens).
+          await endLoginSessions(targetId, {
+            tx,
+            removedRoutingTokens: pushTokens,
+            endKeys: true,
+            actorId: actor.actor.id,
+            revokedKeyIds: endedKeyIds,
+            unboundPeerIds,
+          });
+        }
+        // A member made admin: what they shared or submitted as a member goes
+        // back to private drafts (audit F21). An admin's items are never team
+        // drafts or reviewed, and a later demotion must not bring them back.
+        if (promotes) await settleSpaceOnPromotion(tx, targetId);
+        // Cookies re-read the row every request, so they stop at once. Bearers
+        // and connector (OAuth) grants would too (both re-check the login), but
+        // revoke them so the device and connector lists tell the truth. Unclaimed
+        // pairing codes die too, so a QR shown before the lockout cannot pair.
+        // The login's push devices go (0173): nothing else would stop the brain
+        // pushing to its phone. Its personal assistant is released (kept, never
+        // deleted): a member chats only with team-level agents.
+        if (lockingOut) {
+          pushTokens.push(...(await deleteLoginSubscriptions(targetId, tx)));
+          releasedAgentId = (await releaseAssignedAgent(actor.id, targetId, tx))?.id ?? null;
+          const now = new Date();
+          await tx
+            .update(mobileTokens)
+            .set({ revokedAt: now })
+            .where(and(eq(mobileTokens.userId, targetId), isNull(mobileTokens.revokedAt)));
+          await tx
+            .update(oauthAccessTokens)
+            .set({ revokedAt: now })
+            .where(
+              and(eq(oauthAccessTokens.actorId, targetId), isNull(oauthAccessTokens.revokedAt)),
+            );
+          await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, targetId));
+          await tx
+            .delete(pairingCodes)
+            .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
+        }
+        if (inTx) await inTx(tx);
+      }),
+    );
   } catch (err) {
     // Two links to one contact at once: the check above passed for both, the
     // unique index (0181) stops the second.

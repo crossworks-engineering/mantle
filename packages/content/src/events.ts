@@ -692,6 +692,10 @@ export async function deleteAllExternalEvents(
   // A structure item (packages/db gateway/structure-item.ts): on the
   // calendar area's narrow exit, the definer removes them (a synced event
   // only).
-  const rows = await withDeadlockRetry(() => deleteStructureItems('calendar-event', ownerId, ids));
+  const rows = await withDeadlockRetry(() =>
+    deleteStructureItems('calendar-event', ownerId, ids, {
+      external_account_id: externalAccountId,
+    }),
+  );
   return rows.length;
 }

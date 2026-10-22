@@ -22,7 +22,7 @@ import { RuntimeFaultError } from '@mantle/std';
 import type * as schema from '../schema/index';
 import { nodes, type Node } from '../schema/nodes';
 import { markContentChanged } from '../content-changed';
-import { actingLoginNow, currentCreateHome, currentSpaceScope } from '../viewer';
+import { actingLoginNow, currentCreateHome, currentSpaceScope, onFullSystemRoute } from '../viewer';
 import { db } from './handles';
 import { withNodeDeleteHeads, withNodeInsertHeads } from './heads';
 import { narrowRouteNow } from './pools';
@@ -67,6 +67,26 @@ function narrowTx<T>(fn: (tx: Tx, login: string | null) => Promise<T>): Promise<
   return withSystemTx((tx) => fn(tx, actingLoginNow()));
 }
 
+/**
+ * Where a structure write runs: 'app' off the narrow route (the app's own
+ * statements, as before); 'definer' on it when the exit acts for a login
+ * (actingLoginNow: the request's login, or the login of the turn an
+ * asSystem exit left, viewer.ts exitLogin); 'spot' on it with no login to
+ * act for (a turn that answers no login, as a heartbeat's with the actor
+ * check off): the app's own statements at the full-route spot
+ * structure-no-login, as before this definer, since the definer takes only
+ * an acting login.
+ */
+function structureRoute(): 'app' | 'definer' | 'spot' {
+  if (!narrowRouteNow()) return 'app';
+  return actingLoginNow() ? 'definer' : 'spot';
+}
+
+/** `fn` at the full-route spot structure-no-login when `route` says so. */
+function onSpot<T>(route: 'app' | 'spot', fn: () => Promise<T>): Promise<T> {
+  return route === 'spot' ? onFullSystemRoute('structure-no-login', fn) : fn();
+}
+
 /** The definer, one call; its ids. */
 async function callDefiner(
   q: Pick<Tx, 'execute'>,
@@ -99,7 +119,8 @@ export async function insertStructureItem(
 ): Promise<Node | null> {
   const type = STRUCTURE_KINDS[kind];
   const branch = type === 'branch';
-  if (narrowRouteNow()) {
+  const route = structureRoute();
+  if (route === 'definer') {
     return narrowTx(async (tx, login) => {
       const fields: Record<string, unknown> = {
         title: values.title,
@@ -116,31 +137,33 @@ export async function insertStructureItem(
       return row;
     });
   }
-  return withNodeInsertHeads(values.ownerId, [{ type, path: values.path }], async (tx) => {
-    const insert = tx.insert(nodes).values({
-      ownerId: values.ownerId,
-      type,
-      title: values.title,
-      slug: values.slug ?? null,
-      path: values.path,
-      ...(values.data !== undefined ? { data: values.data } : {}),
-      ...(values.tags !== undefined ? { tags: values.tags } : {}),
-    });
-    const [row] = branch
-      ? await insert
-          .onConflictDoNothing({
-            target: [nodes.ownerId, nodes.path],
-            where: sql`${nodes.type} = 'branch'`,
-          })
-          .returning()
-      : await insert.returning();
-    if (!row) {
-      if (branch) return null;
-      throw new Error('insertStructureItem: insert returned no row');
-    }
-    if (then) await then(tx, row);
-    return row;
-  });
+  return onSpot(route, () =>
+    withNodeInsertHeads(values.ownerId, [{ type, path: values.path }], async (tx) => {
+      const insert = tx.insert(nodes).values({
+        ownerId: values.ownerId,
+        type,
+        title: values.title,
+        slug: values.slug ?? null,
+        path: values.path,
+        ...(values.data !== undefined ? { data: values.data } : {}),
+        ...(values.tags !== undefined ? { tags: values.tags } : {}),
+      });
+      const [row] = branch
+        ? await insert
+            .onConflictDoNothing({
+              target: [nodes.ownerId, nodes.path],
+              where: sql`${nodes.type} = 'branch'`,
+            })
+            .returning()
+        : await insert.returning();
+      if (!row) {
+        if (branch) return null;
+        throw new Error('insertStructureItem: insert returned no row');
+      }
+      if (then) await then(tx, row);
+      return row;
+    }),
+  );
 }
 
 /** The columns an edit sets: title and tags when given, data always. */
@@ -163,7 +186,8 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
   changed: readonly string[],
 ): Promise<Node | null> {
   const type = STRUCTURE_KINDS[kind];
-  if (narrowRouteNow()) {
+  const route = structureRoute();
+  if (route === 'definer') {
     const work: IndexWork | null = indexWorkFor(type, changed);
     const fields: Record<string, unknown> = { data: set.data };
     if (set.title !== undefined) fields.title = set.title;
@@ -186,48 +210,67 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
       return row ?? null;
     });
   }
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(nodes)
-      .set({
-        ...(set.title !== undefined ? { title: set.title } : {}),
-        ...(set.tags !== undefined ? { tags: set.tags } : {}),
-        data: set.data,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, type)))
-      .returning();
-    if (!row) return null;
-    return (
-      (await markContentChanged(
-        tx,
-        { id, type },
-        changed as Parameters<typeof markContentChanged>[2],
-      )) ?? row
-    );
-  });
+  return onSpot(route, () =>
+    db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(nodes)
+        .set({
+          ...(set.title !== undefined ? { title: set.title } : {}),
+          ...(set.tags !== undefined ? { tags: set.tags } : {}),
+          data: set.data,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, type)))
+        .returning();
+      if (!row) return null;
+      return (
+        (await markContentChanged(
+          tx,
+          { id, type },
+          changed as Parameters<typeof markContentChanged>[2],
+        )) ?? row
+      );
+    }),
+  );
 }
 
 /**
  * Remove structure items of the kind's type with the heads of each and of
- * its folder (withNodeDeleteHeads); their foreign keys cascade. The ids
- * removed. Wrap in withDeadlockRetry, as the heads helpers.
+ * its folder (withNodeDeleteHeads); their foreign keys cascade. `match`
+ * (string values) narrows the rows to those whose data still holds it, read
+ * again under the heads on both routes: the account a calendar's events
+ * came from, the collection a purge removes (an item edited between the
+ * read of the ids and the delete is left). The ids removed. Wrap in
+ * withDeadlockRetry, as the heads helpers.
  */
 export async function deleteStructureItems(
   kind: 'secret-item' | 'peer-item' | 'docs-item' | 'calendar-event',
   ownerId: string,
   ids: readonly string[],
+  match?: Readonly<Record<string, string>>,
 ): Promise<string[]> {
   if (ids.length === 0) return [];
   const type = STRUCTURE_KINDS[kind];
-  if (narrowRouteNow()) {
-    return narrowTx((tx, login) => callDefiner(tx, login, kind, 'delete', ownerId, ids, null));
+  const route = structureRoute();
+  if (route === 'definer') {
+    return narrowTx((tx, login) =>
+      callDefiner(tx, login, kind, 'delete', ownerId, ids, match ? { match } : null),
+    );
   }
-  const rows = await withNodeDeleteHeads(ids, (tx) =>
-    tx
-      .delete(nodes)
-      .where(and(inArray(nodes.id, [...ids]), eq(nodes.ownerId, ownerId), eq(nodes.type, type)))
-      .returning({ id: nodes.id }),
-  );
-  return rows.map((r) => r.id);
+  return onSpot(route, async () => {
+    const rows = await withNodeDeleteHeads(ids, (tx) =>
+      tx
+        .delete(nodes)
+        .where(
+          and(
+            inArray(nodes.id, [...ids]),
+            eq(nodes.ownerId, ownerId),
+            eq(nodes.type, type),
+            ...(match ? [sql`${nodes.data} @> ${JSON.stringify(match)}::jsonb`] : []),
+          ),
+        )
+        .returning({ id: nodes.id }),
+    );
+    return rows.map((r) => r.id);
+  });
 }

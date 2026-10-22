@@ -23,10 +23,19 @@
 --   docs-item      documentation  settings    insert update delete   documentation or under it
 --   calendar-event event          connectors  delete                 (a synced event only)
 --
+-- On the narrow login the acting login is a mistake guard, not a boundary:
+-- a raw narrow session may name any acting login (only the gateway's text
+-- check refuses a narrow statement that names it). The database boundaries
+-- there are each definer's own kind, op, place, type and owner checks and
+-- the narrow role's column rights (access-matrix.ts NARROW_COLUMN_RIGHTS:
+-- no credential or rights column of auth.users, no new login, no minted
+-- credential). A definer the narrow role may run must therefore give
+-- nothing whichever login it is told it acts for.
+--
 -- Any other kind or operation is refused (42501). The caller: no scope
 -- (a scope's own writes go through the write role), a system session
--- (session_user the runtime role, the narrow role or a superuser: 0314's
--- rule), LOGIN equal to the acting login the gateway sends
+-- (mantle_system_session: the runtime role, the narrow role, a superuser
+-- or the definers' owner, 0314's rule), LOGIN equal to the acting login the gateway sends
 -- (mantle.acting_login; none, or another, is refused), and that login
 -- holding the kind's area (mantle_area_rule: an Admin workspace member
 -- whose areas do not take it away). OWNER must be this brain. A read-only
@@ -41,7 +50,8 @@
 --    branch kind does nothing on a branch already at that path (the app's
 --    onConflictDoNothing). Returns the new id, or nothing.
 --  - update (one item of the kind's type): title and tags when FIELDS
---    names them, data, updated_at; then, when FIELDS' work is extract,
+--    names them, data (FIELDS must name it: 22023 otherwise, never a wipe),
+--    updated_at; then, when FIELDS' work is extract,
 --    the index reset markContentChanged sends (packages/db
 --    content-changed.ts and index-work.ts stampIndexWork, kept equal by
 --    structure-item.db.test.ts), and node_ingested when FIELDS' announce is
@@ -49,9 +59,12 @@
 --    for embed work only (the kind registry), so no other reset is open.
 --    No heads, as the app's update took none. Returns the id, or nothing.
 --  - delete (items of the kind's type; for calendar-event only an event a
---    calendar synced, data.external_account_id set): the heads of each and of the folder
---    it sits in, for update (as withNodeDeleteHeads), then the rows; their
---    foreign keys cascade as before. Returns the ids removed.
+--    calendar synced, data.external_account_id set; when FIELDS names a
+--    match, only rows whose data holds it: the account a calendar's events
+--    came from, the collection a purge removes, read again under the
+--    heads): the heads of each and of the folder it sits in, for update (as
+--    withNodeDeleteHeads), then the rows; their foreign keys cascade as
+--    before. Returns the ids removed.
 -- The heads go through mantle_lock_heads_nested: the first lock of the
 -- transaction, or more heads where some are held, as the app's own call.
 --
@@ -80,6 +93,7 @@ DECLARE
   heads uuid[];
   new_id uuid;
   w text;
+  m jsonb;
 BEGIN
   IF coalesce(current_setting('mantle.write_mode', true), '') = 'ro' THEN
     RAISE EXCEPTION 'mantle_structure_item: a read-only caller' USING ERRCODE = '42501';
@@ -101,9 +115,7 @@ BEGIN
   END IF;
   IF "public"."mantle_scope_active"() OR "public"."mantle_scope_login_id"() IS NOT NULL THEN
     RAISE EXCEPTION 'mantle_structure_item: only with no scope' USING ERRCODE = '42501';
-  ELSIF NOT (session_user IN ('mantle_runtime', 'mantle_system_narrow')
-              OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r
-                            WHERE r."rolname" = session_user), false)) THEN
+  ELSIF NOT "public"."mantle_system_session"() THEN
     RAISE EXCEPTION 'mantle_structure_item: not a system session' USING ERRCODE = '42501';
   ELSIF "mantle_structure_item"."login" IS NULL
      OR "mantle_structure_item"."login" IS DISTINCT FROM
@@ -161,6 +173,12 @@ BEGIN
     IF coalesce(cardinality("mantle_structure_item"."items"), 0) <> 1 THEN
       RAISE EXCEPTION 'mantle_structure_item: an update names one item' USING ERRCODE = '22023';
     END IF;
+    -- An edit names its data (the app's update always sets it): none is a
+    -- caller's mistake, never a wipe to {}.
+    IF "mantle_structure_item"."fields" IS NULL OR NOT ("mantle_structure_item"."fields" ? 'data')
+       OR jsonb_typeof("mantle_structure_item"."fields" -> 'data') <> 'object' THEN
+      RAISE EXCEPTION 'mantle_structure_item: an update names its data' USING ERRCODE = '22023';
+    END IF;
     w := "mantle_structure_item"."fields" ->> 'work';
     IF w IS NOT NULL AND w <> 'extract' THEN
       RAISE EXCEPTION 'mantle_structure_item: the only work is extract' USING ERRCODE = '22023';
@@ -171,7 +189,7 @@ BEGIN
            "tags" = CASE WHEN "mantle_structure_item"."fields" ? 'tags'
                          THEN ARRAY(SELECT jsonb_array_elements_text("mantle_structure_item"."fields" -> 'tags'))
                          ELSE n."tags" END,
-           "data" = coalesce("mantle_structure_item"."fields" -> 'data', '{}'::jsonb),
+           "data" = "mantle_structure_item"."fields" -> 'data',
            "updated_at" = now()
      WHERE n."id" = "mantle_structure_item"."items"[1]
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
@@ -195,17 +213,25 @@ BEGIN
     RETURN;
   END IF;
 
-  -- delete
+  -- delete. FIELDS' match (an object, or none) narrows the rows to those
+  -- whose data holds it, read again here under the heads: a calendar's
+  -- account id, a collection's key (the app's own delete names the same).
+  m := "mantle_structure_item"."fields" -> 'match';
+  IF m IS NOT NULL AND jsonb_typeof(m) <> 'object' THEN
+    RAISE EXCEPTION 'mantle_structure_item: a delete''s match is an object' USING ERRCODE = '22023';
+  END IF;
   SELECT coalesce(array_agg(DISTINCT x."id"), '{}'::uuid[]) INTO heads FROM (
     SELECT n."id" FROM "public"."nodes" n
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
        AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
+       AND (m IS NULL OR n."data" @> m)
     UNION
     SELECT "public"."mantle_parent_folder"(n."owner_id", n."type", n."path") FROM "public"."nodes" n
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
        AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
+       AND (m IS NULL OR n."data" @> m)
   ) x WHERE x."id" IS NOT NULL;
   PERFORM "public"."mantle_lock_heads_nested"(heads, 'update');
   RETURN QUERY
@@ -213,6 +239,7 @@ BEGIN
      WHERE n."id" = ANY ("mantle_structure_item"."items")
        AND n."owner_id" = "mantle_structure_item"."owner" AND n."type" = t
        AND ("mantle_structure_item"."kind" <> 'calendar-event' OR n."data" ? 'external_account_id')
+       AND (m IS NULL OR n."data" @> m)
     RETURNING n."id";
 END
 $$;

@@ -1148,10 +1148,12 @@ export function requestExitActingLogin(): string | null {
 }
 
 /** The login an exit acts for: the outer login actor's, else the acting
- *  login of the exit it runs in. */
-function exitLogin(outer: Actor | null): string | undefined {
+ *  login of the exit it runs in, else the login of the turn scope it
+ *  leaves (`left`: a turn whose actor is no login, as a Telegram turn's
+ *  with the actor check off, still answers its scope's login). */
+function exitLogin(outer: Actor | null, left?: WorkspaceScope): string | undefined {
   if (outer?.kind === 'login') return outer.loginId;
-  return actingLoginNow() ?? undefined;
+  return actingLoginNow() ?? left?.loginId?.toLowerCase() ?? undefined;
 }
 
 /**
@@ -1180,6 +1182,10 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "the API console runs a tools-table tool through the agent dispatcher as the area's system actor: the tool writes what it writes (content tables)",
   'pending-call':
     "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
+  'login-credential':
+    "a login's credential and rights columns (auth.users role and password_hash, a new login's row): the users area's create, role change and password set, and a login's own password change (login-self); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_COLUMN_RIGHTS), so a narrow session can neither raise a login's role nor set a password",
+  'structure-no-login':
+    "a structure item (gateway/structure-item.ts) written in a narrow exit that acts for no login (a turn that answers none, as a heartbeat's with the actor check off): the definer takes only an acting login, so the app's own statements run here, as before it",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */
@@ -1327,7 +1333,7 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
   );
   // Plan v3.2 S7a: the reason's route (AS_SYSTEM_ROUTE); an unknown one
   // runs full.
-  const login = exitLogin(currentActor());
+  const login = exitLogin(currentActor(), left);
   const entry: SystemRouteEntry = Object.freeze({
     route: AS_SYSTEM_ROUTE[reason] ?? 'full',
     reason: (actor as Extract<Actor, { kind: 'system' }>).reason,

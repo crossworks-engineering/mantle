@@ -144,7 +144,11 @@ export function requestSystemRouteMap(root) {
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/profile-preferences.ts': ['profile-row'],
+  'packages/db/src/gateway/structure-item.ts': ['structure-no-login'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
+  'server/web/lib/auth/session.ts': ['login-credential'],
+  'server/web/lib/login-create.ts': ['login-credential'],
+  'server/web/lib/login-update.ts': ['login-credential'],
   'packages/tools/src/pending.ts': ['pending-call'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],

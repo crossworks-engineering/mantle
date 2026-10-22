@@ -463,7 +463,9 @@ export async function purgeCollection(ownerId: string, collectionKey: string): P
   // take, then delete only those.
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return 0;
-  const deleted = await withDeadlockRetry(() => deleteStructureItems('docs-item', ownerId, ids));
+  const deleted = await withDeadlockRetry(() =>
+    deleteStructureItems('docs-item', ownerId, ids, { collection: collectionKey }),
+  );
   return deleted.length;
 }
 

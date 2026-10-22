@@ -198,6 +198,52 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     ]);
   });
 
+  it('a definer`s writes are never counted on the per-database fallback (0317): the narrow role SET on the superuser`s session', async () => {
+    // The per-database narrow route takes the role per transaction on the
+    // system pool, whose login is the superuser that owns the definers:
+    // inside one, current_user is that superuser again. 0312 counted its
+    // content write and its delete; 0317 asks for the session's own role.
+    await su.unsafe(`create or replace function public.narrow_observe_delete(id uuid) returns void
+      language sql security definer set search_path = public, pg_temp
+      as $$ delete from auth.users where id = $1 $$`);
+    await su.unsafe(
+      `grant execute on function public.narrow_observe_definer(), public.narrow_observe_delete(uuid) to ${NARROW_ROLE}`,
+    );
+    const login = async () => {
+      const id = randomUUID();
+      await su`insert into auth.users (id, email, password_hash, role)
+               values (${id}, ${`pd-${id}@example.invalid`}, 'x', 'member')`;
+      return id;
+    };
+    const who = 'system:http:admin-area';
+    const asNarrow = `${actorSql(who)}, set_config('role', '${NARROW_ROLE}', true)`;
+    counted();
+    expect(await inTx(su, [asNarrow, 'select public.narrow_observe_definer()'])).toBeNull();
+    expect(
+      await inTx(su, [asNarrow, `select public.narrow_observe_delete('${await login()}')`]),
+    ).toBeNull();
+    expect(counted()).toEqual([]);
+    // The narrow role's own delete there still counts (no definer).
+    expect(
+      await inTx(su, [asNarrow, `delete from auth.users where id = '${await login()}'`]),
+    ).toBeNull();
+    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
+    // With the runtime role on, a definer's delete is never counted (its
+    // owner is not the session's login); as the superuser with no role
+    // set, the named limit holds for both counts.
+    await su.unsafe(
+      `grant execute on function public.narrow_observe_delete(uuid) to ${RUNTIME_ROLE}`,
+    );
+    expect(
+      await inTx(rt, [actorSql(who), `select public.narrow_observe_delete('${await login()}')`]),
+    ).toBeNull();
+    expect(counted()).toEqual([]);
+    expect(
+      await inTx(su, [actorSql(who), `select public.narrow_observe_delete('${await login()}')`]),
+    ).toBeNull();
+    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
+  });
+
   it('counts a delete from auth.users by a narrow reason once, on either route, never its cascade', async () => {
     const login = async () => {
       const id = randomUUID();

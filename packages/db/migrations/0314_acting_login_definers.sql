@@ -10,13 +10,24 @@
 --
 -- The acting login alone does not close the gap: the write role can clear
 -- its own scope and set mantle.acting_login in its transaction. So with no
--- scope the call must also come from a system session: session_user (the
--- login, never current_user, which a definer or SET ROLE changes) is the
--- runtime role (the system pool with MANTLE_DB_RUNTIME_ROLE on), the narrow
--- role (the narrow route's own login) or a superuser (the system pool with
--- the runtime role off, and per-database mode, where the narrow route takes
--- the role on that pool). The write role, the user role and every other
+-- scope the call must also come from a system session
+-- (mantle_system_session, below): session_user (the login, never
+-- current_user, which a definer or SET ROLE changes) is the runtime role
+-- (the system pool with MANTLE_DB_RUNTIME_ROLE on), the narrow role (the
+-- narrow route's own login), a superuser (the system pool with the runtime
+-- role off, and per-database mode, where the narrow route takes the role
+-- on that pool) or the definers' owner (a brain whose DATABASE_URL logs in
+-- as a non-superuser owner). The write role, the user role and every other
 -- login are refused (42501, nothing changes).
+--
+-- On the narrow login the acting login is a mistake guard, not a boundary:
+-- a raw narrow session may name any acting login (only the gateway's text
+-- check refuses a narrow statement that names it). The database boundaries
+-- there are each definer's own kind, op, place, type and owner checks and
+-- the narrow role's column rights (access-matrix.ts NARROW_COLUMN_RIGHTS:
+-- no credential or rights column of auth.users, no new login, no minted
+-- credential). A definer the narrow role may run must therefore give
+-- nothing whichever login it is told it acts for.
 --
 -- 1. mantle_tg_chat_set (0313): in a scope, or with a scope login set, the
 --    login must be the scope's own, as before. With neither: a system
@@ -38,13 +49,30 @@
 -- a worker), mantle_ws_seen, mantle_access_keys_seen, mantle_snapshot_bytes,
 -- mantle_area_rule, mantle_login_area(s), mantle_login_is_admin(_user),
 -- mantle_ws_private_for, mantle_ws_private_workspace, mantle_personal_space,
--- mantle_tg_login_moderates; and the Admin acts on a target login
--- (mantle_ws_remove_user, mantle_bridge_login), which check the actor's
--- own rights.
+-- mantle_tg_login_moderates; mantle_ws_remove_user, which takes the
+-- scope's login and refuses with none; and mantle_bridge_login (a login's
+-- Admin rows from its role), which the narrow role may not run: its
+-- callers (a new login, a role change) run at the full-route spot
+-- login-credential on the system pool's own login.
 --
 -- CREATE OR REPLACE keeps each function's grants. No table, row or
 -- trigger changes; no LLM work. Re-runnable. The `when` sits above 0313's.
 SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+-- A system session (called inside a definer, so current_user is the
+-- definer's owner): session_user is the runtime role, the narrow role, a
+-- superuser, or the definers' owner itself (a brain whose DATABASE_URL
+-- logs in as a non-superuser owner: its system pool is that login). Open
+-- to every role: it answers a fact about the caller's own session and
+-- writes nothing; outside a definer its answer means nothing.
+CREATE OR REPLACE FUNCTION "public"."mantle_system_session"()
+  RETURNS boolean LANGUAGE sql STABLE
+  SET search_path = pg_catalog, pg_temp AS $$
+  SELECT session_user IN ('mantle_runtime', 'mantle_system_narrow')
+      OR session_user = current_user
+      OR coalesce((SELECT r.rolsuper FROM pg_catalog.pg_roles r
+                    WHERE r.rolname = session_user), false)
+$$;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_tg_chat_set"(
   owner uuid, login uuid, chat uuid, action text, account uuid)
@@ -70,9 +98,7 @@ BEGIN
     IF "mantle_tg_chat_set"."login" IS DISTINCT FROM "public"."mantle_scope_login_id"() THEN
       RAISE EXCEPTION 'mantle_tg_chat_set: only the scope''s own login' USING ERRCODE = '42501';
     END IF;
-  ELSIF NOT (session_user IN ('mantle_runtime', 'mantle_system_narrow')
-              OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r
-                            WHERE r."rolname" = session_user), false)) THEN
+  ELSIF NOT "public"."mantle_system_session"() THEN
     RAISE EXCEPTION 'mantle_tg_chat_set: no scope, and not a system session' USING ERRCODE = '42501';
   ELSIF "mantle_tg_chat_set"."login" IS DISTINCT FROM
         nullif(current_setting('mantle.acting_login', true), '')::uuid THEN
@@ -119,9 +145,7 @@ BEGIN
     IF login IS DISTINCT FROM "public"."mantle_scope_login_id"() THEN
       RAISE EXCEPTION 'mantle_access_key_revoke: only the scope''s own login' USING ERRCODE = '42501';
     END IF;
-  ELSIF NOT (session_user IN ('mantle_runtime', 'mantle_system_narrow')
-              OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r
-                            WHERE r."rolname" = session_user), false)) THEN
+  ELSIF NOT "public"."mantle_system_session"() THEN
     RAISE EXCEPTION 'mantle_access_key_revoke: no scope, and not a system session' USING ERRCODE = '42501';
   ELSIF login IS DISTINCT FROM nullif(current_setting('mantle.acting_login', true), '')::uuid THEN
     RAISE EXCEPTION 'mantle_access_key_revoke: only the acting login' USING ERRCODE = '42501';

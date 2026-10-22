@@ -274,6 +274,46 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
   },
 });
 
+/**
+ * The credential and rights tables whose 'all' is column-level for the
+ * narrow system role (plan v3.2 S7b part b2): SELECT, UPDATE of only the
+ * columns listed, DELETE only where it says, never INSERT. Measured with
+ * the switch on (the full DB suite under `log_statement = mod`, every
+ * statement the narrow login sent; the handover's round 4): what narrow
+ * reasons write, less every column that grants or proves a right. The rest
+ * of each table's writes run at the full-route spot login-credential
+ * (viewer.ts FULL_ROUTE_SPOTS) or in the login's own scope. The narrow
+ * login's acting login is a mistake guard only (any narrow statement could
+ * name one), so a column a narrow session may write must give nothing
+ * whoever's row it is: on auth.users never role, password_hash, email,
+ * is_owner or contact_id (a contact's shares reach the login linked to
+ * it). runtime-role.db.test.ts pins the live grants equal to this.
+ */
+export const NARROW_COLUMN_RIGHTS: Readonly<
+  Record<string, { update: readonly string[]; delete: boolean; why: string }>
+> = Object.freeze({
+  'auth.users': {
+    update: ['display_name', 'disabled_at', 'session_epoch'],
+    delete: true,
+    why: "the users area renames, disables and enables a login and ends its sessions (endLoginSessions bumps session_epoch), and removes one (DELETE /api/users/:id, counted by 0312's cascade count). A new login, a role, a password and a contact link run at the spot login-credential; a re-enabled login still needs its own password, which no narrow column sets",
+  },
+  'public.access_keys': {
+    update: ['revoked_at', 'revoked_by'],
+    delete: false,
+    why: "the users area ends a login's sessions: its keys revoked. A key is made in the login's own scope (the write role), never by narrow work",
+  },
+  'public.oauth_access_tokens': {
+    update: ['revoked_at'],
+    delete: false,
+    why: "the users area ends a login's sessions: its tokens revoked. A token is minted by the token exchange, never by narrow work",
+  },
+  'public.mobile_tokens': {
+    update: ['revoked_at'],
+    delete: false,
+    why: 'the users area revokes a device and ends sessions. A device token is minted at sign-in or pairing, never by narrow work',
+  },
+});
+
 /** A table name that reads as a credential or a right: it must be in
  *  NARROW_CREDENTIAL_TABLES (access-matrix.test.ts). */
 export const CREDENTIAL_NAME =

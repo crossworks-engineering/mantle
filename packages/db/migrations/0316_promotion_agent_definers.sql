@@ -7,8 +7,9 @@
 --
 -- The caller of each, as mantle_structure_item's (0315): no scope (a
 -- scope's own writes go through the write role), a system session
--- (session_user the runtime role, the narrow role or a superuser: 0314's
--- rule), LOGIN equal to the acting login the gateway sends
+-- (mantle_system_session: the runtime role, the narrow role, a superuser
+-- or the definers' owner, 0314's rule; on the narrow login the acting
+-- login is a mistake guard, 0314's header), LOGIN equal to the acting login the gateway sends
 -- (mantle.acting_login; none, or another, is refused), that login holding
 -- the function's area (mantle_area_rule), not read-only (mantle.write_mode
 -- ro). Refused: 42501.
@@ -51,9 +52,7 @@ BEGIN
     RAISE EXCEPTION 'mantle_space_settle_promotion: a read-only caller' USING ERRCODE = '42501';
   ELSIF "public"."mantle_scope_active"() OR "public"."mantle_scope_login_id"() IS NOT NULL THEN
     RAISE EXCEPTION 'mantle_space_settle_promotion: only with no scope' USING ERRCODE = '42501';
-  ELSIF NOT (session_user IN ('mantle_runtime', 'mantle_system_narrow')
-              OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r
-                            WHERE r."rolname" = session_user), false)) THEN
+  ELSIF NOT "public"."mantle_system_session"() THEN
     RAISE EXCEPTION 'mantle_space_settle_promotion: not a system session' USING ERRCODE = '42501';
   ELSIF "mantle_space_settle_promotion"."login" IS NULL
      OR "mantle_space_settle_promotion"."login" IS DISTINCT FROM
@@ -103,9 +102,7 @@ BEGIN
     RAISE EXCEPTION 'mantle_agent_delete: a read-only caller' USING ERRCODE = '42501';
   ELSIF "public"."mantle_scope_active"() OR "public"."mantle_scope_login_id"() IS NOT NULL THEN
     RAISE EXCEPTION 'mantle_agent_delete: only with no scope' USING ERRCODE = '42501';
-  ELSIF NOT (session_user IN ('mantle_runtime', 'mantle_system_narrow')
-              OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r
-                            WHERE r."rolname" = session_user), false)) THEN
+  ELSIF NOT "public"."mantle_system_session"() THEN
     RAISE EXCEPTION 'mantle_agent_delete: not a system session' USING ERRCODE = '42501';
   ELSIF "mantle_agent_delete"."login" IS NULL
      OR "mantle_agent_delete"."login" IS DISTINCT FROM

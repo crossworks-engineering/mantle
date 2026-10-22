@@ -2220,6 +2220,13 @@
       "when": 1790198280000,
       "tag": "0316_promotion_agent_definers",
       "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1790198340000,
+      "tag": "0317_narrow_observe_definer_frames",
+      "breakpoints": true
     }
   ]
 }

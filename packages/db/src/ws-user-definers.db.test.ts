@@ -57,7 +57,7 @@ import {
   ensureTestAnchor,
   runWorkspacesSwitch,
 } from './test-support';
-import { NARROW_ROLE, OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
+import { OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
 import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -1094,10 +1094,11 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     const hasRuntime = (
       await sql<{ on: boolean }[]>`select to_regrole(${RUNTIME_ROLE}) is not null as on`
     )[0]!.on;
-    // The runtime role, and the narrow system role (the users area adds a
-    // login: narrow work), made with it.
+    // The runtime role only: the users area's new login and role change
+    // run it at the full-route spot login-credential, never the narrow role
+    // (S7b b2 round 4).
     expect(await mayRun('public.mantle_bridge_login(uuid)')).toEqual(
-      hasRuntime ? [RUNTIME_ROLE, NARROW_ROLE] : [],
+      hasRuntime ? [RUNTIME_ROLE] : [],
     );
     for (const fn of [
       'public.mantle_bridge_connector(uuid,text)',
