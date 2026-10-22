@@ -1320,3 +1320,149 @@ system pool, not the narrow route, and without the acting login
 scope). Found by this round's first cell run; the structure gateway avoids
 it. Whether other narrow request exits' transactions should take the
 narrow route is for the CEO (it would widen what the narrow role meets).
+
+## Part b2, round 3: the system transaction's exit and two more spots (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round lands the CEO's first item (a system transaction inside a narrow
+exit) and two of the remaining spots. The default flip is NOT in this
+round (CEO, mid-round: the interim audit of 0314 and 0315 found two MEDs
+that a fresh builder fixes first). The switch's default is unchanged.
+
+### The system transaction inside a narrow exit, measured
+
+packages/db/src/narrow-system-tx.db.test.ts reports, for each way a
+system transaction's work reaches the database, who it ran as
+(current_user / session_user), the acting login and the actor it carried.
+Before the fix (run on 9e203b2ae, the code of 3711425c9):
+
+| Inside withSystemTx                     | request exit (`area`)                 | asSystem('admin-area') exit | full exit (spot)  |
+| --------------------------------------- | ------------------------------------- | --------------------------- | ----------------- |
+| the transaction's own statements (tx)   | narrow / narrow, acting login, actor  | narrow, acting login, actor | system pool login |
+| `db` (the open transaction)             | narrow, acting login, actor           | the same                    | system pool login |
+| a nested withSystemTx (savepoint)       | narrow, acting login, actor           | the same                    | system pool login |
+| a statement on the system pool itself   | system pool login, no actor, no login | narrow, acting login, actor | system pool login |
+| a statement on `systemDb`               | system pool login, no actor, no login | narrow, acting login, actor | system pool login |
+| `systemRouteNow()` / `actingLoginNow()` | null / null                           | narrow / the login          | full / null       |
+
+So the premise that a write inside withSystemTx ran on the system pool's
+own login held only in part: the transaction itself takes the narrow
+route already (the route is chosen when it begins, in the caller's
+context), but inside it the request's exit was hidden (viewer.ts
+boundExitEntry read the request slot only when no scope was open, and the
+system transaction is a scope): a statement on another connection (the
+pool itself, `systemDb`) ran as the system pool's login with no actor and
+no acting login, and any code that asks the route (`narrowRouteNow`, the
+structure gateway; `actingLoginNow`) got none. An asSystem exit's route
+was never hidden (its own store).
+
+The fix: `runInSystemTx` keeps the request's exit on the system
+transaction's scope (`Scope.requestExit`, taken from boundExitEntry when
+the transaction opens, so a nested one inherits it), and boundExitEntry
+reads it there. After (c60b0ce9c): every row of the request-exit column is
+the narrow login with the acting login and the actor; the full exit is
+unchanged. Cells (each switch-forced on): "a narrow exit: withSystemTx runs
+as the narrow login with the acting login" (both exits, five ways, route
+and acting login inside), "a full exit: withSystemTx stays on the system
+pool" (spot and a full reason), and "a content write through the heads (a
+withSystemTx) is refused, nothing written" (`mantle_lock_heads` 42501 on
+both exits, the denial drained by the cell).
+
+The other system transaction helpers (gateway lens): `withSystemTx` is
+the only one that opens a scope (`runInSystemTx`); the heads helpers
+(`withHeads`, `withSubtreeHeads`, `withNodeInsertHeads`,
+`withNodeDeleteHeads`) and `refuseHiddenRows` are withSystemTx; the
+login write gateway's system path and `systemPoolTxInScope` begin on
+`getAdminDb()`, whose client picks the route at begin in the caller's
+context (narrow on a narrow exit; `systemPoolTxInScope` runs only in a
+login's scope, not an exit); `systemDb.transaction` (member-turn-ledger.ts)
+takes the narrow handle in a scope; `brokerLockTx` is the raw pool (a
+store broker's row lock, no write of content; outside every caller's
+transaction by design); `executeAsMigrator` is the first owner's DDL (a
+full exit). The structure gateway's own transaction (round 2's narrowTx,
+which avoided withSystemTx because of this gap) is now withSystemTx.
+
+Refusals the fix brings, measured with the switch on: the full DB vitest
+with MANTLE_NARROW_DUMP, before (14c3b10eb, the code of 3711425c9) and
+after (c60b0ce9c), one lane each: 0 narrow denials and 0 narrow write
+counts in both; after, 1158 files passed (14255 tests); before, 1157 and
+the probe file (it failed at its first line on that commit, a missing
+import). The narrow uses differ only by the probe's own (+5 per exit
+reason). So no driven path wrote content from another connection inside a
+request exit's system transaction: no new spot, the list did not go up.
+
+### What changed
+
+- packages/db/src/viewer.ts: `Scope.requestExit`, `runInSystemTx`,
+  `boundExitEntry` (above).
+- packages/db/src/gateway/structure-item.ts: `narrowTx` is withSystemTx.
+- Migration `0316_promotion_agent_definers` (`when` 1790198280000, 60000
+  above 0315's; renumber at merge), each with 0315's caller rule (no scope,
+  a system session, the acting login, its area, not read-only; refused
+  42501):
+  - `mantle_space_settle_promotion(login, target)`, the users area: what
+    settleSpaceOnPromotion did (the shared and submitted items of the
+    target's personal space back to private drafts, their bundles gone);
+    refuses a target whose `auth.users.role` is not admin (the condition
+    the app settles on, written first in the same transaction).
+  - `mantle_agent_delete(login, owner, agent, conversation)`, the
+    assistants area: what deleteAgent did (the digests' heads, the agent
+    row locked, its messages and digests with its conversation, a pinned
+    Telegram chat denied, the agent row deleted); owner this brain.
+    Revert: rollback/0316_promotion_agent_definers.revert.sql (not needed for
+    any rollback: no older image calls them). EXECUTE: the runtime role and
+    the narrow role (RUNTIME_SYSTEM_FUNCTIONS, NARROW_SYSTEM_FUNCTIONS).
+- packages/db/src/gateway/spot-definers.ts: `settlePromotionOnNarrow`,
+  `deleteAgentOnNarrow` (on the narrow route one definer call; elsewhere
+  undefined or null and the caller's statements run as before). Callers:
+  packages/content member-space-login.ts, server/web lib/agents.ts.
+  login-update.ts's role change transaction no longer wraps a spot.
+- FULL_ROUTE_SPOTS 7 to 5: promotion-space and agent-conversation gone
+  (viewer.ts, eslint-rules/as-system-routes.mjs). Left: profile-row,
+  integrity-delete, reembed, console-tool, pending-call.
+- packages/db/package.json: the `./runtime-role` subpath (the server/web
+  cell forces the switch).
+- docs/runtime-role.md: the two definers, the system transaction's exit.
+
+### Cells
+
+server/web/server/narrow-spots.db.test.ts (4): a promotion settled on the
+narrow exit equals the full route (the items' sharing, review state,
+submitted stamp and bundles, the count; a second call 0 on both); its
+refusals (no admin target, another and no acting login, a login whose
+areas take users away, through the app's exit too; EXECUTE narrow yes,
+write, user and PUBLIC no); an assistant deleted with and without its
+conversation equal both ways (the result, the agent, messages, orphaned
+messages, digests), no such assistant null both ways; its refusals
+(another and no acting login, another brain, a login without assistants
+through the app's exit, the agent kept; EXECUTE narrow yes, write and user
+no). narrow-area-routes.db.test.ts: DELETE /api/agents/:id without its
+conversation, a new row (before, that path took `mantle_lock_heads` on the
+narrow exit, refused as the heads cell shows); the row with its
+conversation now goes through the definer. runtime-role.test.ts: the
+allowlist names the two.
+
+Not celled: the Telegram chat denied by mantle_agent_delete (the same
+statement as deleteAgent's; a chat needs a Telegram account to set up).
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Below them: inside
+a system transaction of an Admin area or login-self request exit, a
+statement on the system pool itself or on `systemDb` runs on the narrow
+login with the actor and the acting login (it ran as the system pool's
+login with neither), and code that asks the route sees the exit's;
+DELETE /api/agents/:id without its conversation answers on the narrow
+route (it met the heads refusal); a promotion's settle and an assistant's
+delete are one definer call each on the narrow route.
+
+### Pins
+
+fullRouteSpots 7 to 5, fullRouteSpotCalls 8 to 6; sqlRoleReaders 14 to 15
+(the promotion definer reads auth.users.role: reasons in
+scripts/arch-scoreboard.pins.json).
+
+### Rollback (round 3)
+
+0316 adds two functions; an older image never calls them (no revert
+needed). The viewer.ts change is code only.

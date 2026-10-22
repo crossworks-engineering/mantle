@@ -1,6 +1,6 @@
 /**
  * Two writes of an Admin area's narrow exit that ran at a full-route spot
- * before (plan v3.2 S7b part b2; viewer.ts FULL_ROUTE_SPOTS
+ * before (viewer.ts FULL_ROUTE_SPOTS
  * promotion-space and agent-conversation), each now one call of its
  * definer (migration 0316) on the narrow route: the narrow role holds no
  * right on the content tables they write, the definer holds the rule (a

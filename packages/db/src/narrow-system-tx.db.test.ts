@@ -1,5 +1,5 @@
 /**
- * A system transaction inside a narrow exit (plan v3.2 S7b part b2): where
+ * A system transaction inside a narrow exit: where
  * withSystemTx (and the helpers built on it: the heads, the hidden-rows
  * check) runs when an Admin area's exit picked the narrow route, as the
  * request's own exit and as an asSystem exit, against the same work on the

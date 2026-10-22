@@ -1,6 +1,6 @@
 /**
  * The promotion and assistant delete definers (migration 0316,
- * packages/db gateway/spot-definers.ts, plan v3.2 S7b part b2): on the
+ * packages/db gateway/spot-definers.ts): on the
  * users and assistants areas' narrow exits the personal space's settle and
  * an assistant's delete are one definer call each, and each answer equals
  * the app's own statements on the full route (the spots promotion-space

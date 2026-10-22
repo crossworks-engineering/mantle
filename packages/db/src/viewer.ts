@@ -856,8 +856,7 @@ export function runInSystemTx<T>(
   // The request's own system exit, when the transaction opens in it (or in
   // a system transaction that did): kept on the scope, which would hide it
   // otherwise (boundExitEntry), so the work inside takes the exit's route
-  // and acting login, as the transaction's own statements do (plan v3.2
-  // S7b part b2).
+  // and acting login, as the transaction's own statements do.
   const bound = boundExitEntry();
   const requestExit = bound?.request ? bound.entry : undefined;
   return store.run(
