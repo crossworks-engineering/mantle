@@ -38,6 +38,8 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.trace_steps.output': "insert and update: a trace's step log, read by no turn",
   'public.trace_steps.meta': "insert and update: a trace's step log, read by no turn",
   'public.traces.data': "insert and update: a trace's summary (observability), read by no turn",
+  'public.turn_stream_buffer.event':
+    "insert only (round 13b, item G): a turn's live stream event, replayed to the browser of the turn's owner, never a prompt",
 };
 
 /** Taken off the narrow list in round 13b (their edits run at skill-text):

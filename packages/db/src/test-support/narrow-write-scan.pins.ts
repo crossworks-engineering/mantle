@@ -17,8 +17,6 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
   'packages/runs/src/sweep.ts': 'the runs sweep: a worker loop (system work)',
   'packages/telegram/src/sync.ts':
     "the Telegram poller (system work; a chat's turn runs in the chat login's scope)",
-  'packages/turn-stream/src/publish.ts':
-    'the turn stream buffer (turn_stream_buffer: written on the login turn scope or the worker)',
   'server/api/src/bench/haystack.ts': 'the memory benchmark harness (a scratch brain, never a box)',
   'server/api/src/workflows/runs-worker-turn.ts': "the runs worker's turn (system work)",
   'server/web/lib/auth/device-token-reap.ts': 'a reaper loop (system work)',
@@ -26,7 +24,6 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
   'server/web/lib/maintenance/actor-misses-reap.ts': 'the maintenance runner (system work)',
   'server/web/lib/maintenance/history.ts':
     'the maintenance runner (CLI and nightly cron: system work)',
-  'server/web/lib/maintenance/turns-reap.ts': 'the maintenance runner (system work)',
   'server/web/lib/system-manifest/reconcile.ts':
     "the manifest's boot reconcile (system work) and its apply at the manifest's spots",
   'server/web/workers/microsoft-sync.ts': 'the Microsoft sync worker (system work)',
@@ -60,7 +57,6 @@ export const NARROW_SCAN_OPEN: readonly string[] = Object.freeze([
   'packages/content/src/share-access-log.ts delete public.share_access_log',
   'packages/content/src/share-access-log.ts insert public.share_access_log',
   'packages/content/src/team-access-log.ts insert public.team_access_log',
-  'packages/content/src/team-messages.ts update public.assistant_messages [attachments,data,error,model,status,text]',
   'packages/content/src/tree/apps-nav.ts insert public.item_marks [open_count,opened_at]',
   'packages/content/src/tree/apps-nav.ts insert public.item_marks [pinned_at]',
   'packages/content/src/tree/marks.ts insert public.item_marks [open_count,opened_at]',
@@ -77,7 +73,6 @@ export const NARROW_SCAN_OPEN: readonly string[] = Object.freeze([
   'packages/runtime/src/agent/chat-archive.ts update public.chat_threads [seed_thread_id,updated_at]',
   'packages/runtime/src/agent/chat-archive.ts update public.chat_threads [summary_node_id,title,updated_at]',
   'packages/runtime/src/agent/chat-archive.ts update public.chat_threads [title,updated_at]',
-  'packages/runtime/src/agent/conversation.ts update public.assistant_messages [attachments,data,error,model,status,text]',
   'packages/telegram/src/channels.ts insert public.channels',
   'packages/telegram/src/channels.ts update public.channels [agent_id,config,credentials_enc,display_name,enabled,owner_id,updated_at]',
   'packages/telegram/src/channels.ts update public.channels [credentials_enc]',
@@ -94,7 +89,6 @@ export const NARROW_SCAN_OPEN: readonly string[] = Object.freeze([
   'packages/tools/src/seed.ts insert public.tools',
   'packages/tools/src/seed.ts update public.tools [description,handler,input_schema,name,updated_at]',
   'packages/tools/src/tool-results.ts delete public.tool_results',
-  'packages/tools/src/tool-results.ts insert public.tool_results',
   'packages/tracing/src/store.ts update public.trace_steps [*,duration_ms,error,finished_at,meta,output,status]',
   'server/api/src/agent/runtime.ts update public.agents [tool_group_slugs,updated_at]',
   'server/api/src/agent/runtime.ts update public.telegram_messages [processed,processed_at]',

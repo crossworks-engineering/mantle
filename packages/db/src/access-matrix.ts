@@ -445,9 +445,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   },
   'public.assistant_messages': {
     insert: true,
-    update: ['data', 'model', 'status', 'text'],
+    update: ['attachments', 'data', 'error', 'model', 'status', 'text'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram',
+    why: "measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram. Round 13b (item G): a turn's outcome writes its error and attachments too (conversation.ts updateAssistantMessageOutcome, team-messages.ts updateThreadMessageOutcome); 0322 holds every one of them to a pending row",
   },
   'public.audit_log': {
     insert: true,
@@ -638,9 +638,16 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by a login turn',
   },
   'public.tool_results': {
+    insert: true,
     update: ['chunked'],
     delete: false,
-    why: 'measured (round 8): UPDATE by a login turn',
+    why: "measured (round 8): UPDATE by a login turn. Round 13b (item G): a turn's spilled result is inserted on its narrow exit too (tool-results.ts, systemDb in the turn's scope); its id is the turn's own random handle, read back only by the turn that holds it",
+  },
+  'public.turn_stream_buffer': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: "round 13b (item G): a turn's live stream events (turn-stream publish.ts, systemDb in the turn's scope: the narrow route with the switch on) and the expired ones' cleanup at a turn's start; a replay buffer the browser reads, never a prompt",
   },
   'public.tools': {
     update: ['updated_at'],
@@ -841,6 +848,8 @@ export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.fre
     "the model pools area adds an entry (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: an entry names a model, its vendor and its catalog routes for the owner's picker, never a vault key or a base URL; its owner_id is the brain's",
   'public.calendar_accounts':
     "the calendar area adds the owner's feed (INSERT measured), so a delete and reinsert gives the narrow login nothing a plain insert does not: a feed brings content in, never a right, and its owner_id is the brain's (named for S7c's signed acting login)",
+  'public.turn_stream_buffer':
+    "a turn's live stream events (INSERT measured, round 13b): a delete and reinsert gives the narrow login nothing a plain insert does not: an event replays to the browser of the turn's owner, never a prompt or a right, and expires within 15 minutes",
   'public.pdf_passwords':
     'the owner stores a PDF password (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: it opens a PDF the brain already holds, never a right',
   'public.traces':

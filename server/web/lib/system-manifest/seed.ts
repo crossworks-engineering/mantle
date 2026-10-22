@@ -391,10 +391,14 @@ async function wireDelegation(ownerId: string, delegateSlugs: string[]): Promise
     const current = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
     const merged = union(current, delegateSlugs);
     if (merged.length === current.length) continue;
-    await db
-      .update(agents)
-      .set({ memoryConfig: { ...mc, delegate_to: merged }, updatedAt: new Date() })
-      .where(eq(agents.id, entry.id));
+    // A delegate is a grant (it runs with its own tool groups), and
+    // memory_config is off the narrow list (round 13b): assistant-grant.
+    await onFullSystemRoute('assistant-grant', () =>
+      db
+        .update(agents)
+        .set({ memoryConfig: { ...mc, delegate_to: merged }, updatedAt: new Date() })
+        .where(eq(agents.id, entry.id)),
+    );
   }
 }
 
