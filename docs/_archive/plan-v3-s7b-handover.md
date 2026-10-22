@@ -818,7 +818,9 @@ that stopped answering for two minutes.
 
 ### Pins
 
-PIN_PLACEHOLDER
+No pin moved (arch:check 0; scripts/arch-scoreboard.pins.json untouched
+this round). The console calls stay 476: the busy line of every pool is
+still the one `logPoolBusy`.
 
 ### Rollback (fix round 3)
 
@@ -826,7 +828,52 @@ No migration. Code and the patch only: an N-1 image runs its own.
 
 ### Gates
 
-GATES_PLACEHOLDER
+Mac, Node 26, DATABASE_URL unset, on fae48ca2d: `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r
+typecheck` 0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm
+test:serial` 0 (1 file skipped: no database), `vitest run server packages
+eslint-rules` 0 (871 files passed, 284 skipped; 11297 tests passed).
+`pnpm install --frozen-lockfile` with the new patch: 0.
+
+Workstation, a fresh clone of the pushed fae48ca2d per suite, one pgvector
+pg18 container each (label mantle.test=s7b-b1, max_connections=450, port
+checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                        | Exit | Counts                              |
+| -------------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                    | 0    | 578 files; 6381 passed, 1 skipped   |
+| full DB vitest, shard 2/2                    | 0    | 577 files; 7858 passed              |
+| test:actor-off                               | 0    | 141 files; 1432 passed, 1 skipped   |
+| test:actor-on                                | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                                 | 0    | 46 files; 583 passed                |
+| test:matrix                                  | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full (rerun, see below) | 0    | 294 files; 2928 passed, 1 skipped   |
+| test:serial                                  | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0       | 0    | 1155 files; 14239 passed, 1 skipped |
+| the drill (N-1, production, per-database)    | 0    | every migrate step 0, as round 2's  |
+| the new cells (5 files, targeted, 37a21a3b3) | 1    | 81 of 82: the cell fixed below      |
+| narrow-login.db.test.ts (fae48ca2d)          | 0    | 17 passed                           |
+| reserve-queue.db.test.ts on the old patch    | 1    | the 3 end cells fail, as above      |
+| a2a-round-trips.db.test.ts, MANTLE_RT_REPORT | 0    | the numbers above (37a21a3b3)       |
+
+The drill (main d0a207d2a and the branch, the same steps as round 2's):
+every state equal to round 2's table (the narrow login refused after N-1,
+its stored setting and its own password taken back by the branch's
+migrate, no large object).
+
+The first test:runtime-role run exited 1 on one cell under the load of
+six lanes: a2a-round-trips.db.test.ts "the edit check on adds no
+statement and no round trip" counted 162 round trips with the edit check
+on and 161 off, the one more a narrow pipeline's RESET after the answer
+(a statement sent after the caller's answer: counted or not by when the
+window closes). The file alone in the same config, three times on
+fae48ca2d: 0, 0, 0; the full suite again in a lane: the counts above.
+The targeted run on 37a21a3b3 failed one cell of the stored-settings cell
+(exit_on_error on ends the raw session, so the driver answered
+CONNECTION_CLOSED, not 57014); fae48ca2d takes either.
 
 ### Open items
 
