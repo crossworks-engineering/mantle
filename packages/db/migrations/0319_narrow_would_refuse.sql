@@ -20,9 +20,11 @@
 --    actor off the narrow route is counted and the row is written.
 --
 -- Counted when the actor is a narrow reason's (0312's mantle_narrow_actor),
--- current_user = session_user (the full route: on the narrow route the
--- role refuses the write itself, counted as narrow-denied; inside a
--- definer or a foreign key's cascade current_user is the owner) and
+-- current_user is the session's own role (the role it SET, else its login,
+-- as 0317's counts ask: the full route; on the narrow route the role
+-- refuses the write itself, counted as narrow-denied; inside a definer or
+-- a foreign key's cascade current_user is the owner, so a definer's own
+-- writes on a superuser's pool are not counted) and
 -- mantle.route is not 'full' (a declared spot). Once per table and
 -- operation per transaction. A NOTICE: the app's pool writes the miss row
 -- on another connection (actor.ts onPgNotice), so nothing changes in the
@@ -55,9 +57,12 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   seen_key text := 'mantle.narrow_would_' || TG_TABLE_SCHEMA || '_' || TG_TABLE_NAME;
+  -- The session's own role (0317's): the role it SET, else its login.
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
 BEGIN
   IF "public"."mantle_narrow_counted"(who)
-     AND current_user = session_user
+     AND current_user::text = own_role
      AND coalesce(current_setting('mantle.route', true), '') <> 'full'
      AND position(TG_OP IN coalesce(current_setting(seen_key, true), '')) = 0 THEN
     PERFORM set_config(seen_key, coalesce(current_setting(seen_key, true), '') || TG_OP || ' ', true);
@@ -75,6 +80,8 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   report boolean := false;
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
   o jsonb;
   n jsonb;
   arg text;
@@ -87,7 +94,7 @@ BEGIN
     -- off the narrow route (the switch off), not at a spot, is counted as
     -- one the narrow role would refuse, and runs.
     IF "public"."mantle_narrow_counted"(who)
-       AND current_user = session_user
+       AND current_user::text = own_role
        AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
       report := true;
     ELSE
