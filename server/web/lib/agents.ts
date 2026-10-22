@@ -386,10 +386,14 @@ export async function updateAgent(
       .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
       .returning();
   // A grant column (the tool groups, the role) is the narrow login's to
-  // write nowhere: such an edit runs at the full-route spot assistant-grant;
-  // any other edit stays on the narrow login (column rights, access-matrix.ts
-  // NARROW_COLUMN_RIGHTS).
-  const grants = patch.role !== undefined || patch.toolGroupSlugs !== undefined;
+  // write nowhere, nor memory_config's delegate_to (a delegate runs with its
+  // own tool groups: 0318 keeps the key on the narrow login): such an edit
+  // runs at the full-route spot assistant-grant; any other edit stays on the
+  // narrow login (column rights, access-matrix.ts NARROW_COLUMN_RIGHTS).
+  const grants =
+    patch.role !== undefined ||
+    patch.toolGroupSlugs !== undefined ||
+    (patch.memoryConfig != null && 'delegate_to' in patch.memoryConfig);
   const [row] = grants ? await onFullSystemRoute('assistant-grant', write) : await write();
   return row ? toSummary(row) : null;
 }

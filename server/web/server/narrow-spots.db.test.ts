@@ -361,6 +361,16 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
       const edited = await run(() =>
         agents.updateAgent(brain, made.id, { description: 'e', thinkingEffort: 'low' }),
       );
+      // Round 7: a delegate named (a grant: assistant-grant), then another
+      // memory key alone (the narrow login; delegate_to kept).
+      const delegated = await run(() =>
+        agents.updateAgent(brain, made.id, { memoryConfig: { delegate_to: ['pages'] } }),
+      );
+      const tuned = await run(() =>
+        agents.updateAgent(brain, made.id, { memoryConfig: { max_iterations: 4 } }),
+      );
+      const [memory] = await su<{ m: unknown }[]>`
+        select memory_config as m from agents where id = ${made.id}`;
       const clone = await run(() =>
         agents.cloneAgentForUser(brain, {
           actorId: admin,
@@ -381,6 +391,9 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
         made: shape(made),
         granted: shape(granted!),
         edited: shape(edited!),
+        delegated: shape(delegated!),
+        tuned: shape(tuned!),
+        memory: memory!.m,
         clone: shape(clone),
         released: released ? shape(released) : null,
         removed,
@@ -395,5 +408,6 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     expect(on.grants).toEqual(['g-TAG']);
     expect(on.removed).toBe(true);
     expect(on.grantsAfter).toEqual([]);
+    expect(on.memory).toMatchObject({ delegate_to: ['pages'], max_iterations: 4 });
   });
 });

@@ -16,12 +16,18 @@
 --   'up:<col>'          a number is never lowered;
 --   'drop:<col>'        the column changes only to NULL (an unbind);
 --   'from:<col>:<src>'  the column changes only to the row's old <src>
---                       (a session end remembering whom a peer acted as).
+--                       (a session end remembering whom a peer acted as);
+--   'keep:<col>:<key>'  a jsonb column's key never changes (the rest of
+--                       the column may).
 -- On agents, assigned_user_id only to NULL: the users area's lockout
 -- releases a login's assistant on the narrow login; an assignment to a
 -- login (the assistant's tool groups then answer that login's turns) runs
 -- at the full-route spot assistant-grant (S7b b2 round 6, folded here: same
--- class, no box has run 0318).
+-- class, no box has run 0318). memory_config's delegate_to key is held the
+-- same way (round 7, folded here): a delegate runs with its own tool groups
+-- for the caller (only the caller's level narrows it), so naming one is a
+-- grant; the rest of memory_config (limits, the corpus map) stays the
+-- narrow login's, and an edit that names delegate_to runs at assistant-grant.
 -- A refused write raises 42501 and changes nothing. Every product write of
 -- these columns on a narrow exit sets a revoke to now() where it is NULL or
 -- bumps the epoch by one (measured: the switch-on suites), so no answer
@@ -73,6 +79,11 @@ BEGIN
       IF (o -> col) IS DISTINCT FROM (n -> col)
          AND (n -> col) IS DISTINCT FROM (o -> split_part(arg, ':', 3)) THEN
         RAISE EXCEPTION 'the narrow system role may set %.% only from %', TG_TABLE_NAME, col,
+          split_part(arg, ':', 3) USING ERRCODE = '42501';
+      END IF;
+    ELSIF split_part(arg, ':', 1) = 'keep' THEN
+      IF (o -> col -> split_part(arg, ':', 3)) IS DISTINCT FROM (n -> col -> split_part(arg, ':', 3)) THEN
+        RAISE EXCEPTION 'the narrow system role may not change %.% %', TG_TABLE_NAME, col,
           split_part(arg, ':', 3) USING ERRCODE = '42501';
       END IF;
     ELSE
@@ -128,4 +139,4 @@ CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."mantle_pee
 DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."agents";
 --> statement-breakpoint
 CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."agents"
-  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('drop:assigned_user_id');
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('drop:assigned_user_id', 'keep:memory_config:delegate_to');

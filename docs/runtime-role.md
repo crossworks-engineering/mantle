@@ -213,7 +213,9 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   unbind of a session end (`acts_as_login_id`, `ended_acts_as_login_id`);
   `telegram_chats`: no write; `agents`: every column but its grants
   (`tool_group_slugs`, `role`, `workspace_id`, `slug`, `owner_id`, `id`),
-  `assigned_user_id` only released; `tool_groups`: `name`, `description`,
+  `assigned_user_id` only released, `memory_config` but its `delegate_to`
+  key (a delegate runs with its own tool groups for the caller, so naming
+  one is a grant: round 7); `tool_groups`: `name`, `description`,
   `integration`, `enabled`, `configured_by`, `updated_at` (never
   `tool_slugs`, `slug`, `admin_only` or `owner_id`), and neither table's
   `DELETE`. Measured with the switch on (every statement
@@ -225,7 +227,8 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   invite, a peer's way in, a peer share and a Telegram chat's pairing each
   at its own spot (`pair-code`, `oauth-code`, `member-invite`,
   `peer-access`, `peer-share`, `telegram-pair`); an assistant made, cloned,
-  granted a tool group or assigned to a login at `assistant-grant`, a tool
+  granted a tool group or a delegate, or assigned to a login at
+  `assistant-grant`, a tool
   group made, removed or its tools changed at `tool-group-grant` (S7b part
   b2 round 6). The model routes, keys and a group's integration stay
   writable: outbound configuration, as `api_keys`;
@@ -234,8 +237,9 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   narrow role): a revoke (`revoked_at` of access keys, OAuth tokens, device
   tokens, invites and peer shares) and a disable are never cleared, a
   session epoch is never lowered, a peer's `acts_as_login_id` and an
-  assistant's `assigned_user_id` change only to NULL and
-  `ended_acts_as_login_id` only to the old binding. A column
+  assistant's `assigned_user_id` change only to NULL,
+  `ended_acts_as_login_id` only to the old binding, and an assistant's
+  `memory_config` `delegate_to` key never changes (`keep:`). A column
   right alone would let the narrow role bring a revoked credential back;
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);

@@ -270,14 +270,15 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     await su`update auth.users set disabled_at = null where id = ${member}`;
   });
 
-  it('agents and tool_groups (round 6): no insert, no grant column, an assignment only released; the other columns allowed', async () => {
+  it('agents and tool_groups (rounds 6, 7): no insert, no grant column, no delegate, an assignment only released; the other columns allowed', async () => {
     const agent = randomUUID();
     const group = randomUUID();
     const gslug = `g-${group.slice(0, 8)}`;
     await su`insert into tool_groups (id, owner_id, slug, name, tool_slugs)
              values (${group}, ${brain}, ${gslug}, 'g', '{search}')`;
-    await su`insert into agents (id, owner_id, slug, name, role, model, system_prompt, tool_group_slugs, assigned_user_id)
-             values (${agent}, ${brain}, ${`a-${agent.slice(0, 8)}`}, 'a', 'responder', 'm', 'p', ${[gslug]}, ${admin})`;
+    await su`insert into agents (id, owner_id, slug, name, role, model, system_prompt, tool_group_slugs, assigned_user_id, memory_config)
+             values (${agent}, ${brain}, ${`a-${agent.slice(0, 8)}`}, 'a', 'responder', 'm', 'p', ${[gslug]}, ${admin},
+                     ${su.json({ delegate_to: ['pages'], max_iterations: 3 })})`;
     const state = async () =>
       (
         await su<{ h: string }[]>`
@@ -299,6 +300,14 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update agents set id = '${randomUUID()}' where id = '${agent}'`,
       `update agents set assigned_user_id = '${member}' where id = '${agent}'`,
       `delete from agents where id = '${agent}'`,
+      // Round 7: a delegate runs with its own tool groups, so delegate_to is
+      // a grant: added, replaced, dropped with the key or the column, each
+      // refused (0318 keep:memory_config:delegate_to).
+      `update agents set memory_config = memory_config || '{"delegate_to":["pages","toolsmith"]}' where id = '${agent}'`,
+      `update agents set memory_config = jsonb_set(memory_config, '{delegate_to}', '["toolsmith"]') where id = '${agent}'`,
+      `update agents set memory_config = memory_config - 'delegate_to' where id = '${agent}'`,
+      `update agents set memory_config = '{}' where id = '${agent}'`,
+      `update agents set memory_config = null where id = '${agent}'`,
       `insert into tool_groups (owner_id, slug, name) values ('${brain}', 'x-${group.slice(0, 6)}', 'x')`,
       `update tool_groups set tool_slugs = '{search,sandbox_exec}' where id = '${group}'`,
       `update tool_groups set slug = 'admin-tools' where id = '${group}'`,
@@ -312,7 +321,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     // assistants, connectors and settings areas' edits), each allowed.
     for (const s of [
       `update agents set name = 'b', description = 'd', model = 'm2', system_prompt = 'q',
-         skill_slugs = '{}', memory_config = '{}', params = '{}', thinking_effort = 'low',
+         skill_slugs = '{}', memory_config = memory_config || '{"max_iterations":5}', params = '{}', thinking_effort = 'low',
          persona_notes = '[]', avatar = null, priority = 5, enabled = false, api_key_id = null,
          tts_worker_id = null, configured_by = null, updated_at = now() where id = '${agent}'`,
       `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,
@@ -344,9 +353,18 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
         select has_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, ${c}, 'UPDATE') as u`;
       expect(g!.u, `${t}.${c}`).toBe(false);
     }
+    // The other keys of memory_config moved, delegate_to kept.
+    const [mc] = await su<{ m: Record<string, unknown> }[]>`
+      select memory_config as m from agents where id = ${agent}`;
+    expect(mc!.m).toEqual({ delegate_to: ['pages'], max_iterations: 5 });
     // The system pool (here the superuser) is not held by the one-way rule.
     expect(
       await run(su, [`update agents set assigned_user_id = '${member}' where id = '${agent}'`]),
+    ).toBe('ok');
+    expect(
+      await run(su, [
+        `update agents set memory_config = memory_config || '{"delegate_to":["toolsmith"]}' where id = '${agent}'`,
+      ]),
     ).toBe('ok');
     await su`delete from agents where id = ${agent}`;
     await su`delete from tool_groups where id = ${group}`;

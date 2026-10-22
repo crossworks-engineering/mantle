@@ -384,7 +384,7 @@ export const NARROW_COLUMN_RIGHTS: Readonly<
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL). An assistant made, cloned, granted a tool group, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in)",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in)",
   },
   'public.tool_groups': {
     update: ['name', 'description', 'integration', 'enabled', 'configured_by', 'updated_at'],
