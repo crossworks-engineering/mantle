@@ -675,7 +675,18 @@ misses (at most one per check, actor and table an hour).
 
 `scripts/arch-scoreboard-box.sh` prints `narrow_misses:content-write`,
 `narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
-actor and table rows in the fail-open rows' window; numbers only).
+actor and table rows in the fail-open rows' window; numbers only), and
+`narrow_misses:would-refuse` and `narrow_misses:would-refuse-tables`
+(migration 0319: the writes the role would refuse, made with the switch
+off).
+
+Every one of these counts needs the actor check in warn or on (the
+process's `MANTLE_ACTOR_CHECK` or the box's mode, the higher). The counts
+read the actor, and the route mark rides the actor's settings: with the
+check off on both, no actor is sent on the full route and nothing is
+counted, so a 0 then says nothing. The fleet boxes run the check on (the same
+script's `actor_check=` line reads `on`), so their 0s are the evidence the
+default flip waits for; read a box's `actor_check=` line before its 0s.
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so
 `current_user = session_user` is the pool login's), the box query and the
 revert (`packages/db/rollback/0312_narrow_write_observe.revert.sql`);
