@@ -26,12 +26,12 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
 import { buildRoutePolicy, type RouteManifestEntry, type RouteRow } from '../lib/auth/route-policy';
 import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
-import { handlerPolicy } from './route-callers';
+import { aliasMismatches, handlerPolicy } from './route-callers';
 import {
   CannotExpress,
   applyDeclaration,
@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     routeManifest: Array<RouteManifestEntry & { file: string }>;
   };
   const lists = buildRoutePolicy(routeManifest, { source: 'lists' });
+  const patternByFile = new Map(routeManifest.map((e) => [e.file, e.pattern]));
 
   const cannot: string[] = [];
   const decls = new Map<string, RoutePolicyDeclaration>();
@@ -141,6 +142,16 @@ async function main(): Promise<void> {
     if (JSON.stringify(read) !== JSON.stringify(decl)) {
       throw new Error(`${entry.file}: the generator reads another declaration back`);
     }
+    // Each alias is the route file its handler is re-exported from (the
+    // generator's check too, gen-route-manifest.ts).
+    const aliases = aliasMismatches(next, entry.file, read, (spec) => {
+      if (!spec.startsWith('.')) return null;
+      const target = relative(webRoot, resolve(dirname(abs), spec))
+        .split(sep)
+        .join('/');
+      return patternByFile.get(`${target}.ts`) ?? patternByFile.get(`${target}.tsx`) ?? null;
+    });
+    if (aliases.length) throw new Error(aliases.join('; '));
     if (next === src) continue;
     changed.push({ file: entry.file, abs, next });
     if (verbose) console.log(`${entry.file}\n${statement}\n`);

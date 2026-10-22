@@ -59,6 +59,19 @@ export function methodEffect(method: string): 'read' | 'write' {
   return (READ_METHODS as readonly string[]).includes(method.toUpperCase()) ? 'read' : 'write';
 }
 
+/** The methods that never write the generic `api.write` audit row by
+ *  their method alone (route-scope.ts auditsAsWrite): the reads and
+ *  OPTIONS. Every other method does; a row whose effect is a write does
+ *  whatever its method. */
+export const UNAUDITED_METHODS = [...READ_METHODS, 'OPTIONS'] as const;
+
+/** Whether `method` writes the generic audit row by its method alone
+ *  (route-scope.ts auditsAsWrite; a declaration's `audit` the same). */
+export function auditsByMethod(method: string): boolean {
+  const m = method.toUpperCase();
+  return m !== '' && !(UNAUDITED_METHODS as readonly string[]).includes(m);
+}
+
 /** The classes a row is declared with. */
 export const DECLARED_CLASSES = ['public', 'link', 'self', 'area', 'content'] as const;
 
@@ -230,6 +243,27 @@ function exactObject(v: unknown, keys: readonly string[]): string | null {
   return null;
 }
 
+/**
+ * A copy of a declared value with no prototype at any level, frozen
+ * (arrays copied and frozen too; any other value as it is). The validator
+ * reads each value once, here, and checks and returns the copy: the rows
+ * are built from it only, never from what a route module exported (a
+ * getter, a prototype or a later change reads nothing). An own key
+ * `__proto__` stays a key of the copy, so the shape check refuses it.
+ */
+function dataCopy(v: unknown): unknown {
+  if (Array.isArray(v)) return Object.freeze(v.map(dataCopy));
+  if (v === null || typeof v !== 'object') return v;
+  const out = Object.create(null) as Record<string, unknown>;
+  for (const k of Object.keys(v)) {
+    Object.defineProperty(out, k, {
+      value: dataCopy((v as Record<string, unknown>)[k]),
+      enumerable: true,
+    });
+  }
+  return Object.freeze(out);
+}
+
 /** What an alias takes from its base's declaration (it runs the base's
  *  handler), and what a v1 row with a `base` takes (its own handler, its
  *  own limits). Neither declares them. */
@@ -252,16 +286,19 @@ export function splitRouteKey(key: string): { method: string; pattern: string } 
  * needs the whole manifest (an alias's base is served and declared, the
  * caller the code reads is the named one) and the rate limits' names
  * (route-limits.ts, also the type's) are the boot's. Throws on the first
- * thing that cannot hold; returns the value, typed.
+ * thing that cannot hold; returns the checked copy (dataCopy), typed.
  */
 export function validateMethodPolicy(raw: unknown, pattern: string, method: string): MethodPolicy {
   const bad = (what: string): never => {
     throw new Error(`ROUTE_POLICY: ${method} ${pattern} declares ${what}`);
   };
   if (!isDeclaredMethod(method)) bad(`a policy for ${method}, which is no method`);
-  const shape = exactObject(raw, DECLARED_KEYS);
+  // The copy is what is checked and what is returned: a value read once,
+  // with no prototype, frozen.
+  const copy = dataCopy(raw);
+  const shape = exactObject(copy, DECLARED_KEYS);
   if (shape) bad(`a policy that ${shape}`);
-  const d = raw as Readonly<Record<string, unknown>>;
+  const d = copy as Readonly<Record<string, unknown>>;
   const own = (k: DeclaredKey) => Object.hasOwn(d, k);
   if (!has(DECLARED_CLASSES, d.class)) bad(`the class ${String(d.class)}, which is none`);
   const cls = d.class as (typeof DECLARED_CLASSES)[number];
@@ -376,9 +413,9 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
     // The generic audit row is written for a mutating method or a row that
     // writes (route-scope.ts auditsAsWrite): `audit` says something only
     // there.
-    const audits =
-      writes || !(READ_METHODS as readonly string[]).concat('OPTIONS').includes(method);
-    if (d.audit !== 'own' || !audits) bad("audit: 'own', on a row that audits as a write only");
+    if (d.audit !== 'own' || !(writes || auditsByMethod(method))) {
+      bad("audit: 'own', on a row that audits as a write only");
+    }
   }
   return d as MethodPolicy;
 }
@@ -386,22 +423,28 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
 /**
  * Check a route file's whole declaration: an object of methods, each one
  * the file exports (`methods`, the manifest entry's), each method's policy
- * valid (validateMethodPolicy). Returns it, typed.
+ * valid (validateMethodPolicy). Returns the checked copies, typed.
  */
 export function validateRoutePolicy(
   raw: unknown,
   pattern: string,
   methods: readonly string[],
 ): RoutePolicyDeclaration {
-  const shape = exactObject(raw, DECLARED_METHODS);
+  // Read once (dataCopy): what is returned is what was checked.
+  const copy = dataCopy(raw) as Readonly<Record<string, unknown>>;
+  const shape = exactObject(copy, DECLARED_METHODS);
   if (shape) throw new Error(`ROUTE_POLICY: ${pattern} declares a policy that ${shape}`);
-  for (const [m, v] of Object.entries(raw as Record<string, unknown>)) {
+  const out = Object.create(null) as Record<string, MethodPolicy>;
+  for (const m of Object.keys(copy)) {
     if (!methods.includes(m)) {
       throw new Error(
         `ROUTE_POLICY: ${pattern} declares a policy for ${m}, which it does not serve`,
       );
     }
-    validateMethodPolicy(v, pattern, m);
+    Object.defineProperty(out, m, {
+      value: validateMethodPolicy(copy[m], pattern, m),
+      enumerable: true,
+    });
   }
-  return raw as RoutePolicyDeclaration;
+  return Object.freeze(out) as RoutePolicyDeclaration;
 }

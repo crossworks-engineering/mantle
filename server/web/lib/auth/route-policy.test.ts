@@ -20,7 +20,7 @@
  * pattern, method and a path spelled with escapes.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -35,6 +35,7 @@ import {
   type GateCaller,
 } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
+import { reExportedHandlers } from '../../scripts/route-callers';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
 import { isPublicPath } from '../auth-constants';
@@ -86,7 +87,7 @@ function pathsOf(pattern: string): string[] {
   ];
 }
 
-type Manifest = Array<{ pattern: string; methods: string[] }>;
+type Manifest = Array<{ file: string; pattern: string; methods: string[] }>;
 
 describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
   let manifest: Manifest;
@@ -229,10 +230,24 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       const file = join(webRoot, 'app', row.pattern.replace(/:(\w+)/g, '[$1]'), 'route.ts');
       const src = readFileSync(file, 'utf8');
       const m = row.method === 'HEAD' ? 'GET' : row.method;
-      const reExports = new RegExp(`export \\{[^}]*\\b${m}\\b[^}]*\\} from`).test(src);
-      // An alias re-exports its base; a row with none has a handler of its
-      // own (or no base route).
-      expect(reExports, row.key).toBe(row.aliasOf !== null);
+      // An alias is the route its file re-exports, resolved from the
+      // `from` path to that route file's pattern (round 3 LOW-1), the same
+      // method there (a HEAD the GET handler answers: its GET's, under the
+      // row's own method); a row with none has a handler of its own (or no
+      // base route). The generator holds a declared aliasOf to the same.
+      const from = reExportedHandlers(src, file)[m];
+      const target = from
+        ? relative(webRoot, resolve(dirname(file), from.spec))
+            .split(sep)
+            .join('/')
+        : null;
+      const basePattern = target
+        ? manifest.find((e) => e.file === `${target}.ts` || e.file === `${target}.tsx`)?.pattern
+        : undefined;
+      expect(from === undefined || from.name === m, row.key).toBe(true);
+      expect(basePattern !== undefined ? `${row.method} ${basePattern}` : null, row.key).toBe(
+        row.aliasOf,
+      );
     }
     expect(table.get('GET /api/v1/pages')?.aliasOf).toBe('GET /api/pages');
     expect(table.get('GET /api/v1/files/:id')?.aliasOf).toBe('GET /api/files/files/:id');

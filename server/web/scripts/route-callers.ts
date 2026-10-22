@@ -1079,3 +1079,85 @@ export function handlerPolicy(
     return fail(call, errorMessage(e));
   }
 }
+
+/** A handler a route file takes from another module, unchanged: the
+ *  method it is exported as, to the module (`spec`) and the name it has
+ *  there. */
+export type ReExportedHandlers = Readonly<Record<string, Readonly<{ spec: string; name: string }>>>;
+
+/**
+ * The methods a route file exports as another module's handler, unchanged
+ * (an /api/v1 alias): `export { GET } from '../../notes/route'`, `export {
+ * GET as POST } from ...`, or an imported handler exported by name
+ * (`import { GET } from ...; export { GET }`). A method the file defines
+ * itself (a wrapper that calls an imported handler) is not one.
+ */
+export function reExportedHandlers(src: string, file: string): ReExportedHandlers {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
+  const imported = new Map<string, { spec: string; name: string }>();
+  const out: Record<string, { spec: string; name: string }> = Object.create(null);
+  const methods = DECLARED_METHODS as readonly string[];
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+      const named = st.importClause?.namedBindings;
+      if (st.importClause?.isTypeOnly || !named || !ts.isNamedImports(named)) continue;
+      for (const el of named.elements) {
+        if (el.isTypeOnly) continue;
+        const name = (el.propertyName ?? el.name).text;
+        imported.set(el.name.text, { spec: st.moduleSpecifier.text, name });
+      }
+    }
+  }
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || st.isTypeOnly) continue;
+    const clause = st.exportClause;
+    if (!clause || !ts.isNamedExports(clause)) continue;
+    const spec =
+      st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier) ? st.moduleSpecifier.text : null;
+    for (const el of clause.elements) {
+      const as = el.name.text;
+      if (el.isTypeOnly || !methods.includes(as)) continue;
+      const local = (el.propertyName ?? el.name).text;
+      const from = spec !== null ? { spec, name: local } : imported.get(local);
+      if (from) out[as] = from;
+    }
+  }
+  return out;
+}
+
+/**
+ * Where a route file's declared `aliasOf` is not the route its handler
+ * comes from (plan v3.2 S9, round 3 LOW-1): each declared method's alias
+ * is exactly the route file it re-exports (`patternOf` its spec, the
+ * same method there), and a method that re-exports another route file's
+ * handler declares that alias. `patternOf` gives the route pattern of a
+ * spec that names a route file, else null (a lib module: not an alias).
+ * Each mismatch, as the generator reports it; none: the file holds.
+ */
+export function aliasMismatches(
+  src: string,
+  file: string,
+  policy: RoutePolicyDeclaration | null,
+  patternOf: (spec: string) => string | null,
+): string[] {
+  if (!policy) return [];
+  const out: string[] = [];
+  const reExported = reExportedHandlers(src, file);
+  for (const m of DECLARED_METHODS) {
+    const p = policy[m];
+    if (!p) continue;
+    const declared = Object.hasOwn(p, 'aliasOf') ? (p as { aliasOf?: string }).aliasOf : undefined;
+    const from = reExported[m];
+    const pattern = from ? patternOf(from.spec) : null;
+    const actual = from && pattern !== null ? `${from.name} ${pattern}` : null;
+    if (declared === undefined && actual !== null) {
+      out.push(`${file}: ${m} re-exports the handler of ${actual} and declares no aliasOf`);
+    } else if (declared !== undefined && actual === null) {
+      out.push(`${file}: ${m} declares aliasOf ${declared} and re-exports no route's handler`);
+    } else if (declared !== undefined && declared !== actual) {
+      out.push(`${file}: ${m} declares aliasOf ${declared}, but re-exports ${actual}`);
+    }
+  }
+  return out;
+}

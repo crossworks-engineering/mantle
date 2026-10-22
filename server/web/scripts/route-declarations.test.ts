@@ -7,10 +7,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
-import { buildRouteRow } from '../lib/auth/route-policy';
-import { handlerPolicy } from './route-callers';
+import { buildRouteRow, type RouteCaller } from '../lib/auth/route-policy';
+import { aliasMismatches, handlerPolicy, reExportedHandlers } from './route-callers';
 import {
   CannotExpress,
+  OWN_THINGS,
   applyDeclaration,
   itemNoneReason,
   renderDeclaration,
@@ -220,9 +221,114 @@ describe('rowDeclaration', () => {
     ).toBe(ITEM_NONE_PLACEHOLDER);
   });
 
+  it("a 'self' write's reason only where its path names nothing of another party's (MED-1)", () => {
+    // Each row with the caller its handler reads (the rows snapshot's).
+    const reason = (method: string, pattern: string, reads: RouteCaller) =>
+      itemNoneReason(buildRouteRow(method, pattern, () => false, { reads }));
+    const SELF = "the login's own things, not an item";
+    // No path param, and no item in the body: the login's own things.
+    expect(reason('PUT', '/api/profile', 'owner')).toBe(SELF);
+    expect(reason('POST', '/api/auth/logout', 'publicLogin')).toBe(SELF);
+    // A param that is one of its own things: named for what it is.
+    expect(reason('DELETE', '/api/access-keys/:id', 'login')).toBe(
+      OWN_THINGS['/api/access-keys/:id'],
+    );
+    expect(reason('DELETE', '/api/telegram/my-chats/:id', 'chat')).toMatch(/own Telegram chats/);
+    // Another party's item in the path, or in the body: not decided yet.
+    for (const [m, p, reads] of [
+      ['POST', '/api/grants/:nodeId', 'login'],
+      ['PATCH', '/api/workspaces/:id/users/:loginId', 'login'],
+      ['POST', '/api/assistant/threads/:id/continue', 'chat'],
+      ['POST', '/api/telegram/chats/:id/block', 'chat'],
+      ['POST', '/api/grants/move', 'login'],
+    ] as const) {
+      expect(reason(m, p, reads), `${m} ${p}`).toBe(ITEM_NONE_PLACEHOLDER);
+    }
+  });
+
+  it('states an effect exception with the reason of its own route', () => {
+    const evaluate = buildRouteRow('POST', '/api/formulas/:id/evaluate', () => false, {
+      reads: 'owner',
+    });
+    expect(rowDeclaration(evaluate).effect).toEqual({
+      read: "a formula's calculator: it evaluates and stores nothing",
+    });
+    const ms = buildRouteRow('GET', '/api/microsoft/oauth/callback', () => false, {
+      reads: 'owner',
+    });
+    expect(rowDeclaration(ms).effect).toEqual({ write: expect.stringMatching(/^the Microsoft/) });
+  });
+
   it('names a row it cannot say, and writes nothing for it', () => {
     const row = buildRouteRow('GET', '/s/:token', () => false, { page: 'link' });
     expect(() => rowDeclaration(row)).toThrow(CannotExpress);
     expect(() => rowDeclaration(row)).toThrow(/a page of server\/pages/);
+  });
+});
+
+describe('an alias is the route its file re-exports (LOW-1)', () => {
+  const ALIAS_FILE = 'app/api/v1/notes/route.ts';
+  const src = (decl: string, head = "export { GET, POST } from '../../notes/route';\n") =>
+    `${IMPORT}\n${head}${decl}\n`;
+  const patternOf = (spec: string) =>
+    spec === '../../notes/route'
+      ? '/api/notes'
+      : spec === '../../pages/route'
+        ? '/api/pages'
+        : null;
+  const V1 = { pattern: '/api/v1/notes', methods: ['GET', 'POST'] };
+  const read = (text: string) => handlerPolicy(text, ALIAS_FILE, V1);
+
+  it('reads the handlers a file takes unchanged, and not one it wraps', () => {
+    expect(
+      reExportedHandlers(
+        [
+          "import { PATCH as patch } from '../../pages/[id]/route';",
+          "import { DELETE } from '../../notes/[id]/route';",
+          "export { GET, routeParams } from '../../notes/route';",
+          "export { GET as HEAD } from '../../notes/route';",
+          'export { DELETE };',
+          'export async function PATCH(req: Request) { return patch(req); }',
+        ].join('\n'),
+        ALIAS_FILE,
+      ),
+    ).toEqual({
+      GET: { spec: '../../notes/route', name: 'GET' },
+      HEAD: { spec: '../../notes/route', name: 'GET' },
+      DELETE: { spec: '../../notes/[id]/route', name: 'DELETE' },
+    });
+  });
+
+  it('holds where each declared alias is the re-exported route', () => {
+    const text = src(
+      `export const policy = routePolicy({
+  GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' },
+  POST: { class: 'content', keyArea: 'notes', item: { none: 'x' }, aliasOf: 'POST /api/notes' },
+});`,
+    );
+    expect(aliasMismatches(text, ALIAS_FILE, read(text), patternOf)).toEqual([]);
+  });
+
+  it('refuses an alias of another route, a missing one, and one with a handler of its own', () => {
+    const other = src(
+      `export const policy = routePolicy({
+  GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/pages' },
+  POST: { class: 'content', keyArea: 'notes', item: { none: 'x' } },
+});`,
+    );
+    expect(aliasMismatches(other, ALIAS_FILE, read(other), patternOf)).toEqual([
+      `${ALIAS_FILE}: GET declares aliasOf GET /api/pages, but re-exports GET /api/notes`,
+      `${ALIAS_FILE}: POST re-exports the handler of POST /api/notes and declares no aliasOf`,
+    ]);
+    const own = src(
+      "export const policy = routePolicy({ GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' } });",
+      'export async function GET() {}\n',
+    );
+    const ownRead = handlerPolicy(own, ALIAS_FILE, { pattern: '/api/v1/notes', methods: ['GET'] });
+    expect(aliasMismatches(own, ALIAS_FILE, ownRead, patternOf)).toEqual([
+      `${ALIAS_FILE}: GET declares aliasOf GET /api/notes and re-exports no route's handler`,
+    ]);
+    // No declaration: nothing to hold (lists mode).
+    expect(aliasMismatches(other, ALIAS_FILE, null, patternOf)).toEqual([]);
   });
 });

@@ -17,6 +17,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  aliasMismatches,
   analyzeRouteFile,
   handlerPolicy,
   handlerSwitches,
@@ -141,7 +142,17 @@ function switchesOf(absFile: string, seen: Set<string> = new Set()): HandlerSwit
   return switches;
 }
 
-function toEntry(absFile: string): Entry {
+/** The route pattern of a route file (its directory under app/, route
+ *  groups dropped): the pattern only, as toEntry builds it. */
+function patternOfFile(absFile: string): string {
+  return '/' + routeSegments(absFile).segments.join('/');
+}
+
+function routeSegments(absFile: string): {
+  segments: string[];
+  catchAll: string | null;
+  catchAllOptional: boolean;
+} {
   const rel = relative(appDir, dirname(absFile)).split('\\').join('/');
   const rawSegs = rel === '' ? [] : rel.split('/');
   const segments: string[] = [];
@@ -163,10 +174,24 @@ function toEntry(absFile: string): Entry {
       segments.push(seg);
     }
   }
+  return { segments, catchAll, catchAllOptional };
+}
+
+function toEntry(absFile: string): Entry {
+  const { segments, catchAll, catchAllOptional } = routeSegments(absFile);
   const src = readFileSync(absFile, 'utf8');
   const file = relative(webRoot, absFile).split('\\').join('/');
   const pattern = '/' + segments.join('/');
   const methods = exportedMethods(src);
+  const policy = handlerPolicy(src, file, { pattern, methods });
+  // A declared alias is the route file the handler comes from (round 3
+  // LOW-1): the boot checks the base is served and declared, this that it
+  // is the one re-exported.
+  const aliases = aliasMismatches(src, file, policy, (spec) => {
+    const target = routeFileAt(absFile, spec);
+    return target ? patternOfFile(target) : null;
+  });
+  if (aliases.length) throw new Error(`[gen-route-manifest] ${aliases.join('; ')}`);
   return {
     file,
     pattern,
@@ -174,7 +199,7 @@ function toEntry(absFile: string): Entry {
     reads: analysisOf(absFile).callers,
     gone: Object.keys(analysisOf(absFile).gone),
     switches: switchesOf(absFile),
-    policy: handlerPolicy(src, file, { pattern, methods }),
+    policy,
     catchAll,
     catchAllOptional,
     segments,

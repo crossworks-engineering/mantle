@@ -70,9 +70,9 @@ import { itemNotFound, itemRefused } from './item-answers';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
-  FRAME_ROWS,
   assetQueryAsHanded,
   currentRoute,
+  findsNoLogin,
   keyOnRow,
   memberOpenRead,
   memberOpenWrite,
@@ -919,15 +919,6 @@ export function forgetRequestLogins(): void {
   boundLogins(currentCaller())?.forget();
 }
 
-/**
- * The rows whose handler reads no login: the sandbox frame documents
- * (route-policy.ts FRAME_ROWS), opened by the `?t=` frame ticket the gate
- * admitted (their caller is the ticket, frameTicketCaller(); the route
- * reads the login it names). The gate finds no login for them (A4 step 3a
- * audit L4): nothing would read it.
- */
-const NO_LOGIN_LOOKUP_ROWS: ReadonlySet<string> = FRAME_ROWS;
-
 /** The logins bound on `caller` by the gate, or null. */
 function boundLogins(caller: GateCaller | null): RequestLogins | null {
   const bound = caller?.facts?.[HTTP_LOGINS];
@@ -974,7 +965,11 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
     admin: null,
     facts: Object.freeze({ [HTTP_LOGINS]: logins }),
   } as const;
-  if (row.public || NO_LOGIN_LOOKUP_ROWS.has(row.pattern)) return none;
+  // A frame document's row (route-policy.ts findsNoLogin, the frame caller):
+  // opened by the `?t=` frame ticket the gate admitted, its handler reads
+  // the login the ticket names (frameTicketCaller()), so nothing would
+  // read one found here (A4 step 3a audit L4).
+  if (row.public || findsNoLogin(row)) return none;
   let found: FoundLogin;
   const finding = logins.login();
   try {

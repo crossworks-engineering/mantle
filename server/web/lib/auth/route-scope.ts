@@ -30,6 +30,7 @@
  */
 import { isWorkspaceArea, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
+import { auditsByMethod, methodEffect } from './route-declaration';
 
 export type RouteClass =
   { kind: 'content' } | { kind: 'self' } | { kind: 'area'; area: WorkspaceArea };
@@ -183,7 +184,8 @@ export const WRITE_GETS: ReadonlySet<string> = new Set([
  *  never a WRITE_GETS route. */
 export function isReadRequest(method: string, pattern: string | null): boolean {
   const m = method.toUpperCase();
-  if (m === 'GET' || m === 'HEAD') return pattern === null || !WRITE_GETS.has(`GET ${pattern}`);
+  // The reads by method: route-declaration.ts READ_METHODS (methodEffect).
+  if (methodEffect(m) === 'read') return pattern === null || !WRITE_GETS.has(`GET ${pattern}`);
   return pattern !== null && READ_POSTS.has(`${m} ${pattern}`);
 }
 
@@ -196,9 +198,9 @@ export function isReadRequest(method: string, pattern: string | null): boolean {
  * row keeps the audit row its method always wrote.
  */
 export function auditsAsWrite(method: string, effect: 'read' | 'write' | null): boolean {
-  const m = method.toUpperCase();
-  const byMethod = m !== '' && m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS';
-  return byMethod || effect === 'write';
+  // By method: route-declaration.ts UNAUDITED_METHODS (auditsByMethod), the
+  // set a declaration's `audit` is checked against too.
+  return auditsByMethod(method) || effect === 'write';
 }
 
 /**

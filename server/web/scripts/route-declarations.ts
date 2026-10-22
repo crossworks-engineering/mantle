@@ -43,13 +43,36 @@ function paramAt(pattern: string, seg: number): string | null {
   return s?.startsWith(':') ? s.slice(1) : null;
 }
 
-/** Why a row's effect is not its method's, by the list that says it
- *  (route-scope.ts READ_POSTS, WRITE_GETS): the declaration states the
- *  exception with its reason. */
-const EFFECT_REASONS: Readonly<Record<'read' | 'write', string>> = {
-  read: "a formula's calculator: it evaluates and stores nothing",
-  write: "a connector's OAuth callback: it stores the tokens it was given",
+/** Why a row's effect is not its method's, per route (each entry of
+ *  route-scope.ts READ_POSTS and WRITE_GETS, by its key there): the
+ *  declaration states the exception with its reason. A listed route with
+ *  no reason here is one the codemod cannot say (it names it). */
+const EFFECT_REASONS: Readonly<Record<string, string>> = {
+  'POST /api/formulas/:id/evaluate': "a formula's calculator: it evaluates and stores nothing",
+  'GET /api/mcp-connectors/oauth/callback':
+    "an MCP connector's OAuth callback: it stores the tokens the provider gave",
+  'GET /api/microsoft/oauth/callback':
+    "the Microsoft connector's OAuth callback: it stores the tokens the provider gave",
 };
+
+/** The login's own things a 'self' write with a path param names: the
+ *  param is the id of one of them, and its handler finds it by the login
+ *  (or the owner), so no item of another party is in the path. A 'self'
+ *  write with any other param takes ITEM_NONE_PLACEHOLDER: its path may
+ *  name another party's item (a grant, a workspace's member, a thread),
+ *  to be decided. */
+export const OWN_THINGS: Readonly<Record<string, string>> = {
+  '/api/access-keys/:id': "one of the login's own access keys, found by the login",
+  '/api/push/subscriptions/:id': "one of the owner's own push devices, found by the owner",
+  '/api/member/push/subscriptions/:id': "one of the login's own push devices, found by the login",
+  '/api/member/mcp/clients/:id': "one of the login's own MCP clients, found by the login",
+  '/api/telegram/my-chats/:id': "one of the login's own Telegram chats, found by the login",
+};
+
+/** The 'self' routes under these prefixes name items in their body (a
+ *  grant's move and its preview): the 'self' reason does not hold for
+ *  them even with no path param. */
+export const BODY_NAMES_ITEMS = ['/api/grants/'] as const;
 
 /**
  * Why a write names no item (`item: { none }`), from the row's facts where
@@ -63,14 +86,22 @@ export function itemNoneReason(row: RouteRow): string {
       return 'a public route: it judges its own credential';
     case 'link':
       return 'a link route: its share token names what it opens';
-    case 'self':
-      return "the login's own things, not an item";
     case 'area':
       return `manages the ${row.area} area: the Admin step checks it`;
     default:
       break;
   }
   const params = row.pattern.split('/').filter((s) => s.startsWith(':'));
+  if (row.class === 'self') {
+    // The login's own things only where the path names nothing of another
+    // party's: no param (and no item in the body), or one of its own.
+    const own = OWN_THINGS[row.pattern];
+    if (own) return own;
+    if (params.length === 0 && !BODY_NAMES_ITEMS.some((p) => row.pattern.startsWith(p))) {
+      return "the login's own things, not an item";
+    }
+    return ITEM_NONE_PLACEHOLDER;
+  }
   if (params.length === 0) {
     return row.creates ? 'creates an item: ?ws= names where it lands' : 'names no item in its path';
   }
@@ -128,10 +159,11 @@ export function rowDeclaration(row: RouteRow): MethodPolicy {
       no(`the class ${row.class}`);
   }
   if (row.effect !== methodEffect(row.method)) {
-    const listed =
-      row.effect === 'read' ? READ_POSTS.has(row.key) : WRITE_GETS.has(`GET ${row.pattern}`);
+    const listedAs = row.effect === 'read' ? row.key : `GET ${row.pattern}`;
+    const listed = row.effect === 'read' ? READ_POSTS.has(listedAs) : WRITE_GETS.has(listedAs);
     if (!listed) no(`the effect ${row.effect} on a ${row.method}, which no list says`);
-    d.effect = { [row.effect]: EFFECT_REASONS[row.effect] };
+    const why = EFFECT_REASONS[listedAs] ?? no(`the effect ${row.effect}, with no reason written`);
+    d.effect = { [row.effect]: why };
   }
   const base = row.aliasOf ?? v1Base(row);
   if (row.logins && !base) d.open = row.logins;

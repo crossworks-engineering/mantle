@@ -210,7 +210,7 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
  * The sandbox frame documents (A4 hand batch B): opened by the `?t=` frame
  * ticket the gate admitted, with no other credential (a sandboxed iframe's
  * navigation carries none). Their caller is the ticket ('frame'); the gate
- * finds no login for them (session.ts NO_LOGIN_LOOKUP_ROWS).
+ * finds no login for them (findsNoLogin, read by session.ts).
  */
 export const FRAME_ROWS: ReadonlySet<string> = new Set([
   '/api/apps/:id/frame',
@@ -656,6 +656,22 @@ function listNamed(kind: NamedCaller, key: string, pattern: string): boolean {
 export type RoutePolicySource = 'lists' | 'declarations';
 export const ROUTE_POLICY_SOURCE: RoutePolicySource = 'lists';
 
+/**
+ * Whether the gate finds no login for `row` (session.ts resolveHttpLogin):
+ * a sandbox frame document's row, whose caller is the frame ticket and
+ * whose handler reads no login. One source, the frame caller: the lists
+ * name it by pattern (FRAME_ROWS, as before), a declaration by `caller:
+ * 'frame'` (the row's caller is then the frame, callerServes checks the
+ * two are one). route-policy-declarations.test.ts finds the two answers
+ * the same for every row of the manifest.
+ */
+export function findsNoLogin(
+  row: Pick<RouteRow, 'pattern' | 'caller'>,
+  source: RoutePolicySource = ROUTE_POLICY_SOURCE,
+): boolean {
+  return source === 'lists' ? FRAME_ROWS.has(row.pattern) : row.caller === 'frame';
+}
+
 /** What a row's policy says, from the lists or from a declaration; the
  *  rest of the row (its caller, switch, gone stub, page) comes from the
  *  manifest either way. */
@@ -785,7 +801,18 @@ function declaredFacts(
     const b = splitRouteKey(baseKey)!;
     if (!served(`${m} ${b.pattern}`))
       bad(`${baseKey} as its base, which the manifest does not serve`);
-    base = declaredOf(baseKey) ?? bad(`${baseKey} as its base, which declares no policy`);
+    // While the key table names a base (api-v1.ts API_V1_ROUTES `base`), a
+    // declared one is that one. (An alias's base is the route its file
+    // re-exports: the generator checks it, route-callers.ts aliasMismatches.)
+    if (d.base !== undefined && d.base !== (v1Route(m, pattern)?.base ?? null)) {
+      bad(`the base ${d.base}, which the key table (API_V1_ROUTES) does not name`);
+    }
+    // The base's values are read from its own checked copy, as the row's.
+    base = validateMethodPolicy(
+      declaredOf(baseKey) ?? bad(`${baseKey} as its base, which declares no policy`),
+      b.pattern,
+      b.method,
+    );
   }
   const from = base ?? d;
   // A v1 row admits a login as its base does: the owner lists only.

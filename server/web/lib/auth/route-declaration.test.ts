@@ -11,6 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DECLARED_KEYS,
   ITEM_NONE_PLACEHOLDER,
+  READ_METHODS,
+  UNAUDITED_METHODS,
+  auditsByMethod,
   methodEffect,
   routePolicy,
   validateMethodPolicy,
@@ -78,8 +81,48 @@ describe('validateMethodPolicy: the one validator', () => {
   it('takes what the type takes', () => {
     for (const decl of typed.slice(0, 2)) {
       const methods = Object.keys(decl);
-      expect(validateRoutePolicy(decl, '/api/x/:id', methods)).toBe(decl);
+      expect(validateRoutePolicy(decl, '/api/x/:id', methods)).toEqual(decl);
     }
+  });
+
+  it('returns a copy with no prototype at any level, frozen, read once (LOW-3)', () => {
+    let reads = 0;
+    const raw = {
+      class: 'content',
+      get item() {
+        reads += 1;
+        return reads === 1 ? { none: 'read once' } : { param: 'id', need: 'manage' };
+      },
+      limits: { rateLimit: ['authLogin'] },
+    };
+    const got = validateMethodPolicy(raw, '/api/x/:id', 'POST') as Record<string, unknown>;
+    // The value checked is the value returned: the getter ran once.
+    expect(reads).toBe(1);
+    expect(got.item).toEqual({ none: 'read once' });
+    for (const v of [got, got.item, got.limits]) {
+      expect(Object.getPrototypeOf(v)).toBeNull();
+      expect(Object.isFrozen(v)).toBe(true);
+    }
+    expect(Object.isFrozen((got.limits as { rateLimit: string[] }).rateLimit)).toBe(true);
+    expect(got).not.toBe(raw);
+    const route = validateRoutePolicy({ GET: { class: 'content' } }, '/api/x', ['GET']);
+    expect(Object.getPrototypeOf(route)).toBeNull();
+    expect(Object.getPrototypeOf(route.GET)).toBeNull();
+    // An own `__proto__` key stays a key of the copy, and is refused.
+    const proto = JSON.parse('{"class":"content","__proto__":{"open":"any"}}') as unknown;
+    expect(() => validateMethodPolicy(proto, '/api/x', 'GET')).toThrow(/__proto__/);
+  });
+
+  it('the methods that audit by their method alone: the shared set (LOW-2)', () => {
+    expect([...UNAUDITED_METHODS]).toEqual([...READ_METHODS, 'OPTIONS']);
+    for (const m of ['GET', 'head', 'OPTIONS', '']) expect(auditsByMethod(m), m).toBe(false);
+    for (const m of ['POST', 'put', 'PATCH', 'DELETE', 'PROPFIND']) {
+      expect(auditsByMethod(m), m).toBe(true);
+    }
+    // A read's audit is refused: it writes no audit row by its method.
+    expect(() => validateMethodPolicy({ class: 'content', audit: 'own' }, '/api/x', 'GET')).toThrow(
+      /audits as a write only/,
+    );
   });
 
   it('refuses what the type refuses, and what it cannot say', () => {

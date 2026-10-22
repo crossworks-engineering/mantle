@@ -22,11 +22,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { checkLoadedPolicy, type RouteModule } from '../../server/route-loader';
 import { isAuditSelfLogged, PUBLIC_PATHS } from '../auth-constants';
 import { auditsAsWrite } from './route-scope';
-import { entryDeclaration } from '../../scripts/route-declarations';
+import { BODY_NAMES_ITEMS, OWN_THINGS, entryDeclaration } from '../../scripts/route-declarations';
 import type { RoutePolicyDeclaration } from './route-declaration';
 import {
   ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
+  findsNoLogin,
   type RouteCaller,
   type RouteManifestEntry,
   type RouteRow,
@@ -117,6 +118,31 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     expect([...declared.values()].map((r) => JSON.stringify(r))).toEqual(
       [...lists.values()].map((r) => JSON.stringify(r)),
     );
+  });
+
+  it('a frame document finds no login: the same rows from the lists and the declarations (INFO)', () => {
+    const derived = manifest.map((e) => ({ ...e, policy: entryDeclaration(lists, e) }));
+    const declared = buildRoutePolicy(derived, { source: 'declarations' });
+    const noLogin: string[] = [];
+    for (const [key, row] of lists) {
+      const fromLists = findsNoLogin(row, 'lists');
+      expect(findsNoLogin(declared.get(key)!, 'declarations'), key).toBe(fromLists);
+      if (fromLists) noLogin.push(key);
+    }
+    expect(noLogin.sort()).toEqual(['GET /api/apps/:id/frame', 'HEAD /api/apps/:id/frame']);
+  });
+
+  it("each of the login's own things is a 'self' write the manifest serves (MED-1)", () => {
+    const rows = [...lists.values()];
+    for (const p of Object.keys(OWN_THINGS)) {
+      const writes = rows.filter((r) => r.pattern === p && r.effect === 'write');
+      expect(writes.length, p).toBeGreaterThan(0);
+      for (const r of writes) expect(r.class, r.key).toBe('self');
+      expect(p, p).toMatch(/\/:/);
+    }
+    for (const prefix of BODY_NAMES_ITEMS) {
+      expect(rows.some((r) => r.pattern.startsWith(prefix) && r.class === 'self')).toBe(true);
+    }
   });
 
   it("a row's audit is the request path's answer, for every path the pattern spells", () => {
@@ -360,8 +386,18 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
         GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' },
         POST: { class: 'content', item: none, keyArea: 'notes', aliasOf: 'POST /api/notes' },
       }),
-      entry('/api/v1/notes/x', ['POST'], {
-        POST: { class: 'content', item: none, keyArea: 'notes', base: 'POST /api/notes' },
+      // A base is the key table's (api-v1.ts API_V1_ROUTES `base`).
+      entry('/api/pages/:id', ['PATCH'], {
+        PATCH: {
+          class: 'content',
+          open: 'owner',
+          creates: true,
+          item: none,
+          limits: { rateLimit: ['memberBytes'] },
+        },
+      }),
+      entry('/api/v1/pages/:id', ['PATCH'], {
+        PATCH: { class: 'content', item: none, keyArea: 'pages', base: 'PATCH /api/pages/:id' },
       }),
     );
     expect(rows.get('POST /api/v1/notes')).toMatchObject({
@@ -375,7 +411,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
       aliasOf: 'HEAD /api/notes',
     });
     // A base: open and creates; its limits are its own handler's.
-    expect(rows.get('POST /api/v1/notes/x')).toMatchObject({
+    expect(rows.get('PATCH /api/v1/pages/:id')).toMatchObject({
       logins: 'owner',
       creates: true,
       aliasOf: null,
@@ -398,6 +434,11 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(() =>
       build(entry('/api/v1/notes', ['POST'], { POST: alias } as RoutePolicyDeclaration)),
     ).toThrow(/does not serve/);
+    // A base the key table does not name (LOW-1): served and declared, and
+    // still refused while API_V1_ROUTES names each base.
+    expect(() => v1({ class: 'content', item: none, base: 'POST /api/notes' })).toThrow(
+      /the base POST \/api\/notes, which the key table \(API_V1_ROUTES\) does not name/,
+    );
   });
 
   it('a named caller is the one the code reads, both ways', () => {
