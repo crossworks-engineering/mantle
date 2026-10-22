@@ -542,6 +542,7 @@ describe.skipIf(!URL)(
       'self DELETE /api/profile/photo': ['profile-row'],
       'self POST /api/push/connect': ['push-device'],
       'self POST /api/push/reset': ['push-device'],
+      'self PUT /api/profile': ['profile-row'],
       'self PUT /api/profile/backgrounds': ['profile-row'],
       'self PUT /api/profile/color-theme': ['profile-row'],
       'self PUT /api/profile/default-mode': ['profile-row'],

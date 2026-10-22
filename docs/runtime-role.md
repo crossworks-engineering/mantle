@@ -236,7 +236,14 @@ Its rights, made equal to the access matrix at every migrate inside
   the full route that the role would refuse (a table or column privilege,
   0318's one-way rules): `narrow-would-refuse` miss rows, read by
   scripts/arch-scoreboard-box.sh; its triggers are derived from the role's
-  live grants on every migrate, so an allowed write fires none;
+  live grants on every migrate, so an allowed write fires none. A
+  `systemDb` write inside a login's turn or request scope (which the narrow
+  route takes with the switch on, whatever its actor) carries the login's
+  actor, so the gateway marks its actor settings `mantle.route = 'narrow'`
+  (gateway/pools.ts getScopeMarkedDb) and the counts take the mark
+  (`mantle_narrow_counted`, round 10): the count has no blind spot there
+  while the actor check is in warn or on (with it off no actor is sent, as
+  before);
 - the credential and rights tables within it: `auth.users`:
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);
