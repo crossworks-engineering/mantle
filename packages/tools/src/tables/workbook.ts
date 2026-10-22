@@ -409,6 +409,9 @@ export const table_commit: BuiltinToolDef = {
     itemArgs: [{ param: 'id' }],
     keyArea: 'tables',
     clientSourced: CS.onNodes('id'),
+    // A team app may publish its own workspace's Table (runtime-policy.ts
+    // memberAppRefusal; task 2178377a fix round 1, Jason's yes).
+    memberApp: 'table-rows',
   },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Commit a table draft',

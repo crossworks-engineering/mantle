@@ -204,8 +204,9 @@ type ToolPolicyFields = Readonly<{
    *  `table-rows`: a row write a team app may make to a Table homed in a
    *  workspace that holds the app, as the running login, whose own rights
    *  the database checks (runtime-policy.ts memberAppRefusal; task
-   *  2178377a, 2026-10-22). Only the row writes carry it: no table create,
-   *  delete or rename, no column, tab or snapshot change, no row delete. */
+   *  2178377a, 2026-10-22). Only the row writes and table_commit (fix
+   *  round 1) carry it: no table create, delete or rename, no column, tab
+   *  or snapshot change, no row delete. */
   memberApp?: 'ok' | 'refused' | 'table-rows';
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram

@@ -673,13 +673,22 @@ run the green PUBLISHED build only and never edit it from there.
   `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
   `team_request_create` and `read_result`. One kind of write is allowed:
   the Table row writes `table_row_add`, `table_rows_add`,
-  `table_rows_upsert`, `table_row_update` and `table_cell_set`, on a Table
-  homed in a workspace that holds the app (any other Table is refused). The
-  write runs as the user running the app, so it lands only when that user
-  may write the Table (its **Write** switch for their workspace, or a
-  Moderator of its home); the rows go to the Table's draft. No table
-  create, delete or rename, no column, tab or snapshot change and no row
-  delete. A shared link runs none of them. A connector tool runs only when
+  `table_rows_upsert`, `table_row_update` and `table_cell_set`, and
+  `table_commit`, on a Table homed in the workspace that holds the app
+  (exactly one workspace beside Admin; any other Table is refused, and an
+  app two workspaces hold writes none). On its own workspace's Tables a
+  team app is held back by nothing beyond what the user running it may do
+  there: the write runs as that user, so it lands only when they may write
+  the Table (its **Write** switch for their workspace, or a Moderator of
+  its home). Row changes go to the Table's draft, and the app reads that
+  draft back, so a second upsert before a commit updates the first's rows;
+  `table_commit` publishes the draft. A call takes at most 1 MB, and a
+  Table whose draft would pass 50,000 rows (or the box's table ceiling,
+  when lower) or whose file is past 20 MB takes no more rows from an app.
+  The Activity row of each call names the Table and the row count. A
+  read-only login (a read key) writes nothing. No table create, delete or
+  rename, no column, tab or snapshot change and no row delete. A shared
+  link runs none of them. A connector tool runs only when
   the connector is attached to every workspace that holds the app and to a
   workspace of the runner. A connector tool without the admin's read-only
   mark is a write: it needs the connector's **Write** tick on in every

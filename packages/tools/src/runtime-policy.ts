@@ -115,7 +115,7 @@ export type AppBuiltinFacts = { readOnly: boolean; spends: boolean; tableRows?: 
 /** What a team app may call, in one sentence: the refusal and the author's
  *  warning name it, so neither drifts from this rule. */
 export const TEAM_APP_TOOLS_ALLOWED =
-  'A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app, as the user running it, when that user may write there.';
+  'A team app may call read-only built-in tools, and add or change rows (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) of a Table homed in a workspace that holds the app and publish its draft (table_commit), as the user running it, when that user may write there.';
 
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
@@ -124,8 +124,10 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  memberAppRefusedName, the policy's `memberApp`). The one reading of
  *  them: memberAppToolVerdict and appToolPolicy both ask it.
  *
- *  A write is refused, but for a row write the policy marks `table-rows`
- *  (task 2178377a, 2026-10-22): a team app's database is shared by every
+ *  A write is refused, but for a Table write the policy marks `table-rows`
+ *  (task 2178377a, 2026-10-22; table_commit since its fix round 1): on its
+ *  own workspace's Tables a team app is held to what the running user may
+ *  do there, no more. A team app's database is shared by every
  *  holder, so it changes only rows of a Table homed in a workspace that
  *  holds the app (memberAppToolVerdict asks the call's table, the app's
  *  holders as AppRunFor reads them), and it runs as the running login in
