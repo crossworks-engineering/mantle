@@ -646,6 +646,11 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     const [lim] = await su<{ n: number }[]>`
       select rolconnlimit as n from pg_roles where rolname = ${NARROW}`;
     expect(lim!.n).toBe(rr.NARROW_CONNECTION_LIMIT);
+    // The user role's, sized the same way (12 x 3 + 4 x 3 + 2 x 3 = 54,
+    // viewer-roles.ts ROLE_CONNECTION_LIMIT; it was 30 under 36 asked).
+    const [user] = await su<{ n: number }[]>`
+      select rolconnlimit as n from pg_roles where rolname = 'mantle_view_user'`;
+    expect(user!.n).toBe(54);
     // Measured on a role of its own with the same limit (the narrow role's
     // connections are shared with the test files running now): as many
     // pools as the limit is sized for (every box process, the stdio MCP

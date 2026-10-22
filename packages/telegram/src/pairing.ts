@@ -464,8 +464,9 @@ async function notifyPaired(args: {
  * is not this brain. A write, in its own transaction:
  * on the write role in the login's own scope (a login's routes; the
  * definer then takes the scope's own login only), on the narrow or full
- * system route on the assistants area's route (no scope: the definer acts
- * for the login it is passed, the request's). A chat the caller may not
+ * system route on the assistants area's route (no scope: the definer takes
+ * only the acting login the gateway sends, the request's, and only from a
+ * system session, migration 0314). A chat the caller may not
  * touch, or none, answers no row: not found, so a caller who may not
  * moderate the bot learns nothing about its chats.
  */

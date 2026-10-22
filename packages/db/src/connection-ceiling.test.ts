@@ -483,9 +483,12 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
     const writePool = Object.entries(WRITE_POOL_ENTRIES)
       .filter(([, p]) => p !== null && shape.processes.includes(p))
       .reduce((sum, [file]) => sum + writePoolSizeOf(file), 0);
-    for (const { role, limit } of ROLE_LIMITS) {
-      const want = role === 'write' ? writePool : VIEWER_POOL_MAX * shape.processes.length;
-      lines[`role ${role}`] = Math.min(limit, want);
+    // Every process's pool at full use: no min() with the role's limit
+    // (that hid 12 x 3 = 36 past the user role's 30); the limit tests below
+    // hold each sum.
+    for (const { role } of ROLE_LIMITS) {
+      lines[`role ${role}`] =
+        role === 'write' ? writePool : VIEWER_POOL_MAX * shape.processes.length;
     }
   }
   const workers = queueWorkers(shape.processes);
@@ -595,6 +598,33 @@ describe('Postgres connection ceiling', () => {
       expect(lines['role narrow'], shape.name).toBe(per * shape.processes.length);
       expect(total, shape.name).toBeLessThanOrEqual(limit);
       expect(total + stdioWrite + headroom, shape.name).toBeLessThanOrEqual(MAX_CONNECTIONS ?? 0);
+    }
+  });
+
+  it('the user role: every process its pool may open in, at full use, fits its CONNECTION LIMIT; the box under 90% with every headroom under max_connections', () => {
+    const per = VIEWER_POOL_MAX;
+    const box = per * DB_PROCESSES.length;
+    const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
+    // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT.
+    expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
+      per: 3,
+      processes: 12,
+      box: 36,
+      headroom: 18,
+      sum: 54,
+    });
+    const user = ROLE_LIMITS.find((r) => r.role === 'user');
+    expect(user?.limit).toBe(54);
+    expect(box + headroom).toBeLessThanOrEqual(user!.limit);
+    const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
+    const narrowHeadroom = sizeOf(narrowCall!) * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
+    for (const shape of SHAPES) {
+      const { total, lines } = ceiling(shape);
+      expect(lines['role user'], shape.name).toBe(per * shape.processes.length);
+      expect(total, shape.name).toBeLessThanOrEqual(limit);
+      expect(total + stdioWrite + narrowHeadroom + headroom, shape.name).toBeLessThanOrEqual(
+        MAX_CONNECTIONS ?? 0,
+      );
     }
   });
 

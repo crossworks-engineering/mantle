@@ -61,11 +61,16 @@ function retireStatement(role: string, exists = true): string {
   return `${exists ? 'ALTER' : 'CREATE'} ROLE "${role}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
 
-/** Hard cap on connections per role, across every process of a box. The
- *  write role's is smaller: only the processes that call openLoginWritePool
- *  open its pool (web, api, the runs worker, the Telegram poller, the stdio
- *  MCP server), and connection-ceiling.test.ts keeps their sum under it. */
-export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 30, write: 20 };
+/** Hard cap on connections per role, across every process of a box.
+ *  The user role's is sized to every user pool a box can open at once, each
+ *  at VIEWER_POOL_MAX (3, gateway/pools.ts), as the narrow role's is: the 12
+ *  compose processes that take the app env (36), up to 4 stdio MCP servers
+ *  (12) and 2 operator runs (6). 36 + 12 + 6 = 54. The write role's is
+ *  smaller: only the processes that call openLoginWritePool open its pool
+ *  (web, api, the runs worker, the Telegram poller, the stdio MCP server).
+ *  connection-ceiling.test.ts holds both sums under these limits, with no
+ *  min(), and the box under 90% of max_connections. */
+export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 54, write: 20 };
 
 /** The attributes that make a viewer role a lock (and the gap writer:
  *  access-matrix.ts gapWriterRoleStatement; it holds nothing since plan v3

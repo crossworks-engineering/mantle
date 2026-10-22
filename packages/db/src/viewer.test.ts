@@ -126,7 +126,7 @@ describe('viewerRoleStatements', () => {
     }
     expect(POOL_ROLES).toEqual(['user', 'write']);
     // The write role's cap holds the box's worst case (docs/actors.md).
-    expect(ROLE_CONNECTION_LIMIT).toEqual({ user: 30, write: 20 });
+    expect(ROLE_CONNECTION_LIMIT).toEqual({ user: 54, write: 20 });
   });
 
   it('alters an existing role (re-derives the password after a key change)', () => {
