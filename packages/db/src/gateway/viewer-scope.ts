@@ -190,8 +190,9 @@ export async function createHomeFallback(
  *  a brain app's holders from its grants. `{ team: true }`, an id that is
  *  not an app, and an app with no live holder beyond Admin read nothing
  *  (they read the built-in Team workspace until 0286 made it a normal one;
- *  no workspace stands in for "team rules" now). Admin pool. */
-async function appRunHolders(app: AppRunFor): Promise<string[]> {
+ *  no workspace stands in for "team rules" now). Admin pool. Also asked
+ *  by appHolderHomes (app-holder-homes.ts). */
+export async function appRunHolders(app: AppRunFor): Promise<string[]> {
   if (!('id' in app)) return [];
   if (!UUID_RE.test(app.id)) throw new Error('withViewer: app must be a uuid');
   const [row] = (await getAdminDb().execute(
@@ -203,32 +204,6 @@ async function appRunHolders(app: AppRunFor): Promise<string[]> {
             where n.id = ${app.id} and n.type = 'app'`,
   )) as unknown as { live: string[] }[];
   return row ? [...row.live] : [];
-}
-
-/**
- * Whether the item `itemId` of `ownerId` is homed in a workspace that holds
- * the app `appId`: one of the live holders beyond Admin an app run reads
- * through (appRunHolders, AppRunFor). A team app's row write asks it of the
- * Table it names (member-app-tools.ts, task 2178377a): the app's database
- * is shared by every holder, so it changes only items homed where they work.
- * A yes or no, never the item: a missing item, one of another owner and an
- * id that is not a uuid all answer false. Admin pool.
- */
-export async function appHolderHomes(
-  ownerId: string,
-  appId: string,
-  itemId: string,
-): Promise<boolean> {
-  if (!UUID_RE.test(ownerId) || !UUID_RE.test(appId) || !UUID_RE.test(itemId)) return false;
-  const held = await appRunHolders({ id: appId });
-  if (held.length === 0) return false;
-  const rows = (await getAdminDb().execute(
-    sqlTag`select 1 from nodes n
-            where n.id = ${itemId}::uuid and n.owner_id = ${ownerId}::uuid
-              and n.home_ws = any(${`{${held.join(',')}}`}::uuid[])
-            limit 1`,
-  )) as unknown as unknown[];
-  return rows.length > 0;
 }
 
 /** The scope `withViewer` enters for `actsFor`, read on the admin pool. */
