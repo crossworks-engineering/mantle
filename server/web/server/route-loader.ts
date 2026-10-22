@@ -114,7 +114,7 @@ function sameData(a: unknown, b: unknown): boolean {
  * from the declarations: a module that exports another throws, and so does
  * one that exports none where the manifest carries one. A test's stand-in
  * routes (`load: async () => ({ GET })`, no file) opt out by name
- * (`standIn`, registerRoutes' `{ standIn: true }`). The lists' rows read
+ * (`standIn`: registerRoutes' `standInModules`, or its stand-in rows). The lists' rows read
  * no declaration (`source`).
  */
 export function checkLoadedPolicy(
@@ -196,14 +196,20 @@ export function servedRoute(c: Context): ServedRoute | null {
  *  map: the rows of the loader's own tests, whose routes are not the app's;
  *  `{ standIn: true }`: the rows of a test's stand-in routes, whose
  *  handlers call the guards themselves (buildRouteRow `standIn`; only a
- *  test passes it, arch-lints.test.ts). */
+ *  test passes it, arch-lints.test.ts). `standInModules`: the real rows
+ *  over a test's stand-in modules, which export no policy
+ *  (checkLoadedPolicy; a test only, the same pin). */
 export function registerRoutes(
   app: Hono,
   manifest: RouteEntry[],
   rows: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }> = buildRoutePolicy(manifest),
+  opts: Readonly<{ standInModules?: boolean }> = {},
 ): void {
   const policy = 'standIn' in rows ? buildRoutePolicy(manifest, rows) : rows;
-  const standIn = 'standIn' in rows && rows.standIn === true;
+  // A test's stand-in modules (`load: async () => ({ GET })`, no file)
+  // export no policy, whatever the manifest's entry carries: named by the
+  // test (`standInModules`, or its stand-in rows), never by the app.
+  const standIn = opts.standInModules === true || ('standIn' in rows && rows.standIn === true);
   for (const entry of manifest) {
     const rowsFor = (methods: string[]): ReadonlyMap<string, RouteRow> =>
       new Map(

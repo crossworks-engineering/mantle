@@ -467,7 +467,7 @@ describe('the architecture ratchets (pinned counts)', () => {
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
     const named = countedFiles(ROOT).filter((f: string) =>
-      /\bstandIn\b/.test(stripComments(readRepoFile(ROOT, f) ?? '')),
+      /\bstandIn(?:Modules)?\b/.test(stripComments(readRepoFile(ROOT, f) ?? '')),
     );
     expect(named).toEqual([
       'server/web/lib/auth/route-policy.ts',

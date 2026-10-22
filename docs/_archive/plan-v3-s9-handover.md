@@ -258,3 +258,159 @@ commit, per the standing rule.
 3. Part 3: delete the lists (route-scope.ts sets, any-login-routes.ts,
    member-routes.ts, ROUTE_GATES, the key table's policy half), the
    `listedFacts` path and `source`; rows held to route-policy.rows.json.
+
+## Part 0 round 2: the shape settled before part 1 writes it
+
+The audit of part 0 (8/10, merge after fixes; no change in 'lists' mode)
+asked for the declaration's shape to settle before the codemod writes
+418 files once. Still tooling only: no route file and no list's
+contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
+
+### What changed, per round 2 input
+
+- M1: `routePolicy(d: RoutePolicyDeclaration): RoutePolicyDeclaration`,
+  not generic, so an excess key is a type error in a method, an item and
+  the limits alike (lib/auth/route-declaration.test.ts holds each refused
+  shape as a `@ts-expect-error` that tsc checks). An item is
+  `{ param, need }` or `{ none }`, exclusively (each says the other's keys
+  are `never`). At run time the policy, the item, the limits and an
+  effect exception are exact key sets; null, an array or a non-object
+  is refused with what it is.
+- M2: the effect is derived from the method (GET and HEAD read, every
+  other method writes, as isReadRequest). A declaration states only an
+  exception, `effect: { read: why }` on a write method or
+  `effect: { write: why }` on a GET or HEAD; a plain `effect` string, an
+  exception that is the method's own effect, or one with no reason is
+  refused. The three: POST /api/formulas/:id/evaluate (read), the two
+  OAuth callback GETs (write).
+- M3: one source. An alias (`aliasOf`) declares no `open`, `creates` or
+  `limits`: they are its base's declaration's (open projected: 'owner'
+  or none), as the lists' alias took them. A v1 row with a handler of
+  its own that admits a login as a base route does declares `base`
+  (was api-v1.ts `base`) and no `open` or `creates`; its limits are its
+  own handler's. The boot finds the base's declaration in the manifest
+  (served and declared, the same method, a route off /api/v1) and
+  refuses one that is not. 25 aliases, 2 base rows.
+- M4: one pure validator, `validateMethodPolicy(raw, pattern, method)`
+  and `validateRoutePolicy(raw, pattern, methods)` in
+  route-declaration.ts. The generator (route-callers.ts handlerPolicy,
+  at pretypecheck) and the boot (route-policy.ts declaredFacts) both run
+  it; what needs the whole manifest (an alias's base, the caller the
+  code reads) and the rate limits' names (route-limits.ts; the type
+  refuses an unknown name too) stay the boot's. The shape is const
+  arrays there (DECLARED_METHODS, DECLARED_KEYS, DECLARED_CLASSES,
+  DECLARED_OPEN, ITEM_NEEDS, ITEM_KEYS, LIMIT_KEYS, CROSS_SITE,
+  NAMED_CALLERS, EFFECT_KEYS, READ_METHODS); a compile-time check pins
+  DECLARED_KEYS to the type's keys. The generator's and route-callers'
+  method lists are DECLARED_METHODS; handlerPolicy takes the methods
+  from the manifest entry (`exportedMethods`) instead of reading its own.
+  The lint (eslint-rules/route-plumbing.mjs) imports DECLARED_METHODS and
+  ROUTE_POLICY_EXPORT from route-declaration.ts: Node 26 loads the
+  TypeScript file as it is, which is why that file imports only the
+  client types' name lists at run time.
+- L1: `checkLoadedPolicy` throws where the manifest carries a policy and
+  the module exports none; a test's stand-in routes opt out by name
+  (registerRoutes' `{ standIn: true }`). A test loads every route module
+  of the manifest and asks it (route-policy-declarations.test.ts).
+- L2: the generator reads a declaration into objects with no prototype
+  and refuses a `__proto__` key; the validator refuses one wherever it
+  is, and reads with Object.hasOwn.
+- L3: the codemod builds, proves and reads back every file's text
+  first, then writes them all (none on a failure).
+- The owner's list decisions:
+  - AUDIT_SELF_LOGGED_PATHS: a field, `audit: 'own'`, per method, only
+    on a row that audits as a write (auditsAsWrite). The row gains
+    `audit` ('own' or null): the lists' row says it from the path list
+    (11 rows). session.ts auditMutation still asks isAuditSelfLogged of
+    the path (no change in 'lists' mode); part 2 reads `row.audit`
+    there. A test proves the row's answer is the path's for every path
+    each pattern spells, every param tried with every segment a listed
+    path holds.
+  - PUBLIC_LOGIN_ROWS, OWNER_AT_READ_ROWS, ADMIN_OPEN_ROWS and
+    FRAME_ROWS (their caller half): one field, `caller`, the named
+    caller kind the row reads (NAMED_CALLERS: publicLogin 7,
+    cookieUpgrade 1, ownerAtRead 2, session 1, frame 1). Checked both
+    ways at boot against the caller the generator reads from the code:
+    a declared kind the handler does not read is refused, and so is a
+    named kind the row does not declare (callerServes). ADMIN_OPEN_ROWS'
+    scope half is the declared class 'self'. One field for the four,
+    as they are one rule: a kind read only on a row named for it.
+    FRAME_ROWS keeps feeding session.ts NO_LOGIN_LOOKUP_ROWS (a kept
+    list; it names two patterns, one of which reads the frame caller).
+  - PUBLIC_PATHS stays a list. Its shrink to the unrouted paths changes
+    the lists' rows, so it is part 3's; the list it shrinks to is pinned
+    now: `/login` and `/app-runtime`, the entries no manifest pattern
+    is under (a param counts as any segment). A route under one of
+    them fails that test first. Body ceilings, LINK_CORS_PATTERNS, the
+    asset lists, NO_LOGIN_LOOKUP_ROWS and the page lists stay lists.
+  - public-session-routes.ts leaves the policy count
+    (arch-counts.mjs ROUTE_LISTS_NOT_POLICY, with why):
+    routePolicyLists 15 to 14.
+- The item decision: `item` is required on every write in the type and
+  at boot, refused on a read. The codemod writes `{ none: why }` where
+  the row has no item check (every write today: itemWriteTarget reads
+  none), the reason from the row's facts (a public, link, self or area
+  row; a create with no path param; a write with no path param), else
+  ITEM_NONE_PLACEHOLDER, one fixed string the lint can forbid later.
+
+### Measured (the branch, main v0.300.132 under it)
+
+| | |
+|---|---|
+| route files | 418 |
+| rows | 819 |
+| declarations (methods declared) | 572 |
+| writes with `item: { none }` | 326 |
+| of them, the placeholder reason | 81 |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
+
+The rows snapshot (route-policy.rows.json) changes by the `audit` field
+alone, on 11 rows: every other field of every row is what it was.
+
+### The dry run and the flip (a throwaway detached worktree of 39bda9d51)
+
+- `--write`: 418 files written (+3466 lines); a second `--check`: 819 of
+  819 equal, 0 files to write (idempotent).
+- On the written tree, lists mode: tsc 0, prettier on server/web/app 0,
+  eslint on server/web/app with `route-policy-declared` at 'error' 0
+  errors (the rule fires on an unwritten file). The full vitest suite:
+  876 files passed, 1 failed (the per-file route list pin of
+  public-session-routes.ts, fixed on the branch after that commit),
+  285 skipped (the database files). The manifest carried every
+  declaration, so route-policy-declarations.test.ts ran its full
+  comparison (each the lists' own, the rows the lists'), and the L1 test
+  loaded all 418 modules and found each export the manifest's.
+- With `ROUTE_POLICY_SOURCE = 'declarations'` (part 2's flip), the full
+  suite: 25 failed. One is the pin above. One is served-route.test.ts,
+  whose stand-in modules over the real rows export no policy: L1
+  refuses them, as it should, and registerRoutes' `standInModules`
+  (added for it) clears it (rerun: passes). The other 23 are the 7
+  files whose tests build a manifest by hand without declarations, each
+  "declares no policy": gate.test.ts 19 tests and route-policy.test.ts
+  4, while gate-caller, gate-login, gate-login-update, gate-route and
+  item-write-encoded fail as files (their setup builds the rows). The
+  same 23 as round 1. Every test over the real manifest passed under the flip.
+
+### Pins
+
+- routePolicyLists 15 to 14 (public-session-routes.ts is test data), and
+  its per-file pin (no-policy-name-lists.mjs ROUTE_LIST_PINS) drops it.
+- historyCodeComments stays 2333.
+- The stand-in escape pin (arch-lints.test.ts) now names
+  `standInModules` too: route-policy.ts and route-loader.ts only.
+
+### Left (parts 1 to 3), as round 2 leaves it
+
+1. Part 1, after feat/s7b-b2 merges: `--check` (expect 819 of 819 and 81
+   placeholders; a moved count names the merged routes), `--write`,
+   `route-policy-declared` to 'warn'.
+2. Part 2: declarations for the 7 hand-built test manifests,
+   `standInModules` in served-route.test.ts, the flip, the rule to
+   'error', session.ts auditMutation reading `row.audit`, and the area
+   check fold.
+3. Part 3: delete the lists and `listedFacts`; PUBLIC_PATHS shrinks to
+   `/login` and `/app-runtime` (renamed for the unrouted paths); FRAME_ROWS
+   leaves route-policy.ts, NO_LOGIN_LOOKUP_ROWS keeps its own two
+   patterns; api-v1.ts keeps its matching half.
+4. Each ITEM_NONE_PLACEHOLDER (81) is decided (a check or a reason);
+   then the lint forbids the string.
