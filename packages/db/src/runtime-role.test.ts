@@ -419,23 +419,32 @@ describe('the narrow system role rights', () => {
     // The allowlist (plan v3.2 S7a part a3): what narrow statements call, by
     // name, measured with the switch on. Only goes down, or a reviewed line.
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
+      // The users area's access log names and a contact's sharing, and the
+      // integrity audit's check, skip and shared reads (the area reads a
+      // trace of every decided function's callers found).
+      'public.mantle_access_log_names(uuid,uuid[])',
       // An assistant's level counts (GET /api/agents on the
       // assistants area's narrow exit), a read of counts only.
       'public.mantle_agent_experience(uuid,uuid[])',
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_brain_id()',
+      'public.mantle_check_box_mode(text)',
+      'public.mantle_check_lowered()',
       // Round 14: a connector held beyond Admin (its sync, move and key
       // rotate on the Admin area's narrow exit), a structure read.
       'public.mantle_connector_beyond_admin(uuid,text)',
       'public.mantle_connector_rows(uuid,text,uuid[])',
       'public.mantle_connector_state(uuid,text)',
+      'public.mantle_contact_sharing(uuid,uuid[])',
       'public.mantle_login_areas(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
       // 0320: the assistant_messages guard's read definer.
       'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
+      'public.mantle_ws_any_shared(uuid[])',
       'public.mantle_ws_kind(uuid)',
       'public.mantle_ws_private_for(uuid,uuid)',
+      'public.mantle_ws_skip_reason()',
     ]);
     for (const [fn, why] of Object.entries(NARROW_SYSTEM_FUNCTIONS)) {
       expect(fn, fn).toMatch(/^public\.mantle_[a-z0-9_]+\(/);

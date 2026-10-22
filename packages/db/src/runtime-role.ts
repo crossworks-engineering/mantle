@@ -290,6 +290,18 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "whether a connector is held beyond Admin (the Admin area's connector sync, move and key rotate: external-access.ts connectorBeyondAdmin): a read definer with no identity read (0293: an inactive scope reads the owner's rows; round 14, the re-audit's app MED-1: refused on the narrow exit before)",
   'public.mantle_agent_experience(uuid,uuid[])':
     "an assistant's level counts (the assistants area's GET /api/agents: agents.ts listAgents withExperience): a read definer of counts only, no content; on the narrow role the identity readers answer no scope, so it counts the owner's assistants as on the system pool (0293). Round 14b: refused on the narrow exit before (dev's narrow-denied miss of 2026-10-22)",
+  'public.mantle_access_log_names(uuid,uuid[])':
+    "the display names of an app's access log actors (the users area's GET /api/apps/:id/access-log: app-access-log.ts actorNames): a read definer; on the narrow role no scope, so the names of the actors the app's log holds, as on the system pool (0293)",
+  'public.mantle_contact_sharing(uuid,uuid[])':
+    "the share code dates of contacts (the users area's POST /api/team-admin/invites from a contact: contacts.ts getContact): a read definer, dates only, never a code; on the narrow role no scope, the listed contacts' (0293)",
+  'public.mantle_check_box_mode(text)':
+    "the box's actor or edit check mode (the settings area's GET /api/debug/integrity/audit: its check rows): a read of the database's settings, no identity (0280)",
+  'public.mantle_check_lowered()':
+    "the record of a lowered check floor (the integrity audit's check_floor row): a read of the database's settings, no identity (0301)",
+  'public.mantle_ws_skip_reason()':
+    "why the workspaces switch skipped this brain (the integrity audit's workspaces_not_migrated row): runs as its caller, so with the narrow role's own reads (0272)",
+  'public.mantle_ws_any_shared(uuid[])':
+    "whether a workspace list holds one beyond Admin and the private ones (the integrity audit's snapshot row, grant-reads.ts sharedReadsAliasSql): a read definer, no identity (0286)",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
 };

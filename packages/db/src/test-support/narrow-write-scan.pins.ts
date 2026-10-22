@@ -145,18 +145,12 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_access_keys_seen:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_access_log_names:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_holders:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_trash_act:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_bridge_login:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_check_box_mode:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
-  mantle_check_lowered:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
   mantle_check_note:
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_client_sourced_among:
@@ -167,8 +161,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
   mantle_contact_shares_revoke_rows:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_contact_sharing:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_contact_sharing_rows:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_contact_sharing_set:
@@ -293,8 +285,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_ws_any_holder:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_ws_any_shared:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_ws_archive:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_attach_assistants:
@@ -335,8 +325,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_set_moderator:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_ws_skip_reason:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
   mantle_ws_update_about:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
 });
@@ -360,10 +348,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/admin-acts.ts mantle_share_close_admin': 1,
   'packages/content/src/admin-acts.ts mantle_share_contact_write_set': 1,
   'packages/content/src/admin-acts.ts mantle_share_with_contacts': 1,
-  'packages/content/src/app-access-log.ts mantle_access_log_names': 1,
   'packages/content/src/app-table-exports.ts mantle_mark_export_client_sourced': 1,
   'packages/content/src/app-trash.ts mantle_deleted_apps': 1,
-  'packages/content/src/contact-share-codes.ts mantle_contact_sharing': 1,
   'packages/content/src/contact-share-codes.ts mantle_contact_sharing_rows': 1,
   'packages/content/src/contact-shares.ts mantle_contact_shares_revoke_rows': 1,
   'packages/content/src/contact-shares.ts mantle_share_with_contacts_rows': 1,
@@ -383,8 +369,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/tree/visibility.ts mantle_ws_names': 3,
   'packages/db/src/brain-answers.ts mantle_name_taken': 1,
   'packages/db/src/brain-answers.ts mantle_snapshot_bytes': 1,
-  'packages/db/src/check-floor.ts mantle_check_box_mode': 4,
-  'packages/db/src/check-floor.ts mantle_check_lowered': 2,
   'packages/db/src/check-floor.ts mantle_check_note': 1,
   'packages/db/src/check-floor.ts mantle_set_actor_check': 1,
   'packages/db/src/check-floor.ts mantle_set_edit_check': 1,
@@ -392,7 +376,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/db/src/extract-skip-backfill.ts mantle_is_brain_space': 1,
   'packages/db/src/first-owner-exit.ts mantle_ws_migrate_locked': 1,
   'packages/db/src/folder-trail.ts mantle_folder_trail': 1,
-  'packages/db/src/gateway/check-mode.ts mantle_check_box_mode': 1,
   'packages/db/src/gateway/heads.ts mantle_lock_heads': 1,
   'packages/db/src/gateway/heads.ts mantle_lock_heads_more': 1,
   'packages/db/src/gateway/heads.ts mantle_lock_heads_nested': 1,
@@ -403,7 +386,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/db/src/gateway/spot-definers.ts mantle_space_settle_promotion': 1,
   'packages/db/src/gateway/viewer-scope.ts mantle_ws_private_workspace': 1,
   'packages/db/src/grant-reads.ts mantle_ws_any_holder': 1,
-  'packages/db/src/grant-reads.ts mantle_ws_any_shared': 1,
   'packages/db/src/hidden-rows.ts mantle_subtree_refuse_hidden': 1,
   'packages/db/src/item-rights.ts mantle_may_manage_home': 1,
   'packages/files/src/email-attachments.ts mantle_mail_branch_holds': 1,
@@ -448,19 +430,16 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/grants.ts mantle_ws_admin_id': 1,
   'server/web/lib/grants.ts mantle_ws_live': 1,
   'server/web/lib/grants.ts mantle_ws_names': 2,
-  'server/web/lib/integrity/audit.ts mantle_ws_skip_reason': 2,
   'server/web/lib/login-update.ts mantle_bridge_login': 1,
   'server/web/lib/maintenance/doc-reindex.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/ocr-rescan.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/refold-embeds.ts mantle_embed_host': 1,
   'server/web/lib/mcp-oauth.ts mantle_login_is_admin': 1,
   'server/web/lib/pair-code.ts mantle_login_is_admin': 1,
-  'server/web/lib/snapshot-copies.ts mantle_ws_skip_reason': 1,
   'server/web/lib/token-login.ts mantle_login_is_admin': 1,
   'server/web/lib/workspace-ticks.ts mantle_ws_set_moderator': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_attach_assistants': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_migrate_locked': 1,
-  'server/web/lib/workspaces-migrate.ts mantle_ws_skip_reason': 1,
   'server/web/lib/workspaces.ts mantle_ws_add_user': 1,
   'server/web/lib/workspaces.ts mantle_ws_admin_id': 1,
   'server/web/lib/workspaces.ts mantle_ws_archive': 1,

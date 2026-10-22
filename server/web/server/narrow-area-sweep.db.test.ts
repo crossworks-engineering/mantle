@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  CONTACT_NODE,
   KEY_OR,
   LANDED_NODE,
   LOGIN_SELF_ENTRIES,
@@ -222,6 +223,21 @@ async function seedFixture(su: postgres.Sql): Promise<void> {
   await su`insert into member_invites (id, owner_id, email, code_hash, expires_at)
            values (${S}, ${OWNER}, 'sweep-invited@example.test', 'sweep-invite-hash', now() + interval '1 day')`;
   await su`insert into mobile_tokens (id, user_id, expires_at) values (${S}, ${S}, now() + interval '30 days')`;
+  // The reads that reach a definer only with a row to read: an app's access
+  // log with an actor (its names, mantle_access_log_names), a contact the
+  // invite names (its sharing), and pg-boss's job table (the queue counts of
+  // the integrity audit and the extraction screen; pg-boss itself is
+  // replaced here). The migrate granted SELECT on pgboss's tables before
+  // this one existed, so the grant is repeated as migrate makes it.
+  await su`insert into app_access_log (owner_id, app_node_id, actor_id, kind)
+           values (${OWNER}, ${S}, ${OWNER}, 'tool')`;
+  await su`insert into nodes (id, owner_id, type, title, path)
+           values (${CONTACT_NODE}, ${OWNER}, 'contact', 'Sweep contact', 'contacts')`;
+  await su`create table if not exists pgboss.job (
+             id uuid primary key default gen_random_uuid(), name text not null,
+             state text not null, data jsonb, created_on timestamptz not null default now(),
+             completed_on timestamptz)`;
+  await su`grant select on pgboss.job to mantle_runtime, mantle_system_narrow`;
 }
 
 /**

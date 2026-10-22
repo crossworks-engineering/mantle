@@ -20,6 +20,8 @@ export const KEY_OR = '55555555-5555-4555-8555-555555555555';
 export const PEER_NODE = '33333333-3333-4333-8333-333333333301';
 export const MAIL_NODE = '33333333-3333-4333-8333-333333333302';
 export const LANDED_NODE = '33333333-3333-4333-8333-333333333303';
+/** A contact the invite row names (its lookup reads the contact's sharing). */
+export const CONTACT_NODE = '33333333-3333-4333-8333-333333333304';
 /** The owner's second Telegram chat, for the login's own chat rows. */
 export const SELF_CHAT = '77777777-7777-4777-8777-777777777771';
 export const WORKER_KINDS = [
@@ -232,7 +234,11 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/studio/sandbox': {
     body: { agentId: S, messages: [{ role: 'user', content: 'hi' }] },
   },
-  'POST /api/team-admin/invites': { body: { email: 'sweep-invitee@example.test' } },
+  // From a contact: the lookup before the insert reads its sharing
+  // (mantle_contact_sharing) on the users area's narrow exit.
+  'POST /api/team-admin/invites': {
+    body: { email: 'sweep-invitee@example.test', contactId: CONTACT_NODE },
+  },
   'DELETE /api/team-admin/invites/:id': {},
   'PATCH /api/team-admin/settings': { body: { teamPrivateReads: true } },
   'PATCH /api/telegram/chats/:id': { body: { responderAgentId: S } },
