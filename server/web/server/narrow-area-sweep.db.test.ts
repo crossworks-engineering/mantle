@@ -93,6 +93,9 @@ const bodies = JSON.parse(
 const OWNER = '22222222-2222-4222-8222-222222222222';
 
 const S = SAMPLE_ID;
+/** The Azure route's 'custom' key, and the provision row's record key. */
+const KEY_AZURE = '55555555-5555-4555-8555-5555555555a2';
+const AZURE_PROVISION = 'onboarding provision (Azure only)';
 
 /**
  * The rows each route needs to reach its write: one per table at the
@@ -275,6 +278,9 @@ describe.skipIf(!URL)(
       off: new Map(),
     };
     const docs: Record<string, Record<string, number | boolean>> = {};
+    /** The Azure-only provision per pass: its answer, the persona's route
+     *  and the tool groups after it. */
+    const azure: Record<string, { answer: string; persona: string; groups: number }> = {};
 
     beforeAll(async () => {
       ts = await import('@mantle/db/test-support');
@@ -427,6 +433,40 @@ describe.skipIf(!URL)(
           sameIds: first.length > 0 && first.every((id) => second.includes(id)),
         };
         if (pass === 'on') denials.set('docs-item', ts.takeNarrowDenials());
+        // The onboarding provision on the Azure route only (round 8's B):
+        // the OpenRouter key leaves the provider lookup (its service
+        // renamed, so the rows that name it keep it), a 'custom' key and
+        // the Models step's Azure endpoint are saved, and Set up seeds the
+        // tool substrate, the workers' routes and the persona assistant.
+        // Last: it changes the fixture's keys.
+        await su`update api_keys set service = 'sweep-renamed' where id = ${KEY_OR}`;
+        await su`insert into api_keys (id, user_id, service, label, key_enc)
+                 values (${KEY_AZURE}, ${OWNER}, 'custom', 'default', ${Buffer.from('sealed')})`;
+        await su`update profiles
+                    set preferences = coalesce(preferences, '{}'::jsonb) || ${su.json({
+                      onboardingModels: {
+                        route: 'azure',
+                        azureBaseUrl: 'https://sweep.openai.azure.example/openai/v1',
+                        assistantModel: 'sweep-assistant',
+                        workerModel: 'sweep-worker',
+                      },
+                    })}
+                  where user_id = ${OWNER}`;
+        const provisioned = await send('POST', '/api/onboarding', { action: 'provision' });
+        record(AZURE_PROVISION);
+        const { PERSONA_SLUG } = await import('../lib/system-manifest/manifest');
+        const [persona] = await su<{ provider: string; key: string | null; url: string | null }[]>`
+  select provider, api_key_id::text as key, base_url as url from agents
+   where owner_id = ${OWNER} and slug = ${PERSONA_SLUG}`;
+        azure[pass] = {
+          answer: `${provisioned.status} ${normalize(provisioned.text)}`,
+          persona: persona ? `${persona.provider} ${persona.key} ${persona.url}` : 'none',
+          groups: (
+            await su<
+              { n: number }[]
+            >`select count(*)::int as n from tool_groups where owner_id = ${OWNER}`
+          )[0]!.n,
+        };
       } finally {
         await m?.closeDb();
         await su.end();
@@ -458,6 +498,15 @@ describe.skipIf(!URL)(
         .filter(([k, a]) => selfAnswers.off.get(k) !== a || !a.startsWith('2'))
         .map(([k, a]) => ({ row: k, on: a, off: selfAnswers.off.get(k) }));
       expect(differ).toEqual([]);
+    });
+
+    it('the onboarding provision on the Azure route only: 2xx, the same both ways, the persona on the custom key', () => {
+      expect(azure.on).toEqual(azure.off);
+      expect(azure.on!.answer.startsWith('2')).toBe(true);
+      expect(azure.on!.persona).toBe(
+        `custom ${KEY_AZURE} https://sweep.openai.azure.example/openai/v1`,
+      );
+      expect(azure.on!.groups).toBeGreaterThan(2);
     });
 
     it('records per row whether the narrow login wrote: never on the off pass; the scope set`s insert on the narrow route', () => {
@@ -516,6 +565,14 @@ describe.skipIf(!URL)(
       'POST /api/mcp-connectors/:slug/oauth/start': ['tool-config'],
       'POST /api/model-combos/apply': ['model-route'],
       'POST /api/onboarding': ['profile-row'],
+      [AZURE_PROVISION]: [
+        'assistant-grant',
+        'heartbeat-maker',
+        'model-route',
+        'profile-row',
+        'tool-config',
+        'tool-group-grant',
+      ],
       'POST /api/openapi-connectors': ['tool-group-grant'],
       'POST /api/peers': ['peer-access'],
       'POST /api/peers/:id/rotate': ['peer-access'],
