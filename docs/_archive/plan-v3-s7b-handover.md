@@ -2979,3 +2979,134 @@ drill (~/s7b-b2/drill7.sh, as the CEO ran it).
    machinery); the sweep's per-row record now covers the area and
    login-self rows.
 5. The full re-audit of b2, both sides.
+
+## Part b2, round 11: the last LOWs, the cascade cell's cause, the narrow pool's queue (handed over)
+
+Same branch. Inputs: the brief's "b2 round 11 inputs" and round 10's "Left
+(round 11)". One builder; commits 7a53b5797 to 0e81fec1d and this handover.
+
+### Item 0: the e runs on 797f8e29e
+
+eaon 0, eeon 0, eserial 0, errole 0, es2 0, eproof 0. es1 1: only
+arch-lints' per-file pin (ROUTE_LIST_PINS had no row for
+narrow-area-sweep.entries.ts; round 10 re-pinned the total only): fixed in
+7a53b5797, with its reason. eaoff 1: narrow-would-refuse's app-path cell in
+test:actor-off (its box-off loop: with the process's check off too, no actor
+and so no mark is sent, nothing is counted; the cell now expects a count
+only while the effective check is warn or on, 3e027fe95). ematrix 1: only
+its time budget (264.9 s of 210 s, six lanes busy, every cell passing).
+eoff and erroff were still running at hand-over.
+
+### Item 1: the last LOWs
+
+- The spot-callback lint (bf538e1bd): FULL_ROUTE_SPOT_CALLBACKS
+  (eslint-rules/as-system-routes.mjs) lists the spot holders that run a
+  caller's function inside their spot: applyLoginChange (login-credential;
+  only the workspace screen may pass its firstInTx) and structure-item's
+  private onSpot. A function in FULL_ROUTE_SPOT_FILES that calls
+  onFullSystemRoute and takes a function-typed parameter is found from the
+  source: unlisted, it fails arch:check; so does a call passing a function
+  from a file not listed, an alias or passed reference of a holder, and a
+  listed name that takes no function. applyManifest takes data only (slugs
+  and modes): no holder. Cells in as-system-exits.test.ts.
+- The Telegram assistant choice in one place (af44ff855):
+  packages/telegram/src/chat-assistant.ts. chatAnsweringAgentId (the
+  override answers before the bot's assistant), botAgentIdSql (the bot's
+  assistant as one subquery, for an id or a column) and botAgentId. The
+  turn's row (runtime.ts: the left join on channels became the subquery),
+  the pairing rule (chatLoginRefusal: both assistants, unchanged), the
+  pairing preview's bot assistant and the bot bind read them. No answer
+  changes. The reverse lookups (an assistant's bot: agent-telegram
+  accountForAgent, events-reminders, agents.ts, channels.ts) are another
+  question and stay.
+- The Azure-only onboarding sweep row (8f8a84ebc, 32a8a0191): after every
+  area row, the sweep takes the OpenRouter key out of the provider lookup
+  (its service renamed, so the rows naming it keep it), saves a 'custom'
+  key and the Models step's Azure endpoint, and sends POST /api/onboarding
+  `provision`. 2xx and equal both ways, no narrow denial, the persona on
+  the custom key and endpoint; its spots pinned in SPOT_ROWS as measured:
+  assistant-grant, docs-root, model-route, profile-row, tool-group-grant
+  (fsweep2 on 32a8a0191: exit 0).
+
+### Item 2: the narrow-observe cascade cell's 42501 (cause found, fixed)
+
+Not a flake. runtime-role.db.test.ts's hand-grant cell commits
+`GRANT mantle_system_narrow TO mantle_runtime WITH INHERIT TRUE` (and the
+same for mantle_system and mantle_owner), then runs ensureRuntimeRoles.
+That took the wrong membership back (REVOKE, committed) before granting it
+again: for that moment mantle_runtime was a member of neither role,
+cluster-wide, so any other database's runtime session doing
+set_config('role', 'mantle_system_narrow') got 42501. narrow-observe's
+cascade cell (rt sets the narrow role, then deletes a login) runs beside it
+in the same packages/db run. The same moment exists on a box when migrate
+finds a hand grant with the wrong options while the old app serves.
+
+Fix (081218d4c, runtime-role.ts ensureRuntimeRoles): the wanted
+memberships are granted first (a GRANT sets its own row's options in
+place), then the take-back (only rows still wrong: another grantor's, an
+ADMIN option, unwanted roles), then every role statement again. The final
+state is the same. Cell: the hand-grant cell now runs SET ROLE to both
+roles as the runtime role throughout ensureRuntimeRoles and expects no
+refusal and no "taken back ... from mantle_runtime" warning.
+
+Proof on the workstation (pg18, the switch off): frrold, the cell with the
+old runtime-role.ts (797f8e29e's) on 32a8a0191: 27 refusals (`mantle_system
+42501`, `mantle_system_narrow 42501`) in one run, exit 1. frr1, the new
+order, runtime-role, narrow-observe, narrow-login and narrow-would-refuse
+together: exit 0.
+
+### Item 3: the narrow pool's queue (measured, no change)
+
+recordReserveWaitsForTests (reserved.ts, 0e81fec1d; off by default)
+records each reserve's pool and wait. fmeas on 0e81fec1d, the switch on,
+packages/runtime, server/api/src and a2a-round-trips (99 files, 1082 tests,
+exit 0), three workers, with the six lanes busy: the narrow pool 307
+reserves, p50 0 ms, p90 1, p99 15, max 55, none at 100 ms or more, none ran
+out of its 15 s; 241 ms of waiting in the whole run (the most in
+run-team-turn.viewer: 93 reserves, 92 ms). The system pool: 1081 reserves,
+max 63 ms. So the narrow pool does not queue a turn in a measurable way and
+the cap of 2 stays; the max includes a fresh connect after the 30 s idle
+close. Limits, named: a reserve is the actor-bound statement's; an
+actorless narrow statement queues inside postgres.js and is not in these
+numbers; a test process runs one turn at a time, a box several (a turn's
+narrow statements are serial, so two connections serve two turns at once
+and a third waits one round trip). The spend-budget slowness of round 10 is
+not the narrow pool (round 10 fixed the cells' fixed wait).
+
+### Item 4: docs
+
+docs/runtime-role.md, "The narrow write count": every narrow count, the
+would-refuse count among them, needs the actor check in warn or on (the
+process's or the box's, the higher); with both off no actor or mark is
+sent and a 0 says nothing. The fleet boxes are on (the scoreboard's
+`actor_check=` line), so their 0s are the flip's evidence (d201f64fa).
+
+### Pins
+
+No arch pin moved (routePolicyLists stays 16; the per-file pin added).
+fullRouteSpots and fullRouteSpotCalls unchanged.
+
+### Gates (round 11)
+
+Mac, Node 26, DATABASE_URL unset, on 0e81fec1d: `pnpm -r typecheck` 0,
+`pnpm lint` 0, `pnpm format:check` 0, `pnpm docs:check` 0, `pnpm
+arch:check` 0; `pnpm -C server/web build` and the full unit vitest were
+running at hand-over ($TMPDIR/macgates/summary on the Mac).
+
+Workstation, every suite on 0e81fec1d, launched at hand-over
+(`UNITR=11 ~/s7b-b2/launch9.sh 0e81fec1d f`: fs1 fs2 faoff faon feon frrole
+fserial foff frroff fmatrix fproof; results in ~/s7b-b2/x-f<name>.exit and
+.log, `bash ~/s7b-b2/grab3.sh fs1 fs2 faoff faon feon frrole fserial foff
+frroff fmatrix`), and the rollback drill (unit s7b-b2r11-fdrill:
+~/s7b-b2/drill.sh 0e81fec1d, ~/s7b-b2/drill.log, exit in x-fdrill.exit).
+launch9.sh now takes UNITR for its unit names (default 9; the old copy is
+launch9.sh.bak). Targeted, done: fsweep2 0, ftg1 0 (the Telegram files and
+a2a on 8f8a84ebc), frr1 0, fmeas 0.
+
+### Left (round 12)
+
+0. Read the f runs and the drill; the matrix alone if only its time budget
+   fails; eoff and erroff (797f8e29e) too. The Mac build and unit vitest
+   on 0e81fec1d (the summary file above), or run them again.
+1. If every gate reads 0 on 0e81fec1d (this handover is docs only), that
+   head goes to the full re-audit of b2, both sides.
