@@ -218,7 +218,7 @@ m216 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m217 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m218 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9286
+# cells whose guard entry moved to the pipeline: 9310
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -5663,6 +5663,20 @@ first HEAD /api/workspaces/:id/archive-preview member-cookie=m17
 first HEAD /api/workspaces/:id/archive-preview admin-bearer=m18
 first HEAD /api/workspaces/:id/archive-preview member-bearer=m19
 first HEAD /api/workspaces/:id/archive-preview revoked-bearer=m20
+first GET /api/workspaces/:id/connector-options owner-cookie=m1
+first GET /api/workspaces/:id/connector-options admin-cookie=m2
+first GET /api/workspaces/:id/connector-options limited-cookie=m3
+first GET /api/workspaces/:id/connector-options member-cookie=m4
+first GET /api/workspaces/:id/connector-options admin-bearer=m5
+first GET /api/workspaces/:id/connector-options member-bearer=m6
+first GET /api/workspaces/:id/connector-options revoked-bearer=m7
+first HEAD /api/workspaces/:id/connector-options owner-cookie=m14
+first HEAD /api/workspaces/:id/connector-options admin-cookie=m15
+first HEAD /api/workspaces/:id/connector-options limited-cookie=m16
+first HEAD /api/workspaces/:id/connector-options member-cookie=m17
+first HEAD /api/workspaces/:id/connector-options admin-bearer=m18
+first HEAD /api/workspaces/:id/connector-options member-bearer=m19
+first HEAD /api/workspaces/:id/connector-options revoked-bearer=m20
 first POST /api/workspaces/:id/resources owner-cookie=m8
 first POST /api/workspaces/:id/resources admin-cookie=m9
 first POST /api/workspaces/:id/resources limited-cookie=m10
@@ -9465,6 +9479,16 @@ more HEAD /api/workspaces/:id/archive-preview bumped-cookie=m20
 more HEAD /api/workspaces/:id/archive-preview gone-cookie=m20
 more HEAD /api/workspaces/:id/archive-preview rotated-bearer=m20
 more HEAD /api/workspaces/:id/archive-preview expired-bearer=m20
+more GET /api/workspaces/:id/connector-options disabled-cookie=m7
+more GET /api/workspaces/:id/connector-options bumped-cookie=m7
+more GET /api/workspaces/:id/connector-options gone-cookie=m7
+more GET /api/workspaces/:id/connector-options rotated-bearer=m7
+more GET /api/workspaces/:id/connector-options expired-bearer=m7
+more HEAD /api/workspaces/:id/connector-options disabled-cookie=m20
+more HEAD /api/workspaces/:id/connector-options bumped-cookie=m20
+more HEAD /api/workspaces/:id/connector-options gone-cookie=m20
+more HEAD /api/workspaces/:id/connector-options rotated-bearer=m20
+more HEAD /api/workspaces/:id/connector-options expired-bearer=m20
 more POST /api/workspaces/:id/resources disabled-cookie=m7
 more POST /api/workspaces/:id/resources bumped-cookie=m7
 more POST /api/workspaces/:id/resources gone-cookie=m7

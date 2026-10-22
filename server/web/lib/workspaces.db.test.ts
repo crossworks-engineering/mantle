@@ -183,6 +183,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     users: await import('@/app/api/workspaces/[id]/users/route'),
     user: await import('@/app/api/workspaces/[id]/users/[loginId]/route'),
     res: await import('@/app/api/workspaces/[id]/resources/route'),
+    opts: await import('@/app/api/workspaces/[id]/connector-options/route'),
     resOne: await import('@/app/api/workspaces/[id]/resources/[kind]/[refId]/route'),
     preview: await import('@/app/api/workspaces/[id]/archive-preview/route'),
     archive: await import('@/app/api/workspaces/[id]/archive/route'),
@@ -961,6 +962,42 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       (await call(r.res.POST(req('POST', { kind: 'connector', id: CONN }), p({ id: team })))).body
         .code,
     ).toBe('admin_only');
+  });
+
+  it('connector options: MCP and HTTP API connectors alike, by the attach`s gate, held ones flagged (0314)', async () => {
+    const API = 'conn-w5a-api';
+    const binding = JSON.stringify({
+      service: 'example-api',
+      baseUrl: 'https://api.example.invalid/v1',
+    });
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
+      values (${owner}, ${API}, 'API W', ARRAY['api_w_get']::text[], 'admin', true, ${binding}::jsonb)`);
+    const ws = await create(mem, 'Mia options');
+    const id = p({ id: ws });
+    // The attach's gate: a Moderator who is no Admin user may not; a login
+    // that may not see the workspace gets 404.
+    const byMember = await call(r.opts.GET(req('GET'), id));
+    expect(byMember.status).toBe(403);
+    expect(byMember.body.code).toBe('admin_only');
+    await as(mem2);
+    expect((await call(r.opts.GET(req('GET'), id))).status).toBe(404);
+    await as(owner);
+    const list = await call(r.opts.GET(req('GET'), id));
+    expect(list.status).toBe(200);
+    const all = list.body.connectors as Json[];
+    expect(all.filter((c) => [CONN, API].includes(c.slug as string))).toEqual([
+      { slug: API, name: 'API W', kind: 'api', held: false },
+      { slug: CONN, name: 'Connector W', kind: 'mcp', held: false },
+    ]);
+    // Every option attaches (the list is the attach's rule), and then shows
+    // as held.
+    for (const c of all) {
+      const add = await call(r.res.POST(req('POST', { kind: 'connector', id: c.slug }), id));
+      expect(add.status, String(c.slug)).toBe(200);
+    }
+    const after = (await call(r.opts.GET(req('GET'), id))).body.connectors as Json[];
+    expect(after.map((c) => c.slug)).toEqual(all.map((c) => c.slug));
+    expect(after.every((c) => c.held === true)).toBe(true);
   });
 
   it('archive: counts first, refusals, and the grants it drops', async () => {

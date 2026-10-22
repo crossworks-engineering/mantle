@@ -65,6 +65,7 @@ import type {
   Workspace,
   WorkspaceArchivePreview,
   WorkspaceArea,
+  WorkspaceConnectorOptionsResponse,
   WorkspaceDetailResponse,
   WorkspaceErrorCode,
   WorkspaceResource,
@@ -1254,6 +1255,35 @@ function mayManageResource(seen: Seen, kind: WorkspaceResourceKind): void {
     );
   }
   if (seen.row.archived_at !== null) throw archivedError();
+}
+
+/** GET /api/workspaces/:id/connector-options: the "add connector" list.
+ *  Every tool group the attach definer accepts (mantle_ws_resource_add:
+ *  a tool group of the brain with an integration), an MCP connector and an
+ *  HTTP API connector alike, each with whether this workspace holds it.
+ *  Read by its definer (mantle_ws_connector_options, 0314), whose filter is
+ *  the attach's rule word for word (ws-connector-options-0314.db.test.ts
+ *  pins the two together). The attach's gate, before the read: a workspace
+ *  the caller may see, the connectors area, not archived. */
+export async function connectorOptions(
+  caller: WsCaller,
+  id: string,
+): Promise<WorkspaceConnectorOptionsResponse> {
+  const pre = await seeWorkspace(caller, id);
+  mayManageResource(pre, 'connector');
+  const list = await rows<{ slug: string; name: string; kind: string; held: boolean }>(
+    db,
+    sql`select o.slug, o.name, o.kind, o.held
+          from mantle_ws_connector_options(${pre.row.id}::uuid) o`,
+  );
+  return {
+    connectors: list.map((o) => ({
+      slug: o.slug,
+      name: o.name,
+      kind: o.kind === 'mcp' ? 'mcp' : 'api',
+      held: o.held === true,
+    })),
+  };
 }
 
 /** POST /api/workspaces/:id/resources. A definer call (mantle_ws_resource_add,

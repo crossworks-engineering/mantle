@@ -197,6 +197,26 @@ export type WorkspaceResourceAddBody = {
 /** PATCH /api/workspaces/:id/resources/:kind/:id. */
 export type WorkspaceResourcePatchBody = { write: boolean };
 
+/** How a connector reaches its tools: an MCP server, or an HTTP API. */
+export type WorkspaceConnectorKind = 'mcp' | 'api';
+
+/** One connector a workspace may hold: exactly the tool groups the attach
+ *  (POST /api/workspaces/:id/resources, kind 'connector') accepts, MCP and
+ *  HTTP API alike. `slug` is the id to attach it by; `held`: the workspace
+ *  holds it already. */
+export type WorkspaceConnectorOption = {
+  slug: string;
+  name: string;
+  kind: WorkspaceConnectorKind;
+  held: boolean;
+};
+
+/** GET /api/workspaces/:id/connector-options: the "add connector" list.
+ *  The same gate as the attach: an Admin user with the connectors area (403
+ *  `admin_only` otherwise; 404 for a workspace the caller may not see; 409
+ *  `archived` for an archived one). Sorted by name. */
+export type WorkspaceConnectorOptionsResponse = { connectors: WorkspaceConnectorOption[] };
+
 /** What /api/shell adds for the signed-in login: its live workspaces (for
  *  the switcher) and its Admin areas ([] when it is not an Admin user). */
 export type ShellWorkspace = WorkspaceLook & {

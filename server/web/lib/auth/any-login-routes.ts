@@ -27,6 +27,7 @@ export const ANY_LOGIN_ROUTES: readonly string[] = [
   'GET /api/workspaces/:id',
   'PATCH /api/workspaces/:id',
   'GET /api/workspaces/:id/archive-preview',
+  'GET /api/workspaces/:id/connector-options',
   'POST /api/workspaces/:id/archive',
   'POST /api/workspaces/:id/users',
   'PATCH /api/workspaces/:id/users/:loginId',

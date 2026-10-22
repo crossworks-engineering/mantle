@@ -292,6 +292,7 @@ GET /api/version class=self scope=self caller=- gone=false
 GET /api/workspaces class=self scope=- caller=login gone=false
 GET /api/workspaces/:id class=self scope=- caller=login gone=false
 GET /api/workspaces/:id/archive-preview class=self scope=- caller=login gone=false
+GET /api/workspaces/:id/connector-options class=self scope=- caller=login gone=false
 GET /api/workspaces/user-search class=self scope=- caller=login gone=false
 GET /pair class=public scope=- caller=- gone=false
 GET /s/:token/a/:fileId class=link scope=- caller=- gone=false
@@ -538,6 +539,7 @@ HEAD /api/version class=self scope=self caller=- gone=false
 HEAD /api/workspaces class=self scope=- caller=login gone=false
 HEAD /api/workspaces/:id class=self scope=- caller=login gone=false
 HEAD /api/workspaces/:id/archive-preview class=self scope=- caller=login gone=false
+HEAD /api/workspaces/:id/connector-options class=self scope=- caller=login gone=false
 HEAD /api/workspaces/user-search class=self scope=- caller=login gone=false
 HEAD /pair class=public scope=- caller=- gone=false
 HEAD /s/:token/a/:fileId class=link scope=- caller=- gone=false
