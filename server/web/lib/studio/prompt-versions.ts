@@ -204,16 +204,21 @@ async function insertVersion(args: {
   note: string | null;
   author: string | null;
 }): Promise<void> {
-  await db.insert(promptVersions).values({
-    ownerId: args.ownerId,
-    entityType: args.entityType,
-    entityId: args.entityId,
-    field: args.field,
-    version: args.version,
-    body: args.body,
-    note: args.note,
-    author: args.author,
-  });
+  // A version is a prompt body a restore makes live again, and names its
+  // author: not the narrow login's (the re-audit's DB LOW-5), so
+  // skill-text, as the live write it records.
+  await onFullSystemRoute('skill-text', () =>
+    db.insert(promptVersions).values({
+      ownerId: args.ownerId,
+      entityType: args.entityType,
+      entityId: args.entityId,
+      field: args.field,
+      version: args.version,
+      body: args.body,
+      note: args.note,
+      author: args.author,
+    }),
+  );
 }
 
 /**

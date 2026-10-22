@@ -368,15 +368,10 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.agents': {
     update: [
       'name',
-      'provider',
-      'model',
-      'backup_provider',
-      'backup_model',
       'backup_enabled',
       'via_tailnet',
       'backup_via_tailnet',
       'tts_worker_id',
-      'thinking_effort',
       'avatar',
       'assigned_user_id',
       'assigned_at',
@@ -387,7 +382,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open. Item F: its description too (the delegate tool and roster read it to the model), at skill-text",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open. Item F: its description too (the delegate tool and roster read it to the model), at skill-text. Round 14 (the re-audit's DB LOW-4, the destination and cost class): its provider, model, backup provider and model (which provider and model a turn pays) and thinking effort (a turn's spend) off the list, at model-route",
   },
   'public.tool_groups': {
     update: ['name', 'enabled', 'updated_at'],
@@ -410,20 +405,16 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.ai_workers': {
     update: [
       'backup_enabled',
-      'backup_model',
-      'backup_provider',
       'backup_via_tailnet',
       'enabled',
       'is_default',
-      'model',
       'name',
       'priority',
-      'provider',
       'updated_at',
       'via_tailnet',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12). Round 13b (item C): params off the list, its edit at skill-text (the params of a kind carry its prompt, extraction_prompt, and its limits)',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12). Round 13b (item C): params off the list, its edit at skill-text (the params of a kind carry its prompt, extraction_prompt, and its limits). Round 14 (DB LOW-4): its provider and model and their backups (which provider and model a kind pays) off the list, at model-route',
   },
   'public.api_keys': {
     update: [
@@ -467,10 +458,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): UPDATE by system:http:admin-area',
   },
   'public.curated_models': {
-    insert: true,
     update: ['updated_at'],
-    delete: true,
-    why: "measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. An entry's edit (its model, routes, price snapshot, place) runs at the full-route spot model-route (round 13c: PATCH /api/model-pools/:id). Its price snapshot ranks the combos' picks only (model-combos.ts); a cost cap reads the provider's own usage cost (packages/tracing), never this column",
+    delete: false,
+    why: "measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. An entry's edit (its model, routes, price snapshot, place) runs at the full-route spot model-route (round 13c: PATCH /api/model-pools/:id). Its price snapshot ranks the combos' picks only (model-combos.ts); a cost cap reads the provider's own usage cost (packages/tracing), never this column. Round 14 (DB LOW-4): an entry added or removed (a model offered in a pool, so a combo may pick it) at model-route too, as its edit",
   },
   'public.doc_collections': {
     update: ['enabled', 'last_reconciled_at', 'updated_at'],
@@ -494,22 +484,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     why: 'measured (round 8): INSERT by system:http:admin-area',
   },
   'public.embedding_config': {
-    update: [
-      'backup_enabled',
-      'backup_label',
-      'backup_provider',
-      'dimensions',
-      'extraction_concurrency',
-      'extraction_time_budget_minutes',
-      'local_embed_batch_size',
-      'local_embed_request_timeout_ms',
-      'model',
-      'primary_label',
-      'primary_provider',
-      'updated_at',
-    ],
+    update: ['backup_enabled', 'backup_label', 'primary_label', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route',
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area. The row made (an upsert), and the keys and base URLs of its routes, run at the full-route spot model-route. Round 14 (DB LOW-4): its providers, model and dimensions (where every embed goes and what it costs) and its knobs (extraction concurrency and time budget, local batch and timeout: the spend rate) off the list, at model-route; its labels (display only) and a backup switched off stay',
   },
   'public.heartbeat_fires': {
     insert: true,
@@ -559,12 +536,6 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     update: ['decided_at', 'error', 'executed_at', 'result', 'status', 'updated_at'],
     delete: false,
     why: 'measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area. A call parked runs at the full-route spot pending-park: the narrow login may only decide one (status and result), never make or swap one',
-  },
-  'public.prompt_versions': {
-    insert: true,
-    update: [],
-    delete: false,
-    why: 'measured (round 8): INSERT by system:http:admin-area',
   },
   'public.provider_alerts': {
     insert: true,
@@ -844,8 +815,6 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * runtime-role.test.ts fails on one not listed.
  */
 export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.freeze({
-  'public.curated_models':
-    "the model pools area adds an entry (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: an entry names a model, its vendor and its catalog routes for the owner's picker, never a vault key or a base URL; its owner_id is the brain's",
   'public.calendar_accounts':
     "the calendar area adds the owner's feed (INSERT measured), so a delete and reinsert gives the narrow login nothing a plain insert does not: a feed brings content in, never a right, and its owner_id is the brain's (named for S7c's signed acting login)",
   'public.turn_stream_buffer':

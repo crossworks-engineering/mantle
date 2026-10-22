@@ -20,7 +20,7 @@
  *
  * Read-only unless `apply` is set. The default is a plan you can read.
  */
-import { db, curatedModels, eq, type CuratedRoute } from '@mantle/db';
+import { db, curatedModels, eq, onFullSystemRoute, type CuratedRoute } from '@mantle/db';
 import { resolveOpenRouterKey } from '@mantle/tools';
 import { errorMessage, NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { MANIFEST_WORKERS, PERSONA_MANIFEST } from '../system-manifest';
@@ -223,6 +223,13 @@ export async function runCuratePools(opts: CuratePoolsOpts = {}): Promise<Curate
 
   const ownerId = opts.ownerId;
   const removed = current.length;
+  // The pools rewritten (which models a combo may pick): model-route
+  //, whoever runs it; off a narrow exit a spot changes nothing.
+  await onFullSystemRoute('model-route', () => curatePoolsWrite(ownerId, plan));
+  return { plan, degraded, written: plan.entries.length, removed };
+}
+
+async function curatePoolsWrite(ownerId: string, plan: CurationPlan): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(curatedModels).where(eq(curatedModels.ownerId, ownerId));
     if (!plan.entries.length) return;
@@ -240,8 +247,6 @@ export async function runCuratePools(opts: CuratePoolsOpts = {}): Promise<Curate
       })),
     );
   });
-
-  return { plan, degraded, written: plan.entries.length, removed };
 }
 
 /**

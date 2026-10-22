@@ -32,6 +32,20 @@ export function turnsOn(set: Record<string, unknown>): boolean {
   return NARROW_OFF_ONLY_PROPS.some((p) => set[p] === true);
 }
 
+/** Whether an insert of `values` into `table` starts one of its off-only
+ *  switches on: a value of true, or none and a column default of true. */
+export function insertTurnsOn(table: PgTable, values: Record<string, unknown>): boolean {
+  const columns = getTableColumns(table) as Record<
+    string,
+    { name: string; default?: unknown; columnType?: string } | undefined
+  >;
+  return NARROW_OFF_ONLY_PROPS.some((p) => {
+    const col = columns[p];
+    if (!col || col.columnType !== 'PgBoolean') return false;
+    return p in values ? values[p] === true : col.default === true;
+  });
+}
+
 /** Per table, the other sets (property names and values) the narrow role's
  *  row rules refuse whatever its column rights (0320's
  *  mantle_narrow_one_way); a turn-on is every table's (turnsOn). */
@@ -51,5 +65,10 @@ export function narrowNeedsSpot(
   const columns = getTableColumns(table) as Record<string, { name: string } | undefined>;
   const names = op === 'update' ? Object.keys(set).map((k) => columns[k]?.name ?? k) : [];
   if (op === 'update' && (turnsOn(set) || NARROW_VALUE_SPOTS[name]?.(set))) return true;
+  // A new row that starts a switch on, named or by its column default
+  // (0324: the off-only rule meets an INSERT too, so a delete and insert
+  // again cannot turn one back on): the caller's spot. `set` is the
+  // insert's values here.
+  if (op === 'insert' && insertTurnsOn(table, set)) return true;
   return !narrowMayWrite(name, op, names);
 }

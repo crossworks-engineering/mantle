@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { sql, eq } from 'drizzle-orm';
-import { db, embeddingConfig } from '@mantle/db';
+import { db, embeddingConfig, onFullSystemRoute } from '@mantle/db';
 import {
   clearEmbeddingModelCache,
   EXTRACTION_CONCURRENCY_DEFAULT,
@@ -76,11 +76,16 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
-  const updated = await db
-    .update(embeddingConfig)
-    .set({ extractionConcurrency: parsed.data.concurrency, updatedAt: new Date() })
-    .where(eq(embeddingConfig.ownerId, user.id))
-    .returning({ ownerId: embeddingConfig.ownerId });
+  // The extraction concurrency (the spend rate of every extract) is not the
+  // narrow login's (the destination and cost class): the
+  // full-route spot model-route.
+  const updated = await onFullSystemRoute('model-route', () =>
+    db
+      .update(embeddingConfig)
+      .set({ extractionConcurrency: parsed.data.concurrency, updatedAt: new Date() })
+      .where(eq(embeddingConfig.ownerId, user.id))
+      .returning({ ownerId: embeddingConfig.ownerId }),
+  );
   if (updated.length === 0) {
     return NextResponse.json(
       { ok: false, error: 'Set up the embedder first (Settings, Embedding).' },

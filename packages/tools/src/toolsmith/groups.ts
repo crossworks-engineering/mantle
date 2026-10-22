@@ -766,10 +766,14 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
       };
     }
 
-    await db
-      .update(agents)
-      .set({ thinkingEffort: effort, updatedAt: new Date() })
-      .where(eq(agents.id, agent.id));
+    // A turn's spend (the destination and cost class): not the
+    // narrow login's, the full-route spot model-route.
+    await onFullSystemRoute('model-route', () =>
+      db
+        .update(agents)
+        .set({ thinkingEffort: effort, updatedAt: new Date() })
+        .where(eq(agents.id, agent.id)),
+    );
     ctx.step?.setOutput({ agentSlug, thinkingEffort: effort });
     return { ok: true, output: { agent_slug: agentSlug, thinking_effort: effort } };
   },

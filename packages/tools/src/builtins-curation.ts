@@ -21,7 +21,13 @@
  */
 
 import { and, asc, eq } from 'drizzle-orm';
-import { db, curatedModels, type CuratedPricing, type CuratedRoute } from '@mantle/db';
+import {
+  db,
+  curatedModels,
+  onFullSystemRoute,
+  type CuratedPricing,
+  type CuratedRoute,
+} from '@mantle/db';
 import {
   MODEL_POOLS,
   MODEL_POOL_IDS,
@@ -623,20 +629,26 @@ const model_pool_set: BuiltinToolDef = {
         ),
       )
       .limit(1);
+    // An entry added, edited or removed (which models a pool offers, so a
+    // combo may pick it: where a turn's spend goes) is not the narrow
+    // login's: the full-route spot model-route, as its HTTP twins
+    // (the re-audit's DB LOW-4 and app LOW-2).
     if (existing) {
-      const [row] = await db
-        .update(curatedModels)
-        .set({
-          routes,
-          ...(vendor != null ? { vendor } : {}),
-          ...(pricing != null ? { pricing } : {}),
-          ...(rating != null ? { rating } : {}),
-          ...(note != null ? { note } : {}),
-          ...(typeof input.position === 'number' ? { position: input.position } : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(curatedModels.id, existing.id))
-        .returning({ id: curatedModels.id });
+      const [row] = await onFullSystemRoute('model-route', () =>
+        db
+          .update(curatedModels)
+          .set({
+            routes,
+            ...(vendor != null ? { vendor } : {}),
+            ...(pricing != null ? { pricing } : {}),
+            ...(rating != null ? { rating } : {}),
+            ...(note != null ? { note } : {}),
+            ...(typeof input.position === 'number' ? { position: input.position } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(curatedModels.id, existing.id))
+          .returning({ id: curatedModels.id }),
+      );
       return { ok: true, output: { ok: true, updated: true, id: row?.id, pool, name } };
     }
     const siblings = await db
@@ -647,10 +659,22 @@ const model_pool_set: BuiltinToolDef = {
       typeof input.position === 'number'
         ? input.position
         : siblings.reduce((m, r) => Math.max(m, r.position + 1), 0);
-    const [row] = await db
-      .insert(curatedModels)
-      .values({ ownerId: ctx.ownerId, pool, position, name, vendor, routes, pricing, rating, note })
-      .returning({ id: curatedModels.id });
+    const [row] = await onFullSystemRoute('model-route', () =>
+      db
+        .insert(curatedModels)
+        .values({
+          ownerId: ctx.ownerId,
+          pool,
+          position,
+          name,
+          vendor,
+          routes,
+          pricing,
+          rating,
+          note,
+        })
+        .returning({ id: curatedModels.id }),
+    );
     return { ok: true, output: { ok: true, inserted: true, id: row?.id, pool, name } };
   },
 };
@@ -683,16 +707,18 @@ const model_pool_remove: BuiltinToolDef = {
     if (refused) return refused;
     const pool = str(input.pool).trim();
     const name = str(input.name).trim();
-    const deleted = await db
-      .delete(curatedModels)
-      .where(
-        and(
-          eq(curatedModels.ownerId, ctx.ownerId),
-          eq(curatedModels.pool, pool),
-          eq(curatedModels.name, name),
-        ),
-      )
-      .returning({ id: curatedModels.id });
+    const deleted = await onFullSystemRoute('model-route', () =>
+      db
+        .delete(curatedModels)
+        .where(
+          and(
+            eq(curatedModels.ownerId, ctx.ownerId),
+            eq(curatedModels.pool, pool),
+            eq(curatedModels.name, name),
+          ),
+        )
+        .returning({ id: curatedModels.id }),
+    );
     if (deleted.length === 0) {
       return {
         ok: false,

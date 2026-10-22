@@ -19,18 +19,22 @@ export async function addIcsFeed(
 ): Promise<CalendarAccount> {
   const id = randomUUID();
   const { ciphertext } = seal(input.url.trim(), id);
-  const [row] = await db
-    .insert(calendarAccounts)
-    .values({
-      id,
-      ownerId,
-      provider: 'ics',
-      displayName: input.displayName.trim().slice(0, 120) || 'Calendar',
-      feedUrlEnc: ciphertext,
-      color: input.color ?? null,
-      enabled: true,
-    })
-    .returning();
+  const values = {
+    id,
+    ownerId,
+    provider: 'ics',
+    displayName: input.displayName.trim().slice(0, 120) || 'Calendar',
+    feedUrlEnc: ciphertext,
+    color: input.color ?? null,
+    enabled: true,
+  };
+  const write = () => db.insert(calendarAccounts).values(values).returning();
+  // A new feed starts on (it syncs, its events are ingested): not the
+  // narrow login's (0324: the off-only rule meets an insert too), so the
+  // full-route spot feed-enable, as a turn-on is.
+  const [row] = narrowNeedsSpot(calendarAccounts, 'insert', values)
+    ? await onFullSystemRoute('feed-enable', write)
+    : await write();
   if (!row) throw new Error('addIcsFeed: insert returned no row');
   return row;
 }

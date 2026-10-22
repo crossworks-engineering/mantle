@@ -2269,6 +2269,13 @@
       "when": 1790198700000,
       "tag": "0323_narrow_enable_off",
       "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1790198800000,
+      "tag": "0324_narrow_off_on_insert",
+      "breakpoints": true
     }
   ]
 }

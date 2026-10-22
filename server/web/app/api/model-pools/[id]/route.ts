@@ -82,10 +82,13 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const deleted = await db
-    .delete(curatedModels)
-    .where(and(eq(curatedModels.id, idParsed.data.id), eq(curatedModels.ownerId, user.id)))
-    .returning({ id: curatedModels.id });
+  // An entry removed: model-route, as its add and edit.
+  const deleted = await onFullSystemRoute('model-route', () =>
+    db
+      .delete(curatedModels)
+      .where(and(eq(curatedModels.id, idParsed.data.id), eq(curatedModels.ownerId, user.id)))
+      .returning({ id: curatedModels.id }),
+  );
   if (deleted.length === 0)
     return NextResponse.json({ error: 'Entry not found.' }, { status: 404 });
   return NextResponse.json({ ok: true });

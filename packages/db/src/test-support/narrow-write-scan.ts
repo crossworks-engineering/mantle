@@ -354,7 +354,7 @@ export function writeKey(w: ScannedWrite): string {
 }
 
 /* ------------------------------------------------------------------------ *
- * The function calls (round 14, the re-audit's app MED-1 class fix): an
+ * The function calls (the re-audit's app MED-1 class fix): an
  * EXECUTE refusal is no write, so neither the counter nor the write scan
  * above saw a narrow exit call a definer the narrow role may not run (a
  * connector's sync, move and key rotate called mantle_connector_beyond_admin

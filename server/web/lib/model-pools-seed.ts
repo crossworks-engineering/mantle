@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { db, curatedModels } from '@mantle/db';
+import { db, curatedModels, onFullSystemRoute } from '@mantle/db';
 import { CURATED_MODEL_POOLS } from '@mantle/client-types/model-pools-data';
 import { MODEL_POOL_IDS } from '@mantle/client-types/model-pools';
 
@@ -33,6 +33,10 @@ export async function seedCuratedModelPools(
     note: e.note,
   }));
   if (rows.length === 0) return { seeded: 0, skipped: null };
-  await db.insert(curatedModels).values(rows).onConflictDoNothing();
+  // The pools seeded (which models a combo may pick): model-route
+  // 14), as an entry's add; off a narrow exit a spot changes nothing.
+  await onFullSystemRoute('model-route', () =>
+    db.insert(curatedModels).values(rows).onConflictDoNothing(),
+  );
   return { seeded: rows.length, skipped: null };
 }

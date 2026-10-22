@@ -189,7 +189,12 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
     'heartbeat-maker',
   ],
   'packages/runs/src/worker.ts': ['assistant-grant'],
-  'packages/tools/src/toolsmith/groups.ts': ['assistant-grant', 'tool-group-grant', 'pending-park'],
+  'packages/tools/src/toolsmith/groups.ts': [
+    'assistant-grant',
+    'tool-group-grant',
+    'pending-park',
+    'model-route',
+  ],
   'server/web/lib/tool-groups.ts': ['tool-group-grant', 'tool-config'],
   'server/web/app/api/tools/route.ts': ['tool-group-grant'],
   'packages/tools/src/toolsmith/common.ts': ['tool-group-grant'],
@@ -209,6 +214,13 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/microsoft/src/token-store.ts': ['ms-account'],
   'packages/microsoft/src/drives/discover.ts': ['ms-account'],
   'server/web/app/api/model-pools/[id]/route.ts': ['model-route'],
+  // (the destination and cost class): a pool entry added or
+  // removed, a turn's thinking effort, the extraction concurrency.
+  'server/web/app/api/model-pools/route.ts': ['model-route'],
+  'packages/tools/src/builtins-curation.ts': ['model-route'],
+  'server/web/app/api/embedding/extraction/route.ts': ['model-route'],
+  'server/web/lib/maintenance/curate-pools-run.ts': ['model-route'],
+  'server/web/lib/model-pools-seed.ts': ['model-route'],
   'packages/db/src/gateway/spot-definers.ts': ['acting-login'],
   'server/web/lib/studio/prompt-versions.ts': ['skill-text'],
   'server/web/lib/mcp-connectors.ts': ['tool-config'],

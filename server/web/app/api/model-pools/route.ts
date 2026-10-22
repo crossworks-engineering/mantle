@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
-import { conflictOnUnique, db, curatedModels } from '@mantle/db';
+import { conflictOnUnique, db, curatedModels, onFullSystemRoute } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -79,20 +79,25 @@ export async function POST(req: Request) {
   // (conflictOnUnique, a ConflictError); anything else answers by the one
   // table (A10 part 2): a domain error its status, a fault the opaque 500.
   return conflictOnUnique(`'${b.name}' is already in the ${b.pool} pool.`, async () => {
-    const [row] = await db
-      .insert(curatedModels)
-      .values({
-        ownerId: user.id,
-        pool: b.pool,
-        position: nextPos,
-        name: b.name,
-        vendor: b.vendor ?? null,
-        routes: b.routes,
-        pricing: b.pricing ?? null,
-        rating: b.rating ?? null,
-        note: b.note ?? null,
-      })
-      .returning();
+    // A model offered in a pool (a combo may pick it: where a turn's spend
+    // goes) is not the narrow login's: the full-route spot
+    // model-route, as an entry's edit.
+    const [row] = await onFullSystemRoute('model-route', () =>
+      db
+        .insert(curatedModels)
+        .values({
+          ownerId: user.id,
+          pool: b.pool,
+          position: nextPos,
+          name: b.name,
+          vendor: b.vendor ?? null,
+          routes: b.routes,
+          pricing: b.pricing ?? null,
+          rating: b.rating ?? null,
+          note: b.note ?? null,
+        })
+        .returning(),
+    );
     return NextResponse.json({ entry: row });
   });
 }

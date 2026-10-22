@@ -698,12 +698,21 @@ describe('the system schemas pattern and the default ACL revoke (round 14, DB LO
     const { defaultAclRevoke } = await import('./runtime-role');
     expect(
       defaultAclRevoke({ owner: 'postgres', schema: 'public', objtype: 'r', grantee: 'PUBLIC' }),
-    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE ALL ON TABLES FROM PUBLIC');
+    ).toBe(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE ALL ON TABLES FROM PUBLIC',
+    );
     expect(
-      defaultAclRevoke({ owner: 'postgres', schema: null, objtype: 'S', grantee: 'mantle_system_narrow' }),
-    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" REVOKE ALL ON SEQUENCES FROM "mantle_system_narrow"');
-    expect(
-      defaultAclRevoke({ owner: 'a', schema: 'x', objtype: 'n', grantee: 'PUBLIC' }),
-    ).toBe('ALTER DEFAULT PRIVILEGES FOR ROLE "a" REVOKE ALL ON SCHEMAS FROM PUBLIC');
+      defaultAclRevoke({
+        owner: 'postgres',
+        schema: null,
+        objtype: 'S',
+        grantee: 'mantle_system_narrow',
+      }),
+    ).toBe(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" REVOKE ALL ON SEQUENCES FROM "mantle_system_narrow"',
+    );
+    expect(defaultAclRevoke({ owner: 'a', schema: 'x', objtype: 'n', grantee: 'PUBLIC' })).toBe(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE "a" REVOKE ALL ON SCHEMAS FROM PUBLIC',
+    );
   });
 });

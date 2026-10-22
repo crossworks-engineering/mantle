@@ -30,7 +30,7 @@ import { afterMigrations } from './migrator-steps';
 import {
   ACL_MARKER_FUNCTION,
   APP_SCHEMAS,
-  DEFAULT_ACL_SQL,
+  defaultAclEntries,
   DB_ROLE_SQL,
   NARROW_DENIED_FUNCTIONS,
   NARROW_PUBLIC_DEFINERS,
@@ -495,11 +495,15 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     await admin.unsafe('CREATE SCHEMA IF NOT EXISTS pgboss');
     try {
       await admin.unsafe('GRANT CREATE ON SCHEMA pgboss TO PUBLIC');
-      await admin.unsafe('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC');
+      await admin.unsafe(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC',
+      );
       await admin.unsafe(`ALTER DEFAULT PRIVILEGES GRANT ALL ON SEQUENCES TO "${NARROW_ROLE}"`);
-      await admin.unsafe('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC');
+      await admin.unsafe(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC',
+      );
       const left = async () =>
-        (await admin.unsafe(DEFAULT_ACL_SQL)).length +
+        (await defaultAclEntries(admin)).length +
         Number(
           (
             await admin<{ c: boolean }[]>`
