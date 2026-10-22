@@ -458,8 +458,10 @@ give them to a no-write specialist (researcher pattern). Full detail:
 
 ### Connector tools in shared apps and on logins' MCP (the workspaces that hold the connector)
 
-Below admin, an app's run may call only read-only built-ins, and a link
-none, besides outside tools. An MCP CONNECTOR tool follows the workspaces
+Below admin, an app's run may call only read-only built-ins (and the
+Table row writes on a Table homed in a workspace that holds the app, as
+the running user: member-app-tools.ts rule 6), and a link none, besides
+outside tools. An MCP CONNECTOR tool follows the workspaces
 it is attached to (`connectorToolVerdict` and `loginConnectorRule` in
 packages/tools/src/external-access.ts): a login's own MCP and its app runs
 reach a connector attached to one of the login's workspaces, and an app

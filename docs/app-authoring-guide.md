@@ -671,7 +671,15 @@ run the green PUBLISHED build only and never edit it from there.
   refused; so are http tools unless an admin switched "External access" on
   for them; so are built-ins that write or spend, and `my_items_list`,
   `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
-  `team_request_create` and `read_result`. A connector tool runs only when
+  `team_request_create` and `read_result`. One kind of write is allowed:
+  the Table row writes `table_row_add`, `table_rows_add`,
+  `table_rows_upsert`, `table_row_update` and `table_cell_set`, on a Table
+  homed in a workspace that holds the app (any other Table is refused). The
+  write runs as the user running the app, so it lands only when that user
+  may write the Table (its **Write** switch for their workspace, or a
+  Moderator of its home); the rows go to the Table's draft. No table
+  create, delete or rename, no column, tab or snapshot change and no row
+  delete. A shared link runs none of them. A connector tool runs only when
   the connector is attached to every workspace that holds the app and to a
   workspace of the runner. A connector tool without the admin's read-only
   mark is a write: it needs the connector's **Write** tick on in every
@@ -735,8 +743,9 @@ the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
   duplicates or imports, or whose code or tools it changes, runs its tools
   at TEAM rules at most, for every runner, an admin included
   (`apps.author_level` 'team'; every tool broker applies it through
-  `appToolLevel`). So declare read-only built-ins from an enabled
-  system-wide (not Admin-only) group, or connector tools of the app's
+  `appToolLevel`). So declare read-only built-ins (or the Table row writes
+  above) from an enabled system-wide (not Admin-only) group, or connector
+  tools of the app's
   workspaces. `app_tools_set` warns for each tool those rules refuse. Only
   an Admin user's own "trust its tools" in the app's settings lifts it.
 - **Keys and peers** never change an app's code (the risky-tool rule): a

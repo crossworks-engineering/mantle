@@ -255,6 +255,7 @@ export { othersCanRead } from './shared-item';
 export { maskToolDatabaseErrors, thrownToolDatabaseError } from './tool-error-mask';
 export {
   NO_RUNTIME_POLICY_ERROR,
+  TEAM_APP_TOOLS_ALLOWED,
   apiToolPolicy,
   appToolPolicy,
   connectorToolPolicy,
@@ -264,6 +265,7 @@ export {
   runtimeToolPolicy,
   sandboxMcpToolPolicy,
   shellToolPolicy,
+  type AppBuiltinFacts,
   type ConnectorToolPolicy,
   type RuntimeRowType,
   type RuntimeToolPolicy,
