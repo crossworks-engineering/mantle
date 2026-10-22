@@ -153,6 +153,9 @@ async function seedFixture(su: postgres.Sql): Promise<void> {
            values (${S}, ${OWNER}, 'sweep-ms@example.invalid', 'microsoft.sweep_ms', ${b}, ${b}, '2000-01-01Z')`;
   await su`insert into ms_drives (id, account_id, drive_id, drive_type, name, branch_label)
            values (${S}, ${S}, 'sweep-drive', 'personal', 'Sweep drive', 'sweep_drive')`;
+  // One scope already set, so the scope set's replace deletes a row.
+  await su`insert into ms_drive_scopes (drive_db_id, item_id, path, is_folder)
+           values (${S}, 'sweep-old', '/Old', true)`;
   await su`insert into runs (id, owner_id, title) values (${S}, ${OWNER}, 'Sweep run')`;
   await su`insert into sandboxes (id, owner_id, name, image) values (${S}, ${OWNER}, 'sweep-box', 'sweep-image')`;
   // The connectors: an MCP one with an authorization pending, an OpenAPI one.
@@ -476,7 +479,78 @@ describe.skipIf(!URL)(
      * each with the spots it enters, the same on both passes (round 10,
      * D 1). A row that starts or stops using a spot fails here: name it.
      */
-    const SPOT_ROWS: Readonly<Record<string, readonly string[]>> = {};
+    const SPOT_ROWS: Readonly<Record<string, readonly string[]>> = {
+      'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
+      'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
+      'DELETE /api/tool-groups/:id': ['tool-group-grant'],
+      'GET /api/mcp-connectors/oauth/callback': ['tool-config'],
+      'PATCH /api/ai-workers/:id': ['model-route'],
+      'PATCH /api/mcp-settings': ['profile-row'],
+      'PATCH /api/peers/:id': ['peer-access'],
+      'PATCH /api/pending/:id': ['pending-call'],
+      'PATCH /api/team-admin/settings': ['profile-row'],
+      'PATCH /api/telegram/chats/:id': ['telegram-responder'],
+      'PATCH /api/users/:id': ['login-credential'],
+      'POST /api/agents': ['assistant-grant'],
+      'POST /api/ai-workers': ['model-route'],
+      'POST /api/ai-workers/reembed': ['reembed'],
+      'POST /api/backups': ['profile-row'],
+      'POST /api/backups/run': ['profile-row'],
+      'POST /api/config/adopt': ['assistant-grant'],
+      'POST /api/config/adopt-all': [
+        'assistant-grant',
+        'heartbeat-maker',
+        'model-route',
+        'tool-config',
+        'tool-group-grant',
+      ],
+      'POST /api/debug/integrity/landed/delete': ['integrity-delete'],
+      'POST /api/dev-tools/execute-tool': ['console-tool'],
+      'POST /api/dev-tools/queue-approval': ['pending-park'],
+      'POST /api/docs/collections': ['docs-root'],
+      'POST /api/docs/collections/all': ['docs-root'],
+      'POST /api/embedding': ['model-route'],
+      'POST /api/embedding/rebuild': ['reembed'],
+      'POST /api/heartbeats': ['heartbeat-maker'],
+      'POST /api/mcp-connectors': ['tool-group-grant'],
+      'POST /api/mcp-connectors/:slug/oauth/start': ['tool-config'],
+      'POST /api/model-combos/apply': ['model-route'],
+      'POST /api/onboarding': ['profile-row'],
+      'POST /api/openapi-connectors': ['tool-group-grant'],
+      'POST /api/peers': ['peer-access'],
+      'POST /api/peers/:id/rotate': ['peer-access'],
+      'POST /api/peers/:id/shares': ['peer-share'],
+      'POST /api/runs/:id': ['run-control'],
+      'POST /api/settings/worker-groups': ['agent-group-grant'],
+      'POST /api/skills': ['skill-text'],
+      'POST /api/studio/reset': [
+        'assistant-grant',
+        'heartbeat-maker',
+        'tool-config',
+        'tool-group-grant',
+      ],
+      'POST /api/team-admin/invites': ['member-invite'],
+      'POST /api/tool-groups': ['tool-group-grant'],
+      'POST /api/tools': ['tool-config'],
+      'POST /api/users': ['login-credential'],
+      'POST /api/users/:id/password': ['login-credential'],
+      'PUT /api/microsoft/config': ['tool-config'],
+      'PUT /api/tools/:id/external-access': ['tool-config'],
+      'PUT /api/tools/settings': ['profile-row'],
+      'PUT /api/users/:id/agent': ['assistant-grant'],
+      'self DELETE /api/profile/logo': ['profile-row'],
+      'self DELETE /api/profile/photo': ['profile-row'],
+      'self POST /api/push/connect': ['push-device'],
+      'self POST /api/push/reset': ['push-device'],
+      'self PUT /api/profile/backgrounds': ['profile-row'],
+      'self PUT /api/profile/color-theme': ['profile-row'],
+      'self PUT /api/profile/default-mode': ['profile-row'],
+      'self PUT /api/profile/fonts': ['profile-row'],
+      'self PUT /api/profile/nav-favorites': ['profile-row'],
+      'self PUT /api/profile/neat-background': ['profile-row'],
+      'self PUT /api/profile/reminder-channel': ['profile-row'],
+      'self PUT /api/profile/share-neat': ['profile-row'],
+    };
 
     it('pins the rows whose write runs at a spot, and which spots, the same both ways', () => {
       const of = (pass: 'on' | 'off') =>

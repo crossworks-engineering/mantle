@@ -270,7 +270,7 @@ export const LOGIN_SELF_ROWS: readonly {
   readonly as: 'owner' | 'member';
   readonly body: unknown;
 }[] = [
-  { key: 'PUT /api/profile', as: 'owner', body: { displayName: 'Sweep Owner' } },
+  { key: 'PUT /api/profile', as: 'owner', body: { timezone: 'UTC' } },
   { key: 'PUT /api/profile/backgrounds', as: 'owner', body: { backgrounds: 'sweep' } },
   { key: 'PUT /api/profile/color-theme', as: 'owner', body: { colorTheme: 'sweep' } },
   { key: 'PUT /api/profile/default-mode', as: 'owner', body: { defaultMode: 'light' } },

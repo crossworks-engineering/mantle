@@ -612,6 +612,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: true,
     why: "measured (round 8): DELETE by system:http:admin-area, system:http:login-self; last_push_at is the delivery's stamp (markPushed). A device subscribed (its INSERT, the upsert's login, owner and token) runs at the full-route spot push-device (round 9)",
   },
+  'public.push_prefs': {
+    insert: true,
+    update: ['assistant_messages', 'approvals'],
+    delete: false,
+    why: "measured (round 10, the area sweep's login-self row PUT /api/push/preferences: refused before, never driven): the owner's push toggles, one brain-wide row (updatePushPrefs, an upsert on the singleton: INSERT and UPDATE of what its SET names). Which kinds of push go out: no login, maker or destination column",
+  },
   'public.ms_drive_scopes': {
     insert: true,
     update: [],
