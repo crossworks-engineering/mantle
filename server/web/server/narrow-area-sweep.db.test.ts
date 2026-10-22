@@ -647,8 +647,13 @@ describe.skipIf(!URL)(
       // items' and the assistant delete's definers run only on the narrow
       // route: with the switch off the app's own statements run, as before
       // 0321, at no spot. A chat's block or unpair calls its definer on
-      // every route (pairing.ts setChatPairing), so its row keeps the spot.
-      const everyRoute = new Set(['POST /api/agents/:id/telegram/chats']);
+      // every route (pairing.ts setChatPairing), so its row keeps the spot;
+      // so does onboarding's assistant attach in the login's scope
+      // (workspaces-migrate.ts attachDefaultAssistants).
+      const everyRoute = new Set([
+        'POST /api/agents/:id/telegram/chats',
+        'onboarding provision (Azure only)',
+      ]);
       const offOf = (rows: Record<string, string[]>) =>
         Object.fromEntries(
           Object.entries(rows)
