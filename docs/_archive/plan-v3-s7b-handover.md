@@ -3110,3 +3110,218 @@ a2a on 8f8a84ebc), frr1 0, fmeas 0.
    fails; eoff and erroff (797f8e29e) too.
 1. If every gate reads 0 on 0e81fec1d (this handover is docs only), that
    head goes to the full re-audit of b2, both sides.
+
+## Part b2, round 12: the re-audit's forges closed by class, the static narrow write scan (handed over)
+
+Same branch. Inputs: the brief's "b2 round 12 inputs" (the full re-audits
+at 0e81fec1d, app 7.5 and database 6). One builder; commits c5e146648 to
+1787786cc and this handover.
+
+### What changed, by item
+
+1. A login's delete (DB HIGH-1): `auth.users` DELETE is off the narrow
+   allowlist; DELETE /api/users/:id runs its transaction at
+   `login-credential`. Migration 0320 also refuses the narrow role a delete
+   of the owner's row or an Admin user's row (`mantle_narrow_keep_trg`,
+   BEFORE DELETE), whatever its grants.
+2. System work trusted a self-set setting (DB MED-1): 0320 redefines
+   `mantle_ws_system_work` to also need `mantle_system_session()`, a
+   session login that is not the narrow role, and a session role (the role
+   it SET, else its login) that is the system, runtime or owner role, a
+   superuser or the definers' owner. The narrow login and a session under
+   the write role are refused (cells). The only caller with its actor
+   (`ws-clear-ticks`) is a CLI script on system work, so no spot was
+   needed. Audited for the same pattern: every other definer that reads a
+   setting the session sets (`mantle.acting_login`: the S7c item, named
+   since b1; `mantle.acl_internal`: already paired with
+   `mantle_owner_role()`; `mantle.human`: the personal space roles' old
+   policies, no narrow table; `mantle.keep_updated_at`: a stamp only).
+3. Heartbeats (DB MED-2, cost safety): 0320's row rules on the narrow
+   role: `fire_count` only up, `last_fired_at` only forward, `next_fire_at`
+   only forward or to NULL and never from NULL again, `status` never from
+   completed, cancelled or paused back to active. `state` (a prompt input)
+   moved to NARROW_NEVER_UPDATE_TABLE. A snooze and a state set run at
+   `heartbeat-maker` always; an edit that resumes or sets a next fire too
+   (narrowNeedsSpot's value rules). A fire's own bookkeeping writes the
+   next fire as `greatest(stored, new)`, and keeps a NULL (paused or
+   completed) NULL: a scheduled fire is unchanged (the stored time is
+   due); a manual fire before the schedule keeps the schedule.
+4. Mail accounts (DB MED-3): no narrow INSERT; `ms_account_id`,
+   `provider`, the hosts, the sealed password, `branch_path`,
+   `ingest_policy` and `address` never. The IMAP add and edit and the
+   Microsoft mailbox's upsert run at the new spot `mail-account`.
+5. What runs (DB MED-4, app MED-3): an assistant's `system_prompt`,
+   `persona_notes`, `skill_slugs` and an AI worker's `system_prompt` run at
+   `skill-text` (the assistants area's edit, update_persona, the
+   reflector, the Studio's prose commit). `assistant_messages`: the narrow
+   INSERT stays (the CEO's decision: the turn's hot path; S7c's signed
+   acting login is the fix), with 0320's BEFORE INSERT guard on the narrow
+   role: this brain's row, a direction of inbound or outbound, an assistant
+   of this brain, and a login that is a user of the row's workspace, of the
+   Admin workspace, or the owner.
+6. Delete then reinsert (app MED-2, DB LOW-2): `api_keys` and `sandboxes`
+   take no narrow INSERT (a key made at `model-route`, a sandbox at the new
+   spot `sandbox-make`). runtime-role.test.ts fails on a table with INSERT
+   and DELETE that carries a never-update column unless it is in
+   NARROW_REINSERT_HELD with why (calendar_accounts, curated_models,
+   pdf_passwords, traces: each an insert the narrow login may make anyway,
+   so a reinsert gives nothing more).
+7. Enable one way (DB LOW-1): 0320's `off:enabled` rule on agents,
+   tool_groups, channels and telegram_accounts. An enable runs at
+   `assistant-grant`, `tool-group-grant` or `telegram-connect`.
+8. Unreached writes (app MED-1): Telegram connect (the account, the channel
+   with its token, the enable) runs at the new spot `telegram-connect`;
+   the mail account add and edit and the Microsoft mailbox at
+   `mail-account`. The static check: `packages/db/src/narrow-write-scan.test.ts`
+   (scanner in `src/test-support/narrow-write-scan.ts`, pins in
+   `src/test-support/narrow-write-scan.pins.ts`) reads every drizzle write
+   of `server/` and `packages/` on a table that is not a content table and
+   holds it against NARROW_WRITES: allowed, at a spot (lexically, a
+   function used only inside one, or passed to one in a file that guards
+   the other call with narrowNeedsSpot), in a system-only file (18, each
+   with why), or pinned open. It found four writes no suite had reached,
+   now at their spots: the Studio's prose commit (skills.instructions,
+   agents and AI workers' prompts), the MCP and OpenAPI connectors' edit
+   (a group's integration, configuring login, enable) and the reflector's
+   persona notes. Open: 103 writes in about 55 files, pinned exactly (the
+   list only shrinks). Not done: stubbing getMe, IMAP login and Graph in the
+   sweep so the Telegram connect, mail and Microsoft rows reach their
+   writes (Left).
+9. The count (app MED-4, DB LOW-4, LOW-3): the box counts read all time and
+   the maintenance reaper keeps the narrow rows; 0319 (edited in place: no
+   box has run it) asks for the session's own role as 0317 does. Named in
+   runtime-role.md as the switch-on suites' job: EXECUTE, read and
+   TRUNCATE denials. Not done: the DB INFO that the content count should
+   exclude allowed writes (Left: the narrow role holds no content write, so
+   every narrow-content-write is a refusal to come; a 0 is reachable).
+10. PUBLIC (DB LOW-5): migrate (applyRuntimeGrants) revokes every right of
+    PUBLIC on the app's tables and EXECUTE on every definer but
+    PUBLIC_DEFINERS (`mantle_actor_check_mode()`, measured as the only one
+    on a fresh migrate). Cell: a hand grant on workspace_users and on
+    mantle_ws_add_user is taken back.
+11. LOWs: onboarding's seedSpecialistStack and
+    attachDefaultAssistantsQuietly rethrow a 42501 (app LOW-3). Not done:
+    run-maker (app LOW-2: tried, it turned execute-item's `agent_missing`
+    and `below_admin` refusals into `no_maker`; those later checks already
+    refuse a gone or another workspace's assistant, so the change was
+    reverted and the gap needs the auditor's exact case), the Telegram
+    channel-to-agent readers (LOW-5), the spot-callback lint's arrow
+    functions (INFO).
+12. Docs: runtime-role.md names the revert order (0320 first, then 0319
+    down to 0314, each in its own transaction) and what a switch off does to
+    an open narrow session (the role goes NOLOGIN; the app's pool ends with
+    the process; a hand session by pg_terminate_backend).
+
+Migration 0320_narrow_row_rules (new, revert
+packages/db/rollback/0320_narrow_row_rules.revert.sql: 0319's
+mantle_narrow_one_way body, 0318's agents trigger, 0313's
+mantle_ws_system_work). 0319 edited in place (own role); 0314 to 0318
+untouched.
+
+### The forge proof (the real narrow login)
+
+`~/s7b-b2/r12/proof12.sh` on the workstation: a fresh pg18 migrated with
+MANTLE_NARROW_SYSTEM=1 and MANTLE_DB_RUNTIME_ROLE=1, fixtures as the
+superuser (`setup12.sql`), then every forge (`forge12.sql`) as
+`mantle_system_narrow` logging in with its derived password over the
+container's non-loopback address (pg_hba scram-sha-256; a wrong password
+is refused), session_user and current_user both the narrow role, each in
+a savepoint. Before = 0e81fec1d (x-g12pb2.log), after = 4b42215e1
+(x-g12pa2.log) and the final head (x-g12pr.log):
+
+| Forge                                          | Before          | After |
+| ---------------------------------------------- | --------------- | ----- |
+| delete the brain owner                         | wrote           | 42501 |
+| delete an Admin user                           | wrote           | 42501 |
+| delete a member login                          | wrote           | 42501 |
+| a member made Moderator (ws-clear-ticks actor) | wrote           | 42501 |
+| a completed heartbeat re-armed                 | wrote           | 42501 |
+| heartbeat status completed to active           | wrote           | 42501 |
+| heartbeat fire_count lowered                   | wrote           | 42501 |
+| heartbeat last_fired_at cleared                | wrote           | 42501 |
+| heartbeat next_fire_at set from NULL           | wrote           | 42501 |
+| an active heartbeat's next fire earlier        | wrote           | 42501 |
+| heartbeat state                                | wrote           | 42501 |
+| mail ms_account_id rebind                      | wrote           | 42501 |
+| mail provider                                  | wrote           | 42501 |
+| a Microsoft mail account forged                | wrote           | 42501 |
+| an assistant's prompt, notes, skills           | wrote (3)       | 42501 |
+| an AI worker's prompt                          | wrote           | 42501 |
+| a message for a login outside its workspace    | wrote           | 42501 |
+| a message for another brain                    | 23503 (FK only) | 42501 |
+| a message with a bad direction                 | 23514 (CHECK)   | 42501 |
+| an api key made (the reinsert)                 | wrote           | 42501 |
+| a sandbox made                                 | 23502 (passed)  | 42501 |
+| a tool group, assistant, channel, bot enabled  | wrote (4)       | 42501 |
+| round 8's seven forms                          | 42501           | 42501 |
+| a fire's books forward, a heartbeat completed  | wrote           | wrote |
+| a group or assistant switched off, renamed     | wrote           | wrote |
+| mail folders and name, a login disabled        | wrote           | wrote |
+| a message in the member's workspace, a trace   | wrote           | wrote |
+
+The same forms are DB cells (narrow-row-rules.db.test.ts, as the real
+narrow login), with the write role's moderator forge and the PUBLIC
+revoke.
+
+### Pins
+
+fullRouteSpots 25 to 28 (mail-account, sandbox-make, telegram-connect),
+fullRouteSpotCalls 86 to 102, reasons in arch-scoreboard.pins.json.
+historyCodeComments unchanged (2341). The sweep's SPOT_ROWS took the new
+spots (DELETE /api/users/:id, POST /api/keys, PATCH
+/api/microsoft/accounts/:id/mail, the connectors' PATCH, the persona and
+prose rows).
+
+### Gates (round 12)
+
+Mac, Node 26, DATABASE_URL unset, on 1787786cc: `pnpm -r typecheck` 0,
+`pnpm lint` 0 (the one old warning), `pnpm format:check` 0, `pnpm
+docs:check` 0, `pnpm arch:check` 0, `pnpm -C server/web build` 0, full
+unit vitest 1 (2 of 11320: deploy-scripts' check that the narrow counts
+read the 24 hour window, and the reaper's SQL cell: both now read all time,
+fixed in e108f0f78; that file set and runtime-role.test.ts rerun: 0).
+
+Workstation on 1787786cc (prefix g12, `UNITR=12 ~/s7b-b2/launch9.sh`):
+test:actor-on 0, test:edit-on 0, test:serial 0, the round 8 forge proof
+(SET ROLE) 0, the real-login forge proof g12pr 0 (34 forges 42501, the 8
+product writes wrote), the rollback drill g12drill 0 (~/s7b-b2/r12/drill12.sh:
+round 11's drill plus the reverts 0320 down to 0314, each in its own
+transaction, every step 0; 15 one-way, keep and guard triggers after the
+roll forward, 9 after 0320's revert, 0 after 0318's; main (N-1) migrates
+0 on the b2 schema and after the reverts). test:actor-off 1: one cell,
+role-readers-catalog (the first message guard named auth.users and read
+the session's role: it now checks as the caller and asks a read definer,
+e108f0f78). test:matrix 1 (not read; rerun it alone first: earlier rounds
+failed only its time budget with six lanes busy). The shards, runtime-role,
+switch off and runtime role off were running at hand-over.
+
+On e108f0f78 (the head, prefix g12b, `UNITR=12b`): every suite, the drill
+(drill12.log is overwritten by it) and the real-login proof g12bpr were
+launched at hand-over: `bash ~/s7b-b2/grab3.sh g12bs1 g12bs2 g12baoff
+g12baon g12beon g12brrole g12bserial g12boff g12brroff g12bmatrix`, and
+x-g12bdrill.exit, x-g12bpr.log.
+
+### Left (round 13)
+
+0. Read the g12b runs on e108f0f78 (and g12s1, g12s2, g12rrole, g12off,
+   g12rroff on 1787786cc); the matrix alone if only its budget fails. Mac:
+   the full unit vitest and the web build on the head.
+1. The sweep stubs: getMe, the IMAP login and Graph, so the Telegram
+   connect, mail account add and edit, Microsoft callback, token refresh
+   and drive discovery rows reach their writes (no false 2xx), each
+   proving its spot. Then the open list of the static scan (103) down:
+   each write to its spot, the allowlist with a cell, or its file shown
+   system only. Likely real ones to look at first: login-self's
+   `last_login_at` updates (auth routes, token-login), curated_models'
+   edit (model pools, builtins-curation), tools' `enabled`
+   (external-access, reconcile), assistant_messages' `attachments` and
+   `error` (conversation.ts, team-messages.ts), push/store.ts' prefs
+   upserts (spread sets), mcp-oauth.ts' token rows.
+2. The content count excluding allowed writes (DB INFO): to confirm with
+   the auditor; the narrow role holds no content-table write, so each
+   narrow-content-write is already a refusal to come.
+3. run-maker (app LOW-2): the auditor's exact case (execute-item's
+   later checks already refuse a gone or another workspace's assistant);
+   the Telegram channel-to-agent readers (app LOW-5); the spot-callback
+   lint seeing arrow functions (INFO).
+4. The full re-audit of b2, both sides, on the head whose gates all read 0.
