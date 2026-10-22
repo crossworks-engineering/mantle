@@ -638,10 +638,8 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
 
     // 8. Max-fires auto-complete ---------------------------------
     let finalStatus = after.status;
-    let finalReason = after.completionReason;
     if (stillActive && after.maxFires != null && after.fireCount + 1 >= after.maxFires) {
       finalStatus = 'completed';
-      finalReason = 'max_fires';
     }
 
     // The fire's books in SQL (round 13b, the app re-audit's L3): the count
@@ -649,14 +647,24 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
     // so two fires racing on one row keep both and never meet 0320's
     // one-way rules (fire_count only up, last_fired_at only forward) with a
     // value read before the other's write.
+    // Its status and completion reason in SQL too (the app re-audit's
+    // LOW-3): from the row's own status at the write, never a value read
+    // before it, so a pause or a completion another writer made during the
+    // fire stands (a fire never sets a row back to active). Only an active
+    // row that reaches its max fires completes here; a row no longer active
+    // keeps its own next fire.
+    const maxed = sql`(${heartbeats.status} = 'active' and ${heartbeats.maxFires} is not null
+                       and ${heartbeats.fireCount} + 1 >= ${heartbeats.maxFires})`;
     await db
       .update(heartbeats)
       .set({
         lastFiredAt: sql`greatest(${heartbeats.lastFiredAt}, ${now.toISOString()}::timestamptz)`,
         fireCount: sql`${heartbeats.fireCount} + 1`,
-        nextFireAt: finalStatus === 'active' && nextFireAt ? laterFire(nextFireAt) : null,
-        status: finalStatus,
-        completionReason: finalReason,
+        nextFireAt: sql`case when ${heartbeats.status} <> 'active' then ${heartbeats.nextFireAt}
+                             when ${maxed} then null::timestamptz
+                             else ${finalStatus === 'active' && nextFireAt ? laterFire(nextFireAt) : sql`null::timestamptz`} end`,
+        status: sql`case when ${maxed} then 'completed' else ${heartbeats.status} end`,
+        completionReason: sql`case when ${maxed} then 'max_fires' else ${heartbeats.completionReason} end`,
         updatedAt: now,
       })
       .where(eq(heartbeats.id, hb.id));

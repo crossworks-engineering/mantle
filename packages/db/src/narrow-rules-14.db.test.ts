@@ -20,6 +20,7 @@ const AGENT = 'c1400000-0000-4000-8000-000000000001';
 const WORKER = '21400000-0000-4000-8000-000000000001';
 const FEED = '21400000-0000-4000-8000-000000000002';
 const POOL_ENTRY = '21400000-0000-4000-8000-000000000003';
+const HEARTBEAT = 'd1400000-0000-4000-8000-000000000001';
 
 const FIXTURES = [
   `insert into agents (id, owner_id, slug, name, provider, model, enabled, system_prompt, workspace_id) values
@@ -32,6 +33,8 @@ const FIXTURES = [
    values (@BRAIN@, 'embeddinggemma', 'local') on conflict (owner_id) do nothing`,
   `insert into curated_models (id, owner_id, pool, position, name, routes)
    values ('${POOL_ENTRY}', @BRAIN@, 'agents', 0, 'x/y', '[]')`,
+  `insert into heartbeats (id, owner_id, slug, name, agent_slug, skill_slug, schedule, schedule_kind, surface, status, fire_count, max_fires, last_fired_at, next_fire_at)
+   values ('${HEARTBEAT}', @BRAIN@, 'hb14', 'hb14', 'forge14', 'x', '{"every_minutes":60}', 'interval', '{}', 'active', 3, 4, now(), now() + interval '1 hour')`,
 ];
 
 const FEED_ROW = (enabled: string) =>
@@ -186,6 +189,38 @@ describe.skipIf(!URL)(
         if (got !== 'ok') bad.push(`${label}: ${got}`);
       }
       expect(bad).toEqual([]);
+    });
+
+    it("a fire's books keep the row's own status: a pause during the fire stands, an active row at its max completes (fire.ts)", async () => {
+      // fire.ts's statement, as the narrow login (a scheduled fire's exit).
+      const books = `update heartbeats set
+        last_fired_at = greatest(last_fired_at, now()), fire_count = fire_count + 1,
+        next_fire_at = case when status <> 'active' then next_fire_at
+                            when (status = 'active' and max_fires is not null and fire_count + 1 >= max_fires) then null::timestamptz
+                            else greatest(next_fire_at, now() + interval '2 hours') end,
+        status = case when (status = 'active' and max_fires is not null and fire_count + 1 >= max_fires) then 'completed' else status end,
+        completion_reason = case when (status = 'active' and max_fires is not null and fire_count + 1 >= max_fires) then 'max_fires' else completion_reason end
+      where id = '${HEARTBEAT}'`;
+      await su`update heartbeats set status = 'paused', completion_reason = 'owner', next_fire_at = null where id = ${HEARTBEAT}`;
+      await nl.begin(async (t) => {
+        await t.unsafe(`select set_config('mantle.actor', 'system:heartbeat', true)`);
+        await t.unsafe(books);
+      });
+      const [paused] =
+        await su`select status, completion_reason, fire_count from heartbeats where id = ${HEARTBEAT}`;
+      expect(paused).toMatchObject({ status: 'paused', completion_reason: 'owner', fire_count: 4 });
+      await su`update heartbeats set status = 'active', completion_reason = null, fire_count = 3, next_fire_at = now() + interval '1 hour' where id = ${HEARTBEAT}`;
+      await nl.begin(async (t) => {
+        await t.unsafe(`select set_config('mantle.actor', 'system:heartbeat', true)`);
+        await t.unsafe(books);
+      });
+      const [done] =
+        await su`select status, completion_reason, next_fire_at from heartbeats where id = ${HEARTBEAT}`;
+      expect(done).toMatchObject({
+        status: 'completed',
+        completion_reason: 'max_fires',
+        next_fire_at: null,
+      });
     });
 
     it('every switch of a table the narrow role may insert into is held on INSERT too (read from the catalog)', async () => {
