@@ -7,7 +7,7 @@
  * sync.
  */
 import { createHash } from 'node:crypto';
-import { db, msDrives, type MsAccount } from '@mantle/db';
+import { db, msDrives, onFullSystemRoute, type MsAccount } from '@mantle/db';
 import { dashToLtree, slugifyFolder } from '@mantle/files';
 import { graphGet, graphGetAll } from '../client';
 import type { GraphDrive, GraphSite } from './types';
@@ -76,6 +76,13 @@ export async function discoverDrives(account: MsAccount): Promise<number> {
     // No followed sites / insufficient grant — OneDrive-only is still useful.
   }
 
+  // A drive found is a row the narrow login never inserts (access-matrix.ts
+  // NARROW_WRITES): the full-route spot ms-account, as the account's own.
+  if (found.length > 0) await onFullSystemRoute('ms-account', () => upsertDrives(account, found));
+  return found.length;
+}
+
+async function upsertDrives(account: MsAccount, found: readonly FoundDrive[]): Promise<void> {
   for (const f of found) {
     await db
       .insert(msDrives)
@@ -94,6 +101,4 @@ export async function discoverDrives(account: MsAccount): Promise<number> {
         set: { name: f.name, siteName: f.siteName, webUrl: f.webUrl, updatedAt: new Date() },
       });
   }
-
-  return found.length;
 }

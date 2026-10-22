@@ -47,7 +47,17 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
       systemPrompt: 'sweep',
     },
   },
-  'PATCH /api/agents/:id': {},
+  // An edit that names a run limit, the description and a turn-on (round 13b
+  // items C, D and F: assistant-grant and skill-text).
+  'PATCH /api/agents/:id': {
+    body: {
+      name: 'sweep2',
+      description: 'sweep d',
+      memoryConfig: { max_iterations: 5 },
+      params: { temperature: 0.5 },
+      enabled: true,
+    },
+  },
   'DELETE /api/agents/:id': {},
   'POST /api/agents/:id/persona': {},
   'POST /api/agents/:id/telegram': {},
@@ -102,7 +112,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/email/accounts/:id': {
     body: { host: '127.0.0.1', port: 1, secure: false, password: 'x' },
   },
-  'PUT /api/email/accounts/:id/folders': {},
+  'PUT /api/email/accounts/:id/folders': { body: { folders: ['INBOX'] } },
   'POST /api/email/discover/contacts': {},
   'PATCH /api/email/messages/:id': {},
   'POST /api/embedding': { body: { model: 'embeddinggemma:latest' } },
@@ -122,7 +132,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
       surface: { kind: 'web' },
     },
   },
-  'PATCH /api/heartbeats/:id': {},
+  'PATCH /api/heartbeats/:id': { body: { name: 'sweep2' } },
   'DELETE /api/heartbeats/:id': {},
   'POST /api/heartbeats/:id/fire': {},
   'POST /api/keys': {},
@@ -168,7 +178,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/model-pools': {
     body: { pool: 'agents', name: 'Sweep model', routes: [{ provider: 'sweep', model: 'sweep' }] },
   },
-  'PATCH /api/model-pools/:id': {},
+  'PATCH /api/model-pools/:id': { body: { note: 'sweep', rating: 3 } },
   'DELETE /api/model-pools/:id': {},
   'POST /api/network/activate': {},
   'POST /api/network/deactivate': {},
@@ -208,10 +218,10 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/secrets/:id/reveal': {},
   'POST /api/services/:name': { path: '/api/services/sandboxes', body: { enable: true } },
   'POST /api/settings/worker-groups': {},
-  'PATCH /api/settings/worker-groups/:id': {},
+  'PATCH /api/settings/worker-groups/:id': { body: { name: 'sweep2', enabled: true } },
   'DELETE /api/settings/worker-groups/:id': {},
   'POST /api/skills': {},
-  'PATCH /api/skills/:id': {},
+  'PATCH /api/skills/:id': { body: { description: 'sweep d2', enabled: true } },
   'DELETE /api/skills/:id': {},
   'POST /api/studio/prose': {
     body: { entityType: 'agent', entityId: S, field: 'system_prompt', body: 'sweep prompt' },
@@ -225,7 +235,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/team-admin/settings': { body: { teamPrivateReads: true } },
   'PATCH /api/telegram/chats/:id': { body: { responderAgentId: S } },
   'POST /api/tool-groups': {},
-  'PATCH /api/tool-groups/:id': {},
+  'PATCH /api/tool-groups/:id': { body: { name: 'sweep2', description: 'sweep d2' } },
   'DELETE /api/tool-groups/:id': {},
   'POST /api/tools': {
     body: {
@@ -236,7 +246,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
     },
   },
   'PUT /api/tools/settings': {},
-  'PATCH /api/tools/:id': {},
+  'PATCH /api/tools/:id': { body: { description: 'sweep d2', requiresConfirm: true } },
   'DELETE /api/tools/:id': {},
   'PUT /api/tools/:id/external-access': { body: { allow: true, readOnlyConfirmed: true } },
   'POST /api/updates/check': {},

@@ -537,12 +537,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.ms_accounts': {
     update: ['last_sync_error', 'updated_at'],
     delete: true,
-    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area. An account connected and its tokens rotated (the OAuth callback, a token refresh) run at the full-route spot ms-account (round 13c)',
   },
   'public.ms_drives': {
     update: ['delta_link', 'enabled', 'updated_at'],
     delete: false,
-    why: 'measured (round 8): UPDATE by system:http:admin-area',
+    why: 'measured (round 8): UPDATE by system:http:admin-area. A drive found (discoverDrives) runs at the full-route spot ms-account, a drive switched on at feed-enable (round 13c, 13b)',
   },
   'public.oauth_clients': {
     update: [],

@@ -13,7 +13,7 @@
  * would invalidate the account).
  */
 import { and, eq } from 'drizzle-orm';
-import { db, msAccounts, type MsAccount } from '@mantle/db';
+import { db, msAccounts, onFullSystemRoute, type MsAccount } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { refreshTokens, type TokenSet } from './oauth';
 import { resolveOAuthConfig } from './config-store';
@@ -48,7 +48,22 @@ export async function upsertAccountFromTokens(args: {
   tokens: TokenSet;
 }): Promise<MsAccount> {
   const { userId, upn, displayName, tenantId, branchPath, tokens } = args;
+  // The account row and its sealed tokens are a credential the narrow login
+  // never writes (access-matrix.ts NARROW_WRITES): the full-route spot
+  // ms-account on the connectors area's narrow exit.
+  return onFullSystemRoute('ms-account', () =>
+    upsertAccountRows(userId, upn, displayName, tenantId, branchPath, tokens),
+  );
+}
 
+async function upsertAccountRows(
+  userId: string,
+  upn: string,
+  displayName: string | null,
+  tenantId: string | null,
+  branchPath: string,
+  tokens: TokenSet,
+): Promise<MsAccount> {
   // Two-step so the seal AAD can be the real row id. Insert metadata first
   // (tokens null), then seal against the returned id. The brief window where a
   // row exists without tokens is invisible — `enabled` rows without a token
@@ -100,48 +115,11 @@ export async function getValidAccessToken(
 
   // Slow path: refresh under a row lock so concurrent callers don't double-
   // refresh and race Azure's refresh-token rotation.
+  // The rotated tokens are the account's credential, never the narrow
+  // login's to write: the full-route spot ms-account (the failure's note
+  // below stays on the narrow login: last_sync_error is its).
   try {
-    return await db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select()
-        .from(msAccounts)
-        .where(eq(msAccounts.id, row.id))
-        .for('update');
-      if (!locked || !locked.enabled) return null;
-
-      // Someone else refreshed while we waited for the lock.
-      if (
-        locked.accessTokenEnc &&
-        locked.tokenExpiresAt &&
-        locked.tokenExpiresAt.getTime() - EXPIRY_SKEW_MS > Date.now()
-      ) {
-        return open(locked.accessTokenEnc, locked.id);
-      }
-
-      if (!locked.refreshTokenEnc) return null; // can't refresh — needs reconnect
-      const refreshToken = open(locked.refreshTokenEnc, locked.id);
-
-      const cfg = await resolveOAuthConfig(userId);
-      if (!cfg) throw new Error('Microsoft app is not configured — cannot refresh token');
-
-      let fresh: TokenSet;
-      try {
-        fresh = await refreshTokens(cfg, refreshToken);
-      } catch (err) {
-        // Rethrow so the caller sees it — but record the failure OUTSIDE this
-        // transaction. Writing it on `tx` and then throwing rolled the write
-        // back with everything else, so the account looked healthy
-        // (`last_sync_error` null) no matter how often the refresh failed.
-        failure.error = err as Error;
-        throw err;
-      }
-
-      await tx
-        .update(msAccounts)
-        .set({ ...tokenUpdate(locked.id, fresh), lastSyncError: null })
-        .where(eq(msAccounts.id, locked.id));
-      return fresh.accessToken;
-    });
+    return await onFullSystemRoute('ms-account', () => refreshUnderLock(userId, row.id, failure));
   } finally {
     if (failure.error) {
       await db
@@ -153,6 +131,55 @@ export async function getValidAccessToken(
         .where(eq(msAccounts.id, row.id));
     }
   }
+}
+
+/** The slow path of getValidAccessToken: refresh under the row's lock. */
+function refreshUnderLock(
+  userId: string,
+  rowId: string,
+  failure: { error: Error | null },
+): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(msAccounts)
+      .where(eq(msAccounts.id, rowId))
+      .for('update');
+    if (!locked || !locked.enabled) return null;
+
+    // Someone else refreshed while we waited for the lock.
+    if (
+      locked.accessTokenEnc &&
+      locked.tokenExpiresAt &&
+      locked.tokenExpiresAt.getTime() - EXPIRY_SKEW_MS > Date.now()
+    ) {
+      return open(locked.accessTokenEnc, locked.id);
+    }
+
+    if (!locked.refreshTokenEnc) return null; // can't refresh — needs reconnect
+    const refreshToken = open(locked.refreshTokenEnc, locked.id);
+
+    const cfg = await resolveOAuthConfig(userId);
+    if (!cfg) throw new Error('Microsoft app is not configured — cannot refresh token');
+
+    let fresh: TokenSet;
+    try {
+      fresh = await refreshTokens(cfg, refreshToken);
+    } catch (err) {
+      // Rethrow so the caller sees it — but record the failure OUTSIDE this
+      // transaction. Writing it on `tx` and then throwing rolled the write
+      // back with everything else, so the account looked healthy
+      // (`last_sync_error` null) no matter how often the refresh failed.
+      failure.error = err as Error;
+      throw err;
+    }
+
+    await tx
+      .update(msAccounts)
+      .set({ ...tokenUpdate(locked.id, fresh), lastSyncError: null })
+      .where(eq(msAccounts.id, locked.id));
+    return fresh.accessToken;
+  });
 }
 
 /** Disconnect: drop the row (and, by FK cascade once M1 adds them, its items).
