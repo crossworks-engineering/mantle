@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ENV_NUMBERS, envNum } from './numbers';
 import { FEATURES, feature, featureSource } from './features';
 import { parseFlag, parseNumber } from './parse';
@@ -46,6 +46,24 @@ describe('parseFlag', () => {
     for (const raw of [undefined, null, '', '   ', 'garbage', '2', 'enabled']) {
       expect(parseFlag(raw, true), String(raw)).toBe(true);
       expect(parseFlag(raw, false), String(raw)).toBe(false);
+    }
+  });
+
+  it('warns once per name and word when a word is neither on nor off, saying what it took', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(parseFlag(' Of ', true, 'MANTLE_TEST_FLAG_A')).toBe(true);
+      expect(parseFlag('of', true, 'MANTLE_TEST_FLAG_A')).toBe(true);
+      expect(parseFlag('disable', false, 'MANTLE_TEST_FLAG_B')).toBe(false);
+      expect(parseFlag('', true, 'MANTLE_TEST_FLAG_C')).toBe(true);
+      expect(parseFlag('off', true, 'MANTLE_TEST_FLAG_C')).toBe(false);
+      expect(parseFlag('garbage', true)).toBe(true);
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        expect.stringMatching(/MANTLE_TEST_FLAG_A: "of" .*taken as on, its default$/),
+        expect.stringMatching(/MANTLE_TEST_FLAG_B: "disable" .*taken as off, its default$/),
+      ]);
+    } finally {
+      warn.mockRestore();
     }
   });
 });

@@ -16,7 +16,15 @@
  */
 import { currentTrace } from '@mantle/tracing';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { agentGroups, agents, db, runItems, runs, scopeHasArea } from '@mantle/db';
+import {
+  agentGroups,
+  agents,
+  db,
+  onFullSystemRoute,
+  runItems,
+  runs,
+  scopeHasArea,
+} from '@mantle/db';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -959,7 +967,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (refused) return refused;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
-      const { cancelled } = await cancelRun(db, run.id);
+      // A run's status is what the sweep executes (the spot run-control).
+      const { cancelled } = await onFullSystemRoute('run-control', () => cancelRun(db, run.id));
       return { ok: true, output: { run_id: run.id, cancelled } };
     },
   },

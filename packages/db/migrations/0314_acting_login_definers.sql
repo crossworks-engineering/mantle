@@ -24,7 +24,7 @@
 -- a raw narrow session may name any acting login (only the gateway's text
 -- check refuses a narrow statement that names it). The database boundaries
 -- there are each definer's own kind, op, place, type and owner checks and
--- the narrow role's column rights (access-matrix.ts NARROW_COLUMN_RIGHTS:
+-- the narrow role's column rights (access-matrix.ts NARROW_WRITES:
 -- no credential or rights column of auth.users, no new login, no minted
 -- credential). A definer the narrow role may run must therefore give
 -- nothing whichever login it is told it acts for.

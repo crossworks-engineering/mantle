@@ -159,7 +159,7 @@ export function feature(
   if ('service' in spec) return serviceEnabled(spec.service);
   if (spec.devOnly && isProduction()) return false;
   const fallback = spec.default === 'context' ? (ctx?.default ?? false) : spec.default;
-  return parseFlag(env(spec.env), fallback);
+  return parseFlag(env(spec.env), fallback, spec.env);
 }
 
 /** Where a feature is read from, for the docs and /debug: the variable (and

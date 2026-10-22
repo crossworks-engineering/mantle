@@ -1183,7 +1183,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'pending-call':
     "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
   'login-credential':
-    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0318 refuses the narrow role): the users area's create, role change, enable and password set, and a login's own password change (login-self); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_COLUMN_RIGHTS), so a narrow session can neither raise a login's role nor set a password",
+    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0318 refuses the narrow role): the users area's create, role change, enable and password set, and a login's own password change (login-self); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
   'structure-no-login':
     "a structure item (gateway/structure-item.ts) written in a narrow exit that acts for no login (a turn that answers none, as a heartbeat's with the actor check off): the definer takes only an acting login, so the app's own statements run here, as before it",
   'pair-code':
@@ -1198,6 +1198,8 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     'a share granted to a peer (peer_shares and peer_share_scopes INSERT, peers/grants.ts): the peer may then read the item or type; the narrow login may only revoke one (revoked_at, never cleared: 0318)',
   'telegram-pair':
     'a Telegram chat paired to a login (telegram_chats allowlist_status and login_id, the login-telegram reason, packages/telegram pairing.ts pairChatWithCode): the chat then talks to the assistant as that login; the narrow login holds no write of either column',
+  'run-control':
+    "a run cancelled (runs status and its items' state: the area's POST /api/runs/:id and run_cancel): a run's status decides what the runs sweep executes, so the narrow login holds no write of it (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE_TABLE)",
   'telegram-responder':
     "a Telegram chat's assistant chosen (telegram_chats responder_agent_id, the connectors area's PATCH /api/telegram/chats/:id): that assistant's tool groups then answer the chat's login; the narrow login holds no write of telegram_chats (S7b part b2 round 7: found by the area-route sweep reaching the write)",
   'assistant-grant':

@@ -8,6 +8,13 @@ import {
   ACCESS_MATRIX,
   CREDENTIAL_NAME,
   NARROW_CREDENTIAL_TABLES,
+  NARROW_MOVES_LEFT,
+  NARROW_NEVER_INSERT,
+  NARROW_NEVER_UPDATE,
+  NARROW_NEVER_UPDATE_TABLE,
+  NARROW_ONE_WAY_HELD,
+  NARROW_WRITES,
+  narrowMayWrite,
   narrowFor,
   type TableAccess,
 } from './access-matrix';
@@ -590,3 +597,57 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 
 /** The narrow role's table counts: `all` only goes down. */
 const NARROW_COUNTS = { all: 97, read: 36, none: 8 };
+
+describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
+  const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
+  /** Every write NARROW_WRITES grants that the rules refuse, as
+   *  NARROW_MOVES_LEFT names them (table.column, or table:insert). */
+  const refused = (): string[] => {
+    const out: string[] = [];
+    for (const [table, w] of Object.entries(NARROW_WRITES)) {
+      if (w.insert && NARROW_NEVER_INSERT.includes(table)) out.push(`${table}:insert`);
+      const never = new Set([...NARROW_NEVER_UPDATE, ...(NARROW_NEVER_UPDATE_TABLE[table] ?? [])]);
+      for (const c of w.update) {
+        if (never.has(c) && !NARROW_ONE_WAY_HELD.includes(`${table}.${c}`))
+          out.push(`${table}.${c}`);
+      }
+    }
+    return out.sort();
+  };
+
+  it('grants writes only on tables the narrow role may write at all (narrowFor all)', () => {
+    for (const table of Object.keys(NARROW_WRITES)) {
+      const t = byName.get(table);
+      expect(t, table).toBeDefined();
+      expect(narrowFor(t!), table).toBe('all');
+      expect(NARROW_WRITES[table]!.why.length, table).toBeGreaterThan(20);
+    }
+  });
+
+  it('names no maker, rights, destination or execution column and no such insert but the moves left, each with its spot', () => {
+    expect(refused()).toEqual(Object.keys(NARROW_MOVES_LEFT).sort());
+    for (const why of Object.values(NARROW_MOVES_LEFT)) expect(why).toMatch(/^[a-z-]+(:|$)/);
+  });
+
+  it('the moves left only shrink (30 measured, 29 with run-control)', () => {
+    expect(Object.keys(NARROW_MOVES_LEFT).length).toBeLessThanOrEqual(29);
+  });
+
+  it('a table not on the allowlist is read only; runs and run items take no narrow insert', () => {
+    expect(narrowMayWrite('public.push_instance', 'insert')).toBe(false);
+    expect(narrowMayWrite('public.brain_identity', 'update', ['brain_id'])).toBe(false);
+    expect(narrowMayWrite('public.conversation_taints', 'delete')).toBe(false);
+    expect(narrowMayWrite('public.runs', 'insert')).toBe(false);
+    expect(narrowMayWrite('public.run_items', 'insert')).toBe(false);
+    expect(narrowMayWrite('public.runs', 'update', ['status'])).toBe(false);
+    expect(narrowMayWrite('public.run_items', 'update', ['state'])).toBe(false);
+    expect(narrowMayWrite('public.skills', 'update', ['instructions'])).toBe(false);
+    expect(narrowMayWrite('public.tools', 'update', ['handler'])).toBe(false);
+    expect(narrowMayWrite('public.pending_tool_calls', 'update', ['args'])).toBe(false);
+    expect(narrowMayWrite('public.pending_tool_calls', 'update', ['tool_slug'])).toBe(false);
+    expect(narrowMayWrite('public.pending_tool_calls', 'update', ['status', 'result'])).toBe(true);
+    expect(narrowMayWrite('public.audit_log', 'insert')).toBe(true);
+    expect(narrowMayWrite('public.audit_log', 'delete')).toBe(false);
+    expect(narrowMayWrite('public.audit_log', 'update', ['detail'])).toBe(false);
+  });
+});

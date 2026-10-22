@@ -225,11 +225,11 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
   },
   'public.agents': {
     narrow: 'all',
-    why: 'the assistants, users, settings and connectors areas write assistants; update_persona and agent_set_thinking_effort (admin-area). Column-level (NARROW_COLUMN_RIGHTS): an assistant made or granted runs at the full-route spot assistant-grant',
+    why: 'the assistants, users, settings and connectors areas write assistants; update_persona and agent_set_thinking_effort (admin-area). Column-level (NARROW_WRITES): an assistant made or granted runs at the full-route spot assistant-grant',
   },
   'public.tool_groups': {
     narrow: 'all',
-    why: 'the connectors and settings areas edit, bind and enable tool groups. Column-level (NARROW_COLUMN_RIGHTS): a group made, removed or its tools changed runs at the full-route spot tool-group-grant',
+    why: 'the connectors and settings areas edit, bind and enable tool groups. Column-level (NARROW_WRITES): a group made, removed or its tools changed runs at the full-route spot tool-group-grant',
   },
   'public.contact_share_codes': {
     narrow: 'read',
@@ -279,23 +279,37 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
 });
 
 /**
- * The credential and rights tables whose 'all' is column-level for the
- * narrow system role (plan v3.2 S7b part b2): SELECT, UPDATE of only the
- * columns listed, DELETE only where it says, never INSERT. Measured with
- * the switch on (the full DB suite under `log_statement = mod`, every
- * statement the narrow login sent; the handover's b2 measurement): what narrow
- * reasons write, less every column that grants or proves a right. The rest
- * of each table's writes run at the full-route spot login-credential
- * (viewer.ts FULL_ROUTE_SPOTS) or in the login's own scope. The narrow
+ * What the narrow system role may WRITE, per table: a measured allowlist
+ * (plan v3.2 S7b part b2 round 8, the class fix of the full audits: its
+ * write rights were derived by table name, so a rights table with a plain
+ * name was narrow 'all'). Every table the narrow role may touch is SELECT;
+ * on top of that only what is listed here: INSERT where `insert`, UPDATE of
+ * exactly the `update` columns (always column-level), DELETE where
+ * `delete`. A table that is not listed is read only, so a new table (and a
+ * new column of a listed one) is closed to narrow writes by default.
+ * Measured with the switch on (the full DB vitest, test:actor-off,
+ * actor-on, edit-on and runtime-role, the area-route sweep inside the full
+ * run: a row trigger on every table and the statement log, every write the
+ * narrow login made with its columns and actor; the handover's round 8
+ * measurement), less every column that grants, makes, points or executes
+ * (NARROW_NEVER_UPDATE, NARROW_NEVER_INSERT): those writes run at a named
+ * full-route spot (viewer.ts FULL_ROUTE_SPOTS) or a definer with its own
+ * check, or are listed in NARROW_MOVES_LEFT with the spot they move to.
+ * runtime-role.db.test.ts pins the live grants equal to this. The narrow
  * login's acting login is a mistake guard only (any narrow statement could
  * name one), so a column a narrow session may write must give nothing
- * whoever's row it is: on auth.users never role, password_hash, email,
- * is_owner or contact_id (a contact's shares reach the login linked to
- * it). runtime-role.db.test.ts pins the live grants equal to this.
+ * whoever's row it is.
  */
-export const NARROW_COLUMN_RIGHTS: Readonly<
-  Record<string, { update: readonly string[]; delete: boolean; why: string }>
-> = Object.freeze({
+export type NarrowWrite = {
+  /** INSERT on the table (drizzle names every column, so an INSERT right
+   *  is table-wide in practice: judged per table, NARROW_NEVER_INSERT). */
+  insert?: true;
+  update: readonly string[];
+  delete: boolean;
+  why: string;
+};
+
+export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freeze({
   'auth.users': {
     update: ['display_name', 'disabled_at', 'session_epoch'],
     delete: true,
@@ -391,7 +405,480 @@ export const NARROW_COLUMN_RIGHTS: Readonly<
     delete: false,
     why: "the connectors and settings areas rename, describe, bind (integration, configured_by) and enable or disable a group; the MCP token refresh writes its integration. A group made or removed, or its tools, slug or admin_only changed, runs at the full-route spot tool-group-grant. The integration is outbound configuration, as api_keys'",
   },
+  // The rest of the measured allowlist (round 8): every table the narrow
+  // login wrote over the measured suites, its operations and its columns.
+  'public.actor_check_misses': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by system:admin-area',
+  },
+  'public.agent_groups': {
+    insert: true,
+    update: ['updated_at'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.ai_workers': {
+    insert: true,
+    update: [
+      'api_key_id',
+      'backup_api_key_id',
+      'backup_base_url',
+      'backup_enabled',
+      'backup_model',
+      'backup_provider',
+      'backup_via_tailnet',
+      'base_url',
+      'configured_by',
+      'enabled',
+      'is_default',
+      'model',
+      'name',
+      'params',
+      'priority',
+      'provider',
+      'system_prompt',
+      'updated_at',
+      'via_tailnet',
+    ],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.api_keys': {
+    insert: true,
+    update: [
+      'anthropic_workspace_id',
+      'key_enc',
+      'key_version',
+      'last_used',
+      'masked',
+      'updated_at',
+    ],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by a login turn, system:admin-area, system:http:admin-area',
+  },
+  'public.app_access_log': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by a login turn',
+  },
+  'public.assistant_messages': {
+    insert: true,
+    update: ['data', 'model', 'status', 'text'],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram',
+  },
+  'public.audit_log': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by a login turn, system:audit-log, system:audit:tool-call, system:http:admin-area, system:http:login-self',
+  },
+  'public.calendar_accounts': {
+    insert: true,
+    update: ['enabled', 'last_sync_error', 'updated_at'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.channels': {
+    update: ['enabled', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): UPDATE by system:http:admin-area',
+  },
+  'public.curated_models': {
+    insert: true,
+    update: ['updated_at'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.doc_collections': {
+    insert: true,
+    update: ['enabled', 'last_reconciled_at', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+  },
+  'public.email_accounts': {
+    insert: true,
+    update: [
+      'display_name',
+      'enabled',
+      'imap_included_folders',
+      'last_sync_error',
+      'ms_account_id',
+      'provider',
+      'updated_at',
+    ],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+  },
+  'public.emails': {
+    update: ['is_read', 'is_starred', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): UPDATE by system:http:admin-area',
+  },
+  'public.embedding_cache': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by system:http:admin-area',
+  },
+  'public.embedding_config': {
+    insert: true,
+    update: [
+      'backup_api_key_id',
+      'backup_base_url',
+      'backup_enabled',
+      'backup_label',
+      'backup_provider',
+      'dimensions',
+      'extraction_concurrency',
+      'extraction_time_budget_minutes',
+      'local_embed_batch_size',
+      'local_embed_request_timeout_ms',
+      'model',
+      'primary_api_key_id',
+      'primary_base_url',
+      'primary_label',
+      'primary_provider',
+      'updated_at',
+    ],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+  },
+  'public.heartbeat_fires': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by system:admin-area, system:http:admin-area',
+  },
+  'public.heartbeats': {
+    insert: true,
+    update: [
+      'completion_reason',
+      'created_by',
+      'fire_count',
+      'last_fired_at',
+      'next_fire_at',
+      'state',
+      'status',
+      'updated_at',
+    ],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+  },
+  'public.microsoft_config': {
+    update: ['client_id', 'redirect_uri', 'tenant', 'updated_at'],
+    delete: true,
+    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.ms_accounts': {
+    update: ['last_sync_error', 'updated_at'],
+    delete: true,
+    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.ms_drives': {
+    update: ['delta_link', 'enabled', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): UPDATE by system:http:admin-area',
+  },
+  'public.oauth_clients': {
+    update: [],
+    delete: true,
+    why: 'measured (round 8): DELETE by system:http:admin-area',
+  },
+  'public.pdf_passwords': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: 'measured (round 8): INSERT, DELETE by system:http:admin-area',
+  },
+  'public.pending_tool_calls': {
+    insert: true,
+    update: ['decided_at', 'error', 'executed_at', 'result', 'status', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area',
+  },
+  'public.prompt_versions': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by system:http:admin-area',
+  },
+  'public.provider_alerts': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by a login turn',
+  },
+  'public.push_subscriptions': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: 'measured (round 8): INSERT, DELETE by system:http:admin-area, system:http:login-self',
+  },
+  'public.sandboxes': {
+    insert: true,
+    update: ['last_used_at', 'status'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+  },
+  'public.secrets': {
+    insert: true,
+    update: ['ciphertext', 'key_version', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
+  },
+  'public.skills': {
+    insert: true,
+    update: ['updated_at'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.tailscale_config': {
+    update: ['auth_key_enc', 'hostname', 'key_version', 'masked', 'updated_at'],
+    delete: true,
+    why: 'measured (round 8): UPDATE, DELETE by system:http:admin-area',
+  },
+  'public.telegram_accounts': {
+    update: ['enabled', 'updated_at'],
+    delete: false,
+    why: 'measured (round 8): UPDATE by system:http:admin-area',
+  },
+  'public.tool_result_chunks': {
+    insert: true,
+    update: [],
+    delete: false,
+    why: 'measured (round 8): INSERT by a login turn',
+  },
+  'public.tool_results': {
+    update: ['chunked'],
+    delete: false,
+    why: 'measured (round 8): UPDATE by a login turn',
+  },
+  'public.tools': {
+    insert: true,
+    update: ['external_access', 'updated_at'],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area',
+  },
+  'public.trace_steps': {
+    insert: true,
+    update: ['duration_ms', 'error', 'finished_at', 'meta', 'output', 'status'],
+    delete: false,
+    why: 'measured (round 8): INSERT, UPDATE by a login turn, an assistant turn, assistant, system:http:admin-area',
+  },
+  'public.traces': {
+    insert: true,
+    update: [
+      'cost_micro_usd',
+      'data',
+      'duration_ms',
+      'error',
+      'finished_at',
+      'status',
+      'step_count',
+      'tokens_cache_read',
+      'tokens_embed',
+      'tokens_in',
+      'tokens_out',
+    ],
+    delete: true,
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by a login turn, system:admin-area, system:http:admin-area',
+  },
 });
+
+/**
+ * Columns no narrow UPDATE may name, on any table (plan v3.2 S7b part b2
+ * round 8): who a row belongs to, acts for or was made by, where it sends a
+ * key or a call, what it runs and with what, and what it grants. A write
+ * that needs one runs at a full-route spot or a definer with its own check
+ * (NARROW_WRITES' header). The exceptions are the one-way columns 0318
+ * holds on the narrow role (a release only: agents.assigned_user_id and
+ * mantle_peers.acts_as_login_id only to NULL), listed in NARROW_ONE_WAY_HELD.
+ */
+export const NARROW_NEVER_UPDATE: readonly string[] = Object.freeze([
+  'id',
+  'login_id',
+  'owner_id',
+  'agent_id',
+  'workspace_id',
+  'user_id',
+  'actor_id',
+  'created_by',
+  'configured_by',
+  'assigned_user_id',
+  'acts_as_login_id',
+  'redeemed_login_id',
+  'integration',
+  'handler',
+  'requires_confirm',
+  'external_access',
+  'base_url',
+  'backup_base_url',
+  'primary_base_url',
+  'api_key_id',
+  'backup_api_key_id',
+  'primary_api_key_id',
+  'redirect_uri',
+  'redirect_uris',
+  'channel_id',
+  'token_id',
+  'relay_url',
+  'root_path',
+  'kind',
+  'elevated',
+  'origin',
+  'tool_slug',
+  'payload',
+  'args',
+  'instructions',
+  'brain_id',
+  'role',
+  'slug',
+  'tool_slugs',
+  'tool_group_slugs',
+  'admin_only',
+  'member_slugs',
+  'node_id',
+  'node_type',
+  'password_hash',
+  'email',
+  'is_owner',
+  'contact_id',
+]);
+
+/** Per table, more columns no narrow UPDATE may name: a run's or a pending
+ *  call's state (a run executes; an approval is the Admin's), a
+ *  heartbeat's schedule (when it fires, as whom). */
+export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[]>> = Object.freeze(
+  {
+    'public.runs': ['status', 'paused_at', 'budget_micro_usd', 'item_cap', 'root_item_id'],
+    'public.run_items': ['state', 'side_effecting', 'retry_policy', 'deadline_at', 'model'],
+    'public.heartbeats': [
+      'schedule',
+      'schedule_kind',
+      'next_fire_at',
+      'earliest_at',
+      'quiet_hours',
+      'cooldown_minutes',
+      'min_idle_minutes',
+      'max_fires',
+      'agent_slug',
+      'skill_slug',
+      'surface',
+    ],
+  },
+);
+
+/** The one-way columns 0318 holds on the narrow role (only a release): the
+ *  only NARROW_NEVER_UPDATE names a narrow UPDATE may list. */
+export const NARROW_ONE_WAY_HELD: readonly string[] = Object.freeze([
+  'public.agents.assigned_user_id',
+  'public.mantle_peers.acts_as_login_id',
+]);
+
+/** Tables no narrow INSERT may reach (plan v3.2 S7b part b2 round 8): a row
+ *  there is executed (a run, a run item, a heartbeat, a tool, a skill's
+ *  instructions), decided (a pending call), grants (an assistant, a tool
+ *  group, a channel, a bot) or lets a device or a client in. Their inserts
+ *  run at a full-route spot or a definer. */
+export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
+  'public.runs',
+  'public.run_items',
+  'public.pending_tool_calls',
+  'public.heartbeats',
+  'public.skills',
+  'public.tools',
+  'public.tool_groups',
+  'public.agents',
+  'public.agent_groups',
+  'public.ai_workers',
+  'public.channels',
+  'public.telegram_accounts',
+  'public.telegram_chats',
+  'public.push_subscriptions',
+  'public.push_instance',
+  'public.oauth_clients',
+  'public.spaces',
+  'public.space_fold_items',
+  'public.brain_identity',
+  'public.doc_collections',
+  'public.embedding_config',
+  'auth.users',
+  'public.access_keys',
+  'public.oauth_auth_codes',
+  'public.oauth_access_tokens',
+  'public.mobile_tokens',
+  'public.pairing_codes',
+  'public.member_invites',
+  'public.mantle_peers',
+  'public.peer_shares',
+  'public.peer_share_scopes',
+]);
+
+/**
+ * What the measured narrow writes still name that the rules above refuse,
+ * with the spot or definer each moves to (plan v3.2 S7b part b2 round 8:
+ * the class fix lands in steps, a round each). Each is granted until its
+ * move lands (the product writes it on the narrow route today, measured);
+ * runtime-role.test.ts holds this list to shrink only, and NARROW_WRITES
+ * to name nothing else the rules refuse.
+ */
+export const NARROW_MOVES_LEFT: Readonly<Record<string, string>> = Object.freeze({
+  'public.agent_groups:insert':
+    'agent-group-grant: an assistant group names who answers together (member_slugs)',
+  'public.ai_workers:insert':
+    'model-route: an AI worker made with its provider, base URL and vault key',
+  'public.ai_workers.api_key_id': 'model-route: which vault key an AI worker sends',
+  'public.ai_workers.backup_api_key_id': 'model-route',
+  'public.ai_workers.base_url': 'model-route: where an AI worker sends its key',
+  'public.ai_workers.backup_base_url': 'model-route',
+  'public.ai_workers.configured_by': 'model-route: the login a vault pairing answers to',
+  'public.agents.api_key_id': 'model-route: which vault key an assistant sends',
+  'public.agents.backup_api_key_id': 'model-route',
+  'public.agents.base_url': 'model-route: where an assistant sends its key',
+  'public.agents.backup_base_url': 'model-route',
+  'public.agents.configured_by': 'model-route',
+  'public.embedding_config:insert': 'model-route: the embedding routes made',
+  'public.embedding_config.primary_api_key_id': 'model-route',
+  'public.embedding_config.backup_api_key_id': 'model-route',
+  'public.embedding_config.primary_base_url': 'model-route',
+  'public.embedding_config.backup_base_url': 'model-route',
+  'public.tool_groups.integration': 'tool-config: where a group sends its OAuth token and calls',
+  'public.tool_groups.configured_by': 'tool-config: the login a group vault refs answer to',
+  'public.tools:insert': 'tool-config: a tool made with its handler (where it sends a vault key)',
+  'public.tools.external_access': 'tool-config: whether a tool reaches outside',
+  'public.microsoft_config.redirect_uri':
+    'tool-config: where the Microsoft sign-in returns its code',
+  'public.doc_collections:insert':
+    'docs-root: a collection made with its root_path (which files the brain reads)',
+  'public.heartbeats:insert':
+    'heartbeat-maker: a heartbeat made with its maker, agent, skill and schedule',
+  'public.heartbeats.created_by': 'heartbeat-maker: whom a heartbeat fires as',
+  'public.heartbeats.next_fire_at': 'heartbeat-maker: when it fires',
+  'public.skills:insert': 'skill-text: a skill made with its instructions',
+  'public.pending_tool_calls:insert':
+    'pending-park: a call parked for an Admin decision (tool, args, origin)',
+  'public.push_subscriptions:insert':
+    'push-device: a device subscribed (login-self) with its endpoint',
+});
+
+/** Whether the narrow role may do `op` on `table` (and, for an UPDATE, on
+ *  every one of `columns`), from NARROW_WRITES: the one place a caller asks
+ *  whether a write needs its full-route spot. */
+export function narrowMayWrite(
+  table: string,
+  op: 'insert' | 'update' | 'delete',
+  columns: readonly string[] = [],
+): boolean {
+  const w = NARROW_WRITES[table.includes('.') ? table : `public.${table}`];
+  if (!w) return false;
+  if (op === 'insert') return w.insert === true;
+  if (op === 'delete') return w.delete;
+  return columns.every((c) => w.update.includes(c));
+}
 
 /** A table name that reads as a credential or a right: it must be in
  *  NARROW_CREDENTIAL_TABLES (access-matrix.test.ts). */

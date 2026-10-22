@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { db } from '@mantle/db';
+import { db, onFullSystemRoute } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
@@ -31,7 +31,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!compiled || compiled.run.ownerId !== user.id) {
     return NextResponse.json({ error: 'run not found' }, { status: 404 });
   }
-  const { cancelled } = await cancelRun(db, id);
+  // A run's status is what the sweep executes: its change runs at the
+  // full-route spot run-control, never on the narrow login.
+  const { cancelled } = await onFullSystemRoute('run-control', () => cancelRun(db, id));
   return NextResponse.json({
     cancelled,
     ...(cancelled ? {} : { note: 'run already terminal — nothing to cancel' }),

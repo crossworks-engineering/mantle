@@ -64,7 +64,7 @@ import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
 import { env, feature, isProduction } from '@mantle/config';
 import { backoffMs, errorMessage, withRetry } from '@mantle/std';
-import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_COLUMN_RIGHTS, narrowFor } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_WRITES, narrowFor } from './access-matrix';
 import { viewerRoleName } from './viewer';
 import { LOCK_ATTRS, POOL_ROLES, runRoleStatement, withRoleRetry } from './viewer-roles';
 
@@ -392,6 +392,12 @@ export function runtimeReadOnlyTables(): string[] {
 /** Tables the narrow system role may read and write (narrowFor 'all'). */
 export function narrowWriteTables(): string[] {
   return ACCESS_MATRIX.filter((t) => narrowFor(t) === 'all').map((t) => t.table);
+}
+
+/** The tables the narrow system role may INSERT into (NARROW_WRITES), whose
+ *  sequences it may draw from. */
+export function narrowInsertTables(): string[] {
+  return narrowWriteTables().filter((t) => NARROW_WRITES[t]?.insert === true);
 }
 
 /** Tables the narrow system role may only SELECT (narrowFor 'read'). */
@@ -1348,29 +1354,28 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
           from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname || '.' || c.relname = any(${tables}::text[]) order by 1`;
   for (const { t, name } of await presentNamed(narrowWriteTables())) {
-    // A credential or rights table with column-level rights
-    // (NARROW_COLUMN_RIGHTS): SELECT, UPDATE of the listed columns, DELETE
-    // where it says, never INSERT.
-    const cols = NARROW_COLUMN_RIGHTS[name];
-    if (cols) {
-      await tx.unsafe(`GRANT SELECT${cols.delete ? ', DELETE' : ''} ON ${t} TO ${nr}`);
-      // Only the columns this schema has: migrate's grants also run on an
-      // older schema (a box before the migration that adds a column).
-      const have = new Set(
-        (
-          await tx<{ c: string }[]>`
-            select attname::text as c from pg_attribute
-             where attrelid = ${t}::regclass and attnum > 0 and not attisdropped`
-        ).map((r) => r.c),
-      );
-      const list = cols.update
-        .filter((c) => have.has(c))
-        .map((c) => `"${c}"`)
-        .join(', ');
-      if (list) await tx.unsafe(`GRANT UPDATE (${list}) ON ${t} TO ${nr}`);
-      continue;
-    }
-    await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO ${nr}`);
+    // SELECT on every table the role may touch; writes only as the measured
+    // allowlist says (NARROW_WRITES): INSERT where listed, UPDATE of the
+    // listed columns (always column-level), DELETE where listed. A table
+    // not listed stays read only.
+    const w = NARROW_WRITES[name];
+    const table = ['SELECT', ...(w?.insert ? ['INSERT'] : []), ...(w?.delete ? ['DELETE'] : [])];
+    await tx.unsafe(`GRANT ${table.join(', ')} ON ${t} TO ${nr}`);
+    if (!w || w.update.length === 0) continue;
+    // Only the columns this schema has: migrate's grants also run on an
+    // older schema (a box before the migration that adds a column).
+    const have = new Set(
+      (
+        await tx<{ c: string }[]>`
+          select attname::text as c from pg_attribute
+           where attrelid = ${t}::regclass and attnum > 0 and not attisdropped`
+      ).map((r) => r.c),
+    );
+    const list = w.update
+      .filter((c) => have.has(c))
+      .map((c) => `"${c}"`)
+      .join(', ');
+    if (list) await tx.unsafe(`GRANT UPDATE (${list}) ON ${t} TO ${nr}`);
   }
   for (const { t } of await presentNamed(narrowReadOnlyTables())) {
     await tx.unsafe(`GRANT SELECT ON ${t} TO ${nr}`);
@@ -1382,7 +1387,7 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
       join pg_attrdef ad on d.classid = 'pg_attrdef'::regclass and ad.oid = d.objid
       join pg_class t on t.oid = ad.adrelid
       join pg_namespace tn on tn.oid = t.relnamespace
-     where tn.nspname || '.' || t.relname = any(${narrowWriteTables()}::text[])
+     where tn.nspname || '.' || t.relname = any(${narrowInsertTables()}::text[])
     union
     select distinct s.oid::regclass::text
       from pg_depend d
@@ -1390,7 +1395,7 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
       join pg_class t on t.oid = d.refobjid
       join pg_namespace tn on tn.oid = t.relnamespace
      where d.classid = 'pg_class'::regclass and d.deptype in ('a', 'i')
-       and tn.nspname || '.' || t.relname = any(${narrowWriteTables()}::text[])
+       and tn.nspname || '.' || t.relname = any(${narrowInsertTables()}::text[])
      order by 1`;
   for (const { seq } of seqs) await tx.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${seq} TO ${nr}`);
   const allowed = await narrowFunctionAllowlist(tx);

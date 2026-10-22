@@ -159,6 +159,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/peers/grants.ts': ['peer-share'],
   'packages/telegram/src/pairing.ts': ['telegram-pair'],
   'server/web/app/api/telegram/chats/[id]/route.ts': ['telegram-responder'],
+  'server/web/app/api/runs/[id]/route.ts': ['run-control'],
+  'packages/tools/src/builtins-runs.ts': ['run-control'],
   'server/web/lib/agents.ts': ['assistant-grant'],
   'server/web/lib/system-manifest/seed.ts': ['assistant-grant'],
   'packages/runs/src/worker.ts': ['assistant-grant'],

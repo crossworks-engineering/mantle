@@ -56,7 +56,7 @@ import {
 } from './runtime-role';
 import { viewerDatabaseUrl, viewerRoleName, viewerRolePassword } from './viewer';
 import { POOL_ROLES } from './viewer-roles';
-import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_COLUMN_RIGHTS, narrowFor } from './access-matrix';
+import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_WRITES, narrowFor } from './access-matrix';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
@@ -397,9 +397,13 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     const want = (table: string): string[] => {
       const t = byTable.get(table);
       const n = t ? narrowFor(t) : 'none';
-      const cols = NARROW_COLUMN_RIGHTS[table];
-      if (n === 'all' && cols) return cols.delete ? ['DELETE', 'SELECT'] : ['SELECT'];
-      if (n === 'all') return ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
+      // The measured allowlist (round 8): SELECT on every table it may
+      // touch, INSERT and DELETE where NARROW_WRITES says, UPDATE only by
+      // column (below); a table not listed is read only.
+      const w = NARROW_WRITES[table];
+      if (n === 'all') {
+        return [...(w?.delete ? ['DELETE'] : []), ...(w?.insert ? ['INSERT'] : []), 'SELECT'];
+      }
       if (n === 'read') return ['SELECT'];
       return [];
     };
@@ -409,15 +413,17 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     // Every matrix table is in this database.
     const tables = new Set(live.map((r) => r.t));
     expect(ACCESS_MATRIX.filter((t) => !tables.has(t.table)).map((t) => t.table)).toEqual([]);
-    // Column grants: exactly NARROW_COLUMN_RIGHTS' UPDATE columns, never
-    // INSERT, and never a credential or rights column of auth.users.
+    // Column grants: exactly NARROW_WRITES' UPDATE columns (no table-wide
+    // UPDATE anywhere), never a column INSERT, and never a credential or
+    // rights column of auth.users. A write grant not on the allowlist fails
+    // here, and a new table or column is read only until it is listed.
     const cols = await admin<{ c: string }[]>`
       select n.nspname || '.' || c.relname || '.' || att.attname || ':' || a.privilege_type as c
         from pg_attribute att join pg_class c on c.oid = att.attrelid
         join pg_namespace n on n.oid = c.relnamespace, aclexplode(att.attacl) a
        where a.grantee = to_regrole(${NARROW_ROLE}) order by 1`;
     expect(cols.map((r) => r.c)).toEqual(
-      Object.entries(NARROW_COLUMN_RIGHTS)
+      Object.entries(NARROW_WRITES)
         .flatMap(([t, r]) => r.update.map((col) => `${t}.${col}:UPDATE`))
         .sort(),
     );

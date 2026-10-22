@@ -25,13 +25,31 @@ export const FLAG_OFF_WORDS = ['0', 'false', 'no', 'off'] as const;
  * is an off switch (only an off word turns it off) and a default-off flag an
  * on switch (only an on word turns it on), from the one rule.
  */
-export function parseFlag(raw: string | null | undefined, fallback: boolean): boolean {
+export function parseFlag(
+  raw: string | null | undefined,
+  fallback: boolean,
+  name?: string,
+): boolean {
   const v = raw?.trim().toLowerCase();
   if (!v) return fallback;
   if ((FLAG_ON_WORDS as readonly string[]).includes(v)) return true;
   if ((FLAG_OFF_WORDS as readonly string[]).includes(v)) return false;
+  // A word that is neither (a typo of a kill switch: `of`, `disable`): the
+  // default still holds, and the process says so once per name and word,
+  // with what it took, so a switch that did not take is seen in the log.
+  if (name) {
+    const key = `${name}=${v}`;
+    if (!warnedFlags.has(key)) {
+      warnedFlags.add(key);
+      console.warn(
+        `[config] ${name}: "${v}" is not an on word (${FLAG_ON_WORDS.join(', ')}) or an off word (${FLAG_OFF_WORDS.join(', ')}); taken as ${fallback ? 'on' : 'off'}, its default`,
+      );
+    }
+  }
   return fallback;
 }
+
+const warnedFlags = new Set<string>();
 
 /** How a number is held to its range. Applied in this order: */
 export type NumberOptions = {

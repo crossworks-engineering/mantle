@@ -8,7 +8,7 @@
  * 'admin', real logins), sent raw on a narrow session:
  *
  *  - no credential or rights column of auth.users is writable, no login and
- *    no credential row may be made (access-matrix.ts NARROW_COLUMN_RIGHTS);
+ *    no credential row may be made (access-matrix.ts NARROW_WRITES);
  *    the audit's chain (a member's role raised, bridged into Admin, then a
  *    structure item as that member) is refused at each step, rows unchanged;
  *  - every definer that takes a login with no scope (0314's header, the

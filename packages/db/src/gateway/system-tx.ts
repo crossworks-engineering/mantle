@@ -23,6 +23,7 @@ import {
   requestWriteScope,
   runInSystemTx,
   runTxHooks,
+  systemRouteNow,
   type SystemTxNest,
 } from '../viewer';
 import { actorSetting, checkActorBound, currentActor, writeModeOf } from '../actor';
@@ -157,15 +158,20 @@ export class NestedSystemTxError extends RuntimeFaultError {
   }
 }
 
-/** What a system transaction opened now would run as: its actor and create
- *  home, as keys a nested call compares (SystemTxNest). The write scope is
- *  not one: inside a system transaction it reads as none (the transaction
- *  masks the request's), so the open one's applies. */
+/** What a system transaction opened now would run as: its actor with its
+ *  route, and its create home, as keys a nested call compares
+ *  (SystemTxNest). The route is part of the actor's key: a full-route spot
+ *  (onFullSystemRoute) inside an open narrow transaction would otherwise
+ *  nest as a savepoint of it and run on the narrow login; with the route in
+ *  the key it is refused as another actor (NestedSystemTxError), never run
+ *  on a route it did not ask for. The write scope is not one: inside a
+ *  system transaction it reads as none (the transaction masks the
+ *  request's), so the open one's applies. */
 function systemTxKeys(): Pick<SystemTxNest, 'actor' | 'home'> {
   const actor = currentActor();
   const home = currentCreateHome();
   return {
-    actor: actor ? `${actorSetting(actor)}|${writeModeOf(actor)}` : '',
+    actor: actor ? `${actorSetting(actor)}|${writeModeOf(actor)}|${systemRouteNow() ?? ''}` : '',
     home: home
       ? JSON.stringify([home.createWs, home.privateWs, !!home.quiet, home.stamp ?? null])
       : '',

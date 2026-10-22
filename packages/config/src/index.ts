@@ -329,7 +329,7 @@ export function envNumber(name: KnownEnvName, fallback: number, opts: NumberOpti
  *  included, is `fallback`. Prefer a registered feature, `feature(name)`, so
  *  the default lives in one table. */
 export function envFlag(name: KnownEnvName, fallback = false): boolean {
-  return parseFlag(env(name), fallback);
+  return parseFlag(env(name), fallback, name);
 }
 
 export function isProduction(): boolean {

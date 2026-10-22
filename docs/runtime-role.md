@@ -202,7 +202,7 @@ Its rights, made equal to the access matrix at every migrate inside
 UPDATE, DELETE`). A row may set a narrower value than the derived one, never a wider one (it
   throws);
 - column-level on the credential and rights tables it writes
-  (`NARROW_COLUMN_RIGHTS`, access-matrix.ts): `SELECT`, `UPDATE` of only the
+  (`NARROW_WRITES`, access-matrix.ts): `SELECT`, `UPDATE` of only the
   listed columns, `DELETE` where listed, never `INSERT`. `auth.users`:
   `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
   `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);

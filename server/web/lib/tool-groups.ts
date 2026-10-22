@@ -139,7 +139,7 @@ export async function updateToolGroup(
   // A changed tool list is a grant (every assistant granted the group may
   // call it): the full-route spot tool-group-grant on a narrow exit; any
   // other edit stays on the narrow login (access-matrix.ts
-  // NARROW_COLUMN_RIGHTS).
+  // NARROW_WRITES).
   const [row] =
     patch.toolSlugs !== undefined
       ? await onFullSystemRoute('tool-group-grant', write)

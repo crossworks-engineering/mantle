@@ -27,7 +27,7 @@
 -- a raw narrow session may name any acting login (only the gateway's text
 -- check refuses a narrow statement that names it). The database boundaries
 -- there are each definer's own kind, op, place, type and owner checks and
--- the narrow role's column rights (access-matrix.ts NARROW_COLUMN_RIGHTS:
+-- the narrow role's column rights (access-matrix.ts NARROW_WRITES:
 -- no credential or rights column of auth.users, no new login, no minted
 -- credential). A definer the narrow role may run must therefore give
 -- nothing whichever login it is told it acts for.
@@ -81,7 +81,12 @@ CREATE OR REPLACE FUNCTION "public"."mantle_structure_item"(
   kind text, op text, login uuid, owner uuid, items uuid[], fields jsonb)
   RETURNS SETOF uuid
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
-  SET search_path = "public", pg_temp AS $$
+  SET search_path = "public", pg_temp
+  -- The create home settings are blank inside (restored at return): a
+  -- narrow session that named one (only the gateway's text check stops it)
+  -- cannot steer where an item lands; the folder's heads and the kind's
+  -- place decide (plan v3.2 S7b part b2, the full audit's DB LOW).
+  SET "mantle.create_ws" = '' SET "mantle.private_ws" = '' SET "mantle.create_stamp" = '' AS $$
 #variable_conflict use_column
 DECLARE
   t "public"."node_type";
