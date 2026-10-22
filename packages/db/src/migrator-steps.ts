@@ -103,7 +103,8 @@ export async function afterMigrations(
   // The identity gateway's catalog check (0321): no function, policy or
   // trigger condition reads an identity setting outside the readers. Fatal:
   // a definer that trusts a session's own login is a hole on every role.
-  await assertNoIdentityLeaks(sql);
+  // A database stopped before 0321 (an old-migration cell) has no check yet.
+  await assertNoIdentityLeaks(sql, (line) => log.info(line));
 
   // The viewer roles' grants come from the access matrix, re-applied every
   // run so the live grants always equal the checked-in list.

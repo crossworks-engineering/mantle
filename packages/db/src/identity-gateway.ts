@@ -18,8 +18,25 @@ export async function identityLeaks(sql: Sql): Promise<IdentityLeak[]> {
   return rows.map((r) => ({ kind: r.kind, object: r.object, detail: r.detail }));
 }
 
-/** Throw on any leak, naming each (migrate's after-step). */
-export async function assertNoIdentityLeaks(sql: Sql): Promise<void> {
+/** Whether the catalog check exists: a database migrated only part of the
+ *  way (an old-migration cell's stop before 0321) has none yet. */
+export async function identityGatewayPresent(sql: Sql): Promise<boolean> {
+  const rows = await sql<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_identity_leaks()') is not null as ok`;
+  return rows[0]?.ok === true;
+}
+
+/** Throw on any leak, naming each (migrate's after-step). On a database
+ *  that has not reached 0321 there is no check to run: `log` says so and
+ *  nothing is read (the migrate that reaches 0321 runs it). */
+export async function assertNoIdentityLeaks(
+  sql: Sql,
+  log: (line: string) => void = () => {},
+): Promise<void> {
+  if (!(await identityGatewayPresent(sql))) {
+    log('  identity gateway check skipped: mantle_identity_leaks() not made yet (before 0321)');
+    return;
+  }
   const leaks = await identityLeaks(sql);
   if (leaks.length === 0) return;
   throw new Error(

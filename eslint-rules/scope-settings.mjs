@@ -62,6 +62,10 @@ export const SCOPE_SETTING_PINS = {
     count: 3,
     why: 'test support: the matrix fixtures set a caller scope as the superuser',
   },
+  'packages/db/src/test-support/identity-sweep.ts': {
+    count: 6,
+    why: "test support: the identity gateway's forge (0321) sets every identity setting to the owner and the Admin workspace as the real narrow login (IDENTITY_FORGE_SQL, 3) and clears the scope for the unscoped forge (3), to prove the readers answer none there",
+  },
 };
 
 /** @type {Record<string, { count: number, why: string }>} */

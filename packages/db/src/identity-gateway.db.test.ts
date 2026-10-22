@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { identityLeaks } from './identity-gateway';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
 import {
+  FORGED_ACTOR,
   fillIdentity,
   IDENTITY_FORGE_SQL,
   IDENTITY_FORGE_UNSCOPED_SQL,
@@ -164,7 +165,7 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
       active: true,
       create_ws: ids.ws,
       acting: ids.owner,
-      actor: 'system:ws-clear-ticks',
+      actor: FORGED_ACTOR,
     });
   });
 

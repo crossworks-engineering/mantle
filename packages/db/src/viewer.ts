@@ -1283,6 +1283,15 @@ export function systemDbOnSpot(): boolean {
   return fullRouteSpotNow.getStore() !== undefined;
 }
 
+/** The acting login of work at the acting-login spot (onFullSystemRoute),
+ *  or null: the gateway's SET carries it in every check mode there
+ *  (gateway/actor-sql.ts actorParams), since its definers refuse a missing
+ *  one (0321). A turn's exit is no request exit (requestExitActingLogin), so
+ *  with the check off nothing else would send it. */
+export function actingLoginAtSpot(): string | null {
+  return fullRouteSpotNow.getStore() === 'acting-login' ? actingLoginNow() : null;
+}
+
 /**
  * The workspace system work: the reasons whose actor
  * (system:<reason>) a definer takes from a caller with no acting login.

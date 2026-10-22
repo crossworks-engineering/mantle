@@ -12,6 +12,8 @@
 
 /** The calls, one per function: `sig` and the statement with @OWNER@,
  *  @WS@ and @AGENT@ to fill in. Run as a superuser. */
+import { WORKSPACE_SYSTEM_REASONS } from '../viewer';
+
 export const IDENTITY_SWEEP_CALLS_SQL = `
 with f as (
   select p.oid, p.oid::regprocedure::text as sig, n.nspname, p.proname, p.prokind,
@@ -64,7 +66,7 @@ export const IDENTITY_FORGE_SQL = `select
   set_config('mantle.acting_login', '@OWNER@', true), set_config('mantle.ws', '{@WS@}', true),
   set_config('mantle.mod_ws', '{@WS@}', true), set_config('mantle.space_id', '@WS@', true),
   set_config('mantle.create_ws', '@WS@', true), set_config('mantle.private_ws', '@WS@', true),
-  set_config('mantle.actor', 'system:ws-clear-ticks', true), set_config('mantle.route', 'full', true),
+  set_config('mantle.actor', '@ACTOR@', true), set_config('mantle.route', 'full', true),
   set_config('mantle.write_mode', 'rw', true)`;
 
 /** The same forge with no scope (no workspaces, no scope login): the
@@ -74,7 +76,7 @@ export const IDENTITY_FORGE_UNSCOPED_SQL = `select
   set_config('mantle.login_id', '', true), set_config('mantle.scope_login', '', true),
   set_config('mantle.ws', '', true), set_config('mantle.mod_ws', '', true),
   set_config('mantle.acting_login', '@OWNER@', true), set_config('mantle.create_ws', '@WS@', true),
-  set_config('mantle.actor', 'system:ws-clear-ticks', true), set_config('mantle.route', 'full', true),
+  set_config('mantle.actor', '@ACTOR@', true), set_config('mantle.route', 'full', true),
   set_config('mantle.write_mode', 'rw', true)`;
 
 export function fillIdentity(
@@ -84,5 +86,12 @@ export function fillIdentity(
   return stmt
     .replaceAll('@OWNER@', ids.owner)
     .replaceAll('@WS@', ids.ws)
-    .replaceAll('@AGENT@', ids.agent);
+    .replaceAll('@AGENT@', ids.agent)
+    .replaceAll('@ACTOR@', FORGED_ACTOR);
 }
+
+/** The forged actor: the first workspace system reason (the Moderator
+ *  tick's), which mantle_ws_system_work trusted before 0321. Read from the
+ *  list, not named: the reasons are named only in their pinned systemWork
+ *  calls (eslint-rules/arch-lints.test.ts). */
+export const FORGED_ACTOR = `system:${WORKSPACE_SYSTEM_REASONS[0]}`;

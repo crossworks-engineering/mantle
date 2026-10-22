@@ -16,7 +16,12 @@ import {
   fullRouteSpotNow,
   writeModeOf,
 } from '../actor';
-import { actingLoginNow, isWorkspaceSystemActor, requestExitActingLogin } from '../viewer';
+import {
+  actingLoginAtSpot,
+  actingLoginNow,
+  isWorkspaceSystemActor,
+  requestExitActingLogin,
+} from '../viewer';
 import { firstModeReadNow } from './check-mode';
 
 type PgSql = ReturnType<typeof postgres>;
@@ -227,8 +232,17 @@ export function actorParams(): ActorParams | null {
   // as 'off', the box's own, so no check reads it.
   // A request exit's system actor too (plan v3.2 S7b): it carries the
   // login it acts for, which a definer acting for a login with no scope
-  // will read (the second part's definers), whatever the mode.
-  if (mode === 'off' && !isWorkspaceSystemActor(actor) && requestExitActingLogin() === null) {
+  // will read (the second part's definers), whatever the mode. And work at
+  // the acting-login spot (round 13b): its definers refuse a missing acting
+  // login (0321), and a turn's exit is no request exit, so with the check
+  // off its acting login went nowhere. Only that spot's statements gain
+  // the SET in off; every other path sends exactly what it sent.
+  if (
+    mode === 'off' &&
+    !isWorkspaceSystemActor(actor) &&
+    requestExitActingLogin() === null &&
+    actingLoginAtSpot() === null
+  ) {
     return null;
   }
   const acting = actingLoginNow() ?? undefined;

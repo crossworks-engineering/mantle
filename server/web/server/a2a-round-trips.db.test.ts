@@ -15,7 +15,9 @@
  * statements on the write role's connections are counted apart).
  *
  * Pinned, within the build (fix round 2: no hard-coded counts):
- *  - with the check off, no statement sets or reads the actor: the setting,
+ *  - with the check off, no statement sets or reads the actor (none of the
+ *    seven paths reaches the acting-login spot, whose definers need the
+ *    acting login the gateway's SET carries in every mode, round 13b): the setting,
  *    and the actor's own statements, tagged `/* mantle:actor *\/` (the mode
  *    read, loginActorNow, the Telegram and heartbeat lookups, the write
  *    wrapper's RESET);

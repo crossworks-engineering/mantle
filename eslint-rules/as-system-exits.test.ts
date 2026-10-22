@@ -412,9 +412,11 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
   });
   it('the repo: every holder listed, every caller allowed', () => {
     // applyManifest takes data only; applyLoginChange's callbacks come from
-    // the workspace screen alone.
+    // the workspace screen alone; narrowTx (the acting-login spot, 0321)
+    // and onSpot (structure-no-login) from their own file alone.
     expect(Object.keys(FULL_ROUTE_SPOT_CALLBACKS_REPO).sort()).toEqual([
       'applyLoginChange',
+      'narrowTx',
       'onSpot',
     ]);
   });
