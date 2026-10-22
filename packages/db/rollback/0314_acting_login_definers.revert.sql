@@ -96,5 +96,8 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_access_key_revoke"(uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
+-- The session check 0314 added (0315 and 0316 call it: revert them first).
+DROP FUNCTION IF EXISTS "public"."mantle_system_session"();
+--> statement-breakpoint
 -- Off the ledger: the next roll forward applies 0314 again (re-runnable).
 DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198160000;

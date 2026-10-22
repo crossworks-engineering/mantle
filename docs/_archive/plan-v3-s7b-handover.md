@@ -1546,3 +1546,197 @@ no revert.
    (`acting` empty in the probe's full column): onFullSystemRoute's own
    entry carries none. Unchanged by this round; the definers never run
    there.
+
+## Part b2, round 4: the interim audit of 0314 and 0315 (handed over)
+
+Same branch, a fresh builder, on main 7f2d12292 (main had not moved). This
+round does only the interim audit's list (MED-1, MED-2, LOW-1 to LOW-7) and
+the round 4 note. The remaining spots, the area-route sweep and the
+default flip are round 5. The switch's default is unchanged.
+
+Migrations: LOW-1 folded into 0314 (a new `mantle_system_session()`, the
+one session check, called by 0314, 0315 and 0316: it belongs with the rule
+0314 made); LOW-2 and LOW-3 folded into 0315 (its own update and delete);
+LOW-5 is a new `0317_narrow_observe_definer_frames` (`when`
+1790198340000, 60000 above 0316's), since 0312 is on main already. None of
+0314 to 0317 has run on a box. 0314's revert now also drops
+`mantle_system_session` (revert 0316 and 0315 first, as their order says).
+
+### The measurement (MED-1)
+
+The full DB vitest, both shards, switch on, on 7b17a1d3f, each on a pg18
+container started with `log_statement = mod` and a `%u@%d` line prefix
+(~/s7b-b2/msuite.sh): every INSERT, UPDATE and DELETE the narrow login sent
+(8285 statements; refused escape-cell statements are logged too). On the
+credential and rights tables:
+
+| Table               | What the narrow login sent (statements)                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| auth.users          | UPDATE session_epoch (35), password_hash (9), role (4), disabled_at (3); no INSERT, no DELETE                                                                |
+| access_keys         | UPDATE revoked_at, revoked_by (35)                                                                                                                           |
+| oauth_access_tokens | UPDATE revoked_at (38)                                                                                                                                       |
+| mobile_tokens       | UPDATE revoked_at (43)                                                                                                                                       |
+| oauth_auth_codes    | DELETE (38)                                                                                                                                                  |
+| pairing_codes       | INSERT (3), DELETE (6)                                                                                                                                       |
+| mantle_peers        | INSERT (10); UPDATE acts_as_login_id, ended_acts_as_login_id, write_enabled, allowed_risky_tools, inbound_token_hash, last_contacted_at                      |
+| telegram_chats      | UPDATE allowlist_status, pairing_code, pairing_expires_at, pairing_replies, login_id (5)                                                                     |
+| agents, tool_groups | agents INSERT (2), UPDATE assigned_user_id, tool_group_slugs, api_key_id, tts_worker_id; tool_groups INSERT (4), UPDATE tool_slugs, integration, description |
+| api_keys, secrets   | api_keys INSERT (2), UPDATE last_used, key_enc; secrets INSERT (2), UPDATE ciphertext                                                                        |
+| push_subscriptions  | INSERT (10), DELETE (58)                                                                                                                                     |
+
+### What changed, by finding
+
+- MED-1 (a), column rights. access-matrix.ts `NARROW_COLUMN_RIGHTS`, applied
+  by migrate (runtime-role.ts `applyNarrowGrants`: SELECT, UPDATE of the
+  listed columns, DELETE where listed, never INSERT). The narrow role may
+  now write, per table: auth.users UPDATE (display_name, disabled_at,
+  session_epoch) and DELETE; access_keys UPDATE (revoked_at, revoked_by);
+  oauth_access_tokens UPDATE (revoked_at); mobile_tokens UPDATE
+  (revoked_at). Never role, password_hash, email, is_owner, contact_id or
+  id, no new login and no minted key or token. display_name is not in the
+  measured list but the users area's PATCH writes it on the narrow exit
+  (login-update.ts `changes`): kept, a label. What narrow work wrote and
+  may no longer runs at a new full-route spot `login-credential` (the
+  system pool's own login, as before b2): the users area's new login
+  (login-create.ts, the transaction with `mantle_bridge_login`), a role
+  change or a contact link (login-update.ts: the whole transaction, with
+  the bridge and the promotion's settle), and a password set (session.ts
+  `updatePassword`: the users area's reset and a login's own change).
+  Pinned: runtime-role.db.test.ts (the live column grants equal the map;
+  no UPDATE or INSERT on any credential column of auth.users).
+- MED-1, every other rights or credential table the narrow role may write,
+  decided (NARROW_CREDENTIAL_TABLES):
+  - column-level now: auth.users, access_keys, oauth_access_tokens,
+    mobile_tokens (above).
+  - open for round 5 (each mints or redirects a way in, and narrow work
+    writes exactly those columns, so column rights cannot split them; a
+    definer is forgeable on the narrow login, so each needs a spot or the
+    login's own scope): pairing_codes INSERT (a login-self pair code: a
+    code for any login could be minted), oauth_auth_codes (DELETE measured;
+    an INSERT path, /api/oauth/authorize, not driven narrow by any suite),
+    member_invites (INSERT by the users area, not driven narrow),
+    mantle_peers with peer_shares and peer_share_scopes (acts_as_login_id,
+    inbound_token_hash, write_enabled: a peer acting as a login),
+    telegram_chats.login_id (a chat paired to a login).
+  - kept 'all' with their why: the outbound credentials and configuration
+    the areas write (api_keys, secrets, pdf_passwords, email_accounts,
+    calendar_accounts, ms_accounts, microsoft_config, telegram_accounts,
+    channels, tailscale_config, oauth_clients, embedding_config,
+    push_subscriptions, spaces): none lets a login or a key into this
+    brain; agents and tool_groups (an assistant's tool grants, not a
+    login's): for the CEO with the round 5 list.
+  - read or none, unchanged: contact_share_codes, private_workspaces,
+    former_user_workspaces, space_item_homes, the archives, the heads key.
+- MED-1 (b). `mantle_bridge_login` left NARROW_SYSTEM_FUNCTIONS and is
+  denied by name (NARROW_DENIED_FUNCTIONS): its callers (a new login, a
+  role change) run at `login-credential`, so no narrow reason calls it
+  (measured: the only narrow callers were those two). The runtime role keeps
+  it.
+- MED-1 (c). packages/db/src/narrow-containment.db.test.ts (new), on a
+  switched brain (the switch's Admin with bridge_key 'admin', a real admin
+  and a real member), raw statements on a narrow session: each credential
+  column and each new login or credential row 42501, the measured columns
+  allowed, the rights digest (auth.users, workspace_users, workspace_events
+  count, access_keys, telegram_chats) unchanged; the audit's chain (any
+  acting login named, the member's role raised, bridged, a structure item
+  as it) refused at each step, the digest unchanged; the 21 definers that
+  take a login with no scope plus mantle_structure_item and the two 0316
+  definers, each called as the narrow role with the member as the login
+  and the admin, then the member, as the acting login: refused or 0 rows
+  written in the call's own transaction (pg_stat_xact delta), the digest
+  unchanged.
+- MED-1 (d). docs/runtime-role.md ("The narrow system role" rights,
+  "The acting login"), and 0314, 0315 and 0316's headers: on the narrow
+  login the acting login is a mistake guard; the database boundaries are
+  kind, op, place, type, owner and the column rights.
+- MED-2. viewer.ts `exitLogin`: an `asSystem` exit whose outer actor is no
+  login acts for the login of the turn scope it leaves (a Telegram turn
+  with the actor check off). gateway/structure-item.ts `structureRoute`:
+  on the narrow route with an acting login, the definer; with none (a
+  heartbeat's turn that answers no login), the app's own statements at a
+  new spot `structure-no-login`. Cells: narrow-containment.db.test.ts, a
+  turn as system(workflow:telegram-turn) and as the login: the definer's
+  transaction is the narrow login with the turn's login as acting login;
+  a turn with no login: the spot (the system pool's login, no acting
+  login). Other narrow callers that need an acting login: the 0316
+  definers (agents.ts, login-update.ts), `mantle_tg_chat_set`
+  (agent-telegram.ts) and `mantle_ws_set_moderator` (workspaces.ts) are
+  reached only from Admin area request routes, whose exit always has the
+  request's login; `exitLogin` covers any turn caller too.
+- LOW-1. `mantle_system_session()` (0314): session_user the runtime role,
+  the narrow role, a superuser, or the definers' owner (session_user =
+  current_user inside the definer). Cell: a definer owned by a
+  non-superuser role answers true under SET SESSION AUTHORIZATION as that
+  owner and as the narrow role, false as the write role.
+- LOW-2. 0315 update: FIELDS must name `data` as an object, else 22023
+  (was: a wipe to {}). Cell: three shapes 22023, the row unchanged.
+- LOW-3. `deleteStructureItems(kind, owner, ids, match)`: the account id
+  (events.ts deleteAllExternalEvents) and the collection key (docs.ts
+  purgeCollection) are matched again under the heads on both routes (app:
+  `data @> match`; definer: FIELDS' `match`). Cell: an event moved to
+  another account and a doc of another collection between the read and the
+  delete are left, on the narrow and the full route.
+- LOW-4. narrow-containment.db.test.ts: an edit with a vector set first
+  drops it on both routes, and both announce `node_ingested` the same
+  number of times (heard on a LISTEN); 0314's own runs write on the narrow
+  login (a real chat paired to the admin unpaired: status pending, login
+  cleared); a real key revoked (the system session: the narrow role may not
+  run the key revoke); 0316's Telegram deny (round 3's open item 6): an
+  assistant's delete on the narrow login denies the chat pinned to it. Not
+  done: the docs-item insert and update at route level with a real markdown
+  file (round 5, with the sweep).
+- LOW-5. 0317: both 0312 counts ask that current_user be the session's own
+  role (the role it SET, else its login): a definer's frame is left out on
+  every route. Cell (narrow-observe.db.test.ts): on the per-database shape
+  (the narrow role SET on the superuser's session) a superuser-owned
+  definer's content write and its delete count nothing; the role's own
+  delete still counts; as the runtime role a definer's delete counts
+  nothing; as the superuser with no role set the named limit holds.
+- LOW-6. Cell: a structure write inside an open system transaction of a
+  narrow exit (the savepoint branch) sees the narrow login and the acting
+  login.
+- LOW-7. packages/db/src/rollback-when.test.ts (unit): every revert's
+  ledger `created_at` equals its own tag's journal `when`, so a renumber at
+  merge that misses a revert fails the unit gate.
+- Round 4 note. 0316's promotion definer reads auth.users.role: safe now,
+  because no narrow column sets a role (the definer's own check that the
+  target is an admin cannot be met by a narrow session's write), and the
+  role change itself runs at `login-credential`. With the role change at
+  the spot no narrow statement calls `mantle_space_settle_promotion` any
+  more; it stays on NARROW_SYSTEM_FUNCTIONS (on a narrow session it can only
+  take an admin's own personal items back to private drafts) for the CEO's
+  call: drop it in round 5, or keep it for a signed acting login. Both 0316
+  definers are in the MED-1 (c) loop as the narrow role.
+
+### Changed answers
+
+None for any member, client, key, peer or public link. Below them:
+
+- On a narrow exit, a new login, a role change, a contact link and a
+  password set run on the system pool's own login (`login-credential`),
+  as before b2; the narrow login may no longer write those columns or make
+  a login, a key, a token or a device token (42501).
+- A structure item in a turn whose actor is no login: through the definer
+  for the turn's login (was 42501 "only the acting login"); with no login
+  at all, the app's own statements at `structure-no-login` (was 42501).
+- `mantle_structure_item` update with no data: 22023 (was: data wiped to
+  {}). A calendar's or a collection's delete leaves an item that left the
+  account or collection between the read and the delete (was: removed).
+- 0317: a definer's write or delete is not counted as narrow-content-write
+  or narrow-cascade-delete.
+- The definers' session check also takes the definers' owner.
+
+### Pins
+
+fullRouteSpots 5 to 7, fullRouteSpotCalls 6 to 10 (login-credential,
+structure-no-login: reasons in scripts/arch-scoreboard.pins.json; the CEO
+told). The spot lint (as-system-routes.mjs) reads `onFullSystemRoute`
+imported from the viewer module inside packages/db. No other pin moved.
+
+### Rollback (round 4)
+
+0314 to 0316 as before (no older image calls the new functions; 0314's
+revert drops `mantle_system_session` after 0316's and 0315's). 0317: an
+older image runs with either trigger body; its revert puts 0312's back.
+The column rights are migrate's: an older image's migrate grants its own
+matrix back.

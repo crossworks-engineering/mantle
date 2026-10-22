@@ -275,7 +275,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
                      (${pinned}, ${randomUUID()}, ${brain}, ${`c-${pinned}`}, 'private', null, 'allowed')`;
       await t`update telegram_chats set responder_agent_id = ${agent} where id = ${pinned}`;
       await t`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
-              values (${keyId}, 'k', ${admin}, 'mtlk_x', 'h', 'read')`;
+              values (${keyId}, 'k', ${admin}, 'abcd1234', ${'a'.repeat(64)}, 'read')`;
     });
     await nl.begin(async (t) => {
       await t.unsafe(acting(admin));

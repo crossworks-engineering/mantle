@@ -201,6 +201,16 @@ Its rights, made equal to the access matrix at every migrate inside
   is `'read'`; a `system` or `admin` table is `'all'` (`SELECT, INSERT,
 UPDATE, DELETE`). A row may set a narrower value than the derived one, never a wider one (it
   throws);
+- column-level on the credential and rights tables it writes
+  (`NARROW_COLUMN_RIGHTS`, access-matrix.ts): `SELECT`, `UPDATE` of only the
+  listed columns, `DELETE` where listed, never `INSERT`. `auth.users`:
+  `display_name`, `disabled_at`, `session_epoch` and `DELETE` (never `role`,
+  `password_hash`, `email`, `is_owner` or `contact_id`, and no new login);
+  `access_keys`: `revoked_at`, `revoked_by`; `oauth_access_tokens` and
+  `mobile_tokens`: `revoked_at`. Measured with the switch on (every
+  statement the narrow login sent in the full DB suite, `log_statement =
+mod`). A new login, a role change, a contact link and a password run at
+  the full-route spot `login-credential`;
 - `USAGE, SELECT` on the sequences its `'all'` tables draw from, never
   `UPDATE` (`setval`);
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
@@ -208,9 +218,11 @@ UPDATE, DELETE`). A row may set a narrower value than the derived one, never a w
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
   what narrow statements call by name, thirteen today (the read definers
   of the login-self routes, the Admin area's approvals and the email
-  discover; `mantle_brain_id`; four writers on an area exit, each its own
+  discover; `mantle_brain_id`; the writers on an area exit, each its own
   rule: `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
-  `mantle_bridge_login`, `mantle_tg_chat_set`), and what the column defaults and checks of the
+  `mantle_tg_chat_set`, the structure, promotion and assistant delete
+  definers; `mantle_bridge_login` left it with the role change, and is
+  denied by name), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime role's.
   `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies with no
@@ -400,9 +412,14 @@ work runs on the full route, keeping its actor, at a spot named in
 the rest of the exit stays narrow: `profile-row` (the login-self routes and
 the settings area write `profiles`, the write role's own-login table, with
 no scope to carry), `integrity-delete` (the landed delete), and the
-others the list names. The list only shrinks: S7b moves each to the write role in
-the caller's scope or to a definer. Outside a narrow exit a spot changes
-nothing.
+others the list names. S7b moves each to the write role in the caller's
+scope or to a definer. Two spots are not content writes but rights the
+narrow login may not hold (S7b part b2, the interim audit of 0314 and
+0315): `login-credential` (a new login, a role change, a contact link and a
+password, with the Admin rows `mantle_bridge_login` keeps in step: the
+whole transaction on the system pool's own login) and `structure-no-login`
+(a structure item in a narrow exit that acts for no login, above). Outside
+a narrow exit a spot changes nothing.
 
 The structure items an Admin area's narrow exit makes, edits and removes
 (the Secrets root, a secret, a peer, a sender's contact, a documentation
@@ -503,6 +520,25 @@ own exit in every check mode (`requestExitActingLogin`: with the check off
 too, so its writes and transactions carry it). It is a gateway setting: no
 narrow statement may name it (`GATEWAY_SETTING`).
 
+On the narrow login the acting login is a mistake guard, not a boundary:
+a raw narrow session may name any acting login (only the gateway's text
+check refuses a narrow statement that names it). The database boundaries
+there are each definer's own kind, op, place, type and owner checks and
+the narrow role's column rights (above): no credential or rights column of
+`auth.users`, no new login, no minted key or token. A definer the narrow
+role may run must give nothing whichever login it is told it acts for
+(`narrow-containment.db.test.ts`: on a switched brain, the raise, bridge
+and structure item chain refused at each step, rows unchanged; every
+definer that takes a login with no scope, called as the narrow role with
+another acting login, writes nothing).
+
+An `asSystem` exit inside a turn whose actor is no login (a Telegram turn
+with the actor check off, the system actor `workflow:telegram-turn`) acts
+for the login of the turn scope it leaves; with no login there either (a
+heartbeat's turn that answers none) it acts for none, and the structure
+items then run the app's own statements at the full-route spot
+`structure-no-login`, as before their definer.
+
 The definers that act for a login with no scope take it (migration 0314):
 `mantle_tg_chat_set` (the assistants area's Telegram block and unpair) and
 `mantle_access_key_revoke`. In a scope the scope's own login rules, as
@@ -511,8 +547,10 @@ login passed must be the acting login (42501 otherwise, nothing changes). A
 system session is one whose `session_user` (the login, never `current_user`,
 which a definer or `SET ROLE` changes) is the runtime role (the system pool
 with `MANTLE_DB_RUNTIME_ROLE` on), the narrow role (the narrow route's own
-login) or a superuser (the system pool with the runtime role off; in
-per-database mode the narrow route takes the role on that pool). The acting
+login), a superuser (the system pool with the runtime role off; in
+per-database mode the narrow route takes the role on that pool) or the
+definers' owner (a brain whose DATABASE_URL logs in as a non-superuser
+owner): `mantle_system_session()`, one check for every such definer. The acting
 login alone would not do: the write role can clear its own scope and set
 `mantle.acting_login` in its transaction, and the session check refuses it
 (acting-login-definers.db.test.ts). The image one release back already sends
@@ -540,15 +578,19 @@ misses (at most one per check, actor and table an hour).
 - `narrow-content-write`: the actor check trigger on a content table counts
   a write whose actor is a narrow reason's (`mantle_narrow_actor`: the
   `AS_SYSTEM_ROUTE` and `REQUEST_SYSTEM_ROUTE` reasons routed narrow, pinned
-  equal by `narrow-observe.test.ts`) AND `current_user = session_user` (the
-  full route: the narrow role was refused before any trigger, a definer runs
-  as its owner, a cascade as the table's owner) AND `mantle.route` is not
+  equal by `narrow-observe.test.ts`) AND `current_user` is the session's own
+  role, the role it SET or else its login (migration 0317; 0312 asked
+  `current_user = session_user`, which a superuser-owned definer met on the
+  per-database fallback: the full route, where the narrow role was refused
+  before any trigger, a definer runs as its owner, a cascade as the table's
+  owner) AND `mantle.route` is not
   `full` (not a declared spot). Counted where the actor check runs (warn or
   on); with it off the trigger is disabled and no actor is sent on the full
   route. Exact with the runtime role on: as the superuser, a definer a
   migration made runs as that superuser, and its writes count too.
 - `narrow-cascade-delete`: a delete from `auth.users`, `spaces` or `agents`
-  by a narrow reason's actor, not at a spot, on either route, once per
+  by a narrow reason's actor, not at a spot, on either route, not inside a
+  definer (the same own-role test, 0317), once per
   statement (their foreign keys cascade or set null into content tables as
   the owner, past the role's own rights). A sign of content going away
   under narrow work, not a refusal to come: turning the role on does not
