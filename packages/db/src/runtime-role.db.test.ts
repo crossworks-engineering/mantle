@@ -557,9 +557,13 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
                 (select count(*)::int from public.workspaces) as w`,
       )) as { u: string; n: number; w: number }[];
       expect(me, who).toEqual({ u: NARROW_ROLE, n: all!.n, w: all!.w });
-      // A system table: written.
-      expect(await asNarrow(conn, 'delete from public.audit_log where false'), who).toEqual([]);
+      // A system table on the allowlist: written (access-matrix.ts
+      // NARROW_WRITES: traces' delete).
+      expect(await asNarrow(conn, 'delete from public.traces where false'), who).toEqual([]);
       for (const stmt of [
+        // A system table's write the allowlist leaves out: audit_log is
+        // INSERT only (round 8).
+        'delete from public.audit_log where false',
         // A content table: read only.
         'insert into public.nodes (id) select id from public.nodes where false',
         'update public.nodes set title = title where false',

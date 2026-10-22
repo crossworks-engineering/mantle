@@ -205,6 +205,9 @@ vi.mock('@mantle/db', () => ({
   pendingToolCalls: {},
   // The R6 shim: no database here, the scope is not under test.
   withViewer: vi.fn(async (_for: unknown, fn: () => Promise<unknown>) => fn()),
+  // The full-route spot (a parked call, pending-park): no route here, the
+  // write runs as it is.
+  onFullSystemRoute: vi.fn(async (_spot: string, fn: () => Promise<unknown>) => fn()),
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn

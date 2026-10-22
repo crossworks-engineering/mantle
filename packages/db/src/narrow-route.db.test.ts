@@ -173,7 +173,9 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(denied).toHaveLength(1);
     expect(denied[0]!.actor).toBe('system:admin-area');
     await v.asSystem(
-      () => m.db.execute(sql`delete from public.audit_log where false`),
+      // On the measured allowlist (access-matrix.ts NARROW_WRITES): traces'
+      // delete; audit_log is INSERT only since round 8.
+      () => m.db.execute(sql`delete from public.traces where false`),
       'admin-area',
     );
     expect(actor.takeNarrowDenials()).toEqual([]);

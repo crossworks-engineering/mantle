@@ -314,6 +314,12 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update tool_groups set admin_only = true where id = '${group}'`,
       `update tool_groups set owner_id = '${member}' where id = '${group}'`,
       `delete from tool_groups where id = '${group}'`,
+      // Round 8: the destination columns (where a vault key, a call or a
+      // token goes) run at the full-route spots model-route and tool-config.
+      `update agents set api_key_id = null where id = '${agent}'`,
+      `update agents set configured_by = null where id = '${agent}'`,
+      `update tool_groups set integration = null where id = '${group}'`,
+      `update tool_groups set configured_by = null where id = '${group}'`,
     ];
     for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
     expect(await state()).toBe(before);
@@ -322,12 +328,12 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     for (const s of [
       `update agents set name = 'b', description = 'd', model = 'm2', system_prompt = 'q',
          skill_slugs = '{}', memory_config = memory_config || '{"max_iterations":5}', params = '{}', thinking_effort = 'low',
-         persona_notes = '[]', avatar = null, priority = 5, enabled = false, api_key_id = null,
-         tts_worker_id = null, configured_by = null, updated_at = now() where id = '${agent}'`,
+         persona_notes = '[]', avatar = null, priority = 5, enabled = false,
+         tts_worker_id = null, updated_at = now() where id = '${agent}'`,
       `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,
       `update agents set assigned_user_id = null, assigned_at = null where id = '${agent}'`,
-      `update tool_groups set name = 'h', description = 'e', integration = null, enabled = false,
-         configured_by = null, updated_at = now() where id = '${group}'`,
+      `update tool_groups set name = 'h', description = 'e', enabled = false,
+         updated_at = now() where id = '${group}'`,
     ]) {
       expect(await run(nl, [s]), s).toBe('ok');
     }
@@ -348,6 +354,10 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       ['tool_groups', 'slug'],
       ['tool_groups', 'admin_only'],
       ['tool_groups', 'owner_id'],
+      ['agents', 'api_key_id'],
+      ['agents', 'configured_by'],
+      ['tool_groups', 'integration'],
+      ['tool_groups', 'configured_by'],
     ] as const) {
       const [g] = await su<{ u: boolean }[]>`
         select has_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, ${c}, 'UPDATE') as u`;

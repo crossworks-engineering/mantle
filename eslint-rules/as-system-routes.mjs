@@ -192,7 +192,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/toolsmith/common.ts': ['tool-group-grant'],
   'packages/tools/src/mcp-sync.ts': ['tool-group-grant', 'tool-config'],
   'packages/tools/src/openapi-sync.ts': ['tool-group-grant', 'tool-config'],
-  'packages/tools/src/sandbox/files.ts': ['tool-group-grant'],
+  'packages/tools/src/sandbox/files.ts': ['tool-group-grant', 'tool-config'],
+  'server/web/lib/push/store.ts': ['push-device'],
 });
 
 /**

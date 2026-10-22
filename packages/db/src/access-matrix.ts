@@ -587,15 +587,36 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   },
   'public.provider_alerts': {
     insert: true,
-    update: [],
+    update: [
+      'code',
+      'error_count',
+      'failing_since',
+      'last_error_at',
+      'last_probe_at',
+      'model',
+      'next_probe_at',
+      'paused',
+      'permanent',
+      'probe_attempts',
+      'provider',
+      'reason',
+      'resolved_at',
+      'updated_at',
+      'visible',
+    ],
     delete: false,
-    why: 'measured (round 8): INSERT by a login turn',
+    why: "measured (round 8, the statement log in round 9): INSERT by a login turn, and the upsert's SET (an INSERT ... ON CONFLICT DO UPDATE needs UPDATE on every column its SET names, a conflict or not) and the probe's stamps. An outage record: its provider and model name what failed, never a route; paused holds the extract queue (availability only, no right)",
   },
   'public.push_subscriptions': {
+    update: ['last_push_at'],
+    delete: true,
+    why: "measured (round 8): DELETE by system:http:admin-area, system:http:login-self; last_push_at is the delivery's stamp (markPushed). A device subscribed (its INSERT, the upsert's login, owner and token) runs at the full-route spot push-device (round 9)",
+  },
+  'public.ms_drive_scopes': {
     insert: true,
     update: [],
     delete: true,
-    why: 'measured (round 8): INSERT, DELETE by system:http:admin-area, system:http:login-self',
+    why: "measured (round 9, the statement log: no row trigger saw it, the delete failed first): the connectors area replaces a drive's scope set (setDriveScopes: delete then insert, in one transaction). Which folders of a drive the brain already reads are ingested: no login, maker or destination column",
   },
   'public.sandboxes': {
     insert: true,
@@ -802,10 +823,7 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * runtime-role.test.ts holds this list to shrink only, and NARROW_WRITES
  * to name nothing else the rules refuse.
  */
-export const NARROW_MOVES_LEFT: Readonly<Record<string, string>> = Object.freeze({
-  'public.push_subscriptions:insert':
-    'push-device: a device subscribed (login-self) with its endpoint, in a transaction with its token check (server/web lib/push/store.ts): its move takes the transaction to the spot',
-});
+export const NARROW_MOVES_LEFT: Readonly<Record<string, string>> = Object.freeze({});
 
 /** Whether the narrow role may do `op` on `table` (and, for an UPDATE, on
  *  every one of `columns`), from NARROW_WRITES: the one place a caller asks

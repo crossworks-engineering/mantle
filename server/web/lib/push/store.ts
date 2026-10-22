@@ -7,6 +7,7 @@ import {
   authUsers,
   db,
   mobileTokens,
+  onFullSystemRoute,
   pushInstance,
   pushLoginPrefs,
   pushPrefs,
@@ -47,23 +48,28 @@ export async function getPushInstanceMeta(): Promise<{
 /** Upsert the singleton relay identity (encrypts the instance token). */
 export async function savePushInstance(args: PushInstanceSecret): Promise<void> {
   const instanceTokenEnc = seal(args.instanceToken).ciphertext.toString('base64');
-  await db
-    .insert(pushInstance)
-    .values({
-      instanceTokenEnc,
-      relayInstanceId: args.relayInstanceId,
-      relayUrl: args.relayUrl,
-      singleton: true,
-    })
-    .onConflictDoUpdate({
-      target: pushInstance.singleton,
-      set: {
+  // The relay every push goes through (its URL and token): the full-route
+  // spot push-device, as a device's row (the narrow login holds no write of
+  // push_instance).
+  await onFullSystemRoute('push-device', () =>
+    db
+      .insert(pushInstance)
+      .values({
         instanceTokenEnc,
         relayInstanceId: args.relayInstanceId,
         relayUrl: args.relayUrl,
-        connectedAt: new Date(),
-      },
-    });
+        singleton: true,
+      })
+      .onConflictDoUpdate({
+        target: pushInstance.singleton,
+        set: {
+          instanceTokenEnc,
+          relayInstanceId: args.relayInstanceId,
+          relayUrl: args.relayUrl,
+          connectedAt: new Date(),
+        },
+      }),
+  );
 }
 
 export interface DeviceRow {
@@ -213,67 +219,73 @@ export async function insertSubscription(args: {
   label?: string | null;
   relayDeviceId?: string | null;
 }): Promise<{ id: string; dropped: string[] }> {
-  return db.transaction(async (tx) => {
-    // The enrolling token, locked (FOR SHARE) for the enrol: a refresh, a
-    // sign-out or End sessions updates that row first, so it waits for this
-    // insert and then sees the new device (a refresh moves it to the new
-    // token, an ending deletes it). If the refresh went first, the token was
-    // rotated: bind the device to the token it was rotated to, so it is not
-    // stranded on a revoked token.
-    let tokenId = args.tokenId;
-    for (let hop = 0; hop < 3; hop++) {
-      const [t] = (await tx.execute(sql`
+  // The full-route spot push-device: a device row decides whose
+  // notifications reach which phone, so the narrow login holds no INSERT of
+  // it (access-matrix.ts NARROW_NEVER_INSERT); the transaction with its
+  // token check and cap runs there whole.
+  return onFullSystemRoute('push-device', () =>
+    db.transaction(async (tx) => {
+      // The enrolling token, locked (FOR SHARE) for the enrol: a refresh, a
+      // sign-out or End sessions updates that row first, so it waits for this
+      // insert and then sees the new device (a refresh moves it to the new
+      // token, an ending deletes it). If the refresh went first, the token was
+      // rotated: bind the device to the token it was rotated to, so it is not
+      // stranded on a revoked token.
+      let tokenId = args.tokenId;
+      for (let hop = 0; hop < 3; hop++) {
+        const [t] = (await tx.execute(sql`
         select revoked_at, rotated_to from mobile_tokens where id = ${tokenId} for share`)) as unknown as Array<{
-        revoked_at: Date | null;
-        rotated_to: string | null;
-      }>;
-      if (!t?.revoked_at || !t.rotated_to) break;
-      tokenId = t.rotated_to;
-    }
-    // One phone belongs to one login: a routing token enrolled again (the
-    // same app signed in as someone else, or the same login once more)
-    // replaces the row it had, whoever held it. One statement on the unique
-    // routing token, so two enrols at once leave one row.
-    const [row] = await tx
-      .insert(pushSubscriptions)
-      .values({
-        ownerId: args.ownerId,
-        loginId: args.loginId,
-        tokenId,
-        routingToken: args.routingToken,
-        publicKey: args.publicKey,
-        platform: args.platform,
-        label: args.label ?? null,
-        relayDeviceId: args.relayDeviceId ?? null,
-      })
-      .onConflictDoUpdate({
-        target: pushSubscriptions.routingToken,
-        set: {
+          revoked_at: Date | null;
+          rotated_to: string | null;
+        }>;
+        if (!t?.revoked_at || !t.rotated_to) break;
+        tokenId = t.rotated_to;
+      }
+      // One phone belongs to one login: a routing token enrolled again (the
+      // same app signed in as someone else, or the same login once more)
+      // replaces the row it had, whoever held it. One statement on the unique
+      // routing token, so two enrols at once leave one row.
+      const [row] = await tx
+        .insert(pushSubscriptions)
+        .values({
           ownerId: args.ownerId,
           loginId: args.loginId,
           tokenId,
+          routingToken: args.routingToken,
           publicKey: args.publicKey,
           platform: args.platform,
           label: args.label ?? null,
           relayDeviceId: args.relayDeviceId ?? null,
-          createdAt: new Date(),
-          lastPushAt: null,
-        },
-      })
-      .returning({ id: pushSubscriptions.id });
-    // The cap: the login's oldest devices beyond it go.
-    const over = await tx
-      .delete(pushSubscriptions)
-      .where(
-        sql`${pushSubscriptions.id} in (
+        })
+        .onConflictDoUpdate({
+          target: pushSubscriptions.routingToken,
+          set: {
+            ownerId: args.ownerId,
+            loginId: args.loginId,
+            tokenId,
+            publicKey: args.publicKey,
+            platform: args.platform,
+            label: args.label ?? null,
+            relayDeviceId: args.relayDeviceId ?? null,
+            createdAt: new Date(),
+            lastPushAt: null,
+          },
+        })
+        .returning({ id: pushSubscriptions.id });
+      // The cap: the login's oldest devices beyond it go.
+      const over = await tx
+        .delete(pushSubscriptions)
+        .where(
+          sql`${pushSubscriptions.id} in (
          select id from push_subscriptions
           where login_id = ${args.loginId}
           order by created_at desc, id desc
           offset ${MAX_DEVICES_PER_LOGIN})`,
-      )
-      .returning({ routingToken: pushSubscriptions.routingToken });
-    return { id: row!.id, dropped: over.map((r) => r.routingToken) };
-  });
+        )
+        .returning({ routingToken: pushSubscriptions.routingToken });
+      return { id: row!.id, dropped: over.map((r) => r.routingToken) };
+    }),
+  );
 }
 
 /** Delete one device (scoped to owner); returns its routing token for relay cleanup. */

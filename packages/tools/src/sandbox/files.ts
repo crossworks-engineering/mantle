@@ -379,10 +379,14 @@ export const sandbox_publish: BuiltinToolDef = {
         : `Service published from sandbox '${row.name}' (port ${port}), reached via the sandboxd proxy.`;
 
     if (existing) {
-      await db
-        .update(toolGroups)
-        .set({ integration, description, updatedAt: new Date() })
-        .where(eq(toolGroups.id, existing.id));
+      // The group's integration (where its calls and token go) runs at the
+      // full-route spot tool-config: the narrow login holds no UPDATE of it.
+      await onFullSystemRoute('tool-config', () =>
+        db
+          .update(toolGroups)
+          .set({ integration, description, updatedAt: new Date() })
+          .where(eq(toolGroups.id, existing.id)),
+      );
     } else {
       // A new group: the full-route spot tool-group-grant on a narrow exit
       // (the narrow login holds no INSERT on tool_groups).

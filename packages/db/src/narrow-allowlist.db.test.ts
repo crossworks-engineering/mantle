@@ -11,8 +11,11 @@
  * Sent raw on a narrow login session (no gateway, no text check), each in
  * a transaction that rolls back: the refused forms answer 42501 (the
  * privilege is checked before any row, so `where false` proves it), the
- * measured ones run. The one form still open until its move lands
- * (NARROW_MOVES_LEFT: push-device) is named in its own cell.
+ * measured ones run. Each refused form is sent as the superuser first and
+ * must run there (or stop only at a row's constraint, 23xxx): a form that
+ * names a missing column or a wrong type would answer before the privilege
+ * check and prove nothing (round 9). A device subscribed (push-device) was
+ * the last move left and is refused since round 9.
  */
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -57,8 +60,31 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
         (e: { ok?: boolean; code?: string }) => (e.ok ? 'ok' : (e.code ?? 'error')),
       );
 
+  /** Each form refused on the narrow login (42501) and reaching that check:
+   *  the superuser runs it, or stops only at a row's constraint. Every
+   *  mismatch is collected, so one run shows them all. */
+  const expectRefused = async (forms: readonly string[]) => {
+    const bad: string[] = [];
+    for (const s of forms) {
+      const asSu = await run(su, s);
+      if (asSu !== 'ok' && !asSu.startsWith('23')) bad.push(`superuser ${asSu}: ${s}`);
+      const asNl = await run(nl, s);
+      if (asNl !== '42501') bad.push(`narrow ${asNl}: ${s}`);
+    }
+    expect(bad).toEqual([]);
+  };
+  /** Each form runs on the narrow login. */
+  const expectRuns = async (forms: readonly string[]) => {
+    const bad: string[] = [];
+    for (const s of forms) {
+      const asNl = await run(nl, s);
+      if (asNl !== 'ok') bad.push(`narrow ${asNl}: ${s}`);
+    }
+    expect(bad).toEqual([]);
+  };
+
   it('a forged run and run item, and a run made to run, are refused (the sweep executes them)', async () => {
-    for (const s of [
+    await expectRefused([
       `insert into runs (owner_id, title, status) values ('${brain}', 'forged', 'running')`,
       `insert into run_items (run_id, position, kind, state, payload)
          values (gen_random_uuid(), 0, 'tool_call', 'ready', '{"slug":"note_create"}')`,
@@ -67,22 +93,18 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
       `update run_items set state = 'ready' where false`,
       `update run_items set payload = '{}' where false`,
       `delete from runs where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('42501');
-    }
+    ]);
   });
 
   it('a pending call cannot be swapped: its tool, arguments, origin and maker are refused; its decision columns run', async () => {
-    for (const s of [
+    await expectRefused([
       `update pending_tool_calls set args = '{}' where false`,
       `update pending_tool_calls set tool_slug = 'x' where false`,
       `update pending_tool_calls set origin = '{}' where false`,
-      `update pending_tool_calls set elevated = true where false`,
+      `update pending_tool_calls set elevated = '{}' where false`,
       `update pending_tool_calls set login_id = null, agent_id = null where false`,
       `delete from pending_tool_calls where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('42501');
-    }
+    ]);
     expect(
       await run(
         nl,
@@ -93,26 +115,24 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
   });
 
   it("the vault and instruction forms: a tool's handler, a skill's instructions, an AI worker's or assistant's key are refused by the allowlist", async () => {
-    for (const s of [
+    await expectRefused([
       `update tools set handler = '{"kind":"http","url":"https://example.invalid"}' where false`,
       `update tools set created_by = null where false`,
       `update tools set requires_confirm = false where false`,
       `update skills set instructions = 'x' where false`,
       `update skills set slug = 'x' where false`,
-      `update heartbeats set schedule = '* * * * *' where false`,
+      `update heartbeats set schedule = '{"every_minutes":1}' where false`,
       `update heartbeats set agent_slug = 'x', skill_slug = 'x' where false`,
       `update doc_collections set root_path = '/' where false`,
       `update channels set agent_id = null where false`,
       `update telegram_accounts set channel_id = null where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('42501');
-    }
+    ]);
   });
 
   it('a table the narrow login never wrote is read only (a new table defaults to read)', async () => {
-    for (const s of [
+    await expectRefused([
       `delete from push_instance where false`,
-      `update brain_identity set updated_at = now() where false`,
+      `update brain_identity set created_at = now() where false`,
       `delete from conversation_taints where false`,
       `delete from space_fold_items where false`,
       `update oauth_clients set redirect_uris = '{}' where false`,
@@ -120,35 +140,32 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
       `delete from item_marks where false`,
       `update ingest_rules set enabled = false where false`,
       `delete from heads_check_misses where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('42501');
-    }
+    ]);
     expect(await run(nl, `select count(*) from push_instance`)).toBe('ok');
   });
 
   it('audit_log and actor_check_misses: insert only', async () => {
-    for (const s of [
+    await expectRefused([
       `delete from audit_log where false`,
       `update audit_log set detail = null where false`,
       `delete from actor_check_misses where false`,
       `update actor_check_misses set detail = null where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('42501');
-    }
+    ]);
     expect(
-      await run(nl, `insert into audit_log (action, method, path) values ('t', 'POST', '/t')`),
+      await run(
+        nl,
+        `insert into audit_log (actor_email, action, method, path) values ('t@t', 't', 'POST', '/t')`,
+      ),
     ).toBe('ok');
   });
 
   it('the measured writes run (traces, steps, the turn stream, a sandbox stamp)', async () => {
-    for (const s of [
-      `update traces set status = 'ok', finished_at = now() where false`,
+    await expectRuns([
+      `update traces set status = 'success', finished_at = now() where false`,
       `update trace_steps set output = '{}' where false`,
       `update sandboxes set last_used_at = now() where false`,
       `update api_keys set last_used = now() where false`,
-    ]) {
-      expect(await run(nl, s), s).toBe('ok');
-    }
+    ]);
   });
 
   it("the audit's forges are refused: a heartbeat as the anchor, a skill's text, a parked call, a vault key's destination (their writes run at the spots)", async () => {
@@ -205,7 +222,7 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
         `insert into agent_groups (owner_id, slug, name) values ('${brain}', 'f', 'f')`,
       ],
     ];
-    for (const [, s] of forged) expect(await run(nl, s), s).toBe('42501');
+    await expectRefused(forged.map(([, s]) => s));
     // The same forms run for the brain's owner role (the superuser here):
     // the refusal is the narrow login's rights, not the statement.
     expect(
@@ -213,13 +230,32 @@ describe.skipIf(!URL)('the narrow login writes only its measured allowlist', () 
     ).toBe('ok');
   });
 
-  it('still open until its move lands (NARROW_MOVES_LEFT): a device subscribed (push-device)', async () => {
-    expect(
-      await run(
-        nl,
-        `insert into push_subscriptions (owner_id, login_id, routing_token, public_key)
-           values ('${brain}', '${brain}', 'r8-forge', 'k')`,
-      ),
-    ).not.toBe('42501');
+  it('a device subscribed and the push relay are refused (the full-route spot push-device, round 9); a device removed and its push stamp run', async () => {
+    await expectRefused([
+      `insert into push_subscriptions (owner_id, login_id, routing_token, public_key)
+         values ('${brain}', '${brain}', 'r9-forge', 'k')`,
+      `update push_subscriptions set login_id = null, owner_id = '${brain}', token_id = null where false`,
+      `insert into push_instance (instance_token_enc, relay_instance_id, relay_url)
+         values ('x', 'x', 'https://example.invalid')`,
+      `update push_instance set relay_url = 'https://example.invalid' where false`,
+    ]);
+    await expectRuns([
+      `delete from push_subscriptions where false`,
+      `update push_subscriptions set last_push_at = now() where false`,
+    ]);
+  });
+
+  it("the statement log's upserts and its own tables (round 9): an outage's upsert and probe stamps, a drive's scope set", async () => {
+    await expectRuns([
+      `insert into provider_alerts (owner_id, subject, code, permanent, reason)
+         values ('${brain}', 'embedding', 'network', false, 'r')
+         on conflict (owner_id, subject) do update set code = excluded.code, reason = excluded.reason,
+           error_count = provider_alerts.error_count + 1, last_error_at = excluded.last_error_at,
+           visible = excluded.visible, paused = excluded.paused, permanent = excluded.permanent,
+           updated_at = now()`,
+      `update provider_alerts set next_probe_at = now(), updated_at = now() where false`,
+      `delete from ms_drive_scopes where false`,
+    ]);
+    await expectRefused([`update provider_alerts set owner_id = '${brain}' where false`]);
   });
 });

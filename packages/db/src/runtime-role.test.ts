@@ -629,8 +629,8 @@ describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class f
     for (const why of Object.values(NARROW_MOVES_LEFT)) expect(why).toMatch(/^[a-z-]+(:|$)/);
   });
 
-  it('the moves left only shrink (30 measured; 1 after the spots of round 8)', () => {
-    expect(Object.keys(NARROW_MOVES_LEFT).length).toBeLessThanOrEqual(1);
+  it('the moves left only shrink (30 measured; 1 after the spots of round 8; 0 after push-device in round 9)', () => {
+    expect(Object.keys(NARROW_MOVES_LEFT).length).toBe(0);
   });
 
   it('a table not on the allowlist is read only; runs and run items take no narrow insert', () => {
