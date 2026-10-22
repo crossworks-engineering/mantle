@@ -246,7 +246,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
     },
   },
   'PUT /api/tools/settings': {},
-  'PATCH /api/tools/:id': { body: { description: 'sweep d2', requiresConfirm: true } },
+  'PATCH /api/tools/:id': { body: { description: 'sweep d2', requiresConfirm: false } },
   'DELETE /api/tools/:id': {},
   'PUT /api/tools/:id/external-access': { body: { allow: true, readOnlyConfirmed: true } },
   'POST /api/updates/check': {},

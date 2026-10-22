@@ -427,12 +427,16 @@ describe.skipIf(!URL)(
                           refresh_token_enc = ${seal('sweep-refresh', S).ciphertext},
                           token_expires_at = '2000-01-01Z', enabled = true
                     where id = ${S}`;
-          const back = await send(
-            'GET',
+          const back = await app.request(
             '/api/microsoft/oauth/callback?code=sweep-code&state=sweep-state',
-            null,
-            `${cookie}; ms_oauth_state=sweep-state; ms_oauth_verifier=sweep-verifier`,
+            {
+              method: 'GET',
+              headers: {
+                cookie: `${cookie}; ms_oauth_state=sweep-state; ms_oauth_verifier=sweep-verifier`,
+              },
+            },
           );
+          const to = back.headers.get('location') ?? '';
           const found = await send('POST', `/api/microsoft/accounts/${S}/drives`, {});
           record(MS_CONNECT);
           const [acct] = await su<{ tokens: boolean }[]>`
@@ -443,7 +447,7 @@ describe.skipIf(!URL)(
           const [drive] = await su<{ enabled: boolean }[]>`
             select enabled from ms_drives where account_id = ${S} and drive_id = 'sweep-drive-2'`;
           ms[pass] = {
-            callback: `${back.status} ${back.text.includes('connected=') ? 'connected' : back.text.slice(0, 120)}`,
+            callback: `${back.status} ${to.includes('connected=') ? 'connected' : to.slice(0, 160)}`,
             discover: `${found.status} ${normalize(found.text)}`,
             account: acct?.tokens ?? false,
             refreshed: fixture?.fresh ?? false,
@@ -618,6 +622,7 @@ describe.skipIf(!URL)(
       'POST /api/agents/:id/persona': ['skill-text'],
       'POST /api/ai-workers': ['model-route'],
       'POST /api/ai-workers/reembed': ['reembed'],
+      'PATCH /api/agents/:id': ['assistant-grant'],
       'PATCH /api/ai-workers/:id': ['skill-text'],
       'POST /api/backups': ['profile-row'],
       'POST /api/backups/run': ['profile-row'],
@@ -641,14 +646,17 @@ describe.skipIf(!URL)(
       'POST /api/keys': ['model-route'],
       'POST /api/mcp-connectors': ['tool-group-grant'],
       'GET /api/mcp-connectors/oauth/callback': ['tool-config'],
+      'PATCH /api/heartbeats/:id': ['heartbeat-maker'],
       'PATCH /api/mcp-connectors/:slug': ['tool-config'],
       'POST /api/mcp-connectors/:slug/oauth/start': ['tool-config'],
       'PATCH /api/mcp-settings': ['profile-row'],
       'PATCH /api/microsoft/accounts/:id/mail': ['mail-account'],
       'PUT /api/microsoft/config': ['tool-config'],
+      'POST /api/microsoft/accounts/:id/drives': ['ms-account'],
       'POST /api/model-combos/apply': ['model-route'],
       'POST /api/onboarding': ['profile-row'],
       'POST /api/openapi-connectors': ['tool-group-grant'],
+      'PATCH /api/model-pools/:id': ['model-route'],
       'PATCH /api/openapi-connectors/:slug': ['tool-config'],
       'POST /api/peers': ['acting-login', 'peer-access'],
       'PATCH /api/peers/:id': ['peer-access'],
@@ -666,6 +674,8 @@ describe.skipIf(!URL)(
         'tool-group-grant',
       ],
       'POST /api/team-admin/invites': ['member-invite'],
+      'PATCH /api/settings/worker-groups/:id': ['agent-group-grant'],
+      'PATCH /api/skills/:id': ['skill-text'],
       'PATCH /api/team-admin/settings': ['profile-row'],
       'PATCH /api/telegram/chats/:id': ['telegram-responder'],
       'POST /api/tool-groups': ['tool-group-grant'],
@@ -673,6 +683,8 @@ describe.skipIf(!URL)(
       'PUT /api/tools/settings': ['profile-row'],
       'PUT /api/tools/:id/external-access': ['tool-config'],
       'POST /api/users': ['login-credential'],
+      'PATCH /api/tool-groups/:id': ['tool-config'],
+      'PATCH /api/tools/:id': ['tool-config'],
       'PATCH /api/users/:id': ['login-credential'],
       'PUT /api/users/:id/agent': ['assistant-grant'],
       // The acting-login spot (0321): the definers that need the exit's
@@ -705,6 +717,7 @@ describe.skipIf(!URL)(
         'profile-row',
         'tool-group-grant',
       ],
+      [MS_CONNECT]: ['ms-account'],
     };
 
     it('pins the rows whose write runs at a spot, and which spots, the same both ways', () => {
