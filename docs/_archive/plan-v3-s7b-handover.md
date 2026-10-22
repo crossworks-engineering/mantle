@@ -1801,19 +1801,17 @@ N-1 never calls the new functions; its migrate grants its own matrix back
 
 ### Left for round 5
 
-1. The switch-off full run on 748c6ec71 (x-off2 on the workstation, running
-   at handover): read its exit.
-2. The credential tables the column rights cannot split (MED-1 list above):
+1. The credential tables the column rights cannot split (MED-1 list above):
    pairing_codes INSERT, oauth_auth_codes, member_invites, mantle_peers with
    peer_shares and peer_share_scopes, telegram_chats.login_id; and agents
    and tool_groups (assistants' grants) for the CEO. Each needs a spot or
    the login's own scope, or a signed acting login (a gateway HMAC the
    narrow login cannot read) if the CEO wants the narrow route to keep them.
-3. `mantle_space_settle_promotion` on NARROW_SYSTEM_FUNCTIONS with no narrow
+2. `mantle_space_settle_promotion` on NARROW_SYSTEM_FUNCTIONS with no narrow
    caller (above): drop, or keep for a signed acting login.
-4. LOW-4's docs-item insert and update at route level with a real markdown
+3. LOW-4's docs-item insert and update at route level with a real markdown
    file (with the sweep).
-5. The remaining spots (profile-row, console-tool, pending-call;
+4. The remaining spots (profile-row, console-tool, pending-call;
    integrity-delete and reembed stay for S7c), the ONE area-route sweep,
    the default flip last, the pins and the box counts list (round 3's
    "Left for the next round" 2 to 5).
