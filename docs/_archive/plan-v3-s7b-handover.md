@@ -1950,3 +1950,49 @@ the spots go.
 2. The ONE area-route sweep (with LOW-4's docs-item at route level): not
    started.
 3. The default flip, last, with the pins and the box counts list.
+
+### Rollback (round 5)
+
+0318 adds a trigger function and eight triggers that hold only the narrow
+role: an older image runs with them (no product write meets a refused
+direction); its revert drops them. The spots, the column rights and the
+allowlist are code and migrate's grants: an older image's migrate grants
+its own matrix back. Migrate now grants a narrow column right only where
+the schema has the column (found by ws-switch-preflight.db.test.ts, which
+runs migrate's grants on a 0232 schema without ended_acts_as_login_id).
+
+### Gates
+
+Mac, Node 26, DATABASE_URL unset, on ee41b203a: `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r
+typecheck` 0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm
+test:serial` 0, `vitest run server packages eslint-rules` 0 (872 files
+passed, 289 skipped; 11300 tests passed; the first run had 2 failures, a
+heading code in this file and pair-code.test.ts's mock, both fixed in
+ee41b203a). On f243629c4 (cells and the grant's column filter):
+format, arch, lint and typecheck of the touched files 0,
+runtime-role.test.ts 0.
+
+Workstation (label mantle.test=s7b-b2, containers removed by exact name):
+
+| Suite                                                 | Commit    | Exit    | Counts                                                                                                                   |
+| ----------------------------------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| the measurement: shard 1/2, shard 2/2, actor-off      | 748c6ec71 | 1, 0, 1 | the table above; failures only the audit triggers' catalog cells (dump-restore, rights-catalog)                          |
+| full DB vitest, shard 1/2                             | ee41b203a | 1       | 3 failed: the three cells fixed below                                                                                    |
+| full DB vitest, shard 2/2                             | ee41b203a | 0       |                                                                                                                          |
+| test:actor-off                                        | ee41b203a | 1       | 2 failed: preflight, the 0318 cell                                                                                       |
+| test:actor-on                                         | ee41b203a | 0       |                                                                                                                          |
+| test:edit-on                                          | ee41b203a | 0       |                                                                                                                          |
+| test:matrix                                           | ee41b203a | 1       | the tool cells' time budget (240.0 s of 210 s) and one afterAll hook over 10 s, beside five lanes (as rounds 1 to 4 met) |
+| test:runtime-role in full                             | ee41b203a | 1       | the same cells                                                                                                           |
+| test:serial                                           | ee41b203a | 0       |                                                                                                                          |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0                | ee41b203a | 1       | 3 of 14276: preflight, the 0318 cell, the round 5 product cell                                                           |
+| the drill (N-1: b1 against b2's schema)               | ee41b203a | 0       | 318 ledger rows; every migrate step 0                                                                                    |
+| the new cells + preflight + runtime-role.db (4 files) | f243629c4 | 0       | 51 passed                                                                                                                |
+
+The cells that failed on ee41b203a, each fixed: the 0318 cell's peer row
+had no node (node_id is NOT NULL), the promotion cell's own refusal was
+not drained (test-support.ts now re-exports takeNarrowDenials), the round
+5 peer shape compared base_url (named per run), and migrate's grants named
+a column a 0232 schema lacks (ws-switch-preflight). The full suites were
+NOT rerun on f243629c4: the next round reruns them first.
