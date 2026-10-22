@@ -80,7 +80,9 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/index-work.ts': 1,
   'packages/db/src/init-scratch.ts': 1,
   'packages/db/src/item-acl.ts': 2,
-  'packages/db/src/runtime-role.ts': 8,
+  // 9: migrate's revoke of a default-privilege entry naming PUBLIC or the
+  // narrow role (defaultAclRevoke: identifiers quoted by quotedIdent).
+  'packages/db/src/runtime-role.ts': 9,
   'packages/db/src/scope-readable.ts': 5,
   'packages/db/src/viewer-roles.ts': 3,
   'packages/db/src/workspace-live.ts': 1,
