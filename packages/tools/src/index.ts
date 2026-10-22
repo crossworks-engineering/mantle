@@ -307,6 +307,7 @@ export {
   appToolRefusal,
   appToolScope,
   appToolVerdict,
+  appRunWrites,
   appToolWarnings,
   movedAppToolWarnings,
   APP_NO_TOOLS,

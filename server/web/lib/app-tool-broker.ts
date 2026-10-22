@@ -57,6 +57,7 @@ import {
 } from '@mantle/content';
 import {
   appBrokerCaller,
+  appRunWrites,
   appToolLevel,
   appToolRefusal,
   appToolScope,
@@ -326,8 +327,12 @@ export async function runAppToolBroker(
       caller: appBrokerCaller(run.surface, verdict),
     });
   const scope = { actsFor: await run.actsFor() };
+  // A built-in write the team rules allowed (a Table row write) runs in the
+  // app's scope as a write, as the running login (appRunWrites); a read
+  // keeps the read-only scope.
+  const writes = scope.actsFor !== null && (await appRunWrites(verdict));
   const result = await system(() =>
-    scope.actsFor ? withViewer(scope.actsFor, dispatch) : dispatch(),
+    scope.actsFor ? withViewer(scope.actsFor, dispatch, { writes }) : dispatch(),
   );
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);

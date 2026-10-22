@@ -38,8 +38,25 @@ import { systemPoolTxInScope } from './system-tx';
  * system runs `fn` itself (the level argument that said so went in W8c).
  * Inside the same workspace scope it just runs `fn`; inside another one it
  * is refused, unless it narrows a request scope.
+ *
+ * `writes`: only a login running an app (`{ login, app }`), for a write its
+ * app rule allowed (a team app's Table row write, @mantle/tools
+ * member-app-tools.ts rule 6): the app's scope writes as that login, so the
+ * database decides whether the login may (runInViewerScope). Any other
+ * caller asking it is refused: an assistant, a link or a login's whole
+ * union never write through here.
  */
-export async function withViewer<T>(actsFor: ViewerFor, fn: () => Promise<T>): Promise<T> {
+export async function withViewer<T>(
+  actsFor: ViewerFor,
+  fn: () => Promise<T>,
+  opts: { writes?: boolean } = {},
+): Promise<T> {
+  if (opts.writes) {
+    if (!('login' in actsFor) || !actsFor.app) {
+      throw new RuntimeFaultError('withViewer: only a login running an app writes through here');
+    }
+    return runInViewerScope(await memoScopeFor(actsFor), fn, { writes: true, drafts: false });
+  }
   // Inside the request scope of this very login (W6a): that scope is the
   // one withViewer would build, read once by the session guard. No second
   // lookup per call (the W5b2 member search cost).

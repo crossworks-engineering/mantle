@@ -195,6 +195,26 @@ export function appToolScope(
 }
 
 /**
+ * Whether an allowed call of an app run below admin writes in the app's
+ * scope (withViewer's `writes`, task 2178377a): a built-in write, which the
+ * team rules let through only for a Table row write on a Table homed in a
+ * holder of the app (member-app-tools.ts rule 6). It writes as the running
+ * login in the app's scope, so the database's checks decide (the item's
+ * Write switch, a Moderator of its home, the actor and edit checks). A read,
+ * or an outside tool (it writes outside the brain, if at all), keeps the
+ * read-only scope.
+ */
+export async function appRunWrites(verdict: AppToolVerdict): Promise<boolean> {
+  if (!verdict.ok) return false;
+  // A row with no handler (none should be) never writes.
+  const h = verdict.tool.handler as Tool['handler'] | undefined;
+  if (h?.kind !== 'builtin') return false;
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinReadOnly } = await import('./registry');
+  return !isBuiltinReadOnly(h.ref);
+}
+
+/**
  * For an app a workspace other than Admin holds: one warning per declared
  * tool its runs would refuse, in the broker's own words (the team rules run
  * for every runner, R2), and one per row write it declares, saying the only

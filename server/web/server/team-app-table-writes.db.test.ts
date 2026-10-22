@@ -24,6 +24,11 @@
  *  6. an app the Admin workspace alone holds, run by the owner: admin rules,
  *     as before (a schema write runs).
  *
+ * A team app's run scope only read before (withViewer); an allowed row
+ * write now enters it as a write scope (withViewer's `writes`, only for a
+ * login running an app), so the write goes through the login write gateway
+ * with the app's scope and the database checks it.
+ *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-table-writes.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -389,6 +394,19 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
     expect(await grid(tables.admin)).toContain(`${tag} admin column`);
+  });
+
+  it('only a login running an app writes through withViewer', async () => {
+    const noop = async () => 'ran';
+    await expect(m.withViewer({ login: writer }, noop, { writes: true })).rejects.toThrow(
+      /only a login running an app/,
+    );
+    await expect(m.withViewer({ agent: null }, noop, { writes: true })).rejects.toThrow(
+      /only a login running an app/,
+    );
+    await expect(m.withViewer({ link: { served: [] } }, noop, { writes: true })).rejects.toThrow(
+      /only a login running an app/,
+    );
   });
 
   it('the publish warning says where a declared row write runs, and refuses the rest', async () => {

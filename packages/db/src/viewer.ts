@@ -668,16 +668,30 @@ function inScope<T>(scope: Scope, fn: () => T): T {
  * a workspace scope it runs `fn` as is when the scope is the same and is
  * refused otherwise (a scope is never widened or swapped). Only
  * gateway/viewer-scope.ts calls this, with a validated, frozen scope.
+ *
+ * `writes` (a login's app run making a write its app rule allowed: a team
+ * app's Table row write, task 2178377a): the scope writes as the login's
+ * mutating request does, through the login write gateway with this scope
+ * on each short write transaction, so the database checks the write
+ * against it (requestWriteScope). It reads published columns only, as any
+ * workspace scope below an editor does. Without it the scope only reads.
  */
-export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+export function runInViewerScope<T>(
+  ws: WorkspaceScope,
+  fn: () => Promise<T>,
+  writes?: RequestScopeMode,
+): Promise<T> {
+  const scope: Scope = writes
+    ? { ws, perQuery: true, request: Object.freeze({ ...writes }) }
+    : { ws, perQuery: true };
   const open = active();
   if (open?.ws) {
-    if (sameWorkspaceScope(open.ws, ws)) return fn();
+    if (sameWorkspaceScope(open.ws, ws) && (!writes || open.request?.writes)) return fn();
     // Inside a request scope a narrower scope may be entered (an app run,
     // an assistant of one of the login's workspaces): it reads less, never
     // more (workspaces W6a).
     if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
-      return inScope({ ws, perQuery: true }, async () => await fn());
+      return inScope(scope, async () => await fn());
     }
     return Promise.reject(
       new RuntimeFaultError('withViewer: already inside another workspace scope'),
@@ -686,7 +700,7 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
   // Awaited INSIDE the scope: a callback that returns a query builder (a
   // thenable, run when awaited) runs it here, not in the caller's scope
   // after this one has ended (ScopeLostError there).
-  return inScope({ ws, perQuery: true }, async () => await fn());
+  return inScope(scope, async () => await fn());
 }
 
 /** Enter a workspace scope that runs in one transaction on the workspace
