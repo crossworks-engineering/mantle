@@ -353,10 +353,16 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
         select has_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, ${c}, 'UPDATE') as u`;
       expect(g!.u, `${t}.${c}`).toBe(false);
     }
-    // The other keys of memory_config moved, delegate_to kept.
-    const [mc] = await su<{ m: Record<string, unknown> }[]>`
-      select memory_config as m from agents where id = ${agent}`;
-    expect(mc!.m).toEqual({ delegate_to: ['pages'], max_iterations: 5 });
+    // Another key of memory_config moves on the narrow login, delegate_to
+    // kept (read in the same transaction: run rolls back; a wrong value
+    // divides by zero).
+    expect(
+      await run(nl, [
+        `update agents set memory_config = memory_config || '{"max_iterations":5}' where id = '${agent}'`,
+        `select case when memory_config = '{"delegate_to":["pages"],"max_iterations":5}'::jsonb
+                then 1 else 1 / 0 end from agents where id = '${agent}'`,
+      ]),
+    ).toBe('ok');
     // The system pool (here the superuser) is not held by the one-way rule.
     expect(
       await run(su, [`update agents set assigned_user_id = '${member}' where id = '${agent}'`]),
