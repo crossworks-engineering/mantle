@@ -23,7 +23,7 @@
  * justified later by its acceptance rate.
  */
 import { and, eq } from 'drizzle-orm';
-import { agents, type Agent, type Db } from '@mantle/db';
+import { agents, onFullSystemRoute, type Agent, type Db } from '@mantle/db';
 
 /** Sentinel model value: resolve to the responder's route at execution time.
  *  (agents.model is NOT NULL by long-standing schema; a nullable model would
@@ -71,22 +71,27 @@ export async function ensureWorkerAgent(
     .orderBy(agents.createdAt)
     .limit(1);
   if (existing) return existing;
-  const [created] = await db
-    .insert(agents)
-    .values({
-      ownerId,
-      slug: DEFAULT_WORKER_SLUG,
-      name: 'Worker agent',
-      description:
-        'Default runner-queue worker: executes delegated run steps and returns evidence-bearing proposals. Duplicate and set a cheaper model to opt into cost arbitrage.',
-      role: 'worker',
-      model: WORKER_MODEL_INHERIT,
-      systemPrompt: WORKER_SYSTEM_PROMPT,
-      toolGroupSlugs: [...WORKER_TOOL_GROUP_SLUGS],
-      enabled: true,
-    })
-    .onConflictDoNothing()
-    .returning();
+  // A new assistant with its tool groups: the narrow login holds no INSERT
+  // on agents, so on a narrow exit it is made at the full-route spot
+  // assistant-grant.
+  const [created] = await onFullSystemRoute('assistant-grant', () =>
+    db
+      .insert(agents)
+      .values({
+        ownerId,
+        slug: DEFAULT_WORKER_SLUG,
+        name: 'Worker agent',
+        description:
+          'Default runner-queue worker: executes delegated run steps and returns evidence-bearing proposals. Duplicate and set a cheaper model to opt into cost arbitrage.',
+        role: 'worker',
+        model: WORKER_MODEL_INHERIT,
+        systemPrompt: WORKER_SYSTEM_PROMPT,
+        toolGroupSlugs: [...WORKER_TOOL_GROUP_SLUGS],
+        enabled: true,
+      })
+      .onConflictDoNothing()
+      .returning(),
+  );
   if (created) return created;
   // Slug collision with an operator row (or a concurrent ensure) — re-read.
   const [again] = await db

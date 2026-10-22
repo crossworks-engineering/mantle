@@ -1198,6 +1198,10 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     'a share granted to a peer (peer_shares and peer_share_scopes INSERT, peers/grants.ts): the peer may then read the item or type; the narrow login may only revoke one (revoked_at, never cleared: 0318)',
   'telegram-pair':
     'a Telegram chat paired to a login (telegram_chats allowlist_status and login_id, the login-telegram reason, packages/telegram pairing.ts pairChatWithCode): the chat then talks to the assistant as that login; the narrow login holds no write of either column',
+  'assistant-grant':
+    "an assistant made, cloned or granted (agents INSERT, and its grant columns tool_group_slugs, role, workspace_id and a login's assignment: server/web lib/agents.ts create, update and clone, the toolsmith's agent_grant_tool_group, the runs worker's default assistant, the manifest's apply and adopt): an assistant's tool groups are what its turns may call; the narrow login may write only an assistant's other columns and release an assignment (assigned_user_id only to NULL: 0318)",
+  'tool-group-grant':
+    "a tool group made, removed or its tools changed (tool_groups INSERT and DELETE, its grant columns tool_slugs, slug, admin_only, and an assistant's grant of a removed group: server/web lib/tool-groups.ts, /api/tools, the toolsmith, the MCP and OpenAPI syncs, the sandbox's group): a group's tools are what every assistant granted it may call; the narrow login may write only a group's name, description, integration, enable and configuring login",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */

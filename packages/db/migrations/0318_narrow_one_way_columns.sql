@@ -17,6 +17,11 @@
 --   'drop:<col>'        the column changes only to NULL (an unbind);
 --   'from:<col>:<src>'  the column changes only to the row's old <src>
 --                       (a session end remembering whom a peer acted as).
+-- On agents, assigned_user_id only to NULL: the users area's lockout
+-- releases a login's assistant on the narrow login; an assignment to a
+-- login (the assistant's tool groups then answer that login's turns) runs
+-- at the full-route spot assistant-grant (S7b b2 round 6, folded here: same
+-- class, no box has run 0318).
 -- A refused write raises 42501 and changes nothing. Every product write of
 -- these columns on a narrow exit sets a revoke to now() where it is NULL or
 -- bumps the epoch by one (measured: the switch-on suites), so no answer
@@ -119,3 +124,8 @@ DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."mantle_peers";
 --> statement-breakpoint
 CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."mantle_peers"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('drop:acts_as_login_id', 'from:ended_acts_as_login_id:acts_as_login_id');
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."agents";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."agents"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('drop:assigned_user_id');

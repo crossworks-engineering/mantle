@@ -23,6 +23,7 @@ import {
   agents,
   conflictOnUnique,
   db,
+  onFullSystemRoute,
   toolGroups,
   tools,
   type Tool,
@@ -454,10 +455,15 @@ export async function syncOpenapiConnector(
       toolCount: plan.toolSlugs.length,
     },
   };
-  await db
-    .update(toolGroups)
-    .set({ toolSlugs: plan.toolSlugs, integration: nextIntegration, updatedAt: now })
-    .where(eq(toolGroups.id, group.id));
+  // The synced tool list is the group's grant: the full-route spot
+  // tool-group-grant on a narrow exit (no write of tool_slugs for the
+  // narrow login).
+  await onFullSystemRoute('tool-group-grant', () =>
+    db
+      .update(toolGroups)
+      .set({ toolSlugs: plan.toolSlugs, integration: nextIntegration, updatedAt: now })
+      .where(eq(toolGroups.id, group.id)),
+  );
 
   return {
     groupSlug,
@@ -545,20 +551,24 @@ export async function createOpenapiConnector(
   // A create that raced this one past the check above meets the unique
   // index: the same words as a ConflictError (409), not the opaque 500
   // (A10 lows, part 2 #3).
+  // A new group: the full-route spot tool-group-grant on a narrow exit
+  // (no INSERT on tool_groups for the narrow login).
   await conflictOnUnique(taken, () =>
-    db.insert(toolGroups).values({
-      ownerId,
-      slug: groupSlug,
-      name: input.name?.trim() || catalog?.label || `API: ${connectorSlug}`,
-      description: openapiGroupDescription({
-        specUrl: parsedBinding.value.specUrl,
-        whenToUse: catalog?.whenToUse,
+    onFullSystemRoute('tool-group-grant', () =>
+      db.insert(toolGroups).values({
+        ownerId,
+        slug: groupSlug,
+        name: input.name?.trim() || catalog?.label || `API: ${connectorSlug}`,
+        description: openapiGroupDescription({
+          specUrl: parsedBinding.value.specUrl,
+          whenToUse: catalog?.whenToUse,
+        }),
+        toolSlugs: [],
+        integration: meta.value,
+        enabled: true,
+        configuredBy: input.configuredBy ?? null,
       }),
-      toolSlugs: [],
-      integration: meta.value,
-      enabled: true,
-      configuredBy: input.configuredBy ?? null,
-    }),
+    ),
   );
 
   try {
@@ -590,18 +600,22 @@ export async function deleteOpenapiConnector(ownerId: string, groupSlug: string)
   const toolSlugsToDelete = ownerRows
     .filter((r) => isOpenapiMirrorHandler(r.handler) && r.handler.openapi.group === groupSlug)
     .map((r) => r.slug);
-  await db.transaction(async (tx) => {
-    for (const slug of toolSlugsToDelete) {
-      await tx.delete(tools).where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
-    }
-    await tx.delete(toolGroups).where(eq(toolGroups.id, group.id));
-    await tx
-      .update(agents)
-      .set({
-        toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${groupSlug})`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(agents.ownerId, ownerId), sql`${groupSlug} = ANY(${agents.toolGroupSlugs})`));
-  });
+  // A group removed with its tools and grants: the full-route spot
+  // tool-group-grant on a narrow exit.
+  await onFullSystemRoute('tool-group-grant', () =>
+    db.transaction(async (tx) => {
+      for (const slug of toolSlugsToDelete) {
+        await tx.delete(tools).where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
+      }
+      await tx.delete(toolGroups).where(eq(toolGroups.id, group.id));
+      await tx
+        .update(agents)
+        .set({
+          toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${groupSlug})`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(agents.ownerId, ownerId), sql`${groupSlug} = ANY(${agents.toolGroupSlugs})`));
+    }),
+  );
   return true;
 }

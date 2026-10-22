@@ -3,6 +3,7 @@ import type { AgentDTO } from '@mantle/client-types';
 import { InputError } from '@mantle/std';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  onFullSystemRoute,
   db,
   agents,
   assistantMessages,
@@ -266,38 +267,48 @@ export async function createAgent(
   input: CreateAgentInput,
   tx: Executor = db,
 ): Promise<AgentSummary> {
-  const [row] = await tx
-    .insert(agents)
-    .values({
-      ownerId: userId,
-      slug: input.slug,
-      name: input.name,
-      description: input.description ?? null,
-      role: input.role,
-      provider: input.provider ?? 'openrouter',
-      model: input.model,
-      apiKeyId: input.apiKeyId,
-      backupProvider: input.backupProvider ?? null,
-      backupModel: input.backupModel ?? null,
-      backupApiKeyId: input.backupApiKeyId ?? null,
-      backupEnabled: input.backupEnabled ?? false,
-      baseUrl: input.baseUrl ?? null,
-      viaTailnet: input.viaTailnet ?? false,
-      backupBaseUrl: input.backupBaseUrl ?? null,
-      backupViaTailnet: input.backupViaTailnet ?? false,
-      configuredBy: input.configuredBy ?? null,
-      ttsWorkerId: input.ttsWorkerId ?? null,
-      systemPrompt: input.systemPrompt,
-      skillSlugs: input.skillSlugs ?? [],
-      toolGroupSlugs: input.toolGroupSlugs ?? [],
-      memoryConfig: splitMemoryConfigPatch(input.memoryConfig ?? {}).set,
-      params: input.params ?? {},
-      thinkingEffort: input.thinkingEffort ?? null,
-      avatar: normalizeAvatar(input.avatar ?? null),
-      priority: input.priority ?? 100,
-      enabled: input.enabled ?? true,
-    })
-    .returning();
+  // An assistant's row carries its grants (its tool groups, role and
+  // workspace): the narrow login holds no INSERT on agents, so on a narrow
+  // exit the insert runs at the full-route spot assistant-grant. Inside a
+  // caller's transaction (tx) the route is the transaction's own (the clone
+  // opens its transaction at the spot).
+  const insertRow = (ex: Executor) =>
+    ex
+      .insert(agents)
+      .values({
+        ownerId: userId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description ?? null,
+        role: input.role,
+        provider: input.provider ?? 'openrouter',
+        model: input.model,
+        apiKeyId: input.apiKeyId,
+        backupProvider: input.backupProvider ?? null,
+        backupModel: input.backupModel ?? null,
+        backupApiKeyId: input.backupApiKeyId ?? null,
+        backupEnabled: input.backupEnabled ?? false,
+        baseUrl: input.baseUrl ?? null,
+        viaTailnet: input.viaTailnet ?? false,
+        backupBaseUrl: input.backupBaseUrl ?? null,
+        backupViaTailnet: input.backupViaTailnet ?? false,
+        configuredBy: input.configuredBy ?? null,
+        ttsWorkerId: input.ttsWorkerId ?? null,
+        systemPrompt: input.systemPrompt,
+        skillSlugs: input.skillSlugs ?? [],
+        toolGroupSlugs: input.toolGroupSlugs ?? [],
+        memoryConfig: splitMemoryConfigPatch(input.memoryConfig ?? {}).set,
+        params: input.params ?? {},
+        thinkingEffort: input.thinkingEffort ?? null,
+        avatar: normalizeAvatar(input.avatar ?? null),
+        priority: input.priority ?? 100,
+        enabled: input.enabled ?? true,
+      })
+      .returning();
+  const [row] =
+    tx === db
+      ? await onFullSystemRoute('assistant-grant', () => insertRow(db))
+      : await insertRow(tx);
   if (!row) throw new Error('failed to insert agent');
   return toSummary(row);
 }
@@ -368,11 +379,18 @@ export async function updateAgent(
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
 
-  const [row] = await db
-    .update(agents)
-    .set(next)
-    .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
-    .returning();
+  const write = () =>
+    db
+      .update(agents)
+      .set(next)
+      .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
+      .returning();
+  // A grant column (the tool groups, the role) is the narrow login's to
+  // write nowhere: such an edit runs at the full-route spot assistant-grant;
+  // any other edit stays on the narrow login (column rights, access-matrix.ts
+  // NARROW_COLUMN_RIGHTS).
+  const grants = patch.role !== undefined || patch.toolGroupSlugs !== undefined;
+  const [row] = grants ? await onFullSystemRoute('assistant-grant', write) : await write();
   return row ? toSummary(row) : null;
 }
 
@@ -468,6 +486,16 @@ export class CloneAgentError extends InputError {
  * doesn't filter by role — the login would land on it every time.
  */
 export async function cloneAgentForUser(
+  userId: string,
+  input: { actorId: string; actorEmail: string; name: string; sourceAgentId: string },
+): Promise<AgentSummary> {
+  // A clone is a new assistant assigned to a login (its grants answer that
+  // login's turns): the whole transaction runs at the full-route spot
+  // assistant-grant on a narrow exit.
+  return onFullSystemRoute('assistant-grant', () => cloneAgentTx(userId, input));
+}
+
+async function cloneAgentTx(
   userId: string,
   input: { actorId: string; actorEmail: string; name: string; sourceAgentId: string },
 ): Promise<AgentSummary> {

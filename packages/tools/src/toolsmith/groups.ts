@@ -5,7 +5,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, agents, pendingToolCalls, toolGroups } from '@mantle/db';
+import { db, agents, onFullSystemRoute, pendingToolCalls, toolGroups } from '@mantle/db';
 import { appUrl } from '@mantle/content';
 import { listToolsForOwner } from '../crud';
 import { notifyPendingCreated } from '../pending-notify';
@@ -380,17 +380,20 @@ export const tool_group_ensure: BuiltinToolDef = {
         mode === 'replace'
           ? [...new Set(requested)]
           : [...new Set([...(existing.toolSlugs ?? []), ...requested])];
-      await db
-        .update(toolGroups)
-        .set({
-          toolSlugs,
-          ...(str(input.name).trim() ? { name: str(input.name).trim() } : {}),
-          ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
-          ...(wantsIntegration ? { integration } : {}),
-          ...(repaired ? { configuredBy: toolMaker(ctx.ownerId) } : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(toolGroups.id, existing.id));
+      // A group's tools are what its grantees may call: the narrow login
+      // holds no write of tool_slugs, so on a narrow exit this runs at the
+      // full-route spot tool-group-grant.
+      const set = {
+        toolSlugs,
+        ...(str(input.name).trim() ? { name: str(input.name).trim() } : {}),
+        ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
+        ...(wantsIntegration ? { integration } : {}),
+        ...(repaired ? { configuredBy: toolMaker(ctx.ownerId) } : {}),
+        updatedAt: new Date(),
+      };
+      await onFullSystemRoute('tool-group-grant', () =>
+        db.update(toolGroups).set(set).where(eq(toolGroups.id, existing.id)),
+      );
       // A new usage skill on the group is what its grantees' heartbeats now
       // run: they become the caller's (W7a fix round 5, heartbeat-maker.ts).
       // So is a changed tool list: the tools their turns may call (W7
@@ -409,7 +412,7 @@ export const tool_group_ensure: BuiltinToolDef = {
       const name = str(input.name).trim();
       if (!name) return { ok: false, error: 'name is required when creating a new group' };
       toolSlugs = [...new Set(requested)];
-      await db.insert(toolGroups).values({
+      const values = {
         ownerId: ctx.ownerId,
         slug,
         name,
@@ -418,7 +421,9 @@ export const tool_group_ensure: BuiltinToolDef = {
         ...(integration ? { integration } : {}),
         enabled: true,
         ...(toolMaker(ctx.ownerId) ? { configuredBy: toolMaker(ctx.ownerId) } : {}),
-      });
+      };
+      // A new group: the full-route spot tool-group-grant on a narrow exit.
+      await onFullSystemRoute('tool-group-grant', () => db.insert(toolGroups).values(values));
     }
     ctx.step?.setOutput({ slug, toolSlugs, warnings });
     return {
@@ -632,10 +637,14 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       };
     }
 
-    await db
-      .update(agents)
-      .set({ toolGroupSlugs: [...current, groupSlug], updatedAt: new Date() })
-      .where(eq(agents.id, agent.id));
+    // A grant: the full-route spot assistant-grant on a narrow exit (the
+    // narrow login holds no write of agents.tool_group_slugs).
+    await onFullSystemRoute('assistant-grant', () =>
+      db
+        .update(agents)
+        .set({ toolGroupSlugs: [...current, groupSlug], updatedAt: new Date() })
+        .where(eq(agents.id, agent.id)),
+    );
     // The group's tools and usage skill now ride with the agent's heartbeats:
     // they become the granting login's (W7a fix round 5, heartbeat-maker.ts).
     await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), { agentSlug });

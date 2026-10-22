@@ -8,7 +8,7 @@ import {
   handlerCarriesSecretRefs,
   inheritedToolMaker,
 } from '@mantle/tools';
-import { conflictOnUnique, db, toolGroups, and, eq } from '@mantle/db';
+import { conflictOnUnique, db, onFullSystemRoute, toolGroups, and, eq } from '@mantle/db';
 import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { firstIssue } from '@/lib/zod-issue';
@@ -97,10 +97,14 @@ export async function POST(req: Request) {
         .where(and(eq(toolGroups.ownerId, user.id), eq(toolGroups.slug, groupSlug)))
         .limit(1);
       if (group && !(group.toolSlugs ?? []).includes(row.slug)) {
-        await db
-          .update(toolGroups)
-          .set({ toolSlugs: [...(group.toolSlugs ?? []), row.slug], updatedAt: new Date() })
-          .where(eq(toolGroups.id, group.id));
+        // The tool joins a group: the full-route spot tool-group-grant on
+        // a narrow exit (the narrow login holds no write of tool_slugs).
+        await onFullSystemRoute('tool-group-grant', () =>
+          db
+            .update(toolGroups)
+            .set({ toolSlugs: [...(group.toolSlugs ?? []), row.slug], updatedAt: new Date() })
+            .where(eq(toolGroups.id, group.id)),
+        );
       }
     }
     return NextResponse.json({

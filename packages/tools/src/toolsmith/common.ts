@@ -6,7 +6,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, tools, type ToolHandler } from '@mantle/db';
+import { db, onFullSystemRoute, toolGroups, tools, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import {
   collectOauthRefs,
@@ -239,10 +239,14 @@ export async function addToolToGroup(
   if (!existing) return;
   const current = existing.toolSlugs ?? [];
   if (current.includes(toolSlug)) return;
-  await db
-    .update(toolGroups)
-    .set({ toolSlugs: [...current, toolSlug], updatedAt: new Date() })
-    .where(eq(toolGroups.id, existing.id));
+  // A tool added to a group: the full-route spot tool-group-grant on a
+  // narrow exit (the narrow login holds no write of tool_slugs).
+  await onFullSystemRoute('tool-group-grant', () =>
+    db
+      .update(toolGroups)
+      .set({ toolSlugs: [...current, toolSlug], updatedAt: new Date() })
+      .where(eq(toolGroups.id, existing.id)),
+  );
 }
 
 /** Vault-presence check for a group's `secret_ref` — a warning, not a failure,

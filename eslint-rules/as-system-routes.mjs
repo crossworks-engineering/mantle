@@ -158,6 +158,16 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/peers/registry.ts': ['peer-access'],
   'packages/content/src/peers/grants.ts': ['peer-share'],
   'packages/telegram/src/pairing.ts': ['telegram-pair'],
+  'server/web/lib/agents.ts': ['assistant-grant'],
+  'server/web/lib/system-manifest/seed.ts': ['assistant-grant'],
+  'packages/runs/src/worker.ts': ['assistant-grant'],
+  'packages/tools/src/toolsmith/groups.ts': ['assistant-grant', 'tool-group-grant'],
+  'server/web/lib/tool-groups.ts': ['tool-group-grant'],
+  'server/web/app/api/tools/route.ts': ['tool-group-grant'],
+  'packages/tools/src/toolsmith/common.ts': ['tool-group-grant'],
+  'packages/tools/src/mcp-sync.ts': ['tool-group-grant'],
+  'packages/tools/src/openapi-sync.ts': ['tool-group-grant'],
+  'packages/tools/src/sandbox/files.ts': ['tool-group-grant'],
 });
 
 /**

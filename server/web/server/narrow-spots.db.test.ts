@@ -323,4 +323,77 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
     expect(on.bound).toMatchObject({ writeEnabled: true });
     expect(on.revoked).toBe(true);
   });
+
+  it('round 6: an assistant and a tool group made, granted, edited, cloned and removed on the narrow exit, each answer equal to the full route', async () => {
+    const tg = await import('../lib/tool-groups');
+    /** A row less what is fresh each call (ids, stamps, slugs, names). */
+    const shape = (o: object) =>
+      Object.fromEntries(
+        Object.entries(o).filter(
+          ([k]) => !/(^id$|Id$|At$|^slug$|^name$|Email$|^toolGroupSlugs$)/.test(k),
+        ),
+      );
+    const flow = async (run: <T>(fn: () => Promise<T>) => Promise<T>, tag: string) => {
+      const group = await run(() =>
+        tg.createToolGroup(brain, { slug: `g-${tag}`, name: `g ${tag}`, toolSlugs: ['search'] }),
+      );
+      const groupTools = await run(() =>
+        tg.updateToolGroup(brain, group.id, { toolSlugs: ['search', 'calculate'] }),
+      );
+      const groupEdit = await run(() =>
+        tg.updateToolGroup(brain, group.id, { description: 'd', enabled: false }),
+      );
+      const made = await run(() =>
+        agents.createAgent(brain, {
+          slug: `a-${tag}`,
+          name: `a ${tag}`,
+          role: 'responder',
+          model: 'm',
+          apiKeyId: null,
+          systemPrompt: 'p',
+          toolGroupSlugs: [],
+        }),
+      );
+      const granted = await run(() =>
+        agents.updateAgent(brain, made.id, { toolGroupSlugs: [`g-${tag}`] }),
+      );
+      const grants = granted!.toolGroupSlugs.map((g) => g.replace(tag, 'TAG'));
+      const edited = await run(() =>
+        agents.updateAgent(brain, made.id, { description: 'e', thinkingEffort: 'low' }),
+      );
+      const clone = await run(() =>
+        agents.cloneAgentForUser(brain, {
+          actorId: admin,
+          actorEmail: `${admin}@example.test`,
+          name: `c ${tag}`,
+          sourceAgentId: made.id,
+        }),
+      );
+      const released = await run(() => agents.releaseAssignedAgent(brain, admin));
+      const removed = await run(() => tg.deleteToolGroup(brain, group.id));
+      const [after] = await su<{ g: string[] }[]>`
+        select tool_group_slugs as g from agents where id = ${made.id}`;
+      await su`delete from agents where id = any(${[made.id, clone.id]}::uuid[])`;
+      return {
+        group: shape(group),
+        groupTools: shape(groupTools!),
+        groupEdit: shape(groupEdit!),
+        made: shape(made),
+        granted: shape(granted!),
+        edited: shape(edited!),
+        clone: shape(clone),
+        released: released ? shape(released) : null,
+        removed,
+        grants,
+        grantsAfter: after!.g,
+      };
+    };
+    const tag = randomUUID().slice(0, 8);
+    const on = await flow(exit, `on-${tag}`);
+    const full = await flow(exitFull, `full-${tag}`);
+    expect(on).toEqual(full);
+    expect(on.grants).toEqual(['g-TAG']);
+    expect(on.removed).toBe(true);
+    expect(on.grantsAfter).toEqual([]);
+  });
 });

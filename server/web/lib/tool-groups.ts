@@ -8,7 +8,14 @@
  */
 
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, toolGroups, agents, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
+import {
+  db,
+  onFullSystemRoute,
+  toolGroups,
+  agents,
+  type ToolGroup,
+  type ToolGroupIntegration,
+} from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
@@ -83,18 +90,22 @@ export async function createToolGroup(
   ownerId: string,
   input: CreateToolGroupInput,
 ): Promise<ToolGroupSummary> {
-  const [row] = await db
-    .insert(toolGroups)
-    .values({
-      ownerId,
-      slug: input.slug,
-      name: input.name,
-      description: input.description ?? '',
-      toolSlugs: input.toolSlugs ?? [],
-      ...(input.integration ? { integration: input.integration } : {}),
-      enabled: input.enabled ?? true,
-    })
-    .returning();
+  // A new group: the full-route spot tool-group-grant on a narrow exit (the
+  // narrow login holds no INSERT on tool_groups).
+  const [row] = await onFullSystemRoute('tool-group-grant', () =>
+    db
+      .insert(toolGroups)
+      .values({
+        ownerId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description ?? '',
+        toolSlugs: input.toolSlugs ?? [],
+        ...(input.integration ? { integration: input.integration } : {}),
+        enabled: input.enabled ?? true,
+      })
+      .returning(),
+  );
   if (!row) throw new Error('failed to insert tool group');
   return toSummary(row);
 }
@@ -119,11 +130,20 @@ export async function updateToolGroup(
   if (patch.integration !== undefined) next.integration = patch.integration;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   if (patch.configuredBy !== undefined) next.configuredBy = patch.configuredBy;
-  const [row] = await db
-    .update(toolGroups)
-    .set(next)
-    .where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)))
-    .returning();
+  const write = () =>
+    db
+      .update(toolGroups)
+      .set(next)
+      .where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)))
+      .returning();
+  // A changed tool list is a grant (every assistant granted the group may
+  // call it): the full-route spot tool-group-grant on a narrow exit; any
+  // other edit stays on the narrow login (access-matrix.ts
+  // NARROW_COLUMN_RIGHTS).
+  const [row] =
+    patch.toolSlugs !== undefined
+      ? await onFullSystemRoute('tool-group-grant', write)
+      : await write();
   return row ? toSummary(row) : null;
 }
 
@@ -146,18 +166,23 @@ export async function deleteToolGroup(ownerId: string, id: string): Promise<bool
   if (existing.integration?.openapi) {
     return deleteOpenapiConnector(ownerId, existing.slug);
   }
+  // A group removed with its grants: the full-route spot tool-group-grant
+  // on a narrow exit (no DELETE on tool_groups, no write of
+  // agents.tool_group_slugs for the narrow login).
+  await onFullSystemRoute('tool-group-grant', () => deleteToolGroupTx(ownerId, id, existing.slug));
+  return true;
+}
+
+async function deleteToolGroupTx(ownerId: string, id: string, slug: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(toolGroups).where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)));
     // Remove the slug from any agent that granted it.
     await tx
       .update(agents)
       .set({
-        toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${existing.slug})`,
+        toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${slug})`,
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(agents.ownerId, ownerId), sql`${existing.slug} = ANY(${agents.toolGroupSlugs})`),
-      );
+      .where(and(eq(agents.ownerId, ownerId), sql`${slug} = ANY(${agents.toolGroupSlugs})`));
   });
-  return true;
 }

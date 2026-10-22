@@ -23,6 +23,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import { findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
+  onFullSystemRoute,
   db,
   agents,
   heartbeats,
@@ -569,6 +570,17 @@ export async function applyManifest(
   ownerId: string,
   opts: ApplyManifestOpts = {},
 ): Promise<ApplyManifestResult> {
+  // The manifest makes assistants and tool groups and sets their grants
+  // (tool groups, tools, roles): on a narrow exit (studio reset) it runs at
+  // the full-route spot assistant-grant; at boot, in a script or in the
+  // login's own scope it runs where it is.
+  return onFullSystemRoute('assistant-grant', () => applyManifestHere(ownerId, opts));
+}
+
+async function applyManifestHere(
+  ownerId: string,
+  opts: ApplyManifestOpts,
+): Promise<ApplyManifestResult> {
   const mode: ApplyMode = opts.mode ?? 'gap-fill';
 
   // 1. Capability substrate: builtin tool rows + tool groups, before anything
@@ -754,6 +766,16 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
 /** Apply the manifest version of one config item to the brain (the /settings/config
  *  adopt action). Throws on an unknown slug or a worker with no key. */
 export async function adoptManifestItem(
+  ownerId: string,
+  kind: AdoptKind,
+  slug: string,
+): Promise<void> {
+  // An adopted assistant or tool group is made or its grants overwritten:
+  // the full-route spot assistant-grant on a narrow exit (/api/config/adopt).
+  return onFullSystemRoute('assistant-grant', () => adoptManifestItemHere(ownerId, kind, slug));
+}
+
+async function adoptManifestItemHere(
   ownerId: string,
   kind: AdoptKind,
   slug: string,

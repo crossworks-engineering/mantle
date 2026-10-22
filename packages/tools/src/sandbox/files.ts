@@ -21,7 +21,7 @@ import { getSandboxByRef, touchSandbox } from '@mantle/content';
 import { readFileById, upsertFile } from '@mantle/files';
 import { listApiKeys, setApiKey } from '@mantle/api-keys';
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
+import { db, onFullSystemRoute, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { notFound } from '../errors';
 import { areaSystem, callerHasArea } from '../admin-gate';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
@@ -384,14 +384,18 @@ export const sandbox_publish: BuiltinToolDef = {
         .set({ integration, description, updatedAt: new Date() })
         .where(eq(toolGroups.id, existing.id));
     } else {
-      await db.insert(toolGroups).values({
-        ownerId: ctx.ownerId,
-        slug: rawSlug,
-        name: `Sandbox: ${row.name}`,
-        description,
-        toolSlugs: [],
-        integration,
-      });
+      // A new group: the full-route spot tool-group-grant on a narrow exit
+      // (the narrow login holds no INSERT on tool_groups).
+      await onFullSystemRoute('tool-group-grant', () =>
+        db.insert(toolGroups).values({
+          ownerId: ctx.ownerId,
+          slug: rawSlug,
+          name: `Sandbox: ${row.name}`,
+          description,
+          toolSlugs: [],
+          integration,
+        }),
+      );
     }
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, port, group: rawSlug });
     return {

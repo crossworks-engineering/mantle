@@ -2,7 +2,7 @@
 -- pinning an image older than the one that added it, if they want the
 -- triggers gone. Not a migration: nothing runs it on its own.
 --
--- 0318 adds one trigger function and a BEFORE UPDATE trigger on eight
+-- 0318 adds one trigger function and a BEFORE UPDATE trigger on nine
 -- tables; it refuses only the narrow system role, which an older image's
 -- product writes never meet in the refused direction. An older image runs
 -- with them in place: a rollback of one image needs NOT this file. This
@@ -29,6 +29,8 @@ DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."peer_shares";
 DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."peer_share_scopes";
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."mantle_peers";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."agents";
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_one_way"();
 --> statement-breakpoint

@@ -16,6 +16,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   agents,
   db,
+  onFullSystemRoute,
   toolGroups,
   tools,
   type Tool,
@@ -323,10 +324,15 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
       ...(serverInfo ? { serverInfo } : {}),
     },
   };
-  await db
-    .update(toolGroups)
-    .set({ toolSlugs: plan.toolSlugs, integration: nextIntegration, updatedAt: now })
-    .where(eq(toolGroups.id, group.id));
+  // The synced tool list is the group's grant: the full-route spot
+  // tool-group-grant on a narrow exit (no write of tool_slugs for the
+  // narrow login).
+  await onFullSystemRoute('tool-group-grant', () =>
+    db
+      .update(toolGroups)
+      .set({ toolSlugs: plan.toolSlugs, integration: nextIntegration, updatedAt: now })
+      .where(eq(toolGroups.id, group.id)),
+  );
 
   return {
     groupSlug,
@@ -418,16 +424,20 @@ export async function createMcpConnector(
   }
 
   const catalog = knownMcpServer(connectorSlug);
-  await db.insert(toolGroups).values({
-    ownerId,
-    slug: groupSlug,
-    name: input.name?.trim() || catalog?.label || `MCP: ${connectorSlug}`,
-    description: mcpGroupDescription({ url: parsed.value.url, whenToUse: catalog?.whenToUse }),
-    toolSlugs: [],
-    integration: { service: connectorSlug, mcp: parsed.value },
-    enabled: true,
-    configuredBy: input.configuredBy ?? null,
-  });
+  // A new group: the full-route spot tool-group-grant on a narrow exit
+  // (no INSERT on tool_groups for the narrow login).
+  await onFullSystemRoute('tool-group-grant', () =>
+    db.insert(toolGroups).values({
+      ownerId,
+      slug: groupSlug,
+      name: input.name?.trim() || catalog?.label || `MCP: ${connectorSlug}`,
+      description: mcpGroupDescription({ url: parsed.value.url, whenToUse: catalog?.whenToUse }),
+      toolSlugs: [],
+      integration: { service: connectorSlug, mcp: parsed.value },
+      enabled: true,
+      configuredBy: input.configuredBy ?? null,
+    }),
+  );
 
   if (input.oauthClient || input.oauthScope) {
     await setMcpOAuthClient(store, { client: input.oauthClient, scope: input.oauthScope });
@@ -465,19 +475,23 @@ export async function deleteMcpConnector(ownerId: string, groupSlug: string): Pr
   const toolSlugsToDelete = ownerRows
     .filter((r) => r.handler.kind === 'mcp' && r.handler.group === groupSlug)
     .map((r) => r.slug);
-  await db.transaction(async (tx) => {
-    for (const slug of toolSlugsToDelete) {
-      await tx.delete(tools).where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
-    }
-    await tx.delete(toolGroups).where(eq(toolGroups.id, group.id));
-    await tx
-      .update(agents)
-      .set({
-        toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${groupSlug})`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(agents.ownerId, ownerId), sql`${groupSlug} = ANY(${agents.toolGroupSlugs})`));
-  });
+  // A group removed with its tools and grants: the full-route spot
+  // tool-group-grant on a narrow exit.
+  await onFullSystemRoute('tool-group-grant', () =>
+    db.transaction(async (tx) => {
+      for (const slug of toolSlugsToDelete) {
+        await tx.delete(tools).where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
+      }
+      await tx.delete(toolGroups).where(eq(toolGroups.id, group.id));
+      await tx
+        .update(agents)
+        .set({
+          toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${groupSlug})`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(agents.ownerId, ownerId), sql`${groupSlug} = ANY(${agents.toolGroupSlugs})`));
+    }),
+  );
   await closeMcpClient(ownerId, groupSlug);
   // OAuth connectors keep their registration/tokens/verifier sealed in the
   // vault under the group slug — purge them so nothing orphaned survives.

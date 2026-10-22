@@ -266,8 +266,90 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     ).toBe('ok');
     const [t] = await su<{ n: number }[]>`
       select count(*)::int as n from pg_trigger where tgname = 'mantle_narrow_one_way_trg'`;
-    expect(t!.n).toBe(8);
+    expect(t!.n).toBe(9);
     await su`update auth.users set disabled_at = null where id = ${member}`;
+  });
+
+  it('agents and tool_groups (round 6): no insert, no grant column, an assignment only released; the other columns allowed', async () => {
+    const agent = randomUUID();
+    const group = randomUUID();
+    const gslug = `g-${group.slice(0, 8)}`;
+    await su`insert into tool_groups (id, owner_id, slug, name, tool_slugs)
+             values (${group}, ${brain}, ${gslug}, 'g', '{search}')`;
+    await su`insert into agents (id, owner_id, slug, name, role, model, system_prompt, tool_group_slugs, assigned_user_id)
+             values (${agent}, ${brain}, ${`a-${agent.slice(0, 8)}`}, 'a', 'responder', 'm', 'p', ${[gslug]}, ${admin})`;
+    const state = async () =>
+      (
+        await su<{ h: string }[]>`
+        select md5(concat_ws('#',
+          (select a::text from agents a where id = ${agent}),
+          (select g::text from tool_groups g where id = ${group}),
+          (select count(*)::text from agents where owner_id = ${brain}),
+          (select count(*)::text from tool_groups where owner_id = ${brain}))) as h`
+      )[0]!.h;
+    const before = await state();
+    const refused = [
+      `insert into agents (owner_id, slug, name, role, model, system_prompt)
+         values ('${brain}', 'x-${agent.slice(0, 6)}', 'x', 'responder', 'm', 'p')`,
+      `update agents set tool_group_slugs = '{admin-tools}' where id = '${agent}'`,
+      `update agents set role = 'worker' where id = '${agent}'`,
+      `update agents set workspace_id = '${adminWs}' where id = '${agent}'`,
+      `update agents set slug = 'other' where id = '${agent}'`,
+      `update agents set owner_id = '${member}' where id = '${agent}'`,
+      `update agents set id = '${randomUUID()}' where id = '${agent}'`,
+      `update agents set assigned_user_id = '${member}' where id = '${agent}'`,
+      `delete from agents where id = '${agent}'`,
+      `insert into tool_groups (owner_id, slug, name) values ('${brain}', 'x-${group.slice(0, 6)}', 'x')`,
+      `update tool_groups set tool_slugs = '{search,sandbox_exec}' where id = '${group}'`,
+      `update tool_groups set slug = 'admin-tools' where id = '${group}'`,
+      `update tool_groups set admin_only = true where id = '${group}'`,
+      `update tool_groups set owner_id = '${member}' where id = '${group}'`,
+      `delete from tool_groups where id = '${group}'`,
+    ];
+    for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
+    expect(await state()).toBe(before);
+    // What narrow work writes (the round 4 and 5 measurements, and the
+    // assistants, connectors and settings areas' edits), each allowed.
+    for (const s of [
+      `update agents set name = 'b', description = 'd', model = 'm2', system_prompt = 'q',
+         skill_slugs = '{}', memory_config = '{}', params = '{}', thinking_effort = 'low',
+         persona_notes = '[]', avatar = null, priority = 5, enabled = false, api_key_id = null,
+         tts_worker_id = null, configured_by = null, updated_at = now() where id = '${agent}'`,
+      `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,
+      `update agents set assigned_user_id = null, assigned_at = null where id = '${agent}'`,
+      `update tool_groups set name = 'h', description = 'e', integration = null, enabled = false,
+         configured_by = null, updated_at = now() where id = '${group}'`,
+    ]) {
+      expect(await run(nl, [s]), s).toBe('ok');
+    }
+    for (const t of ['agents', 'tool_groups']) {
+      const [g] = await su<{ i: boolean; d: boolean }[]>`
+        select (has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')
+            or has_any_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')) as i,
+               has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'DELETE') as d`;
+      expect(g, t).toEqual({ i: false, d: false });
+    }
+    for (const [t, c] of [
+      ['agents', 'tool_group_slugs'],
+      ['agents', 'role'],
+      ['agents', 'workspace_id'],
+      ['agents', 'slug'],
+      ['agents', 'owner_id'],
+      ['tool_groups', 'tool_slugs'],
+      ['tool_groups', 'slug'],
+      ['tool_groups', 'admin_only'],
+      ['tool_groups', 'owner_id'],
+    ] as const) {
+      const [g] = await su<{ u: boolean }[]>`
+        select has_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, ${c}, 'UPDATE') as u`;
+      expect(g!.u, `${t}.${c}`).toBe(false);
+    }
+    // The system pool (here the superuser) is not held by the one-way rule.
+    expect(
+      await run(su, [`update agents set assigned_user_id = '${member}' where id = '${agent}'`]),
+    ).toBe('ok');
+    await su`delete from agents where id = ${agent}`;
+    await su`delete from tool_groups where id = ${group}`;
   });
 
   it("the audit's chain: a member raised, bridged into Admin, then a structure item as it: refused at each step", async () => {
