@@ -354,15 +354,17 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       expect(g!.u, `${t}.${c}`).toBe(false);
     }
     // Another key of memory_config moves on the narrow login, delegate_to
-    // kept (read in the same transaction: run rolls back; a wrong value
-    // divides by zero).
-    expect(
-      await run(nl, [
-        `update agents set memory_config = memory_config || '{"max_iterations":5}' where id = '${agent}'`,
-        `select case when memory_config = '{"delegate_to":["pages"],"max_iterations":5}'::jsonb
-                then 1 else 1 / 0 end from agents where id = '${agent}'`,
-      ]),
-    ).toBe('ok');
+    // kept: read in the update's own transaction, then rolled back.
+    const moved = await nl
+      .begin(async (t) => {
+        await t.unsafe(
+          `update agents set memory_config = memory_config || '{"max_iterations":5}' where id = '${agent}'`,
+        );
+        const r = await t.unsafe(`select memory_config as m from agents where id = '${agent}'`);
+        throw Object.assign(new Error('rollback'), { m: r[0]?.m });
+      })
+      .catch((e: { m?: unknown; message: string }) => e.m ?? e.message);
+    expect(moved).toEqual({ delegate_to: ['pages'], max_iterations: 5 });
     // The system pool (here the superuser) is not held by the one-way rule.
     expect(
       await run(su, [`update agents set assigned_user_id = '${member}' where id = '${agent}'`]),
