@@ -418,7 +418,6 @@ describe('the narrow system role rights', () => {
     // The allowlist (plan v3.2 S7a part a3): what narrow statements call, by
     // name, measured with the switch on. Only goes down, or a reviewed line.
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
-      'public.mantle_agent_delete(uuid,uuid,uuid,boolean)',
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_brain_id()',
       'public.mantle_connector_rows(uuid,text,uuid[])',
@@ -428,12 +427,9 @@ describe('the narrow system role rights', () => {
       // 0320: the assistant_messages guard's read definer.
       'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
-      'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)',
-      'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)',
       'public.mantle_ws_attach_assistants()',
       'public.mantle_ws_kind(uuid)',
       'public.mantle_ws_private_for(uuid,uuid)',
-      'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)',
     ]);
     for (const [fn, why] of Object.entries(NARROW_SYSTEM_FUNCTIONS)) {
       expect(fn, fn).toMatch(/^public\.mantle_[a-z0-9_]+\(/);

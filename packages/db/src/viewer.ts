@@ -1263,8 +1263,11 @@ export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<
   }
   // Awaited inside: a drizzle query runs when it is awaited, so it must be
   // awaited where the route is set.
+  // The exit's acting login goes with it: a definer at the spot that needs
+  // it (acting-login) reads it from the gateway's own SET on the full route.
+  const login = actingLoginNow() ?? undefined;
   return fullRouteSpotNow.run(spot, () =>
-    systemRoutes.run(Object.freeze({ route: 'full' as const, reason: actor.reason }), () =>
+    systemRoutes.run(Object.freeze({ route: 'full' as const, reason: actor.reason, login }), () =>
       runOnFullRouteSpot(actor.reason, async () => await fn()),
     ),
   );

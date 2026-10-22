@@ -319,7 +319,7 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   // The four definers that need the exit's acting login (0321): the
   // identity readers answer none on the narrow role, so each would refuse
-  // it; their callers run at the full-route spot acting-login until S7c's
+  // it; their callers run at the full-route spot acting-login until a
   // signed acting login lets the readers trust a signed value.
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
     "the workspaces area's Moderator tick (workspaces.ts setModerator): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set login and workspace made a member Moderator on the narrow role before",

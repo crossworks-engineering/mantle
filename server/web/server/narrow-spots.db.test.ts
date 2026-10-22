@@ -253,7 +253,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
       select has_function_privilege('mantle_write_user', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as w,
              has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as n`;
-    expect(g).toEqual({ w: false, u: false, n: true });
+    expect(g).toEqual({ w: false, u: false, n: false });
     expect(await code(call(admin))).toBe('ran');
     expect((await agentState(a)).a).toBe(0);
   });

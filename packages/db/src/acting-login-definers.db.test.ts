@@ -94,6 +94,14 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
       if (name) expect(me!.s).toBe(name);
       // The narrow role may run the Telegram definer only (its EXECUTE);
       // the key revoke is the write role's and the system pool's.
+      // Since 0321 the narrow role runs neither (the full-route spot
+      // acting-login): its call is refused before the rule.
+      if (on === nl) {
+        expect(await call(on, tg(login), [acting(login)]), `${who} tg, its own`).toMatch(
+          /^42501: permission denied for function/,
+        );
+        continue;
+      }
       const fns =
         on === nl
           ? [['tg', tg]]
@@ -103,10 +111,10 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
             ];
       for (const [n, f] of fns as [string, (l: string) => string][]) {
         expect(await call(on, f(login)), `${who} ${n}, none`).toMatch(
-          /^42501: .*only the acting login/,
+          /^42501: .*(only the acting login|no acting login)/,
         );
         expect(await call(on, f(login), [acting(other)]), `${who} ${n}, another`).toMatch(
-          /^42501: .*only the acting login/,
+          /^42501: .*(only the acting login|no acting login)/,
         );
         // Its own: the call runs (no chat or key by that id: no row).
         expect(await call(on, f(login), [acting(login)]), `${who} ${n}, its own`).toBe('ok');

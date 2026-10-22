@@ -997,13 +997,17 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
   });
 
   it('TypeScript: a definer inside an asSystem exit (admin-area) is refused; systemWork(ws-clear-ticks) refuses any scope', async () => {
+    // At the full-route spot acting-login, as setModerator runs it since
+    // 0321 (the narrow role holds no EXECUTE of the definer).
     const inExit = m.asSystem(
       () =>
-        m.db.transaction(async (tx) => {
-          await tx.execute(
-            sqlTag`select mantle_ws_set_moderator(mantle_brain_id(), ${W}::uuid, ${L.mem}::uuid, true, null)`,
-          );
-        }),
+        m.onFullSystemRoute('acting-login', () =>
+          m.db.transaction(async (tx) => {
+            await tx.execute(
+              sqlTag`select mantle_ws_set_moderator(mantle_brain_id(), ${W}::uuid, ${L.mem}::uuid, true, null)`,
+            );
+          }),
+        ),
       'admin-area',
     );
     await expect(inExit).rejects.toSatisfy((err: unknown) =>

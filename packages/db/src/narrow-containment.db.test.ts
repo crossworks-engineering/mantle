@@ -520,7 +520,9 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await t`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
               values (${keyId}, 'k', ${admin}, 'abcd1234', ${'a'.repeat(64)}, 'read')`;
     });
-    await nl.begin(async (t) => {
+    // On the full route since 0321 (the spot acting-login): a system
+    // session with the acting login the gateway sends.
+    await su.begin(async (t) => {
       await t.unsafe(acting(admin));
       const rows = await t`select * from mantle_tg_chat_set(${brain}::uuid, ${admin}::uuid,
                              ${chat}::uuid, 'unpair', null)`;
@@ -599,7 +601,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     for (const fields of [`'{"title": "x"}'::jsonb`, 'null::jsonb', `'{"data": "s"}'::jsonb`]) {
       const call = `select * from mantle_structure_item('secret-item', 'update', '${admin}'::uuid,
                       '${brain}'::uuid, array['${id}'::uuid], ${fields})`;
-      expect(await run(nl, [acting(admin), call]), fields).toBe('22023');
+      expect(await run(su, [acting(admin), call]), fields).toBe('22023');
     }
     const [r] = await su<
       { d: unknown; t: string }[]
@@ -682,9 +684,8 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     expect(none.a).toBeNull();
   });
 
-  it('a structure write inside an open system transaction of a narrow exit (a savepoint) sends the acting login', async () => {
-    const saw = await exit(() => m.withSystemTx(() => sawOf()));
-    expect(saw).toEqual({ s: rr.NARROW_ROLE, a: admin });
+  it('a structure write inside an open system transaction of a narrow exit is refused: the acting-login spot cannot leave an open narrow transaction (0321)', async () => {
+    await expect(exit(() => m.withSystemTx(() => sawOf()))).rejects.toThrow(/different actor/);
   });
 
   it("an edit through the definer drops a set vector and announces node_ingested, as the app's edit does", async () => {

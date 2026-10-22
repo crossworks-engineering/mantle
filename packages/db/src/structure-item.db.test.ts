@@ -298,33 +298,33 @@ describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
 
   it('refused: an unlisted kind or operation, another place, another brain', async () => {
     const pre = [acting(admin)];
-    expect(await call(nl, def('secret-item', 'insert', admin), pre)).toBe('ok');
-    expect(await call(nl, def('note', 'insert', admin, 'notes'), pre)).toMatch(
+    expect(await call(su, def('secret-item', 'insert', admin), pre)).toBe('ok');
+    expect(await call(su, def('note', 'insert', admin, 'notes'), pre)).toMatch(
       /^42501: .*not a listed kind/,
     );
-    expect(await call(nl, def('branch', 'insert', admin), pre)).toMatch(
+    expect(await call(su, def('branch', 'insert', admin), pre)).toMatch(
       /^42501: .*not a listed kind/,
     );
-    expect(await call(nl, def('contact-item', 'delete', admin), pre)).toMatch(
+    expect(await call(su, def('contact-item', 'delete', admin), pre)).toMatch(
       /^42501: .*not an operation of this kind/,
     );
-    expect(await call(nl, def('secrets-root', 'update', admin), pre)).toMatch(
+    expect(await call(su, def('secrets-root', 'update', admin), pre)).toMatch(
       /^42501: .*not an operation of this kind/,
     );
-    expect(await call(nl, def('secret-item', 'insert', admin, 'notes'), pre)).toMatch(
+    expect(await call(su, def('secret-item', 'insert', admin, 'notes'), pre)).toMatch(
       /^42501: .*not where this kind lands/,
     );
-    expect(await call(nl, def('docs-item', 'insert', admin, 'notes'), pre)).toMatch(
+    expect(await call(su, def('docs-item', 'insert', admin, 'notes'), pre)).toMatch(
       /^42501: .*not where this kind lands/,
     );
-    expect(await call(nl, def('peer-item', 'insert', admin, 'secrets'), pre)).toMatch(
+    expect(await call(su, def('peer-item', 'insert', admin, 'secrets'), pre)).toMatch(
       /^42501: .*not where this kind lands/,
     );
     expect(
-      await call(nl, def('secret-item', 'insert', admin, 'secrets', randomUUID()), pre),
+      await call(su, def('secret-item', 'insert', admin, 'secrets', randomUUID()), pre),
     ).toMatch(/^42501: .*only on this brain/);
     expect(
-      await call(nl, `${def('secret-item', 'insert', admin)}`, [
+      await call(su, `${def('secret-item', 'insert', admin)}`, [
         ...pre,
         "select set_config('mantle.write_mode', 'ro', true)",
       ]),
@@ -332,17 +332,14 @@ describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
   });
 
   it('refused: no or another acting login, a login without the area, a scope', async () => {
-    for (const [who, on] of [
-      ['the narrow login', nl],
-      ['the superuser', su],
-    ] as const) {
+    for (const [who, on] of [['the superuser', su]] as const) {
       expect(await call(on, def('secret-item', 'insert', admin)), `${who}, none`).toMatch(
-        /^42501: .*only the acting login/,
+        /^42501: .*(only the acting login|no acting login)/,
       );
       expect(
         await call(on, def('secret-item', 'insert', admin), [acting(plain)]),
         `${who}, another`,
-      ).toMatch(/^42501: .*only the acting login/);
+      ).toMatch(/^42501: .*(only the acting login|no acting login)/);
       expect(
         await call(on, def('secret-item', 'insert', admin), [acting(admin)]),
         `${who}, its own`,
@@ -404,6 +401,6 @@ describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
              has_function_privilege('mantle_system_narrow', p.oid, 'EXECUTE') as n,
              has_function_privilege('public', p.oid, 'EXECUTE') as p
         from pg_proc p where p.proname = 'mantle_structure_item'`;
-    expect(g).toEqual({ w: false, u: false, n: true, p: false });
+    expect(g).toEqual({ w: false, u: false, n: false, p: false });
   });
 });

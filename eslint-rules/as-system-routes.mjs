@@ -144,7 +144,7 @@ export function requestSystemRouteMap(root) {
  */
 export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/profile-preferences.ts': ['profile-row'],
-  'packages/db/src/gateway/structure-item.ts': ['structure-no-login'],
+  'packages/db/src/gateway/structure-item.ts': ['structure-no-login', 'acting-login'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
   'server/web/lib/auth/session.ts': ['login-credential'],
   'server/web/lib/login-create.ts': ['login-credential'],
@@ -157,7 +157,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/content/src/member-invites.ts': ['member-invite'],
   'packages/content/src/peers/registry.ts': ['peer-access'],
   'packages/content/src/peers/grants.ts': ['peer-share'],
-  'packages/telegram/src/pairing.ts': ['telegram-pair'],
+  'packages/telegram/src/pairing.ts': ['telegram-pair', 'acting-login'],
   'server/web/app/api/telegram/chats/[id]/route.ts': ['telegram-responder'],
   'server/web/app/api/runs/[id]/route.ts': ['run-control'],
   'packages/tools/src/builtins-runs.ts': ['run-control'],
@@ -201,6 +201,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/microsoft/src/outlook/manage.ts': ['mail-account'],
   'packages/content/src/sandboxes.ts': ['sandbox-make'],
   'server/web/lib/agent-telegram.ts': ['telegram-connect'],
+  'server/web/lib/workspaces.ts': ['acting-login'],
+  'packages/db/src/gateway/spot-definers.ts': ['acting-login'],
   'server/web/lib/studio/prompt-versions.ts': ['skill-text'],
   'server/web/lib/mcp-connectors.ts': ['tool-config'],
   'server/web/lib/openapi-connectors.ts': ['tool-config'],
@@ -243,6 +245,13 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     // The workspace screen's role change: its firstInTx locks the
     // workspace and checks its rules (reads; a refusal throws).
     callers: ['server/web/lib/workspaces.ts'],
+  },
+  narrowTx: {
+    spot: 'acting-login',
+    from: 'packages/db/src/gateway/structure-item.ts',
+    // Its own file's definer calls of a structure item (not exported): the
+    // definer needs the acting login (migration 0321).
+    callers: ['packages/db/src/gateway/structure-item.ts'],
   },
   onSpot: {
     spot: 'structure-no-login',

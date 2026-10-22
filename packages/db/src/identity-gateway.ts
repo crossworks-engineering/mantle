@@ -1,6 +1,5 @@
 /**
- * The identity gateway's catalog check (migration 0321, plan v3.2 S7b part
- * b2 round 13): a session sets the mantle.* identity settings itself (the
+ * The identity gateway's catalog check (migration 0321): a session sets the mantle.* identity settings itself (the
  * login, the scope, the workspaces, the acting login, the actor), so only
  * the gateway's SQL readers may read them, and on the narrow system role
  * they answer no identity. mantle_identity_leaks() lists every function

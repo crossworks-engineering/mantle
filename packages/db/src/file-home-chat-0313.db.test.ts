@@ -309,7 +309,7 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
     expect(await rowOf(id)).toEqual(untouched(L.member));
   });
 
-  it('on the narrow role with no scope the rule reads the login it is given (the acting login, 0314)', async () => {
+  it('on the narrow role the rule refuses even the acting login it is given (0321: the readers answer no identity there)', async () => {
     const run = async (login: string, id: string): Promise<number> =>
       su.begin(async (tx) => {
         // The gateway sends the acting login with the actor (0314): the
@@ -324,10 +324,10 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
         return rows.length;
       });
     const id = await chatOf(L.member);
-    expect(await run(L.outsider, id)).toBe(0);
+    for (const login of [L.outsider, L.admin2]) {
+      await expect(run(login, id)).rejects.toMatchObject({ code: '42501' });
+    }
     expect(await rowOf(id)).toEqual(untouched(L.member));
-    expect(await run(L.admin2, id)).toBe(1);
-    expect(await rowOf(id)).toMatchObject({ s: 'pending', login: null });
   });
 
   it('a read-only caller and an owner that is not this brain are refused first', async () => {
@@ -358,9 +358,11 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
         return `${e.code}: ${e.message}`;
       }
     };
-    expect(await narrow({ owner, chat: id, mode: 'ro' })).toMatch(/^42501: .*a read-only caller/);
+    expect(await narrow({ owner, chat: id, mode: 'ro' })).toMatch(
+      /^42501: (.*a read-only caller|permission denied for function)/,
+    );
     expect(await narrow({ owner: L.outsider, chat: foreign })).toMatch(
-      /^42501: .*only on this brain/,
+      /^42501: (.*only on this brain|permission denied for function)/,
     );
     expect(await rowOf(id)).toEqual(untouched(L.member));
     expect(await rowOf(foreign)).toEqual(untouched(L.member));
@@ -476,7 +478,7 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
         public: false,
         mantle_view_user: false,
         mantle_write_user: true,
-        mantle_system_narrow: true,
+        mantle_system_narrow: false,
         mantle_runtime: true,
       },
       [RESTAMP]: {
