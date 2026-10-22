@@ -10,8 +10,8 @@
  * a disabled or demoted login's run included). A run that fails it never
  * runs as the bare owner or as the system.
  */
-import { eq } from 'drizzle-orm';
-import { authUsers, db } from '@mantle/db';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { agents, authUsers, db, workspaces } from '@mantle/db';
 import type { RunItemFailure } from '@mantle/db';
 
 export async function runMakerRefusal(run: {
@@ -25,7 +25,32 @@ export async function runMakerRefusal(run: {
         'this run names neither the assistant that planned it nor the login it serves, so none of its items may run. Plan it again with run_plan from a chat.',
     };
   }
-  if (!run.loginId) return null;
+  if (!run.loginId) {
+    // No login: the run is the brain owner's own (the anchor's turns name
+    // none), so its assistant must be an assistant of the owner's: this
+    // brain's, in the Admin workspace or in none (round 12, app LOW-2). A
+    // run naming any other assistant and no login would run that
+    // assistant's tool groups as the owner.
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .leftJoin(workspaces, eq(workspaces.id, agents.workspaceId))
+      .where(
+        and(
+          eq(agents.id, run.agentId!),
+          sql`${agents.ownerId} = "public"."mantle_brain_id"()`,
+          or(isNull(agents.workspaceId), eq(workspaces.isAdmin, true)),
+        ),
+      );
+    if (!agent) {
+      return {
+        type: 'no_maker',
+        message:
+          "this run names no login and its assistant is not one of the owner's, so none of its items may run. Plan it again with run_plan from a chat.",
+      };
+    }
+    return null;
+  }
   const [login] = await db
     .select({ id: authUsers.id })
     .from(authUsers)

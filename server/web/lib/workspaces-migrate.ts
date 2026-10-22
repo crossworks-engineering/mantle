@@ -148,6 +148,9 @@ export async function attachDefaultAssistantsQuietly(when: string, loginId: stri
     const attached = await attachDefaultAssistants(loginId);
     if (attached) console.log(`[workspaces] ${when}: attached ${attached} default assistant(s)`);
   } catch (err) {
+    // A refused right (42501) is rethrown, never logged away (round 12,
+    // app LOW-3): the narrow login met a write it may not make.
+    if ((err as { code?: string } | null)?.code === '42501') throw err;
     failure(when, err);
   }
 }

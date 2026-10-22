@@ -188,7 +188,9 @@ SQL
 # second number is the tables they name. Both must read 0 on every box
 # before the default flip (S7b part b3). Numbers only: the table names
 # are read on the box itself (select detail from actor_check_misses where
-# check_name = 'narrow-would-refuse').
+# check_name = 'narrow-would-refuse'). All time, not the last 24 hours (S7b
+# part b2 round 12): the counts are the flip's evidence, so every row since
+# the count began counts (the maintenance reaper keeps the narrow rows).
 narrow=$(q <<SQL || true
 select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
@@ -197,10 +199,7 @@ select count(*) filter (where check_name = 'narrow-content-write')
     || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
   from (select distinct check_name, actor, detail from public.actor_check_misses
          where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
-                              'narrow-would-refuse')
-           and at >= greatest(now() - interval '24 hours',
-                              least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
-                                    now() - interval '1 hour'))) m;
+                              'narrow-would-refuse')) m;
 SQL
 )
 # Whether the stack's .env has the runtime role's line at all (S4a: the

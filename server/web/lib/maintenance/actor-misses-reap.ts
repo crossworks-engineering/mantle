@@ -14,6 +14,12 @@ import { actorCheckMisses, db } from '@mantle/db';
 
 export const ACTOR_MISSES_RETENTION_DAYS = 14;
 
+/** The narrow role's counts (check names narrow-*) are kept: they are the
+ *  evidence for the narrow switch's default flip, read all time by
+ *  scripts/arch-scoreboard-box.sh (plan v3.2 S7b part b2 round 12). Their
+ *  rows are capped per hour and distinct, so they stay small. */
+const KEEP = sql`check_name not like 'narrow-%'`;
+
 const BATCH = 10_000;
 
 /** Delete the miss rows past the retention. `dryRun` counts without
@@ -27,7 +33,7 @@ export async function reapActorMisses(
   ).toISOString();
   if (opts.dryRun) {
     const [row] = (await db.execute(
-      sql`select count(*)::int as n from actor_check_misses where at < ${cutoff}::timestamptz`,
+      sql`select count(*)::int as n from actor_check_misses where at < ${cutoff}::timestamptz and ${KEEP}`,
     )) as unknown as { n: number }[];
     return { deleted: row?.n ?? 0 };
   }
@@ -37,7 +43,7 @@ export async function reapActorMisses(
       .delete(actorCheckMisses)
       .where(
         sql`${actorCheckMisses.id} in (
-        select id from actor_check_misses where at < ${cutoff}::timestamptz limit ${BATCH})`,
+        select id from actor_check_misses where at < ${cutoff}::timestamptz and ${KEEP} limit ${BATCH})`,
       )
       .returning({ id: actorCheckMisses.id });
     deleted += gone.length;

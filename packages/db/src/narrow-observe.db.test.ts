@@ -223,11 +223,12 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
       await inTx(su, [asNarrow, `select public.narrow_observe_delete('${await login()}')`]),
     ).toBeNull();
     expect(counted()).toEqual([]);
-    // The narrow role's own delete there still counts (no definer).
+    // The narrow role holds no delete of a login now (round 12: a login's
+    // delete runs at the spot login-credential): refused, nothing counted.
     expect(
       await inTx(su, [asNarrow, `delete from auth.users where id = '${await login()}'`]),
-    ).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
+    ).toBe('42501');
+    expect(counted()).toEqual([]);
     // With the runtime role on, a definer's delete is never counted (its
     // owner is not the session's login); as the superuser with no role
     // set, the named limit holds for both counts.
@@ -256,22 +257,31 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     const del = (id: string) => `delete from auth.users where id = '${id}'`;
     counted();
     const who = 'system:http:admin-area';
-    // The full route, as the runtime role.
+    // The full route, as the runtime role: the cascade count, and (round
+    // 12: the narrow role holds no delete of a login) the would-refuse
+    // count of 0319's derived trigger.
     expect(await inTx(rt, [actorSql(who), del(await login())])).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
-    // The narrow role (it may delete a login; the cascade runs as the owner).
+    expect(counted().sort()).toEqual(
+      [
+        `${PREFIX}narrow-cascade-delete ${who} users DELETE`,
+        `${PREFIX}narrow-would-refuse ${who} auth.users DELETE`,
+      ].sort(),
+    );
+    // The narrow role: refused (round 12), nothing deleted, nothing counted.
     expect(
       await inTx(rt, [
         `${actorSql(who)}, set_config('role', '${NARROW_ROLE}', true)`,
         del(await login()),
       ]),
-    ).toBeNull();
-    expect(counted()).toEqual([`${PREFIX}narrow-cascade-delete ${who} users DELETE`]);
+    ).toBe('42501');
+    expect(counted()).toEqual([]);
     // Not: no row deleted, at a spot, a full reason.
     expect(await inTx(rt, [actorSql(who), del(randomUUID())])).toBeNull();
     expect(await inTx(rt, [actorSql(who, true), del(await login())])).toBeNull();
     expect(await inTx(rt, [actorSql('system:app-data'), del(await login())])).toBeNull();
-    expect(counted()).toEqual([]);
+    // The delete that met no row is still a statement the narrow role would
+    // refuse (0319 counts the statement, not its rows).
+    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} auth.users DELETE`]);
   });
 
   it('the app`s path: with the switch off a narrow exit`s content write is counted outside a spot, not at one', async () => {

@@ -326,9 +326,10 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     // What narrow work writes (the round 4 and 5 measurements, and the
     // assistants, connectors and settings areas' edits), each allowed.
     for (const s of [
-      `update agents set name = 'b', description = 'd', model = 'm2', system_prompt = 'q',
-         skill_slugs = '{}', memory_config = memory_config || '{"max_iterations":5}', params = '{}', thinking_effort = 'low',
-         persona_notes = '[]', avatar = null, priority = 5, enabled = false,
+      // Round 12: its prompt, skill list and persona notes run at skill-text.
+      `update agents set name = 'b', description = 'd', model = 'm2',
+         memory_config = memory_config || '{"max_iterations":5}', params = '{}', thinking_effort = 'low',
+         avatar = null, priority = 5, enabled = false,
          tts_worker_id = null, updated_at = now() where id = '${agent}'`,
       `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,
       `update agents set assigned_user_id = null, assigned_at = null where id = '${agent}'`,

@@ -159,6 +159,14 @@ const ACL_MARKER_BODY = `
  * so this list is not what keeps a function from it: it is what is taken
  * from PUBLIC and the viewer roles, and what the allowlist may never hold.
  */
+/** The definers PUBLIC keeps EXECUTE on, each with why (every other
+ *  definer's is taken from PUBLIC on every migrate, applyRuntimeGrants).
+ *  Measured on a fresh migrate (round 12's forge proof): this one only. */
+export const PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
+  'public.mantle_actor_check_mode()':
+    "the actor check's mode, read by the actor check's own triggers, which run as whichever role wrote: every role must reach it; it answers a setting and writes nothing",
+};
+
 export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_set_check(text,text,integer,text)': 'sets a check mode (ALTER DATABASE)',
   'public.mantle_set_actor_check(text,integer,text)': 'sets mantle.actor_check',
@@ -1271,6 +1279,24 @@ export async function applyRuntimeGrants(sql: Sql): Promise<void> {
       const [db] = await tx<{ name: string; me: string }[]>`
         select current_database() as name, current_user as me`;
       await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
+      // PUBLIC holds nothing on the app's tables, and EXECUTE on no
+      // definer but PUBLIC_DEFINERS (plan v3.2 S7b part b2 round 12, the
+      // full audit's DB LOW-5: a hand GRANT ... TO PUBLIC on a table or a
+      // definer survived two migrates; every role is a member of PUBLIC,
+      // the narrow login too). A fresh migrate grants PUBLIC neither, so
+      // this changes nothing there.
+      await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schemas} FROM PUBLIC`);
+      const publicDefiners = await tx<{ fn: string }[]>`
+        select p.oid::regprocedure::text as fn
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and p.prosecdef
+           and has_function_privilege('public', p.oid, 'EXECUTE')
+           and p.oid not in (select to_regprocedure(x)
+                               from unnest(${Object.keys(PUBLIC_DEFINERS)}::text[]) x
+                              where to_regprocedure(x) is not null)`;
+      for (const { fn } of publicDefiners) {
+        await tx.unsafe(`REVOKE EXECUTE ON FUNCTION ${fn} FROM PUBLIC`);
+      }
       // Temporary objects: PUBLIC has TEMPORARY on a database by default, so
       // every role (the narrow role too) could make a function in pg_temp
       // and call it, code no text check reads. No role the app runs as
