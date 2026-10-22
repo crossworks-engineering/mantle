@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, agents, telegramChats } from '@mantle/db';
+import { db, agents, onFullSystemRoute, telegramChats } from '@mantle/db';
 import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from '@mantle/telegram';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
@@ -74,15 +74,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
   }
 
-  await db
-    .update(telegramChats)
-    .set({
-      ...(parsed.data.responderAgentId !== undefined
-        ? { responderAgentId: parsed.data.responderAgentId }
-        : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(telegramChats.id, idParsed.data.id));
+  // Which assistant answers the chat's login is a grant (its tool groups):
+  // the narrow login holds no write of telegram_chats, so on a narrow exit
+  // the update runs at the full-route spot telegram-responder.
+  await onFullSystemRoute('telegram-responder', () =>
+    db
+      .update(telegramChats)
+      .set({
+        ...(parsed.data.responderAgentId !== undefined
+          ? { responderAgentId: parsed.data.responderAgentId }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(telegramChats.id, idParsed.data.id)),
+  );
 
   return NextResponse.json({ ok: true });
 }
