@@ -414,3 +414,114 @@ alone, on 11 rows: every other field of every row is what it was.
    patterns; api-v1.ts keeps its matching half.
 4. Each ITEM_NONE_PLACEHOLDER (81) is decided (a check or a reason);
    then the lint forbids the string.
+
+## Part 0 round 3: the item reasons, the aliases, one checked copy
+
+The re-audit of round 2 (8.5/10, merge after fixes; 'lists' mode proven
+identical by running main against the branch) left one medium, three low
+and two informational inputs. Still tooling only: no route file and no
+list's contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
+
+### What changed, per round 3 input
+
+- MED-1, the 'self' item reason: scripts/route-declarations.ts
+  itemNoneReason gave every 'self' write "the login's own things, not an
+  item", and 24 of them name another party's thing in the path (a grant,
+  a workspace's member or resource, an assistant thread or turn, a
+  Telegram chat of the workspace). Now the 'self' reason is written only
+  for a write with no path param, except under `/api/grants/` (the grant
+  move and its preview name items in the body, BODY_NAMES_ITEMS), and for
+  five named own things, each with its own reason (OWN_THINGS: an access
+  key, the owner's and a login's push device, a login's MCP client, a
+  login's Telegram chat; each handler finds the thing by the login or the
+  owner). Every other 'self' write takes ITEM_NONE_PLACEHOLDER: 19 with a
+  param and the 2 grant moves. A test holds each OWN_THINGS pattern to a
+  'self' write the manifest serves.
+- LOW-1, the alias is the route re-exported: route-callers.ts
+  `reExportedHandlers` reads the methods a route file takes unchanged
+  from another module (`export { GET } from`, `export { GET as HEAD }
+from`, an imported handler exported by name; a wrapper is not one), and
+  `aliasMismatches` holds each declared `aliasOf` to the route file the
+  handler comes from (its pattern, the same method): the generator
+  (gen-route-manifest.ts) and the codemod refuse a mismatch, an alias
+  declared on a handler of its own, and a re-exported route handler with
+  no alias. route-policy.test.ts holds the lists' alias to the same
+  resolved `from` path, where it held only that some re-export existed.
+  The boot refuses a declared `base` that API_V1_ROUTES does not name,
+  while that table names the bases.
+- LOW-2: route-declaration.ts exports UNAUDITED_METHODS (the reads and
+  OPTIONS) and `auditsByMethod`; route-scope.ts auditsAsWrite and
+  isReadRequest read them and READ_METHODS (through methodEffect), and
+  the validator's `audit` check is the same function. No answer moves.
+- LOW-3: validateMethodPolicy copies the value first (dataCopy: no
+  prototype at any level, arrays too, frozen; each value read once),
+  checks the copy and returns it; validateRoutePolicy returns an object of
+  those copies. declaredFacts builds a row from the copy only, and reads
+  an alias's base from the base's own checked copy, not the module's
+  value. A test with a getter that answers differently on a second read
+  finds it read once.
+- INFO, the no-login rows: session.ts NO_LOGIN_LOOKUP_ROWS is gone; the
+  gate asks route-policy.ts `findsNoLogin(row)`, the frame caller: in
+  'lists' mode FRAME_ROWS by pattern, as before; in 'declarations' mode
+  `row.caller === 'frame'` (callerServes already holds the declared and
+  the read kind to one). A test finds the two answers equal on every row
+  of the manifest (GET and HEAD /api/apps/:id/frame, nothing else).
+- INFO, effect reasons per route: each effect exception's reason is its
+  own route's (the formula calculator; the MCP connector's and the
+  Microsoft connector's OAuth callbacks), and a listed exception with no
+  reason written is one the codemod cannot say.
+- LOW-4 (merge note, not done here): when feat/s7b-b2 lands, keep both
+  histories in scripts/arch-scoreboard.pins.json `routePolicyLists` and
+  in eslint-rules/no-policy-name-lists.mjs ROUTE_LIST_PINS's comment, the
+  number 14.
+
+### Measured (the branch at the round 3 fix, main v0.300.132 under it)
+
+| | |
+|---|---|
+| route files | 418 |
+| rows | 819 |
+| declarations (methods declared) | 572 |
+| aliases (`aliasOf`) / v1 rows with a `base` | 25 / 2 |
+| writes with `item: { none }` | 326 |
+| of them, the placeholder reason | 102 (was 81) |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
+| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+
+### The dry run and the flip (a throwaway detached worktree)
+
+- main first (fe06d3037): the manifest generated and every row dumped;
+  then the same worktree at the branch's round 3 commit: the rows equal,
+  as the table says.
+- `--write`: 418 files written (+3498 lines); a second `--check` (which
+  regenerates the manifest, so the generator's alias check ran on all 25
+  aliases): 819 of 819 equal, 102 placeholders, 0 files to write. One
+  alias pointed at another served, declared route (`GET /api/pages` in
+  the v1 notes file): the generator refused it, naming the route the
+  file re-exports; the boot alone would have taken it.
+- On the written tree, 'lists' mode: tsc 0, prettier on server/web/app 0,
+  eslint on server/web/app with `route-policy-declared` at 'error' 0
+  errors (the one warning is an unused disable in a database test, as in
+  round 2). The full vitest suite, DATABASE_URL unset: 877 files passed,
+  285 skipped (the database files), 0 failed.
+- With `ROUTE_POLICY_SOURCE = 'declarations'`: 24 failed, the same tests
+  as round 2 less the pin it fixed: served-route.test.ts (its stand-in
+  modules want `standInModules`) and the 7 files whose tests build a
+  manifest by hand without declarations (gate.test.ts 19,
+  route-policy.test.ts 4 and its gate describe, gate-caller, gate-login,
+  gate-login-update, gate-route, item-write-encoded). The new tests (the
+  alias resolution, the no-login rows) passed under the flip.
+
+### Left (parts 1 to 3), as round 3 leaves it
+
+1. Part 1, after feat/s7b-b2 merges (LOW-4 above): `--check` (expect 819
+   of 819 and 102 placeholders; a moved count names the merged routes),
+   `--write`, `route-policy-declared` to 'warn'.
+2. Part 2: as round 2 says (the hand-built test manifests,
+   `standInModules` in served-route.test.ts, the flip, the rule to
+   'error', `row.audit` in auditMutation, the area check fold).
+3. Part 3: as round 2 says; FRAME_ROWS goes with the lists, and
+   `findsNoLogin` keeps its declarations half.
+4. Each of the 102 placeholders is decided (a check or a reason), then
+   the lint forbids the string. The 21 'self' ones first: they are the
+   writes whose path or body names another party's thing.
