@@ -1,10 +1,12 @@
 import type { Context, Hono } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import {
+  ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
   compileSpelling,
   linkCors,
   servedMethods,
+  type RoutePolicySource,
   type PageClass,
   type RouteCaller,
   type RouteRow,
@@ -17,6 +19,7 @@ import {
   capRequestBody,
 } from '../lib/body-limit';
 import { ROUTE_PARAMS_EXPORT, routeParamsRefusal } from '../lib/route-params';
+import { ROUTE_POLICY_EXPORT, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { getRequestContext } from './request-context';
 
 /**
@@ -70,8 +73,59 @@ export type RouteEntry = {
   /** Each method to the switch its route file declares (`routeSwitches`,
    *  lib/auth/route-switches.ts; A4 hand batch A): their rows' switch. */
   switches?: Readonly<Record<string, RouteSwitch>>;
+  /** The policy the route file declares (`policy`,
+   *  lib/auth/route-declaration.ts; plan v3.2 S9), as the generator read it
+   *  from the code: the rows are built from it where the source is
+   *  'declarations' (ROUTE_POLICY_SOURCE). */
+  policy?: RoutePolicyDeclaration;
   load: () => Promise<RouteModule>;
 };
+
+/** Plain data equal, key order aside (a declaration is literals only). */
+function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((x, i) => sameData(x, b[i]))
+    );
+  }
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  return (
+    ka.length === kb.length &&
+    ka.every(
+      (k) =>
+        Object.hasOwn(b, k) &&
+        sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+    )
+  );
+}
+
+/**
+ * Whether a loaded route module's `policy` is the one its rows were built
+ * from (S9): the generator reads the declaration from the code, the module
+ * exports its value, and the two must be one. Asked when the module is
+ * first loaded, where the rows are read from the declarations; a module
+ * whose export is not the manifest's throws (the rows would answer for a
+ * policy the file does not hold). The lists' rows read no declaration, so
+ * nothing is asked there (`source`).
+ */
+export function checkLoadedPolicy(
+  entry: Pick<RouteEntry, 'pattern' | 'policy'>,
+  mod: RouteModule,
+  source: RoutePolicySource = ROUTE_POLICY_SOURCE,
+): void {
+  if (source !== 'declarations') return;
+  if (!sameData(mod[ROUTE_POLICY_EXPORT] ?? null, entry.policy ?? null)) {
+    throw new Error(
+      `${entry.pattern}: the module's ${ROUTE_POLICY_EXPORT} is not the one the manifest read (regenerate it)`,
+    );
+  }
+}
 
 function memoize<T>(fn: () => Promise<T>): () => Promise<T> {
   let p: Promise<T> | null = null;
@@ -149,7 +203,11 @@ export function registerRoutes(
     // The gate's spelling test of the pattern (spellsPattern), compiled at
     // registration: a pattern it cannot spell fails at boot, not per request.
     compileSpelling(entry.pattern);
-    const load = memoize(entry.load);
+    const load = memoize(async () => {
+      const mod = await entry.load();
+      checkLoadedPolicy(entry, mod);
+      return mod;
+    });
     const isCatchAll = entry.catchAll !== null;
     // Segment count of the static prefix before the '*' (for rest extraction).
     const prefixSegCount = entry.pattern.split('/').filter(Boolean).length - 1;

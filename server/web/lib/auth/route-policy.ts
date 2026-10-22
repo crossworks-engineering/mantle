@@ -40,9 +40,22 @@ import type { WorkspaceArea } from '@mantle/client-types';
 import { env, feature } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
+import { isWorkspaceArea } from '@mantle/client-types/dto/workspaces';
+import { ACCESS_KEY_AREAS } from '@mantle/client-types/dto/access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
-import { RATE_LIMITS, ROUTE_GATES, type RateLimitName } from '../route-limits';
+import {
+  RATE_LIMITS,
+  ROUTE_GATES,
+  isRateLimitName,
+  type RateLimitName,
+  type RouteGates,
+} from '../route-limits';
 import type { RouteSwitch } from './route-switches';
+import {
+  isDeclaredMethod,
+  type MethodPolicy,
+  type RoutePolicyDeclaration,
+} from './route-declaration';
 import { getRequestContext } from '../../server/request-context';
 import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
@@ -457,17 +470,23 @@ const LIMIT_LOGIN_CALLERS: ReadonlySet<RouteCaller> = new Set([
  * each limit needs a caller that names it, a catch-all or a page takes
  * none).
  */
+function listedGates(key: string, alias: string | null): RouteGates {
+  return ROUTE_GATES.get(key) ?? (alias ? ROUTE_GATES.get(alias) : undefined) ?? {};
+}
+
+/** The row's gates (listedGates, or its declaration's `limits`), checked
+ *  against the row. */
 function gatesOf(
   key: string,
-  alias: string | null,
+  gates: RouteGates,
   row: Readonly<{ caller: RouteCaller | null; catchAll: boolean; page: boolean }>,
 ) {
-  const gates = ROUTE_GATES.get(key) ?? (alias ? ROUTE_GATES.get(alias) : undefined) ?? {};
   const rateLimit = gates.rateLimit ?? [];
   if ((rateLimit.length || gates.crossSite) && (row.catchAll || row.page)) {
     throw new Error(`ROUTE_POLICY: ${key} is a catch-all or a page: the gate checks nothing first`);
   }
   for (const name of rateLimit) {
+    if (!isRateLimitName(name)) throw new Error(`ROUTE_POLICY: ${key} takes ${name}, no limit`);
     const spec = RATE_LIMITS[name];
     if (spec.per === 'login' && !(row.caller && LIMIT_LOGIN_CALLERS.has(row.caller))) {
       throw new Error(
@@ -595,8 +614,232 @@ function callerServes(
 }
 
 /**
- * The row of `method pattern`, from the lists (step 1). `served` says
- * which `METHOD pattern` keys the manifest serves (the v1 aliases).
+ * Where the rows' policy comes from (plan v3.2 S9): the lists (today), or
+ * the declaration each route file exports (`policy`, route-declaration.ts),
+ * which the manifest carries. Part 2 flips this to 'declarations', once
+ * part 1's codemod has written every route file's declaration and
+ * route-policy-declarations.test.ts finds every row equal; part 3 deletes
+ * the lists. A page of server/pages has no route file: its row is the
+ * lists' in either source.
+ */
+export type RoutePolicySource = 'lists' | 'declarations';
+export const ROUTE_POLICY_SOURCE: RoutePolicySource = 'lists';
+
+/** What a row's policy says, from the lists or from a declaration; the
+ *  rest of the row (its caller, switch, gone stub, page) comes from the
+ *  manifest either way. */
+type RowFacts = Readonly<{
+  scope: RouteClass | null;
+  /** The class before a page's own (buildRouteRow), null where none. */
+  listed: RoutePolicyClass | null;
+  isPublic: boolean;
+  logins: RouteLogins | null;
+  effect: 'read' | 'write';
+  creates: boolean;
+  makesItems: boolean;
+  item: RouteItem | null;
+  key: Readonly<{ keyArea: AccessKeyArea | null; keySelf: boolean }> | null;
+  alias: string | null;
+  gates: RouteGates;
+}>;
+
+/** The facts of a row from the lists (step 1). `m` is the row's method,
+ *  `answeredAs` the method whose handler answers (GET's for a HEAD the GET
+ *  handler answers). */
+function listedFacts(
+  m: string,
+  answeredAs: string,
+  pattern: string,
+  path: string,
+  served: (key: string) => boolean,
+): RowFacts {
+  const key = `${m} ${pattern}`;
+  // A v1 row admits a login as its base route does (D3; the A8 finding F1,
+  // owner decision a): the base's login list, of the owner lists only (a
+  // member's open reads and writes). No base: Admin users only.
+  const v1Base = v1BaseOf(answeredAs, pattern, served);
+  const logins = v1Base ? v1BaseLogins(v1Base) : loginsOf(answeredAs, pattern);
+  const scope = rowScope(answeredAs, pattern, logins);
+  const effect = isReadRequest(m, pattern) ? 'read' : 'write';
+  if (memberMayRead(m, pattern) && effect !== 'read') {
+    throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);
+  }
+  if (memberMayWrite(m, pattern) && effect !== 'write') {
+    throw new Error(`ROUTE_POLICY: ${key} is a member write that reads`);
+  }
+  const target = itemWriteTarget(m, pattern, path);
+  let item: RouteItem | null = null;
+  if (target) {
+    const seg = path.split('/').indexOf(target.id);
+    if (seg < 0) throw new Error(`ROUTE_POLICY: ${key} names its item outside a path param`);
+    item = Object.freeze({ need: target.need, ref: target.ref, seg });
+  }
+  const isPublic = isPublicPath(path);
+  const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
+    ? 'link'
+    : (scope?.kind ?? (isPublic ? 'public' : logins ? 'self' : null));
+  const v1 = v1Route(m, pattern);
+  // An alias runs its base's handler: the same method on the base pattern.
+  const alias = aliasOf(m, pattern, served);
+  return {
+    scope,
+    listed,
+    isPublic,
+    logins,
+    effect,
+    // A v1 create reads ?ws= as its base route does (D3; the A8 fix round 1
+    // L3, owner decision: yes), for every key, the owner's and an Admin
+    // user's too. Without ?ws= nothing changes.
+    creates: CREATE_ROUTES.has(key) || (v1Base !== null && CREATE_ROUTES.has(v1Base)),
+    makesItems: !(m === 'DELETE' || NO_ITEM_WRITES.has(key)),
+    item,
+    // A v1 pattern the key table does not list has none: no key calls it
+    // (api-v1.test.ts pins the table to the route files).
+    key:
+      pattern.startsWith('/api/v1/') && v1 ? { keyArea: v1.area, keySelf: v1.self === true } : null,
+    alias,
+    gates: listedGates(
+      `${answeredAs} ${pattern}`,
+      alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
+    ),
+  };
+}
+
+const DECLARED_CLASSES: ReadonlySet<string> = new Set([
+  'public',
+  'link',
+  'self',
+  'area',
+  'content',
+]);
+const DECLARED_OPEN: ReadonlySet<string> = new Set(['owner', 'any', 'chat', 'telegram', 'member']);
+const ITEM_NEEDS: ReadonlySet<string> = new Set(['read', 'edit', 'manage']);
+const DECLARED_KEYS: ReadonlySet<string> = new Set([
+  'class',
+  'area',
+  'public',
+  'scope',
+  'effect',
+  'open',
+  'creates',
+  'makesItems',
+  'item',
+  'keyArea',
+  'limits',
+  'aliasOf',
+]);
+
+/**
+ * The facts of a row from its route file's declaration (S9 part 2), the
+ * declaration of the method whose handler answers (`answeredAs`: a HEAD the
+ * GET handler answers takes its GET's). Every value is checked here, at
+ * boot: a declaration that cannot hold is refused, never read as a pass.
+ */
+function declaredFacts(
+  m: string,
+  answeredAs: string,
+  pattern: string,
+  path: string,
+  served: (key: string) => boolean,
+  d: MethodPolicy,
+): RowFacts {
+  const key = `${m} ${pattern}`;
+  const bad = (what: string): never => {
+    throw new Error(`ROUTE_POLICY: ${key} declares ${what}`);
+  };
+  const raw = d as Readonly<Record<string, unknown>>;
+  for (const k of Object.keys(raw)) if (!DECLARED_KEYS.has(k)) bad(`${k}, which no row has`);
+  if (!DECLARED_CLASSES.has(d.class)) bad(`the class ${String(d.class)}, which is none`);
+  if ((d.class === 'link') !== pattern.startsWith('/s/')) {
+    bad(`the class ${d.class}: a link row is an /s route, and every /s route is one`);
+  }
+  if (d.effect !== 'read' && d.effect !== 'write') bad(`the effect ${String(d.effect)}`);
+  if ((d.class === 'area') !== 'area' in raw) bad('an area on a row that is not of the class area');
+  if (d.class === 'area' && !isWorkspaceArea(d.area)) bad(`the area ${String(d.area)}, no area`);
+  if ('public' in raw && (raw.public !== true || (d.class !== 'self' && d.class !== 'area'))) {
+    bad("public: only a 'self' or 'area' row says it (true); a 'public' or 'link' row is");
+  }
+  if ('scope' in raw && (raw.scope !== null || d.class !== 'self')) {
+    bad("scope: only a 'self' row says it (null: no owner guard serves it)");
+  }
+  if (d.open !== undefined && !DECLARED_OPEN.has(d.open)) bad(`open ${String(d.open)}`);
+  const scope: RouteClass | null =
+    d.class === 'area'
+      ? { kind: 'area', area: d.area }
+      : d.class === 'content'
+        ? { kind: 'content' }
+        : d.class === 'self' && raw.scope !== null
+          ? SELF_SCOPE
+          : null;
+  // A 'self' row no owner guard serves is a row of a login list.
+  if (d.class === 'self' && scope === null && !d.open) bad('scope null on a row no list opens');
+  if ('creates' in raw && (raw.creates !== true || d.effect !== 'write')) {
+    bad('creates: true, on a write only');
+  }
+  if ('makesItems' in raw && (raw.makesItems !== false || d.effect !== 'write')) {
+    bad('makesItems: false, on a write only');
+  }
+  let item: RouteItem | null = null;
+  if (d.item !== undefined) {
+    if ('none' in d.item) {
+      if (typeof d.item.none !== 'string' || !d.item.none) bad('item none with no reason');
+    } else {
+      const seg = pattern.split('/').indexOf(`:${d.item.param}`);
+      if (seg < 0) bad(`its item in ${String(d.item.param)}, which is no param of its pattern`);
+      if (!ITEM_NEEDS.has(d.item.need)) bad(`the item need ${String(d.item.need)}`);
+      item = Object.freeze({ need: d.item.need, ref: 'node', seg });
+    }
+  }
+  let keyFacts: RowFacts['key'] = null;
+  if (d.keyArea !== undefined) {
+    if (!pattern.startsWith('/api/v1/')) bad('a key area off /api/v1');
+    const area = d.keyArea;
+    if (area !== null && area !== 'self' && !ACCESS_KEY_AREAS.includes(area)) {
+      bad(`the key area ${String(area)}, which is none`);
+    }
+    keyFacts = { keyArea: area === 'self' ? null : area, keySelf: area === 'self' };
+  }
+  let alias: string | null = null;
+  if (d.aliasOf !== undefined) {
+    const at = d.aliasOf.indexOf(' ');
+    const base = at < 0 ? '' : d.aliasOf.slice(at + 1);
+    if (!pattern.startsWith('/api/v1/') || d.aliasOf.slice(0, at) !== answeredAs) {
+      bad(`aliasOf ${d.aliasOf}: an /api/v1 row's alias is the same method of its base`);
+    }
+    alias = `${m} ${base}`;
+    if (!served(alias)) bad(`aliasOf ${d.aliasOf}, which the manifest does not serve`);
+  }
+  const limits = d.limits ?? {};
+  if (
+    limits.crossSite !== undefined &&
+    limits.crossSite !== 'json' &&
+    limits.crossSite !== 'origin'
+  ) {
+    bad(`the cross-site refusal ${String(limits.crossSite)}`);
+  }
+  const own = m === answeredAs;
+  return {
+    scope,
+    listed: d.class,
+    isPublic: d.class === 'public' || d.class === 'link' || raw.public === true,
+    logins: d.open ?? null,
+    effect: d.effect,
+    // A HEAD the GET handler answers creates nothing and makes what a read
+    // makes: the method's own declaration says it, never its GET's.
+    creates: own && d.creates === true,
+    makesItems: !(m === 'DELETE' || (own && d.makesItems === false)),
+    item,
+    key: keyFacts,
+    alias,
+    gates: limits,
+  };
+}
+
+/**
+ * The row of `method pattern`, from the lists (step 1), or, with
+ * `declared` (S9 part 2, ROUTE_POLICY_SOURCE), from the route file's
+ * declaration for the method. `served` says which `METHOD pattern` keys the
+ * manifest serves (the v1 aliases).
  */
 export function buildRouteRow(
   method: string,
@@ -618,6 +861,10 @@ export function buildRouteRow(
      *  caller is let through. Never the app's manifest: only a test file
      *  passes it (arch-lints.test.ts pins it). */
     standIn?: boolean;
+    /** The route file's declaration for the method whose handler answers
+     *  (S9; a HEAD the GET handler answers: its GET's): the row's policy
+     *  is read from it, not from the lists. */
+    declared?: MethodPolicy;
   } = {},
 ): RouteRow {
   const m = method.toUpperCase();
@@ -635,32 +882,12 @@ export function buildRouteRow(
   // its own handler, and its HEAD row is that method's, as listed (fix
   // round 1, L3).
   const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
-  // A v1 row admits a login as its base route does (D3; the A8 finding F1,
-  // owner decision a): the base's login list, of the owner lists only (a
-  // member's open reads and writes). No base: Admin users only.
-  const v1Base = v1BaseOf(answeredAs, pattern, served);
-  const logins = v1Base ? v1BaseLogins(v1Base) : loginsOf(answeredAs, pattern);
-  const classLogins = logins;
-  const scope = rowScope(answeredAs, pattern, classLogins);
-  const effect = isReadRequest(m, pattern) ? 'read' : 'write';
-  if (memberMayRead(m, pattern) && effect !== 'read') {
-    throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);
-  }
-  if (memberMayWrite(m, pattern) && effect !== 'write') {
-    throw new Error(`ROUTE_POLICY: ${key} is a member write that reads`);
-  }
   const path = markedPath(pattern);
-  const target = itemWriteTarget(m, pattern, path);
-  let item: RouteItem | null = null;
-  if (target) {
-    const seg = path.split('/').indexOf(target.id);
-    if (seg < 0) throw new Error(`ROUTE_POLICY: ${key} names its item outside a path param`);
-    item = Object.freeze({ need: target.need, ref: target.ref, seg });
-  }
-  const isPublic = isPublicPath(path);
-  const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
-    ? 'link'
-    : (scope?.kind ?? (isPublic ? 'public' : classLogins ? 'self' : null));
+  const facts = opts.declared
+    ? declaredFacts(m, answeredAs, pattern, path, served, opts.declared)
+    : listedFacts(m, answeredAs, pattern, path, served);
+  const { scope, listed, isPublic, logins, effect } = facts;
+  const classLogins = logins;
   // A page's class is its list's (registerPages). A link page is an /s
   // pattern; a render page is one no list classes, so it can never shadow
   // a route the lists know. Nothing else is mounted outside the manifest.
@@ -675,7 +902,6 @@ export function buildRouteRow(
   // before it ships (route-policy.test.ts builds every row).
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
   const page = pageClass !== null;
-  const v1 = v1Route(m, pattern);
   // The pipeline answers a kind's caller only on a row that kind's guard
   // serves (CALLER_LOGINS): the owner guard a session route of the owner
   // (self, content or area), open to Admin or to the owner lists (a
@@ -728,18 +954,17 @@ export function buildRouteRow(
   if (caller && pattern.endsWith('*')) {
     throw new Error(`ROUTE_POLICY: ${key} is a catch-all: it keeps its guard (hand batch)`);
   }
-  // An alias runs its base's handler: the same method on the base pattern.
-  const alias = aliasOf(m, pattern, served);
+  const alias = facts.alias;
   // A test's stand-in rows (their handlers call the guards themselves)
   // take no limit: none names the login the gate would count.
   const gates =
     opts.standIn === true
       ? { crossSite: null, rateLimit: Object.freeze([]) }
-      : gatesOf(
-          `${answeredAs} ${pattern}`,
-          alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
-          { caller, catchAll: pattern.endsWith('*'), page },
-        );
+      : gatesOf(`${answeredAs} ${pattern}`, facts.gates, {
+          caller,
+          catchAll: pattern.endsWith('*'),
+          page,
+        });
   const startsAs =
     pageClass === 'render'
       ? 'http:render'
@@ -757,17 +982,10 @@ export function buildRouteRow(
     open: logins ? 'login' : 'admin',
     logins,
     effect,
-    // A v1 create reads ?ws= as its base route does (D3; the A8 fix round 1
-    // L3, owner decision: yes), for every key, the owner's and an Admin
-    // user's too. Without ?ws= nothing changes.
-    creates: CREATE_ROUTES.has(key) || (v1Base !== null && CREATE_ROUTES.has(v1Base)),
-    makesItems: !(m === 'DELETE' || NO_ITEM_WRITES.has(key)),
-    item,
-    // A v1 pattern the key table does not list has none: no key calls it
-    // (api-v1.test.ts pins the table to the route files).
-    ...(pattern.startsWith('/api/v1/') && v1
-      ? { keyArea: v1.area, keySelf: v1.self === true }
-      : {}),
+    creates: facts.creates,
+    makesItems: facts.makesItems,
+    item: facts.item,
+    ...(facts.key ? { keyArea: facts.key.keyArea, keySelf: facts.key.keySelf } : {}),
     aliasOf: alias,
     cors: linkCors(pattern),
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
@@ -794,6 +1012,10 @@ export type RouteManifestEntry = Readonly<{
   /** Each method to the switch its route file declares (`routeSwitches`,
    *  route-switches.ts): its rows' `switch`. */
   switches?: Readonly<Record<string, RouteSwitch>>;
+  /** The route file's policy declaration (`policy`, route-declaration.ts;
+   *  S9), read from the code by the generator: each method to its policy.
+   *  Its rows are built from it where the source is 'declarations'. */
+  policy?: RoutePolicyDeclaration;
 }>;
 
 /** The methods a manifest entry is called with: its own, and HEAD where
@@ -807,11 +1029,14 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
  *  server/pages, all of that class): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
   manifest: readonly RouteManifestEntry[],
-  opts: { page?: PageClass; standIn?: boolean } = {},
+  opts: { page?: PageClass; standIn?: boolean; source?: RoutePolicySource } = {},
 ): ReadonlyMap<string, RouteRow> {
   const keys = new Set(manifest.flatMap((e) => servedMethods(e).map((m) => `${m} ${e.pattern}`)));
   const served = (key: string) => keys.has(key);
   const table = new Map<string, RouteRow>();
+  const { source = ROUTE_POLICY_SOURCE, ...rowOpts } = opts;
+  // A page has no route file, so no declaration: its row is the lists'.
+  const declared = source === 'declarations' && !opts.page;
   for (const entry of manifest) {
     const reads = entry.reads ?? {};
     const gone = new Set(entry.gone ?? []);
@@ -825,16 +1050,33 @@ export function buildRoutePolicy(
         );
       }
     }
+    // So would a policy for a method it does not export, whichever source
+    // the rows are read from.
+    for (const m of Object.keys(entry.policy ?? {})) {
+      if (!isDeclaredMethod(m) || !entry.methods.includes(m)) {
+        throw new Error(
+          `ROUTE_POLICY: ${entry.pattern} declares a policy for ${m}, which it does not serve`,
+        );
+      }
+    }
     for (const m of servedMethods(entry)) {
       // HEAD is answered by the GET handler: it reads what GET reads.
       const as = m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m;
       const read = reads[as] ?? null;
+      // S9 part 2: every method a route file exports declares its policy;
+      // one that does not is refused at boot (and by lint,
+      // route-plumbing.mjs route-policy-declared).
+      const policy = declared ? entry.policy?.[as as keyof RoutePolicyDeclaration] : undefined;
+      if (declared && !policy) {
+        throw new Error(`ROUTE_POLICY: ${m} ${entry.pattern} declares no policy for ${as}`);
+      }
       const row = buildRouteRow(m, entry.pattern, served, {
-        ...opts,
+        ...rowOpts,
         reads: read,
         gone: gone.has(as),
         switch: switches[as] ?? null,
         ownHead: as === 'HEAD',
+        ...(policy ? { declared: policy } : {}),
       });
       table.set(row.key, row);
     }

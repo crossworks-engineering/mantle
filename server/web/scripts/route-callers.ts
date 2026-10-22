@@ -69,6 +69,11 @@ import {
   isRouteSwitch,
   type RouteSwitch,
 } from '../lib/auth/route-switches';
+import {
+  ROUTE_POLICY_EXPORT,
+  isDeclaredMethod,
+  type RoutePolicyDeclaration,
+} from '../lib/auth/route-declaration';
 
 /** The readers and the session guards: the one list
  *  (eslint-rules/session-guards.mjs). */
@@ -947,4 +952,131 @@ function readsFirst(fn: Fn, readsIn: ts.CallExpression[], wrapsIn: ts.CallExpres
   }
   if (ts.isReturnStatement(first)) return isWrap(first.expression);
   return false;
+}
+
+/** The module a route file imports routePolicy from, by its own name. */
+const DECLARATION_MODULE = '@/lib/auth/route-declaration';
+
+/**
+ * The policy a route file declares (plan v3.2 S9; lib/auth/route-declaration.ts):
+ *
+ *     export const policy = routePolicy({ GET: { class: 'content', effect: 'read' } });
+ *
+ * read from the code, as data: the generator puts it in the manifest
+ * (`policy`), so the loader has it when it registers the route without
+ * loading the module. Null: the file declares none.
+ *
+ * Refused (the generator fails): the export in any other form (let or
+ * var, not a call of routePolicy imported by its own name from
+ * DECLARATION_MODULE with one object literal, `export { x as policy }`, a
+ * re-export), a value that is not a literal (a name, a call, a spread, a
+ * computed key, a template with a substitution), a key named twice, and a
+ * method the file does not export. What each value may be is
+ * buildRouteRow's to say (route-policy.ts declaredFacts), at boot.
+ */
+export function handlerPolicy(src: string, file: string): RoutePolicyDeclaration | null {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
+  const fail = (node: ts.Node, msg: string): never => {
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    throw new Error(`${file}:${line + 1}: ${msg}`);
+  };
+  const NAME = ROUTE_POLICY_EXPORT;
+  const exported = new Set<string>();
+  let declared: ts.VariableDeclaration | null = null;
+  let call: ts.CallExpression | null = null;
+  let importedAs: string | null = null;
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+      const named = st.importClause?.namedBindings;
+      if (st.moduleSpecifier.text !== DECLARATION_MODULE || !named || !ts.isNamedImports(named)) {
+        continue;
+      }
+      for (const el of named.elements) {
+        if ((el.propertyName ?? el.name).text !== 'routePolicy') continue;
+        if (el.propertyName) fail(el, `imports routePolicy as ${el.name.text}: by its own name`);
+        importedAs = 'routePolicy';
+      }
+    } else if (
+      ts.isFunctionDeclaration(st) &&
+      st.name &&
+      hasModifier(st, ts.SyntaxKind.ExportKeyword)
+    ) {
+      if (st.name.text === NAME) fail(st, `${NAME} is a function: declare it with routePolicy`);
+      if (HTTP_METHODS.has(st.name.text)) exported.add(st.name.text);
+    } else if (ts.isVariableStatement(st) && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name)) continue;
+        if (HTTP_METHODS.has(d.name.text)) exported.add(d.name.text);
+        if (d.name.text !== NAME) continue;
+        declared = d;
+        if ((st.declarationList.flags & ts.NodeFlags.Const) === 0) {
+          fail(d, `${NAME} is declared with let or var: declare it with const`);
+        }
+        const init = d.initializer ? bare(d.initializer) : undefined;
+        if (
+          !init ||
+          !ts.isCallExpression(init) ||
+          !ts.isIdentifier(init.expression) ||
+          init.expression.text !== 'routePolicy' ||
+          init.arguments.length !== 1
+        ) {
+          fail(d, `${NAME} is not routePolicy({ ... }): each method to its policy, written out`);
+        }
+        call = init as ts.CallExpression;
+      }
+    } else if (
+      ts.isExportDeclaration(st) &&
+      st.exportClause &&
+      ts.isNamedExports(st.exportClause)
+    ) {
+      for (const el of st.exportClause.elements) {
+        if (el.name.text === NAME) {
+          fail(el, `${NAME} is exported by name: declare it here with routePolicy({ ... })`);
+        }
+        if (HTTP_METHODS.has(el.name.text)) exported.add(el.name.text);
+      }
+    }
+  }
+  if (!declared || !call) return null;
+  if (!importedAs) fail(call, `calls routePolicy with no import of it from ${DECLARATION_MODULE}`);
+  const value = (e: ts.Expression): unknown => {
+    const b = bare(e);
+    if (ts.isStringLiteral(b) || ts.isNoSubstitutionTemplateLiteral(b)) return b.text;
+    if (b.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (b.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (b.kind === ts.SyntaxKind.NullKeyword) return null;
+    if (ts.isArrayLiteralExpression(b)) {
+      return b.elements.map((x) => {
+        if (ts.isSpreadElement(x)) fail(x, `${NAME}: a spread; write each value out`);
+        return value(x);
+      });
+    }
+    if (ts.isObjectLiteralExpression(b)) {
+      const out: Record<string, unknown> = {};
+      for (const p of b.properties) {
+        if (!ts.isPropertyAssignment(p))
+          fail(p, `${NAME}: each entry is a key to a literal, written out`);
+        const a = p as ts.PropertyAssignment;
+        const k = ts.isIdentifier(a.name) || ts.isStringLiteral(a.name) ? a.name.text : null;
+        if (k === null) fail(a.name, `${NAME}: ${a.name.getText(sf)} is a computed key`);
+        if (Object.hasOwn(out, k!)) fail(a.name, `${NAME}: ${k} is named twice`);
+        out[k!] = value(a.initializer);
+      }
+      return out;
+    }
+    return fail(b, `${NAME}: ${b.getText(sf)} is not a literal: a declaration is data`);
+  };
+  const decl = value(call.arguments[0]!);
+  if (!decl || typeof decl !== 'object' || Array.isArray(decl)) {
+    fail(call, `${NAME}: routePolicy takes an object of methods`);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [m, v] of Object.entries(decl as Record<string, unknown>)) {
+    if (!isDeclaredMethod(m)) fail(call, `${NAME}: ${m} is no method`);
+    if (!exported.has(m)) fail(call, `${NAME}: ${m} is a method this file does not export`);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) fail(call, `${NAME}.${m} is no policy`);
+    out[m] = v;
+  }
+  return out as RoutePolicyDeclaration;
 }

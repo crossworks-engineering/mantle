@@ -369,10 +369,105 @@ export const noRouteRateLimits = {
   },
 };
 
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+/** The name of a route file's policy export (server/web/lib/auth/route-declaration.ts
+ *  ROUTE_POLICY_EXPORT; plain JS here, pinned equal by route-plumbing.test.ts). */
+export const ROUTE_POLICY_EXPORT = 'policy';
+
+/**
+ * route-policy-declared (plan v3.2 S9): every route file declares its
+ * policy beside its handlers, `export const policy = routePolicy({ ... })`
+ * (server/web/lib/auth/route-declaration.ts), naming each method it exports
+ * and no other (a HEAD the GET handler answers takes its GET's). The boot
+ * refuses the same (route-policy.ts buildRoutePolicy) once the rows are
+ * read from the declarations; this says it at the line. Off until S9 part
+ * 1's codemod has written every declaration (eslint.config.mjs).
+ */
+export const routePolicyDeclared = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'A route file declares its policy (export const policy = routePolicy({ ... })) for each method it exports (plan v3.2 S9).',
+    },
+    messages: {
+      missing:
+        'This route file exports {{methods}} and declares no policy: export const policy = routePolicy({ ... }) beside its handlers (server/web/lib/auth/route-declaration.ts; scripts/route-policy-codemod.ts writes it from the lists).',
+      undeclared:
+        "The policy names no {{method}}, which this file exports: declare each method's policy.",
+      stray: 'The policy names {{method}}, which this file does not export.',
+    },
+    schema: [],
+  },
+  create(context) {
+    const file = context.filename;
+    if (!isRoutePath(file)) return {};
+    const exported = new Set();
+    /** The declaration's object literal, or null when it is not one. */
+    let declared = null;
+    let declaredNode = null;
+    return {
+      ExportNamedDeclaration(node) {
+        const d = node.declaration;
+        if (d?.type === 'FunctionDeclaration' && d.id && HTTP_METHODS.has(d.id.name)) {
+          exported.add(d.id.name);
+        } else if (d?.type === 'VariableDeclaration') {
+          for (const v of d.declarations) {
+            if (v.id.type !== 'Identifier') continue;
+            if (HTTP_METHODS.has(v.id.name)) exported.add(v.id.name);
+            if (v.id.name !== ROUTE_POLICY_EXPORT) continue;
+            declaredNode = v;
+            const init = v.init;
+            const arg =
+              init?.type === 'CallExpression' && init.arguments.length === 1
+                ? init.arguments[0]
+                : null;
+            declared = arg?.type === 'ObjectExpression' ? arg : null;
+          }
+        }
+        for (const sp of node.specifiers ?? []) {
+          const name = sp.exported.type === 'Identifier' ? sp.exported.name : sp.exported.value;
+          if (HTTP_METHODS.has(name)) exported.add(name);
+          if (name === ROUTE_POLICY_EXPORT) declaredNode = sp;
+        }
+      },
+      'Program:exit'(program) {
+        if (exported.size === 0) return;
+        if (!declaredNode) {
+          context.report({
+            node: program,
+            messageId: 'missing',
+            data: { methods: [...exported].sort().join(', ') },
+          });
+          return;
+        }
+        // A declaration not written out is the generator's to refuse.
+        if (!declared) return;
+        const named = new Set();
+        for (const p of declared.properties) {
+          if (p.type !== 'Property' || p.computed) continue;
+          const key = p.key.type === 'Identifier' ? p.key.name : String(p.key.value);
+          named.add(key);
+          if (!exported.has(key)) {
+            context.report({ node: p, messageId: 'stray', data: { method: key } });
+          }
+        }
+        for (const m of exported) {
+          if (!named.has(m)) {
+            context.report({ node: declaredNode, messageId: 'undeclared', data: { method: m } });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default {
   rules: {
     'no-direct-body-reads': noDirectBodyReads,
     'no-error-text-replies': noErrorTextReplies,
     'no-route-rate-limits': noRouteRateLimits,
+    'route-policy-declared': routePolicyDeclared,
   },
 };

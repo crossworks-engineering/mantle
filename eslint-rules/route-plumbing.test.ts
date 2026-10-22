@@ -10,7 +10,10 @@ import {
   isRoutePath,
   noDirectBodyReads,
   noErrorTextReplies,
+  ROUTE_POLICY_EXPORT,
+  routePolicyDeclared,
 } from './route-plumbing.mjs';
+import { ROUTE_POLICY_EXPORT as DECLARED_EXPORT } from '../server/web/lib/auth/route-declaration';
 
 /**
  * no-direct-body-reads (A10 part 2, fold 1): a route reads its body with
@@ -165,6 +168,59 @@ describe('no-error-text-replies', () => {
           code: 'try { await a(); } catch (err) { return NextResponse.json({ error: errorMessage(err) }, { status: 400 }); }',
           filename: route,
           errors: [{ messageId: 'text' }],
+        },
+      ],
+    });
+  });
+});
+
+/**
+ * route-policy-declared (plan v3.2 S9): a route file declares its policy
+ * for each method it exports, and no other. Off in eslint.config.mjs until
+ * the codemod writes the declarations (part 1).
+ */
+describe('route-policy-declared', () => {
+  const tester = new RuleTester({
+    languageOptions: { parser: tseslint.parser, ecmaVersion: 2022, sourceType: 'module' },
+  });
+  const route = '/r/server/web/app/api/notes/route.ts';
+  const decl = (body: string) => `export const policy = routePolicy({ ${body} });`;
+
+  it('names the export the declarations module names', () => {
+    expect(ROUTE_POLICY_EXPORT).toBe(DECLARED_EXPORT);
+  });
+
+  it('wants a declaration naming each exported method, and only those', () => {
+    tester.run('route-policy-declared', routePolicyDeclared, {
+      valid: [
+        {
+          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content', effect: 'read' }, POST: { class: 'content', effect: 'write' }")}`,
+          filename: route,
+        },
+        {
+          code: `export { GET } from '../../notes/route';\n${decl("GET: { class: 'content', effect: 'read' }")}`,
+          filename: route,
+        },
+        // Not a route file.
+        { code: 'export async function GET() {}', filename: '/r/server/web/lib/notes.ts' },
+        // A route file that exports no handler.
+        { code: 'export const x = 1;', filename: route },
+      ],
+      invalid: [
+        {
+          code: 'export async function GET() {}\nexport const DELETE = handler;',
+          filename: route,
+          errors: [{ messageId: 'missing' }],
+        },
+        {
+          code: `export async function GET() {}\nexport async function POST() {}\n${decl("GET: { class: 'content', effect: 'read' }")}`,
+          filename: route,
+          errors: [{ messageId: 'undeclared' }],
+        },
+        {
+          code: `export async function GET() {}\n${decl("GET: { class: 'content', effect: 'read' }, PUT: { class: 'content', effect: 'write' }")}`,
+          filename: route,
+          errors: [{ messageId: 'stray' }],
         },
       ],
     });
