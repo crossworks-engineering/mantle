@@ -7,6 +7,7 @@
  */
 import type postgres from 'postgres';
 import { headsBypassesIn } from './heads-bypass';
+import { assertNoIdentityLeaks } from './identity-gateway';
 import {
   gapRefusal,
   gapWarning,
@@ -63,6 +64,11 @@ export async function applyJournal(
       for (const stmt of migration.sql) {
         await tx.unsafe(stmt);
       }
+      // The identity gateway's catalog check (0321) before the commit: a
+      // migration that leaves a read of an identity setting outside the
+      // readers fails, and its transaction leaves nothing (afterMigrations
+      // checks again after the grants, for what no migration made).
+      await assertNoIdentityLeaks(tx as unknown as postgres.Sql);
       await tx`
         insert into "drizzle"."__drizzle_migrations" ("hash", "created_at")
         values (${migration.hash}, ${migration.folderMillis})

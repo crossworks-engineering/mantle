@@ -115,12 +115,32 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
           using (current_setting('mantle.acting_login', true) <> '')`);
         await t.unsafe(`create trigger r13_leak_t before update on public.agents for each row
           when (current_setting('mantle.actor', true) = 'system:x') execute function touch_updated_at()`);
+        // The forms the re-audit's DB LOW-2 named: a SQL-standard body (no
+        // prosrc), a quoted and a schema-qualified current_setting,
+        // pg_show_all_settings, a reader's name in another schema, a
+        // domain's check.
+        await t.unsafe(`create function public.r14_leak_e() returns text language sql stable
+          begin atomic select current_setting('mantle.login_id', true); end`);
+        await t.unsafe(`create function public.r14_leak_f() returns text language sql stable as
+          $$ select pg_catalog."current_setting"('mantle.ws', true) $$`);
+        await t.unsafe(`create function public.r14_leak_g() returns text language sql stable as
+          $$ select setting from pg_show_all_settings() where name = 'mantle.scope_login' $$`);
+        await t.unsafe(`create schema r14_other`);
+        await t.unsafe(`create function r14_other.mantle_login_id() returns text language sql stable as
+          $$ select current_setting('mantle.login_id', true) $$`);
+        await t.unsafe(`create domain public.r14_leak_dom as text
+          check (value <> current_setting('mantle.acting_login', true))`);
         const rows = await identityLeaks(t as unknown as postgres.Sql);
         throw Object.assign(new Error('rollback'), { rows });
       })
       .catch((e: { rows?: { object: string }[] }) => e.rows ?? []);
     const objects = found.map((r) => r.object).join(' | ');
     for (const want of [
+      'r14_leak_e()',
+      'r14_leak_f()',
+      'r14_leak_g()',
+      'r14_other.mantle_login_id()',
+      'r14_leak_dom',
       'r13_leak_a()',
       'r13_leak_b(text)',
       'r13_leak_c()',
@@ -130,6 +150,29 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
     ]) {
       expect(objects).toContain(want);
     }
+  });
+
+  it('a migration that leaves a leak fails before its commit and leaves nothing', async () => {
+    const { applyJournal } = await import('./migrate-runner');
+    const [top] = await su<{ at: string }[]>`
+      select max(created_at)::text as at from "drizzle"."__drizzle_migrations"`;
+    const when = Number(top!.at) + 1;
+    const leak = {
+      folderMillis: when,
+      hash: 'r14-leak',
+      sql: [
+        `create function public.r14_migrated_leak() returns text language sql stable as
+          $$ select current_setting('mantle.login_id', true) $$`,
+      ],
+    };
+    const journal = [{ idx: 99999, version: '7', when, tag: '9999_r14_leak', breakpoints: true }];
+    await expect(
+      applyJournal(su, [leak], journal, { log: () => {}, warn: () => {} }),
+    ).rejects.toThrow(/r14_migrated_leak/);
+    const [left] = await su<{ fn: string | null; ledger: number }[]>`
+      select to_regprocedure('public.r14_migrated_leak()')::text as fn,
+             (select count(*)::int from "drizzle"."__drizzle_migrations" where hash = 'r14-leak') as ledger`;
+    expect(left).toEqual({ fn: null, ledger: 0 });
   });
 
   it('the readers answer no identity on the narrow login, and what was set elsewhere', async () => {

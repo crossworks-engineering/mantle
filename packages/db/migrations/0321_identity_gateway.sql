@@ -159,12 +159,17 @@ CREATE OR REPLACE FUNCTION "public"."mantle_identity_leaks"()
   RETURNS TABLE (kind text, object text, detail text)
   LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
-  -- The readers: the only bodies that may read an identity key.
+  -- The readers: the only bodies that may read an identity key, by their
+  -- exact signature in public (a function of the same name in another
+  -- schema, or another overload, is no reader).
   readers constant text[] := ARRAY[
-    'mantle_identity_narrow', 'mantle_login_id', 'mantle_scope_login_id', 'mantle_scope_ws',
-    'mantle_scope_mod_ws', 'mantle_scope_active', 'mantle_setting_uuid',
-    'mantle_identity_acting_login', 'mantle_identity_actor'];
-  -- Bodies that build a key at run time, each with why it reads no identity.
+    'public.mantle_identity_narrow()', 'public.mantle_login_id()',
+    'public.mantle_scope_login_id()', 'public.mantle_scope_ws()',
+    'public.mantle_scope_mod_ws()', 'public.mantle_scope_active()',
+    'public.mantle_setting_uuid(text)', 'public.mantle_identity_acting_login()',
+    'public.mantle_identity_actor()'];
+  -- Bodies that build a key at run time, each with why it reads no identity
+  -- (named in public only, as the makers below).
   dynamic constant text[] := ARRAY[
     -- 'mantle.' || the check's name (actor_check, edit_check): a session
     -- value only ever raises the box's mode (greatest of the two).
@@ -216,27 +221,32 @@ DECLARE
 BEGIN
   -- Function bodies.
   FOR f IN
-    SELECT p.oid, p.proname::text AS name, p.oid::regprocedure::text AS sig, p.prosrc
-      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
-       AND NOT EXISTS (SELECT 1 FROM pg_depend d
-                        WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
-       AND p.prosrc ~* '(current_setting|pg_settings|show\s+mantle)'
-       AND p.proname <> 'mantle_identity_leaks'
+    SELECT x.* FROM (
+      SELECT p.oid, p.proname::text AS name, p.oid::regprocedure::text AS sig,
+             n.nspname = 'public' AS pub,
+             -- A SQL-standard body (BEGIN ATOMIC, RETURN) keeps no prosrc:
+             -- its text is pg_get_function_sqlbody's.
+             p.prosrc || ' ' || coalesce(pg_get_function_sqlbody(p.oid), '') AS prosrc
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+         AND NOT (n.nspname = 'public' AND p.proname = 'mantle_identity_leaks')) x
+     WHERE x.prosrc ~* '(current_setting|pg_settings|pg_show_all_settings|show\s+mantle)'
   LOOP
-    IF f.prosrc ~* 'pg_settings|show\s+mantle' THEN
-      kind := 'function'; object := f.sig; detail := 'reads settings by pg_settings or SHOW';
+    IF f.prosrc ~* 'pg_settings|pg_show_all_settings|show\s+mantle' THEN
+      kind := 'function'; object := f.sig; detail := 'reads settings by pg_settings, pg_show_all_settings or SHOW';
       RETURN NEXT;
     END IF;
-    CONTINUE WHEN f.name = ANY (makers);
-    FOR m IN SELECT regexp_matches(f.prosrc, 'current_setting\s*\(\s*([^,)]*)', 'gi') LOOP
+    CONTINUE WHEN f.pub AND f.name = ANY (makers);
+    FOR m IN SELECT regexp_matches(f.prosrc, 'current_setting"?\s*\(\s*([^,)]*)', 'gi') LOOP
       arg := btrim(m[1]);
       k := substring(arg FROM '^''{1,2}([^'']*)''{1,2}(?:::text)?$');
       IF k IS NULL THEN
-        CONTINUE WHEN f.name = ANY (readers) OR f.name = ANY (dynamic);
+        CONTINUE WHEN f.sig = ANY (readers) OR (f.pub AND f.name = ANY (dynamic));
         kind := 'function'; object := f.sig; detail := 'reads a key built at run time: ' || arg;
         RETURN NEXT;
-      ELSIF NOT (k = ANY (plain)) AND NOT (f.name = ANY (readers)) THEN
+      ELSIF NOT (k = ANY (plain)) AND NOT (f.sig = ANY (readers)) THEN
         kind := 'function'; object := f.sig; detail := 'reads ' || k || ' outside the readers';
         RETURN NEXT;
       END IF;
@@ -255,12 +265,23 @@ BEGIN
     SELECT 'check', c.conrelid::regclass::text || ' ' || c.conname, pg_get_constraintdef(c.oid)
       FROM pg_constraint c WHERE c.contype = 'c' AND c.conrelid <> 0
     UNION ALL
+    -- A domain's check runs on every write of a column of that type.
+    SELECT 'domain', c.contypid::regtype::text || ' ' || c.conname, pg_get_constraintdef(c.oid)
+      FROM pg_constraint c JOIN pg_type t ON t.oid = c.contypid
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+     WHERE c.contypid <> 0
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+    UNION ALL
     SELECT 'view', r.ev_class::regclass::text, pg_get_ruledef(r.oid)
       FROM pg_rewrite r JOIN pg_class cl ON cl.oid = r.ev_class
       JOIN pg_namespace n ON n.oid = cl.relnamespace
      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
   LOOP
-    FOR m IN SELECT regexp_matches(f.src, 'current_setting\s*\(\s*([^,)]*)', 'gi') LOOP
+    IF f.src ~* 'pg_settings|pg_show_all_settings' THEN
+      kind := f.kind; object := f.obj; detail := 'reads settings by pg_settings or pg_show_all_settings';
+      RETURN NEXT;
+    END IF;
+    FOR m IN SELECT regexp_matches(f.src, 'current_setting"?\s*\(\s*([^,)]*)', 'gi') LOOP
       k := substring(btrim(m[1]) FROM '^''([^'']*)''(?:::text)?$');
       IF k IS NULL OR NOT (k = ANY (plain)) THEN
         kind := f.kind; object := f.obj; detail := 'reads ' || m[1];
@@ -277,7 +298,7 @@ BEGIN
       FROM pg_trigger t WHERE NOT t.tgisinternal
   LOOP
     CONTINUE WHEN f.name = ANY (added_checks);
-    FOR m IN SELECT regexp_matches(f.src, 'current_setting\s*\(\s*([^,)]*)', 'gi') LOOP
+    FOR m IN SELECT regexp_matches(f.src, 'current_setting"?\s*\(\s*([^,)]*)', 'gi') LOOP
       k := substring(btrim(m[1]) FROM '^''([^'']*)''(?:::text)?$');
       CONTINUE WHEN k = ANY (plain);
       CONTINUE WHEN EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = 'mantle_system_narrow')
