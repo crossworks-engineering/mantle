@@ -24,16 +24,16 @@
     "@mantle/rules": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
-    "drizzle-orm": "^0.45.3",
-    "imapflow": "^2.2.6",
-    "mailparser": "^3.9.36",
-    "nodemailer": "^10.0.15",
-    "pg-boss": "^12.37.0",
-    "sanitize-html": "^2.18.0"
+    "drizzle-orm": "^0.45.4",
+    "imapflow": "^2.5.5",
+    "mailparser": "^3.9.46",
+    "nodemailer": "^10.1.7",
+    "pg-boss": "^12.38.0",
+    "sanitize-html": "^2.18.1"
   },
   "devDependencies": {
     "@types/mailparser": "^3.9.0",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/sanitize-html": "^2.16.2",
     "postgres": "^3.4.9",
     "tsx": "^4.23.15",
