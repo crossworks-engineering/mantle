@@ -392,7 +392,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
           const [r] = await t.unsafe(`select text from assistant_messages where id = '${SETTLED}'`);
           throw Object.assign(new Error('rollback'), {
             ok: true,
-            text: (r as { text: string }).text,
+            text: (r as unknown as { text: string }).text,
           });
         })
         .catch((e: { ok?: boolean; text?: string; code?: string }) => (e.ok ? e.text : e.code));

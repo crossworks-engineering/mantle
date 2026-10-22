@@ -289,13 +289,16 @@ Its rights, made equal to the access matrix at every migrate inside
 - `EXECUTE` on an allowlist, `NARROW_SYSTEM_FUNCTIONS`
   (`packages/db/src/runtime-role.ts`), measured with the switch on (the full
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
-  what narrow statements call by name, fourteen today (the read definers
+  what narrow statements call by name, ten today (the read definers
   of the login-self routes, the Admin area's approvals and the email
-  discover; `mantle_brain_id`; the writers on an area exit, each its own
-  rule: `mantle_ws_set_moderator`, `mantle_ws_attach_assistants`,
-  `mantle_tg_chat_set`, the structure and assistant delete definers;
+  discover; `mantle_brain_id`; 0320's message guard read). No writer on an
+  area exit is left on it: the five that need the exit's login
+  (`mantle_ws_set_moderator`, `mantle_tg_chat_set`, the structure and
+  assistant delete definers, and `mantle_ws_attach_assistants`, the
+  onboarding attach, round 13c) run at the full-route spot `acting-login`
+  (0321: the identity readers answer no login on the narrow role);
   `mantle_bridge_login` left it with the role change, and the promotion
-  definer `mantle_space_settle_promotion` in S7b part b2 round 5, both
+  definer `mantle_space_settle_promotion` in S7b part b2 round 5, all
   denied by name), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime role's.

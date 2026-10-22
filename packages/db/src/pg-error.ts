@@ -100,6 +100,15 @@ export function isRefusedRight(err: unknown): boolean {
   return pgErrorCode(err) === '42501';
 }
 
+/** The rule a workspace definer named in its refusal (`mantle_ws:<rule>`,
+ *  0307 and after), read off the database error on the cause chain, else
+ *  null: tells a definer's own answer (a login without the area) from a
+ *  right the role lacks, both 42501. */
+export function wsRuleOf(err: unknown): string | null {
+  const message = (findPgError(err) as { message?: unknown } | null)?.message;
+  return typeof message === 'string' ? (/^mantle_ws:([a-z_]+)\b/.exec(message)?.[1] ?? null) : null;
+}
+
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';

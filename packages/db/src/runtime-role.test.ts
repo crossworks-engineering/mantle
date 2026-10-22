@@ -427,7 +427,6 @@ describe('the narrow system role rights', () => {
       // 0320: the assistant_messages guard's read definer.
       'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
-      'public.mantle_ws_attach_assistants()',
       'public.mantle_ws_kind(uuid)',
       'public.mantle_ws_private_for(uuid,uuid)',
     ]);
@@ -438,8 +437,9 @@ describe('the narrow system role rights', () => {
       expect(why.length, fn).toBeGreaterThan(10);
     }
     // The content and workspace writers among the definers (the a2
-    // re-audit's 17 less mantle_ws_attach_assistants, the onboarding attach
-    // on the assistants area's exit, measured), each denied by name;
+    // re-audit's 17; the onboarding attach left the narrow list in round
+    // 13c: it needs the login, so it runs at the spot acting-login), each
+    // denied by name;
     // mantle_bridge_login too (it runs at the spot
     // login-credential with the role change).
     const writers = [

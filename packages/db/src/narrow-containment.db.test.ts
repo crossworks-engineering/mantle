@@ -135,11 +135,13 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `insert into mobile_tokens default values`,
       `update access_keys set login_id = '${member}'`,
       `update oauth_access_tokens set actor_id = '${member}'`,
+      // Round 13b (item F): a rename runs at login-credential (the display
+      // name reaches the prompts as the user's name).
+      `update auth.users set display_name = 'd' where id = '${member}'`,
     ];
     for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
     // What narrow work writes (measured), each allowed.
     for (const s of [
-      `update auth.users set display_name = 'd' where id = '${member}'`,
       `update auth.users set disabled_at = now() where id = '${member}'`,
       `update auth.users set session_epoch = session_epoch + 1 where id = '${member}'`,
       `update access_keys set revoked_at = now(), revoked_by = '${admin}' where false`,
@@ -266,9 +268,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     ).toBe('ok');
     const [t] = await su<{ n: number }[]>`
       select count(*)::int as n from pg_trigger where tgname = 'mantle_narrow_one_way_trg'`;
-    // 0318's nine, and 0320's heartbeats, tool_groups, channels and
-    // telegram_accounts.
-    expect(t!.n).toBe(13);
+    // 0318's nine, 0320's heartbeats, tool_groups, channels and
+    // telegram_accounts, and 0323's twelve (every table
+    // with a boolean enabled, is_default or backup_enabled column the narrow
+    // role may update and no trigger before; the rest merged into these).
+    expect(t!.n).toBe(25);
     await su`update auth.users set disabled_at = null where id = ${member}`;
   });
 
@@ -322,6 +326,12 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update agents set configured_by = null where id = '${agent}'`,
       `update tool_groups set integration = null where id = '${group}'`,
       `update tool_groups set configured_by = null where id = '${group}'`,
+      // Round 13b (items C and F): an assistant's description, memory_config
+      // and params run at skill-text, a group's description at tool-config.
+      `update agents set description = 'd' where id = '${agent}'`,
+      `update agents set memory_config = memory_config || '{"max_iterations":5}' where id = '${agent}'`,
+      `update agents set params = '{}' where id = '${agent}'`,
+      `update tool_groups set description = 'e' where id = '${group}'`,
     ];
     for (const s of refused) expect(await run(nl, [s]), s).toBe('42501');
     expect(await state()).toBe(before);
@@ -329,13 +339,12 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     // assistants, connectors and settings areas' edits), each allowed.
     for (const s of [
       // Its prompt, skill list and persona notes run at skill-text now.
-      `update agents set name = 'b', description = 'd', model = 'm2',
-         memory_config = memory_config || '{"max_iterations":5}', params = '{}', thinking_effort = 'low',
+      `update agents set name = 'b', model = 'm2', thinking_effort = 'low',
          avatar = null, priority = 5, enabled = false,
          tts_worker_id = null, updated_at = now() where id = '${agent}'`,
       `update agents set last_used_at = now(), usage_count = usage_count + 1 where id = '${agent}'`,
       `update agents set assigned_user_id = null, assigned_at = null where id = '${agent}'`,
-      `update tool_groups set name = 'h', description = 'e', enabled = false,
+      `update tool_groups set name = 'h', enabled = false,
          updated_at = now() where id = '${group}'`,
     ]) {
       expect(await run(nl, [s]), s).toBe('ok');
@@ -361,23 +370,15 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       ['agents', 'configured_by'],
       ['tool_groups', 'integration'],
       ['tool_groups', 'configured_by'],
+      ['agents', 'description'],
+      ['agents', 'memory_config'],
+      ['agents', 'params'],
+      ['tool_groups', 'description'],
     ] as const) {
       const [g] = await su<{ u: boolean }[]>`
         select has_column_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, ${c}, 'UPDATE') as u`;
       expect(g!.u, `${t}.${c}`).toBe(false);
     }
-    // Another key of memory_config moves on the narrow login, delegate_to
-    // kept: read in the update's own transaction, then rolled back.
-    const moved = await nl
-      .begin(async (t) => {
-        await t.unsafe(
-          `update agents set memory_config = memory_config || '{"max_iterations":5}' where id = '${agent}'`,
-        );
-        const r = await t.unsafe(`select memory_config as m from agents where id = '${agent}'`);
-        throw Object.assign(new Error('rollback'), { m: r[0]?.m });
-      })
-      .catch((e: { m?: unknown; message: string }) => e.m ?? e.message);
-    expect(moved).toEqual({ delegate_to: ['pages'], max_iterations: 5 });
     // The system pool (here the superuser) is not held by the one-way rule.
     expect(
       await run(su, [`update agents set assigned_user_id = '${member}' where id = '${agent}'`]),

@@ -286,8 +286,6 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "a connector's rows (the Admin area's approval of an elevated call): a read definer",
   'public.mantle_pending_card_route(uuid,uuid)':
     "a pending approval card's route (the Admin area's run of an item): a read definer",
-  'public.mantle_ws_attach_assistants()':
-    "the default assistants attached at onboarding (the assistants area's exit): the definer's own rule, workspace_resources only",
   'public.mantle_mail_backfill_accounts(uuid)':
     "the email area's discover (a sender made a contact): the enabled mail accounts' ids and providers, a read definer (backfill-queue.ts)",
 };
@@ -317,7 +315,8 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
  * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
-  // The four definers that need the exit's acting login (0321): the
+  // The five definers that need the exit's acting login (0321, and the
+  // onboarding attach): the
   // identity readers answer none on the narrow role, so each would refuse
   // it; their callers run at the full-route spot acting-login until a
   // signed acting login lets the readers trust a signed value.
@@ -329,6 +328,8 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "the keys, connectors and settings areas' structure items (gateway/structure-item.ts): need the acting login, so they run at the full-route spot acting-login (0321)",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
     "an assistant's delete (gateway/spot-definers.ts deleteAgentOnNarrow): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set acting login deleted an assistant on the narrow role before",
+  'public.mantle_ws_attach_assistants()':
+    "the default assistants attached at onboarding (workspaces-migrate.ts attachDefaultAssistants in the login's scope): needs that login, so it runs at the full-route spot acting-login (round 13c: the fifth such definer, met by the onboarding cells with the switch on; on the narrow role it refused every call after 0321)",
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
   'public.mantle_bridge_login(uuid)':

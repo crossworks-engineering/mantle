@@ -37,8 +37,10 @@ import {
   type FirstOwnerSwitchRow,
   hasRequestSlot,
   loginScopeFor,
+  onFullSystemRoute,
   systemPoolTxInScope,
   isRefusedRight,
+  wsRuleOf,
 } from '@mantle/db';
 
 /** A row of the switch: the same shape the first owner's exit returns. */
@@ -60,15 +62,19 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
  *  with one it runs in that login's own scope on the system pool (its
  *  workspaces and its login set: systemPoolTxInScope), where
  *  the definer asks the assistants area of it: the first owner at signup
- *  and onboarding, both inside a request. */
+ *  and onboarding, both inside a request. The definer needs that login,
+ *  which the identity readers answer only off the narrow role (0321): on
+ *  an Admin area's narrow exit (onboarding) it runs at the full-route spot
+ *  acting-login; anywhere else as it is. */
 export async function attachDefaultAssistants(loginId?: string): Promise<number> {
   const call = sql`select "public"."mantle_ws_attach_assistants"() as n`;
   if (loginId === undefined) {
     const [r] = (await db.execute(call)) as unknown as { n: number }[];
     return Number(r?.n ?? 0);
   }
-  const rows = (await systemPoolTxInScope(await loginScopeFor(loginId), (tx) =>
-    tx.execute(call),
+  const scope = await loginScopeFor(loginId);
+  const rows = (await onFullSystemRoute('acting-login', () =>
+    systemPoolTxInScope(scope, (tx) => tx.execute(call)),
   )) as unknown as { n: number }[];
   return Number(rows[0]?.n ?? 0);
 }
@@ -149,9 +155,12 @@ export async function attachDefaultAssistantsQuietly(when: string, loginId: stri
     const attached = await attachDefaultAssistants(loginId);
     if (attached) console.log(`[workspaces] ${when}: attached ${attached} default assistant(s)`);
   } catch (err) {
-    // A refused right (42501) is rethrown, never logged away:
-    // the narrow login met a write it may not make.
-    if (isRefusedRight(err)) throw err;
+    // A refused right (42501) is rethrown, never logged away: the narrow
+    // login met a write it may not make. The definer's own area rule is
+    // the one 42501 that is an answer, not a bug: a login without the
+    // assistants area attaches nothing (logged; the next boot's system
+    // work attaches).
+    if (isRefusedRight(err) && wsRuleOf(err) !== 'resources_admin_only') throw err;
     failure(when, err);
   }
 }

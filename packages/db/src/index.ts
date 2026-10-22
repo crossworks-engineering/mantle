@@ -372,6 +372,7 @@ export {
   pgConstraint,
   pgErrorCode,
   isRefusedRight,
+  wsRuleOf,
 } from './pg-error';
 export { adminActTx } from './admin-act';
 export {
