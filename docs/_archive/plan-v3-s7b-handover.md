@@ -1026,6 +1026,69 @@ handler writes a `writer: 'content'` table. The next round: a cell per
 undriven row, switch on and off, answers equal (the brief's item 2), and a
 unit sweep pinning the undriven list (down only).
 
+### Gates
+
+Mac, Node 26, DATABASE_URL unset, on 0ee7b25da: `pnpm format:check` 0,
+`pnpm docs:check` 0, `pnpm arch:check` 0, `pnpm lint` 0, `pnpm -r
+typecheck` 0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0, `pnpm
+test:serial` 0 (1 file skipped: no database), `vitest run server packages
+eslint-rules` 0 (871 files passed, 285 skipped; 11299 tests passed).
+
+Workstation, a fresh clone of the pushed 0ee7b25da per suite, one pgvector
+pg18 container each (label mantle.test=s7b-b2, max_connections=450, port
+checked free, removed by exact name with its volumes), init-scratch and
+migrate with MANTLE_CHECK_FLOOR=keep, systemd-run --user, test lanes,
+--maxWorkers=3, MANTLE_NARROW_SYSTEM=1 unless said; the default suites are
+the fresh-install shape (MANTLE_DB_RUNTIME_ROLE unset, the switch on):
+
+| Suite                                     | Exit | Counts                              |
+| ----------------------------------------- | ---- | ----------------------------------- |
+| full DB vitest, shard 1/2                 | 0    | 578 files; 6384 passed, 1 skipped   |
+| full DB vitest, shard 2/2                 | 0    | 578 files; 7862 passed              |
+| test:actor-off                            | 0    | 142 files; 1439 passed, 1 skipped   |
+| test:actor-on                             | 0    | 34 files; 413 passed, 1 skipped     |
+| test:edit-on                              | 0    | 46 files; 583 passed                |
+| test:matrix (rerun, see below)            | 0    | 4 files; 8 passed                   |
+| test:runtime-role in full                 | 0    | 295 files; 2933 passed, 1 skipped   |
+| test:serial                               | 0    | 1 file; 1 passed                    |
+| full DB vitest, MANTLE_NARROW_SYSTEM=0    | 0    | 1156 files; 14246 passed, 1 skipped |
+| the new cells, targeted (2 files)         | 0    | 18 passed                           |
+| the new cells under the runtime role      | 0    | 2 files; 22 passed                  |
+| the drill (N-1: b1 against the b2 schema) | 0    | every migrate step 0 (below)        |
+
+test:matrix first ran beside five other lanes and failed only its time
+budget (the tool cells 212.2 s against 210 s; every cell the oracle's
+answer, as b1 fix round 1 met); main 7f2d12292 in the same config passed
+(161 s), and the branch again beside one other lane passed (137 s).
+serial and the switch-off run first failed to start (a host port taken
+between the check and `docker run`, then the leftover container's name);
+suite.sh now removes its own container by exact name before and after a
+failed start, and both ran clean.
+
+The drill (main 7f2d12292 = b1, and the branch), each migrate step: ledger
+rows / md5 of mantle_tg_chat_set's body / the user role's rolconnlimit /
+the narrow role's rolcanlogin:
+
+| Step                                                     | Exit | State                          |
+| -------------------------------------------------------- | ---- | ------------------------------ |
+| init and migrate with main (b1), production, switch on   | 0    | 313 / b8266526... / 30 / true  |
+| migrate with the branch (b2), production, switch on      | 0    | 314 / c1ab8138... / 54 / true  |
+| migrate with main (N-1 boot on the b2 schema)            | 0    | 314 / c1ab8138... / 30 / true  |
+| N-1: the narrow login, its own acting login (b1's shape) | 0    | runs, no row                   |
+| N-1: the narrow login, another acting login              | 1    | 42501 only the acting login    |
+| N-1: the system pool (superuser), its own / another      | 0, 1 | runs / 42501                   |
+| migrate with the branch again                            | 0    | 314 / c1ab8138... / 54 / true  |
+| the branch, production, switch unset                     | 0    | 314 / c1ab8138... / 54 / false |
+| the branch, production, per-database mode                | 0    | 314 / c1ab8138... / 54 / false |
+
+N-1 keeps 0314's body (its migrate does not know it) and sets the user
+role's limit back to its own 30; b1 sends the acting login, so its
+Telegram calls run. Rolling b2 back to b1 needs no revert.
+
+### Pins
+
+No pin moved (arch:check 0). The spots' pins move with the spots.
+
 ### Left for the next round, in the brief's order
 
 1. The spot moves (decision A, then each row of the table above), the
