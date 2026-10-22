@@ -291,44 +291,10 @@ of `'all'`, `'read'` and `'none'` tables.
 
 ### The narrow route
 
-`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default everywhere
-since S7b part b2 (production, development and tests); `0`, `off` or `false`
-turns it off on a box (the kill switch, below). Read once per process when
-the system pool opens, and a production process logs it with the pool's
-login; migrate reads it too and gives the role its login only while it is
-on. Off, every statement runs as before.
-
-#### The kill switch
-
-Per box, with no image change: set `MANTLE_NARROW_SYSTEM=0` in the box's
-`.env` (`off` and `false` read the same), then `docker compose up -d`.
-Compose passes the switch to the migrate gate and to every app process
-(x-app-env), so migrate runs first and makes `mantle_system_narrow`
-`NOLOGIN` again, and each process starts on the full route (its boot line
-says `narrow system route off`). Nothing in the database changes: the
-column rights, the definers and the one-way rules stay, and hold only the
-narrow role, which then runs nothing. To turn it back on, remove the line
-(or set `1`) and `docker compose up -d` again. A process that reads the
-switch on while migrate saw it off fails its narrow statements closed and
-names the fix (`NARROW_LOGIN_FIX`); compose cannot produce that, since both
-read the same `.env`.
-
-What the default means for each shape:
-
-- A fresh install: on. Compose's `MANTLE_NARROW_SYSTEM` is empty, so
-  migrate gives the role its login (its password derived from
-  `MANTLE_MASTER_KEY`, which compose requires) and the app opens the narrow
-  pool on its first narrow statement. `MANTLE_DB_RUNTIME_ROLE` may be off:
-  the narrow pool logs in as the narrow role either way.
-- Per-database mode (`MANTLE_VIEWER_ROLES_PER_DATABASE`, several brains on
-  one cluster): on, on the S7a route. The role has no login there (one
-  password cannot be every brain's), so the system pool takes the role per
-  transaction, with the hold check and the text check as the boundary.
-- An existing box rolled to this release: on at that roll, with nothing set
-  in its `.env`. Before the fleet flip the box counts of
-  `scripts/arch-scoreboard-box.sh` must read 0 on the box:
-  `narrow_misses:content-write`, `narrow_misses:cascade-delete`,
-  `narrow_misses:denied` and `fail_open_misses:all` (each site with it). On, a statement the system pool sends
+`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default in tests and
+development, off by default in production; read once per process when the
+system pool opens, and a production process logs it with the pool's login.
+Off, every statement runs as before. On, a statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 

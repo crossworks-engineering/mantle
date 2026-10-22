@@ -730,28 +730,6 @@ sets `MANTLE_DB_RUNTIME_ROLE=1` in its `.env` (only then does migrate give
 a fresh backup first: the steps, the checks and the rollback are in
 [runtime-role.md](runtime-role.md). Hand psql below stays the superuser.
 
-## The narrow system route on by default (S7b) and its kill switch
-
-From the release that carries S7b part b2, `MANTLE_NARROW_SYSTEM` is on
-when unset: the system work of an Admin area exit runs as
-`mantle_system_narrow`, on a pool that logs in as it (migrate gives the role
-its login at the roll). Before the fleet flip, the box counts of
-`scripts/arch-scoreboard-box.sh` must read 0 on the box (the list:
-[runtime-role.md](runtime-role.md), "The kill switch").
-
-The kill switch, per box, no image change:
-
-```sh
-# ~/mantle/.env
-MANTLE_NARROW_SYSTEM=0      # off and false read the same
-docker compose up -d        # migrate first (the role loses its login), then the app
-docker logs mantle_web 2>&1 | grep 'narrow system route'   # "... narrow system route off"
-```
-
-To turn it back on, remove the line (or set `1`) and `docker compose up -d`
-again. The detail, and what a fresh install and per-database mode do, is in
-[runtime-role.md](runtime-role.md), "The kill switch".
-
 ## Hand psql on a box: name the operator actor (arch A2a, migration 0275)
 
 Every statement carries who it runs as (docs/actors.md). The app sets it

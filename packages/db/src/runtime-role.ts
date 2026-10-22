@@ -62,7 +62,7 @@
  */
 import { hkdfSync } from 'node:crypto';
 import type postgres from 'postgres';
-import { env, feature } from '@mantle/config';
+import { env, feature, isProduction } from '@mantle/config';
 import { backoffMs, errorMessage, withRetry } from '@mantle/std';
 import { ACCESS_MATRIX, GAP_WRITER_ROLE, NARROW_COLUMN_RIGHTS, narrowFor } from './access-matrix';
 import { viewerRoleName } from './viewer';
@@ -527,16 +527,15 @@ let narrowSystem: boolean | null = null;
 /**
  * Whether the system pool sends the work of a reason routed 'narrow'
  * (viewer.ts AS_SYSTEM_ROUTE, REQUEST_SYSTEM_ROUTE) as the narrow system
- * role (plan v3.2 S7a): MANTLE_NARROW_SYSTEM, on by default everywhere
- * since S7b (production too); 0, off or false is the per-box kill switch
- * (docs/runtime-role.md, "The kill switch"). Read once, when the system pool
- * opens (gateway/pools.ts), and by migrate (the role's login follows it); a
- * production process logs it with the pool's login (reportDbRole). Off,
- * every statement runs as before.
+ * role (plan v3.2 S7a): MANTLE_NARROW_SYSTEM, on by default in tests and
+ * development, off by default in production (S7b turns it on). Read once,
+ * when the system pool opens (gateway/pools.ts); a production process logs
+ * it with the pool's login (reportDbRole). Off, every statement runs as
+ * before.
  */
 export function narrowSystemOn(): boolean {
   if (narrowSystem === null) {
-    narrowSystem = feature('narrowSystem');
+    narrowSystem = feature('narrowSystem', { default: !isProduction() });
   }
   return narrowSystem;
 }
