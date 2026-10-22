@@ -21,6 +21,7 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
   let rr: typeof import('./runtime-role');
   let v: typeof import('./viewer');
   let m: typeof import('./index');
+  let pools: typeof import('./gateway/pools');
   let su: ReturnType<typeof postgres>;
   let brain = '';
   let systemLogin = '';
@@ -40,7 +41,8 @@ describe.skipIf(!URL)('a system transaction inside a narrow exit', () => {
     rr.setNarrowSystemForTests(true);
     v = await import('./viewer');
     m = await import('./index');
-    const [r] = await m.getAdminDb().execute<{ u: string }>(sql`select current_user as u`);
+    pools = await import('./gateway/pools');
+    const [r] = await pools.getAdminDb().execute<{ u: string }>(sql`select current_user as u`);
     systemLogin = r!.u;
   }, 120_000);
 
