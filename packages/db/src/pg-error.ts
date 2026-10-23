@@ -88,6 +88,15 @@ export function permissionGapOf(err: unknown): string | null {
   return /^permission denied for /.test(message) ? message.slice(0, 200) : null;
 }
 
+/** Any 42501 on the chain, its message: a privilege gap, or a refusal a
+ *  row rule, a guard or a definer raised with that code (the narrow role's
+ *  refusals are noted whatever their text). Else null. */
+export function refusalOf(err: unknown): string | null {
+  const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
+  if (!pg || pg.code !== '42501') return null;
+  return (typeof pg.message === 'string' ? pg.message : '42501').slice(0, 200);
+}
+
 /**
  * Any 42501 insufficient_privilege on the error or its cause chain (drizzle
  * wraps the driver's error in `.cause`): a privilege gap, or a refusal a

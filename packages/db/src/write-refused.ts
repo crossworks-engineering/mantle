@@ -19,6 +19,7 @@
  * driver error, so the code can sit on the cause rather than the top object.
  */
 import { narrowRouteNow } from './gateway/pools';
+import { raisedOnNarrow } from './gateway/narrow-route';
 import { pgErrorCode } from './pg-error';
 import { systemRouteNow } from './viewer';
 
@@ -34,8 +35,12 @@ const WRITE_REFUSED_CODES = new Set(['42501', '25006']);
 export function isWriteRefused(err: unknown): boolean {
   const code = pgErrorCode(err);
   if (code === null || !WRITE_REFUSED_CODES.has(code)) return false;
+  if (code !== '42501') return true;
+  // Raised on the narrow route (marked where it was met, which covers
+  // systemDb inside a turn or request scope), or met in a narrow exit.
+  if (raisedOnNarrow(err)) return false;
   // Outside a narrow exit no pool is asked (systemRouteNow first).
-  return !(code === '42501' && systemRouteNow() === 'narrow' && narrowRouteNow());
+  return !(systemRouteNow() === 'narrow' && narrowRouteNow());
 }
 
 /**

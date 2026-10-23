@@ -21,7 +21,7 @@
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
 import { RuntimeFaultError, TtlCache } from '@mantle/std';
-import { permissionGapOf, pgErrorCode } from '../pg-error';
+import { pgErrorCode, refusalOf } from '../pg-error';
 import {
   actorCheckMode,
   actorSetting,
@@ -114,7 +114,10 @@ async function narrowSettingsSql(takeRole: boolean): Promise<string | null> {
  * 'narrow-denied'). The caller's error stays its error.
  */
 function noteNarrowDenial(err: unknown): void {
-  const what = permissionGapOf(err);
+  markNarrowRaised(err);
+  // Every 42501: a privilege gap, and a row rule's, a guard's or a
+  // definer's refusal (the re-audit's L1: only the first was noted).
+  const what = refusalOf(err);
   if (!what) return;
   // Once per error: a statement's denial is noted where it is met, not
   // again as the savepoint's or the transaction's error (the same error, or
@@ -139,6 +142,29 @@ function noteNarrowDenial(err: unknown): void {
 
 /** The denials already noted (noteNarrowDenial). */
 const notedDenials = new WeakSet<object>();
+
+/** Errors raised by a statement on the narrow route (noteNarrowDenial
+ *  marks each on its cause chain), so a caller can tell the narrow role's
+ *  refusal from a read-only database wherever it is caught (isWriteRefused:
+ *  systemDb inside a turn or request scope runs narrow with no exit). */
+const narrowRaised = new WeakSet<object>();
+
+function markNarrowRaised(err: unknown): void {
+  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
+    narrowRaised.add(e);
+    e = (e as { cause?: unknown }).cause;
+  }
+}
+
+/** Whether `err` (or an error on its cause chain) was raised on the narrow
+ *  route. */
+export function raisedOnNarrow(err: unknown): boolean {
+  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
+    if (narrowRaised.has(e)) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 /** Tests only: the start of the refused statement's text, from the
  *  driver's error or the one it is the cause of. */

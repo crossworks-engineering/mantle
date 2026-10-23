@@ -390,3 +390,67 @@ describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)',
       .toBe(true);
   });
 });
+
+describe.skipIf(!URL)(
+  'a narrow refusal raised by a row rule is noted and never read as a read-only database (switch on)',
+  () => {
+    let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
+    let su: ReturnType<typeof postgres>;
+    let m: typeof import('./index');
+    let rr: typeof import('./runtime-role');
+    let ts: typeof import('./test-support');
+    let anchor = '';
+    const login = randomUUID();
+
+    beforeAll(async () => {
+      scratch = await createMigratedScratchDatabase(URL!);
+      su = postgres(scratch.url, { max: 1, prepare: false });
+      expect(await ensureRuntimeRoles(su, KEY, { login: true, narrowLogin: true })).toBe('ok');
+      anchor = await ensureTestAnchor(su);
+      await su`insert into auth.users (id, email, password_hash, role)
+             values (${login}, ${`${login}@example.test`}, 'x', 'member')`;
+      process.env.DATABASE_URL = scratch.url;
+      process.env.MANTLE_MASTER_KEY ??= KEY;
+      rr = await import('./runtime-role');
+      rr.setNarrowSystemForTests(true);
+      ts = await import('./test-support');
+      m = await import('./index');
+    }, 180_000);
+
+    afterAll(async () => {
+      await m?.closeDb();
+      rr?.setNarrowSystemForTests(null);
+      await su?.end();
+      await scratch?.drop();
+    }, 60_000);
+
+    it('the hold`s refusal of systemDb inside a login`s request scope is noted, and isWriteRefused says no', async () => {
+      ts.takeNarrowDenials();
+      let caught: unknown = null;
+      await m.runInRequestSlot(async () => {
+        const scope = Object.freeze({
+          kind: 'user' as const,
+          loginId: login,
+          ws: Object.freeze([]),
+          modWs: Object.freeze([]),
+        });
+        expect(m.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
+        try {
+          await m.systemDb
+            .update(m.authUsers)
+            .set({ sessionEpoch: sqlTag`${m.authUsers.sessionEpoch} + 1` })
+            .where(sqlTag`${m.authUsers.id} = ${anchor}`);
+        } catch (err) {
+          caught = err;
+          // Caught here: never a read-only database to skip.
+          expect(m.isWriteRefused(err)).toBe(false);
+        }
+      });
+      expect(caught).not.toBeNull();
+      const denied = ts.takeNarrowDenials();
+      expect(denied.map((d) => d.what).join('\n')).toContain(
+        'may not disable or sign out the owner',
+      );
+    });
+  },
+);
