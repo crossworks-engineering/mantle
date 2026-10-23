@@ -20,7 +20,14 @@
  *    of an exit routed narrow that calls a function the narrow role may not
  *    run is noted (narrow-would-refuse fn:<name> EXECUTE); one it may run,
  *    or the same call outside the exit, is not;
- *  - every migration of the narrow set (0315 to 0327) runs again over its
+ *  - 0328: the grant hold also holds a held login's unclaimed pairing
+ *    codes, push devices (a row with no login is the owner's) and the
+ *    peers acting as it (released only at the spot); a member's the narrow
+ *    login still removes; off the narrow route counted;
+ *  - mantle_narrow_counter_missing() (the box script's and this cell's one
+ *    query): 0, then 1 with one UPDATE OF trigger dropped, then 1 with one
+ *    column grant changed;
+ *  - every migration of the narrow set (0315 to 0328) runs again over its
  *    own end state and leaves it as it was (0322's end-state check, 0319
  *    with the rules after it).
  *
@@ -303,6 +310,132 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     await su`delete from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})`;
   });
 
+  it('0328: the real narrow login may not remove a held login`s pairing codes or push devices, nor release a peer acting as one; a member`s it may; off the route counted', async () => {
+    const tag = randomUUID().slice(0, 8);
+    const node = async (title: string) =>
+      (
+        await su<{ id: string }[]>`
+          insert into nodes (owner_id, type, title, path) values (${anchor}, 'note', ${title}, 'notes')
+          returning id::text as id`
+      )[0]!.id;
+    const peer = { owner: randomUUID(), admin: randomUUID(), member: randomUUID() };
+    for (const [id, login] of [
+      [peer.owner, anchor],
+      [peer.admin, adminByWs],
+      [peer.member, member],
+    ] as const) {
+      await su`insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
+               values (${id}, ${anchor}, ${await node(`peer ${id.slice(0, 8)}`)}, 'p', 'https://p.example.test',
+                       ${`${tag}-${id}`}, ${login})`;
+    }
+    const code = (login: string, n: string) =>
+      su`insert into pairing_codes (code_hash, user_id, expires_at)
+         values (${`${tag}-pc-${n}`}, ${login}, now() + interval '5 minutes')`;
+    await code(anchor, 'owner');
+    await code(adminByRole, 'admin');
+    await code(member, 'member');
+    const device = (login: string | null, n: string) =>
+      su`insert into push_subscriptions (owner_id, login_id, routing_token, public_key, platform)
+         values (${anchor}, ${login}, ${`${tag}-rt-${n}`}, 'k', 'ios')`;
+    await device(anchor, 'owner');
+    await device(adminByWs, 'admin');
+    await device(null, 'legacy');
+    await device(member, 'member');
+    const state = async () =>
+      (
+        await su<{ h: string }[]>`
+          select md5(concat_ws('#',
+            (select string_agg(code_hash, '|' order by code_hash) from pairing_codes where code_hash like ${`${tag}-%`}),
+            (select string_agg(routing_token, '|' order by routing_token) from push_subscriptions where routing_token like ${`${tag}-%`}),
+            (select string_agg(id::text || coalesce(acts_as_login_id::text, '-'), '|' order by id)
+               from mantle_peers where id in (${peer.owner}, ${peer.admin}, ${peer.member})))) as h`
+      )[0]!.h;
+    const before = await state();
+    const release = (id: string) =>
+      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where id = '${id}'`;
+    const refused: Array<[string, string]> = [
+      ['owner pairing code', `delete from pairing_codes where code_hash = '${tag}-pc-owner'`],
+      ['Admin pairing code', `delete from pairing_codes where code_hash = '${tag}-pc-admin'`],
+      ['owner device', `delete from push_subscriptions where routing_token = '${tag}-rt-owner'`],
+      ['Admin device', `delete from push_subscriptions where routing_token = '${tag}-rt-admin'`],
+      [
+        'a device with no login',
+        `delete from push_subscriptions where routing_token = '${tag}-rt-legacy'`,
+      ],
+      [
+        'every device at once',
+        `delete from push_subscriptions where routing_token like '${tag}-%'`,
+      ],
+      ['peer acting as the owner', release(peer.owner)],
+      ['peer acting as an Admin user', release(peer.admin)],
+    ];
+    for (const [what, stmt] of refused) {
+      expect(await run(nl, [stmt], true), what).toBe('42501');
+    }
+    expect(await state()).toBe(before);
+    // A member's: the users area's own lockout writes on the narrow login.
+    for (const stmt of [
+      `delete from pairing_codes where code_hash = '${tag}-pc-member'`,
+      `delete from push_subscriptions where routing_token = '${tag}-rt-member'`,
+      release(peer.member),
+    ]) {
+      expect(await run(nl, [stmt]), stmt).toBeNull();
+    }
+    // Off the narrow route a narrow reason's removal of a held login's is
+    // counted, the row removed; at a spot not.
+    counted();
+    const who = 'system:http:admin-area';
+    const set = (spot = false) =>
+      `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true)` +
+      (spot ? `, set_config('mantle.route', 'full', true)` : '');
+    expect(
+      await run(rt, [
+        set(),
+        `delete from push_subscriptions where routing_token = '${tag}-rt-owner'`,
+      ]),
+    ).toBeNull();
+    expect(counted()).toEqual([
+      `${PREFIX}narrow-would-refuse ${who} public.push_subscriptions DELETE`,
+    ]);
+    expect(await run(rt, [set(), release(peer.admin)])).toBeNull();
+    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} public.mantle_peers UPDATE`]);
+    expect(
+      await run(rt, [set(true), `delete from pairing_codes where code_hash = '${tag}-pc-owner'`]),
+    ).toBeNull();
+    expect(counted()).toEqual([]);
+    await su`delete from pairing_codes where code_hash like ${`${tag}-%`}`;
+    await su`delete from push_subscriptions where routing_token like ${`${tag}-%`}`;
+    await su`delete from mantle_peers where id in (${peer.owner}, ${peer.admin}, ${peer.member})`;
+  });
+
+  it('the counter`s missing triggers (one function, the box script`s): 0, 1 with an UPDATE OF trigger dropped, 1 with a column grant changed', async () => {
+    const missing = async (tx: ReturnType<typeof postgres> | postgres.TransactionSql) =>
+      Number((await tx.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
+    expect(await missing(su)).toBe(0);
+    // A table with an UPDATE OF trigger (columns the narrow role may not
+    // update) and one column the narrow role may update.
+    const [t] = await su<{ t: string; col: string }[]>`
+      select g.tgrelid::regclass::text as t,
+             (select a.attname::text from pg_attribute a
+               where a.attrelid = g.tgrelid and a.attnum = any (g.tgattr::int2[]) limit 1) as col
+        from pg_trigger g where g.tgname = 'mantle_narrow_would_refuse_upd' and cardinality(g.tgattr::int2[]) > 1
+       order by 1 limit 1`;
+    expect(t?.t).toBeTruthy();
+    for (const change of [
+      `drop trigger mantle_narrow_would_refuse_upd on ${t!.t}`,
+      `grant update ("${t!.col}") on ${t!.t} to ${NARROW_ROLE}`,
+    ]) {
+      const n = await su
+        .begin(async (tx) => {
+          await tx.unsafe(change);
+          throw Object.assign(new Error('rollback'), { n: await missing(tx) });
+        })
+        .catch((err: { n?: number }) => err.n);
+      expect(n, change).toBe(1);
+    }
+    expect(await missing(su)).toBe(0);
+  });
+
   it('with the held readers taken from the runtime role (an older image`s grants) every sign-in and sign-out write writes, uncounted; the narrow login`s holds refuse', async () => {
     // One image back, the older image's migrate grants the runtime role its
     // own list: the two held readers are not on it. The report branches ask
@@ -569,6 +702,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       'narrow_off_on_insert',
       'member_turn_ledger_definers',
       'narrow_lockout_and_ledger_tokens',
+      'narrow_hold_wider',
     ];
     const journal = (
       JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {

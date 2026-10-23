@@ -44,7 +44,11 @@
 #     number, the ones missing, the actor check's mode and whether the
 #     runtime role may run the two held readers (b3 needs triggers above
 #     0, none missing, the mode warn or on and the readers yes: a box can
-#     read 0 counts with no counter);
+#     read 0 counts with no counter); the same counts over the epoch
+#     before; the narrow switch as the app container has it (on, off,
+#     unset: the image's default, or "?"); and real use since the epoch,
+#     counts only (member chat turns, Admin-area audited actions, active
+#     logins: a 0 with no traffic proves nothing);
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -249,8 +253,16 @@ SQL
 # The derived triggers the narrow role's grants call for (runtime-role.ts
 # wouldRefuseRows) less the ones there: 0 when the counter is whole. A
 # trigger dropped and never made again (a migrate stopped part way) shows
-# here, though the total above stays above 0. "?" before 0320.
+# here, though the total above stays above 0. "?" before 0320. From 0328
+# the database's own mantle_narrow_counter_missing() answers (the query
+# below is its copy, for a box before 0328; the would-refuse cell reads the
+# function: narrow-lockout.db.test.ts).
 narrow_missing=$(q <<'SQL' || true
+select case when to_regprocedure('public.mantle_narrow_counter_missing()') is not null
+            then public.mantle_narrow_counter_missing() end;
+SQL
+)
+[ -n "$narrow_missing" ] || narrow_missing=$(q <<'SQL' || true
 with t as (
   select c.oid,
          has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'INSERT') is false as ins,
@@ -310,6 +322,25 @@ select case when detail ~ '^[0-9]+[.][0-9]+[.][0-9]+' and detail !~ '[^0-9A-Za-z
  limit 1;
 SQL
 )
+# Real use since the narrow epoch (counts only; the b3 rule reads the
+# would-refuse counts against it: a 0 with no traffic proves nothing):
+# member chat turns (the member turn ledger; rows older than its own keep
+# window are gone), Admin-area writes (audit_log rows: the areas' recorded
+# actions), and active logins (distinct logins that sent a chat message or
+# made an audited action). All time on a box with no epoch.
+traffic=$(q <<'SQL' || true
+with e as (select coalesce((select max(at) from public.actor_check_misses
+                             where check_name = 'narrow-epoch'), '-infinity') as at)
+select (select count(*) from public.member_turn_ledger l, e where l.created_at >= e.at)
+    || ' ' || (select count(*) from public.audit_log a, e where a.created_at >= e.at)
+    || ' ' || (select count(distinct x) from (
+                 select m.login_id as x from public.assistant_messages m, e
+                  where m.created_at >= e.at and m.direction = 'inbound' and m.login_id is not null
+                 union
+                 select a.actor_id from public.audit_log a, e
+                  where a.created_at >= e.at and a.actor_id is not null) u);
+SQL
+)
 # Whether the stack's .env has the runtime role's line at all (S4a: the
 # updater and roll.sh write one when it has none).
 env_stack="$stack"
@@ -359,6 +390,25 @@ if [ "$have" = 1 ]; then
   v=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
   case "$v" in 1 | true | yes | on) names_role=1 ;; *) names_role=0 ;; esac
 fi
+# MANTLE_NARROW_SYSTEM as the app container has it (the narrow route's
+# switch, read once at boot): on (1, true, yes, on), off (0, false, no,
+# off), unset (the image's default: off before S7b part b3, on from it),
+# or "?" (a word parseFlag warns on). Only that word leaves the box.
+narrow_switch=n/a
+if env_dump=$(docker inspect --type container "$web" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null); then
+  if printf '%s\n' "$env_dump" | grep -q '^MANTLE_NARROW_SYSTEM='; then
+    v=$(printf '%s\n' "$env_dump" | sed -n 's/^MANTLE_NARROW_SYSTEM=//p' | tail -n 1 |
+      sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
+    case "$v" in
+      1 | true | yes | on) narrow_switch=on ;;
+      0 | false | no | off) narrow_switch=off ;;
+      '') narrow_switch=unset ;;
+      *) narrow_switch='?' ;;
+    esac
+  else
+    narrow_switch=unset
+  fi
+fi
 printf '  %-34s %s\n' role_drift "$drift"
 printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
 printf '  %-34s %s\n' admin_workspaces_without_assistant "$no_assistant"
@@ -374,6 +424,7 @@ case "$narrow_epoch" in
   '') narrow_epoch=none ;;
   *[!0-9A-Za-z.:\ -]*) narrow_epoch='?' ;;
 esac
+printf '  %-34s %s\n' narrow_switch "$narrow_switch"
 printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
 printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
 printf '  %-34s %s\n' narrow_counter_missing_triggers "$(num "$narrow_missing")"
@@ -382,6 +433,11 @@ printf '  %-34s %s\n' narrow_counter_held_readers "$narrow_held"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
+  shift || true
+done
+set -- $traffic
+for what in member-turns admin-area-writes active-logins; do
+  printf '  %-34s %s\n' "narrow_traffic_since_epoch:$what" "$(num "${1:-}")"
   shift || true
 done
 set -- $narrow_prev

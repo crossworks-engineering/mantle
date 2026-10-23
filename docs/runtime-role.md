@@ -819,6 +819,19 @@ it). Off the narrow route the same change by a narrow reason is counted
 here keeps meaning the Admin workspace's users; the role column test is
 the older name of the same thing.
 
+The same hold covers their grants (`mantle_narrow_token_hold`): a revoke
+of their access key, OAuth token or device token, a delete of their open
+OAuth code and of an MCP client a live grant of theirs rides on (0327),
+and since 0328 a delete of their unclaimed pairing code or of a push
+device of theirs (a device row with no login is the owner's), and a peer
+taken off acting as them (`mantle_peers.acts_as_login_id` to NULL). The
+product sites go through `onLoginHoldSpot` too: the lockout and session
+end (login-update.ts, endLoginSessions), and every device delete outside
+a caller's transaction (`devicesDelete` in server/web `lib/push/store.ts`
+reads the rows' logins first, on the narrow route only). The decision is
+`onFullSystemRoute`'s own third argument (`when`, asked only on the
+narrow route): one rule for every hold.
+
 ### The narrow role's message rows
 
 The turn writes its message rows (`assistant_messages`) on the narrow
@@ -939,8 +952,17 @@ scope-marked handle) is read for its `mantle_<name>(` calls, and each
 function the narrow role may not EXECUTE (its grants and PUBLIC's, read
 from the catalog once every ten minutes, `has_function_privilege`) is
 noted as `narrow-would-refuse <actor> fn:<name> EXECUTE`, beside the
-database's own count of refused writes. Inside a transaction of such an
-exit its statements and savepoints are read too. Not read: a call made
+database's own count of refused writes. Only `public.mantle_*` calls are
+read, bare or schema-qualified as `public` (quoted or not); a name after
+any other schema's dot is not (one pattern, `CALLED_FN` in
+`gateway/narrow-would-refuse.ts`, which the static scan reads too). The
+text check the narrow route runs before it sends a statement
+(`narrowSendable`) runs here as well, and a statement it would refuse is
+noted as `narrow-would-refuse <actor> text:<what> TEXT` (`<what>` the
+refusal as one word, e.g. `text:a-do-block`): the switch-off count has
+no blind spot for the text check either. Inside a transaction of such an
+exit its statements (tagged templates included) and savepoints are read
+too. Not read: a call made
 inside a function (a definer's calls run as its owner, so the role needs
 no EXECUTE there) and a name built at run time (dynamic SQL); the
 switch-on suites cover those. A trigger function that is not a definer is
@@ -1024,13 +1046,15 @@ So with the switch on, pinning any image older than this release (one
 back or more) takes one of two forms: set `MANTLE_NARROW_SYSTEM=0` in the
 same `.env` edit as `MANTLE_IMAGE_TAG` and one `docker compose up -d` for
 both (no container of the older image ever runs with the switch on), or
-revert 0327 down to 0315 first (below), then pin. The switch alone, with
+revert 0328 down to 0315 first (below), then pin. The switch alone, with
 no pin, is the fallback for a narrow refusal on this release
 (update-prod.md's rollback floors say the same).
 
 Reverting the narrow migrations by hand (before pinning an image older
 than one back, or to keep the switch on one back): newest first, each file in its own
-transaction, `0327_narrow_lockout_and_ledger_tokens`,
+transaction, `0328_narrow_hold_wider` (the grant hold's three new
+triggers and the counter's missing-triggers function; 0327's hold body
+back), `0327_narrow_lockout_and_ledger_tokens`,
 `0326_member_turn_ledger_definers`,
 `0325_narrow_off_on_insert`, `0324_narrow_enable_off`,
 `0323_narrow_message_rules`, `0322_identity_gateway`,
@@ -1064,7 +1088,9 @@ makes; 0 on a box before 0320 or after a failed migrate) and
 `narrow_counter_actor_check` warn or on, and
 `narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
 call for, less the ones there: a migrate stopped part way can leave the
-total above 0 with one table blind), and `narrow_counter_held_readers` yes
+total above 0 with one table blind; from 0328 the database's own
+`mantle_narrow_counter_missing()` answers, the one query the script and
+the cell in `narrow-lockout.db.test.ts` read), and `narrow_counter_held_readers` yes
 (the runtime role may run the two held readers the login and grant holds
 ask; without them those writes run uncounted). b3 needs all four on every
 box. The epoch must also have seen real work: the rule (the owner's,
@@ -1073,7 +1099,10 @@ the most daily member traffic (member and Admin turns, the users, keys and
 settings areas, workers), each count 0 at its end, and each count 0 on
 every other box; a release rolled to that box in between starts its own
 epoch and the day again. A fresh epoch on a quiet box reads 0 and proves
-nothing, so the day is of that busy box. The script also prints the epoch
+nothing, so the day is of that busy box: the script prints that use as
+counts (`narrow_traffic_since_epoch:member-turns`, `:admin-area-writes`,
+`:active-logins`) and the switch as the app container has it
+(`narrow_switch`: on, off, unset or `?`). The script also prints the epoch
 before (`narrow_prev_epoch:*`, from the second latest epoch row to the
 latest), so a reset shows what the one before it saw. b3 flips the default
 on the version that ran the day, never on a later one that has not. A path

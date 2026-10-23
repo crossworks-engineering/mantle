@@ -2290,6 +2290,13 @@
       "when": 1790199700000,
       "tag": "0327_narrow_lockout_and_ledger_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1790199760000,
+      "tag": "0328_narrow_hold_wider",
+      "breakpoints": true
     }
   ]
 }

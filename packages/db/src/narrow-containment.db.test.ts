@@ -226,6 +226,14 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       returning id::text as id`;
     await su`insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
              values (${peer}, ${brain}, ${pn!.id}, 'p', 'https://p.example.test', ${peer}, ${admin})`;
+    // A peer acting as a member: the release narrow work takes (0328 holds
+    // the release of a peer acting as an Admin user, as above).
+    const peer2 = randomUUID();
+    const [pn2] = await su<{ id: string }[]>`
+      insert into nodes (owner_id, type, title, path) values (${brain}, 'note', 'peer 2', 'notes')
+      returning id::text as id`;
+    await su`insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash, acts_as_login_id)
+             values (${peer2}, ${brain}, ${pn2!.id}, 'p2', 'https://p2.example.test', ${peer2}, ${member})`;
     const state = async () =>
       (
         await su<{ h: string }[]>`
@@ -244,6 +252,8 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update member_invites set revoked_at = null where id = '${invite}'`,
       `update mantle_peers set acts_as_login_id = '${member}' where id = '${peer}'`,
       `update mantle_peers set ended_acts_as_login_id = '${member}' where id = '${peer}'`,
+      // 0328: a peer acting as an Admin user is released only at the spot.
+      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where id = '${peer}'`,
     ]) {
       expect(await run(nl, [s]), s).toBe('42501');
     }
@@ -253,7 +263,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update auth.users set disabled_at = now() where id = '${member}'`,
       `update auth.users set session_epoch = session_epoch + 1 where id = '${member}'`,
       `update mobile_tokens set revoked_at = now() where id = '${device}'`,
-      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where id = '${peer}'`,
+      `update mantle_peers set ended_acts_as_login_id = acts_as_login_id, acts_as_login_id = null where id = '${peer2}'`,
     ]) {
       expect(await run(nl, [s]), s).toBe('ok');
     }

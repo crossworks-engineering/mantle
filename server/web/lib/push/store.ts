@@ -2,12 +2,13 @@
 // @mantle/crypto (AES-256-GCM under the master key); subscriptions hold the
 // relay's routing token + the device's public key.
 
-import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   authUsers,
   db,
   mobileTokens,
   onFullSystemRoute,
+  onLoginHoldSpot,
   pushInstance,
   pushLoginPrefs,
   pushPrefs,
@@ -288,12 +289,39 @@ export async function insertSubscription(args: {
   );
 }
 
+/**
+ * A delete of devices (`where`) on a narrow exit: the narrow login may not
+ * remove a push device of the owner or an Admin user (0328's grant hold; a
+ * row with no login is the owner's), so when one of the rows it takes is
+ * theirs the delete runs at the spot login-credential (onLoginHoldSpot).
+ * Off the narrow route it runs as it is, with no lookup.
+ */
+function devicesDelete<T>(where: SQL | undefined, write: () => Promise<T>): Promise<T> {
+  return onLoginHoldSpot(
+    {
+      logins: async () =>
+        (
+          await db
+            .select({
+              login: sql<string>`coalesce(${pushSubscriptions.loginId}, ${pushSubscriptions.ownerId})`,
+            })
+            .from(pushSubscriptions)
+            .where(where)
+        ).map((r) => r.login),
+    },
+    write,
+  );
+}
+
 /** Delete one device (scoped to owner); returns its routing token for relay cleanup. */
 export async function deleteSubscription(ownerId: string, id: string): Promise<string | null> {
-  const [row] = await db
-    .delete(pushSubscriptions)
-    .where(and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.ownerId, ownerId)))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const where = and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.ownerId, ownerId));
+  const [row] = await devicesDelete(where, () =>
+    db
+      .delete(pushSubscriptions)
+      .where(where)
+      .returning({ routingToken: pushSubscriptions.routingToken }),
+  );
   return row?.routingToken ?? null;
 }
 
@@ -301,20 +329,26 @@ export async function deleteSubscription(ownerId: string, id: string): Promise<s
  *  phone); returns its routing token for relay cleanup, null when the device
  *  is not that login's. */
 export async function deleteOwnSubscription(loginId: string, id: string): Promise<string | null> {
-  const [row] = await db
-    .delete(pushSubscriptions)
-    .where(and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.loginId, loginId)))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const where = and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.loginId, loginId));
+  const [row] = await devicesDelete(where, () =>
+    db
+      .delete(pushSubscriptions)
+      .where(where)
+      .returning({ routingToken: pushSubscriptions.routingToken }),
+  );
   return row?.routingToken ?? null;
 }
 
 /** Delete the devices one device token enrolled (that token signed out);
  *  returns their routing tokens for {@link forgetRelayDevices}. */
 export async function deleteTokenSubscriptions(tokenId: string): Promise<string[]> {
-  const rows = await db
-    .delete(pushSubscriptions)
-    .where(and(isNotNull(pushSubscriptions.tokenId), eq(pushSubscriptions.tokenId, tokenId)))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const where = and(isNotNull(pushSubscriptions.tokenId), eq(pushSubscriptions.tokenId, tokenId));
+  const rows = await devicesDelete(where, () =>
+    db
+      .delete(pushSubscriptions)
+      .where(where)
+      .returning({ routingToken: pushSubscriptions.routingToken }),
+  );
   return rows.map((r) => r.routingToken);
 }
 
@@ -326,19 +360,27 @@ export async function deleteLegacySubscriptions(
   loginId: string,
   exec: Executor = db,
 ): Promise<string[]> {
-  const rows = await exec
-    .delete(pushSubscriptions)
-    .where(and(eq(pushSubscriptions.loginId, loginId), isNull(pushSubscriptions.tokenId)))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const where = and(eq(pushSubscriptions.loginId, loginId), isNull(pushSubscriptions.tokenId));
+  const run = () =>
+    exec
+      .delete(pushSubscriptions)
+      .where(where)
+      .returning({ routingToken: pushSubscriptions.routingToken });
+  // In the caller's transaction the caller picked the route (a lockout at
+  // its own hold spot); alone, the hold decides here.
+  const rows = exec === db ? await onLoginHoldSpot(loginId, run) : await run();
   return rows.map((r) => r.routingToken);
 }
 
 /** Delete all of an owner's devices (used by reset); returns their routing tokens. */
 export async function deleteAllSubscriptions(ownerId: string): Promise<string[]> {
-  const rows = await db
-    .delete(pushSubscriptions)
-    .where(eq(pushSubscriptions.ownerId, ownerId))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const where = eq(pushSubscriptions.ownerId, ownerId);
+  const rows = await devicesDelete(where, () =>
+    db
+      .delete(pushSubscriptions)
+      .where(where)
+      .returning({ routingToken: pushSubscriptions.routingToken }),
+  );
   return rows.map((r) => r.routingToken);
 }
 
@@ -349,10 +391,14 @@ export async function deleteLoginSubscriptions(
   loginId: string,
   exec: Executor = db,
 ): Promise<string[]> {
-  const rows = await exec
-    .delete(pushSubscriptions)
-    .where(eq(pushSubscriptions.loginId, loginId))
-    .returning({ routingToken: pushSubscriptions.routingToken });
+  const run = () =>
+    exec
+      .delete(pushSubscriptions)
+      .where(eq(pushSubscriptions.loginId, loginId))
+      .returning({ routingToken: pushSubscriptions.routingToken });
+  // In the caller's transaction the caller picked the route (a lockout or a
+  // login delete at its spot); alone, the hold decides here.
+  const rows = exec === db ? await onLoginHoldSpot(loginId, run) : await run();
   return rows.map((r) => r.routingToken);
 }
 
@@ -378,7 +424,8 @@ export async function forgetRelayDevices(routingTokens: string[]): Promise<void>
 /** Drop a device by routing token (worker cleanup: the relay says the
  *  device is gone, or its public key cannot be sealed to). */
 export async function deleteSubscriptionByRoutingToken(routingToken: string): Promise<void> {
-  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.routingToken, routingToken));
+  const where = eq(pushSubscriptions.routingToken, routingToken);
+  await devicesDelete(where, () => db.delete(pushSubscriptions).where(where));
 }
 
 export async function markPushed(id: string): Promise<void> {

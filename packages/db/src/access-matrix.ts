@@ -333,7 +333,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.pairing_codes': {
     update: [],
     delete: true,
-    why: "the users area's lockout removes a login's unclaimed codes (login-update.ts). A code is minted at the full-route spot pair-code: it signs a phone in as its login",
+    why: "the users area's lockout removes a login's unclaimed codes (login-update.ts; 0328: never the owner's or an Admin user's, that lockout at the spot login-credential). A code is minted at the full-route spot pair-code: it signs a phone in as its login",
   },
   'public.oauth_auth_codes': {
     update: [],
@@ -348,7 +348,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.mantle_peers': {
     update: ['acts_as_login_id', 'ended_acts_as_login_id', 'last_contacted_at', 'updated_at'],
     delete: false,
-    why: "peer_call (admin-area) stamps a peer contacted; the users area's session end unbinds the peers acting as the login (peer-unbind.ts; 0319: acts_as_login_id only to NULL, ended_acts_as_login_id only from it). A peer's row, inbound token, enable, status, binding, Write switch and risky tools run at the full-route spot peer-access; its delete is the structure definer's cascade",
+    why: "peer_call (admin-area) stamps a peer contacted; the users area's session end unbinds the peers acting as the login (peer-unbind.ts; 0319: acts_as_login_id only to NULL, ended_acts_as_login_id only from it; 0328: a peer acting as the owner or an Admin user is released only at the spot login-credential). A peer's row, inbound token, enable, status, binding, Write switch and risky tools run at the full-route spot peer-access; its delete is the structure definer's cascade",
   },
   'public.peer_shares': {
     update: ['revoked_at'],
@@ -573,7 +573,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.push_subscriptions': {
     update: ['last_push_at'],
     delete: true,
-    why: "measured (round 8): DELETE by system:http:admin-area, system:http:login-self; last_push_at is the delivery's stamp (markPushed). A device subscribed (its INSERT, the upsert's login, owner and token) runs at the full-route spot push-device (round 9)",
+    why: "measured (round 8): DELETE by system:http:admin-area, system:http:login-self (0328: never a device of the owner or an Admin user, nor one with no login: those at the spot login-credential, push/store.ts devicesDelete); last_push_at is the delivery's stamp (markPushed). A device subscribed (its INSERT, the upsert's login, owner and token) runs at the full-route spot push-device (round 9)",
   },
   'public.push_prefs': {
     insert: true,

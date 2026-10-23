@@ -1251,8 +1251,27 @@ export type FullRouteSpot = keyof typeof FULL_ROUTE_SPOTS;
  * (pools.ts), so the spot changes only that one setting in the SET the
  * actor client sends anyway (none with the check off): the same statements
  * and answers.
+ *
+ * `when` (a hold's spot, the one rule for them all): asked only when the
+ * route is the narrow one; `fn` runs at the spot when it answers yes, else
+ * as it is (off the narrow route too, untouched). The login and grant
+ * holds (0327, 0328) ask whether the row's login is held from the narrow
+ * login (login-hold.ts).
  */
-export function onFullSystemRoute<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
+export function onFullSystemRoute<T>(
+  spot: FullRouteSpot,
+  fn: () => PromiseLike<T>,
+  when?: () => PromiseLike<boolean>,
+): Promise<T> {
+  if (!when) return atFullRouteSpot(spot, fn);
+  if (systemRouteNow() !== 'narrow') return Promise.resolve().then(fn);
+  return Promise.resolve()
+    .then(when)
+    .then((at) => (at ? atFullRouteSpot(spot, fn) : fn()));
+}
+
+/** onFullSystemRoute's spot itself (its `when` decided). */
+function atFullRouteSpot<T>(spot: FullRouteSpot, fn: () => PromiseLike<T>): Promise<T> {
   const actor = currentActor();
   if (!FULL_ROUTE_SPOTS[spot]) return Promise.resolve(fn());
   noteTestSpotUse(spot);
