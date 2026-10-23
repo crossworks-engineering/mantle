@@ -5161,3 +5161,182 @@ r16bqt1063e2) 0.
 - The N-1 rows of the drill show the narrow login refused by 0322 with
   "no acting login" on main's image too: by design since round 13 (on the
   narrow role the readers answer no identity), as in round 15's drill.
+
+## Part b2, round 17: one report predicate, the N-1 sign-in and sign-out writes
+
+Same branch, on main v0.300.132 (no rebase this round). Inputs: the
+brief's "b2 round 17 inputs" (the DB re-audit on eb1efbeb2, 8/10, one
+MED). Branch migrations still never ran on any box: 0320, 0321, 0322,
+0323 and 0327 (and the 0320, 0321 and 0327 reverts) edited in place.
+
+### MED-1: an older image's runtime role refused sign-in and sign-out writes
+
+Proven first on the old head (eb1efbeb2) with the drill's new N-1 rows:
+main's image after main's migrate, as mantle_runtime with the actor check
+on, each write by the narrow reason main sends for it: all nine 42501
+(`permission denied for function mantle_narrow_login_held`; main's
+re-grant leaves the runtime role without 0327's two held readers, and the
+login and grant holds' report branches called them bare).
+
+Fix: ONE report predicate, `mantle_narrow_report(who, held, id)` (0320,
+replaced in 0327 to name the holds). It is the count
+(`mantle_narrow_counted`), the session's own role, not at a spot, and the
+named hold (`'login'` asks `mantle_narrow_login_held(id)`, `'client'`
+`mantle_narrow_client_held(id)`), all inside an `EXCEPTION WHEN
+insufficient_privilege THEN RETURN false` block: a role that may not run
+a reader answers false, so the write runs uncounted and is never refused
+for it. A cheap first test (`mantle_narrow_counted`'s own: a system actor
+or the narrow mark) runs before the guard, so a write no narrow reason
+makes pays no subtransaction. Open to every role (an invoker function
+reading only the session's own settings; the held readers keep their own
+EXECUTE). Every report branch asks it: the would-refuse statement trigger,
+`mantle_narrow_one_way` (0320 and 0321), the content and cascade counts
+(0320), the message guard (0323), the login hold and the grant hold
+(0327). Eight own_role CASE copies and eight predicate copies are
+gone (left: the superseded 0318 bodies, the miss guard's own test, 0321's
+`mantle_ws_system_work` and 0322's `mantle_identity_narrow`). The narrow
+login's own holds still call the readers bare: on one image back with the
+switch on they refuse (42501, fail closed), a member's write too.
+
+Reverts: 0327's puts 0320's predicate back (no hold named) before the
+held readers go; 0320's drops it; 0321's carries 0320's new one-way body.
+
+Cells: `narrow-lockout.db.test.ts` (the held readers taken from the
+runtime role and the narrow login, as one image back: nine writes pass
+as the runtime role, nothing counted; the narrow login's member disable
+and device revoke 42501; with the readers back the owner's End sessions
+by a narrow reason counts again). `write-role.db.test.ts`'s caller-rights
+walker: a call inside the predicate's own guard is not one the write role
+must run (a GUARDED map with why; the guard asserted in the body).
+
+The drill (`~/s7b-b2/r17/drill17.sh`, `n1-writes17.sql`): new rows after
+"migrate with main (N-1 boot on the b2 schema)":
+
+| N-1 row (as mantle_runtime, actor check on)        | eb1efbeb2 (before) | this round |
+| -------------------------------------------------- | ------------------ | ---------- |
+| rotate a device token (old revoked), login-self    | 42501              | 0, 1 row   |
+| sign a phone out, login-self                       | 42501              | 0, 1 row   |
+| revoke a member's key, admin-area                  | 42501              | 0, 1 row   |
+| disable a member (and End sessions), admin-area    | 42501              | 0, 1 row   |
+| End a member's sessions, admin-area                | 42501              | 0, 1 row   |
+| revoke a member's MCP token, admin-area            | 42501              | 0, 1 row   |
+| burn an OAuth code, admin-area                     | 42501              | 0, 1 row   |
+| delete an MCP client, admin-area                   | 42501              | 0, 1 row   |
+| revoke a member's key, the statement marked narrow | 42501              | 0, 1 row   |
+| the narrow login disables a member (switch on)     | 42501              | 42501      |
+
+Doc: runtime-role.md no longer says one image back needs nothing
+outright: with the switch off (the default) it needs no revert; with the
+switch on, set `MANTLE_NARROW_SYSTEM=0` with the older image (the narrow
+holds fail closed without this release's readers).
+
+### LOW-1 and LOW-2: the derived triggers' drop
+
+`dropNarrowWouldRefuse` now runs inside applyJournal's try: a drop that
+stops part way is made again with the failed migration's best-effort
+rebuild. It drops only `mantle_narrow_would_refuse_upd` (the only one
+with column dependencies), so a migrate with a migration pending locks
+only the tables that have one (a short lock twice); the INSERT and DELETE
+triggers stay. The would-refuse cell asserts the INSERT and DELETE ones
+stay through the runner. runtime-role.md's lock lines say so. The box
+script prints `narrow_counter_missing_triggers` (the triggers the narrow
+role's grants call for, as wouldRefuseRows derives them, less the ones
+there, the UPDATE OF columns compared); b3 needs it 0 with the other two.
+
+### LOW-3: the SET leak check
+
+`mantle_identity_leaks` (0322, in place) also finds: SET or RESET of an
+identity key with the name quoted or spaced in any part; a SET whose name
+is built at run time (`EXECUTE 'SET ' || ...`, `format('SET %I ...')`);
+the session's role set by `SET ROLE` / `SET SESSION AUTHORIZATION` / their
+RESET (at a statement's start, so an UPDATE's SET of a column named role
+is not one), by `set_config('role' | 'session_authorization', ...)` or by
+a function's SET clause; and a role's or this database's default
+(`pg_db_role_setting`) of an identity key or the role. Planted in
+`identity-gateway.db.test.ts` (nine found; an UPDATE ... SET role not); the
+live catalog reads no leak. Not read: a statement built whole at run time
+(the readers answer the narrow role no identity whatever it sets). A
+`role` default is allowed only as a per-database viewer login takes its
+pool role (viewer-roles.ts sets `role = '<shared>'` on each login): a role
+the login may SET, no superuser, none of the system roles. The drill's
+roll forward found that case on the first try (acf53429a fixes it; the
+drill's exit code covers only the script, so its rows are read).
+
+### INFO
+
+- 0315's header names main's 0314 (its stamp sits above it).
+- merge-branch.sh's stamp check: when the branch reflog is empty, it also
+  reads origin's copy of the branch (reflog and history) and the branch
+  commits that touched the journal; an earlier entry counts by tag and
+  stamp; a new entry whose stamp an earlier head gave another migration,
+  or that another current entry or main shares, is a clash. Read-only run
+  on this head: no clash, next free number 0315.
+- Not done (listed): a run-wide migrate advisory lock; the b3 checklist
+  items (pairing_codes, mantle_peers acts_as_login_id and
+  push_subscriptions holds for held logins; text-check refusals in report
+  mode).
+
+### Pins
+
+No arch-scoreboard count moved. One new function, `mantle_narrow_report`
+(an invoker, open to every role, as `mantle_narrow_counted`); no grant
+list changed. The forge's identity sweep reads one more function the
+narrow role may run (270 no change, was 269): the predicate.
+
+### Gates on acf53429a (the code head; fsync off on the test clusters)
+
+Mac on acf53429a: typecheck 0, lint 0, format 0, docs 0, arch 0, web
+build 0, boot smoke 0, unit 0 (884 files, 11378 tests, the
+migrations-journal and rollback cells included; DATABASE_URL unset).
+
+Workstation (`TAG=<tag> ~/s7b-b2/r17/r17-run.sh <sha> <names>`, units
+`s7b-b2r17-<tag><name>`, results `~/s7b-b2/x-<tag><name>.exit` and
+`.log`; every `.log.setup` names acf53429a):
+
+| gate                                 | result                                                                                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| shard 1/2                            | 0 (593)                                                                                                                                                                                                      |
+| shard 2/2                            | 591 of 593: owner-caller-imports' file scan (15 s) and a3b's app statement (5 s cap) under load 28; alone 0 (r17itbbf72b)                                                                                    |
+| actor-off                            | 163 of 165 under load (edit-check's file scan, the A4 guard sweep); the whole suite alone 0 (165, r17iaoff)                                                                                                  |
+| actor-on                             | 0 (34)                                                                                                                                                                                                       |
+| edit-on                              | 0 (46)                                                                                                                                                                                                       |
+| runtime-role                         | 0 (313)                                                                                                                                                                                                      |
+| serial                               | 0 (r17iserial; the first launch never started its container, exit 93)                                                                                                                                        |
+| switch off, full                     | 0 (1186)                                                                                                                                                                                                     |
+| runtime role off, full               | 1185 of 1186: gate-caller timed out under load; alone 0 (r17itbbf72b)                                                                                                                                        |
+| matrix                               | 0 (4)                                                                                                                                                                                                        |
+| main's team-app Table writes, on     | 0 (team-app-table-writes, ws-connector-options-0314, write-role, both workspaces, a4-head-logins; 6 files)                                                                                                   |
+| round 8 proof                        | 0 (16 refused, 2 written; r17iproof, the first launch exit 93 as serial's)                                                                                                                                   |
+| forge proof (`r16b/proof16.sh`)      | 0: 128 refused of 128 (42501 or 40001), 27 written of 27, 12 flag forms propagated of 12; identity sweep 270 no change, 17 refused; leaks 0 and 0; SET forms 6 of 6, allowed key 0; public rights 0          |
+| drill (`r17/drill17.sh`, N-1 = main) | 0: every step 0; the nine N-1 runtime rows 0 with one row each; the narrow login's member disable 42501 (fail closed); reverts 0327 to 0315 each 0, to 314 rows; main after 0; roll forward 327, 27 triggers |
+
+Earlier heads this round (not the final): 0707db4a0 (lockout cell 0, drill
+0 with the nine rows); 1d9af9b7c (identity, would-refuse, runtime-role.db,
+lockout 0; actor suites red on the write-role walker, fixed in 4974cb35b);
+4974cb35b (the drill's roll forward red on the per-database role default,
+fixed in acf53429a). The old head eb1efbeb2's drill (DRILL_TAG=old): the
+nine N-1 rows 42501.
+
+### Left
+
+1. The CEO's full re-audit, both sides, on acf53429a.
+2. b3 checklist, not done here: pairing_codes DELETE, mantle_peers
+   acts_as_login_id to NULL and push_subscriptions DELETE held for held
+   logins (extend the grant hold, product spots, forge cells); text-check
+   refusals noted in report mode (or say it is the switch-on suites' job);
+   the box counts (`narrow_counter_missing_triggers` 0 now among them).
+3. INFO not done: a run-wide migrate advisory lock.
+4. Backlog as before: Telegram member tokens toward the budget.
+
+### Doubts
+
+- One image back with the switch on refuses every write the narrow holds
+  guard (the held readers are not on the older image's narrow list): fail
+  closed, documented (set the switch off with the older image). Granting
+  the readers to PUBLIC would avoid it but tells any role which logins
+  are held; not done.
+- The predicate's guard costs a subtransaction only on a write a narrow
+  reason or the narrow mark makes off the narrow route; not measured on a
+  busy turn.
+- Shard 2, actor-off and runtime-role-off each had load-only timeouts at
+  load 26 to 29; each passed alone.
