@@ -1394,7 +1394,13 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   back the bridge that adds and the bodies the older image ran, drops
   0330's new functions and takes it off the ledger (the S8b handover in
   docs/_archive/). To go below b2 or b3 as well, this revert comes first,
-  then theirs (the entry above).
+  then theirs (the entry above). Going up to 0330, its migrate refuses
+  (42501, nothing written, the box stays on the older image's schema) while
+  an enabled login holds an Admin seat without role admin: membership
+  alone would make it an Admin user. Read `scripts/arch-scoreboard-box.sh`
+  first (`s8b_precondition_met yes`); to repair, on the older image, take
+  the login out of Admin or make it an admin on the Users screen, then
+  roll again.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
