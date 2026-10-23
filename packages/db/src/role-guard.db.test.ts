@@ -795,7 +795,9 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
     const statements = readFileSync(REVERT, 'utf8')
       .split('--> statement-breakpoint')
       .map((st) => st.trim())
-      .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '');
+      .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
+      // A scratch database has no drizzle ledger (its runner stamps none).
+      .filter((st) => !st.includes('"drizzle"."__drizzle_migrations"'));
     const catalog = async (sql: postgres.Sql) =>
       sql<{ what: string; v: string }[]>`
         select p.proname::text as what,
