@@ -18,7 +18,9 @@ parked on its branches; this doc only says how a canvas would plug in later.
 3. **Libraries come from a vendored, pinned, offline set the brain serves**
    (`/canvas-runtime/`, beside the existing `/app-runtime/` and
    `/excalidraw-assets/`), wired in with an import map. No CDNs. An agent
-   may still inline its own small code.
+   may still inline its own small code. The same set should serve mini
+   apps too, and canvases get the theme tokens, Tailwind classes, a shadcn
+   look and every Appearance font (sections 6.1 to 6.3).
 4. **A new `presenter` specialist** authors canvases with a new `canvas`
    tool group (create, patch, read, render to PNG). Draftsman keeps charts
    and diagrams inside pages. The `specialist_routing` skill gets one plain
@@ -216,7 +218,7 @@ Reuse the app frame plumbing, minus the bridge:
   parent (keeps the owner UI's own CSP out of it and gives one place to set
   headers).
 - Header CSP:
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' <origin>/canvas-runtime/; style-src 'unsafe-inline' <origin>/canvas-runtime/; img-src data: blob:; font-src data: <origin>/canvas-runtime/; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors <owner UI origins>`.
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' <origin>/canvas-runtime/; style-src 'unsafe-inline' <origin>/canvas-runtime/ <origin>/share-runtime/; img-src data: blob:; font-src data: <origin>/canvas-runtime/ <origin>/share-runtime/ <origin>/fonts/ <origin>/Inter/; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors <owner UI origins>`.
   Unlike apps, `img-src` does **not** include the brain origin, so a canvas
   cannot even fire GETs at our own API.
 - The parent listens to the iframe for two messages only (`ready`, `error`,
@@ -265,24 +267,113 @@ canvas `import { gsap } from 'gsap'` by bare name. Same approach as the app
 import map (`packages/app-build/src/build-runtime.ts`) and the self-hosted
 Excalidraw fonts.
 
-Starter set (small, covers diagrams, charts, motion, 3D, maths). Licences to
-confirm before shipping:
+### 6.1 The set: one library per job (revised 2026-10-23 with Jason)
 
-| Need                                 | Library                                                | Licence                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Data-driven SVG, layouts, scales     | d3                                                     | ISC                                                                                                        |
-| Charts with little code              | Chart.js (or ECharts if we want one heavy all-rounder) | MIT (Apache-2.0)                                                                                           |
-| Timeline animation                   | GSAP                                                   | Free "no charge" standard licence, not OSI open source: check it fits a public, commercially licensed repo |
-| Light animation, open licence        | anime.js or Motion (vanilla)                           | MIT                                                                                                        |
-| Hand-drawn look (matches Excalidraw) | rough.js                                               | MIT                                                                                                        |
-| 3D                                   | three.js                                               | MIT                                                                                                        |
-| Graph layout for schematics          | elkjs or dagre                                         | EPL-2.0 / MIT                                                                                              |
-| Maths                                | KaTeX (already shipped)                                | MIT                                                                                                        |
-| Vector animation playback            | lottie-web                                             | MIT                                                                                                        |
+Sizes are rough, minified. A library loads only when a canvas imports it,
+so a big one costs nothing until it is used.
+
+| Category                      | Library        | What it is for                                                                                  | Size       | Licence                                                    |
+| ----------------------------- | -------------- | ----------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------- |
+| Charts and dashboards         | Apache ECharts | Large chart catalogue, interactive, gauges, Sankey, heatmaps; Canvas or SVG output              | ~1 MB      | Apache-2.0                                                 |
+| Engineering and science plots | Plotly.js      | Contour, heatmap, 3D surface, statistical plots, WebGL scatter for very large data              | ~3 to 4 MB | MIT                                                        |
+| Custom drawing, schematics    | D3             | Scales, layouts, force graphs, maps, full control of the SVG. For visuals the agent must invent | ~280 KB    | ISC                                                        |
+| Interactive 2D                | Konva          | Shapes people can drag, click and connect: interactive diagrams, simple editors                 | ~150 KB    | MIT                                                        |
+| 3D                            | Three.js       | WebGL 3D scenes: plant layouts, equipment models                                                | ~650 KB    | MIT                                                        |
+| Animation                     | Motion         | Transitions and movement; has a React API too, so the same library serves mini apps             | ~40 KB     | MIT                                                        |
+| Slides                        | reveal.js      | HTML slides in one file; the parked Slides plan already picked Reveal.js 6 as its player        | ~150 KB    | MIT                                                        |
+| Maths                         | KaTeX          | Formulas (already shipped in `share-ui`)                                                        | ~280 KB    | MIT                                                        |
+| Custom vector drawing         | plain SVG + JS | No library at all. The default choice; D3 adds data binding when needed                         | 0          | n/a                                                        |
+| Timeline animation (maybe)    | GSAP           | The strongest timeline tool. Add only if its licence fits                                       | ~70 KB     | Free "no charge" licence, NOT OSI open source: check first |
+
+Considered and left out:
+
+| Library             | Why not                                                                                                                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chart.js            | ECharts covers it                                                                                                                                                                        |
+| anime.js            | Motion covers it                                                                                                                                                                         |
+| lottie-web          | Plays designer-made After Effects files; agents cannot author them well                                                                                                                  |
+| PixiJS              | Games and particles; Konva and Three cover our needs                                                                                                                                     |
+| Mermaid             | Removed on purpose in 2026-08 for weak output ([docs/diagrams.md](../diagrams.md)); bringing it back competes with Draftsman                                                             |
+| Slidev              | Needs a Node/Vite build; a canvas has no build step                                                                                                                                      |
+| Leaflet (for later) | Map tiles come from the internet and the sandbox blocks that. Without a tile source the brain serves, it draws GeoJSON shapes with no base map. Revisit with a tile proxy if maps matter |
 
 Rules: inline code is always allowed; nothing outside the set loads (the CSP
 enforces it); adding a library is a normal release change with a pinned
 version and a line in `THIRD-PARTY-NOTICES.md`.
+
+**Mini apps have the same gap.** The app bundler allows only `react`,
+`react-dom` and `lucide-react` (`packages/app-build/src/index.ts` line 66).
+Build ONE vendored runtime and one import map that both canvases and mini
+apps read, so a library is added once and both get it. That is a separate
+change with its own branch; it should land before or with canvas P1.
+
+### 6.2 CSS and the shadcn look
+
+What mini apps get today, which a canvas can reuse:
+
+- `/share-runtime/styles.css`: base styles and the colour tokens for every
+  theme, generated from `packages/share-ui/styles/themes.css`
+  (`pnpm themes:build`). The host sends the active theme into the frame
+  by `postMessage`, so the tokens follow the owner's theme.
+- A per-app Tailwind compile on the server (`packages/app-build/src/css.ts`,
+  the `tailwindcss` `compile` API). It scans the app's own source and emits
+  only the utilities it uses, mapped onto the shadcn tokens
+  (`bg-card`, `text-muted-foreground`, `border-border`, `chart-1..5`).
+- Six shadcn components as React code (`packages/app-build/src/kit.ts`:
+  button, card, input, label, badge, separator).
+
+For a canvas (plain HTML, no React, no build step for the agent):
+
+1. **Tokens:** the frame links `/share-runtime/styles.css` and receives the
+   theme message, exactly like an app. `var(--primary)`, `var(--card)` and
+   the rest work in hand-written CSS.
+2. **Tailwind classes, compiled on save:** `canvas_create` and
+   `canvas_update` run the same `css.ts` compile over the canvas HTML and
+   store the result next to it. The agent just writes
+   `class="rounded-lg bg-card p-6 text-foreground"`. No CDN, and no
+   in-browser Tailwind. This is a build step the agent never sees.
+3. **shadcn components without React:** emit a small `mantle-kit.css` with
+   plain classes (`.btn`, `.btn-outline`, `.card`, `.badge`, `.input`) whose
+   rules come from the SAME class strings in `kit.ts`, so the look cannot
+   drift from the apps. (Basecoat, an MIT library that does shadcn styling
+   for plain HTML, is the alternative to check; our own file is smaller and
+   tied to our tokens.)
+4. **Theme on or off:** by default a canvas follows the theme.
+   `<meta name="canvas:theme" content="fixed">` pins it to the light palette
+   for posters and print, the way Draftsman diagrams are fixed today.
+
+Mini apps already have points 1 and 2. They would gain from more shadcn
+components in the kit (tabs, table, select, dialog, tooltip); that belongs
+in the mini-app change above.
+
+### 6.3 Fonts: every Appearance font is available
+
+The facts:
+
+- One registry, `packages/client-types/src/display-fonts.ts`, drives
+  Settings → Appearance: 16 faces (Inter plus 15 library faces across
+  sans, serif, mono and display shelves), all variable fonts.
+- The files ship on the brain too: `server/web/public/fonts/library/`
+  (22 woff2 files plus `licenses/`) and `server/web/public/Inter/`, served
+  by the static layer (`server/web/server/static.ts` line 52, `/fonts/*` and
+  `/Inter/*`).
+- `displayFontFaceCss()` in the same file builds the `@font-face` block the
+  share and print shells already inject.
+- The app frame CSP already allows `<origin>/fonts/` for fonts.
+
+So the frame route injects `displayFontFaceCss()` plus Inter's face, and
+sets `--font-sans`, `--font-serif`, `--font-mono` and the prose font to the
+owner's current choices. A canvas can then use `var(--font-sans)` (follows
+the owner) or name any face, such as `"Fraunces"` or `"Big Shoulders"`.
+Files load lazily, only when text paints in that face. The
+`canvas_authoring` skill lists the 16 names, generated from the registry,
+not typed by hand. The PNG render uses the same fonts, because the sidecar
+loads the brain's own origin. That is better than Draftsman SVG today,
+which shows through `<img>` and can only use system fonts.
+
+Add `<origin>/fonts/ <origin>/Inter/ <origin>/share-runtime/` to the
+canvas CSP `font-src` and `<origin>/share-runtime/` to `style-src`
+(section 5.2).
 
 ## 7. The Presenter agent
 
@@ -374,9 +465,8 @@ Presenter later, which would leave one visual specialist.
 3. **Public shares of canvases in v1?** My pick: no, poster PNG on public
    links; live canvases for logins and contacts.
 4. **History:** keep the last 10 revisions, or plain overwrite like files?
-5. **Library set:** approve the starter list, and is GSAP's licence fine
-   for a public, commercially licensed repo, or do we use anime.js or
-   Motion only?
+5. **Library set:** approve the set in section 6.1. Is GSAP's licence
+   fine for a public, commercially licensed repo, or is Motion enough?
 6. **Display name** for the agent (Presenter is a placeholder).
 7. **The sidecar:** it is optional in `docker-compose.core.yml`. Make it
    required wherever Presenter is enabled, or accept "no render" on such
