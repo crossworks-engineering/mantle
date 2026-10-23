@@ -190,6 +190,12 @@ export default tseslint.config(
           selector: "ImportExpression[source.value='@mantle/content/test-support']",
           message: 'test fixtures only: a route calls the Admin act definers',
         },
+        {
+          // The database's test fixtures (scratch databases, the superuser
+          // client, the Admin seat by hand) likewise (S8b r6 app L5).
+          selector: 'ImportExpression[source.value=/test-support$/]',
+          message: 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+        },
       ],
     },
   },
@@ -484,6 +490,13 @@ export default tseslint.config(
               group: ['@mantle/content/test-support'],
               message: 'test fixtures only: a route calls the Admin act definers',
             },
+            {
+              // The database's test fixtures (the superuser client, the
+              // Admin seat by hand, scratch databases): S8b r6 app L5.
+              group: ['@mantle/db/test-support', './test-support', '../test-support'],
+              message:
+                'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+            },
           ],
         },
       ],
@@ -573,6 +586,36 @@ export default tseslint.config(
               // Plan v3.2 S6 c3 (c1 audit LOW-6): the owner functions that
               // skip the Admin check are for test fixtures only; a route
               // calls the definers (@mantle/content admin-acts).
+              group: ['@mantle/content/test-support'],
+              message: 'test fixtures only: a route calls the Admin act definers',
+            },
+            {
+              // S8b r6 app L5: the database's test fixtures (the superuser
+              // client, the Admin seat by hand) never reach shipped code.
+              group: ['@mantle/db/test-support'],
+              message:
+                'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The bench (a scratch database per run) and scripts may use the
+    // database's test fixtures: the server block's rule less that entry.
+    files: ['server/api/src/bench/**/*.{ts,tsx}', 'server/**/scripts/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/client/web/**', '@mantle/client-web*'],
+              message: 'server tier must not import the client app',
+            },
+            {
               group: ['@mantle/content/test-support'],
               message: 'test fixtures only: a route calls the Admin act definers',
             },
