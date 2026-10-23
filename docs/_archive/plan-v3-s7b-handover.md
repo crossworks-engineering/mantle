@@ -4390,3 +4390,148 @@ s here).
    alone.
 3. The narrow role still reads the ledger (content and system reads stay
    until S7c revokes reads).
+
+## Part b2, round 15: the token budget off the traces, the login hold, refused calls counted (handed over)
+
+Same branch. Inputs: the brief's "b2 round 15 inputs", parts A and B (two
+full re-audits at bdf64f52a, 7.5 each, no HIGH). Code head 829514ead.
+
+### The MEDs
+
+1. Traces and the member token cap (app MED-1 = DB MED-1). The DB
+   auditor's preferred fix: the budget no longer reads traces. Migration
+   `0326_narrow_lockout_and_ledger_tokens` adds `member_turn_ledger.tokens`
+   (bigint, 0) and `mantle_member_turn_settle(turn, tokens)`: the scope
+   login's own slot only (identity gateway, never an argument), only up
+   (greatest). `mantle_member_turn_claim` now sums the ledger's tokens. A
+   team turn stamps its trace's close totals (in + out) on its slot
+   (startTrace's new `onClose` hook, run-team-turn.ts; the slot id comes
+   with the queued input as `ledgerTurnId`, set by workspace-turn.ts when it
+   claimed). The narrow role may not run the settle and holds no right on
+   the ledger, so neither direction works any more (its own traces zeroed,
+   a victim's inflated). Also, as the app auditor asked: the narrow role
+   loses DELETE on traces (access-matrix.ts; the one delete, integrity
+   landed.ts, runs at the spot integrity-delete), and traces leave
+   NARROW_REINSERT_HELD ("nothing decides from a trace" is true again). Not
+   done: up-only token rules and a kept data.login_id on traces: with the
+   budget off the traces they guard nothing (say if wanted anyway).
+   Changed answer: on the day 0326 lands the budget counts from 0 (old
+   slots carry 0 tokens); late usage after a trace's close is not counted.
+2. disabled_at and session_epoch lockout (MED-2 both sides). 0326's
+   `mantle_narrow_login_hold` (BEFORE UPDATE OF disabled_at,
+   session_epoch on auth.users) refuses the narrow role either column on
+   the owner, an admin by role, or a user of the Admin workspace (disabled
+   or not), via the read definer `mantle_narrow_login_held` (on
+   NARROW_SYSTEM_FUNCTIONS: the trigger runs as the narrow role). It keeps
+   0319's report branch (counted off the route, not at a spot). The app
+   side: `onLoginHoldSpot` (packages/db login-hold.ts) runs the write at
+   the spot login-credential when the exit's route is narrow and the
+   definer says held; endLoginSessions and applyLoginChange use it (a new
+   FULL_ROUTE_SPOT_FILES entry and FULL_ROUTE_SPOT_CALLBACKS holder). Both
+   columns are held for the owner AND Admin users (the brief named the
+   epoch for the owner only; one predicate is simpler, and repeated
+   sign-out of an Admin user is a nuisance too). S8b rebase: "Admin" here
+   is the Admin workspace's users plus the role column; keep the workspace
+   test.
+3. The counter's refused calls (app MED-3). No migration. With the switch
+   off, narrowRouteClient reads the statements of a route that would be
+   narrow (an exit routed narrow, and the scope-marked handle) for
+   `mantle_<name>(` calls (CALLED_FN on the code, literals blanked) and
+   notes `narrow-would-refuse <actor> fn:<name> EXECUTE` for each the narrow
+   role may not EXECUTE. The answer comes from the catalog
+   (`has_function_privilege`, grants and PUBLIC's, cached ten minutes), so
+   there is no hand list to drift. Transactions and savepoints of such an
+   exit are read too (gateway/narrow-would-refuse.ts). Not read: calls a
+   trigger or definer makes, dynamic SQL (docs say so).
+4. The planner and 0321 (DB MED-3, code parts). migrate-plan.ts:
+   `HASH_REFUSED_FROM = 314`: a journal entry from 0314 on whose `when` the
+   ledger holds under another hash (and whose own hash is nowhere in the
+   ledger) is refused with its name and the remedy, instead of being
+   counted applied. Below 0314 an edit in place stays a pass (historic
+   boxes). Rule written in docs: from 0314 on a migration is never edited
+   in place. 0321's DO now asserts the end state (nothing outside the set
+   rewritten, the set present, no direct read left in the rewritten form)
+   instead of the count it rewrote, so a second run passes. 0318 re-apply:
+   proven safe in sequence by a cell that runs every migration 0314 to
+   0326 again over a migrated database and finds every function (body and
+   rights) and trigger as it was. 0321 and 0318 were changed in place
+   (never run on any box); 0326 is new. The renumber itself (0314 to 0326
+   to 0315 to 0327, every `when` above 1790198920000, the reverts' stamps)
+   stays for the rebase step.
+
+### The LOWs and INFO done
+
+- L1: every 42501 met on the narrow route is noted (refusalOf, not only
+  "permission denied for"); an error raised there is marked (WeakSet on its
+  cause chain) and isWriteRefused never reads it as a read-only database,
+  systemDb inside a scope included. Cell in narrow-lockout.db.test.ts.
+- L2: the box script prints `narrow_prev_epoch:*` (the epoch before);
+  docs: b3 needs at least 7 days since the epoch with the box's usual
+  traffic.
+- L3: `loginDefinerCall(loginId, 'admin' | 'own', sql)` replaces adminActTx
+  and memberTurnTx: the definer SQL (one select of a mantle_* function,
+  checked), never a callback; the login compared without case; the
+  request's own. Callers pinned per file (login-definer.test.ts: admin-acts
+  1, member-turn-ledger 3). The sweep mocks follow.
+- L4: the ledger release's failure is logged (workspace-turn.ts), the
+  traces forge cells (both directions), a caught row-rule refusal noted.
+  Not done: a Telegram member claim cell through the definers on a real DB.
+- L5: 0325's roll window documented (old process, member claim 42501 until
+  restart).
+- DB LOWs: 0319's revert stamp quoted and rollback-when.test.ts reads both
+  forms; the epoch forge closed (0326 `mantle_narrow_miss_guard`: the
+  narrow login, directly or through mantle_actor_miss_log, writes no
+  narrow-epoch row and no miss dated ahead); NOTICE path loss, NOTIFY and
+  advisory locks, the encrypted value binding, the prompt-reaching inserts
+  and ingest-scope columns (S7c list, with reasons): docs/runtime-role.md.
+- Not done (INFO): the acl_internal "plain" reason, the leak check's
+  proargdefaults and dynamic SQL, one mantle_session_role(), one
+  report-branch predicate, 0324's revert replace() check, deriving 0323
+  from TS, 0321's header order note, the six read definers listed for S7c,
+  microsoft_config client_id/tenant and embedding_cache INSERT reasons,
+  the agents spot text and the mobile_tokens why text.
+
+### Cells
+
+packages/db/src/narrow-lockout.db.test.ts (green alone on e80e32b80): the
+hold as the real narrow login (owner, admin by role, Admin workspace user:
+42501 for both columns, rows unchanged; a member allowed) and its count;
+the ledger's own tokens (settle only up, own login only, an inflated
+victim trace and the member's own count change nothing, budget refusal);
+no settle, ledger write or trace delete as the narrow login; the epoch
+guard; refused calls counted (exit and transaction) and not outside the
+exit; the narrow set re-run over its end state; the L1 note. Updated:
+member-turn-ledger.db.test.ts (token cell on the slots),
+narrow-would-refuse.db.test.ts (the owner's lowered epoch breaks two
+rules), runtime-role.db.test.ts (traces DELETE now refused),
+migrate-plan.test.ts (two cases).
+
+### Pins
+
+NARROW_SYSTEM_FUNCTIONS +1 (mantle_narrow_login_held); RUNTIME_SYSTEM_FUNCTIONS
++2 (settle, held); NARROW_DENIED_FUNCTIONS +1 (settle); scan pins +1 call
+(member-turn-ledger settle) and its decision; traces delete false;
+no-raw-write-sql: narrow-would-refuse.ts 1 (new file; narrow-route.ts
+stays 5); heads-writers DYNAMIC_UNSAFE_REVIEWED +1; SYSTEM_POOL_SCOPE_PINS:
+admin-act.ts and member-turn-tx.ts out, login-definer.ts 1;
+FULL_ROUTE_SPOT_FILES + login-hold.ts; FULL_ROUTE_SPOT_CALLBACKS +
+onLoginHoldSpot. Migration 0326 new (when 1790198920000, its revert first
+in the order); 0321 edited in place (its DO block); 0318 unchanged.
+
+### Gates
+
+Launched on 829514ead (workstation units s7b-b2r15-r15<name>, results in
+~/s7b-b2/x-r15<name>.exit and .log; ~/s7b-b2/r15-run.sh <sha> <names>, plus
+`t=<files>` / `toff=<files>` for single files): s1 s2 aoff aon eon rrole
+serial off rroff matrix proof pf drill. The forge kit: ~/s7b-b2/r15/
+(mk15.sh, add15.sql: 12 new refused forms and 2 allowed; 106 refused and
+23 allowed in all). The drill reverts 0326 first. Mac gates: the scratchpad
+runner on the same head. Results: see the round 16 inputs (not read at
+hand-over).
+
+### Left
+
+1. Read the r15* results on 829514ead; rerun a load-only timeout alone.
+   Expect the forge proof at 106 refused / 23 allowed.
+2. The not-done INFO items above, and the Telegram claim cell.
+3. The renumber at the rebase (MED-4/DB MED-3 data part).
