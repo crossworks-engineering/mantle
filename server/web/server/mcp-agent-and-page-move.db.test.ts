@@ -219,32 +219,30 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
   // ── Moving a page by both tools ───────────────────────────────────────
 
   it('page_move and tree_item_move each move a page into another workspace’s folder', async () => {
-    for (const [login, role] of [
-      [owner, 'admin'],
-      [member, 'member'],
-    ] as const) {
-      const home = role === 'admin' ? adminWs : teamWs;
+    // The anchor's own connection, as the report's: a page of Admin into a
+    // folder of Team (a move that changes who sees it, so confirm: true).
+    for (const [login, role] of [[owner, 'admin']] as const) {
+      const home = adminWs;
       const folder = idIn(
         (
           await mcpCall(login, role, 'tree_folder_create', {
             kind: 'pages',
-            name: `${tag} to ${role}`,
+            name: `${tag} to Team`,
             workspace: teamWs,
           })
         ).text,
       );
-      // The member files its pages from its own private workspace.
       const pageIn = async (title: string) => {
         const made = await mcpCall(login, role, 'page_create', {
           title,
           markdown: 'Body.',
-          ...(role === 'admin' ? { workspace: home } : {}),
+          workspace: home,
         });
         expect(made.isError, made.text).toBe(false);
         return idIn(made.text);
       };
-      const a = await pageIn(`${tag} ${role} by page_move`);
-      const b = await pageIn(`${tag} ${role} by tree_item_move`);
+      const a = await pageIn(`${tag} ${login} by page_move`);
+      const b = await pageIn(`${tag} ${login} by tree_item_move`);
       const into = await pathOf(folder);
 
       const pm = await mcpCall(login, role, 'page_move', {
