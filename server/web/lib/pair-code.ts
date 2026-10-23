@@ -13,7 +13,7 @@ import {
   sql,
 } from '@mantle/db';
 import { WEB_TOKEN_TTL_SECONDS, adminLogin, buildMobileToken } from '@/lib/auth';
-import { loginIsAdmin } from '@/lib/auth/admin-seat';
+import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
 
 /**
  * "Sign in on your phone" — the pairing-code half of QR sign-in.
@@ -107,8 +107,8 @@ export async function claimPairCode(
     // use it. Only a live, unclaimed code of a non-Admin login says so.
     const [peek] = await db
       .select({
-        // Admin membership (mantle_login_role, S8b), never the column.
-        inAdmin: sql<boolean>`"public"."mantle_login_role"(${pairingCodes.userId}) = 'admin'`,
+        // Admin membership (loginRole, S8b), never the column.
+        inAdmin: sql<boolean>`${loginRole(pairingCodes.userId)} = 'admin'`,
       })
       .from(pairingCodes)
       .innerJoin(authUsers, eq(authUsers.id, pairingCodes.userId))

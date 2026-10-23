@@ -1,7 +1,7 @@
 import { NextResponse } from '../server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db, authUsers, mobileTokens, eq, sql, type LoginRole } from '@mantle/db';
+import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
 import { adminLogin, buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
@@ -9,7 +9,7 @@ import { brainIdField } from '@/lib/brain-identity';
 import { updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from './cache-control';
-import { loginIsAdmin } from '@/lib/auth/admin-seat';
+import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -89,9 +89,9 @@ export async function handleTokenLogin(
     opts.adminsOnly || opts.withRole
       ? await db
           .select({
-            // The display role (mantle_login_role: Admin membership, S8b),
-            // never the column.
-            shownRole: sql<LoginRole>`"public"."mantle_login_role"(${userId}::uuid)`,
+            // The display role (loginRole: Admin membership, S8b), never
+            // the column.
+            shownRole: loginRole(userId),
             adminMember: loginIsAdmin(userId),
           })
           .from(authUsers)

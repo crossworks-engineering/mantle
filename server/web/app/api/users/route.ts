@@ -21,6 +21,7 @@ import {
 } from '@mantle/content';
 import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
+import { loginRole } from '@/lib/auth/admin-seat';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
 import { adminMembershipRefusal, LoginRoleSchema } from '@/lib/login-update';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -54,7 +55,8 @@ export async function GET() {
       email: authUsers.email,
       displayName: authUsers.displayName,
       isOwner: authUsers.isOwner,
-      role: authUsers.role,
+      // The display role Admin membership gives (S8b), never the column.
+      role: loginRole(authUsers.id),
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       createdAt: authUsers.createdAt,

@@ -35,7 +35,7 @@ import {
 import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
-import { liveAdminWorkspace } from '@/lib/auth/admin-seat';
+import { liveAdminWorkspace, loginRole } from '@/lib/auth/admin-seat';
 
 /**
  * One change to a login row (PATCH /api/users/:id), and the role change the
@@ -88,7 +88,7 @@ export type LoginChangeDone = {
 };
 
 /** The login row a change is about, or null. Its `role` is the one Admin
- *  membership gives (mantle_login_role: 'admin' for a user of the live
+ *  membership gives (loginRole: 'admin' for a user of the live
  *  Admin workspace, else 'member'; S8b), never the column: a change is
  *  decided from membership, so a row whose column drifted is put right by
  *  the role change that names what membership should be. */
@@ -98,7 +98,7 @@ export async function loadLoginTarget(id: string): Promise<LoginTarget | null> {
       id: authUsers.id,
       email: authUsers.email,
       isOwner: authUsers.isOwner,
-      role: sql<string>`"public"."mantle_login_role"(${authUsers.id})`,
+      role: loginRole(authUsers.id),
     })
     .from(authUsers)
     .where(eq(authUsers.id, id))
