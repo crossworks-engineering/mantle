@@ -281,6 +281,13 @@ function dataCopy(v: unknown): unknown {
 export const ALIAS_COPIES = ['open', 'creates', 'limits'] as const;
 export const BASE_COPIES = ['open', 'creates'] as const;
 
+/** What an alias declares as its own, not its base's: the base it names
+ *  and the key area its /api/v1 row needs. Every other key of
+ *  DECLARED_KEYS is the base's: ALIAS_COPIES are read from the base, and
+ *  each of the rest must say what the base's says (route-policy.ts
+ *  declaredFacts), so a key added to the shape is held by default. */
+export const ALIAS_OWN = ['aliasOf', 'keyArea'] as const;
+
 /** The base route an alias or `base` names: `METHOD pattern`. */
 export function splitRouteKey(key: string): { method: string; pattern: string } | null {
   const at = key.indexOf(' ');

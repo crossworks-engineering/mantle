@@ -50,6 +50,9 @@ import {
 } from '../route-limits';
 import type { RouteSwitch } from './route-switches';
 import {
+  ALIAS_COPIES,
+  ALIAS_OWN,
+  DECLARED_KEYS,
   isDeclaredMethod,
   methodEffect,
   splitRouteKey,
@@ -818,33 +821,40 @@ function declaredFacts(
       b.pattern,
       b.method,
     );
-    // An alias runs its base's handler, so it is the base's row in all the
-    // handler decides: its class, area, effect and item
-    // are the base's, or the declaration is refused. (Its open, creates and
-    // limits it may not declare: they are read from the base, above.)
+    // An alias runs its base's handler, so it is the base's row in every
+    // key its base declares: each key of the shape but the alias's own
+    // (ALIAS_OWN: its base, its key area) and the ones read from the base
+    // (ALIAS_COPIES: open, creates, limits, which it may not declare) says
+    // what the base's says, or the declaration is refused. The effect is
+    // compared as the row's (the method's, or the stated exception), the
+    // item as its param and need or its `none` reason.
     if (d.aliasOf !== undefined) {
       const baseEffect = base.effect
         ? Object.hasOwn(base.effect, 'read')
           ? 'read'
           : 'write'
         : methodEffect(b.method);
-      const areaOf = (p: MethodPolicy) => (p.class === 'area' ? p.area : null);
+      const shown = (v: unknown): string =>
+        v === undefined ? 'none declared' : typeof v === 'string' ? v : JSON.stringify(v);
       const itemOf = (p: MethodPolicy) =>
         p.item === undefined
           ? 'none declared'
           : p.item.none !== undefined
             ? `none: ${p.item.none}`
             : `${p.item.param} ${p.item.need}`;
-      for (const [what, mine, theirs] of [
-        ['class', d.class, base.class],
-        ['area', areaOf(d), areaOf(base)],
-        ['effect', effect, baseEffect],
-        ['item', itemOf(d), itemOf(base)],
-      ] as const) {
+      const field = (p: MethodPolicy, k: string): unknown =>
+        Object.hasOwn(p, k) ? (p as Readonly<Record<string, unknown>>)[k] : undefined;
+      const notHeld: readonly string[] = [...ALIAS_OWN, ...ALIAS_COPIES];
+      for (const what of DECLARED_KEYS) {
+        if (notHeld.includes(what)) continue;
+        const [mine, theirs] =
+          what === 'effect'
+            ? [effect, baseEffect]
+            : what === 'item'
+              ? [itemOf(d), itemOf(base)]
+              : [shown(field(d, what)), shown(field(base, what))];
         if (mine !== theirs) {
-          bad(
-            `the ${what} ${String(mine)} on an alias of ${baseKey}, whose ${what} is ${String(theirs)}`,
-          );
+          bad(`the ${what} ${mine} on an alias of ${baseKey}, whose ${what} is ${theirs}`);
         }
       }
     }

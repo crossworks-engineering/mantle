@@ -23,7 +23,12 @@ import { checkLoadedPolicy, type RouteModule } from '../../server/route-loader';
 import { isAuditSelfLogged, PUBLIC_PATHS } from '../auth-constants';
 import { auditsAsWrite } from './route-scope';
 import { BODY_NAMES_ITEMS, OWN_THINGS, entryDeclaration } from '../../scripts/route-declarations';
-import type { RoutePolicyDeclaration } from './route-declaration';
+import {
+  ALIAS_COPIES,
+  ALIAS_OWN,
+  DECLARED_KEYS,
+  type RoutePolicyDeclaration,
+} from './route-declaration';
 import {
   ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
@@ -474,6 +479,64 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
         } as RoutePolicyDeclaration),
       ),
     ).toThrow(/the area users on an alias of POST \/api\/notes, whose area is settings/);
+  });
+
+  it('an alias says every key its base declares, but its own and the copied', () => {
+    // Each key of the shape an alias may declare, one at a time: on the
+    // base and not the alias, or on the alias and not the base, refused.
+    // A key added to DECLARED_KEYS is held by default; this list is
+    // checked against the shape below, so it gets a cell too.
+    const aliasOf = 'POST /api/notes';
+    const cases: [
+      key: string,
+      onBase: Record<string, unknown>,
+      onAlias: Record<string, unknown>,
+    ][] = [
+      ['class', { class: 'content' }, { class: 'self' }],
+      ['area', { class: 'area', area: 'settings' }, { class: 'area', area: 'users' }],
+      ['public', { class: 'self' }, { class: 'self', public: true }],
+      ['scope', { class: 'self' }, { class: 'self', scope: null }],
+      ['effect', { class: 'content', item: none }, { class: 'content', effect: { read: 'r' } }],
+      ['item', { class: 'content', item: none }, { class: 'content', item: { none: 'other' } }],
+      ['makesItems', { class: 'content', item: none, makesItems: false }, { class: 'content' }],
+      ['audit', { class: 'content', item: none }, { class: 'content', audit: 'own' }],
+      ['caller', { class: 'self' }, { class: 'self', caller: 'session' }],
+      ['base', { class: 'content', item: none }, { class: 'content', base: aliasOf }],
+    ];
+    const run = (onBase: Record<string, unknown>, onAlias: Record<string, unknown>) => {
+      const baseDecl = { item: none, ...onBase };
+      const mine = { item: none, ...onAlias } as Record<string, unknown>;
+      if (Object.hasOwn(mine, 'effect')) delete mine.item;
+      return build(
+        entry('/api/notes', ['POST'], { POST: baseDecl } as RoutePolicyDeclaration),
+        entry('/api/v1/notes', ['POST'], {
+          POST: { ...mine, keyArea: 'notes', aliasOf },
+        } as RoutePolicyDeclaration),
+      );
+    };
+    for (const [key, onBase, onAlias] of cases) {
+      const refusal =
+        key === 'base'
+          ? /both aliasOf and base/
+          : new RegExp(`the ${key} .* on an alias of POST /api/notes, whose ${key} is `);
+      expect(() => run(onBase, onAlias), key).toThrow(refusal);
+    }
+    // The base's own value said on the alias builds the row.
+    expect(
+      run(
+        { class: 'content', item: none, makesItems: false, audit: 'own' },
+        { class: 'content', makesItems: false, audit: 'own' },
+      ).get('POST /api/v1/notes'),
+    ).toMatchObject({ aliasOf, makesItems: false, audit: 'own' });
+    // Every key of the shape has a cell, but the alias's own and the copied
+    // (which an alias may not declare: the test above).
+    expect(cases.map(([k]) => k).sort()).toEqual(
+      DECLARED_KEYS.filter(
+        (k) =>
+          !(ALIAS_OWN as readonly string[]).includes(k) &&
+          !(ALIAS_COPIES as readonly string[]).includes(k),
+      ).sort(),
+    );
   });
 
   it('a v1 row declares the key area the key table names, and only it', () => {
