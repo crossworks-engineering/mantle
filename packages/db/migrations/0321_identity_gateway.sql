@@ -234,10 +234,66 @@ DECLARE
     'mantle.ws_switch_deadline',   -- the same
     'mantle.ws_ddl_retry_pause',   -- the same
     'mantle.ws_former_clients'];   -- an operator's 'reviewed' for the switch's skip reason (report)
+  -- The two functions that set the actor (the gateway's own SET, an
+  -- operator's): mantle.actor is set nowhere else.
+  actor_setters constant text[] := ARRAY[
+    'public.mantle_set_actor(text,text,text)', 'public.mantle_operator_actor(text)'];
+  -- The function whose own SET clause blanks its three create keys (0315:
+  -- a structure item takes no caller's create workspaces), only to ''.
+  blankers constant text[] := ARRAY['public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)'];
   f record;
   m text[];
   k text;
+  c text;
+  body text;
 BEGIN
+  -- What a function sets: set_config and SET in its body, and its own SET
+  -- clause (proconfig). A body that sets an identity key hands the readers
+  -- (and any definer it calls) a value of its own choosing, so only the
+  -- non-identity keys above (and mantle.check_lowered, the floor's own
+  -- record) may be set; the actor only by its two setters; the structure
+  -- definer's clause only blanks its create keys. The derivation's flag and
+  -- its mark: mantle_acl_flag_leaks (0326) holds who may set them.
+  FOR f IN
+    SELECT p.oid::regprocedure::text AS sig, p.proname::text AS name, n.nspname = 'public' AS pub,
+           p.prosrc || ' ' || coalesce(pg_get_function_sqlbody(p.oid), '') AS prosrc,
+           coalesce(p.proconfig, '{}'::text[]) AS cfg
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                        WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+       AND NOT (n.nspname = 'public' AND p.proname IN ('mantle_identity_leaks', 'mantle_acl_flag_leaks'))
+  LOOP
+    body := regexp_replace(f.prosrc, '--[^\n]*', '', 'g');
+    FOR m IN SELECT regexp_matches(body, 'set_config"?\s*\(\s*([^,)]*)', 'gi') LOOP
+      arg := btrim(m[1]);
+      k := lower(substring(arg FROM '^''{1,2}([^'']*)''{1,2}(?:::text)?$'));
+      IF k IS NULL THEN
+        CONTINUE WHEN f.pub AND f.name = ANY (dynamic);
+        kind := 'function'; object := f.sig; detail := 'sets a key built at run time: ' || arg;
+        RETURN NEXT;
+      ELSIF k LIKE 'mantle.%' AND NOT (k = ANY (plain)) AND k <> 'mantle.check_lowered'
+            AND NOT (k = 'mantle.actor' AND f.sig = ANY (actor_setters)) THEN
+        kind := 'function'; object := f.sig; detail := 'sets ' || k;
+        RETURN NEXT;
+      END IF;
+    END LOOP;
+    FOR m IN SELECT regexp_matches(body, '\mset\s+(?:local\s+|session\s+)?"?(mantle\.[a-z0-9_]+)', 'gi') LOOP
+      k := lower(m[1]);
+      CONTINUE WHEN k = ANY (plain) OR k = 'mantle.check_lowered';
+      kind := 'function'; object := f.sig; detail := 'sets ' || k || ' by SET';
+      RETURN NEXT;
+    END LOOP;
+    FOREACH c IN ARRAY f.cfg LOOP
+      k := lower(split_part(c, '=', 1));
+      CONTINUE WHEN k NOT LIKE 'mantle.%' OR k = ANY (plain) AND k <> 'mantle.create_stamp';
+      CONTINUE WHEN f.sig = ANY (blankers)
+                AND k IN ('mantle.create_ws', 'mantle.private_ws', 'mantle.create_stamp')
+                AND substr(c, length(split_part(c, '=', 1)) + 2) = '';
+      kind := 'function'; object := f.sig; detail := 'its SET clause sets ' || c;
+      RETURN NEXT;
+    END LOOP;
+  END LOOP;
   -- Function bodies.
   FOR f IN
     SELECT x.* FROM (

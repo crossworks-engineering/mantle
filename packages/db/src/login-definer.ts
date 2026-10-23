@@ -30,8 +30,9 @@ import { loginScopeFor, systemPoolTxInScope } from './client';
 import { getAdminDb } from './gateway/pools';
 import { actingLoginNow, currentWorkspaceScope } from './viewer';
 
-/** A column the definer answers, optionally cast (`share_id::text`). */
-const COL = String.raw`[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)?`;
+/** A column the definer answers, optionally cast and named
+ *  (`contact::text as contact`). */
+const COL = String.raw`[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)?(?:\s+as\s+[a-z_][a-z0-9_]*)?`;
 /** An argument: a bound parameter, optionally cast (`$2::uuid[]`). */
 const ARG = String.raw`\$[0-9]+(?:::[a-z_][a-z0-9_]*(?:\[\])?)?`;
 

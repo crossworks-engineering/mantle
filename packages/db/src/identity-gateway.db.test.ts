@@ -130,6 +130,25 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
           $$ select current_setting('mantle.login_id', true) $$`);
         await t.unsafe(`create domain public.r14_leak_dom as text
           check (value <> current_setting('mantle.acting_login', true))`);
+        // What a function sets (the round 16 re-audit's DB LOW-3): a body's
+        // set_config and SET of an identity key, a key built at run time,
+        // and a function's own SET clause naming one (or blanking one
+        // outside the structure definer).
+        await t.unsafe(`create function public.r16_set_a() returns text language sql volatile as
+          $$ select set_config('mantle.login_id', '00000000-0000-4000-8000-000000000001', true) $$`);
+        await t.unsafe(`create function public.r16_set_b(k text) returns text language sql volatile as
+          $$ select set_config('mantle.' || k, 'x', true) $$`);
+        await t.unsafe(`create function public.r16_set_c() returns void language plpgsql volatile as
+          $$ begin set local mantle.acting_login = '00000000-0000-4000-8000-000000000001'; end $$`);
+        await t.unsafe(`create function public.r16_set_d() returns text language sql volatile
+          set mantle.ws = '{00000000-0000-4000-8000-000000000001}' as $$ select '' $$`);
+        await t.unsafe(`create function public.r16_set_e() returns text language sql volatile
+          set mantle.create_ws = '' as $$ select '' $$`);
+        await t.unsafe(`create function public.r16_set_f() returns text language sql volatile as
+          $$ select set_config('mantle.actor', 'system:x', true) $$`);
+        // A setting the check allows: no row for it.
+        await t.unsafe(`create function public.r16_set_ok() returns text language sql volatile as
+          $$ select set_config('mantle.keep_updated_at', 'on', true) $$`);
         const rows = await identityLeaks(t as unknown as postgres.Sql);
         throw Object.assign(new Error('rollback'), { rows });
       })
@@ -147,9 +166,16 @@ describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
       'r13_leak_d()',
       'agents r13_leak_p',
       'agents r13_leak_t',
+      'r16_set_a()',
+      'r16_set_b(text)',
+      'r16_set_c()',
+      'r16_set_d()',
+      'r16_set_e()',
+      'r16_set_f()',
     ]) {
       expect(objects).toContain(want);
     }
+    expect(objects).not.toContain('r16_set_ok()');
   });
 
   it('a migration that leaves a leak fails before its commit and leaves nothing', async () => {

@@ -104,6 +104,13 @@ const S = SAMPLE_ID;
 const KEY_AZURE = '55555555-5555-4555-8555-5555555555a2';
 const AZURE_PROVISION = 'onboarding provision (Azure only)';
 const MOBILE_LOGOUT = 'POST /api/auth/mobile-logout (a device bearer)';
+/** The users area disables an Admin user (0326's hold): the record key. */
+const ADMIN_DISABLE = 'PATCH /api/users/:id {disabled} (an Admin user)';
+/** The owner signs out everywhere (its own sessions, keys and grants):
+ *  the record key. Last in a pass: it ends the pass's cookie. */
+const OWNER_LOGOUT_ALL = 'POST /api/auth/logout {everywhere} (the owner)';
+/** The Admin user the disable row acts on (an admin by role: held). */
+const ADMIN2 = '22222222-2222-4222-8222-2222222222a1';
 /** The Microsoft sign-in, token refresh and drive discovery with Graph
  *  stubbed: the record key (the table's callback row carries no state
  *  cookie, so it never reaches the account write). */
@@ -321,6 +328,10 @@ describe.skipIf(!URL)(
     /** The phone's sign-out per pass (a live device bearer, no cookie): its
      *  answer and whether the token row was revoked. */
     const mobileOut: Record<string, string> = {};
+    /** The Admin user's disable and the owner's sign-out everywhere per
+     *  pass: the answer and what landed. */
+    const adminOff: Record<string, string> = {};
+    const ownerOut: Record<string, string> = {};
     /** The MS_CONNECT block per pass: the callback's redirect, the discover
      *  answer, and what landed (the new account with its tokens, the
      *  fixture account's refreshed expiry, the drive found). */
@@ -483,6 +494,19 @@ describe.skipIf(!URL)(
           mobileOut[pass] = `${res.status} ${normalize(await res.text())} revoked=${row?.revoked}`;
           record(MOBILE_LOGOUT);
         }
+        // The users area disables an Admin user (the round 16 re-audit's
+        // L5): 0326's hold, so a narrow exit runs it at the spot
+        // login-credential; the same answer both ways.
+        {
+          await su`insert into auth.users (id, email, password_hash, role)
+                   values (${ADMIN2}, 'sweep-admin2@example.invalid', 'x', 'admin')
+                   on conflict (id) do nothing`;
+          const r = await send('PATCH', `/api/users/${ADMIN2}`, { disabled: true });
+          const [row] = await su<{ off: boolean }[]>`
+            select disabled_at is not null as off from auth.users where id = ${ADMIN2}`;
+          adminOff[pass] = `${r.status} ${normalize(r.text)} disabled=${row?.off}`;
+          record(ADMIN_DISABLE);
+        }
         // The Microsoft sign-in, a token refresh and a drive discovery, with
         // Graph stubbed (round 13c, G): the callback with its state and PKCE
         // cookies; the fixture account's tokens sealed for real and expired,
@@ -614,6 +638,26 @@ describe.skipIf(!URL)(
             >`select count(*)::int as n from tool_groups where owner_id = ${OWNER}`
           )[0]!.n,
         };
+        // The owner signs out everywhere (the round 16 re-audit's L5): its
+        // session epoch, its keys, OAuth grants and devices (0326's hold:
+        // the owner's own, at the spot login-credential on a narrow exit).
+        // Last: the pass's cookie ends with it.
+        {
+          await su`insert into mobile_tokens (id, user_id, label, expires_at)
+                   values ('00000000-0000-4000-8000-00000000a0bf', ${OWNER}, 'sweep phone 2',
+                           now() + interval '30 days')`;
+          const [was] = await su<{ epoch: number }[]>`
+            select session_epoch as epoch from auth.users where id = ${OWNER}`;
+          const r = await send('POST', '/api/auth/logout', { everywhere: true });
+          const [now] = await su<{ epoch: number; live: number }[]>`
+            select u.session_epoch as epoch,
+                   (select count(*)::int from mobile_tokens t
+                     where t.user_id = u.id and t.revoked_at is null) as live
+              from auth.users u where u.id = ${OWNER}`;
+          ownerOut[pass] =
+            `${r.status} ${normalize(r.text)} epochMoved=${now!.epoch > was!.epoch} liveDevices=${now!.live}`;
+          record(OWNER_LOGOUT_ALL);
+        }
       } finally {
         await m?.closeDb();
         await su.end();
@@ -669,6 +713,15 @@ describe.skipIf(!URL)(
       expect(mobileOut.on).toBe(mobileOut.off);
       expect(mobileOut.on).toMatch(/^200 .*revoked=true$/);
       expect(denials.get(MOBILE_LOGOUT) ?? []).toEqual([]);
+    });
+
+    it("an Admin user's disable and the owner's sign-out everywhere: the same both ways, landed, nothing refused by the narrow role", () => {
+      expect(adminOff.on).toBe(adminOff.off);
+      expect(adminOff.on).toMatch(/^200 .*disabled=true$/);
+      expect(denials.get(ADMIN_DISABLE) ?? []).toEqual([]);
+      expect(ownerOut.on).toBe(ownerOut.off);
+      expect(ownerOut.on).toMatch(/^200 .*epochMoved=true liveDevices=0$/);
+      expect(denials.get(OWNER_LOGOUT_ALL) ?? []).toEqual([]);
     });
 
     it('the onboarding provision on the Azure route only: 2xx, the same both ways, the persona on the custom key', () => {
@@ -816,10 +869,14 @@ describe.skipIf(!URL)(
       'PATCH /api/docs/collections/:id': ['docs-root'],
       'PATCH /api/microsoft/drives/:id': ['feed-enable'],
       'POST /api/users/:id/password': ['login-credential'],
+      // 0326's hold on grants: a live grant of the owner rides on the client.
+      'DELETE /api/mcp-clients/:id': ['login-credential'],
       'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/tool-groups/:id': ['tool-group-grant'],
       'DELETE /api/users/:id': ['login-credential'],
+      // 0326's hold on grants: the sample login is an Admin user.
+      'DELETE /api/users/:id/devices/:jti': ['login-credential'],
       [AZURE_PROVISION]: [
         'acting-login',
         'assistant-grant',
