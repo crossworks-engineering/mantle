@@ -541,7 +541,7 @@ export async function listPresentRevisions(
  */
 export async function flushDuePresentIndex(limit = 25): Promise<number> {
   const due = await db
-    .select({ id: presents.nodeId, dueAt: presents.indexDueAt })
+    .select({ id: presents.nodeId })
     .from(presents)
     .where(and(isNotNull(presents.indexDueAt), lte(presents.indexDueAt, new Date())))
     .orderBy(asc(presents.indexDueAt))
@@ -549,10 +549,12 @@ export async function flushDuePresentIndex(limit = 25): Promise<number> {
   let announced = 0;
   for (const d of due) {
     const done = await db.transaction(async (tx) => {
+      // Still due now: a save since the read pushed the mark on (compared
+      // in the database, which keeps microseconds a JS Date drops).
       const cleared = await tx
         .update(presents)
         .set({ indexDueAt: null })
-        .where(and(eq(presents.nodeId, d.id), eq(presents.indexDueAt, d.dueAt!)))
+        .where(and(eq(presents.nodeId, d.id), lte(presents.indexDueAt, sql`now()`)))
         .returning({ id: presents.nodeId });
       if (cleared.length === 0) return false;
       await markContentChanged(tx, { id: d.id, type: 'present' }, ['source']);

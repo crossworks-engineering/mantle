@@ -550,12 +550,13 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     const perKind = ORACLE_WRITE_ROLES.length + ORACLE_ACTORS.length - 1;
     expect(tally.cells).toBe(kinds.length * 2 * ORACLE_WRITE_ACTIONS.length * perKind);
     // Both answers exercised, and every applicable cell counted.
-    // 11 kinds x 2 placements x 23 writes x 15 actors and logins: 7590
-    // cells, 2976 the oracle covers (4614 not applicable: a write a kind
+    // 12 kinds x 2 placements x 23 writes x 15 actors and logins: 8280
+    // cells, 3226 the oracle covers (5054 not applicable: a write a kind
     // has no row for, a login's create, a contact's write that is not app
-    // data, a create with forged values at the root).
-    expect(tally.allowed).toBe(730);
-    expect(tally.denied).toBe(2246);
+    // data, a create with forged values at the root). Present added 690
+    // cells: 60 allowed, 190 denied.
+    expect(tally.allowed).toBe(790);
+    expect(tally.denied).toBe(2436);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });
