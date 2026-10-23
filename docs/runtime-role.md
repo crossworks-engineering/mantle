@@ -1019,8 +1019,14 @@ or token revoke, a disable, an End sessions, an MCP client's removal, an
 OAuth code's burn) write, uncounted; the drill's N-1 rows run each as the
 runtime role with the actor check on. With the switch on, the older
 image's grants also leave the narrow role without those readers, so its
-holds refuse (42501, fail closed) every write they guard, a member's too:
-set `MANTLE_NARROW_SYSTEM=0` with the older image.
+holds refuse (42501, fail closed) every write they guard, a member's too.
+So with the switch on, pinning any image older than this release (one
+back or more) takes one of two forms: set `MANTLE_NARROW_SYSTEM=0` in the
+same `.env` edit as `MANTLE_IMAGE_TAG` and one `docker compose up -d` for
+both (no container of the older image ever runs with the switch on), or
+revert 0327 down to 0315 first (below), then pin. The switch alone, with
+no pin, is the fallback for a narrow refusal on this release
+(update-prod.md's rollback floors say the same).
 
 Reverting the narrow migrations by hand (before pinning an image older
 than one back, or to keep the switch on one back): newest first, each file in its own
@@ -1058,17 +1064,24 @@ makes; 0 on a box before 0320 or after a failed migrate) and
 `narrow_counter_actor_check` warn or on, and
 `narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
 call for, less the ones there: a migrate stopped part way can leave the
-total above 0 with one table blind). b3 needs all three on every box. The epoch must also be old enough and have
-seen traffic: at least 7 days since it (a soak), with the box's usual
-work in them (member and Admin turns, the users, keys and settings areas,
-workers); a fresh epoch on a quiet box reads 0 and proves nothing. The
-script also prints the epoch before (`narrow_prev_epoch:*`, from the
-second latest epoch row to the latest), so a reset shows what the one
-before it saw. The soak is of one version: b3 flips the default on the
-version that soaked, never on a later one that has not (a release after
-the soak starts its own epoch and its own 7 days). A path too rare to run
-in 7 days (a yearly job, a recovery tool) is not proven by the soak; it
-rests on the switch-on suites above. Only migrate or an operator writes an epoch row: 0327's
+total above 0 with one table blind), and `narrow_counter_held_readers` yes
+(the runtime role may run the two held readers the login and grant holds
+ask; without them those writes run uncounted). b3 needs all four on every
+box. The epoch must also have seen real work: the rule (the owner's,
+2026-10-23) is one working day of real use since the epoch on the box with
+the most daily member traffic (member and Admin turns, the users, keys and
+settings areas, workers), each count 0 at its end, and each count 0 on
+every other box; a release rolled to that box in between starts its own
+epoch and the day again. A fresh epoch on a quiet box reads 0 and proves
+nothing, so the day is of that busy box. The script also prints the epoch
+before (`narrow_prev_epoch:*`, from the second latest epoch row to the
+latest), so a reset shows what the one before it saw. b3 flips the default
+on the version that ran the day, never on a later one that has not. A path
+too rare to run in a day (a yearly job, a recovery tool) is not proven by
+it; it rests on the switch-on suites above. The fallback after the flip is
+per box and is the switch itself, not a code roll: `MANTLE_NARROW_SYSTEM=0`
+in the stack's `.env` and the app services recreated (`docker compose up
+-d`), the full route again for every system write. Only migrate or an operator writes an epoch row: 0327's
 guard refuses the narrow role a `narrow-epoch` row or a miss row dated
 ahead (directly or through `mantle_actor_miss_log`).
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so
