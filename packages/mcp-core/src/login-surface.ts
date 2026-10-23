@@ -368,13 +368,12 @@ export function connectorCheck(caller: McpCaller) {
  * app its app_delete sends to Recently deleted then waits there for the
  * owner, who alone deletes it for good.
  *
- * It reads the peer's login role, not the Admin pair (role admin AND a user
- * of Admin), until the role follows membership. The pair would answer
- * "names its login" for a role admin outside Admin, and a named login is
- * what app_delete, app_create, the share, Telegram, replay, runs, pending
- * and delegation builtins act for: for the anchor taken out of Admin, its
- * peer's app_delete would be purged. Every other login answers the same
- * either way (the cells in login-surface-peer.test.ts).
+ * The caller's role is its bound login's Admin membership (peer-access.ts
+ * asks loginIsAdmin since S8b; the role column follows the same membership).
+ * A named login is what app_delete, app_create, the share, Telegram,
+ * replay, runs, pending and delegation builtins act for; the anchor never
+ * leaves Admin (the removal definer keeps it), so its peer's app_delete
+ * still waits for the owner (the cells in login-surface-peer.test.ts).
  */
 export function peerNamesNoLogin(caller: Pick<McpCaller, 'via' | 'role' | 'peerByOwner'>): boolean {
   return caller.via === 'peer' && caller.role === 'admin' && !caller.peerByOwner;

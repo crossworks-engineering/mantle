@@ -31,9 +31,11 @@
  *    archived and keeps a Moderator. Team is a workspace like any other
  *    since 0286 (renamed, archived and moderated by the same rules).
  *
- * A user of the Admin workspace IS an admin login until W5c (adding one or
- * removing one is the same role change the Users screen makes, through
- * applyLoginChange, which keeps the Admin row in step with the role).
+ * A user of the Admin workspace IS an admin login: membership decides, and
+ * the role column follows it (S8b, 0330: the membership definers write the
+ * row and the role in one transaction). Adding one or removing one is the
+ * same change the Users screen makes, through applyLoginChange (its
+ * lockout and audit).
  * Connectors are attached here only: since W5b2 (0261) no level attaches
  * one.
  *
@@ -993,9 +995,9 @@ function mayChangeAdminUsers(seen: Seen): void {
 
 /** The Admin-workspace role change behind adding or removing a user there,
  *  in ONE transaction: `change` (the user definer, which checks the acting
- *  login and locks the workspace) runs first inside it, then the role, the
- *  login bridge (a no-op once the definer made or removed the row) and the
- *  lockout (sessions, agent, push devices: applyLoginChange). On success
+ *  login, locks the workspace and writes the row and the role column, 0330)
+ *  runs first inside it, then the lockout (sessions, agent, push devices:
+ *  applyLoginChange); no bridge runs. On success
  *  the user.update audit row the Users screen writes. On the
  *  system pool with the caller's write scope set on the transaction: the
  *  write role holds no right on the login's rows, and the

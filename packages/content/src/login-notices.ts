@@ -120,11 +120,12 @@ function clip(s: string, max: number): string {
  * member (a member or a client). An admin, a disabled login and a role this
  * code does not know are told nothing.
  *
- * It reads the login's role, not the Admin pair (role admin AND a user of
- * Admin), until the role follows membership. "Not an Admin user" by the
- * pair would tell a role admin outside Admin its notices, which the role
- * never did: a push it never had, a wider answer. Every other login answers
- * the same either way (the cells in login-notices-role.test.ts).
+ * It reads the login's role column, which follows Admin membership since
+ * S8b (0330: the membership definers write it with the seat, the role guard
+ * refuses any other app writer), so it answers as membership does. Where a
+ * hand write left them apart, a role admin outside Admin is still told
+ * nothing (narrower), and a seat without role admin cannot reach a box
+ * (0330's migrate refuses it). The cells: login-notices-role.test.ts.
  */
 export function toldLoginNotices(row: {
   role: string | null | undefined;

@@ -186,8 +186,8 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
  * with the row). Membership decides: the role column follows it, written
  * only by the membership definers (mantle_ws_add_user and
  * mantle_ws_remove_user on Admin), so it is never asked here. The session
- * itself (resolvedFor), memberLoginActive and findMemberAsset still read
- * the column, which equals membership by construction.
+ * (resolvedFor) asks this too; memberLoginActive and findMemberAsset still
+ * read the column's 'member', which equals membership by construction.
  */
 export function adminLogin(row: Pick<LoginRow, 'adminMember'>): boolean {
   return row.adminMember === true;
