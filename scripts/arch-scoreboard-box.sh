@@ -41,8 +41,10 @@
 #     release's epoch (the latest narrow-epoch row: migrate writes one per
 #     version; all time on a box with none), and that epoch's version and
 #     time; and whether the count can count at all: its derived triggers'
-#     number and the actor check's mode (b3 needs triggers above 0 and the
-#     mode warn or on: a box can read 0 counts with no counter);
+#     number, the ones missing, the actor check's mode and whether the
+#     runtime role may run the two held readers (b3 needs triggers above
+#     0, none missing, the mode warn or on and the readers yes: a box can
+#     read 0 counts with no counter);
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -274,6 +276,22 @@ select case when to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is 
 end;
 SQL
 )
+# Whether the runtime role may run the two held readers (0327) the login
+# and grant holds' report branches ask: without them (an older image's
+# grants) those writes run uncounted. yes or no; n/a before 0327 or with
+# no runtime role. b3 needs yes.
+narrow_held=$(q <<'SQL' || true
+select case
+  when to_regprocedure('public.mantle_narrow_login_held(uuid)') is null
+    or to_regprocedure('public.mantle_narrow_client_held(uuid)') is null
+    or to_regrole('mantle_runtime') is null then 'n/a'
+  when has_function_privilege('mantle_runtime', 'public.mantle_narrow_login_held(uuid)', 'EXECUTE')
+   and has_function_privilege('mantle_runtime', 'public.mantle_narrow_client_held(uuid)', 'EXECUTE')
+    then 'yes'
+  else 'no' end;
+SQL
+)
+case "$narrow_held" in yes | no | n/a) ;; *) narrow_held='?' ;; esac
 narrow_mode=$(q <<SQL || true
 select coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
 SQL
@@ -360,6 +378,7 @@ printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
 printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
 printf '  %-34s %s\n' narrow_counter_missing_triggers "$(num "$narrow_missing")"
 printf '  %-34s %s\n' narrow_counter_actor_check "$narrow_mode"
+printf '  %-34s %s\n' narrow_counter_held_readers "$narrow_held"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
