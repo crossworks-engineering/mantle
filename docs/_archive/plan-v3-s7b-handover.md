@@ -5627,3 +5627,141 @@ readers, so a member's disable is allowed, as on the branch. In b2's drill
   re-enrol at the push-device spot) meets the hold's 42501, fail closed.
 - Load-only timeouts as in every round (load 20 to 32 with 13 lanes); each
   passed alone.
+
+## Part b3, round 2: the audits' small fixes before the merge
+
+Both b3 audits at feed7f7c2 scored 8.5 (app MERGE, DB MERGE AFTER FIXES).
+The fixes land before the default flip, which stays the last code commit
+(re-applied with two of its own text fixes folded in); docs only after it.
+
+### Item 1: a text check refusal on the route is a noted denial
+
+`noteNarrowDenial` noted only a 42501, so with the switch on a statement
+the text check refused (no SQLSTATE: nothing was sent) was never counted,
+in `narrowStatement` (the check ran before any note) and on the tagged
+template branch of the narrow transaction client. Now the denial note,
+`raisedOnNarrow` and one helper live in `gateway/narrow-denial.ts`:
+`sendOrNote(text, tagged, on)` runs the text check in both switch states,
+on the route a refusal is a noted denial (`narrow-denied`, detail
+`text:<what>`) and thrown, off it a `narrow-would-refuse text:<what> TEXT`
+count and the statement goes. `narrowStatement` (both pools: the login
+pool's `narrowLoginStatement` is only reached after it), the transaction
+client (unsafe, tagged template, savepoints) and `noteWouldRefuseStatement`
+all call it. `textRefusalOf` reads the refusal through drizzle's wrapper.
+Cells: `narrow-would-refuse-unread.test.ts` (both states, once per error,
+a wrapper noted first), `narrow-route.db.test.ts` (alone, in a
+transaction, a tagged template and a savepoint, each once with its
+reason; the older text cells now take their `text:` denials), and
+`narrow-login.db.test.ts` (the gateway settings cell).
+
+### Item 2: the owner's device routes with the switch on
+
+`server/web/server/narrow-push-routes.db.test.ts` drives the real app:
+DELETE `/api/push/subscriptions/:id` with the owner's device bearer, on the
+owner's device (200, gone, at the spot `login-credential`) and a member's
+(200, gone, no spot), and POST `/api/push/reset` with the owner's session
+and both devices present (200, `invalidated: 2`, every device gone). The
+relay is stubbed, the master-key seal mocked (as in the area sweep).
+
+### Items 3 and 6: one derivation of the would-refuse triggers (0328, edited in place)
+
+0328 now adds `mantle_narrow_would_refuse_expected()` (one row per derived
+trigger the narrow role's grants call for: table, trigger name, the UPDATE
+OF columns), the one derivation. `mantle_narrow_counter_missing()` counts
+its rows with no trigger of that name that is enabled (`tgenabled <> 'D'`)
+and calls the count's function (`tgfoid`), with the exact columns for the
+UPDATE OF one. Migrate's `applyNarrowWouldRefuse` (runtime-role.ts
+`wouldRefuseRows`) reads the same function, so its triggers and the
+counter can no longer drift; the tables it walks are those the function
+names and those holding a derived trigger it no longer calls for. Between
+0320 and 0328 (a migrate that failed short of 0328) it throws
+`NarrowWouldRefuseBeforeError`, which the runner's catch logs as its
+warning. The box script's own copy (for a box before 0328) takes the
+same two conditions, and it prints `narrow_hold_triggers` (the enabled
+`mantle_narrow_token_hold_trg` count: 5 from 0327, 3 from 0328; b3 needs
+8). Both functions have no EXECUTE for PUBLIC (the owner role and a
+superuser run them); 0328's header says so now, not "superuser only". The
+revert drops both. Cells (`narrow-lockout.db.test.ts`): the expected rows
+equal the derived triggers there, the hold count is 8, the counter reads 1
+with an UPDATE OF trigger dropped, disabled, or replaced by one calling
+another function, and with a column grant changed; before 0328 the
+triggers' step throws its error.
+
+### Item 4: migrate warns about the narrow login
+
+`beforeMigrations` warns (`narrowLoginWarning`, migrator-steps.ts) when
+the narrow switch is on but the roles step did not run (not a superuser,
+or a server before Postgres 16): the role was not made or given its login,
+so unless an earlier migrate did, every narrow statement fails closed; it
+names the fix, migrate as a superuser on Postgres 16 or later, or
+`MANTLE_NARROW_SYSTEM=0` and a full `docker compose up -d`. Cell:
+`migrator-steps.test.ts`. Documented in runtime-role.md (the narrow system
+role).
+
+### Item 5: INFO
+
+- docs/configuration.md and features.ts: `narrowSystem` defaults to on
+  (it sat under "the caller" knows); folded into the flip commit, which
+  introduced them.
+- 0328's header: the EXECUTE wording (above).
+- update-prod.md and runtime-role.md: the kill switch takes a full
+  `docker compose up -d` (migrate must run to take the role's login);
+  pinning the b2 image with the switch on needs only 0328's revert (b2's
+  own migrations grant the held readers; 0328's wider hold would refuse the
+  push device deletes b2 sends outside the spot); an image older than b2
+  needs 0328 down to 0315, or the switch.
+- The box script's traffic label `admin-area-writes` is now
+  `audited-actions` (it counts every audit_log row since the epoch).
+- runtime-role.md's soak sentence: the release shape (which release
+  carries the default to a box, after which day's counts) is decided by
+  the CEO per box and written in update-prod.md before that box rolls. Not
+  decided here.
+
+### Commit order
+
+On 46e2898de: item 1 (555099f03), item 2 (e64df2a08), items 3 and 6
+(f23d70ced), item 4 (64816def5), item 5's pre-flip part (b20baa9e4), the
+flip (2e8f2ac42, the last code commit), the b3 handover (69ec4ea67), item
+5's docs after the flip (56e7a7dcd, the gated head), this section.
+
+### Gates on 56e7a7dcd (the gated head; its code is the flip's, 2e8f2ac42; fsync off on the suite clusters)
+
+Mac: typecheck 0, lint 0, format 0, docs 0, arch 0, boot smoke 0, unit 0
+(885 files, 11388 tests, migrations-journal and rollback-when included;
+DATABASE_URL unset), the rest of `pnpm verify` 0, web build 0.
+
+Workstation (`TAG=<t> ~/s7b-b3/kit/r2-run.sh <sha> <names>`, units
+`s7b-b3r2-<name>`, results `~/s7b-b3/x-<t><name>.exit` and `.log`):
+
+| gate                                  | result                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| shard 1/2                             | 0 (595 files, 6526 tests; the first launch's container failed to bind a port, exit 93, relaunched)                             |
+| shard 2/2                             | 593 of 594: gate-caller (a 15 s timeout and the bearer touch 1 vs 2) under load; alone 0, switch on and off                    |
+| runtime-role                          | 0 (315 files)                                                                                                                  |
+| switch off (`MANTLE_NARROW_SYSTEM=0`) | 1188 of 1189: gate-caller under load, as above; alone 0 with the switch off                                                    |
+| the touched DB files (19)             | 18 of 19: narrow-login's pinned settings cell met "tuple concurrently deleted" beside the other files' role work; alone 0 (17) |
+| forge proof (`kit/proof.sh`)          | 0: 138 refused of 138 (126 42501, 12 40001), 30 written of 30, 12 flag forms propagated; identity sweep 270 no change, 17 refused; leaks 0 and 0; SET forms 6 of 6, allowed key 0; narrow defaults stored 2, leaks 0, migrate 0, after 0; held readers yes, then no; missing triggers 0, then 1; public rights 0 |
+| drill (`kit/drill.sh`, N-1 = 444d91373) | 0: init on main (327), branch (328), N-1 boot (328 kept); the N-1 runtime rows as in part b3 (each row 1, the member turn claim, settle and release, the three 0328 writes counted); switch unset gives the role its login, 0 and off take it, per-database none; reverts 0328 to 0315 each 0, to 314; main after 0 (327); roll forward 328; 27 one-way triggers |
+
+### Left
+
+1. The CEO's re-audit of this round (both sides) on 56e7a7dcd.
+2. The release shape per box: the CEO's, written in update-prod.md
+   before each box rolls.
+3. As before: the pre-roll count of stray role or database defaults, and
+   the backlog (Telegram member tokens, a run-wide migrate lock).
+
+### Doubts
+
+- `applyNarrowWouldRefuse` now walks the tables holding a derived trigger
+  too, so a stale one on a table the actor check now covers is dropped
+  (before, such a table was skipped). Right by the derivation; no box is
+  known to have one.
+- A migrate that fails before 0328 on a box coming from 0320 to 0327
+  leaves the would-refuse UPDATE OF triggers dropped until the next
+  migrate, with a warning (before, it made them again from the inline
+  derivation). The counter reads them missing meanwhile.
+- The text denial note in tests fails any test that sends a refused text
+  on the route without taking it: the suites found none beyond the text
+  check's own cells.
+- Load-only timeouts as before; each passed alone.
