@@ -75,6 +75,10 @@ function styleText(css: string): string {
  * Theme, fit, ready and error, in one classic inline script that runs while
  * the head parses, before the canvas's own scripts.
  *
+ *  - WebRTC: removed before any canvas script runs. Its ICE traffic (a STUN
+ *    host of the canvas's choice) is not under `connect-src` in Chromium, so
+ *    it would be a way out; a canvas has no use for it, and the frame has no
+ *    nested frame or other realm to take it back from.
  *  - Theme: the `<html>` class and data-color-theme are set at once (no flash),
  *    then follow the parent's `{v:1, kind:'theme'}` messages. A fixed-theme
  *    canvas ignores them.
@@ -100,6 +104,8 @@ function preludeScript(opts: {
   });
   return `(function(){
   var cfg=${cfg};var h=document.documentElement;
+  ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription'].forEach(function(n){
+    try{Object.defineProperty(window,n,{value:undefined,writable:false,configurable:false});}catch(_){}});
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
   theme(cfg.cls,cfg.ct);
   window.addEventListener('message',function(e){
@@ -144,11 +150,25 @@ function layoutCss(size: CanvasSize): string {
   );
 }
 
-/** The canvas source without a leading BOM, comments or doctype: the frame
- *  writes its own doctype first, so the document never parses in quirks
- *  mode. */
-function stripLeadingDoctype(source: string): string {
-  return source.replace(/^\uFEFF?(\s*(<!--[\s\S]*?-->\s*)*)<!doctype[^>]*>/i, '$1');
+/** The canvas source without a leading BOM or doctype (comments before it
+ *  kept): the frame writes its own doctype first, so the document never
+ *  parses in quirks mode. A linear scan, not a regex: a nested repeat over
+ *  comments backtracks exponentially when no doctype follows, and this runs
+ *  on every frame load (the canvas audit, 2026-10-24). */
+export function stripLeadingDoctype(source: string): string {
+  const start = source.charCodeAt(0) === 0xfeff ? 1 : 0;
+  let i = start;
+  for (;;) {
+    while (i < source.length && /\s/.test(source[i]!)) i++;
+    if (!source.startsWith('<!--', i)) break;
+    const end = source.indexOf('-->', i + 4);
+    if (end < 0) return source.slice(start);
+    i = end + 3;
+  }
+  const doctype = /^<!doctype[^>]*>/i.exec(source.slice(i, i + 1024));
+  return doctype
+    ? source.slice(start, i) + source.slice(i + doctype[0].length)
+    : source.slice(start);
 }
 
 export function buildCanvasFrameHtml(opts: {

@@ -83,3 +83,37 @@ describe('buildCanvasFrameHtml', () => {
     expect(html).not.toContain('</style><script>');
   });
 });
+
+describe('stripLeadingDoctype', () => {
+  it('drops a leading BOM and doctype, keeping comments before it', async () => {
+    const { stripLeadingDoctype } = await import('./canvas-frame-html');
+    expect(stripLeadingDoctype('﻿<!DOCTYPE html><html>')).toBe('<html>');
+    expect(stripLeadingDoctype('<!-- a --> <!doctype html><html>')).toBe('<!-- a --> <html>');
+    expect(stripLeadingDoctype('<html><!doctype html>')).toBe('<html><!doctype html>');
+  });
+
+  it('is linear: many comments and no doctype take no time (the audit ReDoS)', async () => {
+    const { stripLeadingDoctype } = await import('./canvas-frame-html');
+    const evil = '<!--a-->'.repeat(50_000) + '<html>';
+    const t = performance.now();
+    expect(stripLeadingDoctype(evil)).toBe(evil);
+    expect(performance.now() - t).toBeLessThan(200);
+  });
+});
+
+describe('the prelude', () => {
+  it('takes WebRTC away before any canvas script runs', () => {
+    const html = buildCanvasFrameHtml({
+      source: '<html><body><script>new RTCPeerConnection()</script></body></html>',
+      css: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      size: 'fill',
+      theme: 'follow',
+      fontCss: '',
+    });
+    expect(html.indexOf("'RTCPeerConnection'")).toBeGreaterThan(0);
+    expect(html.indexOf("'RTCPeerConnection'")).toBeLessThan(html.indexOf('new RTCPeerConnection'));
+  });
+});

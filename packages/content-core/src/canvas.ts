@@ -49,7 +49,7 @@ const NAMED_ENTITIES: Record<string, string> = {
 
 /** Decode the character references agent HTML commonly holds. */
 export function decodeHtmlEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (whole, ref: string) => {
+  return text.replace(/&(#x[0-9a-f]{1,8}|#[0-9]{1,8}|[a-z]{1,32});/gi, (whole, ref: string) => {
     if (ref[0] === '#') {
       const code =
         ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
@@ -102,25 +102,119 @@ function parseSeconds(value: string | undefined): number | null {
   return n >= 0 && n <= 60 ? n : null;
 }
 
+// Every reader below is a linear scan (indexOf, and regexes bounded to one
+// tag or a short window), never a backtracking regex over the document: a
+// canvas is written by an agent that may be steered, and a save, a search
+// index or a frame load must not be held up by a document built to make a
+// regex run for minutes (the canvas audit, 2026-10-24).
+
+/** The tags whose content is never visible text. */
+const HIDDEN_TAGS = new Set(['script', 'style', 'noscript', 'template']);
+
+/** The tag name at `<` (lower case), or null. Reads at most 40 characters. */
+function tagNameAt(html: string, lt: number): string | null {
+  const m = /^<([a-zA-Z][\w:-]*)/.exec(html.slice(lt, lt + 40));
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+/** The index just past the `>` that closes `</name ...>` from `from`, or
+ *  the end of the text when there is none. `lower` is the text in lower case. */
+function pastClose(lower: string, name: string, from: number): number {
+  const close = lower.indexOf(`</${name}`, from);
+  if (close < 0) return lower.length;
+  const gt = lower.indexOf('>', close);
+  return gt < 0 ? lower.length : gt + 1;
+}
+
 /** Comments, scripts, styles and other non-visible blocks removed. */
 function withoutHiddenBlocks(html: string): string {
-  return html
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|noscript|template|svg:style)\b[\s\S]*?<\/\1\s*>/gi, ' ');
+  const lower = html.toLowerCase();
+  let out = '';
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, lt);
+    if (html.startsWith('<!--', lt)) {
+      const end = html.indexOf('-->', lt + 4);
+      out += ' ';
+      i = end < 0 ? html.length : end + 3;
+      continue;
+    }
+    const name = tagNameAt(html, lt);
+    if (name && HIDDEN_TAGS.has(name)) {
+      out += ' ';
+      i = pastClose(lower, name, lt + 1 + name.length);
+      continue;
+    }
+    out += '<';
+    i = lt + 1;
+  }
+  return out;
+}
+
+/** Every `<...>` replaced by a space, in one pass. (`/<[^>]+>/g` reads to
+ *  the end of the text from each `<` that has no `>` after it.) */
+function withoutTags(html: string): string {
+  let out = '';
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, lt);
+    const gt = html.indexOf('>', lt + 1);
+    if (gt < 0) {
+      out += html.slice(lt);
+      break;
+    }
+    out += ' ';
+    i = gt + 1;
+  }
+  return out;
 }
 
 function collapse(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+/** The most of the document the head is looked for in. */
+const HEAD_SCAN_MAX = 64_000;
+
+/** The document's head (from `<head` to `</head>`, else the first
+ *  HEAD_SCAN_MAX characters). */
+function headOf(html: string): string {
+  const window = html.slice(0, HEAD_SCAN_MAX);
+  const lower = window.toLowerCase();
+  const open = lower.indexOf('<head');
+  if (open < 0) return window;
+  const close = lower.indexOf('</head', open);
+  return window.slice(open, close < 0 ? window.length : close);
+}
+
+/** The text inside the head's `<title>`, or ''. */
+function titleOf(head: string): string {
+  const lower = head.toLowerCase();
+  const open = lower.indexOf('<title');
+  if (open < 0) return '';
+  const gt = lower.indexOf('>', open);
+  if (gt < 0) return '';
+  const close = lower.indexOf('</title', gt);
+  return head.slice(gt + 1, close < 0 ? Math.min(head.length, gt + 1 + 400) : close);
+}
+
 /** Read a canvas's head contract (section 4.2). Missing parts take their
  *  defaults: no title is '', no size is the default design size. */
 export function parseCanvasHead(html: string): CanvasHead {
-  const head = /<head\b[\s\S]*?<\/head\s*>/i.exec(html)?.[0] ?? html;
-  const titleMatch = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(head);
+  const head = headOf(html);
   const metas = metaTags(head);
   return {
-    title: collapse(decodeHtmlEntities(titleMatch?.[1] ?? '')).slice(0, 200),
+    title: collapse(decodeHtmlEntities(titleOf(head))).slice(0, 200),
     description: collapse(metas.get('description') ?? '').slice(0, 500),
     size: parseCanvasSize(metas.get('canvas:size')) ?? { ...CANVAS_DEFAULT_SIZE },
     theme: metas.get('canvas:theme')?.toLowerCase() === 'fixed' ? 'fixed' : 'follow',
@@ -131,6 +225,18 @@ export function parseCanvasHead(html: string): CanvasHead {
 /** The most text a canvas contributes to search and the extractor. */
 export const CANVAS_TEXT_MAX = 20_000;
 
+/** The document's body (after `<body ...>`, up to the last `</body`), else
+ *  the whole document. */
+function bodyOf(html: string): string {
+  const lower = html.toLowerCase();
+  const open = lower.indexOf('<body');
+  if (open < 0) return html;
+  const gt = lower.indexOf('>', open);
+  if (gt < 0) return html;
+  const close = lower.lastIndexOf('</body');
+  return html.slice(gt + 1, close > gt ? close : html.length);
+}
+
 /**
  * The canvas's derived text (section 4.3): title, description, then the
  * visible text of the body, with scripts, styles and comments removed.
@@ -139,18 +245,38 @@ export const CANVAS_TEXT_MAX = 20_000;
  */
 export function canvasText(html: string): string {
   const { title, description } = parseCanvasHead(html);
-  const body = /<body\b[^>]*>([\s\S]*)<\/body\s*>/i.exec(html)?.[1] ?? html;
   const visible = collapse(
     decodeHtmlEntities(
-      withoutHiddenBlocks(body)
-        // Block ends become spaces so words in adjacent cells never fuse.
-        .replace(/<[^>]+>/g, ' '),
+      // Tags become spaces so words in adjacent cells never fuse.
+      withoutTags(withoutHiddenBlocks(bodyOf(html))),
     ),
   );
   return [title, description, visible]
     .filter((s) => s.length > 0)
     .join('\n')
     .slice(0, CANVAS_TEXT_MAX);
+}
+
+/** How far after `import` or `export` a specifier is looked for. */
+const IMPORT_WINDOW = 400;
+
+/** The specifiers one module script imports, each statement read within a
+ *  short window after its keyword. */
+function moduleSpecifiers(code: string): string[] {
+  const out: string[] = [];
+  const keyword = /\b(import|export)\b/g;
+  let k: RegExpExecArray | null;
+  while ((k = keyword.exec(code))) {
+    const window = code.slice(k.index, k.index + IMPORT_WINDOW);
+    const m =
+      k[1] === 'import'
+        ? (/^import\s*\(\s*["']([^"'\n]+)["']\s*\)/.exec(window) ??
+          /^import\s*["']([^"'\n]+)["']/.exec(window) ??
+          /^import\b[^"';]*?\bfrom\s*["']([^"'\n]+)["']/.exec(window))
+        : /^export\b[^"';]*?\bfrom\s*["']([^"'\n]+)["']/.exec(window);
+    if (m) out.push(m[1]!);
+  }
+  return out;
 }
 
 /**
@@ -162,24 +288,24 @@ export function canvasText(html: string): string {
 export function canvasImports(html: string): { modules: string[]; scripts: string[] } {
   const modules: string[] = [];
   const scripts: string[] = [];
-  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-    const attrs = `<script ${m[1] ?? ''}>`;
+  const lower = html.toLowerCase();
+  let i = 0;
+  while (i < html.length) {
+    const open = lower.indexOf('<script', i);
+    if (open < 0) break;
+    const gt = lower.indexOf('>', open);
+    if (gt < 0) break;
+    const attrs = `<script ${html.slice(open + 7, gt)}>`;
+    const close = lower.indexOf('</script', gt);
+    const code = html.slice(gt + 1, close < 0 ? html.length : close);
+    i = close < 0 ? html.length : close + 8;
     const src = attrOf(attrs, 'src');
     if (src) {
       if (!scripts.includes(src)) scripts.push(src);
       continue;
     }
     if ((attrOf(attrs, 'type') ?? '').toLowerCase() !== 'module') continue;
-    const code = m[2] ?? '';
-    const found = [
-      ...code.matchAll(/\bimport\s+(?:[\w*{}\s,$]+?\s+from\s+)?["']([^"']+)["']/g),
-      ...code.matchAll(/\bexport\s+[\w*{}\s,$]+?\s+from\s+["']([^"']+)["']/g),
-      ...code.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g),
-    ];
-    for (const f of found) {
-      const spec = f[1]!;
-      if (!modules.includes(spec)) modules.push(spec);
-    }
+    for (const spec of moduleSpecifiers(code)) if (!modules.includes(spec)) modules.push(spec);
   }
   return { modules, scripts };
 }

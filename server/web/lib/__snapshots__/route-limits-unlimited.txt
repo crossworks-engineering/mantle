@@ -39,9 +39,8 @@ chat logins (11):
   POST /api/assistant/threads/:id/continue
   POST /api/assistant/threads/:id/summarize
   POST /api/assistant/turn
-frame (a frame ticket) (2):
+frame (a frame ticket) (1):
   GET /api/apps/:id/frame
-  GET /api/presents/:id/frame
 link (a share token) (2):
   GET /s/:token/bundle/css
   GET /s/:token/frame

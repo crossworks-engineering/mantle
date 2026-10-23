@@ -6,7 +6,8 @@
  * (an app's is refused). What it may open is checked here:
  *
  *  - the ticket names this canvas;
- *  - an Admin user's ticket: the login is still an active Admin user;
+ *  - an Admin user's ticket: the login is still an active Admin user, and
+ *    the canvas is still one it reads (read in its own scope);
  *  - a member's ticket: the login is still an active member, and the canvas
  *    is still one it reads (read again in its own scope).
  *
@@ -30,7 +31,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (!(await adminLoginActive(ticket.actorId))) {
       return new NextResponse('admin session required', { status: 401 });
     }
-    canvas = await getPresentFrame(ticket.ownerId, id);
+    // Read in the admin login's own scope, as the mint read it: a login that
+    // lost the canvas's workspace loses it here too.
+    const actorId = ticket.actorId;
+    canvas = await withViewer({ login: actorId }, () => getPresentFrame(ticket.ownerId, id));
   } else if (ticket.loginId && ticket.clientEpoch === undefined) {
     const loginId = ticket.loginId;
     if (!(await memberLoginActive(loginId))) {

@@ -425,6 +425,10 @@ export function verifyContactVisitorValue(value: string): ContactVisitorClaims |
 // session/mobile/asset verifiers all reject kind 'f'.
 
 const APP_FRAME_TICKET_TTL_SECONDS = 120;
+/** A canvas ticket lives shorter: it opens one navigation the parent makes
+ *  at once, and the canvas can read its own URL, ticket included (the
+ *  canvas audit, 2026-10-24). */
+const CANVAS_FRAME_TICKET_TTL_SECONDS = 30;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
  *  only); `loginId` set ⇒ member surface (a member login, published build
@@ -472,7 +476,10 @@ export function buildAppFrameTicket(opts: {
   // ticket already says who runs the app.
   if (opts.actorId && !opts.shareId && !opts.loginId) claims.act = opts.actorId;
   if (opts.reviewTest && opts.actorId && !opts.shareId && !opts.loginId) claims.rv = 1;
-  return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
+  return signClaims(
+    claims,
+    opts.canvas ? CANVAS_FRAME_TICKET_TTL_SECONDS : APP_FRAME_TICKET_TTL_SECONDS,
+  ).value;
 }
 
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —

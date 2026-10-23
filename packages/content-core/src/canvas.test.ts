@@ -106,3 +106,26 @@ describe('decodeHtmlEntities', () => {
     expect(decodeHtmlEntities('a &lt;b&gt; &#65;&#x42; &unknown;')).toBe('a <b> AB &unknown;');
   });
 });
+
+describe('linear on hostile input (the canvas audit)', () => {
+  const quick = (f: () => unknown) => {
+    const t = performance.now();
+    f();
+    return performance.now() - t;
+  };
+
+  it('many unclosed hidden tags, many unclosed heads, titles and scripts', () => {
+    const cases = [
+      '<style '.repeat(150_000),
+      '<head '.repeat(150_000),
+      '<title>'.repeat(150_000),
+      '<body '.repeat(150_000),
+      '<script type="module">import '.repeat(30_000),
+      '<script type="module">' + 'import '.repeat(100_000) + ' '.repeat(100_000),
+    ];
+    for (const html of cases) {
+      expect(quick(() => canvasText(html))).toBeLessThan(1000);
+      expect(quick(() => canvasImports(html))).toBeLessThan(1000);
+    }
+  });
+});
