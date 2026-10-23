@@ -82,7 +82,9 @@ CREATE POLICY "present_revisions_user_read" ON "public"."present_revisions" FOR 
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "present_revisions"."node_id"));
 --> statement-breakpoint
 
--- The actor check on the new content tables (0275), as on `draws`.
+-- The actor check on the new content tables (0275), and the edit check's two
+-- item triggers with 0294's bodies, as 0302 added them for profiles: each
+-- follows its box mode (off on every box but dev), as the loops leave them.
 DO $$
 DECLARE
   t text;
@@ -92,6 +94,21 @@ BEGIN
     EXECUTE format(
       'CREATE TRIGGER mantle_actor_check BEFORE INSERT OR UPDATE OR DELETE ON public.%I '
       'FOR EACH STATEMENT EXECUTE FUNCTION public.mantle_actor_check_stmt()', t);
+    IF "public"."mantle_actor_check_box_mode"() = 'off' THEN
+      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_actor_check', t);
+    END IF;
+    EXECUTE format(
+      'CREATE OR REPLACE TRIGGER mantle_edit_check_ro BEFORE INSERT OR UPDATE OR DELETE ON public.%I '
+      'FOR EACH STATEMENT WHEN (current_setting(''mantle.write_mode'', true) = ''ro'') '
+      'EXECUTE FUNCTION public.mantle_edit_ro_stmt()', t);
+    EXECUTE format(
+      'CREATE OR REPLACE TRIGGER mantle_edit_check_contact BEFORE INSERT OR UPDATE OR DELETE ON public.%I '
+      'FOR EACH STATEMENT WHEN (current_setting(''mantle.actor'', true) = ''contact:rw'') '
+      'EXECUTE FUNCTION public.mantle_edit_contact_stmt()', t);
+    IF "public"."mantle_check_box_mode"('edit_check') = 'off' THEN
+      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_edit_check_ro', t);
+      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_edit_check_contact', t);
+    END IF;
   END LOOP;
 END $$;
 --> statement-breakpoint

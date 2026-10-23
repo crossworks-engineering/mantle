@@ -57,6 +57,9 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
   let sql: ReturnType<typeof postgres>;
   let oldKinds: string[] = [];
   let teamReadsBefore = '';
+  /** The node types before 0295: a later kind (present, 0330) is not in
+   *  the before answer, so the comparison reads these only. */
+  let enumBefore: string[] = [];
   let validBefore: Record<string, boolean> = {};
 
   const statements = () =>
@@ -67,7 +70,8 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
       .split('--> statement-breakpoint')
       .map((x) => x.trim())
       .filter(Boolean);
-  /** mantle_team_reads over every kind and every level it reads. */
+  /** mantle_team_reads over every kind there was before 0295 and every
+   *  level it reads. */
   const teamReads = async () =>
     JSON.stringify(
       await sql`
@@ -76,6 +80,7 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
                unnest(array['admin', 'team', 'client', 'public', null]) a,
                unnest(array['team', 'client', null]) i,
                unnest(array['team', 'client', 'public', null]) e
+         where t::text = any(${enumBefore})
          order by 1, 2, 3, 4`,
     );
   const valid = async () =>
@@ -107,6 +112,9 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
       await sql<{ t: string }[]>`
         select t::text as t from unnest(enum_range(null::node_type)) t
          where mantle_workspace_kind(t) order by 1`
+    ).map((r) => r.t);
+    enumBefore = (
+      await sql<{ t: string }[]>`select t::text as t from unnest(enum_range(null::node_type)) t`
     ).map((r) => r.t);
     teamReadsBefore = await teamReads();
     validBefore = await valid();

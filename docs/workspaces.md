@@ -203,7 +203,8 @@ every workspace it is granted to, each with a Write switch.
   but no", for every login, Admin users included. An item the caller
   reads but may not change answers "forbidden".
 - **Kinds.** Folders, files, notes, pages, tables, apps, formulas,
-  drawings, tasks, events and Recall maps can be granted to any workspace.
+  drawings, tasks, events, Recall maps and canvases can be granted to any
+  workspace.
   Telegram messages are a class of their own: they belong to the workspace
   of the assistant that holds the chat, and a grant of one to any
   workspace is set by hand, never passed on by a folder. Every other kind
