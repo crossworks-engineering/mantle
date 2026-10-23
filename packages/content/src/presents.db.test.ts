@@ -33,22 +33,34 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
   const owner = randomUUID();
   const tag = owner.slice(0, 8);
 
+  /** A raw write of the test's own, named as an operator's: another file
+   *  may have raised the box's actor check while this one runs. */
+  const asOperator = (fn: (tx: typeof admin) => Promise<unknown>) =>
+    admin.begin(async (tx) => {
+      await tx`select mantle_operator_actor('test-presents')`;
+      await fn(tx as unknown as typeof admin);
+    });
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     presents = await import('./presents');
-    await admin`insert into auth.users (id, email, password_hash, role) values
-      (${owner}, ${`pr-${tag}@example.invalid`}, 'x', 'admin')`;
-    await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
+    await asOperator(async (tx) => {
+      await tx`insert into auth.users (id, email, password_hash, role) values
+        (${owner}, ${`pr-${tag}@example.invalid`}, 'x', 'admin')`;
+      await tx`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
+    });
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from nodes where owner_id = ${owner}`;
-    await admin`delete from spaces where login_id = ${owner}`;
-    await admin`delete from auth.users where id = ${owner}`;
+    await asOperator(async (tx) => {
+      await tx`delete from nodes where owner_id = ${owner}`;
+      await tx`delete from spaces where login_id = ${owner}`;
+      await tx`delete from auth.users where id = ${owner}`;
+    });
     await m.closeDb();
   });
 
@@ -146,7 +158,10 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
 
     // Once past due, one flush announces it and clears the mark; a second
     // flush finds nothing.
-    await admin`update presents set index_due_at = now() - interval '1 second' where node_id = ${p.id}`;
+    await asOperator(
+      (tx) =>
+        tx`update presents set index_due_at = now() - interval '1 second' where node_id = ${p.id}`,
+    );
     const announced = await presents.flushDuePresentIndex();
     expect(announced).toBeGreaterThanOrEqual(1);
     expect(await due()).toBeNull();
