@@ -11,6 +11,16 @@ import { type BuiltinToolDef, type ToolHandlerContext } from './types';
 import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
 import { str } from './coerce';
 import { CS } from './client-sourced-rule';
+import { currentToolCaller } from './gate-callers';
+
+/** invoke_agent called from outside an agent's turn (an MCP connection):
+ *  a delegation hands work from one agent to another, so there is none to
+ *  hand it from. ask_responder runs the named agent for this caller. */
+export const NO_PARENT_AGENT_ERROR =
+  'invoke_agent hands work from one agent to another inside that agent’s turn, and this ' +
+  'call comes from outside any agent’s turn, so there is no agent to delegate from. To ask ' +
+  'an agent from here, call ask_responder with agent_slug set to that agent’s slug and ' +
+  'your prompt as message.';
 
 /** The surface a delegated child runs on. A non-owner parent (team, client,
  *  none) passes its own surface down unchanged. An owner parent's child is
@@ -75,11 +85,21 @@ export const invoke_agent: BuiltinToolDef = {
     const { getAgentInvoker } = await import('./agent-bridge');
 
     if (!ctx.agent) {
-      return {
-        ok: false,
-        error:
-          'invoke_agent: missing parent agent context — runToolLoop did not populate ctx.agent. This is a wiring bug.',
-      };
+      // An agent's own turn always names its agent (the tool loop): one
+      // that names none is a bug there. Any other entry (the owner MCP
+      // surface lists this tool for parity) calls from outside every
+      // agent's turn, so there is no agent to hand the work from, and its
+      // allowlist and depth do not exist: say so, and name the tool that
+      // asks an agent from outside a turn.
+      const entry = (ctx.caller ?? currentToolCaller())?.entry;
+      if (entry === 'turn' || entry === 'run') {
+        return {
+          ok: false,
+          error:
+            'invoke_agent: missing parent agent context, runToolLoop did not populate ctx.agent. This is a wiring bug.',
+        };
+      }
+      return { ok: false, error: NO_PARENT_AGENT_ERROR };
     }
 
     const targetSlug = str(input.agent_slug);

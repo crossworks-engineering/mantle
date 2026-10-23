@@ -50,7 +50,7 @@ vi.mock('./agent-bridge', () => ({ getAgentInvoker: vi.fn(), registerAgentInvoke
 
 import * as dbmod from '@mantle/db';
 import { getAgentInvoker, type AgentInvoker } from './agent-bridge';
-import { invoke_agent } from './builtins-delegation';
+import { invoke_agent, NO_PARENT_AGENT_ERROR } from './builtins-delegation';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
@@ -111,10 +111,24 @@ beforeEach(() => {
 });
 
 describe('invoke_agent guards run before the child turn', () => {
-  it('refuses without parent agent context and names it as a wiring bug', async () => {
-    expect(errorOf(await invoke_agent.handler(ARGS, { ownerId: 'o1' }))).toMatch(
-      /missing parent agent context/,
-    );
+  it('refuses an agent turn without parent agent context and names it as a wiring bug', async () => {
+    for (const entry of ['turn', 'run'] as const) {
+      const ctx = { ownerId: 'o1', caller: { entry, via: 'turn' } } as ToolHandlerContext;
+      expect(errorOf(await invoke_agent.handler(ARGS, ctx))).toMatch(
+        /missing parent agent context/,
+      );
+    }
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('a call from outside any agent turn (an MCP connection) is told to use ask_responder', async () => {
+    const mcp = { ownerId: 'o1', caller: { entry: 'mcp', via: 'oauth' } } as ToolHandlerContext;
+    for (const ctx of [mcp, { ownerId: 'o1' }]) {
+      const error = errorOf(await invoke_agent.handler(ARGS, ctx));
+      expect(error).toBe(NO_PARENT_AGENT_ERROR);
+      expect(error).toMatch(/call ask_responder with agent_slug/);
+      expect(error).not.toMatch(/wiring/);
+    }
     expect(invoker).not.toHaveBeenCalled();
   });
 
