@@ -509,16 +509,12 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
     rootPath: '_changelog',
     brainDepth: 'retrieval',
   },
-  {
-    // Per-type drawing references for the Draftsman diagram specialist
-    // (docs/diagrams.md). Indexing is opt-in like every collection; the
-    // diagram_design skill degrades to its core rules when not enabled.
-    key: 'diagram-guides',
-    label: 'Diagram guides',
-    origin: 'system',
-    rootPath: 'diagram-guides',
-    brainDepth: 'retrieval',
-  },
+  // `diagram-guides` was a built-in collection until 2026-10-23. The Draftsman
+  // now reads docs/diagram-guides/ through the diagram_types / diagram_guide
+  // tools, straight from disk (docs/diagrams.md), so a fresh brain no longer
+  // gets the row. A row an existing brain already has is left as it is: a
+  // disabled one is inert, an enabled one keeps indexing the same files
+  // harmlessly, and the operator may switch it off at /docs.
 ];
 
 /** Ensure the built-in collections exist (disabled by default). Idempotent —

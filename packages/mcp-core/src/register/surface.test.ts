@@ -257,6 +257,8 @@ const HTTP_SURFACE = [
   'formula_create',
   'formula_update',
   'formula_delete',
+  'diagram_types',
+  'diagram_guide',
   'file_create',
   'folder_get_by_path',
   'content_supersede',

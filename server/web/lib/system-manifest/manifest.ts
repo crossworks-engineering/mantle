@@ -36,6 +36,7 @@ import {
   JOURNAL_AUTO_GRANT_SLUGS,
   FORMULA_AUTO_GRANT_SLUGS,
   CALCULATE_TOOL_SLUGS,
+  DIAGRAM_TOOL_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
@@ -328,7 +329,7 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     slug: 'diagram_design',
     name: 'Diagram design',
     description:
-      'Draw presentation-grade SVG diagrams + charts into pages: the spec-block contract, the editorial design system, and per-type guide retrieval.',
+      'Draw presentation-grade SVG diagrams + charts into pages: the spec-block contract, the medium rules, and the diagram_types / diagram_guide workflow.',
     instructions: SKILL_INSTRUCTIONS['diagram_design']!,
   },
   {
@@ -967,6 +968,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...CALCULATE_TOOL_SLUGS],
   },
   {
+    slug: 'diagram',
+    name: 'Diagram guides',
+    description:
+      "List the diagram types and read one type's drawing guide (static files baked into the image; no index, no spend).",
+    toolSlugs: [...DIAGRAM_TOOL_SLUGS],
+  },
+  {
     slug: 'formulas-admin',
     name: 'Formulas admin',
     description: 'Delete a formula — deliberate-only; not on the persona.',
@@ -1516,24 +1524,24 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // chosen to sit alongside Remy / Ledger / Reader. Confirm before release.
     name: 'Draftsman',
     description:
-      'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (38 visual types).',
+      'Diagram + chart specialist: hand-draws editorial SVG into pages beside a readable spec block (46 visual types, P&ID included).',
     role: 'custom',
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'DIAGRAMMER_MODEL',
     systemPrompt: AGENT_PROMPTS['diagrammer']!,
-    // `pages` for the spec block + embed edits, `files` for the SVG upload
-    // (file_create) + source reads, `memory-core` for type-guide retrieval
-    // (search_chunks/read_section on the diagram-guides docs collection) and
-    // for sourcing chart data from the brain. No page-admin/page-share:
-    // deletes and sharing stay deliberate human acts.
-    toolGroupSlugs: ['pages', 'files', 'memory-core'],
+    // `diagram` for the type list + per-type drawing guides (read from the
+    // guide files in the image, never the docs collection), `pages` for the
+    // spec block + embed edits, `files` for the SVG upload (file_create) +
+    // source reads, `memory-core` for sourcing chart data from the brain. No
+    // page-admin/page-share: deletes and sharing stay deliberate human acts.
+    toolGroupSlugs: ['diagram', 'pages', 'files', 'memory-core'],
     skillSlugs: ['diagram_design', 'page_editing', 'writing_style'],
     isDelegate: true,
     // A single hand-drawn SVG easily runs thousands of tokens; match the
     // Pages output budget so a two-diagram task doesn't truncate mid-path.
     params: { temperature: 0.3, max_tokens: 32000 },
-    // Guide retrieval (search + section reads) + draft writes add up; give it
-    // headroom over the flat default.
+    // Guide reads + data lookups + draft writes add up; give it headroom over
+    // the flat default.
     memoryConfig: { max_iterations: 25 },
     priority: 100,
   },

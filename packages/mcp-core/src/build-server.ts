@@ -39,6 +39,7 @@ import {
   DRAW_TOOLS,
   APP_TOOLS,
   APP_GUIDE_TOOLS,
+  DIAGRAM_TOOLS,
   WORKSPACE_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
@@ -356,6 +357,10 @@ export function registerMantleTools(
   // Pure computation — no I/O, no spend.
   registerBuiltinTools(CALCULATE_TOOLS);
   registerBuiltinTools(FORMULA_TOOLS);
+  // The diagram design system: the type list and one type's drawing guide,
+  // read from the guide files in the image, so an outside agent draws to the
+  // same rules as the Draftsman. Static reads, no spend.
+  registerBuiltinTools(DIAGRAM_TOOLS);
 
   // Files: create-from-text and resolve-a-folder-by-path, the two the
   // hand-written file surface never had.

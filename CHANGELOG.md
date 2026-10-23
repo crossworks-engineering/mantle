@@ -4,6 +4,42 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: diagram guides become tools; a P&ID type
+
+- **Feature:** two read-only tools in a new `diagram` tool group,
+  granted to the Draftsman and on the MCP surface. `diagram_types` lists
+  every diagram type with one line on when to use it (plus the semantic
+  patterns and import notations); `diagram_guide(type)` returns that type's
+  drawing guide with the shared rules it needs (Mantle's medium rules, the
+  style guide, the layout budget, the core SVG primitives, the output
+  sizes). Both read the guide files baked into the image, so nothing has to
+  be enabled or indexed first. Before this, the guides were the opt-in
+  `diagram-guides` docs collection, which most brains never enabled, and
+  the Draftsman searched for guides that were not there.
+- **Feature:** Mantle's own diagram types live in
+  `docs/diagram-guides/mantle/`, out of reach of an upstream refresh. The
+  first is `pid`: a P&ID and process-schematic guide (ISA-5.1 bubbles and
+  tag letters, valve, pump, vessel and exchanger symbols, line types,
+  service colours, line numbers, circuits, sheet continuation, its own
+  budget). It is a first draft for review by a process engineer.
+- **Feature:** site profiles. Every site draws differently, so a brain
+  may keep its own conventions for a type in
+  `files/diagrams/profiles/<type>.md` (for a P&ID, `pid.md`: symbol
+  variants, service colours, line-number format, circuit naming, title
+  block). `diagram_guide` appends the profile after the base guide, where
+  it wins, and says plainly when the brain has none. The Draftsman adds to
+  it when the owner corrects a convention. Profiles are the owner's data
+  and never enter the repo.
+- **Change:** the vendored guides are refreshed to diagram-design v2.6.119
+  (upstream commit 7a12007): 42 guides changed, 7 new types
+  (architecture delta, axonometric plan, exploded, heatmap, polar, service
+  blueprint, waterfall), plus `layout-budget.md`, `primitives-core.md` and
+  `import-excalidraw.md`. The `diagram_design` skill is rewritten around the
+  two tools.
+- **Change:** a fresh brain no longer gets the `diagram-guides` docs
+  collection row. An existing row stays as it is (harmless; switch it off
+  at /docs if it was on).
+
 ## Unreleased: a DWG keeps each block's attribute tags together
 
 - **Fix:** the DWG/DXF indexer stored each block attribute as its own text
