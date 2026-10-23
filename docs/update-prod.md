@@ -1383,9 +1383,8 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   `docker compose up -d`), not a pin.
 
 - **Below the role following Admin membership (plan v3.2 S8b, migration
-  0330):** the revert is
-  **mandatory**. With 0330 in place the older image's role change and
-  admin login create are refused (the role guard lets only the membership
+  0330):** the revert is **mandatory**. With 0330 in place the older
+  image's role change and admin login create are refused (the role guard lets only the membership
   definers write `auth.users.role`), and where its pool is the superuser
   its promotions land outside Admin (the bridge only demotes since 0330).
   While the newer image is still up, as the superuser, in one transaction:

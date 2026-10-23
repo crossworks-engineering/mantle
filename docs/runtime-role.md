@@ -564,8 +564,9 @@ others the list names. S7b moves each to the write role in the caller's
 scope or to a definer. Two spots are not content writes but rights the
 narrow login may not hold (S7b part b2, the interim audit of 0315 and
 0316): `login-credential` (a new login, a role change, a contact link and a
-password, with the Admin rows `mantle_bridge_login` keeps in step: the
-whole transaction on the system pool's own login) and `structure-no-login`
+password; a role change is the Admin membership definer's add or removal,
+which writes the role with the Admin row since 0330: the whole transaction
+on the system pool's own login) and `structure-no-login`
 (a structure item in a narrow exit that acts for no login, above). Outside
 a narrow exit a spot changes nothing.
 
@@ -708,6 +709,17 @@ login alone would not do: the write role can clear its own scope and set
 (acting-login-definers.db.test.ts). The image one release back already sends
 the acting login, so rolling back one image needs no revert.
 
+The Admin membership definers (`mantle_ws_add_user`, `mantle_ws_remove_user`)
+take the exit's acting login with no scope too since 0330 (S8b), only on the
+Admin workspace and only from a system session that is not the narrow login
+(`mantle_ws_exit_login`): the Users screen's role change and its admin login
+create run them at the full-route spot `login-credential`, on the system pool,
+where the gateway sends the acting login in every check mode. The definer then
+asks the area rule of that login for the users area (an Admin user with the
+area), as a scope asks its own; the write role, which can set the acting login
+itself, is no system session, and the narrow role may run neither definer
+(role-guard.db.test.ts).
+
 The readers that take a login (`mantle_tg_my_chats`,
 `mantle_tg_moderated_chats`, `mantle_read_cursors`,
 `mantle_login_connector_rows`, `mantle_turn_heartbeats`, `mantle_ws_seen`,
@@ -715,9 +727,9 @@ The readers that take a login (`mantle_tg_my_chats`,
 have a caller with no acting login (the heartbeat tick, a worker), and the
 narrow role may run none of them; the login facts (`mantle_area_rule`,
 `mantle_login_areas` and the rest) answer about a login another login may
-ask about; `mantle_ws_private_workspace` and `mantle_ws_remove_user` take
-the scope's login and refuse with none. A cell each: none writes for the
-login it is given.
+ask about; `mantle_ws_private_workspace` takes the scope's login and
+refuses with none (so does `mantle_ws_remove_user` on any workspace but
+Admin, above). A cell each: none writes for the login it is given.
 
 ### The identity gateway
 
