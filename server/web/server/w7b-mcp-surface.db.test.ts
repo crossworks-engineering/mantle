@@ -97,7 +97,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   ],
   [
     'context',
-    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path/i,
+    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|no agent to delegate from|No enabled assistant agent|made by Mantle and found by its path/i,
   ],
   ['workspace', /not a Moderator of|You are not in a workspace/],
   ['item rights', ITEM_RIGHTS],

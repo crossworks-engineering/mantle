@@ -131,7 +131,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   // integration fix 2: so is the rest of the Telegram inbox.)
   [
     'context',
-    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path|only the brain's owner pairs a Telegram chat|only the brain's owner works the Telegram inbox/i,
+    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|no agent to delegate from|No enabled assistant agent|made by Mantle and found by its path|only the brain's owner pairs a Telegram chat|only the brain's owner works the Telegram inbox/i,
   ],
   // A switch W7b retired (agent and tool group levels) says so.
   ['retired', /Agents and tool groups have no level any more/],
