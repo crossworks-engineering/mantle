@@ -7,9 +7,9 @@
  *    another inside that agent's turn: an MCP call names no agent, and the
  *    tool answered "missing parent agent context ... This is a wiring bug"
  *    to every login. It now names the tool that asks an agent from outside
- *    a turn (ask_responder), and ask_responder answers each login kind: the
- *    anchor and a second Admin user with the Admin assistant, a member with
- *    its Team's assistant (the model is a fake: no real model is called).
+ *    a turn (ask_responder), and ask_responder answers the anchor and a
+ *    second Admin user with the Admin assistant (the model is a fake: no
+ *    real model is called). A member login's surface lists neither tool.
  *  - Moving a page into a folder of another workspace, by both move tools
  *    (page_move and tree_item_move with kind pages). The share follow-up
  *    after such a move once read node_embeds in the caller's scope, which
@@ -55,7 +55,6 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
   let adminWs = '';
   let teamWs = '';
   const adminSlug = `${tag}-admin`;
-  const teamSlug = `${tag}-team`;
   /** What the fake model was asked, per call: the agent's model id. */
   const asked: string[] = [];
 
@@ -169,7 +168,9 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
         values (${ws}, 'assistant', ${row!.id}, true) on conflict do nothing`);
     };
     await agent(adminSlug, 'assistant', adminWs);
-    await agent(teamSlug, 'responder', teamWs);
+    // The pages tree's root, as a brain's boot makes it.
+    const tree = await import('@mantle/content/tree');
+    await m.asSystem(() => tree.ensureKindRoot(owner, 'pages'), 'test');
   }, 240_000);
 
   afterAll(async () => {
@@ -182,12 +183,9 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
   // ── Asking an agent ───────────────────────────────────────────────────
 
   it('invoke_agent over MCP names ask_responder, never a wiring bug, and runs nothing', async () => {
-    for (const [login, role] of [
-      [owner, 'admin'],
-      [member, 'member'],
-    ] as const) {
+    for (const login of [owner, second]) {
       const before = asked.length;
-      const res = await mcpCall(login, role, 'invoke_agent', {
+      const res = await mcpCall(login, 'admin', 'invoke_agent', {
         agent_slug: adminSlug,
         prompt: 'What is on my plate today?',
       });
@@ -210,24 +208,13 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
     }
   }, 180_000);
 
-  it('ask_responder answers a member with its Team assistant; the Admin one is refused in words', async () => {
-    const res = await mcpCall(member, 'member', 'ask_responder', {
-      message: 'ping',
-      agent_slug: teamSlug,
-    });
-    expect(res.isError, res.text).toBe(false);
-    const out = JSON.parse(res.text) as { reply: string; agent: { slug: string } };
-    expect(out.agent.slug).toBe(teamSlug);
-    expect(out.reply).toBe(`pong from ${teamSlug}-model`);
-    // The Admin assistant answers Admin users only: refused with the reason,
-    // never a wiring or server fault.
-    const admin = await mcpCall(member, 'member', 'ask_responder', {
-      message: 'ping',
-      agent_slug: adminSlug,
-    });
-    expect(admin.isError, admin.text).toBe(true);
-    expect(admin.text).not.toMatch(/wiring|could not run this request/i);
-  }, 180_000);
+  it('a member login’s MCP surface lists neither agent tool', async () => {
+    for (const name of ['ask_responder', 'invoke_agent']) {
+      await expect(mcpCall(member, 'member', name, { message: 'ping' })).rejects.toThrow(
+        new RegExp(`Tool ${name} not found`),
+      );
+    }
+  }, 120_000);
 
   // ── Moving a page by both tools ───────────────────────────────────────
 
