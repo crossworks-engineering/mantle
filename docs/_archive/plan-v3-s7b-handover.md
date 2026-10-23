@@ -5340,3 +5340,72 @@ nine N-1 rows 42501.
   busy turn.
 - Shard 2, actor-off and runtime-role-off each had load-only timeouts at
   load 26 to 29; each passed alone.
+
+## Part b2, round 17b: the pre-merge LOWs (no re-audit)
+
+Same branch, on main v0.300.132. Inputs: the brief's "b2 round 17b" list
+(both re-audits at acf53429a said MERGE, 9/10 each). 0320 and 0322 edited
+in place (never ran on any box); no revert changed.
+
+1. **DB LOW-1, a stored default on the narrow role.** Its login may store
+   a default on itself (`ALTER ROLE current_user SET role ...`, every
+   database or this one), and 0322's default scan read it as a leak, so
+   every migrate would fail. The scan now skips the narrow role's own
+   `pg_db_role_setting` rows: the readers answer it no identity whatever
+   it sets, its pool fixes the settings that matter at connect, and
+   migrate takes every one back each run (`resetNarrowRoleSettings`).
+   Another role's default is still read. Cell
+   (`identity-gateway.db.test.ts`): two defaults stored as the narrow
+   role, no leak; the same default on mantle_runtime found. Forge: the
+   real narrow login stores two, the check reads 0, a third migrate exits
+   0 and leaves 0 rows. runtime-role.md says so.
+2. **DB LOW-2, the held readers on the box.** The box script prints
+   `narrow_counter_held_readers` (yes when the runtime role may run
+   `mantle_narrow_login_held` and `mantle_narrow_client_held`, no when
+   not, n/a before 0327). b3 needs yes. Proven in the forge: the script's
+   own query read yes, then no with one reader revoked.
+3. **App LOW-1/LOW-2, docs.** runtime-role.md's b3 rule is the owner's
+   (2026-10-23): one working day of real use since the epoch on the box
+   with the most member traffic, every count 0 there and on every other
+   box, the counter whole (triggers above 0, none missing, the mode warn
+   or on, the held readers yes); a release rolled there in between starts
+   the day again; the per-box fallback is the switch, not a roll. The one
+   image back paragraph is wider: with the switch on, pinning any image
+   older than b2 sets `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit and
+   compose up as the tag, or reverts 0327 down to 0315 first.
+   update-prod.md's rollback floors has a b2 bullet with the revert loop.
+4. **INFO.** 0320's predicate comment: the cheap first test is half of
+   `mantle_narrow_counted`; a login's write with no narrow mark skips the
+   guard, any system actor's enters it. merge-branch.sh reads the journal
+   commits past main only (`main..<branch>`, and the origin copy); a
+   read-only run of its check on this head: no clash, next free 0315.
+
+### Gates on 1d9464404 (the code head)
+
+Mac: typecheck 0, lint 0, format 0, docs 0, arch 0, web build 0, unit 0
+(884 files, 11378 tests, migrations-journal included; DATABASE_URL
+unset). The pre-push verify also clean.
+
+Workstation (`TAG=r17b ~/s7b-b2/r17b/r17b-run.sh <sha> <names>`, units
+`s7b-b2r17b-r17b<name>`; every `.log.setup` names 1d9464404):
+
+| gate                                  | result                                                                                                                                                                                                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shard 1/2                             | 0 (593 files, 6510 tests)                                                                                                                                                                                                                                                                       |
+| shard 2/2                             | 0 (593 files, 7972 tests)                                                                                                                                                                                                                                                                       |
+| runtime-role                          | 0 (313 files, 3092 tests)                                                                                                                                                                                                                                                                       |
+| identity-gateway.db.test.ts (touched) | 0 (8 tests)                                                                                                                                                                                                                                                                                     |
+| forge proof (`r17b/proof17b.sh`)      | 0: 128 refused of 128 (116 42501, 12 40001), 27 written of 27, 12 flag forms propagated of 12; identity sweep 270 no change, 17 refused; leaks 0 and 0; SET forms 6 of 6, allowed key 0; narrow defaults stored 2, leaks 0, migrate 0, rows after 0; held readers yes, then no; public rights 0 |
+| drill (`r17/drill17.sh`, N-1 = main)  | 0: every step 0; the nine N-1 runtime rows 0 with one row each; the narrow login's member disable 42501 (fail closed); reverts 0327 to 0315 each 0, to 314 rows; main after 0; roll forward 327, 27 triggers                                                                                    |
+
+### Left
+
+1. The CEO merges (no re-audit needed for this list).
+2. b3 checklist as listed in round 17's handover and the brief.
+
+### Doubts
+
+- The narrow role's stored defaults are now not read at all by the check;
+  they hold until the next migrate (the boot line names any). A key the
+  pool does not fix could reach narrow sessions until then; the readers
+  still give it no identity.
