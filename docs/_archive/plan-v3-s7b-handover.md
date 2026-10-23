@@ -4818,9 +4818,9 @@ No pin moved. No new migration: 0326 edited in place (part 4) and 0321
 
 ### Gates on 9e47d5f1a (code; fsync off on the test clusters)
 
-Mac (on 43325a693, the pre-push verify, and the web build; 9e47d5f1a only
-puts back one test file): typecheck, lint, format, docs, arch, boot
-smoke, unit, web build: all 0.
+Mac, on f058b9264 (this handover; the code is 9e47d5f1a's): typecheck,
+lint, format, docs, arch, web build and unit (880 files, 11360 tests)
+all 0; boot smoke 0 in 43325a693's pre-push verify.
 
 Workstation (units s7b-b2r15c-r15f<name>, results
 ~/s7b-b2/x-r15f<name>.exit and .log, launcher `TAG=r15f
