@@ -5107,3 +5107,57 @@ files (the branch at 5638de89d, newest first), then delete its ledger
 rows at 1790198220000 through 1790198920000 by hand, and b2's old 0314
 row at 1790198160000 only if main's 0314 is not applied there (the two
 share that stamp; main's 0314 is applied on any box at v0.300.132).
+
+### Pins
+
+No arch-scoreboard count moved (only migration numbers inside reason
+texts). The call scan gains main's `mantle_ws_connector_options` (its
+decision and its one call in workspaces.ts). Revert order now 0327 down
+to 0315, each in its own transaction (the drill below).
+
+### Gates on eb1efbeb2 (the rebased code head; fsync off on the test clusters)
+
+Mac on eb1efbeb2: typecheck 0, lint 0, format 0, docs 0, arch 0, web
+build 0, boot smoke 0, unit 0 (884 files, 11378 tests, the
+migrations-journal and rollback-when cells included; DATABASE_URL unset).
+
+Workstation (`TAG=r16bf ~/s7b-b2/r16b/r16b-run.sh <sha> <names>`, units
+`s7b-b2r16b-r16bf<name>`, results `~/s7b-b2/x-r16bf<name>.exit` and
+`.log`; every `.log.setup` names eb1efbeb2):
+
+| gate                                  | result                                                                                                                                                                                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shard 1/2                             | 591 of 593 files; the two others timed out under load (arch-lints' two file scans at 15 s, the A4 guard sweep cut short at 36 s); alone 0 (r16bratea5924)                                                                                                                 |
+| shard 2/2                             | 592 of 593; device-tokens' member login timed out at 15 s under load; alone 0 (3.4 s, r16bratea5924)                                                                                                                                                                      |
+| actor-off                             | 0 (165 files)                                                                                                                                                                                                                                                             |
+| actor-on                              | 0 (34)                                                                                                                                                                                                                                                                    |
+| edit-on                               | 45 of 46: edit-check's file scan timed out at 15 s under load; the whole suite alone 0 (46, r16braeon)                                                                                                                                                                    |
+| runtime-role                          | 0 (313)                                                                                                                                                                                                                                                                   |
+| serial                                | 0                                                                                                                                                                                                                                                                         |
+| switch off, full                      | 0 (1186)                                                                                                                                                                                                                                                                  |
+| runtime role off, full                | 0 (1186)                                                                                                                                                                                                                                                                  |
+| matrix                                | 0 (4)                                                                                                                                                                                                                                                                     |
+| main's team-app Table writes, on      | 0 (team-app-table-writes, ws-connector-options-0314, write-role, workspaces, a4-head-logins; r16bqta3918b) and in both shards                                                                                                                                             |
+| round 8 proof                         | 0 (16 refused, 2 written)                                                                                                                                                                                                                                                 |
+| forge proof (`r16b/proof16.sh`)       | 0: 128 refused (each 42501 or 40001: 106 + 10 grant-hold + 12 flag forms), 27 written (23 + 4), 12 flag forms propagated; identity sweep 269 no change, 17 refused; leaks 0 and 0; SET forms 6 of 6 found, the allowed key not; public rights 0; a wrong password refused |
+| drill (`r16b/drill16.sh`, N-1 = main) | 0: init on main (314 rows), branch (327), main again (N-1 boot, 327 kept), branch again, switch unset, per-database; reverts 0327 to 0315 each 0, ending at 314 rows with main's tg_chat_set body back; main after the reverts 0; roll forward 327, 27 one-way triggers   |
+
+Also on eb1efbeb2: the rebase-touched files (narrow-lockout, would-refuse,
+narrow-route, member ledger narrow, users-lockout, identity gateway;
+r16bqt1063e2) 0.
+
+### Left
+
+1. The CEO's full re-audit, both sides, on the rebased head.
+2. The merge (the CEO): merge-branch.sh's stamp check read clean on this
+   head (read-only run, above).
+3. Backlog as before: Telegram member tokens toward the budget.
+
+### Doubts
+
+- Shard 1, shard 2 and edit-on each had a cell time out under load (six
+  lanes and the box's other users, load 8 to 16); each passed alone. They
+  are file scans and a route sweep, not narrow-route work.
+- The N-1 rows of the drill show the narrow login refused by 0322 with
+  "no acting login" on main's image too: by design since round 13 (on the
+  narrow role the readers answer no identity), as in round 15's drill.
