@@ -1,0 +1,29 @@
+{
+  "template": "flow",
+  "title": "How a message becomes memory",
+  "description": "A message from chat or Telegram is stored, summarised and split into facts by local models, then indexed for recall.",
+  "direction": "right",
+  "groups": [
+    { "id": "brain", "label": "The brain" },
+    { "id": "local", "label": "Local models", "parent": "brain" }
+  ],
+  "nodes": [
+    { "id": "chat", "label": "Web chat", "tag": "input", "kind": "input" },
+    { "id": "telegram", "label": "Telegram bot", "tag": "input", "kind": "input" },
+    { "id": "ingest", "label": "Ingest route", "sublabel": "POST /api/turn", "group": "brain" },
+    { "id": "summarise", "label": "Summariser", "sublabel": "gemma, local", "group": "local" },
+    { "id": "extract", "label": "Fact extractor", "sublabel": "gemma, local", "group": "local" },
+    { "id": "store", "label": "Postgres + pgvector", "tag": "store", "kind": "focal", "shape": "cylinder", "group": "brain" },
+    { "id": "recall", "label": "Recall", "sublabel": "search + rerank", "group": "brain" }
+  ],
+  "edges": [
+    { "from": "chat", "to": "ingest", "label": "message" },
+    { "from": "telegram", "to": "ingest", "label": "update" },
+    { "from": "ingest", "to": "store", "label": "raw text" },
+    { "from": "ingest", "to": "summarise", "style": "dashed", "label": "queue" },
+    { "from": "ingest", "to": "extract", "style": "dashed", "label": "queue" },
+    { "from": "summarise", "to": "store", "label": "summary" },
+    { "from": "extract", "to": "store", "label": "facts" },
+    { "from": "store", "to": "recall", "tone": "accent", "label": "embeddings" }
+  ]
+}

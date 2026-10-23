@@ -1,0 +1,12 @@
+{
+  "name": "Example site (generic)",
+  "lineNumber": {
+    "pattern": "^(?<size>[0-9./]+\")-(?<service>[A-Z]{1,4})-(?<seq>[0-9]{4})-(?<class>[A-Z][0-9A-Z]{2,5})$",
+    "example": "4\"-P-2001-A1A",
+    "enforce": "error"
+  },
+  "colourByService": true,
+  "serviceColours": { "ST": "series-4", "CW": "series-2", "CWR": "series-2", "FL": "series-3" },
+  "symbols": { "normallyClosed": "filled", "checkValve": "filled", "corners": "square", "crossing": "gap" },
+  "instrumentFirstLetters": { "X": "Site variable (vendor package)" }
+}
