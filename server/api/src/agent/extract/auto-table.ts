@@ -151,7 +151,10 @@ export async function maybeAutoTableSpreadsheet(
         const blocksClaim = sheets.some((s) => s.name === 'Blocks')
           ? ` Blocks has one row per attribute-bearing block with one column per` +
             ` attribute tag, so tags of the same block stay together (a LineNumber` +
-            ` block's LINENO and CIRCUIT are one row).`
+            ` block's LINENO and CIRCUIT are one row)` +
+            (grids.blocksCapped
+              ? ` (TRUNCATED: the drawing has more blocks or rarer tags than kept).`
+              : `.`)
           : '';
         description =
           `AutoCAD ${fileExt.toUpperCase()} model-space registry. Layers counts entities per layer;` +

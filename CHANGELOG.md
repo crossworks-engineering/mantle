@@ -13,8 +13,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   that carries attributes, one column per tag, with its layer, handle and
   X/Y. The text digest lists the same blocks as one line each
   (`LineNumber: LINENO=…, CIRCUIT=…`), so search finds the pair. Texts is
-  unchanged. Needs the new `mantle-media` image; existing drawings get the
-  tab when they are indexed again.
+  unchanged. Needs the new `mantle-media` image. An indexed drawing keeps
+  its old table on a re-index (the import never replaces a table it made),
+  so to get the Blocks tab, delete the drawing's auto-imported table, then
+  index the file again. The digest gains the block lines on any re-index.
 
 ## Unreleased: the Files tree rail opens in milliseconds on a large brain
 

@@ -548,6 +548,9 @@ export type DwgRender = {
   entities: number;
   /** A registry cap bit (texts or layers hit their ceiling). */
   capped: boolean;
+  /** The blocks list hit its ceiling; separate so it never reads as Texts
+   *  being truncated. */
+  blocksCapped: boolean;
   layers: Array<{ name: string; count: number }>;
   texts: DwgTextEntity[];
   /** Attribute-bearing INSERTs; empty from a sidecar image older than the
@@ -652,7 +655,8 @@ export async function mediaDwgRender(
         if (blocks.length >= DWG_BLOCKS_MAX) break;
         const b = rawBlock as Record<string, unknown>;
         if (!b.attribs || typeof b.attribs !== 'object') continue;
-        const attribs: Record<string, string> = {};
+        // No prototype: a tag named `constructor` or `__proto__` is just a tag.
+        const attribs: Record<string, string> = Object.create(null) as Record<string, string>;
         for (const [tag, value] of Object.entries(b.attribs as Record<string, unknown>)) {
           if (tag && typeof value === 'string') attribs[tag] = value;
         }
@@ -687,6 +691,7 @@ export async function mediaDwgRender(
           version: typeof body.version === 'string' ? body.version : null,
           entities: typeof body.entities === 'number' ? body.entities : 0,
           capped: body.capped === true,
+          blocksCapped: body.blocks_capped === true,
           layers,
           texts,
           blocks,

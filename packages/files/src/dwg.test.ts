@@ -242,6 +242,86 @@ describe('parseDwgToGrids', () => {
     }
   });
 
+  it('keeps a blocks cap apart from the Texts cap', async () => {
+    // A title block alone can carry dozens of tags; past the column cap the
+    // Blocks tab is incomplete, but Texts is not, and must not say so.
+    const attribs: Record<string, string> = {};
+    for (let i = 0; i < 45; i++) attribs[`T${String(i).padStart(2, '0')}`] = `v${i}`;
+    stubSidecar({
+      ...sidecarReply(),
+      blocks: [{ block: 'Title', layer: 'TB', handle: '9B1', x: 0, y: 0, attribs }],
+    });
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(16));
+      expect(grids.capped).toBe(false);
+      expect(grids.blocksCapped).toBe(true);
+      const blocks = grids.sheets.find((g) => g.name === 'Blocks')!;
+      expect(blocks.columns).toHaveLength(5 + 40);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+    stubSidecar({ ...sidecarReply(), blocks_capped: true });
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(17));
+      expect(grids.capped).toBe(false);
+      expect(grids.blocksCapped).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reads a tag named like an object built-in as a plain tag', async () => {
+    stubSidecar({
+      ...sidecarReply(),
+      blocks: [
+        { block: 'A', layer: 'L', handle: '9C1', x: 1, y: 1, attribs: { constructor: 'c1' } },
+        { block: 'B', layer: 'L', handle: '9C2', x: 2, y: 2, attribs: { LINENO: 'N90020' } },
+      ],
+    });
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(18));
+      const blocks = grids.sheets.find((g) => g.name === 'Blocks')!;
+      const col = blocks.columns.findIndex((c) => c.name === 'constructor');
+      expect(col).toBeGreaterThan(-1);
+      expect(blocks.rows[0]![col]).toBe('c1');
+      // Block B has no such tag: an empty cell, not Object's constructor.
+      expect(blocks.rows[1]![col]).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('lists block lines in drawing order so unique pairs are not pushed out', async () => {
+    stubSidecar({
+      ...sidecarReply(),
+      blocks: [
+        {
+          block: 'LineNumber',
+          layer: 'L',
+          handle: '9D1',
+          x: 1,
+          y: 1,
+          attribs: { LINENO: 'N90031' },
+        },
+        { block: 'Title', layer: 'TB', handle: '9D2', x: 0, y: 0, attribs: { SHEET: '1' } },
+        { block: 'Title', layer: 'TB', handle: '9D3', x: 0, y: 0, attribs: { SHEET: '1' } },
+      ],
+    });
+    try {
+      const digest = await parseDwg(dwgFixture(19));
+      const line = digest.indexOf('LineNumber: LINENO=N90031');
+      const title = digest.indexOf('Title: SHEET=1 (×2)');
+      expect(line).toBeGreaterThan(-1);
+      expect(title).toBeGreaterThan(line);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('threads the registry cap bit through (finding 12)', async () => {
     stubSidecar({ ...sidecarReply(), capped: true });
     try {

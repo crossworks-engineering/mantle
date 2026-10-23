@@ -72,6 +72,7 @@ extraction_failed, duration_exceeded, size_exceeded, timeout, busy.
 import base64
 import ipaddress
 import json
+import math
 import hmac
 import os
 import re
@@ -1242,6 +1243,19 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     entities = 0
     texts_capped = False
     blocks_capped = False
+    # Every attribute value is also in `texts`; this bounds what `blocks`
+    # adds to the reply, whatever the per-block tag count.
+    max_block_chars = 2_000_000
+    block_chars = 0
+
+    def coord(value):
+        """A model coordinate rounded for the reply, or None. A bare NaN in
+        index.json would make the whole reply unparseable on the app side."""
+        try:
+            v = float(value)
+        except Exception:
+            return None
+        return round(v, 1) if math.isfinite(v) else None
 
     def add_text(entity, layer: str) -> None:
         """Harvest one text-bearing entity into `texts` under the shared caps."""
@@ -1258,8 +1272,8 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             {
                 "text": text,
                 "layer": layer,
-                "x": round(float(point[0]), 1) if point is not None else None,
-                "y": round(float(point[1]), 1) if point is not None else None,
+                "x": coord(point[0]) if point is not None else None,
+                "y": coord(point[1]) if point is not None else None,
             }
         )
 
@@ -1294,33 +1308,37 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                 except Exception:
                     continue
             if any(attribs.values()):
-                if len(blocks) >= max_blocks:
+                size = sum(len(k) + len(v) for k, v in attribs.items())
+                if len(blocks) >= max_blocks or block_chars + size > max_block_chars:
                     blocks_capped = True
                 else:
                     try:
                         point = e.dxf.insert
-                        blocks.append(
-                            {
-                                "block": str(e.dxf.name or ""),
-                                "layer": layer,
-                                "handle": str(getattr(e.dxf, "handle", "") or ""),
-                                "x": round(float(point[0]), 1),
-                                "y": round(float(point[1]), 1),
-                                "attribs": attribs,
-                            }
-                        )
                     except Exception:
-                        pass
+                        point = None
+                    block_chars += size
+                    blocks.append(
+                        {
+                            "block": str(getattr(e.dxf, "name", "") or ""),
+                            "layer": layer,
+                            "handle": str(getattr(e.dxf, "handle", "") or ""),
+                            "x": coord(point[0]) if point is not None else None,
+                            "y": coord(point[1]) if point is not None else None,
+                            "attribs": attribs,
+                        }
+                    )
 
     layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     index = {
         "converter": converter,
         "version": doc.dxfversion,
         "entities": entities,
-        "capped": texts_capped or blocks_capped or len(layers) > max_layers,
+        "capped": texts_capped or len(layers) > max_layers,
         "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
         "texts": texts,
         "blocks": blocks,
+        # Its own bit: a blocks cap must not make the app call Texts truncated.
+        "blocks_capped": blocks_capped,
         "counts": type_counts,
         "render_error": None,
     }

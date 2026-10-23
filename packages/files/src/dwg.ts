@@ -90,8 +90,9 @@ const DIGEST_LAYERS = 400;
 const DIGEST_LABEL_CHARS = 12_000;
 /** Row ceiling for the Texts tab of the auto-imported registry workbook. */
 const MAX_TEXT_ROWS = 20_000;
-/** Character budget for the block-attribute list in the digest. */
-const DIGEST_BLOCK_CHARS = 8_000;
+/** Character budget for the block-attribute list in the digest: room for a
+ *  few hundred line-number pairs, since table rows never reach embeddings. */
+const DIGEST_BLOCK_CHARS = 24_000;
 const DIGEST_BLOCK_LINE_CHARS = 400;
 /** Row ceiling for the Blocks tab. */
 const MAX_BLOCK_ROWS = 20_000;
@@ -226,8 +227,10 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
   }
 
   // One line per attribute-bearing block, its tags kept together: this is
-  // what makes "which circuit is line N25060" a retrievable sentence rather
-  // than two unrelated labels.
+  // what makes "which circuit is line N…" a retrievable sentence rather than
+  // two unrelated labels. Drawing order, NOT frequency: every line-number
+  // block is unique, so a frequency sort would put them all behind the
+  // repeated blocks and the budget would cut exactly the pairs that matter.
   const blockCounts = new Map<string, number>();
   for (const b of r.blocks) {
     const pairs = Object.entries(b.attribs)
@@ -238,9 +241,7 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
     blockCounts.set(line, (blockCounts.get(line) ?? 0) + 1);
   }
   if (blockCounts.size) {
-    const ordered = [...blockCounts.entries()].sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-    );
+    const ordered = [...blockCounts.entries()];
     out.push('', `Block attributes (${r.blocks.length} blocks, ${blockCounts.size} unique):`);
     let spent = 0;
     let shown = 0;
@@ -278,6 +279,9 @@ export type DwgGrids = {
    *  caps or the Texts tab was cut at MAX_TEXT_ROWS. The auto-table
    *  description must not claim "every annotation string" then. */
   capped: boolean;
+  /** True when the Blocks tab is incomplete: rows or tag columns cut. Kept
+   *  apart from `capped`, which speaks for Texts. */
+  blocksCapped?: boolean;
 };
 
 async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGrids> {
@@ -319,7 +323,11 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
       rows: countRows,
     });
   }
-  return { sheets, capped: r.capped || r.texts.length > MAX_TEXT_ROWS || blocks.capped };
+  return {
+    sheets,
+    capped: r.capped || r.texts.length > MAX_TEXT_ROWS,
+    blocksCapped: r.blocksCapped || blocks.capped,
+  };
 }
 
 /**
@@ -364,7 +372,14 @@ function blocksSheet(r: DwgRender): { sheet: ParsedSheet | null; capped: boolean
       ],
       rows: r.blocks
         .slice(0, MAX_BLOCK_ROWS)
-        .map((b) => [b.block, b.layer, b.handle, b.x, b.y, ...kept.map((t) => b.attribs[t] ?? '')]),
+        .map((b) => [
+          b.block,
+          b.layer,
+          b.handle,
+          b.x,
+          b.y,
+          ...kept.map((t) => (Object.hasOwn(b.attribs, t) ? b.attribs[t]! : '')),
+        ]),
     },
     capped: r.blocks.length > MAX_BLOCK_ROWS || tags.length > kept.length,
   };
