@@ -13,7 +13,10 @@
  *    one plain reply and no turn, and the chat goes back to pending; so is a
  *    chat with no login (W7d fix round 1, L4);
  *  - a photo on a second Admin user's chat is saved private to that user:
- *    another Admin user (the anchor) cannot read it (W7d fix round 1, M2).
+ *    another Admin user (the anchor) cannot read it (W7d fix round 1, M2);
+ *  - a member's turn claims its slot through the ledger definers (0325,
+ *    0326) under the turn's own actor, the cap refuses with one plain reply,
+ *    and an Admin user's turn takes no slot.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/telegram-w7d.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -267,6 +270,45 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       );
     expect(await reads(admin2)).toEqual([file!.id]);
     expect(await reads(owner)).toEqual([]);
+  });
+
+  it('a member turn claims a slot through the ledger definers (0325, 0326); the cap refuses; an Admin user takes none', async () => {
+    // The member's slots and tokens, as the superuser (the app pools hold
+    // no right on the ledger: the claim is the definer's).
+    const slots = async (login: string) =>
+      su<{ turn: string; tokens: string }>(sql`
+        select turn_id as turn, tokens::text as tokens from member_turn_ledger
+         where login_id = ${login} order by created_at`);
+    const before = (await slots(member)).length;
+    expect(before).toBeGreaterThan(0); // the first cell's turn took one
+    const prev = process.env.TEAM_CHAT_DAILY_TURNS;
+    process.env.TEAM_CHAT_DAILY_TURNS = String(before + 1);
+    try {
+      const id = await inbound(chat.member, member, 'one more?');
+      await handleTelegramMessage(id);
+      expect(h.prompts).toHaveLength(1);
+      const after = await slots(member);
+      expect(after).toHaveLength(before + 1);
+      // The message's own slot, its turn id the message's. A Telegram turn
+      // stamps no tokens on it: its tokens never counted toward the budget
+      // (0325 summed member chat turns' traces only; 0326 keeps that).
+      expect(after.at(-1)).toEqual({ turn: `tg-${id}`, tokens: '0' });
+      // At the cap: one plain reply, no turn, no slot.
+      h.sent = [];
+      h.prompts = [];
+      await handleTelegramMessage(await inbound(chat.member, member, 'and another?'));
+      expect(h.prompts).toHaveLength(0);
+      expect(h.sent.map((s) => s.text)).toEqual([
+        'Daily message limit reached for this chat. Try again tomorrow.',
+      ]);
+      expect(await slots(member)).toHaveLength(before + 1);
+    } finally {
+      if (prev === undefined) delete process.env.TEAM_CHAT_DAILY_TURNS;
+      else process.env.TEAM_CHAT_DAILY_TURNS = prev;
+    }
+    // An Admin user's chat takes no slot.
+    await handleTelegramMessage(await inbound(chat.admin2, admin2, 'admin here'));
+    expect(await slots(admin2)).toEqual([]);
   });
 
   it('a user removed from the workspace is refused on the next message', async () => {
