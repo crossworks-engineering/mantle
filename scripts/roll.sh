@@ -16,7 +16,10 @@
 #      roll to a release that ships the checks' floor (the pre-check
 #      removal, *_check_mode_floor.sql in the target's tree; a target this
 #      checkout cannot tell counts as one) on a box whose actor or edit
-#      check is not on, unless its .env says MANTLE_CHECK_FLOOR=keep (2d)
+#      check is not on, unless its .env says MANTLE_CHECK_FLOOR=keep (2d);
+#      refuse a roll to a release that ships 0330 (the role follows Admin
+#      membership) while any login holds an Admin seat without role admin,
+#      whose migrate would refuse and leave the site down (2e)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -28,7 +31,9 @@
 #   4. request: request.json holding only {"target": <tag>}, written into the
 #      updater's signal dir by a throwaway alpine container (the dir is
 #      root-owned on the host), exactly as the in-app Update button would
-#   5. wait for a NEW started_at with this target and a finished_at, ok:true
+#   5. wait for a NEW started_at with this target and a finished_at, ok:true;
+#      when not ok, the tail of update.log and of the mantle_migrate log
+#      (masked as in 6): a refused migrate is why compose up failed
 #   6. wait for mantle_web healthy; if it never is, a loud banner and the
 #      last 20 lines of its log, every line, with secret values masked. No
 #      automatic rollback: the operator decides.
@@ -413,9 +418,10 @@ select case when to_regprocedure('public.mantle_check_box_mode(text)') is null t
        end;
 CHECK_MODES_SQL
 }
-# floor_in_release <tag>: yes when release <tag>'s tree holds the floor's
-# migration, no when it does not, unknown when this checkout has no such tag.
-floor_in_release() {
+# migration_in_release <tag> <name end>: yes when release <tag>'s tree holds
+# a migration whose file name ends so, no when it does not, unknown when this
+# checkout has no such tag.
+migration_in_release() {
   local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref names
   for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
     git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
@@ -424,13 +430,15 @@ floor_in_release() {
       return 0
     }
     case "$names" in
-      *_check_mode_floor.sql*) echo yes ;;
+      *"$2"*) echo yes ;;
       *) echo no ;;
     esac
     return 0
   done
   echo unknown
 }
+# floor_in_release <tag>: the checks' floor's migration in release <tag>.
+floor_in_release() { migration_in_release "$1" _check_mode_floor.sql; }
 if tag_at_or_past "$CHECK_FLOOR_NOT_BEFORE" "$TAG"; then
   CF=$(check_modes_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At") ||
     die "could not read this box's check modes"
@@ -456,6 +464,57 @@ if tag_at_or_past "$CHECK_FLOOR_NOT_BEFORE" "$TAG"; then
   fi
 else
   echo "checks: $TAG is older than any release with the checks' floor (v$CHECK_FLOOR_NOT_BEFORE); not checked"
+fi
+
+# ── 2e. S8b: no Admin seat without role admin before 0330 ────────────────
+# From migration 0330 (the role follows Admin membership) the seat alone
+# makes an Admin user, so its migrate refuses (42501) while any login holds
+# an Admin seat without role admin, a disabled one and a former client
+# too: each would become an Admin user. A refused migrate leaves the site
+# down (every service waits on mantle_migrate) until the old tag is pinned
+# back (docs/update-prod.md, "Going up to 0330"). So the roll is refused
+# first, with the count and the repair. Whether the target ships 0330 is
+# read from its own tree, as 2d; a target this checkout cannot tell counts
+# as shipping it. The count is plain SQL on the box's CURRENT schema, 0 once
+# 0330 is in (its guard function there: that migrate never runs again) or
+# before the workspace tables; the updater asks the same SQL
+# (infra/updater/updater.sh, s8b_seat_refusal), pinned equal and against
+# 0330's own count by packages/db/src/s8b-seat-preflight.db.test.ts.
+# S8B_SEAT_NOT_BEFORE only skips the question for a release older than any
+# that could ship 0330 (main was v0.300.137 when it was written). A number
+# only comes back over ssh.
+S8B_SEAT_NOT_BEFORE=0.300.138
+S8B_MIGRATION=_s8b_role_follows_membership.sql
+s8b_seat_sql() {
+  cat <<'S8B_SEAT_SQL'
+select case when to_regprocedure('public.mantle_login_role_guard()') is not null then 0
+            when to_regclass('public.workspace_users') is null then 0
+            else (xpath('/row/n/text()', query_to_xml(
+              'select count(*) as n from auth.users l '
+              || 'where not coalesce(l.role = ''admin'', false) and exists ('
+              || 'select 1 from public.workspaces w '
+              || 'join public.workspace_users u on u.workspace_id = w.id and u.login_id = l.id '
+              || 'join auth.users o on o.id = w.owner_id and o.is_owner '
+              || 'where w.is_admin and w.archived_at is null)', false, true, '')))[1]::text::bigint
+       end;
+S8B_SEAT_SQL
+}
+if tag_at_or_past "$S8B_SEAT_NOT_BEFORE" "$TAG"; then
+  SEAT=$(s8b_seat_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At") ||
+    die "could not count this box's Admin seats without role admin"
+  SEAT=$(printf '%s' "$SEAT" | tr -d '\r ')
+  case "$SEAT" in '' | *[!0-9]*) die "unexpected Admin seat count: $SEAT" ;; esac
+  echo "admin seats without role admin: $SEAT"
+  if [ "$SEAT" -gt 0 ]; then
+    S8B_HOW="Take each out of Admin first (the Admin workspace's users, or mantle_ws_remove_user), then roll again. Only a login that should be an Admin user gets role admin instead (the Users screen's promotion): that makes it an Admin user. docs/update-prod.md, \"Going up to 0330\"."
+    case "$(migration_in_release "$TAG" "$S8B_MIGRATION")" in
+      no) echo "admin seats: $TAG does not ship 0330 (no *$S8B_MIGRATION in its tree): not refused" ;;
+      yes) die "$SEAT login(s) on this box hold an Admin seat without role admin, and $TAG ships 0330 (the role follows Admin membership): its migrate refuses them, and a refused migrate leaves the site down until the old tag is pinned back. $S8B_HOW" ;;
+      *) die "$SEAT login(s) on this box hold an Admin seat without role admin, and this checkout cannot tell whether $TAG ships 0330 (no such tag here: git fetch --tags), so it counts as shipping it. $S8B_HOW" ;;
+    esac
+  fi
+else
+  echo "admin seats: $TAG is older than any release with 0330 (v$S8B_SEAT_NOT_BEFORE); not checked"
 fi
 
 if [ -n "$DRY" ]; then
@@ -509,32 +568,7 @@ docker run --rm -i -v "$SIGDIR:/s" alpine sh -c 'cat > /s/request.json.tmp && mv
 REQ
 EOF
 
-# ── 5. wait for THIS run to finish ───────────────────────────────────────────
-S=""; waited=0
-while :; do
-  S=$(status_json)
-  if [ "$(printf '%s' "$S" | field target)" = "$TAG" ] \
-    && [ "$(printf '%s' "$S" | field started_at)" != "$OLD_STARTED" ] \
-    && [ -n "$(printf '%s' "$S" | field finished_at)" ]; then
-    break
-  fi
-  [ "$waited" -ge "$TIMEOUT" ] && die "TIMED OUT after ${TIMEOUT}s waiting for the roll; last status: $S"
-  sleep "$POLL"; waited=$((waited + POLL))
-  [ "$POLL" -gt 0 ] || waited=$((waited + 1))
-done
-echo "status: $S"
-if ! printf '%s' "$S" | grep -q '"ok":true'; then
-  rsh docker exec mantle_updater tail -n 30 /signal/update.log 2>/dev/null || true
-  die "ROLL NOT OK: $(printf '%s' "$S" | field error)"
-fi
-if [ -n "$UPDATER_DUMPS" ]; then
-  # One string: ssh joins its arguments, so separate quoted words lose their
-  # quotes on the box and grep reads "backup" and "ok" as file names.
-  rsh "docker exec mantle_updater grep -q 'pre-roll backup ok' /signal/update.log" 2>/dev/null \
-    || die "the roll finished but update.log shows no pre-roll backup; check backups/pre-roll by hand"
-fi
-
-# ── 6. health ────────────────────────────────────────────────────────────────
+# ── log tails, masked (steps 5 and 6) ───────────────────────────────────────
 # A web that never comes up is the worst roll outcome (v0.300.64: every server
 # process crash-looped at start on an import error), so say it loudly and show
 # why: the tail of its own log, every line of it, with secret VALUES masked
@@ -607,8 +641,53 @@ s{[^\s,;\x22\x27]*(?=\n?\z)}{} if $cut;
 s{(?=\n?\z)}{ [cut]} if $cut;
 '
 redact_secrets() { perl -pe "$REDACT_PERL"; }
-web_not_healthy() { # <last health status>
+# show_log_tail <container> <lines>: the tail of a container's log on the
+# box, masked as above, to stderr; said so when it cannot be read or masked.
+show_log_tail() {
   local logs
+  logs=$(rsh "docker logs --tail $2 $1 2>&1" 2>/dev/null) || logs=""
+  if [ -z "$logs" ]; then
+    printf '(could not read the %s log on %s)\n' "$1" "$SSH_ALIAS" >&2
+  elif ! command -v perl >/dev/null 2>&1; then
+    printf '(perl not found: the log cannot be masked, so it is not shown; read it on the box:\n' >&2
+    printf '  ssh %s docker logs --tail %s %s)\n' "$SSH_ALIAS" "$2" "$1" >&2
+  else
+    printf 'last lines of the %s log (secret values masked):\n' "$1" >&2
+    printf '%s\n' "$logs" | redact_secrets | sed 's/^/    /' >&2 || true
+  fi
+}
+
+# ── 5. wait for THIS run to finish ───────────────────────────────────────────
+S=""; waited=0
+while :; do
+  S=$(status_json)
+  if [ "$(printf '%s' "$S" | field target)" = "$TAG" ] \
+    && [ "$(printf '%s' "$S" | field started_at)" != "$OLD_STARTED" ] \
+    && [ -n "$(printf '%s' "$S" | field finished_at)" ]; then
+    break
+  fi
+  [ "$waited" -ge "$TIMEOUT" ] && die "TIMED OUT after ${TIMEOUT}s waiting for the roll; last status: $S"
+  sleep "$POLL"; waited=$((waited + POLL))
+  [ "$POLL" -gt 0 ] || waited=$((waited + 1))
+done
+echo "status: $S"
+if ! printf '%s' "$S" | grep -q '"ok":true'; then
+  rsh docker exec mantle_updater tail -n 30 /signal/update.log 2>/dev/null || true
+  # A migrate that refused (0330's seat check, any migration's error) is
+  # why compose up fails: every service waits on mantle_migrate, so the site
+  # stays down until the old tag is pinned back (docs/update-prod.md).
+  show_log_tail mantle_migrate 30
+  die "ROLL NOT OK: $(printf '%s' "$S" | field error)"
+fi
+if [ -n "$UPDATER_DUMPS" ]; then
+  # One string: ssh joins its arguments, so separate quoted words lose their
+  # quotes on the box and grep reads "backup" and "ok" as file names.
+  rsh "docker exec mantle_updater grep -q 'pre-roll backup ok' /signal/update.log" 2>/dev/null \
+    || die "the roll finished but update.log shows no pre-roll backup; check backups/pre-roll by hand"
+fi
+
+# ── 6. health ────────────────────────────────────────────────────────────────
+web_not_healthy() { # <last health status>
   printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
   printf '!!  WEB NOT HEALTHY on %s %ss after the roll to %s (last: %s).\n' \
     "$SSH_ALIAS" "$HEALTH_TIMEOUT" "$TAG" "${1:-unknown}" >&2
@@ -616,16 +695,7 @@ web_not_healthy() { # <last health status>
   printf '!!  else; read the log below, then fix forward or roll back by hand\n' >&2
   printf '!!  (docs/update-prod.md). The pre-roll backup is the way back.\n' >&2
   printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
-  logs=$(rsh "docker logs --tail 20 mantle_web 2>&1" 2>/dev/null) || logs=""
-  if [ -z "$logs" ]; then
-    printf '(could not read the mantle_web log on %s)\n' "$SSH_ALIAS" >&2
-  elif ! command -v perl >/dev/null 2>&1; then
-    printf '(perl not found: the log cannot be masked, so it is not shown; read it on the box:\n' >&2
-    printf '  ssh %s docker logs --tail 20 mantle_web)\n' "$SSH_ALIAS" >&2
-  else
-    printf 'last lines of the mantle_web log (secret values masked):\n' >&2
-    printf '%s\n' "$logs" | redact_secrets | sed 's/^/    /' >&2 || true
-  fi
+  show_log_tail mantle_web 20
   exit 1
 }
 HS=""; waited=0

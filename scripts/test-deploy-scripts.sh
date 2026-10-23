@@ -877,7 +877,10 @@ docker() {
       # The checks floor sends its SQL on stdin (-i): "<actor> <edit>".
       if [ "$2" = -i ]; then
         in=$(cat)
-        case "$in" in *mantle_check_box_mode*) echo "${FAKE_FLOOR:-on on}"; return 0 ;; esac
+        case "$in" in
+          *mantle_check_box_mode*) echo "${FAKE_FLOOR:-on on}"; return 0 ;;
+          *mantle_login_role_guard*) echo "${FAKE_SEAT:-0}"; return 0 ;;
+        esac
       fi
       echo "${FAKE_EXEC_OUT:-1000}"; return 0 ;;
     image) cat "$FAKE_STATE/images"; return 0 ;;
@@ -1245,6 +1248,58 @@ check "checks both on, a target with the floor: the roll goes ahead" \
   grep -q '"phase":"done","target":"v9".*"ok":true' "$T/sig/status.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: S8b refuses a target with 0330 while an Admin seat has no role admin"
+# seat_img <root> yes|no|none: the target image with 0330, without it, none.
+seat_img() {
+  rm -rf "$1/img/app"
+  [ "$2" = none ] && return 0
+  mkdir -p "$1/img/app/packages/db/migrations"
+  echo 'select 1;' > "$1/img/app/packages/db/migrations/0001_a.sql"
+  [ "$2" = no ] || echo 'select 1;' > "$1/img/app/packages/db/migrations/0330_s8b_role_follows_membership.sql"
+}
+ssr_probe='if s8b_seat_refusal v9; then printf "refused: %s" "$SSR_ERR"; else printf ok; fi'
+T="$WORK/ssr-lib"; fake_stack "$T"; mkdir -p "$T/state"
+seat_img "$T" yes
+out=$(FAKE_SEAT=0 roll_lib "$T" "$ssr_probe")
+check "s8b_seat_refusal: no seat without role admin goes ahead" test "$out" = ok
+check "s8b_seat_refusal: a 0 never reads the image" sh -c "! grep -qE 'pull|create' '$T/calls'"
+FAKE_SEAT=2 roll_lib "$T" "$ssr_probe" > "$T/ssr.out"
+check "s8b_seat_refusal: seats without role admin, a target with 0330: refused, the count and the repair" \
+  grep -q "^refused: 2 login(s) on this box hold an Admin seat without role admin, and v9 ships 0330 .*leaves the site down until the old tag is pinned back. Take each out of Admin first" "$T/ssr.out"
+check "s8b_seat_refusal: role admin is the second repair, said to make an Admin user" \
+  grep -q "Only a login that should be an Admin user gets role admin instead (the Users screen's promotion): that makes it an Admin user" "$T/ssr.out"
+check "s8b_seat_refusal: the image read is test/mantle-server:v9" grep -q 'docker pull test/mantle-server:v9' "$T/calls"
+seat_img "$T" no
+out=$(FAKE_SEAT=2 roll_lib "$T" "$ssr_probe")
+check "s8b_seat_refusal: a target without 0330 goes ahead" test "$(printf '%s\n' "$out" | tail -n 1)" = ok
+check "s8b_seat_refusal: a target without 0330 says so" grep -q 'v9 does not ship 0330: not refused' "$T/sig/update.log"
+seat_img "$T" none
+FAKE_SEAT=1 roll_lib "$T" "$ssr_probe" > "$T/ssr.out"
+check "s8b_seat_refusal: an image that cannot be read: refused (fails closed)" \
+  grep -q '^refused: 1 login(s) .*could not be read from its image, so it counts as shipping it' "$T/ssr.out"
+seat_img "$T" yes
+FAKE_EXEC_FAIL=1 roll_lib "$T" "$ssr_probe" > "$T/ssr.out"
+check "s8b_seat_refusal: a count that cannot be read, a target with 0330: refused (fails closed)" \
+  grep -q "^refused: this box's Admin seats without role admin could not be counted" "$T/ssr.out"
+out=$(FAKE_SEAT=2 roll_lib "$T" 'if s8b_seat_refusal v0.300.137; then printf refused; else printf ok; fi')
+check "s8b_seat_refusal: a release older than any with 0330 is not checked" test "$out" = ok
+sed -n "/<<'S8B_SEAT_SQL'/,/^S8B_SEAT_SQL\$/p" "$ROOT/scripts/roll.sh" > "$T/a.sql"
+sed -n "/<<'S8B_SEAT_SQL'/,/^S8B_SEAT_SQL\$/p" "$ROOT/infra/updater/updater.sh" > "$T/b.sql"
+check "s8b_seat_refusal: the SQL is there" grep -q mantle_login_role_guard "$T/a.sql"
+check "s8b_seat_refusal: roll.sh and the updater send the same SQL" cmp -s "$T/a.sql" "$T/b.sql"
+check "s8b_seat_refusal: 0330 keeps the name the updater and step 2e look for" \
+  sh -c "ls '$ROOT/packages/db/migrations' | grep -q '_s8b_role_follows_membership\.sql\$'"
+
+floor_case ssrseat v9
+seat_img "$T" yes
+FAKE_TS=20260105-000000 FAKE_SEAT=3 roll_loop "$T"
+check "Admin seats without role admin, a target with 0330: status error, ok false, why" \
+  grep -q '"phase":"error","target":"v9".*"ok":false.*roll refused, nothing changed: 3 login(s) on this box hold an Admin seat without role admin' "$T/sig/status.json"
+check "Admin seats without role admin: .env and compose unchanged" \
+  sh -c "cmp -s '$T/stack/.env' '$T/env.before' && cmp -s '$T/stack/docker-compose.yml' '$T/compose.before'"
+check "Admin seats without role admin: no backup, no compose pull, no up" sh -c "! grep -qE 'db-dump.sh|compose.* pull| up ' '$T/calls'"
+
+# ═════════════════════════════════════════════════════════════════════════════
 echo "roll.sh: backup first, request only the target, stop on any count drop"
 # `ssh <opts> <host> <cmd>` runs <cmd> locally (stdin passes through), and a
 # docker stub plays the box: counts come from files in $RS, the updater
@@ -1377,6 +1432,7 @@ case "$1" in
             case "$in" in
               *bridge_key*) echo "${FAKE_WS:-0 0 0}" ;;
               *mantle_check_box_mode*) echo "${FAKE_FLOOR:-on on}" ;;
+              *mantle_login_role_guard*) echo "${FAKE_SEAT:-0}" ;;
             esac ;;
         esac ;;
       *) : ;;
@@ -1624,6 +1680,8 @@ check "web never healthy, no perl: no log line printed at all" \
 roll_box notok
 FAKE_OK=false FAKE_PHASE=error FAKE_ERR="compose up failed" roll_sh --ssh fakebox v8
 check "updater reports ok:false: exit 1 with its error" sh -c "test '$rc' = 1 && grep -q 'ROLL NOT OK: compose up failed' '$RS/out'"
+check "updater reports ok:false: the mantle_migrate log tail, masked (a refused migrate is why)" \
+  sh -c "grep -q 'last lines of the mantle_migrate log (secret values masked)' '$RS/out' && grep -q 'docker logs --tail 30 mantle_migrate' '$RS/calls' && ! grep -q 'pgpass123' '$RS/out'"
 
 roll_box updaterdumps
 printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
@@ -1758,6 +1816,37 @@ roll_box floorgarbage
 FAKE_FLOOR="oops" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.90
 check "checks' floor: an answer that is not two modes stops the roll" \
   sh -c "test '$rc' = 1 && grep -q 'unexpected check modes' '$RS/out' && test ! -e '$RS/request.seen'"
+
+# Step 2e: v0.300.140 ships 0330 (a migration named *_s8b_role_follows_membership.sql).
+echo 'select 1;' > "$RG/packages/db/migrations/0330_s8b_role_follows_membership.sql"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm c
+git -C "$RG" tag v0.300.140
+
+roll_box seatrefused
+FAKE_SEAT=2 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.140
+check "Admin seats: 2 without role admin, a target that ships 0330: refused before anything, the repair named" \
+  sh -c "test '$rc' = 1 && grep -q '2 login(s) on this box hold an Admin seat without role admin, and v0.300.140 ships 0330' '$RS/out' && grep -q 'Take each out of Admin first' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+
+roll_box seatnot0330
+FAKE_SEAT=2 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.139
+check "Admin seats: a target this checkout has no tag for counts as shipping 0330 (refused)" \
+  sh -c "test '$rc' = 1 && grep -q 'cannot tell whether v0.300.139 ships 0330' '$RS/out' && test ! -e '$RS/request.seen'"
+
+roll_box seatzero
+FAKE_SEAT=0 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.140
+check "Admin seats: none without role admin, a target with 0330: the roll goes ahead" \
+  sh -c "test '$rc' = 0 && grep -q 'admin seats without role admin: 0' '$RS/out' && test -e '$RS/request.seen'"
+
+roll_box seatbefore
+FAKE_SEAT=2 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.137
+check "Admin seats: a release older than any with 0330 is not checked" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.300.137 is older than any release with 0330' '$RS/out'"
+
+roll_box seatgarbage
+FAKE_SEAT="oops" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.140
+check "Admin seats: an answer that is not a number stops the roll" \
+  sh -c "test '$rc' = 1 && grep -q 'unexpected Admin seat count' '$RS/out' && test ! -e '$RS/request.seen'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"

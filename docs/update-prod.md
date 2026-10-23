@@ -1275,6 +1275,44 @@ item pre-checks are gone): keep it as short as you can.
   before 0301 over a restored database leaves the checks off (that image's
   migrate does not raise them); that image still has its pre-checks.
 
+## Going up to 0330 (the role follows Admin membership, plan v3.2 S8b)
+
+From migration 0330 a seat in the Admin workspace alone makes a login an
+Admin user (before, the role column AND the seat). So its migrate refuses
+(42501; 0330 writes nothing, the schema stays the older image's) while any
+login holds an Admin seat without role admin: an enabled one, a disabled
+one (it would be an Admin user on its re-enable) and a former client
+alike. The other drift (role admin without a seat) is narrower and only a
+NOTICE.
+
+**A refused migrate leaves the site down.** Every service waits on
+`mantle_migrate`, so after a refused 0330 nothing starts until the older
+tag is pinned back in `.env` (`MANTLE_IMAGE_TAG`) and the stack is up
+again (the Rollback steps below, without the revert: 0330 never went in).
+`scripts/roll.sh` prints the tail of the `mantle_migrate` log when a roll
+is not ok (`docker logs mantle_migrate 2>&1 | grep 'mantle S8b'` on the
+box shows the count).
+
+So a roll is refused BEFORE it starts while that count is above 0 and the
+target ships 0330: `scripts/roll.sh` step 2e and the updater
+(`s8b_seat_refusal`) ask the same plain SQL of the box's current schema,
+numbers only, and refuse with the count. The updater that decides is the
+running one: roll a box whose updater predates the check with
+`scripts/roll.sh`. Read `scripts/arch-scoreboard-box.sh` first as well
+(`s8b_precondition_met yes`).
+
+The repair, on the older image, before rolling again:
+
+1. **Take each such login out of Admin** (the Admin workspace's users, or
+   `mantle_ws_remove_user`). This is the default: the login was no Admin
+   user before 0330 and stays none.
+2. Only a login that SHOULD be an Admin user: give it role admin instead
+   (the Users screen's promotion). That makes it an Admin user from 0330
+   on; it is a grant, not a fix.
+
+The logins, by id only (as the superuser, on the box):
+`select l.id from auth.users l join workspace_users u on u.login_id = l.id join workspaces w on w.id = u.workspace_id and w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null where l.role <> 'admin';`
+
 ## Rollback
 
 ```bash
@@ -1391,16 +1429,12 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   `docker exec mantle_web cat /app/packages/db/rollback/0330_s8b_role_follows_membership.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`.
   Then pin the older tag straight away (or stop mantle_web first): a
   restart in between applies 0330 again. The revert drops the guard, puts
-  back the bridge that adds and the bodies the older image ran, drops
-  0330's new functions and takes it off the ledger (the S8b handover in
-  docs/_archive/). To go below b2 or b3 as well, this revert comes first,
-  then theirs (the entry above). Going up to 0330, its migrate refuses
-  (42501, nothing written, the box stays on the older image's schema) while
-  an enabled login holds an Admin seat without role admin: membership
-  alone would make it an Admin user. Read `scripts/arch-scoreboard-box.sh`
-  first (`s8b_precondition_met yes`); to repair, on the older image, take
-  the login out of Admin or make it an admin on the Users screen, then
-  roll again.
+  back the bridge that adds, the bodies the older image ran, the bridge
+  functions and triggers 0330 dropped and `mantle_role_drift`'s older
+  count, drops 0330's new functions and takes it off the ledger: the
+  catalog is the older image's again (the S8b handover in docs/_archive/).
+  To go below b2 or b3 as well, this revert comes first, then theirs (the
+  entry above). Going up to 0330: "Going up to 0330" above.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

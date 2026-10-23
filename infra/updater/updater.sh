@@ -1034,18 +1034,19 @@ select case when to_regprocedure('public.mantle_check_box_mode(text)') is null t
 CHECK_MODES_SQL
 }
 
-# floor_in_image <tag>: yes when the target server image holds the floor's
-# migration, no when it does not, unknown when it cannot be pulled or read.
-floor_in_image() {
+# migration_in_image <tag> <name regex> <what>: yes when the target server
+# image holds a migration whose file name matches, no when it does not,
+# unknown when it cannot be pulled or read. <what> names the check in the log.
+migration_in_image() {
   fi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
   fi_img="${fi_ns:-titanwest}/mantle-server:$1"
   # The log only: this function's stdout is its answer.
-  echo "[updater] checks' floor: reading the migrations of $fi_img" >> "$SIG/update.log"
+  echo "[updater] $3: reading the migrations of $fi_img" >> "$SIG/update.log"
   docker pull "$fi_img" >> "$SIG/update.log" 2>&1 || { echo unknown; return 0; }
   fi_cid=$(docker create "$fi_img" 2>> "$SIG/update.log") || { echo unknown; return 0; }
   fi_tmp=$(mktemp -d 2>/dev/null) || { docker rm "$fi_cid" > /dev/null 2>&1; echo unknown; return 0; }
   if docker cp "$fi_cid:/app/packages/db/migrations" "$fi_tmp/m" >> "$SIG/update.log" 2>&1 && [ -d "$fi_tmp/m" ]; then
-    if ls "$fi_tmp/m" 2>/dev/null | grep -q '_check_mode_floor\.sql$'; then fi_out=yes; else fi_out=no; fi
+    if ls "$fi_tmp/m" 2>/dev/null | grep -q "$2"; then fi_out=yes; else fi_out=no; fi
   else
     fi_out=unknown
   fi
@@ -1053,6 +1054,9 @@ floor_in_image() {
   rm -rf "$fi_tmp"
   echo "$fi_out"
 }
+
+# floor_in_image <tag>: the checks' floor's migration in the target image.
+floor_in_image() { migration_in_image "$1" '_check_mode_floor\.sql$' "checks' floor"; }
 
 # check_floor_refusal <tag>: 0 with CKF_ERR set when the roll must be
 # refused; 1 when it may go ahead.
@@ -1079,6 +1083,63 @@ check_floor_refusal() {
     *) ckf_ships="whether $1 ships the checks' floor could not be read from its image, so it counts as shipping it" ;;
   esac
   CKF_ERR="$ckf_what, and $ckf_ships: the tools' item pre-checks are gone there and its migrate would raise them. Turn both checks on first (docs/edit-check.md), or set MANTLE_CHECK_FLOOR=keep and MANTLE_CHECK_FLOOR_REASON in .env to keep this box below on on purpose (docs/update-prod.md, Keep one box below on, on purpose)"
+  return 0
+}
+
+# ── S8b: no Admin seat without role admin before 0330 ───────────────────────
+# From migration 0330 (the role follows Admin membership) the seat alone
+# makes an Admin user, so its migrate refuses (42501) while any login holds
+# an Admin seat without role admin, a disabled one and a former client too.
+# A refused migrate leaves the site down (every service waits on
+# mantle_migrate) until the old tag is pinned back (docs/update-prod.md,
+# Going up to 0330). So a request is refused, with nothing changed, while
+# that count is above 0 and the TARGET image ships 0330 (asked of the image
+# by the migration's file name, as the checks' floor asks, and only when
+# the count is above 0). Fails closed: a count that cannot be read, or a
+# target whose image cannot be read, counts as above 0 and as shipping it.
+# The count is plain SQL on the box's CURRENT schema, 0 once 0330 is in
+# (its guard function there: that migrate never runs again) and before the
+# workspace tables; the same SQL as scripts/roll.sh (step 2e), pinned equal
+# and against 0330's own count by packages/db/src/s8b-seat-preflight.db.test.ts.
+# No .env knob: the repair is the way through. Only a number is logged.
+S8B_SEAT_NOT_BEFORE=0.300.138
+SSR_ERR=""
+
+s8b_seat_sql() {
+  cat <<'S8B_SEAT_SQL'
+select case when to_regprocedure('public.mantle_login_role_guard()') is not null then 0
+            when to_regclass('public.workspace_users') is null then 0
+            else (xpath('/row/n/text()', query_to_xml(
+              'select count(*) as n from auth.users l '
+              || 'where not coalesce(l.role = ''admin'', false) and exists ('
+              || 'select 1 from public.workspaces w '
+              || 'join public.workspace_users u on u.workspace_id = w.id and u.login_id = l.id '
+              || 'join auth.users o on o.id = w.owner_id and o.is_owner '
+              || 'where w.is_admin and w.archived_at is null)', false, true, '')))[1]::text::bigint
+       end;
+S8B_SEAT_SQL
+}
+
+# s8b_seat_refusal <tag>: 0 with SSR_ERR set when the roll must be refused;
+# 1 when it may go ahead.
+s8b_seat_refusal() {
+  SSR_ERR=""
+  tag_below "$1" "$S8B_SEAT_NOT_BEFORE" && return 1
+  ssr_n=$(s8b_seat_sql | docker exec -i mantle_pg psql -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 -At 2>/dev/null | tr -d '\r ')
+  case "$ssr_n" in
+    0) return 1 ;;
+    '' | *[!0-9]*) ssr_what="this box's Admin seats without role admin could not be counted (is mantle_pg up?)" ;;
+    *) ssr_what="$ssr_n login(s) on this box hold an Admin seat without role admin" ;;
+  esac
+  case "$(migration_in_image "$1" '_s8b_role_follows_membership\.sql$' 'admin seats')" in
+    no)
+      echo "[updater] admin seats: $ssr_what, and $1 does not ship 0330: not refused" | tee -a "$SIG/update.log"
+      return 1 ;;
+    yes) ssr_ships="$1 ships 0330 (the role follows Admin membership), whose migrate refuses them" ;;
+    *) ssr_ships="whether $1 ships 0330 could not be read from its image, so it counts as shipping it" ;;
+  esac
+  SSR_ERR="$ssr_what, and $ssr_ships: a refused migrate leaves the site down until the old tag is pinned back. Take each out of Admin first (the Admin workspace's users, or mantle_ws_remove_user), then roll again. Only a login that should be an Admin user gets role admin instead (the Users screen's promotion): that makes it an Admin user (docs/update-prod.md, Going up to 0330)"
   return 0
 }
 
@@ -1729,6 +1790,14 @@ while true; do
     if check_floor_refusal "$TARGET"; then
       write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $CKF_ERR"
       echo "[updater] ROLL REFUSED before any change: $CKF_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
+
+    # S8b: no Admin seat without role admin before 0330's migrate.
+    if s8b_seat_refusal "$TARGET"; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $SSR_ERR"
+      echo "[updater] ROLL REFUSED before any change: $SSR_ERR" | tee -a "$SIG/update.log"
       write_stack_info
       continue
     fi
