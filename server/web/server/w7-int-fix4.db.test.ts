@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -169,7 +169,7 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
     );
     m = await import('@mantle/db');
     hbs = await import('@mantle/runtime/heartbeats');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${maker}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Maker'),
       (${other}, ${`${tag}-c@example.invalid`}, 'x', false, 'admin', 'Other')`);

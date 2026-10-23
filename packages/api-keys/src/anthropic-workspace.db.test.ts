@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { InputError } from '@mantle/std';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -31,7 +32,7 @@ describe.skipIf(!URL)('an Anthropic key carries its workspace id', () => {
     m = await import('@mantle/db');
     keys = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
   }, 60_000);

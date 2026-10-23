@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -82,7 +83,7 @@ describe.skipIf(!URL)('apps for members', () => {
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
 
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin', null),
         (${other}, ${`${tag}-other@example.invalid`}, 'x', 'admin', null),
@@ -335,7 +336,7 @@ describe.skipIf(!URL)('apps for members', () => {
 
   it('names a login without a display name by its email, and a deleted one as removed', async () => {
     const plain = randomUUID();
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name)
       values (${plain}, ${`${tag}-sam@example.invalid`}, 'x', 'member', '  ')`);
     log.recordAppAccess({

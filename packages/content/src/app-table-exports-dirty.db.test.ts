@@ -12,6 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -41,7 +42,7 @@ describe.skipIf(!URL)('app table export dirty stamp on Postgres', () => {
     apps = await import('./apps');
     broker = await import('./app-broker');
     exportsMod = await import('./app-table-exports');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`ed-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
   }, 60_000);

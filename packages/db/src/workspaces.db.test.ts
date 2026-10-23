@@ -814,18 +814,21 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
 
   it('audit M1: no security definer function of a workspaces migration is callable by PUBLIC or a limited role', async () => {
     const names = new Set<string>();
-    const files = readdirSync(join(__dirname, '..', 'migrations')).filter((f) =>
-      /^\d{4}_workspaces_\w+\.sql$/.test(f),
-    );
+    const all = readdirSync(join(__dirname, '..', 'migrations'))
+      .filter((f) => /^\d{4}_\w+\.sql$/.test(f))
+      .sort();
+    const files = all.filter((f) => /^\d{4}_workspaces_\w+\.sql$/.test(f));
     expect(files.length).toBeGreaterThanOrEqual(5);
-    for (const f of files) {
+    for (const f of all) {
       const text = readFileSync(join(__dirname, '..', 'migrations', f), 'utf8');
-      // In file order: a later statement may drop one (0273, W8c).
+      const ours = files.includes(f);
+      // In file order: a later statement may drop one (0273, W8c), in any
+      // migration (0399, S8b, drops the bridges' functions).
       for (const mm of text.matchAll(
         /CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$|DROP FUNCTION IF EXISTS "public"\."(\w+)"/g,
       )) {
         if (mm[2]) names.delete(mm[2]);
-        else if (/SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);
+        else if (ours && /SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);
       }
     }
     expect(names.size).toBeGreaterThan(20);

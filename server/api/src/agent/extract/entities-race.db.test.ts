@@ -11,6 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -27,7 +28,7 @@ describe.skipIf(!URL)('concurrent entity creation', () => {
     m = await import('@mantle/db');
     ({ reconcileEntities } = await import('./entities'));
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`race-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

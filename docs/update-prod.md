@@ -1382,5 +1382,20 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   box is the switch alone (`MANTLE_NARROW_SYSTEM=0` and a full
   `docker compose up -d`), not a pin.
 
+- **Below the role following Admin membership (plan v3.2 S8b, migration
+  0399, a placeholder number renumbered at its merge):** the revert is
+  **mandatory**. With 0399 in place the older image's role change and
+  admin login create are refused (the role guard lets only the membership
+  definers write `auth.users.role`), and where its pool is the superuser
+  its promotions land outside Admin (the bridge only demotes since 0399).
+  While the newer image is still up, as the superuser, in one transaction:
+  `docker exec mantle_web cat /app/packages/db/rollback/0399_s8b_role_follows_membership.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`.
+  Then pin the older tag straight away (or stop mantle_web first): a
+  restart in between applies 0399 again. The revert drops the guard, puts
+  back the bridge that adds and the bodies the older image ran, drops
+  0399's new functions and takes it off the ledger (the S8b handover in
+  docs/_archive/). To go below b2 or b3 as well, this revert comes first,
+  then theirs (the entry above).
+
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

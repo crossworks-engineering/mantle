@@ -5,11 +5,15 @@ import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 import {
+  adminMembershipChange,
+  adminMembershipRefusal,
   applyLoginChange,
   isLastAdminRefusal,
   LAST_ADMIN_MESSAGE,
   loadLoginTarget,
   LoginRoleSchema,
+  type LoginChangeDone,
+  type LoginChangeRefusal,
 } from '@/lib/login-update';
 import { readJson } from '@/lib/read-body';
 
@@ -45,7 +49,38 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const target = await loadLoginTarget(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
 
-  const done = await applyLoginChange(user, target, body);
+  // A role change is an add to or a removal from the Admin workspace, by
+  // its membership definer in this caller's name (the exit's acting login,
+  // which the gateway sends; the definer checks the caller and writes the
+  // role column), in the change's one transaction at the full-route spot
+  // login-credential (applyLoginChange).
+  // target.role is the role membership gives (loadLoginTarget), so the
+  // change is decided from membership, and a drifted column is put right.
+  const role = body.role;
+  const roleChange = role !== undefined && role !== target.role;
+  let done: LoginChangeDone | LoginChangeRefusal;
+  try {
+    done = roleChange
+      ? await applyLoginChange(
+          user,
+          target,
+          body,
+          undefined,
+          (tx) => adminMembershipChange(tx, targetId, role === 'admin'),
+        )
+      : await applyLoginChange(user, target, body);
+  } catch (err) {
+    // The definer's refusal: the last Moderator of Admin (409), or a caller
+    // it refuses, one without the users area (403).
+    const refused = adminMembershipRefusal(err);
+    if (refused) {
+      return NextResponse.json(
+        { error: refused.error, reason: refused.reason },
+        { status: refused.status },
+      );
+    }
+    throw err;
+  }
   // The refusal's reason rides along (W8d): `contact-was-client` and
   // `former-client` among them, as the invite routes name theirs.
   if (!done.ok) {

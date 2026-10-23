@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { authUsers, db, mantlePeers } from '@mantle/db';
+import { loginIsAdmin } from '@/lib/auth/admin-seat';
 
 /** A tool name the owner allows on a peer bound to the owner (a risky one:
  *  its policy says `peerRisky`, read by the gate's peer narrower). An unknown name allows
@@ -68,15 +69,21 @@ export async function resolvePeerActsAs(
   if (actsAs === null) return null;
   const loginId = actsAs === 'owner' ? anchorId : actsAs;
   const [row] = await db
-    .select({ id: authUsers.id, role: authUsers.role, disabledAt: authUsers.disabledAt })
+    .select({
+      id: authUsers.id,
+      disabledAt: authUsers.disabledAt,
+      // Admin membership (loginIsAdmin, S8b), never the role column.
+      admin: loginIsAdmin(authUsers.id),
+    })
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
   if (!row) return { error: 'No such login.' };
   if (row.disabledAt) return { error: 'That login is disabled.' };
   // Another Admin login is not offered: a peer acts as the owner or as a
-  // member (as before W8a). What the bound login reads is its workspaces'.
-  if (actsAs !== 'owner' && row.role !== 'member') {
+  // member (as before W8a), a login that is no Admin user (membership
+  // decides, S8b). What the bound login reads is its workspaces'.
+  if (actsAs !== 'owner' && row.admin) {
     return { error: "Pick 'owner' or a member." };
   }
   return { loginId: row.id };

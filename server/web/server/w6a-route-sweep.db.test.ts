@@ -34,6 +34,7 @@ import { isMemberRoute } from '../lib/auth/member-routes';
 import { isReadRequest, itemWriteTarget, routeClass } from '../lib/auth/route-scope';
 import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -324,7 +325,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     const hash = (await import('bcryptjs')).default.hashSync(PASSWORD, 4);
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${noArea}, ${email('noarea')}, 'x', false, 'admin', 'Nora Noarea'),
       (${mem}, ${email('mem')}, ${hash}, false, 'member', 'Mia Member'),

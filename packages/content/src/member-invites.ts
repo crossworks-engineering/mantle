@@ -453,11 +453,10 @@ export async function redeemMemberInvite(
         contactId: invite.contactId,
       });
 
-      // The login bridge (0251, its trigger off since W5b2) keeps the Admin
-      // row in step with the role: a member joins no workspace (0286; plan
-      // Q1 reversed 2026-10-13). Its private workspace comes the first time
-      // it needs one; an Admin user adds it to any other.
-      await tx.execute(sql`select "public"."mantle_bridge_login"(${loginId}::uuid)`);
+      // A member joins no workspace (0286; plan Q1 reversed 2026-10-13): its
+      // private workspace comes the first time it needs one; an Admin user
+      // adds it to any other. The role follows Admin membership, so a new
+      // member login needs no Admin row and nothing calls the login bridge.
 
       const marked = await tx
         .update(memberInvites)

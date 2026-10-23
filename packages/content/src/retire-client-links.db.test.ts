@@ -15,6 +15,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -73,7 +74,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     m = await import('@mantle/db');
     s = await import('./shares');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
-    await admin`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
     const level: Record<keyof typeof n, string> = {

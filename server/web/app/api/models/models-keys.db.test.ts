@@ -18,6 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
@@ -89,7 +90,7 @@ describe.skipIf(!URL)('the model list with a key not labelled default', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     h.owner = owner;
     for (const id of [owner, other]) {
-      await exec(sqlTag`
+      await asSuperuser()(sqlTag`
         insert into auth.users (id, email, password_hash, role)
         values (${id}, ${`${tag}-${id.slice(0, 4)}@example.invalid`}, 'x', 'admin')`);
     }

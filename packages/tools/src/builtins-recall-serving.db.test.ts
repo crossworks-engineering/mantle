@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -82,7 +83,7 @@ describe.skipIf(!URL)('Recall serving on Postgres', () => {
     index = byslug('recall_index');
     match = byslug('recall_match');
 
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     // nodes.owner_id FKs to spaces: every node lives in one.

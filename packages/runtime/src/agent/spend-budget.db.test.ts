@@ -15,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -42,7 +43,7 @@ describe.skipIf(!URL)('member token budget: completion tokens only', () => {
     voice = await import('@mantle/voice');
     ledger = await import('@mantle/content');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${`anchor-${tag}@example.invalid`}, 'x', 'admin'),
       (${member}, ${`member-${tag}@example.invalid`}, 'x', 'member')`;
     voice.registerEmbeddingAdapter({

@@ -13,6 +13,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   superuserClient,
@@ -64,7 +65,7 @@ describe.skipIf(!URL)('credential races', () => {
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     for (const id of logins) {
       const role = id === member ? 'member' : 'admin';
-      await sql`insert into auth.users (id, email, password_hash, role)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.com`}, 'x', ${role})`;
     }
     // The OAuth code's actor is an Admin login: role admin AND a user of

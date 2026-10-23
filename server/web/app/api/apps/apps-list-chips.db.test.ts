@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppListResponse } from '@mantle/client-types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '', login: '' }));
@@ -84,7 +85,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     route = await import('./route');
     h.owner = owner;
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${owner}, ${`${tag}-o@example.invalid`}, 'x', 'admin'),
         (${plain}, ${`${tag}-p@example.invalid`}, 'x', 'admin'),

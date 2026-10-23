@@ -10,7 +10,8 @@
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { superuserClient } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -32,6 +33,8 @@ class Rollback extends Error {}
 async function inRollback(admin: Sql, fn: (tx: Sql) => Promise<void>): Promise<void> {
   try {
     await admin.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:migration', true),
+                      set_config('mantle.write_mode', 'rw', true)`;
       await fn(tx);
       throw new Rollback();
     });
@@ -49,11 +52,21 @@ const OLD = { colorTheme: 'clean-slate', avatarStyle: 'thumbs', neatBackground: 
 describe.skipIf(!URL)('migration keep_existing_look', () => {
   let admin: Sql;
 
-  beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
-    const m = await import('./index');
-    admin = (m.systemDb as unknown as { $client: Sql }).$client;
-  }, 60_000);
+  // A migration runs as the migrator: on a superuser client of its own, so
+  // its admin login fixtures pass the role guard (0399) under the runtime
+  // role too.
+  beforeAll(() => {
+    const su = superuserClient(URL!);
+    // As the app's drizzle pool sent them: a json or jsonb parameter goes as
+    // the text it is (`${JSON.stringify(v)}::jsonb`), not a JSON string of it.
+    const serializers = (su.options as unknown as { serializers: Record<string, unknown> })
+      .serializers;
+    serializers['114'] = serializers['3802'] = (v: unknown) => v;
+    admin = su as unknown as Sql;
+  });
+  afterAll(async () => {
+    await (admin as unknown as { end: () => Promise<void> }).end();
+  });
 
   it('is fine on an empty table', async () => {
     await inRollback(admin, async (tx) => {

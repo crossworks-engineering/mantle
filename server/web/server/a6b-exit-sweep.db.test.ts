@@ -27,6 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MODE = (process.env.MANTLE_ACTOR_CHECK ?? 'warn').trim() || 'warn';
@@ -844,7 +845,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     for (const [k, v] of Object.entries(W)) names.set(v, `ws:${k}`);
     for (const [k, v] of Object.entries(AG)) names.set(v, `agent:${k}`);
     for (const k of LOGINS) {
-      await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                   values (${L[k]}, ${`a6b-${k}@example.invalid`}, 'x', ${k === 'owner'},
                           ${isAdmin(k) ? 'admin' : 'member'}, ${k})`);
     }
@@ -1596,12 +1597,12 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     names.set(OTHER, 'brain:other');
     names.set(FC, 'login:formerClient');
     names.set(CW, 'ws:Clients');
-    await x(sql`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role) values
                 (${OTHER}, 'a6b-other@example.invalid', 'x', 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${OTHER}, 'brain', ${OTHER})`);
     // A former client (0272 leaves a disabled member row and its archive
     // row), a user of the Clients workspace.
-    await x(sql`insert into auth.users (id, email, password_hash, role, disabled_at)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role, disabled_at)
                 values (${FC}, 'a6b-fc@example.invalid', 'x', 'member', now())`);
     await x(sql`insert into archive_client_logins (login_id, email, created_at, session_epoch)
                 select id, email, created_at, session_epoch from auth.users where id = ${FC}`);

@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { appAnswerOf } from '@/server/test-support';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -138,7 +139,7 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     create = await import('./route');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${adm2}, ${email('adm2')}, 'x', false, 'admin', 'Ada Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})

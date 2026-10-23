@@ -42,6 +42,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -266,7 +267,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
     ls = await import('@mantle/mcp-core');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${emailOf(owner)}, 'x', true, 'admin', 'Owner'),
       (${asker}, ${emailOf(asker)}, 'x', false, 'admin', 'Asker'),
       (${mod}, ${emailOf(mod)}, 'x', false, 'admin', 'Mod'),

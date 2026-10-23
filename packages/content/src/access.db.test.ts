@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -32,7 +33,7 @@ describe.skipIf(!URL)('frozen levels and the plain unshare, on Postgres', () => 
     m = await import('@mantle/db');
     a = await import('./access');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     // Items belong to a space (0165): this test's own owner is a brain row.
     await m.db.execute(sqlTag`

@@ -18,7 +18,9 @@ vi.mock('@mantle/db', () => {
     return chain;
   };
   chain['then'] = (resolve: (v: unknown[]) => void) =>
-    resolve([{ role: state.role, adminMember: state.adminMember }]);
+    resolve(
+      state.role === 'gone' ? [] : [{ shownRole: state.role, adminMember: state.adminMember }],
+    );
   return {
     db: { select: () => chain, insert: () => chain, update: () => chain },
     authUsers: { id: 'id', role: 'role', lastLoginAt: 'last_login_at' },
@@ -28,9 +30,8 @@ vi.mock('@mantle/db', () => {
   };
 });
 vi.mock('@/lib/auth', () => ({
-  // The Admin pair as session.ts answers it.
-  adminLogin: (r: { role: string; adminMember: boolean }) =>
-    r.role === 'admin' && r.adminMember === true,
+  // Membership only, as session.ts answers it since S8b.
+  adminLogin: (r: { adminMember: boolean }) => r.adminMember === true,
   loginWithPassword: vi.fn(async () => 'login-1'),
   buildMobileToken: () => ({ value: 'tok', expiresInSec: 60, expiresAt: new Date() }),
 }));
@@ -64,15 +65,17 @@ beforeEach(() => {
 describe('token login: adminsOnly', () => {
   it('answers a member 426 update-app (W7e) and mints nothing', async () => {
     state.role = 'member';
+    state.adminMember = false;
     const res = await login(true);
     expect(res.status).toBe(426);
     expect(((await res.json()) as { reason: string }).reason).toBe('update-app');
     expect(state.inserts).toBe(0);
   });
 
-  it('refuses any other role 401 with the one failure message, never "Update the app" (W8a)', async () => {
-    // A row still marked client (there is no client login since W8a).
-    state.role = 'client';
+  it('refuses a login gone by now 401 with the one failure message, never "Update the app" (W8a)', async () => {
+    // Since S8b a login that is no Admin user is a member (no client login
+    // is left since W8a, 0272); only a login gone by now is refused so.
+    state.role = 'gone';
     const res = await login(true);
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: string; reason?: string };
@@ -87,11 +90,11 @@ describe('token login: adminsOnly', () => {
     expect(state.inserts).toBe(1);
   });
 
-  it('refuses a role=admin login taken out of Admin 401 (the Admin pair, not the role)', async () => {
+  it('a login taken out of Admin is a member: 426, mints nothing (membership decides, S8b)', async () => {
+    // Even with the column left at admin by hand (drift): the column is not asked.
     state.adminMember = false;
     const res = await login(true);
-    expect(res.status).toBe(401);
-    expect(((await res.json()) as { error: string }).error).toBe('Invalid email or password.');
+    expect(res.status).toBe(426);
     expect(state.inserts).toBe(0);
   });
 
@@ -113,6 +116,7 @@ describe('token login: what the answer names', () => {
 
   it('device-login (withRole) names the role, the login and this brain', async () => {
     state.role = 'member';
+    state.adminMember = false;
     const body = (await (await signIn({ withRole: true })).json()) as Record<string, unknown>;
     expect(body).toMatchObject({
       token: 'tok',

@@ -81,6 +81,8 @@ vi.mock('@mantle/db', () => {
   };
   const cols = (names: string[]) => Object.fromEntries(names.map((n) => [n, `col:${n}`]));
   return {
+    // admin-seat.ts (loginIsAdmin) builds its column with @mantle/db's sql.
+    sql: (...a: unknown[]) => ({ __sql: a }),
     // The OAuth lock (A10 #15: through the one advisory lock helper) is a
     // no-op here, as its execute is.
     advisoryXactLock: async () => undefined,
@@ -290,8 +292,8 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
 
 describe('a grant lives only as long as its login is a usable admin', () => {
   const locked: [string, unknown[]][] = [
-    ['demoted to member', [{ ...ADMIN, role: 'member' }]],
-    ['taken out of Admin', [{ ...ADMIN, adminMember: false }]],
+    // Taken out of Admin: the definer writes the role with the row (S8b).
+    ['demoted to member', [{ ...ADMIN, role: 'member', adminMember: false }]],
     ['disabled', [{ ...ADMIN, disabledAt: new Date() }]],
     ['deleted', []],
   ];
@@ -311,7 +313,9 @@ describe('a grant lives only as long as its login is a usable admin', () => {
     expect(await ownerFromBearer(new Request('https://brain.example.com/api/mcp'))).toBe(OWNER);
 
     const where = JSON.stringify(dbState.selectWheres[0]);
-    expect(where).toContain('"__eq":["col:role","admin"]');
+    // Admin membership (S8b), never the role column.
+    expect(where).toContain('mantle_login_is_admin');
+    expect(where).not.toContain('col:role');
     expect(where).toContain('"__isNull":"col:disabledAt"');
   });
 

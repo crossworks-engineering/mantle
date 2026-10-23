@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
@@ -164,7 +165,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
   /** A login made for one test, with a password. */
   const addLogin = async (name: string, role: 'admin' | 'member'): Promise<string> => {
     const id = randomUUID();
-    await sql`insert into auth.users (id, email, password_hash, role, display_name)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name)
               values (${id}, ${emailOf(name)}, ${bcrypt.hashSync(PASSWORD, 4)}, ${role}, ${name})`;
     made.push(id);
     // An Admin login is role admin AND a user of Admin.
@@ -194,7 +195,7 @@ describe.skipIf(!URL)('device tokens for an admin and a member', () => {
     tokens = await import('./tokens');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
     // An Admin login is role admin AND a user of Admin.

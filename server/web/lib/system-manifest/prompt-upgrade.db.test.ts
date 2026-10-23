@@ -17,6 +17,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const OLD = 'You are the Team Responder. A default from an earlier release.';
@@ -65,7 +66,7 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     )!.systemPrompt!;
     const prompts = { unedited: OLD, edited: EDITED, fresh: current };
     for (const [k, owner] of Object.entries(brains)) {
-      await admin`insert into auth.users (id, email, password_hash, role)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`pu-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
       await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
       await admin`insert into agents (owner_id, slug, name, model, system_prompt)

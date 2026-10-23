@@ -15,6 +15,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
@@ -119,7 +120,7 @@ describe.skipIf(!URL)('the OAuth token endpoint', () => {
     oauth = await import('./mcp-oauth');
     tokens = await import('./auth/tokens');
     anchor = await ensureTestAnchor(sql);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name)
               values (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin')`;
     // An Admin login is role admin AND a user of Admin.
     // As the superuser: the app pools only read the workspace tables.

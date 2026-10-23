@@ -181,16 +181,16 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /**
- * Whether a login row is an Admin login: role admin AND a user of the
- * brain's live Admin workspace now (adminMember, mantle_login_is_admin read
- * with the row). The role alone never makes one: a role=member login inside
- * Admin stays a member, and a role=admin login outside Admin is no Admin
- * login (no asset token, render cookie or frame; its areas come from the
- * area rule, so none). The session itself (resolvedFor),
- * memberLoginActive and findMemberAsset still read the role.
+ * Whether a login row is an Admin login: a user of the brain's live Admin
+ * workspace now, the login enabled (adminMember, mantle_login_is_admin read
+ * with the row). Membership decides: the role column follows it, written
+ * only by the membership definers (mantle_ws_add_user and
+ * mantle_ws_remove_user on Admin), so it is never asked here. The session
+ * itself (resolvedFor), memberLoginActive and findMemberAsset still read
+ * the column, which equals membership by construction.
  */
-export function adminLogin(row: Pick<LoginRow, 'role' | 'adminMember'>): boolean {
-  return row.role === 'admin' && row.adminMember === true;
+export function adminLogin(row: Pick<LoginRow, 'adminMember'>): boolean {
+  return row.adminMember === true;
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
@@ -205,7 +205,7 @@ type Resolved =
       source: AuthSource;
       epoch: number;
       contactId: string | null;
-      /** adminLogin(row): role admin AND a user of Admin now. */
+      /** adminLogin(row): a user of Admin now. */
       adminPair: boolean;
     }
   | {
@@ -558,54 +558,47 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 }
 
 /**
- * An admin row becomes a SessionUser (id = the anchor), a member row a
- * MemberCaller. Every role is named: a role this code does not know is NO
- * login (null), never an admin (client logins C0: before it, every role that
- * was not member resolved as an admin). A row still marked client (none is
- * left after migration 0272, workspaces W8a) is no login either. Null too
- * when the brain has no anchor (a corrupt state). The session stays on the
- * role: a role=admin login outside Admin keeps its session and works in its
- * own scope, but is no Admin (adminLogin: no asset token, render cookie or
- * frame, no area).
+ * An Admin login becomes a SessionUser (id = the anchor), any other login a
+ * MemberCaller. Membership decides (S8b): an Admin login is a user of the
+ * brain's live Admin workspace now, the login enabled (adminLogin, the
+ * row's adminMember, loginIsAdmin read with the row), never the role
+ * column, which follows membership. A row with a role this code does not
+ * know (the CHECK admits admin and member only since 0272) is no login
+ * (null), never an admin. Null too when the brain has no anchor (a corrupt
+ * state).
  */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
-  const role: string = row.role;
-  switch (role) {
-    case 'admin': {
-      const user = await sessionUserFor(row);
-      if (!user) return null;
-      return {
-        kind: 'admin',
-        loginId: row.id,
-        user,
-        source,
-        epoch: row.sessionEpoch,
-        contactId: row.contactId,
-        adminPair: adminLogin(row),
-      };
-    }
-    case 'member': {
-      const anchorId = await getAnchorId();
-      if (!anchorId) return null;
-      return {
-        kind: 'member',
-        loginId: row.id,
-        source,
-        epoch: row.sessionEpoch,
-        adminPair: false,
-        member: {
-          role: 'member',
-          loginId: row.id,
-          anchorId,
-          email: row.email,
-          displayName: row.displayName,
-          contactId: row.contactId,
-        },
-      };
-    }
-    default:
-      return null;
+  if (!isLoginRole(row.role)) return null;
+  if (adminLogin(row)) {
+    const user = await sessionUserFor(row);
+    if (!user) return null;
+    return {
+      kind: 'admin',
+      loginId: row.id,
+      user,
+      source,
+      epoch: row.sessionEpoch,
+      contactId: row.contactId,
+      adminPair: true,
+    };
   }
+  const anchorId = await getAnchorId();
+  if (!anchorId) return null;
+  return {
+    kind: 'member',
+    loginId: row.id,
+    source,
+    epoch: row.sessionEpoch,
+    adminPair: false,
+    member: {
+      role: 'member',
+      loginId: row.id,
+      anchorId,
+      email: row.email,
+      displayName: row.displayName,
+      contactId: row.contactId,
+    },
+  };
 }
 
 /**
@@ -2165,12 +2158,11 @@ export function legacyLogin(login: Login): AnyLogin {
 }
 
 /**
- * The row's Admin pair for a Login getLoginOr401 answered: role admin AND a
- * user of the live Admin workspace now (adminLogin, read with the login
- * row). A transition: while the role column can still differ from Admin
- * membership, an Admin answer needs both; once membership decides the role,
- * the scope's own answer is the whole of it. False for a Login it did not
- * answer.
+ * The row's Admin answer for a Login getLoginOr401 answered: a user of the
+ * live Admin workspace now (adminLogin, read with the login row; the role
+ * is not asked). adminFacts needs it, then asks the login's own scope
+ * (mantle_scope_admin_facts, membership again in SQL) or, with no scope
+ * open, takes the row's areas. False for a Login it did not answer.
  */
 export function loginAdminPair(login: Login): boolean {
   return legacyEntry(login)?.adminPair === true;

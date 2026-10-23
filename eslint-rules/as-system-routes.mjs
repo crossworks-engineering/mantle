@@ -267,8 +267,11 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     spot: 'login-credential',
     from: 'server/web/lib/login-update.ts',
     // The workspace screen's role change: its firstInTx locks the
-    // workspace and checks its rules (reads; a refusal throws).
-    callers: ['server/web/lib/workspaces.ts'],
+    // workspace and checks its rules (reads; a refusal throws). The Users
+    // screen's role change (PATCH /api/users/:id): its firstInTx is the
+    // Admin membership definer's one call (adminMembershipChange: the add
+    // or removal that writes the role; a refusal throws).
+    callers: ['server/web/lib/workspaces.ts', 'server/web/app/api/users/[id]/route.ts'],
   },
   atActingLogin: {
     spot: 'acting-login',

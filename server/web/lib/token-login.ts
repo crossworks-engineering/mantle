@@ -1,7 +1,7 @@
 import { NextResponse } from '../server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
+import { db, authUsers, mobileTokens, eq, sql, type LoginRole } from '@mantle/db';
 import { adminLogin, buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
@@ -9,6 +9,7 @@ import { brainIdField } from '@/lib/brain-identity';
 import { updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from './cache-control';
+import { loginIsAdmin } from '@/lib/auth/admin-seat';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -88,8 +89,10 @@ export async function handleTokenLogin(
     opts.adminsOnly || opts.withRole
       ? await db
           .select({
-            role: authUsers.role,
-            adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${userId}::uuid)`,
+            // The display role (mantle_login_role: Admin membership, S8b),
+            // never the column.
+            shownRole: sql<LoginRole>`"public"."mantle_login_role"(${userId}::uuid)`,
+            adminMember: loginIsAdmin(userId),
           })
           .from(authUsers)
           .where(eq(authUsers.id, userId))
@@ -100,13 +103,10 @@ export async function handleTokenLogin(
   // app is older than the workspaces contract (W7e, plan 7.3), 426 "Update
   // the app". A login that is gone by now is refused like a wrong
   // password (only admins and members sign in with one since W8a). An
-  // Admin login is the Admin pair (adminLogin: role admin AND a user of
-  // Admin now, read with the row).
-  if (
-    opts.adminsOnly &&
-    !(login && adminLogin({ role: login.role, adminMember: login.adminMember === true }))
-  ) {
-    if (login?.role === 'member') return updateTheAppResponse();
+  // Admin login is a user of Admin now (adminLogin, read with the row); a
+  // login that is not is a member (membership decides, S8b).
+  if (opts.adminsOnly && !(login && adminLogin({ adminMember: login.adminMember === true }))) {
+    if (login) return updateTheAppResponse();
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
@@ -138,7 +138,9 @@ export async function handleTokenLogin(
       deviceId: jti,
       // device-login: the login and this brain (the key a device holding
       // several logins files the session under, docs/mobile-companion-backend.md).
-      ...(opts.withRole ? { role: login?.role, loginId: userId, ...(await brainIdField()) } : {}),
+      ...(opts.withRole
+        ? { role: login?.shownRole, loginId: userId, ...(await brainIdField()) }
+        : {}),
     },
     { headers: { 'Cache-Control': CACHE_CONTROL.none } },
   );

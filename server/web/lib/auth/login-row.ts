@@ -4,7 +4,7 @@
  * every path reads the same columns: the role is taken from this row on every
  * request, never from a token.
  */
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -14,6 +14,7 @@ import {
   seedLoginScope,
   type LoginRole,
 } from '@mantle/db';
+import { loginIsAdmin } from './admin-seat';
 
 export type LoginRow = {
   id: string;
@@ -51,7 +52,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       sessionEpoch: authUsers.sessionEpoch,
       // Membership of Admin with the same read: the bound id, as the
       // scope columns take it.
-      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${id}::uuid)`,
+      adminMember: loginIsAdmin(id),
       // The login's workspaces with the same read (W6a fix round 1): the
       // request's scope, so the guard looks nothing up twice.
       ...loginScopeColumns(id, authUsers.disabledAt),

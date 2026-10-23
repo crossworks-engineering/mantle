@@ -12,6 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -60,7 +61,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
 
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await exec(

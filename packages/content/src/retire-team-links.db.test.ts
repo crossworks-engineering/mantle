@@ -13,6 +13,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -68,7 +69,7 @@ describe.skipIf(!URL)('retire team links (0176 and the share read path)', () => 
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     s = await import('./shares');
-    await admin`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
     await admin`insert into nodes (id, owner_id, type, title, path, audience) values

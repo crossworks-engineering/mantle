@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ChatArchiveResponse, ChatThreadRow } from '@mantle/client-types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
@@ -97,7 +98,7 @@ describe.skipIf(!URL)('/api/assistant/threads on Postgres', () => {
     cont = await import('./[id]/continue/route');
     bundle = await import('../thread/route');
     page = await import('../messages/route');
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await exec(

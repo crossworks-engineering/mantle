@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { LoginMcpChannel, ToolHandlerContext } from './types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -140,7 +141,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     su = (await import('@mantle/db/test-support')).superuserClient(URL!);
     broker = await import('@mantle/content/app-broker');
     tools = await import('./builtins-app-data');
-    await admin`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${anchor}, ${`ad-${tag}-o@example.invalid`}, 'x', 'admin', null),
       (${other}, ${`ad-${tag}-x@example.invalid`}, 'x', 'admin', null),
       (${member}, ${`ad-${tag}-m@example.invalid`}, 'x', 'member', 'Pat Member')`;

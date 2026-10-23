@@ -12,7 +12,7 @@
  * rest, constant-time comparisons. HTTPS enforcement lives in the route layer.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { lockOauthActor, type OauthExec as Exec } from './oauth-lock';
 import { bearerFrom } from './auth/request';
 import { adminLogin } from './auth/session';
@@ -30,6 +30,7 @@ import {
 import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
 import { feature } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { loginIsAdmin } from '@/lib/auth/admin-seat';
 
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
@@ -259,22 +260,20 @@ async function connectingLogin(
 ): Promise<{ id: string; email: string } | null> {
   const [row] = await exec
     .select({
-      role: authUsers.role,
       disabledAt: authUsers.disabledAt,
       email: authUsers.email,
       sessionEpoch: authUsers.sessionEpoch,
-      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${actorId}::uuid)`,
+      adminMember: loginIsAdmin(actorId),
     })
     .from(authUsers)
     .where(eq(authUsers.id, actorId))
     .limit(1);
   if (!row || row.disabledAt || !row.email) return null;
-  // An Admin grant (no epoch) needs an Admin login: the Admin pair
-  // (adminLogin: role admin AND a user of Admin now, read with the row).
-  const may =
-    sessionEpoch === null
-      ? adminLogin({ role: row.role, adminMember: row.adminMember === true })
-      : row.role === 'member' && row.sessionEpoch === sessionEpoch;
+  // An Admin grant (no epoch) needs an Admin login (adminLogin: a user of
+  // Admin now, read with the row); a member grant a login that is not one
+  // (membership decides, S8b; the login is enabled, checked above).
+  const admin = adminLogin({ adminMember: row.adminMember === true });
+  const may = sessionEpoch === null ? admin : !admin && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
 }
 
@@ -511,7 +510,8 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
         eq(oauthAccessTokens.tokenHash, sha256Hex(token)),
         isNull(oauthAccessTokens.revokedAt),
         gt(oauthAccessTokens.expiresAt, new Date()),
-        eq(authUsers.role, 'admin'),
+        // An Admin login: a user of Admin now, enabled (membership, S8b).
+        loginIsAdmin(authUsers.id),
         isNull(authUsers.disabledAt),
       ),
     )

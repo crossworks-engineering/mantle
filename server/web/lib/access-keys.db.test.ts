@@ -31,6 +31,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
@@ -168,7 +169,7 @@ describe.skipIf(!URL)('inbound API keys', () => {
     tokens = await import('./auth/tokens');
     await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${admin2}, ${emailOf('admin2')}, ${hash}, 'admin', 'Abe Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
@@ -521,13 +522,13 @@ describe.skipIf(!URL)('inbound API keys', () => {
     // No role-equality check (W8a): the key acts as its login as it is now,
     // whatever role it was made under.
     const kept = await makeKey({}, member2);
-    await sql`update auth.users set role = 'admin' where id = ${member2}`;
+    await asSuperuser()`update auth.users set role = 'admin' where id = ${member2}`;
     await asSu((su) => ensureAdminUsers(su, [member2]));
     expect(await json(await whoami(kept.secret))).toMatchObject({
       role: 'admin',
       loginId: member2,
     });
-    await sql`update auth.users set role = 'member' where id = ${member2}`;
+    await asSuperuser()`update auth.users set role = 'member' where id = ${member2}`;
     await asSu(async (su) => {
       await su`delete from workspace_users u using workspaces w
                where u.workspace_id = w.id and w.is_admin and u.login_id = ${member2}`;

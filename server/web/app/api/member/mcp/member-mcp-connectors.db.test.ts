@@ -11,6 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ anchor: '', member: '' }));
@@ -63,7 +64,7 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     h.anchor = anchor;
     h.member = member;
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${anchor}, ${`${tag}-o@example.invalid`}, 'x', 'admin'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`);

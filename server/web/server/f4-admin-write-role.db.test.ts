@@ -45,6 +45,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -230,7 +231,7 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
     for (const [who, id] of Object.entries(L)) {
-      await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
         values (${id}, ${`${tag}-${who}@example.invalid`}, 'x', ${who === 'owner'}, 'admin',
                 ${who})`;
     }

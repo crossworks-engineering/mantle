@@ -12,6 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -38,10 +39,10 @@ describe.skipIf(!URL)('app identity on Postgres', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     broker = await import('./app-broker');
     viewer = await import('./app-viewer');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`av-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
-    await admin`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${login}, ${`av-m-${tag}@example.invalid`}, 'x', 'member', ${`${tag} Pat`})`;
     await admin`insert into nodes (id, owner_id, type, title, path) values
       (${appA}, ${owner}, 'app', 'review log', 'apps'),

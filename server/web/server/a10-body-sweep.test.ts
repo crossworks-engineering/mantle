@@ -150,7 +150,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
           // adminFacts' one statement in the login's scope (asked only for
           // a login whose row holds the Admin pair): the scope holds
           // Admin, as an Admin user's does; no area is stood in.
-          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_is_admin')) {
+          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_admin_facts')) {
             return [{ admin: true, areas: [] }];
           }
           return [

@@ -24,6 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -72,7 +73,10 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   const plain = randomUUID();
   const parent = randomUUID();
   const member = randomUUID();
-  const ws = { admin: randomUUID(), team: randomUUID() };
+  const ws: { admin: string; team: string } = { admin: randomUUID(), team: randomUUID() };
+  /** Whether this file made the anchor's Admin workspace (else another
+   *  file on the shared anchor did, and keeps it). */
+  let ownAdmin = true;
   const vec = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
   const vecLit = `[${vec.join(',')}]`;
   const deps = {
@@ -151,7 +155,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
       await su.end();
     }
     anchor = await ensureTestAnchor(admin);
-    await admin`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`;
     await admin`insert into nodes (id, owner_id, type, title, path, data)
       values (${file}, ${anchor}, 'file', ${`${SECRET[0]}.png`}, 'files',
@@ -197,11 +201,23 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
     await boss.start();
     await boss.stop({ graceful: false, timeout: 5_000 });
-    await wsFixture(
-      (tx) => tx`insert into workspaces (id, owner_id, name, is_admin) values
-        (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true),
-        (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`,
-    );
+    // The anchor has one Admin workspace (workspaces_one_admin_uq): another
+    // file on the shared anchor (login-facts) may have made it first, so
+    // this one takes it, and makes one only when there is none.
+    await wsFixture(async (tx) => {
+      await tx`lock table workspaces in share row exclusive mode`;
+      const [a] = await tx<{ id: string }[]>`
+        select id::text as id from workspaces where owner_id = ${anchor} and is_admin`;
+      if (a) {
+        ws.admin = a.id;
+        ownAdmin = false;
+      } else {
+        await tx`insert into workspaces (id, owner_id, name, is_admin)
+                 values (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true)`;
+      }
+      await tx`insert into workspaces (id, owner_id, name, is_admin)
+               values (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
+    });
     // The page is granted to Team and Admin; its embed to neither.
     await admin`insert into item_grants (node_id, workspace_id, is_home) values
       (${granted}, ${ws.admin}, true), (${granted}, ${ws.team}, false)`;
@@ -219,8 +235,11 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     // deletes broke the second under load).
     await wsFixture(async (tx) => {
       await tx`lock table item_grants in exclusive mode`;
-      await tx`delete from item_grants where workspace_id in (${ws.admin}, ${ws.team})`;
-      await tx`delete from workspaces where id in (${ws.admin}, ${ws.team})`;
+      const mine = ownAdmin ? [ws.admin, ws.team] : [ws.team];
+      await tx`delete from item_grants where workspace_id = any (${mine}::uuid[])`;
+      if (!ownAdmin)
+        await tx`delete from item_grants where workspace_id = ${ws.admin} and node_id = ${granted}`;
+      await tx`delete from workspaces where id = any (${mine}::uuid[])`;
     });
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;

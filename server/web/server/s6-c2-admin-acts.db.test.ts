@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -257,7 +258,7 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
 
     for (const [who, id] of Object.entries(L)) {
       const role = who === 'member' ? 'member' : 'admin';
-      await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
         values (${id}, ${`${tag}-${who}@example.invalid`}, 'x', ${who === 'owner'}, ${role},
                 ${who})`;
     }
@@ -390,9 +391,11 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       const hidden = await call(`${mode} limited close`, L.limited, 'DELETE', `/api/shares/${s}`);
       expect(hidden.status, hidden.text).toBe(404);
       expect(hidden.json).toEqual(NOT_FOUND);
+      // Role drift (role admin, no Admin seat) is a member session since S8b
+      // round 4 (membership decides): the guard's 403, as the member.
       for (const who of ['member', 'drift'] as const) {
         const r = await call(`${mode} ${who} close`, L[who], 'DELETE', `/api/shares/${s}`);
-        expect(r.status, `${who} ${r.text}`).toBe(who === 'member' ? 403 : 404);
+        expect(r.status, `${who} ${r.text}`).toBe(403);
       }
       expect((await shareRow(s)).live).toBe(true);
       const closed = await call(`${mode} admin close`, L.admin, 'DELETE', `/api/shares/${s}`);

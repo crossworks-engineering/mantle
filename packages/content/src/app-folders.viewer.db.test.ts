@@ -30,7 +30,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { superuserExec, teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, superuserExec, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -247,7 +247,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     // The viewer roles are the cluster's (set up once for the test run): a
     // scratch database never resets them.
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, is_owner, role)
       values (${brain}, ${`${label}-owner@example.invalid`}, 'x', true, 'admin')`);
     await m.systemDb.execute(sqlTag`
@@ -349,7 +349,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
 
     // Another brain with a folder and a team app at one of our paths, and a
     // member's own folder there: rows of other owners at the same path.
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${other}, ${`${label}-other@example.invalid`}, 'x', 'admin', null),
         (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member'),

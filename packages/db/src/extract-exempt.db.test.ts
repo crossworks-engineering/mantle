@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -28,7 +29,7 @@ describe.skipIf(!URL)('unextractedNodeConds', () => {
     process.env.DATABASE_URL = URL;
     m = await import('./index');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${`anchor-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`;
     await admin`insert into nodes (id, owner_id, type, title, path, data) values

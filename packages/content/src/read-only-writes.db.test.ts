@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SQL } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
@@ -55,7 +56,7 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
     peers = await import('./peers/index');
     shares = await import('./shares');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

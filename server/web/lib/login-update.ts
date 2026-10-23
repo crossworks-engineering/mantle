@@ -34,13 +34,16 @@ import {
 import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
+import { liveAdminWorkspace } from '@/lib/auth/admin-seat';
 
 /**
  * One change to a login row (PATCH /api/users/:id), and the role change the
- * Admin workspace's user list makes (workspaces W5a: a user of the Admin
- * workspace IS an admin login until W5b, and the 0251 login bridge keeps the
- * Admin and Team rows in step with the role). Both paths end the same
- * sessions, settle the same drafts and lock the same devices out.
+ * Admin workspace's user list makes. Membership decides the role: a role
+ * change is an add to or a removal from the Admin workspace through its
+ * membership definers (mantle_ws_add_user, mantle_ws_remove_user), which
+ * write auth.users.role in the same transaction; nothing here writes the
+ * role. Both paths end the same sessions, settle the same drafts and lock
+ * the same devices out.
  */
 
 /** A login role in a request body: the users routes' zod enum over
@@ -83,14 +86,18 @@ export type LoginChangeDone = {
   pushDevicesRemoved: number;
 };
 
-/** The login row a change is about, or null. */
+/** The login row a change is about, or null. Its `role` is the one Admin
+ *  membership gives (mantle_login_role: 'admin' for a user of the live
+ *  Admin workspace, else 'member'; S8b), never the column: a change is
+ *  decided from membership, so a row whose column drifted is put right by
+ *  the role change that names what membership should be. */
 export async function loadLoginTarget(id: string): Promise<LoginTarget | null> {
   const [row] = await db
     .select({
       id: authUsers.id,
       email: authUsers.email,
       isOwner: authUsers.isOwner,
-      role: authUsers.role,
+      role: sql<string>`"public"."mantle_login_role"(${authUsers.id})`,
     })
     .from(authUsers)
     .where(eq(authUsers.id, id))
@@ -98,16 +105,18 @@ export async function loadLoginTarget(id: string): Promise<LoginTarget | null> {
   return row ?? null;
 }
 
-type LoginTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type LoginTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Apply `change` to `target` for `actor`. `inTx` runs last inside the same
- * transaction (the workspace screen writes its own rows there), after the
- * login bridge has written the Admin and Team rows the new role gives.
- * `firstInTx` runs first in it, before any write: the workspace screen
- * locks the workspace and checks its rules there (W5a audit L2), against
- * the rows as they are before the bridge changes them. What it throws ends
- * the transaction and is thrown on.
+ * Apply `change` to `target` for `actor`. `change.role` is the role the
+ * change makes (it ends the sessions, locks a demoted login out, settles a
+ * promoted login's space); the role column itself is written only by the
+ * membership definer the caller runs in `firstInTx` or `inTx`. `inTx` runs
+ * last inside the same transaction (the workspace screen writes its own
+ * rows there). `firstInTx` runs first in it, before any write: the
+ * workspace screen locks the workspace and checks its rules there (W5a
+ * audit L2), and the Users screen adds to or removes from Admin there.
+ * What a callback throws ends the transaction and is thrown on.
  */
 export async function applyLoginChange(
   actor: SessionUser,
@@ -119,8 +128,8 @@ export async function applyLoginChange(
   const targetId = target.id;
   // Any role but admin locks the login out of admin sessions (named, not
   // "is it member", so a new role can never skip this).
-  const lockingOut =
-    (change.role !== undefined && change.role !== 'admin') || change.disabled === true;
+  const toAdmin = change.role === 'admin';
+  const lockingOut = (change.role !== undefined && !toAdmin) || change.disabled === true;
   // A role change touches admins and members only: a row with a role this
   // code does not know is refused (fail closed); disable it instead.
   if (change.role !== undefined && change.role !== target.role && !isLoginRole(target.role)) {
@@ -199,7 +208,6 @@ export async function applyLoginChange(
 
   const changes: Partial<typeof authUsers.$inferInsert> = {};
   if (change.displayName !== undefined) changes.displayName = change.displayName || null;
-  if (change.role !== undefined) changes.role = change.role;
   if (change.contactId !== undefined) changes.contactId = change.contactId;
   if (change.disabled !== undefined) changes.disabledAt = change.disabled ? new Date() : null;
 
@@ -218,21 +226,27 @@ export async function applyLoginChange(
   let releasedAgentId: string | null = null;
   try {
     // A promotion settles the login's personal space (space_items, a content
-    // table) in this transaction: on the narrow exit through its definer
-    // (settleSpaceOnPromotion, migration 0317).
-    const promotes = change.role === 'admin';
+    // table) in this transaction: at the spot below the caller's own
+    // statements run (settlePromotionOnNarrow answers null off the narrow
+    // route); on a narrow exit with no spot, through its definer (0317).
+    const promotes = toAdmin;
     // A role change or a contact link writes a rights column the narrow
-    // login may not (auth.users role and contact_id, and the Admin rows
-    // mantle_bridge_login keeps in step; a contact's shares reach the
-    // login linked to it): the whole transaction then runs at the full-route spot
-    // login-credential (docs/runtime-role.md); any other change stays on
-    // the exit's own route. An enable (disabled_at back to NULL) lets the
-    // login in again: the narrow login may only set disabled_at (0319), so
-    // an enable runs at the spot too.
+    // login may not (a role change is an add to or a removal from Admin by
+    // its membership definer, which writes auth.users role and asks the
+    // exit's acting login, the caller, with no scope; auth.users
+    // contact_id: a contact's shares reach the login linked to it): the
+    // whole transaction then runs at the full-route spot login-credential
+    // (docs/runtime-role.md); any other change stays on the exit's own
+    // route. The role change is keyed on what membership gives the target
+    // (target.role, loadLoginTarget), so a request naming the role the
+    // login already has changes nothing and needs no spot. An enable
+    // (disabled_at back to NULL) lets the login in again: the narrow login
+    // may only set disabled_at (0319), so an enable runs at the spot too.
     // A rename too (round 13b): the display name reaches the prompts as the
     // user's name, so the narrow login holds no write of it.
+    const roleChange = change.role !== undefined && change.role !== target.role;
     const credential =
-      changes.role !== undefined ||
+      roleChange ||
       changes.contactId !== undefined ||
       changes.disabledAt === null ||
       changes.displayName !== undefined;
@@ -251,13 +265,6 @@ export async function applyLoginChange(
         if (firstInTx) await firstInTx(tx);
         if (Object.keys(changes).length > 0) {
           await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
-          // The role still names who is an Admin user (until W5c): keep the
-          // Admin row in step, as the login bridge's trigger did before W5b2
-          // turned it off (the function stays, 0261; Admin only since 0286:
-          // a role change never touches another workspace's rows).
-          if (changes.role !== undefined) {
-            await tx.execute(sql`select "public"."mantle_bridge_login"(${targetId}::uuid)`);
-          }
         }
         if (endSessions) {
           // The login's push devices go with its sessions; the relay is told
@@ -337,6 +344,78 @@ export async function applyLoginChange(
     releasedAgentId,
     pushDevicesRemoved: pushTokens.length,
   };
+}
+
+/**
+ * The Users screen's role change, as Admin membership (PATCH /api/users/:id
+ * with a role): `toAdmin` (the role 'admin') adds the login to the brain's
+ * live Admin workspace (a Moderator there, as every Admin user); any other
+ * role removes it, each through the membership definer, which checks the
+ * caller (an Admin user with the users area: the scope's login, or with no
+ * scope the exit's acting login the gateway sends) and writes the role
+ * column. A login already where the role puts it is left as it is. Run in
+ * applyLoginChange's `firstInTx`, at the full-route spot login-credential
+ * (a role change's), on the system pool.
+ */
+export async function adminMembershipChange(
+  tx: LoginTx,
+  targetId: string,
+  toAdmin: boolean,
+): Promise<void> {
+  const admin = await liveAdminWorkspace(tx, targetId);
+  if (!admin) {
+    throw new Error('adminMembershipChange: the brain has no live Admin workspace');
+  }
+  if (toAdmin === admin.member) return;
+  // A savepoint (drizzle's nested transaction: the driver's own, which the
+  // narrow route lets through where it refuses SAVEPOINT text), so a
+  // concurrent change that got there first (the definer's "already a user"
+  // or "not a user", read after that change committed) is a no-op here
+  // rather than the end of the whole change: the login is where this change
+  // puts it either way.
+  const call = toAdmin
+    ? sql`select "public"."mantle_ws_add_user"(${admin.owner}::uuid, ${admin.ws}::uuid, ${targetId}::uuid, true)`
+    : sql`select "public"."mantle_ws_remove_user"(${admin.owner}::uuid, ${admin.ws}::uuid, ${targetId}::uuid)`;
+  try {
+    await tx.transaction(async (sp) => {
+      await sp.execute(call);
+    });
+  } catch (err) {
+    if (definerRefusal(err) !== (toAdmin ? 'already_user' : 'not_user')) throw err;
+  }
+}
+
+/** The membership definer's refusal code in `err` (the word after
+ *  `mantle_ws:` in its message, e.g. 'last_moderator'), or null. */
+export function definerRefusal(err: unknown): string | null {
+  for (let e: unknown = err, d = 0; e && d < 4; d++) {
+    const m = (e as { message?: unknown }).message;
+    const hit = typeof m === 'string' ? /^mantle_ws:([a-z_]+)\b/.exec(m) : null;
+    if (hit) return hit[1]!;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** The answer for a membership definer's refusal of the Users screen's
+ *  role change or admin login create, or null for any other error: the
+ *  last Moderator of Admin is the old last-admin 409; a caller the definer
+ *  refuses (no users area, not an Admin user: 42501) is a 403, not a 500. */
+export function adminMembershipRefusal(
+  err: unknown,
+): { status: 403 | 409; reason: string; error: string } | null {
+  const code = definerRefusal(err);
+  if (code === 'last_moderator') {
+    return { status: 409, reason: 'last-admin', error: LAST_ADMIN_MESSAGE };
+  }
+  if (code === 'admin_users_only' || code === 'admin_only' || code === 'forbidden') {
+    return {
+      status: 403,
+      reason: 'users-area',
+      error: 'Changing who is an admin needs the users area.',
+    };
+  }
+  return null;
 }
 
 /** The Admin workspace keeps at least one Moderator (workspaces 0241; the

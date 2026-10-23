@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -32,7 +33,7 @@ describe.skipIf(!URL)('every tree kind refuses a folder share', () => {
     tree = await import('./index');
     files = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`sharekinds-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

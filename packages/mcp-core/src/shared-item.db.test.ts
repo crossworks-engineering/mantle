@@ -9,6 +9,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -41,7 +42,7 @@ describe.skipIf(!URL)('othersCanRead from the grants and live links', () => {
     m = await import('@mantle/db');
     shared = await import('./shared-item');
     sqlTag = (await import('drizzle-orm')).sql;
-    await q(sqlTag`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     await su(sqlTag`

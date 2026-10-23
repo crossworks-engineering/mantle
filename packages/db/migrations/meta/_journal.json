@@ -2304,6 +2304,13 @@
       "when": 1790199820000,
       "tag": "0329_narrow_counter_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1790199880000,
+      "tag": "0399_s8b_role_follows_membership",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,14 @@
  * entry names its login). One cell runs through the real any-login request
  * scope (getLoginOr401's enterLoginScope, read-write), not only withViewer.
  *
+ * Since S8b round 4 (L1) membership decides the session too (resolvedFor),
+ * so the answer is membership's (nowAnswer: mantle_login_is_admin and the
+ * area rule). It equals main's for every login but the drifted role=member
+ * login inside Admin, which is an Admin login now (the one looser answer,
+ * drift only: the membership definers never leave it, and mantle_role_drift
+ * is 0 on every box before the roll); the role=admin login outside Admin
+ * stays no Admin and its session is a member's.
+ *
  * The cells run with the box modes warn (the full run) and on.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/admin-facts.db.test.ts
@@ -58,6 +66,17 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
   const mem = randomUUID(); // member, not in Admin
   const all = { adm, lim, out, memIn, mem };
   const emailOf = (id: string) => `${tag}-${id.slice(0, 8)}@example.com`;
+  let adminWs = '';
+  /** `fn` on a superuser client of its own (the app pools only read the
+   *  workspace tables). */
+  const asSu = async (fn: (su: ReturnType<typeof superuserClient>) => Promise<unknown>) => {
+    const su = superuserClient(scratch!.url);
+    try {
+      await fn(su);
+    } finally {
+      await su.end();
+    }
+  };
 
   /** A fresh request carrying `id`'s session cookie. */
   const ctxFor = (id: string) => {
@@ -70,6 +89,15 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     const [r] = await sql<Row[]>`
       select (u.role = 'admin' and mantle_login_is_admin(u.id)) as admin,
              mantle_login_areas(u.id) as areas
+        from auth.users u where u.id = ${id}`;
+    const admin = r!.admin === true;
+    return { admin, areas: admin ? (r!.areas as string[]) : [] };
+  };
+  /** What membership decides (S8b round 4): a user of Admin now, enabled,
+   *  and the area rule's areas when it is one. */
+  const nowAnswer = async (id: string) => {
+    const [r] = await sql<Row[]>`
+      select mantle_login_is_admin(u.id) as admin, mantle_login_areas(u.id) as areas
         from auth.users u where u.id = ${id}`;
     const admin = r!.admin === true;
     return { admin, areas: admin ? (r!.areas as string[]) : [] };
@@ -100,14 +128,18 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     rc = await import('../../server/request-context');
     await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync('first password 1', 4);
-    await sql`insert into auth.users (id, email, password_hash, role) values
-      (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${lim}, ${emailOf(lim)}, ${hash}, 'admin'),
-      (${out}, ${emailOf(out)}, ${hash}, 'admin'), (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'),
-      (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+    // As the superuser: the role guard (0399) refuses the app pools an admin login.
+    await asSu(
+      (su) => su`insert into auth.users (id, email, password_hash, role) values
+        (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${lim}, ${emailOf(lim)}, ${hash}, 'admin'),
+        (${out}, ${emailOf(out)}, ${hash}, 'admin'), (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'),
+        (${mem}, ${emailOf(mem)}, ${hash}, 'member')`,
+    );
     await runWorkspacesSwitch(scratch.url);
     const [a] = await sql<Row[]>`select w.id::text as id from workspaces w
                                   join auth.users o on o.id = w.owner_id and o.is_owner
                                  where w.is_admin`;
+    adminWs = a!.id as string;
     // As the superuser: the app pools only read the workspace tables.
     const su = superuserClient(scratch.url);
     try {
@@ -138,6 +170,15 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     });
     for (const id of [out, memIn, mem])
       expect(await mainAnswer(id)).toEqual({ admin: false, areas: [] });
+    // Membership equals main for every login but the drifted memIn.
+    for (const [name, id] of Object.entries(all)) {
+      if (name === 'memIn') continue;
+      expect(await nowAnswer(id), name).toEqual(await mainAnswer(id));
+    }
+    expect(await nowAnswer(memIn)).toEqual({
+      admin: true,
+      areas: ['settings', 'users', 'assistants', 'connectors', 'keys'],
+    });
   });
 
   it('the Login has no kind and no role; its legacy shape keeps the session kind', async () => {
@@ -159,12 +200,13 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         kinds[name] = session.legacyLogin(login).kind;
       });
     }
-    // The session stays on the role: as main's getLoginOr401 answered.
+    // Membership decides the session (S8b round 4): the two drifted logins
+    // swap (main: out admin, memIn member).
     expect(kinds).toEqual({
       adm: 'admin',
       lim: 'admin',
-      out: 'admin',
-      memIn: 'member',
+      out: 'member',
+      memIn: 'admin',
       mem: 'member',
     });
     // A Login getLoginOr401 did not answer has no legacy shape and no pair.
@@ -175,17 +217,17 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     });
   });
 
-  it('no scope open: the row pair and the area rule, byte-equal to main', async () => {
+  it('no scope open: membership and the area rule (main for all but the drifted memIn)', async () => {
     for (const [name, id] of Object.entries(all)) {
       const got = await inRequest(id, async (login) => {
         expect(m.currentScope().kind).toBe('system');
         return shown(await facts.adminFacts(login));
       });
-      expect(JSON.stringify(got), name).toBe(JSON.stringify(await mainAnswer(id)));
+      expect(JSON.stringify(got), name).toBe(JSON.stringify(await nowAnswer(id)));
     }
   });
 
-  it("in the login's own scope: one round trip on the scope's answers, byte-equal to main", async () => {
+  it("in the login's own scope: one round trip on the scope's answers, membership's", async () => {
     for (const [name, id] of Object.entries(all)) {
       const got = await inRequest(id, (login) =>
         m.withViewer({ login: id }, async () => {
@@ -196,7 +238,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
           return shown(await a);
         }),
       );
-      expect(JSON.stringify(got), name).toBe(JSON.stringify(await mainAnswer(id)));
+      expect(JSON.stringify(got), name).toBe(JSON.stringify(await nowAnswer(id)));
     }
   });
 
@@ -223,7 +265,12 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         expect(shown(await facts.adminFacts(login)).admin).toBe(true);
         const before = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
         expect(before.admin).toBe(true);
-        await sql`update auth.users set role = 'member' where id = ${adm}`;
+        // The demotion is the removal from Admin (membership decides; the
+        // column, which only the definers write, is left as it was).
+        await asSu(
+          (su) => su`delete from workspace_users where workspace_id = ${adminWs}
+                                and login_id = ${adm}`,
+        );
         session.forgetRequestLogins();
         const again = await session.getLoginOr401();
         if (again instanceof Response) throw new Error(`no login again: ${again.status}`);
@@ -232,13 +279,16 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         expect(shown(await facts.adminFacts(again))).toEqual({ admin: false, areas: [] });
         const scoped = await m.withViewer({ login: adm }, () => facts.adminFacts(again));
         expect(shown(scoped)).toEqual({ admin: false, areas: [] });
-        // main's answer after the demotion: no.
-        expect(await mainAnswer(adm)).toEqual({ admin: false, areas: [] });
+        // Membership's answer after the demotion: no.
+        expect(await nowAnswer(adm)).toEqual({ admin: false, areas: [] });
       });
     } finally {
-      await sql`update auth.users set role = 'admin' where id = ${adm}`;
+      await asSu(
+        (su) => su`insert into workspace_users (workspace_id, login_id, moderator)
+                             values (${adminWs}, ${adm}, true) on conflict do nothing`,
+      );
     }
-    expect(await mainAnswer(adm)).toEqual({
+    expect(await nowAnswer(adm)).toEqual({
       admin: true,
       areas: ['settings', 'users', 'assistants', 'connectors', 'keys'],
     });
@@ -284,7 +334,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     });
   });
 
-  it('through the real any-login request scope (enterLoginScope, read-write): byte-equal to main', async () => {
+  it('through the real any-login request scope (enterLoginScope, read-write): membership`s', async () => {
     const { buildRoutePolicy } = await import('./route-policy');
     const { routeManifest } = await import('../../server/route-manifest.gen');
     const row = [...buildRoutePolicy(routeManifest).values()].find(
@@ -304,7 +354,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
           return shown(await a);
         }),
       );
-      expect(JSON.stringify(got), `${name} ${row.key}`).toBe(JSON.stringify(await mainAnswer(id)));
+      expect(JSON.stringify(got), `${name} ${row.key}`).toBe(JSON.stringify(await nowAnswer(id)));
     }
   });
 

@@ -46,6 +46,7 @@ import path from 'node:path';
 import postgres from 'postgres';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const WRITER = /^mantle_write_user/;
@@ -155,7 +156,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     process.env.SESSION_SECRET = 'a2b2b-write-gateway-secret-at-least-32-chars!';
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
       (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member')`);
@@ -420,7 +421,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     const c = await import('@mantle/content');
     const adm = randomUUID(); // an Admin user, not the anchor, with Settings
     const admNo = randomUUID(); // an Admin user without the Settings area
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${adm}, ${email('adm')}, 'x', false, 'admin', 'Ada Admin'),
       (${admNo}, ${email('admno')}, 'x', false, 'admin', 'Abe Admin')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
@@ -511,7 +512,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // to the system pool up front (no row rule), a transaction's ran again
     // there; now the row rule and the write check ask manage of the app.
     const mem3 = randomUUID(); // an outsider: in no workspace of the app
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                 values (${mem3}, ${email('mem3')}, 'x', false, 'member', 'Ola Outsider')`);
     const appId = randomUUID();
     const tableId = randomUUID();
@@ -621,7 +622,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // in every mode. Only the managers' on cells move (refused to ok), and
     // their misses go; nothing else changes.
     const mem3 = randomUUID(); // an outsider: in no workspace of the app
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                 values (${mem3}, ${email('mem3s11')}, 'x', false, 'member', 'Oona Outsider')`);
     const appRo = randomUUID();
     const appAdm = randomUUID();
@@ -835,7 +836,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // Settings, a 500).
     const withS = randomUUID();
     const noS = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${withS}, ${email('rcs')}, 'x', false, 'admin', 'Rhea Admin'),
       (${noS}, ${email('rcn')}, 'x', false, 'admin', 'Rex Admin')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values

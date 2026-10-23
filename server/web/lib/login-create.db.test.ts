@@ -1,14 +1,18 @@
 /**
- * POST /api/users makes a login and its workspace rows (by its role,
- * mantle_bridge_login: Admin for an admin login, as a Moderator; nothing for
- * a member login since 0286) in ONE transaction (W5b2 part B fix round 1):
- * when the rows fail after the insert, no half-made login stays. On a
- * scratch database of its own (a test trigger makes the bridge fail).
+ * POST /api/users makes a login and its workspace rows (Admin for an admin
+ * login, as a Moderator, through the membership definer mantle_ws_add_user
+ * as the acting login, which writes the role; nothing for a member login
+ * since 0286) in ONE transaction (W5b2 part B fix round 1): when the rows
+ * fail after the insert, no half-made login stays. The role column follows
+ * Admin membership, written only by the definers; the login bridge is a
+ * no-op. On a scratch database of its own (a test trigger makes the Admin
+ * row fail).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/login-create.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -18,7 +22,16 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
   >;
   let scratch: Scratch;
   let m: typeof import('@mantle/db');
-  let create: typeof import('./login-create').insertLoginWithWorkspaces;
+  let insert: typeof import('./login-create').insertLoginWithWorkspaces;
+  /** The users area's create (POST /api/users) in `acting`'s Admin area
+   *  request exit: the gateway sends `acting` as the exit's acting login,
+   *  which the membership definer takes with no scope. */
+  const create = (r: ReturnType<typeof row>, acting: string) =>
+    m.runInRequestSlot(async () => {
+      m.setRequestActor(m.loginActor(acting, 'rw'));
+      m.noteRequestSystem('area');
+      return insert(r);
+    });
   const owner = randomUUID();
   let admin = '';
 
@@ -43,8 +56,8 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    create = (await import('./login-create')).insertLoginWithWorkspaces;
-    await sys(sql`insert into auth.users (id, email, password_hash, role, is_owner)
+    insert = (await import('./login-create')).insertLoginWithWorkspaces;
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${owner}, ${`o-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin', true)`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await sys<{ id: string }>(
@@ -76,7 +89,7 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
 
   it('a member login is made in no workspace (0286: no Team, no Moderator by itself)', async () => {
     const id = randomUUID();
-    await create(row(id, `ok-${id.slice(0, 8)}@example.invalid`, 'member'));
+    await create(row(id, `ok-${id.slice(0, 8)}@example.invalid`, 'member'), owner);
     const users = await sys<{ id: string }>(
       sql`select id::text as id from auth.users where id = ${id}`,
     );
@@ -89,16 +102,37 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
 
   it('an admin login joins Admin only, as a Moderator', async () => {
     const id = randomUUID();
-    await create(row(id, `ad-${id.slice(0, 8)}@example.invalid`, 'admin'));
+    await create(row(id, `ad-${id.slice(0, 8)}@example.invalid`, 'admin'), owner);
     const rows = await sys<{ ws: string; moderator: boolean }>(
       sql`select workspace_id::text as ws, moderator from workspace_users where login_id = ${id}`,
     );
     expect(rows).toEqual([{ ws: admin, moderator: true }]);
+    // The definer wrote the role, and its event names the acting login.
+    expect(await sys(sql`select role from auth.users where id = ${id}`)).toEqual([
+      { role: 'admin' },
+    ]);
+    expect(
+      await sys(sql`select actor_id::text as actor, action from workspace_events
+                     where workspace_id = ${admin} and subject->>'login' = ${id}`),
+    ).toEqual([{ actor: owner, action: 'user.add' }]);
+    expect(await sys(sql`select mantle_role_drift() as n`)).toEqual([{ n: 0 }]);
   });
 
-  it('a role change keeps only the Admin row in step, never another workspace', async () => {
+  it('an acting login that is no Admin user makes no admin login (refused, nothing left)', async () => {
+    const member = randomUUID();
+    await create(row(member, `mb-${member.slice(0, 8)}@example.invalid`, 'member'), owner);
     const id = randomUUID();
-    await create(row(id, `rc-${id.slice(0, 8)}@example.invalid`, 'member'));
+    await expect(
+      create(row(id, `na-${id.slice(0, 8)}@example.invalid`, 'admin'), member),
+    ).rejects.toThrow();
+    expect(await sys(sql`select count(*)::int as n from auth.users where id = ${id}`)).toEqual([
+      { n: 0 },
+    ]);
+  });
+
+  it('the role follows Admin membership through the definers, never another workspace', async () => {
+    const id = randomUUID();
+    await create(row(id, `rc-${id.slice(0, 8)}@example.invalid`, 'member'), owner);
     const [other] = await su<{ id: string }>(
       sql`insert into workspaces (owner_id, name) values (${owner}, 'Team') returning id::text as id`,
     );
@@ -109,22 +143,48 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
         sql`select workspace_id::text as ws, moderator from workspace_users
              where login_id = ${id} order by moderator desc, ws`,
       );
-    await sys(sql`update auth.users set role = 'admin' where id = ${id}`);
+    const roleOf = async () =>
+      (await sys<{ role: string }>(sql`select role from auth.users where id = ${id}`))[0]!.role;
+    // The login bridge is a no-op: a role written by hand moves no row.
+    await asSuperuser()(sql`update auth.users set role = 'admin' where id = ${id}`);
     await sys(sql`select mantle_bridge_login(${id}::uuid)`);
+    expect(await rowsOf()).toEqual([{ ws: other!.id, moderator: false }]);
+    // ... and shows as drift until it is put back (the box count).
+    expect(await sys(sql`select mantle_role_drift() as n`)).toEqual([{ n: 1 }]);
+    await asSuperuser()(sql`update auth.users set role = 'member' where id = ${id}`);
+    expect(await sys(sql`select mantle_role_drift() as n`)).toEqual([{ n: 0 }]);
+    // The definers move the row and write the role, in one transaction.
+    await m.loginDefinerCall(
+      owner,
+      'admin',
+      sql`select mantle_ws_add_user(${owner}::uuid, ${admin}::uuid, ${id}::uuid, ${true})`,
+    );
     expect(await rowsOf()).toEqual([
       { ws: admin, moderator: true },
       { ws: other!.id, moderator: false },
     ]);
-    await sys(sql`update auth.users set role = 'member' where id = ${id}`);
-    await sys(sql`select mantle_bridge_login(${id}::uuid)`);
+    expect(await roleOf()).toBe('admin');
+    await m.loginDefinerCall(
+      owner,
+      'admin',
+      sql`select mantle_ws_remove_user(${owner}::uuid, ${admin}::uuid, ${id}::uuid)`,
+    );
     expect(await rowsOf()).toEqual([{ ws: other!.id, moderator: false }]);
+    expect(await roleOf()).toBe('member');
+    // Another workspace's add or removal never touches the role.
+    await m.loginDefinerCall(
+      owner,
+      'admin',
+      sql`select mantle_ws_remove_user(${owner}::uuid, ${other!.id}::uuid, ${id}::uuid)`,
+    );
+    expect(await roleOf()).toBe('member');
   });
 
   it('when the rows fail after the insert, no login is left', async () => {
     const id = randomUUID();
     await expect(
-      // An admin login: the bridge writes its Admin row (a member's writes none).
-      create(row(id, `bridge-fails-${id.slice(0, 8)}@example.invalid`, 'admin')),
+      // An admin login: the definer writes its Admin row (a member's none).
+      create(row(id, `bridge-fails-${id.slice(0, 8)}@example.invalid`, 'admin'), owner),
     ).rejects.toThrow();
     const users = await sys<{ n: number }>(
       sql`select count(*)::int as n from auth.users where id = ${id}`,
@@ -139,9 +199,9 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
   it('a duplicate email is refused and changes nothing', async () => {
     const id = randomUUID();
     const email = `dup-${id.slice(0, 8)}@example.invalid`;
-    await create(row(id, email, 'admin'));
+    await create(row(id, email, 'admin'), owner);
     const again = randomUUID();
-    await expect(create(row(again, email, 'member'))).rejects.toThrow();
+    await expect(create(row(again, email, 'member'), owner)).rejects.toThrow();
     const users = await sys<{ n: number }>(
       sql`select count(*)::int as n from auth.users where id = ${again}`,
     );

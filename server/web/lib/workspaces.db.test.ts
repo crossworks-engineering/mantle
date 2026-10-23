@@ -38,6 +38,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loginStandIn } from '@/server/run-route-stand-ins';
 import { appAnswerOf } from '@/server/test-support';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -219,7 +220,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'workspaces-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email(owner, 'owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${adm2}, ${email(adm2, 'adm')}, 'x', false, 'admin', 'Ada Admin'),
       (${mem}, ${email(mem, 'mem')}, 'x', false, 'member', 'Mia Member'),
@@ -351,7 +352,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(Number.isNaN(Date.parse(by(adm2).addedAt as string))).toBe(false);
     // The adder's login gone: no name to show.
     const gone = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role)
       values (${gone}, ${email(gone, 'gone')}, 'x', 'member')`);
     const empty = await create(gone, 'Former user');
     expect((await addUser(empty, mem)).status).toBe(200);
@@ -623,8 +624,9 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(h.audits).toEqual([]);
   });
 
-  it('the Admin workspace: its checks run inside the role change, before the bridge (audit L2)', async () => {
-    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+  it('the Admin workspace: its checks run inside the role change, before the definer (audit L2)', async () => {
+    const { adminMembershipChange, applyLoginChange, loadLoginTarget } =
+      await import('@/lib/login-update');
     const target = (await loadLoginTarget(mem3))!;
     const actor = {
       id: owner,
@@ -645,20 +647,29 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       }),
     ).rejects.toThrow('refused here');
     expect(await roleOf(mem3)).toBe('member');
-    // The first step sees the rows before the bridge, the last after it.
-    const done = await applyLoginChange(
-      actor,
-      target,
-      { role: 'admin' },
-      async (tx) => {
-        seen.push(`last:${await rowIn(tx)}`);
-      },
-      async (tx) => {
-        seen.push(`first:${await rowIn(tx)}`);
-      },
-    );
+    // The first step sees the rows before the membership definer (S8b: the
+    // Users screen's role change is the add to Admin, in the caller's Admin
+    // area exit, the definer taking its acting login), the last after it;
+    // the definer wrote the role.
+    const done = await m.runInRequestSlot(async () => {
+      m.setRequestActor(m.loginActor(owner, 'rw'));
+      m.noteRequestSystem('area');
+      return applyLoginChange(
+        actor,
+        target,
+        { role: 'admin' },
+        async (tx) => {
+          seen.push(`last:${await rowIn(tx)}`);
+        },
+        async (tx) => {
+          seen.push(`first:${await rowIn(tx)}`);
+          await adminMembershipChange(tx, mem3, true);
+        },
+      );
+    });
     expect(done.ok).toBe(true);
     expect(seen).toEqual(['first:0', 'first:0', 'last:1']);
+    expect(await roleOf(mem3)).toBe('admin');
     // Back to a member, through the workspace screen.
     await as(owner);
     const back = await call(r.user.DELETE(req('DELETE'), p({ id: admin, loginId: mem3 })));
@@ -764,7 +775,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     // mantle_ws_kind answers for this brain's workspaces only (audit L1).
     const other = randomUUID();
     const otherWs = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role)
       values (${other}, ${email(other, 'other')}, 'x', 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
     await su(sql`insert into workspaces (id, owner_id, name, is_admin)
@@ -1142,7 +1153,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(((await q('Olive')).body as unknown as Json[]).map((h2) => h2.loginId)).toEqual([owner]);
     // A login that moderates nothing may not search.
     const plain = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role)
       values (${plain}, ${email(plain, 'plain')}, 'x', 'member')`);
     await su(sql`delete from workspace_users where login_id = ${plain}`);
     await as(plain);
@@ -1158,7 +1169,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       call(r.search.GET(req('GET', undefined, `/user-search?q=pager&offset=${offset}`)));
     const many = Array.from({ length: 53 }, () => randomUUID());
     for (const [i, id] of many.entries()) {
-      await x(sql`insert into auth.users (id, email, password_hash, role, display_name)
+      await asSuperuser()(sql`insert into auth.users (id, email, password_hash, role, display_name)
         values (${id}, ${email(id, 'pager')}, 'x', 'member', ${`Pager ${String(i).padStart(2, '0')}`})`);
     }
     await as(owner);

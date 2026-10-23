@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -31,7 +32,7 @@ describe.skipIf(!URL)('email gates and the brain logins', () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, disabled_at) values
         (${owner}, ${`owner-${tag}@example.invalid`}, 'x', 'admin', null),
         (${active}, ${activeEmail}, 'x', 'member', null),

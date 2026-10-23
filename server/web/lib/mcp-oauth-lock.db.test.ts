@@ -13,6 +13,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
@@ -75,7 +76,7 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     oauth = await import('./mcp-oauth');
     anchor = await ensureTestAnchor(sql);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin'),
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'Mia Member')`;
     // An Admin login is role admin AND a user of Admin. As the superuser:

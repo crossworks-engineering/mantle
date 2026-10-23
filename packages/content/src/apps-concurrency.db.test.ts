@@ -13,6 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -35,7 +36,7 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     apps = await import('./apps');
     broker = await import('./app-broker');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`ac-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
   }, 60_000);

@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -71,7 +72,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
       ...(await import('./builtins-recall-owner')).RECALL_OWNER_TOOLS,
     ];
     tool = (slug) => all.find((t) => t.slug === slug)!;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

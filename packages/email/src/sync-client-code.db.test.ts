@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EmailAccount } from '@mantle/db';
 import type { EmailProvider, RawMessage } from './types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 /** A Message-ID as the old code mails carried it (email-code sign-in went
  *  in workspaces W8a; the sync still skips every copy). */
@@ -80,7 +81,7 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     sync = await import('./sync');
-    await sql`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
               values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
     await sql`insert into email_accounts (id, user_id, provider, address, branch_path)

@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -96,7 +96,7 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
       vi.fn(async () => new Response('offline in the 2a HEAD test', { status: 503 })),
     );
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${admin}, ${`${tag}-a@example.invalid`}, 'x', false, 'admin', 'Admin user'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);

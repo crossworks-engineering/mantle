@@ -19,6 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
@@ -101,13 +102,13 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     rec = await import('./reconcile');
     content = await import('@mantle/content');
     for (const owner of Object.values(brains)) {
-      await admin`insert into auth.users (id, email, password_hash, role)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`tr-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
       await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
       await admin`insert into api_keys (id, user_id, service, label, key_enc)
                   values (${randomUUID()}, ${owner}, 'openrouter', 'default', '\\x00'::bytea)`;
     }
-    await admin`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${member}, ${`trm-${member.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
     // Each starts as onboarding leaves it, then the older shape is set.
     for (const owner of Object.values(brains)) await seed.applyManifest(owner);

@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { LoginNotice } from './login-notices';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const CHANNEL = 'login_notice';
@@ -108,10 +109,10 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     const sub = await pool.listen(CHANNEL, (p: string) => raw.push(p));
     unlisten = () => sub.unlisten();
 
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name, is_owner) values
         (${anchor}, ${`${tag}-anchor@example.invalid`}, 'x', 'admin', null, true)`);
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Ada Admin'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Mia Member'),

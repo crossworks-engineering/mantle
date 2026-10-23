@@ -38,6 +38,7 @@ import { inspect } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -294,7 +295,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     rt = await import('@mantle/runtime/agent');
     const hb = await import('@mantle/runtime/heartbeats');
     hb.registerHeartbeatTools();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Second Admin'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Member')`);

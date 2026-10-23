@@ -15,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const NOT_NULL_VIOLATION = '23502';
@@ -36,7 +37,7 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     m = await import('./index');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     await m.ensureViewerRoles(sql, process.env.MANTLE_MASTER_KEY);
-    await sql`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
       (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member')`;
     const rows = await sql<{ id: string; login_id: string }[]>`
@@ -61,7 +62,7 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
   it('an insert without a role fails instead of making an admin', async () => {
     const id = randomUUID();
     await expect(
-      sql`insert into auth.users (id, email, password_hash)
+      asSuperuser()`insert into auth.users (id, email, password_hash)
           values (${id}, ${`${tag}-x@example.invalid`}, 'x')`,
     ).rejects.toMatchObject({ code: NOT_NULL_VIOLATION });
     expect(await sql`select 1 from auth.users where id = ${id}`).toHaveLength(0);
@@ -70,12 +71,12 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
   it('the role CHECK refuses client on insert and on update (0272)', async () => {
     const id = randomUUID();
     await expect(
-      sql`insert into auth.users (id, email, password_hash, role)
+      asSuperuser()`insert into auth.users (id, email, password_hash, role)
           values (${id}, ${`${tag}-c@example.invalid`}, 'x', 'client')`,
     ).rejects.toMatchObject({ code: CHECK_VIOLATION });
     expect(await sql`select 1 from auth.users where id = ${id}`).toHaveLength(0);
     await expect(
-      sql`update auth.users set role = 'client' where id = ${member}`,
+      asSuperuser()`update auth.users set role = 'client' where id = ${member}`,
     ).rejects.toMatchObject({ code: CHECK_VIOLATION });
     const [row] = await sql<{ role: string }[]>`select role from auth.users where id = ${member}`;
     expect(row?.role).toBe('member');
@@ -84,9 +85,9 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
   it('admin and member still change into each other', async () => {
     const roleOf = async (id: string) =>
       (await sql<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]?.role;
-    await sql`update auth.users set role = 'admin' where id = ${other}`;
+    await asSuperuser()`update auth.users set role = 'admin' where id = ${other}`;
     expect(await roleOf(other)).toBe('admin');
-    await sql`update auth.users set role = 'member' where id = ${other}`;
+    await asSuperuser()`update auth.users set role = 'member' where id = ${other}`;
     expect(await roleOf(other)).toBe('member');
   });
 });

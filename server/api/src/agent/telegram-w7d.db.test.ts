@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -140,7 +141,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       vi.fn(async () => new Response('{"error":"offline in the W7d test"}', { status: 503 })),
     );
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
       (${member2}, ${`${tag}-n@example.invalid`}, 'x', false, 'member', 'Other'),

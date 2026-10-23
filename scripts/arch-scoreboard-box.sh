@@ -15,7 +15,12 @@
 #   - the rights counts (plan v3, rule 10), each a number counted on the
 #     box: role drift (mantle_role_drift(): enabled logins, former clients
 #     left out, whose role disagrees with Admin; n/a on a box that has no
-#     such function yet, never a guessed 0), brains without a live Admin
+#     such function yet, never a guessed 0), the same over ALL logins
+#     (disabled ones too, former clients left out: a login whose role
+#     says admin without a user row in the live Admin workspace, or the
+#     other way; asked of the tables directly, so a box before S8b's
+#     migration answers it too; n/a where the tables are not there yet),
+#     brains without a live Admin
 #     workspace, live Admin workspaces with no assistant and no assistant
 #     removal event, the SQL functions writing the four workspace tables
 #     (the live catalog; scripts/arch-scoreboard.pins.json
@@ -134,6 +139,21 @@ drift=n/a
 has=$(echo "select to_regprocedure('public.mantle_role_drift()') is not null;" | q || true)
 if [ "$has" = t ]; then
   drift=$(num "$(echo 'select public.mantle_role_drift()::bigint;' | q || true)")
+fi
+drift_all=n/a
+has=$(echo "select to_regclass('public.archive_client_logins') is not null
+              and to_regclass('public.workspace_users') is not null;" | q || true)
+if [ "$has" = t ]; then
+  drift_all=$(num "$(q <<'SQL' || true
+select count(*) from auth.users l
+ where not exists (select 1 from public.archive_client_logins a where a.login_id = l.id)
+   and coalesce(l.role = 'admin', false) <> exists (
+         select 1 from public.workspaces w
+           join public.workspace_users u on u.workspace_id = w.id and u.login_id = l.id
+           join auth.users o on o.id = w.owner_id and o.is_owner
+          where w.is_admin and w.archived_at is null);
+SQL
+)")
 fi
 no_admin=$(num "$(q <<'SQL' || true
 select count(*) from auth.users o
@@ -427,7 +447,13 @@ if env_dump=$(docker inspect --type container "$web" --format '{{range .Config.E
   fi
 fi
 printf '  %-34s %s\n' role_drift "$drift"
+printf '  %-34s %s\n' role_drift_all_logins "$drift_all"
 printf '  %-34s %s\n' brains_without_admin_workspace "$no_admin"
+# S8b's merge precondition (the role follows Admin membership): the three
+# above all 0. Anything else, n/a or ? included, is a no.
+s8b_ready=no
+[ "$drift" = 0 ] && [ "$drift_all" = 0 ] && [ "$no_admin" = 0 ] && s8b_ready=yes
+printf '  %-34s %s\n' s8b_precondition_met "$s8b_ready"
 printf '  %-34s %s\n' admin_workspaces_without_assistant "$no_assistant"
 printf '  %-34s %s\n' workspace_table_writer_fns "$writers"
 printf '  %-34s %s\n' env_names_runtime_role "$names_role"

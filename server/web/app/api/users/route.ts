@@ -22,7 +22,7 @@ import {
 import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
-import { LoginRoleSchema } from '@/lib/login-update';
+import { adminMembershipRefusal, LoginRoleSchema } from '@/lib/login-update';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 
@@ -175,7 +175,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    // With its Admin and Team rows for the role, in the same transaction.
+    // An admin login with its Admin row, added by this caller, in the same
+    // transaction.
     await insertLoginWithWorkspaces({
       id,
       email,
@@ -201,6 +202,11 @@ export async function POST(req: Request) {
         { error: 'A user with that email already exists.' },
         { status: 409 },
       );
+    }
+    // The membership definer refused the caller (no users area): a 403.
+    const refused = adminMembershipRefusal(err);
+    if (refused?.status === 403) {
+      return NextResponse.json({ error: refused.error, reason: refused.reason }, { status: 403 });
     }
     return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 });
   }

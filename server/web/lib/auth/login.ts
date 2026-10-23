@@ -54,20 +54,21 @@ const memo = new WeakMap<Login, Asked>();
  * Whether `login` is an Admin user now and which Admin areas it holds,
  * asked once per Login object and scope.
  *
- * In a scope for the login's own login: one SQL round trip, the scope's
- * own answers (mantle_scope_is_admin: the scope holds the live Admin
- * workspace; mantle_scope_has_area for each area). With no scope open (a
+ * In a scope for the login's own login: one SQL call,
+ * mantle_scope_admin_facts (the scope holds the brain's live Admin
+ * workspace AND the scope's login is an enabled user of it now; the areas
+ * mantle_scope_has_area holds, only then). Membership decides, in SQL; the
+ * role column is not asked (it follows membership). With no scope open (a
  * route about the login itself that stays on the system pool: sign out,
- * change password, OAuth consent): the login row's answer, and the areas
- * of the area rule (mantle_login_areas) when it is one. A scope for
- * another login, or for none, throws: an ask about another login is
- * loginHasArea's.
+ * change password, OAuth consent): the login row's answer (a user of
+ * Admin, loginAdminPair), and the areas of the area rule
+ * (mantle_login_areas) when it is one. A scope for another login, or for
+ * none, throws: an ask about another login is loginHasArea's.
  *
- * Either way `admin` also needs the row's Admin pair (loginAdminPair: role
- * admin AND a user of Admin), a transition while the role column can still
- * differ from Admin membership; areas count only when `admin` is true. A
- * Login getLoginOr401 did not answer has no pair: no, before any memo.
- * Fails closed: an error answers no.
+ * Either way the row read with the request's login must say a user of
+ * Admin (loginAdminPair, membership only: the role is not asked), so a
+ * member's ask costs no round trip; a Login getLoginOr401 did not answer
+ * has none: no, before any memo. Fails closed: an error answers no.
  */
 export function adminFacts(login: Login): Promise<AdminFacts> {
   const scope = currentScope();
@@ -97,17 +98,16 @@ export function adminFacts(login: Login): Promise<AdminFacts> {
   return p;
 }
 
-/** The scope's answers, in one statement (the caller checked the pair). */
+/** The scope's answers, in one statement: membership and the areas, in
+ *  SQL (mantle_scope_admin_facts). */
 async function scopeFacts(): Promise<AdminFacts> {
   const areas = sql.join(
     SCOPE_AREAS.map((a) => sql`${a}`),
     sql`, `,
   );
   const rows = (await db.execute(sql`
-    select "public"."mantle_scope_is_admin"() as admin,
-           coalesce((select array_agg(t.a order by t.o)
-                       from unnest(array[${areas}]::text[]) with ordinality as t(a, o)
-                      where "public"."mantle_scope_has_area"(t.a)), '{}'::text[]) as areas`)) as unknown as {
+    select f.admin, f.held as areas
+      from "public"."mantle_scope_admin_facts"(array[${areas}]::text[]) f`)) as unknown as {
     admin: boolean;
     areas: ScopeArea[] | null;
   }[];
@@ -116,7 +116,7 @@ async function scopeFacts(): Promise<AdminFacts> {
   return { admin: true, areas: new Set(r.areas ?? []) };
 }
 
-/** The row's answer, with no scope open (the caller checked the pair;
+/** The row's answer, with no scope open (the caller checked membership;
  *  loginAreas fails closed and logs a lost grant, loginFactFailed). */
 async function rowFacts(login: Login): Promise<AdminFacts> {
   return { admin: true, areas: new Set(await loginAreas(login.loginId)) };

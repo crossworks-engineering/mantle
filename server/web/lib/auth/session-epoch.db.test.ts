@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureTestAnchor,
   runWorkspacesSwitch,
@@ -123,7 +124,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     // A member resolves against the brain's anchor: this database's own.
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(password, 4);
-    await sql`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${emailOf(member)}, ${hash}, 'member'),
       (${admin}, ${emailOf(admin)}, ${hash}, 'admin'),
       (${demoted}, ${emailOf(demoted)}, ${hash}, 'admin')`;

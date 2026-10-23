@@ -13,6 +13,7 @@ import {
   sql,
 } from '@mantle/db';
 import { WEB_TOKEN_TTL_SECONDS, adminLogin, buildMobileToken } from '@/lib/auth';
+import { loginIsAdmin } from '@/lib/auth/admin-seat';
 
 /**
  * "Sign in on your phone" — the pairing-code half of QR sign-in.
@@ -105,7 +106,10 @@ export async function claimPairCode(
     // Read before the claim, so the code is not spent on an app that cannot
     // use it. Only a live, unclaimed code of a non-Admin login says so.
     const [peek] = await db
-      .select({ role: authUsers.role })
+      .select({
+        // Admin membership (mantle_login_role, S8b), never the column.
+        inAdmin: sql<boolean>`"public"."mantle_login_role"(${pairingCodes.userId}) = 'admin'`,
+      })
       .from(pairingCodes)
       .innerJoin(authUsers, eq(authUsers.id, pairingCodes.userId))
       .where(
@@ -116,10 +120,9 @@ export async function claimPairCode(
         ),
       )
       .limit(1);
-    // A member's code only: a client is never served by a phone build yet,
-    // so its code (a login made a client since) claims nothing (W7e fix
-    // round 1): the one 401 below.
-    if (peek && peek.role === 'member') return 'update-app';
+    // A member's code only (a login outside Admin: membership decides,
+    // S8b; no client login is left since 0272).
+    if (peek && !peek.inAdmin) return 'update-app';
   }
   // Single-use, atomically: only an unclaimed, unexpired row flips.
   const [won] = await db
@@ -138,22 +141,23 @@ export async function claimPairCode(
   // The login is re-read, not trusted from the code: lockout drops unclaimed
   // codes, but a claim racing it (or a row that outlived it) must not mint a
   // bearer for a login that is gone, disabled or of a role this phone build
-  // cannot serve. An Admin login always (adminLogin: role admin AND a user
-  // of Admin now, read with the row); a member only from a build that
+  // cannot serve. An Admin login always (adminLogin: a user of Admin
+  // now, read with the row); a member only from a build that
   // serves every login (W7e). A client signs in with its emailed code
   // instead.
   const [user] = await db
     .select({
       email: authUsers.email,
-      role: authUsers.role,
       disabledAt: authUsers.disabledAt,
-      adminMember: sql<boolean>`"public"."mantle_login_is_admin"(${won.userId}::uuid)`,
+      adminMember: loginIsAdmin(won.userId),
     })
     .from(authUsers)
     .where(eq(authUsers.id, won.userId))
     .limit(1);
-  const admin = !!user && adminLogin({ role: user.role, adminMember: user.adminMember === true });
-  const member = user?.role === 'member' && opts.nonAdmin === true;
+  const admin = !!user && adminLogin({ adminMember: user.adminMember === true });
+  // Not an Admin user is a member (membership decides, S8b): for an
+  // enabled login the column said the same, and a disabled one is refused.
+  const member = !!user && !admin && opts.nonAdmin === true;
   if (!user || user.disabledAt || (!admin && !member)) return null;
 
   const label = deviceName?.trim() || 'Mobile device (paired by QR)';

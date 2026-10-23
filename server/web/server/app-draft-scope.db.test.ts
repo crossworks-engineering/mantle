@@ -35,6 +35,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -276,7 +277,7 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
     m = await import('@mantle/db');
     ls = await import('@mantle/mcp-core');
     content = await import('@mantle/content');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${ids.owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${ids.admin}, ${email('admin')}, 'x', false, 'admin', 'Second Admin'),
       (${ids.moderator}, ${email('mod')}, 'x', false, 'member', 'Moderator'),

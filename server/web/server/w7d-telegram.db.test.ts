@@ -26,6 +26,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -189,7 +190,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     );
     m = await import('@mantle/db');
     t = await import('@mantle/tools');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${`${tag}-a2@example.invalid`}, 'x', false, 'admin', 'Second'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),

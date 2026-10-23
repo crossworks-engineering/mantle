@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -81,7 +82,7 @@ describe.skipIf(!URL)('every search arm fails closed in a scope that holds no wo
     // Items that are not the brain's, each at client level: a member's
     // personal item, a member's team draft, an admin's private item. The
     // personal spaces come from the login trigger (0165).
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
       (${adminLogin}, ${`${tag}-a@example.invalid`}, 'x', 'admin')`;
     const space = async (login: string) =>

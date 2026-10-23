@@ -32,6 +32,7 @@ import {
   type FolderCountCase,
   type FolderCountScope,
 } from '@mantle/db/matrix/oracle';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -197,7 +198,7 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     process.env.APP_DB_DIR = path.join(dir, 'apps');
     m = await import('@mantle/db');
     const email = (who: string) => `${tag}-${who}@example.invalid`;
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${email('o')}, 'x', true, 'admin'),
       (${login.member}, ${email('m')}, 'x', false, 'member'),
       (${login.adminUser}, ${email('a')}, 'x', false, 'admin'),

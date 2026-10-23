@@ -45,6 +45,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** `main`: write the main file (on main only); `now`: write what this tree
@@ -374,7 +375,7 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     tracing = await import('@mantle/tracing');
     ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
     const content = await import('@mantle/content');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${id.owner}, ${emailOf(id.owner)}, 'x', true, 'admin', 'Owner'),
       (${id.adminUser}, ${emailOf(id.adminUser)}, 'x', false, 'admin', 'Admin user'),
       (${id.member}, ${emailOf(id.member)}, 'x', false, 'member', 'Member'),

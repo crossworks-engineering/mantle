@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -65,7 +66,7 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
     go = bySlug('recall_go');
     index = bySlug('recall_index');
 
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

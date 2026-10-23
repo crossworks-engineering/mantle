@@ -480,6 +480,11 @@ describe('the narrow system role rights', () => {
       'public.mantle_connector_state(uuid,text)',
       'public.mantle_contact_sharing(uuid,uuid[])',
       'public.mantle_login_areas(uuid)',
+      // S8b round 4: the users area's change reads its target's role from
+      // Admin membership (loadLoginTarget), and the peers area asks whether
+      // a peer's bound login is an Admin user (peer-access): read definers.
+      'public.mantle_login_is_admin(uuid)',
+      'public.mantle_login_role(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
       // 0327: the hold on a login's grants asks whether an MCP client
       // carries a live grant of the owner or an Admin user.

@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TaskRow } from '@mantle/client-types';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -83,7 +84,7 @@ describe.skipIf(!URL)('reopen restores the status before done', () => {
     tools = await import('@mantle/tools');
     tree = await import('@mantle/content/tree');
     h.owner = { id: owner };
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
   }, 60_000);

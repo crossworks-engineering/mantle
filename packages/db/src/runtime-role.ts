@@ -198,7 +198,7 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_actor_miss_log(text,text,text,text)':
     'gateway/pools.ts logActorMiss: an actor check miss row, as system(actor-check)',
   'public.mantle_bridge_login(uuid)':
-    'login-create.ts, login-update.ts, member-invites.ts: a login into its workspaces (0286)',
+    'demote only since the role follows Admin membership (0399): nothing in this image calls it; an image one release back does (login create, the role change, an invite), so it keeps EXECUTE until it is dropped',
   'public.mantle_check_box_mode(text)':
     'gateway/check-mode.ts EDIT_CHECK_DRIFT_SQL and check-floor.ts CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
@@ -231,6 +231,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_login_areas(uuid)': 'the areas the area rule gives a login (0304, S2a a0)',
   'public.mantle_login_is_admin(uuid)':
     'gateway/scope-answers.ts loginHoldsAdmin: a login holds Admin now (0304, S2a a0)',
+  'public.mantle_login_role(uuid)':
+    "the display role, Admin membership (0399, S8b): token-login's device-login answer, pair-code's read before the claim (a member's code) and the Users screen's target (loadLoginTarget), membership whether the login is enabled or not",
   'public.mantle_role_drift()':
     'the box count of role drift (scripts/arch-scoreboard-box.sh; 0304, S2a a0)',
   'public.mantle_ws_archive(uuid,uuid)':
@@ -300,6 +302,10 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "whether a workspace is a login's private one (the login-self routes' whoami): a read definer",
   'public.mantle_connector_rows(uuid,text,uuid[])':
     "a connector's rows (the Admin area's approval of an elevated call): a read definer",
+  'public.mantle_login_role(uuid)':
+    "the users area's change reads its target's role from Admin membership (login-update.ts loadLoginTarget, S8b round 4): a read definer (0399)",
+  'public.mantle_login_is_admin(uuid)':
+    "a peer's bound login is no Admin user (peer-access.ts resolvePeerActsAs, loginIsAdmin; S8b round 4) on the peers area's exit: a read definer (0304)",
   'public.mantle_pending_card_route(uuid,uuid)':
     "a pending approval card's route (the Admin area's run of an item): a read definer",
   'public.mantle_connector_beyond_admin(uuid,text)':

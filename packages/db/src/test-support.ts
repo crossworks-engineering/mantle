@@ -17,8 +17,10 @@
  *    every notification committed before it has arrived too.
  *  - setLoginRoleUnguarded: a test that pins what the code does after a
  *    login's role changes sets the role directly. The client role guard
- *    (0200) is gone since 0272, so this is a plain UPDATE now; the name
- *    stays so callers need no change.
+ *    (0200) is gone since 0272, so this is a plain UPDATE; since 0399's
+ *    role guard it needs a superuser client (`asSuperuser` below).
+ *  - asSuperuser: login fixtures with a role other than member (0399's
+ *    role guard refuses them on the app's pools under the runtime role).
  *  - createReadOnlyRole: a read path must be served by a database that
  *    refuses writes (a read-only replica, the public demo's reader role). A
  *    test proves it by running the read as a login that can SELECT
@@ -158,7 +160,9 @@ export function teamWorkspaceSql(owner: string): string {
 /**
  * Set a login's role. The client role guard trigger (0200) was dropped by
  * 0272 and the role CHECK admits only 'admin' and 'member', so this is a
- * plain UPDATE.
+ * plain UPDATE. The role guard (0399) lets only the membership definers'
+ * owner or a superuser change the column: `sql` must be the test's
+ * superuser client, and the row it leaves is drift (no Admin row moves).
  */
 export async function setLoginRoleUnguarded(
   sql: Sql,
@@ -362,6 +366,51 @@ export async function runWorkspacesSwitch<T = Record<string, unknown>>(
 ): Promise<T[]> {
   if (!url) throw new Error('runWorkspacesSwitch: no database URL (set DATABASE_URL)');
   return superuserExec<T>(url, 'select * from mantle_ws_migrate()');
+}
+
+/** A fixture statement run as the superuser: a postgres.js tag, or a
+ *  drizzle `sql` query or raw text. */
+export type SuperuserFixture = {
+  <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+  <T = Record<string, unknown>>(query: SQL | string): Promise<T[]>;
+};
+
+/**
+ * Login fixtures as the superuser (S8b): a login's role follows Admin
+ * membership, and the role guard (`users_role_guard`, 0399) lets only the
+ * membership definers' owner or a superuser write it. A test that inserts
+ * a login with a role other than member, or sets a login's role, does it
+ * here, on a connection of its own as the superuser of `url` (default
+ * DATABASE_URL at call time, the database a test points the app's pools
+ * at), as system(test), in a transaction of its own. Never through the
+ * app's pools, which log in as the runtime role under
+ * MANTLE_DB_RUNTIME_ROLE. A fixture only: no app path writes the role
+ * outside the definers.
+ *
+ *   await asSuperuser()`insert into auth.users (...) values (...)`;
+ *   await asSuperuser()(sql`insert into auth.users (...) values (...)`);
+ */
+export function asSuperuser(url?: string): SuperuserFixture {
+  const target = (): string => {
+    const u = url ?? env('DATABASE_URL');
+    if (!u) throw new Error('asSuperuser: no database URL (set DATABASE_URL)');
+    return u;
+  };
+  return (async (first: TemplateStringsArray | SQL | string, ...values: unknown[]) => {
+    if (typeof first === 'string' || !Array.isArray(first)) {
+      return superuserExec(target(), first as SQL | string);
+    }
+    const sql = postgres(target(), { max: 1, prepare: false, onnotice: () => {} });
+    try {
+      return await sql.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true),
+                        set_config('mantle.write_mode', 'rw', true)`;
+        return [...(await tx(first as TemplateStringsArray, ...(values as never[])))];
+      });
+    } finally {
+      await sql.end();
+    }
+  }) as SuperuserFixture;
 }
 
 /** One statement the system pool wrote to the wire: the postgres.js

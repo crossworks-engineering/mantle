@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asMigrator } from './test-support';
+import { asMigrator, asSuperuser } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -70,7 +70,7 @@ describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {
     process.env.DATABASE_URL = URL;
     m = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);

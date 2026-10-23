@@ -155,7 +155,7 @@ const ADMIN_ROW = {
   adminMember: true,
 };
 /** The read before the claim (W7e): the code's login role, while unclaimed. */
-const PEEK_ADMIN = [{ role: 'admin' }];
+const PEEK_ADMIN = [{ inAdmin: true }];
 const MEMBER_ROW = {
   email: 'member@example.com',
   role: 'member',
@@ -206,9 +206,8 @@ describe('claimPairCode', () => {
   it.each([
     ['deleted', []],
     ['disabled', [{ ...ADMIN_ROW, disabledAt: new Date('2026-09-20T00:00:00Z') }]],
-    ['demoted to member', [{ ...ADMIN_ROW, role: 'member' }]],
-    // The Admin pair: role admin but no longer a user of Admin.
-    ['taken out of Admin', [{ ...ADMIN_ROW, adminMember: false }]],
+    // Taken out of Admin: the definer writes the role with the row (S8b).
+    ['demoted to member', [{ ...ADMIN_ROW, role: 'member', adminMember: false }]],
   ])('a code whose login was %s is null and mints nothing', async (_what, row) => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
     dbState.selectResults = [PEEK_ADMIN, row];
@@ -228,7 +227,7 @@ describe('claimPairCode', () => {
 
   // W7e: any login pairs its own phone, from a build that serves every login.
   it('a member code scanned by an older phone app is update-app and stays unused', async () => {
-    dbState.selectResults = [[{ role: 'member' }]];
+    dbState.selectResults = [[{ inAdmin: false }]];
     expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBe('update-app');
     expect(dbState.updates).toHaveLength(0);
     expect(dbState.inserts).toHaveLength(0);
@@ -247,19 +246,13 @@ describe('claimPairCode', () => {
     expect(verifyMobileToken(claimed.token)?.uid).toBe('user-2');
   });
 
-  it('a client code from an older phone app is null, never update-app (W7e fix round 1)', async () => {
-    dbState.updateResults = [[{ id: 'row-1', userId: 'user-3' }], []];
-    dbState.selectResults = [[{ role: 'client' }], [{ ...MEMBER_ROW, role: 'client' }]];
-    expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBeNull();
-    expect(dbState.inserts).toHaveLength(0);
-  });
-
-  it('a client code is null even from a workspace phone build', async () => {
-    dbState.updateResults = [[{ id: 'row-1', userId: 'user-3' }], []];
-    dbState.selectResults = [[{ ...MEMBER_ROW, role: 'client' }]];
-    expect(
-      await mod.claimPairCode('the-code-the-code-1234', 'Phone', new Date(), { nonAdmin: true }),
-    ).toBeNull();
+  // S8b: membership decides, the column is not asked. A row still marked
+  // client (none since 0272; the migrate report of 0399 counts any left) is
+  // a login outside Admin, so a member: the role it carries changes nothing.
+  it('a login outside Admin is a member whatever its column says (S8b)', async () => {
+    dbState.selectResults = [[{ inAdmin: false }]];
+    expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBe('update-app');
+    expect(dbState.updates).toHaveLength(0);
     expect(dbState.inserts).toHaveLength(0);
   });
 });

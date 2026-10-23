@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
@@ -229,7 +230,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     threadsRoute = await import('../app/api/assistant/threads/route');
     turnRoute = await import('../app/api/assistant/turn/route');
 
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${adminB}, ${`${tag}-b@example.invalid`}, 'x', false, 'admin', 'Second admin'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),

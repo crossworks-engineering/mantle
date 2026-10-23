@@ -39,6 +39,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -330,7 +331,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     t = await import('@mantle/tools');
     ls = await import('@mantle/mcp-core');
     content = await import('@mantle/content');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Second Admin'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Member One'),

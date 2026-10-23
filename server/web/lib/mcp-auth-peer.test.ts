@@ -1,9 +1,9 @@
 /**
  * A linked brain's bearer (lib/mcp-auth.ts callerFromPeerToken): the peer
  * acts as the login it is bound to, and what only an Admin login has (the
- * owner's own peer, the risky tools named on the peer) asks the Admin pair
- * (role admin AND a user of Admin, read with the login row), never the role
- * alone. No database: the peer check and the login row are stood in, for
+ * owner's own peer, the risky tools named on the peer) asks Admin
+ * membership (a user of Admin, read with the login row; S8b), never the
+ * role. No database: the peer check and the login row are stood in, for
  * the five logins of the adminFacts cells.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe("a peer's Admin facts (callerFromPeerToken)", () => {
-  it('the owner peer and the risky tools follow the Admin pair, not the role', async () => {
+  it('the owner peer and the risky tools follow Admin membership, not the role', async () => {
     const { resolveMcpCaller } = await import('./mcp-auth');
     const got: Record<string, unknown> = {};
     for (const [name, [role, adminMember, anchor]] of Object.entries(LOGINS)) {
@@ -73,8 +73,10 @@ describe("a peer's Admin facts (callerFromPeerToken)", () => {
     expect(got).toEqual({
       owner: { role: 'admin', peerByOwner: true, risky: ['email_send'] },
       adm: { role: 'admin', peerByOwner: false, risky: ['email_send'] },
-      out: { role: 'admin', peerByOwner: false, risky: [] }, // narrower: no Admin pair
-      memIn: { role: 'member', peerByOwner: false, risky: [] },
+      out: { role: 'admin', peerByOwner: false, risky: [] }, // drift: not a user of Admin
+      // Drift: membership decides (S8b), the one wider answer, on a box with
+      // drift only (the merge's precondition is mantle_role_drift 0).
+      memIn: { role: 'member', peerByOwner: false, risky: ['email_send'] },
       mem: { role: 'member', peerByOwner: false, risky: [] },
     });
   });

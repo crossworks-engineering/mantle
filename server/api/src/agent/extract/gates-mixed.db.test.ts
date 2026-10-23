@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
@@ -67,7 +68,7 @@ describe.skipIf(!URL)('an edit to a marked page before the re-fold', () => {
     h.autoTable.mockResolvedValue(undefined);
     h.embeddedImages.mockResolvedValue(undefined);
     const x = (q: ReturnType<typeof sqlTag>) => m.db.execute(q);
-    await x(sqlTag`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`gm-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`);
     await x(sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict do nothing`);

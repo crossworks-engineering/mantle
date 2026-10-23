@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -186,7 +187,7 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     const seed = (await import('@mantle/content-core/formula-seed')).FORMULA_SEED[0]!;
     formulaSpec = seed.spec as Json;
     formulaExample = seed.examples[0]! as typeof formulaExample;
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${mod}, ${email('mod')}, 'x', false, 'member', 'Mo Moderator'),
       (${reader}, ${email('reader')}, 'x', false, 'member', 'Rae Reader'),

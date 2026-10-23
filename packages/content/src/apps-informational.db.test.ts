@@ -17,6 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -99,7 +100,7 @@ describe.skipIf(!URL)('the informational switch writes no grant (contract 36)', 
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
 
-    await m.systemDb.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin', null),
         (${member}, ${`${tag}-pat@example.invalid`}, 'x', 'member', 'Pat Member')`);

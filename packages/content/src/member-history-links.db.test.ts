@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -78,7 +79,7 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     inv = await import('./member-invites');
     log = await import('./team-access-log');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${email('anchor')}, 'x', 'admin'),
       (${adminLogin}, ${email('admin')}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`;
@@ -89,7 +90,7 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
       (${c.cy}, ${anchor}, 'contact', 'Cy', 'contacts', ${data('cy')}::jsonb),
       (${c.dee}, ${anchor}, 'contact', 'Dee', 'contacts', ${data('dee')}::jsonb),
       (${task}, ${anchor}, 'task', 'a task', 'tasks', '{}'::jsonb)`;
-    await admin`insert into auth.users (id, email, password_hash, role, contact_id) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, contact_id) values
       (${logins.ana}, ${email('ana-login')}, 'x', 'member', ${c.ana}),
       (${logins.cy1}, ${email('cy1')}, 'x', 'member', null),
       (${logins.cy2}, ${email('cy2')}, 'x', 'member', null),

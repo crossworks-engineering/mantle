@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -31,7 +32,7 @@ describe.skipIf(!URL)('listAdminSubscriptions', () => {
       [gone, 'admin'],
       [member, 'member'],
     ] as const) {
-      await sql`insert into auth.users (id, email, password_hash, role)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', ${role})`;
     }
     await sql`update auth.users set disabled_at = now() where id = ${gone}`;

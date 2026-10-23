@@ -19,7 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asMigrator, superuserClient } from '@mantle/db/test-support';
+import { asMigrator, asSuperuser, superuserClient } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -68,7 +68,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     cs = await import('./client-sourced');
     const { sql: sqlTag } = await import('drizzle-orm');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`cs-o-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
       (${other}, ${`cs-x-${other.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
       (${ids.memberLogin}, ${`cs-m-${owner.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
@@ -101,7 +101,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     // Two former clients, as 0272 leaves them: a disabled member row and
     // its archive row (no client role any more).
     for (const id of former) {
-      await admin`insert into auth.users (id, email, password_hash, role, disabled_at)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role, disabled_at)
         values (${id}, ${`cs-fc-${id.slice(0, 8)}@example.invalid`}, 'x', 'member', now())`;
       await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
         select id, email, created_at, session_epoch from auth.users where id = ${id}`;

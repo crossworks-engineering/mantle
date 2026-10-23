@@ -32,6 +32,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -164,7 +165,7 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     const hash = (await import('bcryptjs')).default.hashSync(PASSWORD, 4);
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, ${hash}, true, 'admin', 'Olive Owner'),
       (${admin2}, ${email('admin2')}, ${hash}, false, 'admin', 'Ada Admin'),
       (${mem}, ${email('mem')}, ${hash}, false, 'member', 'Mia Member'),

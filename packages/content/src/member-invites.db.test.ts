@@ -10,6 +10,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -52,7 +53,7 @@ describe.skipIf(!URL)('member invites', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     inv = await import('./member-invites');
-    await admin`insert into auth.users (id, email, password_hash, role) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${email('anchor')}, 'x', 'admin'),
       (${otherBrain}, ${email('other')}, 'x', 'admin'),
       (${adminLogin}, ${email('admin')}, 'x', 'admin')`;
@@ -68,7 +69,7 @@ describe.skipIf(!URL)('member invites', () => {
       (${ids.tia}, ${anchor}, 'contact', 'Tia', 'contacts', ${data([email('tia')])}::jsonb),
       (${ids.foreign}, ${otherBrain}, 'contact', 'Far', 'contacts', ${data([email('far')])}::jsonb),
       (${ids.note}, ${anchor}, 'note', 'a note', 'notes', '{}'::jsonb)`;
-    await admin`insert into auth.users (id, email, password_hash, role, contact_id)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, contact_id)
                 values (${randomUUID()}, ${email('lee-login')}, 'x', 'member', ${ids.lee})`;
   }, 60_000);
 
@@ -133,7 +134,7 @@ describe.skipIf(!URL)('member invites', () => {
       // One former client still a (disabled) row, one whose row was deleted:
       // only the archive of 0272 remembers it.
       const kept = randomUUID();
-      await admin`insert into auth.users (id, email, password_hash, role, disabled_at)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role, disabled_at)
         values (${kept}, ${email('fc-kept')}, 'x', 'member', now())`;
       await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
         values (${kept}, ${email('fc-kept')}, now(), 0),
@@ -376,7 +377,7 @@ describe.skipIf(!URL)('member invites', () => {
         email: email('late'),
         createdBy: adminLogin,
       });
-      await admin`insert into auth.users (id, email, password_hash, role)
+      await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                   values (${randomUUID()}, ${email('LATE')}, 'x', 'admin')`;
       expect(await inv.redeemMemberInvite({ code, passwordHash: HASH })).toBeNull();
       expect((await inviteRow(invite.id)).redeemed_at).toBeNull();

@@ -36,6 +36,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** `main`: write the main file (on main only); `now`: write what this tree
@@ -187,7 +188,7 @@ describe.skipIf(!DB_URL)('what a write re-indexes (A10 #7): the recorded matrix'
     ) as typeof c;
     f = await import('@mantle/files');
     secrets = await import('@/lib/secrets');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`a10cc-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);

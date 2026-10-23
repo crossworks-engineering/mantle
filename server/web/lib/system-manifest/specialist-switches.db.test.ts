@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MANIFEST_AGENTS } from './manifest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -41,7 +42,7 @@ describe.skipIf(!URL)('owner param switches on a specialist', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     seed = await import('./seed');
     rec = await import('./reconcile');
-    await admin`insert into auth.users (id, email, password_hash, role)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                 values (${owner}, ${`sw-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
     await admin`insert into api_keys (id, user_id, service, label, key_enc)

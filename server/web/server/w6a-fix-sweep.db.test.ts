@@ -27,6 +27,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isReadRequest, routeClass } from '../lib/auth/route-scope';
 import { isMemberRoute } from '../lib/auth/member-routes';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -128,7 +129,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     process.env.SESSION_SECRET = 'w6a-fix-sweep-secret-at-least-32-characters!';
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
       (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member'),
@@ -600,7 +601,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
 
   it('L-b: a deleted app with no stored home is purged and restored by the owner only', async () => {
     const admin2 = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                 values (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${admin2}, true) on conflict do nothing`);

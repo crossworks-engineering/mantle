@@ -63,7 +63,7 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
 
   it('finds the same functions reading auth.users.role', () => {
     const want = names(live, (f) => counts.readsLoginRole(f.body));
-    expect(want).toContain('mantle_login_is_admin_user');
+    expect(want).toContain('mantle_access_keys_seen');
     expect(names(read, (f) => counts.readsLoginRole(f.body))).toEqual(want);
   });
 
@@ -75,7 +75,65 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
       live,
       (f) => /\bauth"?\s*\.\s*"?users\b/i.test(code(f.body)) && /\brole\b/i.test(code(f.body)),
     );
-    expect(both).toEqual(names(live, (f) => counts.readsLoginRole(f.body)));
+    // The two membership definers name both as writers of the column (S8b:
+    // the role follows Admin membership); they read none of it.
+    const WRITERS = ['mantle_ws_add_user', 'mantle_ws_remove_user'];
+    for (const w of WRITERS) {
+      const f = live.find((x) => x.name === w);
+      expect(f, w).toBeDefined();
+      expect(counts.readsLoginRole(f!.body), w).toBe(false);
+      expect(code(f!.body), w).toMatch(/UPDATE "auth"\."users" SET "role" = '(?:admin|member)'/);
+    }
+    // The role guard (0399) names both to check the row being written
+    // (NEW and OLD), never a stored login's role: it decides who may write.
+    const GUARDS = ['mantle_login_role_guard'];
+    for (const g of GUARDS) {
+      const f = live.find((x) => x.name === g);
+      expect(f, g).toBeDefined();
+      expect(counts.readsLoginRole(f!.body), g).toBe(false);
+      expect(code(f!.body), g).toMatch(/NEW\."role" IS DISTINCT FROM OLD\."role"/);
+    }
+    expect(both.filter((n) => !WRITERS.includes(n) && !GUARDS.includes(n))).toEqual(
+      names(live, (f) => counts.readsLoginRole(f.body)),
+    );
+  });
+
+  it('each reader is migration-only or reads the column the membership definers keep exact', async () => {
+    // Since 0399 the role column is written only by mantle_ws_add_user and
+    // mantle_ws_remove_user on the Admin workspace, in the transaction of
+    // the membership row, so it equals Admin membership. A reader an app
+    // role may EXECUTE is named here with what it reads the column for; a
+    // reader no app role may run (the switch's steps, the box count) needs
+    // no line. A new reader an app role may run fails here until named.
+    const EXACT: Readonly<Record<string, string>> = {
+      mantle_access_keys_seen: "shows each key's login role (display): the exact column",
+      mantle_client_space_usage: 'counts by role: the exact column',
+      mantle_bridge_login:
+        "demote only (0399): an older image's demotion writes role member and calls it; the login leaves Admin, never joins it",
+      mantle_member_space: "a member's personal space by role: the exact column",
+      mantle_role_drift:
+        'compares the column with Admin membership, numbers only: the pre-merge and box check that the two agree',
+      mantle_space_item_author_role: "an item author's role: the exact column",
+      mantle_space_item_client_private: "a client item's privacy by role: the exact column",
+      mantle_ws_dry_run: "the switch's dry run (counts by role, writes nothing): the exact column",
+      mantle_ws_skip_reason: "the switch's skip reason (counts by role): the exact column",
+    };
+    const readers = names(live, (f) => counts.readsLoginRole(f.body));
+    for (const k of Object.keys(EXACT)) expect(readers, k).toContain(k);
+    const appRun = (
+      await sql<{ name: string }[]>`
+        select distinct p.proname::text as name
+          from pg_proc p join pg_roles r on not r.rolsuper and r.rolname <> 'mantle_owner'
+                                        and r.rolname <> current_user
+         where p.pronamespace = 'public'::regnamespace
+           and p.proname = any (${readers}::text[])
+           and has_function_privilege(r.oid, p.oid, 'EXECUTE')
+         order by 1`
+    ).map((x) => x.name);
+    expect(appRun.filter((n) => !(n in EXACT))).toEqual([]);
+    // The one the membership definers replaced reads no role now; the
+    // bridge reads it again only to demote (round 4, M1).
+    expect(readers).not.toContain('mantle_login_is_admin_user');
   });
 
   it('leaves out a role of something else', () => {

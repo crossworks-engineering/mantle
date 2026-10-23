@@ -27,6 +27,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -78,7 +79,7 @@ describe.skipIf(!URL)('onboarding attaches the assistants in the login`s scope (
     process.env.SESSION_SECRET = 'ws-onboarding-attach-secret-at-least-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${adm}, ${email('adm')}, 'x', false, 'admin', 'Ada Admin'),
       (${noAsst}, ${email('noasst')}, 'x', false, 'admin', 'Nia Admin')`);

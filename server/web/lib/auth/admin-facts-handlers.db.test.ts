@@ -32,6 +32,11 @@
  *  - a role change in the Admin workspace (WsCaller's Admin only), in the
  *    any-login scope.
  *
+ * Since S8b round 4 (L1) the session follows membership too (resolvedFor):
+ * where a cell's first column is the session's legacy kind it now agrees
+ * with adminFacts (BY_MEMBERSHIP); against main, drift only, out is a member
+ * session and memIn an Admin login (the one wider answer).
+ *
  * The cells run with the box modes warn (the full run) and on.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/admin-facts-handlers.db.test.ts
@@ -136,10 +141,16 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     riq = await import('./rule-in-query');
     await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync('first password 1', 4);
-    await sql`insert into auth.users (id, email, password_hash, role) values
-      (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${lim}, ${emailOf(lim)}, ${hash}, 'admin'),
-      (${out}, ${emailOf(out)}, ${hash}, 'admin'), (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'),
-      (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+    // As the superuser: the role guard (0399) refuses the app pools an admin login.
+    const su0 = superuserClient(scratch.url);
+    try {
+      await su0`insert into auth.users (id, email, password_hash, role) values
+        (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${lim}, ${emailOf(lim)}, ${hash}, 'admin'),
+        (${out}, ${emailOf(out)}, ${hash}, 'admin'), (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'),
+        (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+    } finally {
+      await su0.end();
+    }
     await runWorkspacesSwitch(scratch.url);
     const [a] = await sql<Row[]>`select w.id::text as id from workspaces w
                                   join auth.users o on o.id = w.owner_id and o.is_owner
@@ -179,13 +190,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           (await facts.adminFacts(login)).admin,
         ]),
       );
-      expect(got, key).toEqual({
-        adm: [true, true],
-        lim: [true, true],
-        out: [true, false], // narrower: role admin outside Admin is no Admin user
-        memIn: [false, false],
-        mem: [false, false],
-      });
+      expect(got, key).toEqual(BY_MEMBERSHIP);
     }
   });
 
@@ -212,7 +217,10 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
         adm: [true, true],
         lim: [false, false],
         out: [false, false],
-        memIn: [true, false], // narrower: role member inside Admin holds no keys area
+        // S8b round 4: the session follows membership, so the drifted login
+        // inside Admin holds the keys area as the area rule says (wider than
+        // main's [true, false], drift only).
+        memIn: [true, true],
         mem: [false, false],
       });
     }
@@ -231,17 +239,26 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     expect(got).toEqual({
       adm: ['token', 'token'],
       lim: ['token', 'token'],
-      out: [null, null], // narrower: main minted an Admin bearer (role admin)
-      memIn: ['update-app', 'token'],
+      // S8b: membership decides (drift only, both): outside Admin is a
+      // member (narrower: main minted an Admin bearer for role admin) ...
+      out: ['update-app', 'token'],
+      // ... and inside Admin an Admin login (wider: main answered a member).
+      memIn: ['token', 'token'],
       mem: ['update-app', 'token'],
     });
   });
 
-  const NARROWS_OUT = {
+  // S8b round 4 (L1): membership decides the session too (resolvedFor), so
+  // the legacy kind and adminFacts agree for every login. Against main,
+  // drift only: out (role admin outside Admin) is a member session, no
+  // Admin (main [true, false]); memIn (role member inside Admin) is an Admin
+  // login (main [false, false]: the one wider answer, which the membership
+  // definers never leave and the merge precondition reads as 0).
+  const BY_MEMBERSHIP = {
     adm: [true, true],
     lim: [true, true],
-    out: [true, false], // narrower: role admin outside Admin is no Admin user
-    memIn: [false, false],
+    out: [false, false],
+    memIn: [true, true],
     mem: [false, false],
   };
 
@@ -266,7 +283,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           },
         ),
       );
-      expect(got, key).toEqual(NARROWS_OUT);
+      expect(got, key).toEqual(BY_MEMBERSHIP);
     }
   });
 
@@ -288,7 +305,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           },
         ),
       );
-      expect(got, key).toEqual(NARROWS_OUT);
+      expect(got, key).toEqual(BY_MEMBERSHIP);
     }
   });
 
@@ -312,7 +329,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           },
         ),
       );
-      expect(got, key).toEqual(NARROWS_OUT);
+      expect(got, key).toEqual(BY_MEMBERSHIP);
     }
   });
 
@@ -330,7 +347,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           ];
         }),
       );
-      expect(got, key).toEqual(NARROWS_OUT);
+      expect(got, key).toEqual(BY_MEMBERSHIP);
     }
   });
 
@@ -345,7 +362,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
       adm: [true, true],
       lim: [true, true],
       out: [true, false], // narrower: its peer names no risky tool
-      memIn: [false, false],
+      memIn: [false, true], // S8b, wider for the drift only: membership decides
       mem: [false, false],
     });
   });
@@ -382,7 +399,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
       adm: ['admin', 'admin'],
       lim: ['admin', 'admin'],
       out: ['admin', null], // narrower: not an Admin caller, and no member
-      memIn: ['member', 'member'],
+      memIn: ['member', 'admin'], // S8b, wider for the drift only: membership decides
       mem: ['member', 'member'],
     });
     // An Admin OAuth grant (no session epoch) connects only an Admin login.
@@ -390,7 +407,13 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
       (await roleOf(id)) === 'admin',
       await actorMayConnect(id, null),
     ]);
-    expect(connect).toEqual(NARROWS_OUT);
+    expect(connect).toEqual({
+      adm: [true, true],
+      lim: [true, true],
+      out: [true, false], // narrower: role admin outside Admin is no Admin user
+      memIn: [false, true], // S8b: drift only
+      mem: [false, false],
+    });
     // The old companion's sign-in (POST /api/auth/mobile-login): Admin only,
     // a member hears "Update the app".
     const signIn = await table(async (id) => {
@@ -411,8 +434,10 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     expect(signIn).toEqual({
       adm: [200, 200],
       lim: [200, 200],
-      out: [200, 401], // narrower: no Admin bearer for a login outside Admin
-      memIn: [426, 426],
+      // S8b: membership decides (drift only): outside Admin is a member
+      // ("Update the app"), inside Admin an Admin login.
+      out: [200, 426],
+      memIn: [426, 200],
       mem: [426, 426],
     });
   });

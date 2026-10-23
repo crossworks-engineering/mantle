@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
@@ -67,7 +68,7 @@ describe.skipIf(!URL)('the tool group level is gone from the owner API on Postgr
     r.list = (await import('./route')).GET as unknown as Route;
     r.get = (await import('./[id]/route')).GET as unknown as Route;
 
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(
       sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,

@@ -17,6 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -70,7 +71,12 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   const eve = randomUUID(); // admin, links contacts
   const raw = randomUUID(); // deleted with raw SQL (the FK)
   const former = randomUUID(); // a former client login (archived by 0272)
-  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, former];
+  const fay = randomUUID(); // admin, in Admin: the no-users-area caller's target
+  const gus = randomUUID(); // member
+  const hal = randomUUID(); // role admin, not in Admin (drift)
+  const ivy = randomUUID(); // role member, in Admin (drift)
+  const noU = randomUUID(); // admin, in Admin, the users area off
+  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, former, fay, gus, hal, ivy, noU];
   const ids = {
     contact: randomUUID(),
     /** The contact a former client login was linked to (W8d). */
@@ -134,9 +140,25 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     process.env.SESSION_SECRET ??= 'users-lockout-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
-    for (const id of logins) {
-      await admin`insert into auth.users (id, email, password_hash, role)
-                  values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
+    // Admin membership decides (S8b): the caller and the admin logins are
+    // users of the brain's live Admin workspace, as a box with no role drift
+    // has them; the role change adds to it and removes from it.
+    // On a superuser client of its own: under the runtime role the app pool
+    // only reads the workspace tables, and the role guard (0399) refuses it
+    // an admin login.
+    const { ensureAdminUsers, superuserClient } = await import('@mantle/db/test-support');
+    const su = superuserClient(URL!);
+    try {
+      for (const id of logins) {
+        const role = id === gus || id === ivy || id === former ? 'member' : 'admin';
+        await asSuperuser()`insert into auth.users (id, email, password_hash, role)
+                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', ${role})`;
+      }
+      const adminWs = await ensureAdminUsers(su, [anchor, bea, cal, dee, eve, fay, ivy, noU]);
+      await su`update workspace_users set limits = '{"areas": {"users": false}}'::jsonb
+                where workspace_id = ${adminWs} and login_id = ${noU}`;
+    } finally {
+      await su.end();
     }
     // Items belong to a space (0165): each test brain is a brain row.
     await admin`insert into spaces (id, kind, login_id) values
@@ -216,6 +238,18 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     expect(await devicesOf(cal)).toEqual([]);
     expect(h.relayDeleted).toEqual([`${tag}-cal-1`]);
     expect(await assignedTo(`${tag}-cal-pa`)).toEqual({ assigned_user_id: null });
+    // S8b: the demotion is a removal from Admin by its definer, which wrote
+    // the role in the same transaction and names the caller on its event.
+    const [after] = await admin<Row[]>`
+      select u.role,
+             exists (select 1 from workspace_users wu join workspaces w on w.id = wu.workspace_id
+                      where wu.login_id = u.id and w.is_admin and w.archived_at is null
+                        and w.owner_id = mantle_brain_id()) as in_admin,
+             (select count(*)::int from workspace_events e
+               where e.action = 'user.remove' and e.actor_id = ${anchor}
+                 and e.subject->>'login' = u.id::text) as removed
+        from auth.users u where u.id = ${cal}`;
+    expect(after).toEqual({ role: 'member', in_admin: false, removed: 1 });
   });
 
   it('a rename is not a lockout: devices and assistant stay', async () => {
@@ -339,7 +373,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   // W8a fix round 1 (L6): a former client login stays disabled.
   it('refuses to enable a former client login; an ordinary disabled login enables', async () => {
-    await admin`update auth.users set role = 'member', disabled_at = now() where id = ${former}`;
+    // A member since setup (the role guard, 0399, refuses the app pool a role write).
+    await admin`update auth.users set disabled_at = now() where id = ${former}`;
     await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
       select id, email, created_at, session_epoch from auth.users where id = ${former}`;
     h.caller = as(anchor);
@@ -388,11 +423,83 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   });
 
   // W8a: there is no client login. The role check admits admin and member
-  // only, so no route here meets a third role.
+  // only, so no route here meets a third role. As the superuser: the role
+  // guard (0399, a BEFORE trigger) refuses an app pool first.
   it('a login row cannot be made with the client role (0272)', async () => {
-    await expect(
-      admin`insert into auth.users (id, email, password_hash, role)
-            values (${randomUUID()}, ${`${tag}-client@example.invalid`}, 'x', 'client')`,
-    ).rejects.toMatchObject({ code: '23514' });
+    const { superuserClient } = await import('@mantle/db/test-support');
+    const su = superuserClient(URL!);
+    try {
+      await expect(
+        su`insert into auth.users (id, email, password_hash, role)
+           values (${randomUUID()}, ${`${tag}-client@example.invalid`}, 'x', 'client')`,
+      ).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await su.end();
+    }
+  });
+
+  /** A login's role column, its Admin row, and the events naming it. */
+  const adminState = async (id: string) =>
+    (
+      await admin<Row[]>`
+        select u.role,
+               exists (select 1 from workspace_users wu join workspaces w on w.id = wu.workspace_id
+                        where wu.login_id = u.id and w.is_admin and w.archived_at is null
+                          and w.owner_id = mantle_brain_id()) as in_admin,
+               (select count(*)::int from workspace_events e
+                 where e.action in ('user.add', 'user.remove')
+                   and e.subject->>'login' = u.id::text) as events
+          from auth.users u where u.id = ${id}`
+    )[0];
+
+  it('a caller without the users area: the definer refuses the role change, 403 (S8b round 4, L3)', async () => {
+    h.caller = as(noU);
+    const { PATCH } = await import('./route');
+    const before = { fay: await adminState(fay), gus: await adminState(gus) };
+    for (const [id, role] of [
+      [fay, 'member'],
+      [gus, 'admin'],
+    ] as const) {
+      const res = await PATCH(json('PATCH', { role }), ctx(id));
+      expect(res.status, role).toBe(403);
+      expect(await res.json(), role).toMatchObject({ reason: 'users-area' });
+    }
+    // Nothing moved: no row, no role, no event.
+    expect({ fay: await adminState(fay), gus: await adminState(gus) }).toEqual(before);
+    // The admin login create is the same refusal (POST /api/users).
+    const { POST } = await import('../route');
+    const made = await POST(
+      json('POST', {
+        email: `${tag}-nou-made@example.invalid`,
+        password: 'a-long-enough-password-1',
+        role: 'admin',
+      }),
+    );
+    expect(made.status).toBe(403);
+    expect(
+      (
+        await admin<
+          Row[]
+        >`select id from auth.users where email = ${`${tag}-nou-made@example.invalid`}`
+      ).length,
+    ).toBe(0);
+  });
+
+  it('decides from membership, so drift is put right (S8b round 4, L2)', async () => {
+    h.caller = as(anchor);
+    const { PATCH } = await import('./route');
+    // hal: role admin, no Admin row. Made admin: membership says member, so
+    // the change adds it; the definer writes the role (main: no change).
+    expect(await adminState(hal)).toEqual({ role: 'admin', in_admin: false, events: 0 });
+    expect((await PATCH(json('PATCH', { role: 'admin' }), ctx(hal))).status).toBe(200);
+    expect(await adminState(hal)).toEqual({ role: 'admin', in_admin: true, events: 1 });
+    // ivy: role member, an Admin row. Made member: membership says admin,
+    // so the change removes it (main: no change, the row stayed).
+    expect(await adminState(ivy)).toEqual({ role: 'member', in_admin: true, events: 0 });
+    expect((await PATCH(json('PATCH', { role: 'member' }), ctx(ivy))).status).toBe(200);
+    expect(await adminState(ivy)).toEqual({ role: 'member', in_admin: false, events: 1 });
+    // Again: membership already says member, nothing moves.
+    expect((await PATCH(json('PATCH', { role: 'member' }), ctx(ivy))).status).toBe(200);
+    expect(await adminState(ivy)).toEqual({ role: 'member', in_admin: false, events: 1 });
   });
 });

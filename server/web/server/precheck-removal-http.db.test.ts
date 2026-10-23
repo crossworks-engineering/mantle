@@ -58,6 +58,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { READ_ONLY_COPY_MESSAGE } from '@mantle/std';
 import { itemWriteTarget } from '../lib/auth/route-scope';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -1281,7 +1282,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
 
-    await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+    await asSuperuser()`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
              (${L.admin}, ${`${tag}-admin@example.invalid`}, 'x', false, 'admin', 'Admin'),
              (${L.member}, ${`${tag}-member@example.invalid`}, 'x', false, 'member', 'Member')`;

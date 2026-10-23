@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -39,7 +40,7 @@ describe.skipIf(!URL)('moving an app between folders', () => {
     tree = await import('@mantle/content/tree');
     builtins = await import('./builtins');
     sqlTag = (await import('drizzle-orm')).sql;
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await exec(

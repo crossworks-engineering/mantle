@@ -46,6 +46,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const RECORD = process.env.A6_GRANT_RECORD === '1';
@@ -294,7 +295,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     const role = (k: LoginKey) =>
       k === 'owner' || k === 'adminAll' || k === 'adminNoUsers' ? 'admin' : 'member';
     for (const k of LOGINS) {
-      await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
                   values (${L[k]}, ${`a6-${k}@example.invalid`}, 'x', ${k === 'owner'}, ${role(k)}, ${k})`);
     }
     await x(sql`insert into spaces (id, kind, login_id) values (${L.owner}, 'brain', ${L.owner})

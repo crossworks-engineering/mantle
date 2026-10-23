@@ -12,6 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -54,7 +55,7 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     g = await import('./grants');
     sqlTag = (await import('drizzle-orm')).sql;
     const inbox = `inbox.${tag.replace(/-/g, '_')}`;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);

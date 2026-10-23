@@ -440,7 +440,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     ).toBe(1);
   });
 
-  it('catalog: no role but a superuser, the runtime roles and the owner role may EXECUTE a login fact; the runtime role runs the four it calls, the narrow role the two narrow work calls', async () => {
+  it('catalog: no role but a superuser, the runtime roles and the owner role may EXECUTE a login fact; the runtime role runs the four it calls, the narrow role the three narrow work calls', async () => {
     const facts = [
       'public.mantle_area_rule(uuid,text)',
       'public.mantle_login_areas(uuid)',
@@ -502,7 +502,9 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       );
       // The narrow system role: what narrow work calls, measured with the
       // switch on (runtime-role.ts NARROW_SYSTEM_FUNCTIONS): the area rule
-      // and a login's areas (the login-self routes, the Telegram login).
+      // and a login's areas (the login-self routes, the Telegram login);
+      // since S8b round 4 whether a login is an Admin user (the peers area
+      // asks it of a peer's bound login on the narrow route).
       const narrow = await sql<{ fn: string; ok: boolean }[]>`
         select f.fn, has_function_privilege(${NARROW_ROLE}, to_regprocedure(f.fn), 'EXECUTE') as ok
           from unnest(${facts}::text[]) f(fn)`;
@@ -510,7 +512,9 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
         Object.fromEntries(
           facts.map((fn) => [
             fn,
-            fn === 'public.mantle_area_rule(uuid,text)' || fn === 'public.mantle_login_areas(uuid)',
+            fn === 'public.mantle_area_rule(uuid,text)' ||
+              fn === 'public.mantle_login_areas(uuid)' ||
+              fn === 'public.mantle_login_is_admin(uuid)',
           ]),
         ),
       );

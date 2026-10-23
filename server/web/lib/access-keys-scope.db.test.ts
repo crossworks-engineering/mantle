@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  asSuperuser,
   createMigratedScratchDatabase,
   ensureTestAnchor,
   runWorkspacesSwitch,
@@ -122,7 +123,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     mcpAuth = await import('./mcp-auth');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name) values
+    await asSuperuser()`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
     await runWorkspacesSwitch(scratch.url);

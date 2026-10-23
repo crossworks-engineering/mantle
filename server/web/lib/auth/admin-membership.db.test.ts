@@ -6,13 +6,12 @@
  * The two named narrowing cells, each next to its as-before cell:
  *  - a login with role admin outside the Admin workspace (role drift) loses
  *    its `?at=` asset token, its render cookie and the frame re-check
- *    (adminLoginActive); an Admin user keeps all three. It keeps its
- *    session (owner decision: the session stays on the role until
- *    S8b) and works in its own scope as on main, but is not Admin: an Admin
- *    area route refuses it;
- *  - a role=member login inside the Admin workspace is not an Admin login:
- *    it stays a member (the member gate lets it in, the owner gate refuses
- *    it as it refuses any member).
+ *    (adminLoginActive); an Admin user keeps all three. Since S8b round 4
+ *    membership decides the session too (resolvedFor): it is a member
+ *    session, answered as any member;
+ *  - a role=member login inside the Admin workspace is an Admin login since
+ *    S8b (membership decides): the owner gate lets it in as the Admin user
+ *    (the one looser answer, drift only, which the definers never leave).
  *
  * Member-negative (plan rule 5): an outsider and the drift admin are
  * refused the asset token with the answer a random uuid's token gets, a
@@ -104,9 +103,16 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     ws = await import('../workspaces');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
-    await sql`insert into auth.users (id, email, password_hash, role) values
-      (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${out}, ${emailOf(out)}, ${hash}, 'admin'),
-      (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'), (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+    // As the superuser: the role guard (0399) refuses an admin insert from
+    // the app pools (the runtime role's lane).
+    const su0 = superuserClient(scratch.url);
+    try {
+      await su0`insert into auth.users (id, email, password_hash, role) values
+        (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${out}, ${emailOf(out)}, ${hash}, 'admin'),
+        (${memIn}, ${emailOf(memIn)}, ${hash}, 'member'), (${mem}, ${emailOf(mem)}, ${hash}, 'member')`;
+    } finally {
+      await su0.end();
+    }
     await runWorkspacesSwitch(scratch.url);
     // The drift the precondition counts (mantle_role_drift): a role=admin
     // login taken out of Admin and a role=member login put into it.
@@ -157,16 +163,19 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(await call(fileBytes(), { cookie: renderAt(out) })).toBe(refused);
   });
 
-  it('a role=admin login outside Admin keeps its session but is not Admin', async () => {
-    // Its session, as on main: a login (no 401) on an owner route, where
-    // the Admin user gets past the gate; it is refused there as no Admin.
+  it('a role=admin login outside Admin (drift) is a member session, not Admin (S8b round 4)', async () => {
+    // Membership decides the session too (resolvedFor, L1): the drifted
+    // login is a member, answered as any member on the member and owner
+    // gates (main: an admin session with no Admin pair).
     expect(await ownerProbe(cookieAt(adm))).not.toBe(401);
-    expect(await ownerProbe(cookieAt(out))).not.toBe(401);
-    // Not Admin: an Admin area route (users) refuses it, the Admin user not.
+    expect(await memberProbe(cookieAt(out))).toBe(await memberProbe(cookieAt(mem)));
+    expect(await memberProbe(cookieAt(out))).not.toBe(401);
+    expect(await ownerProbe(cookieAt(out))).toBe(await ownerProbe(cookieAt(mem)));
+    // Not Admin: the users area route answers it as any member.
     expect(status(await call('/api/users', { cookie: cookieAt(adm) }))).toBe(200);
-    const area = await call('/api/users', { cookie: cookieAt(out) });
-    expect(status(area)).toBe(403);
-    expect(area).toContain('"area"');
+    expect(await call('/api/users', { cookie: cookieAt(out) })).toBe(
+      await call('/api/users', { cookie: cookieAt(mem) }),
+    );
     // No asset token, no render cookie, no frame re-check.
     expect(status(await assetAnswer(out))).toBe(401);
     expect(status(await call(fileBytes(), { cookie: renderAt(out) }))).toBe(401);
@@ -174,15 +183,15 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(await session.adminLoginActive(out)).toBe(false);
   });
 
-  it('a role=member login inside Admin is not Admin: it stays a member', async () => {
-    // The member gate lets it in, as any member.
-    expect(await memberProbe(cookieAt(memIn))).toBe(await memberProbe(cookieAt(mem)));
-    expect(await memberProbe(cookieAt(memIn))).not.toBe(401);
-    // The owner gate refuses it as it refuses any member.
-    expect(await call('/api/pending/not-a-uuid', { cookie: cookieAt(memIn) })).toBe(
-      await call('/api/pending/not-a-uuid', { cookie: cookieAt(mem) }),
-    );
-    expect(await session.adminLoginActive(memIn)).toBe(false);
+  it('a role=member login inside Admin (drift): membership makes it an Admin session (S8b round 4)', async () => {
+    // Membership decides (L1): the owner gate lets it in as it lets the
+    // Admin user in (main: a member session the owner gate refused). The
+    // one looser answer, drift only: the definers never leave it, and
+    // mantle_role_drift is 0 on every box before the roll.
+    expect(await ownerProbe(cookieAt(memIn))).toBe(await ownerProbe(cookieAt(adm)));
+    expect(await ownerProbe(cookieAt(memIn))).not.toBe(401);
+    expect(await memberProbe(cookieAt(memIn))).toBe(await memberProbe(cookieAt(adm)));
+    expect(await session.adminLoginActive(memIn)).toBe(true);
   });
 
   it('member-negative: no Admin answer for a non-Admin token, byte for byte', async () => {
@@ -194,12 +203,15 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     expect(status(random)).toBe(401);
     for (const id of [out, nobody]) expect(await assetAnswer(id), id).toBe(random);
     expect(await assetAnswer(memIn)).toBe(await assetAnswer(mem));
-    // The render cookie is the Admin login's only: refused for all of them.
+    // The render cookie is the Admin login's only: refused for all of them
+    // but the drifted login inside Admin, which membership makes Admin (S8b,
+    // drift only): it passes the cookie check and meets the route's own 404.
     const randomRender = await call(fileBytes(), { cookie: renderAt(randomUUID()) });
     expect(status(randomRender)).toBe(401);
-    for (const id of [mem, memIn, out, nobody]) {
+    for (const id of [mem, out, nobody]) {
       expect(await call(fileBytes(), { cookie: renderAt(id) }), id).toBe(randomRender);
     }
+    expect(status(await call(fileBytes(), { cookie: renderAt(memIn) }))).not.toBe(401);
   });
 
   it('the key list: a role=admin login outside Admin gets no other login`s key, as the route runs', async () => {

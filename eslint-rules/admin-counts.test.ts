@@ -472,7 +472,9 @@ describe('the repo', () => {
     // pair-code.ts: the claim's Admin bearer asks adminLogin.
     const claim = lineOf('server/web/lib/pair-code.ts', '(!admin && !member)) return null');
     expect(claim).toBeGreaterThan(0);
-    expect(reads['server/web/lib/pair-code.ts']).not.toContain(claim);
+    expect(reads['server/web/lib/pair-code.ts'] ?? []).not.toContain(claim);
+    // S8b round 2: pair-code.ts reads no role at all (membership decides).
+    expect(reads['server/web/lib/pair-code.ts']).toBeUndefined();
   });
 
   it("an MCP key's Admin caller, an Admin OAuth grant and the companion's sign-in ask the Admin pair", () => {
@@ -484,8 +486,8 @@ describe('the repo', () => {
         .findIndex((l) => l.includes(needle)) + 1;
     for (const [path, needle] of [
       ['server/web/lib/mcp-auth.ts', 'if (adminLogin(key.login)) {'],
-      ['server/web/lib/mcp-oauth.ts', '? adminLogin({ role: row.role, adminMember'],
-      ['server/web/lib/token-login.ts', '!(login && adminLogin({ role: login.role'],
+      ['server/web/lib/mcp-oauth.ts', 'const admin = adminLogin({ adminMember'],
+      ['server/web/lib/token-login.ts', '!(login && adminLogin({ adminMember'],
     ] as const) {
       const at = lineOf(path, needle);
       expect(at, path).toBeGreaterThan(0);
@@ -552,9 +554,16 @@ describe('the repo', () => {
   });
 
   it('reads the role column in the functions S8b must pin', () => {
+    // mantle_login_is_admin_user is membership only since 0399; the
+    // membership definers write the column; mantle_bridge_login reads the
+    // role only to demote (round 4, M1), and the role guard reads none.
+    expect(detail.sqlRoleReaderFns).not.toContain('mantle_login_is_admin_user');
+    expect(detail.sqlRoleReaderFns).toContain('mantle_bridge_login');
+    expect(detail.sqlRoleReaderFns).not.toContain('mantle_login_role_guard');
+    expect(detail.sqlRoleReaderFns).not.toContain('mantle_ws_add_user');
+    expect(detail.sqlRoleReaderFns).not.toContain('mantle_ws_remove_user');
     expect(detail.sqlRoleReaderFns).toEqual(
       expect.arrayContaining([
-        'mantle_login_is_admin_user',
         'mantle_member_space',
         'mantle_ws_dry_run',
         'mantle_ws_reach_diff',

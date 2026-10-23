@@ -8,7 +8,7 @@
  *    kind drew (one picked before stays), and one workspace_events row says
  *    so. A second run changes nothing;
  *  - mantle_ws_kind has no 'team' kind;
- *  - the login bridge gives Admin only: a new member joins nothing, an
+ *  - the login bridge gave Admin only (a no-op since 0399, S8b): a new member joins nothing, an
  *    admin joins Admin as a Moderator, and a role change never touches
  *    Team's rows;
  *  - "Team" is no reserved name any more; "Admin" still is.
@@ -120,7 +120,7 @@ describe.skipIf(!URL)('migration 0286: Team is a normal workspace', () => {
     expect(k).toEqual({ team: 'other', admin: 'admin' });
   });
 
-  it('the login bridge gives Admin only, and never touches Team', async () => {
+  it('the login bridge (a no-op since 0399) moves no row, and never touches Team', async () => {
     const z = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role)
       values (${z}, 'z@example.invalid', 'x', 'member')`;
@@ -137,7 +137,9 @@ describe.skipIf(!URL)('migration 0286: Team is a normal workspace', () => {
       values (${team}, ${z}, false)`;
     await sql`update auth.users set role = 'admin' where id = ${z}`;
     await sql`select mantle_bridge_login(${z})`;
-    expect(await rows()).toEqual(['A:true', 'T:false']);
+    // S8b (0399): the bridge is a no-op; only the membership definers put a
+    // login in Admin (and write its role). A hand-written role is drift.
+    expect(await rows()).toEqual(['T:false']);
     await sql`update auth.users set role = 'member' where id = ${z}`;
     await sql`select mantle_bridge_login(${z})`;
     expect(await rows()).toEqual(['T:false']);

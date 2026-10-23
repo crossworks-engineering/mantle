@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Tool } from '@mantle/db';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -111,7 +112,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     process.env.MANTLE_FILES_ROOT = join(dir, 'files');
     m = await import('@mantle/db');
     tools = turnCallDispatch(await import('./index'));
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin'),
       (${mod}, ${`${tag}-m@example.invalid`}, 'x', false, 'member'),
       (${reader}, ${`${tag}-r@example.invalid`}, 'x', false, 'member'),
@@ -244,7 +245,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
 
   it('a read in a turn does not make the private workspace; a create does (L-3)', async () => {
     const fresh = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role)
                 values (${fresh}, ${`${tag}-f@example.invalid`}, 'x', false, 'member')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${fresh}, false)`);
@@ -266,7 +267,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
 
   it('a Team reader with no private workspace: any write tool makes it; export_node is refused (M-a)', async () => {
     const fresh = randomUUID();
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role)
                 values (${fresh}, ${`${tag}-g@example.invalid`}, 'x', false, 'member')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${fresh}, false)`);

@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -116,7 +117,7 @@ describe.skipIf(!URL)('W6b fix round 5', () => {
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
     c = await import('@mantle/content');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member')`);

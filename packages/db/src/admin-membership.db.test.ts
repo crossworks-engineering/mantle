@@ -8,6 +8,9 @@
  *    narrowing cell: a role=admin login outside Admin is no Admin user any
  *    more (true to false); a role=member login inside Admin stays no Admin
  *    user (false, as on main); never false to true anywhere;
+ *  - since 0399 (S8b) it is membership only: a role=member login inside
+ *    Admin (drift, which the membership definers never leave) is an Admin
+ *    user; the grid's other cells answer as under 0306;
  *  - mantle_access_key_revoke (a reader): a role=admin login outside Admin
  *    may no longer revoke another login's key (the narrowing, through the
  *    reader); an Admin user still may; a role=member login inside Admin
@@ -60,110 +63,117 @@ describe('0306 is stamped above every `when` before it (renumber proof)', () => 
   });
 });
 
-describe.skipIf(!URL)('mantle_login_is_admin_user is role AND membership (S8a)', () => {
-  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
-  let sql: ReturnType<typeof postgres>;
-  let brain = '';
-  let adminWs = '';
-  const tag = `am${randomUUID().slice(0, 8)}`;
-  const L = {
-    adm: randomUUID(), // role admin, in Admin
-    dis: randomUUID(), // role admin, in Admin, disabled
-    out: randomUUID(), // role admin, not in Admin (drift)
-    memIn: randomUUID(), // role member, in Admin (drift)
-    mem: randomUUID(), // member, not in Admin
-    none: randomUUID(), // no login at all
-  };
-  const logins = (): Record<string, string> => ({ anchor: brain, ...L });
+describe.skipIf(!URL)(
+  'mantle_login_is_admin_user: role AND membership (S8a), membership only (S8b, 0399)',
+  () => {
+    let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+    let sql: ReturnType<typeof postgres>;
+    let brain = '';
+    let adminWs = '';
+    const tag = `am${randomUUID().slice(0, 8)}`;
+    const L = {
+      adm: randomUUID(), // role admin, in Admin
+      dis: randomUUID(), // role admin, in Admin, disabled
+      out: randomUUID(), // role admin, not in Admin (drift)
+      memIn: randomUUID(), // role member, in Admin (drift)
+      mem: randomUUID(), // member, not in Admin
+      none: randomUUID(), // no login at all
+    };
+    const logins = (): Record<string, string> => ({ anchor: brain, ...L });
 
-  const one = async (q: string, params: unknown[]): Promise<unknown> =>
-    (await sql.unsafe<{ a: unknown }[]>(q, params as never[]))[0]!.a;
-  /** `fn` in a transaction rolled back after. */
-  const rolledBack = async <T>(fn: (tx: postgres.TransactionSql) => Promise<T>): Promise<T> => {
-    let out: T | undefined;
-    await sql
-      .begin(async (tx) => {
-        out = await fn(tx);
-        throw new Error('rollback');
-      })
-      .catch((err: unknown) => {
-        if ((err as Error).message !== 'rollback') throw err;
-      });
-    return out as T;
-  };
+    const one = async (q: string, params: unknown[]): Promise<unknown> =>
+      (await sql.unsafe<{ a: unknown }[]>(q, params as never[]))[0]!.a;
+    /** `fn` in a transaction rolled back after. */
+    const rolledBack = async <T>(fn: (tx: postgres.TransactionSql) => Promise<T>): Promise<T> => {
+      let out: T | undefined;
+      await sql
+        .begin(async (tx) => {
+          out = await fn(tx);
+          throw new Error('rollback');
+        })
+        .catch((err: unknown) => {
+          if ((err as Error).message !== 'rollback') throw err;
+        });
+      return out as T;
+    };
 
-  beforeAll(async () => {
-    scratch = await createMigratedScratchDatabase(URL!);
-    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
-    brain = await ensureTestAnchor(sql);
-    const email = (k: string) => `${tag}-${k}@example.invalid`;
-    await sql`insert into auth.users (id, email, password_hash, role) values
+    beforeAll(async () => {
+      scratch = await createMigratedScratchDatabase(URL!);
+      sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+      brain = await ensureTestAnchor(sql);
+      const email = (k: string) => `${tag}-${k}@example.invalid`;
+      await sql`insert into auth.users (id, email, password_hash, role) values
       (${L.adm}, ${email('adm')}, 'x', 'admin'), (${L.dis}, ${email('dis')}, 'x', 'admin'),
       (${L.out}, ${email('out')}, 'x', 'admin'), (${L.memIn}, ${email('memin')}, 'x', 'member'),
       (${L.mem}, ${email('mem')}, 'x', 'member')`;
-    await sql`update auth.users set disabled_at = now() where id = ${L.dis}`;
-    await sql`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
+      await sql`update auth.users set disabled_at = now() where id = ${L.dis}`;
+      await sql`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
               on conflict (id) do nothing`;
-    const [a] = await sql<{ id: string }[]>`
+      const [a] = await sql<{ id: string }[]>`
       select id::text from workspaces where owner_id = ${brain} and is_admin`;
-    adminWs = a?.id ?? randomUUID();
-    if (!a) {
-      await sql`insert into workspaces (id, owner_id, name, is_admin)
+      adminWs = a?.id ?? randomUUID();
+      if (!a) {
+        await sql`insert into workspaces (id, owner_id, name, is_admin)
                 values (${adminWs}, ${brain}, ${`${tag} Admin`}, true)`;
-    }
-    await sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
+      }
+      await sql`insert into workspace_users (workspace_id, login_id, moderator, limits) values
       (${adminWs}, ${brain}, true, '{}'), (${adminWs}, ${L.adm}, true, '{}'),
       (${adminWs}, ${L.dis}, true, '{}'), (${adminWs}, ${L.memIn}, true, '{}')
       on conflict do nothing`;
-  }, 300_000);
+    }, 300_000);
 
-  afterAll(async () => {
-    await sql?.end();
-    await scratch?.drop();
-  }, 120_000);
+    afterAll(async () => {
+      await sql?.end();
+      await scratch?.drop();
+    }, 120_000);
 
-  it('answers as 0293`s text AND mantle_login_is_admin: only the named cell narrows', async () => {
-    const changed: string[] = [];
-    for (const [k, id] of Object.entries(logins())) {
-      const main = await one(MAIN_IS_ADMIN_USER, [id]);
-      const member = await one('select mantle_login_is_admin($1::uuid) as a', [id]);
-      const now = await one('select mantle_login_is_admin_user($1::uuid) as a', [id]);
-      expect(now, k).toBe(main === true && member === true);
-      if (now !== main) changed.push(`${k}: ${String(main)} -> ${String(now)}`);
-    }
-    // The one changed answer, and it narrows.
-    expect(changed).toEqual(['out: true -> false']);
-    expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [brain])).toBe(true);
-    expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [L.adm])).toBe(true);
-    expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [L.memIn])).toBe(false);
-  });
+    it('answers as 0293`s text AND mantle_login_is_admin: only the named cell narrows', async () => {
+      const changed: string[] = [];
+      for (const [k, id] of Object.entries(logins())) {
+        const main = await one(MAIN_IS_ADMIN_USER, [id]);
+        const member = await one('select mantle_login_is_admin($1::uuid) as a', [id]);
+        const now = await one('select mantle_login_is_admin_user($1::uuid) as a', [id]);
+        // Since 0399 (S8b) membership alone: mantle_login_is_admin.
+        expect(now, k).toBe(member === true);
+        if (now !== main) changed.push(`${k}: ${String(main)} -> ${String(now)}`);
+      }
+      // Against 0293's text, only the two drift cells move: 0306 narrowed
+      // `out`; 0399 widens `memIn`, a drifted login the membership definers
+      // never leave (they write the role with the row; the precondition is
+      // mantle_role_drift 0 on every box).
+      expect(changed).toEqual(['out: true -> false', 'memIn: false -> true']);
+      expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [brain])).toBe(true);
+      expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [L.adm])).toBe(true);
+      expect(await one('select mantle_login_is_admin_user($1::uuid) as a', [L.memIn])).toBe(true);
+    });
 
-  it('mantle_access_key_revoke: a role=admin login outside Admin revokes only its own keys now', async () => {
-    const revokeBy = (who: string) =>
-      rolledBack(async (tx) => {
-        const key = randomUUID();
-        await tx`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
+    it('mantle_access_key_revoke: a role=admin login outside Admin revokes only its own keys now', async () => {
+      const revokeBy = (who: string) =>
+        rolledBack(async (tx) => {
+          const key = randomUUID();
+          await tx`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
                  values (${key}, ${tag}, ${L.mem}, ${key.replace(/-/g, '').slice(0, 8)},
                          ${createHash('sha256').update(key).digest('hex')}, 'read')`;
-        // No scope: the acting login the gateway sends must be `who` (0315).
-        await tx`select set_config('mantle.acting_login', ${who}, true)`;
-        const got = await tx<{ id: string }[]>`
+          // No scope: the acting login the gateway sends must be `who` (0315).
+          await tx`select set_config('mantle.acting_login', ${who}, true)`;
+          const got = await tx<{ id: string }[]>`
           select id::text from mantle_access_key_revoke(${key}::uuid, ${who}::uuid)`;
-        return got.length;
-      });
-    expect(await revokeBy(L.adm)).toBe(1); // an Admin user: any key, as on main
-    expect(await revokeBy(L.out)).toBe(0); // the named narrowing (main: 1)
-    expect(await revokeBy(L.memIn)).toBe(0); // member-negative, as on main
-    expect(await revokeBy(L.none)).toBe(0); // no login, as on main
-    expect(await revokeBy(L.mem)).toBe(1); // its own key, as on main
-  });
+          return got.length;
+        });
+      expect(await revokeBy(L.adm)).toBe(1); // an Admin user: any key, as on main
+      expect(await revokeBy(L.out)).toBe(0); // the named narrowing (main: 1)
+      expect(await revokeBy(L.memIn)).toBe(1); // in Admin: membership decides (0399; drift only)
+      expect(await revokeBy(L.none)).toBe(0); // no login, as on main
+      expect(await revokeBy(L.mem)).toBe(1); // its own key, as on main
+    });
 
-  it('keeps its grants: PUBLIC may not EXECUTE it', async () => {
-    const [r] = await sql<{ pub: boolean }[]>`
+    it('keeps its grants: PUBLIC may not EXECUTE it', async () => {
+      const [r] = await sql<{ pub: boolean }[]>`
       select has_function_privilege('public', 'public.mantle_login_is_admin_user(uuid)', 'EXECUTE') as pub`;
-    expect(r!.pub).toBe(false);
-  });
-});
+      expect(r!.pub).toBe(false);
+    });
+  },
+);
 
 describe.skipIf(!URL)('a database at the migration before 0306 runs 0306 and only it', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;

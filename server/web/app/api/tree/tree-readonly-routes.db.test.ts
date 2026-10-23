@@ -15,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** MANTLE_DB_RUNTIME_ROLE as the run set it, back after the reader. */
@@ -84,7 +85,7 @@ describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => 
     // The caller's private items are read on the personal-space role.
     await m.ensureViewerRoles(adminClient(), process.env.MANTLE_MASTER_KEY);
     h.owner = owner;
-    await m.db.execute(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -56,7 +56,7 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: each login reads in its own sco
     process.env.SESSION_SECRET = 'w7-int-fix3-session-secret-at-least-32-chars!';
     delete process.env.MANTLE_DETACHED_DEV;
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${admin}, ${`${tag}-a@example.invalid`}, 'x', false, 'admin', 'Admin user'),
       (${outsider}, ${`${tag}-x@example.invalid`}, 'x', false, 'admin', 'Outsider')`);

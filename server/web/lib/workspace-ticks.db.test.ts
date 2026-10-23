@@ -26,6 +26,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -64,7 +65,7 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     t = await import('./workspace-ticks');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${email(owner)}, 'x', true, 'admin'),
       (${adm2}, ${email(adm2)}, 'x', false, 'admin'),
       (${mem}, ${email(mem)}, 'x', false, 'member'),
@@ -205,7 +206,7 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
     const off = randomUUID();
     const noUsers = randomUUID();
     // Admin logins: the login bridge makes each a user of Admin.
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${off}, ${email(off)}, 'x', false, 'admin'),
       (${noUsers}, ${email(noUsers)}, 'x', false, 'admin')`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values

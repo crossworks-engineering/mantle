@@ -55,22 +55,25 @@ vi.mock('@mantle/db', async (importOriginal) => {
       if (!inTx) throw new Error('bridge outside the transaction');
       h.executed.push(JSON.stringify(q.queryChunks ?? q));
       h.executedInTx.push(h.txCount);
-      return [];
+      // The lookup answers the brain's one live Admin workspace; the add
+      // answers its one row.
+      return [{ owner: ANCHOR, ws: ANCHOR, member: false }];
     },
+  };
+  const open = async (fn: (t: typeof tx) => Promise<unknown>) => {
+    h.txCount++;
+    inTx++;
+    try {
+      return await fn(tx);
+    } finally {
+      inTx--;
+    }
   };
   return {
     ...(await importOriginal<typeof import('@mantle/db')>()),
     db: {
       select: () => chain,
-      transaction: async (fn: (t: typeof tx) => Promise<unknown>) => {
-        h.txCount++;
-        inTx++;
-        try {
-          return await fn(tx);
-        } finally {
-          inTx--;
-        }
-      },
+      transaction: open,
     },
   };
 });
@@ -131,13 +134,17 @@ describe('POST /api/users, the insert refused', () => {
     expect(h.inserted).toMatchObject({ role: 'member', isOwner: false });
     const admin = await POST(post({ ...noRole, email: 'adm@example.invalid', role: 'admin' }));
     expect(admin.status).toBe(201);
-    expect(h.inserted).toMatchObject({ role: 'admin' });
-    // Each new login is put in the workspaces its role gives, by name.
+    // Inserted a member; the membership definer adds it to Admin and writes
+    // the role, as the caller (the exit's acting login), in the same
+    // transaction.
+    expect(h.inserted).toMatchObject({ role: 'member' });
+    // The live Admin workspace (liveAdminWorkspace), then the add.
     expect(h.executed).toHaveLength(2);
-    expect(h.executed.every((q) => q.includes('mantle_bridge_login'))).toBe(true);
-    // Each login with its rows in its own one transaction.
+    expect(h.executed[0]).toContain('is_admin');
+    expect(h.executed[1]).toContain('mantle_ws_add_user');
+    // Each login in its own one transaction; the member's runs no statement.
     expect(h.txCount).toBe(2);
-    expect(h.executedInTx).toEqual([1, 2]);
+    expect(h.executedInTx).toEqual([2, 2]);
   });
 
   it("refuses a former client's email, before any write (W8a fix round 1, L6)", async () => {

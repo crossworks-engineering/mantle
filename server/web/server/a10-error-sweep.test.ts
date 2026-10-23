@@ -161,7 +161,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       // which it replaced, read no database in the handler).
       if (k === 'execute') {
         return async (stmt: { queryChunks?: unknown[] }) => {
-          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_is_admin')) {
+          if (JSON.stringify(stmt?.queryChunks ?? []).includes('mantle_scope_admin_facts')) {
             return [{ admin: true, areas: [] }];
           }
           if (faults.inHandler && faults.make) throw faults.make();

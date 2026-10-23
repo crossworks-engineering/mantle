@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const fake = vi.hoisted(() => ({
   calls: [] as Array<{ toolName: string; args: Record<string, unknown> }>,
@@ -115,7 +116,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
 
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await exec(
@@ -158,7 +159,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${appId}, ${anchor}, 'app', ${`${tag} app`}, 'apps', 'team')`);
     await exec(sqlTag`insert into apps (node_id) values (${appId})`);
-    await exec(sqlTag`
+    await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
         (${clientsMember}, ${`${tag}-c@example.invalid`}, 'x', 'member')`);

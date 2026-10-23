@@ -34,7 +34,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -184,7 +184,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     c = await import('@mantle/content');
     t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
       (${second}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Second Admin')`);

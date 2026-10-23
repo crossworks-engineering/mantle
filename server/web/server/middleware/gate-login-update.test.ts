@@ -210,7 +210,10 @@ describe.skipIf(!hasManifest)('a guard read inside a login change (A4 step 3a, L
       second: 401,
     });
     expect(state.epochs.get(MEMBER)).toBe(1);
-    expect(state.roles.get(MEMBER)).toBe('admin');
+    // applyLoginChange writes no role since S8b: the Admin definer does, in
+    // the route's own step (adminMembershipChange), which this stand-in
+    // leaves out; the session still ends.
+    expect(state.roles.get(MEMBER)).toBeUndefined();
     // The gate's find, the read inside the transaction, the one after.
     expect(state.loginRows).toBe(3);
   });
