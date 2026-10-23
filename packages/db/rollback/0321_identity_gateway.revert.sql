@@ -6,10 +6,10 @@
 -- requires the acting login where a definer read it; an older image's
 -- product writes reach those definers on the full route with the acting
 -- login sent, so a rollback of one image needs NOT this file. Order when
--- reverting several: 0321 first, then 0320, then 0319 down to 0314, each in
--- its own transaction, newest first (0320's revert puts 0319's
--- mantle_narrow_one_way back, whose body this file must have restored the
--- reads of first).
+-- reverting several: every newer one first (0326 down to 0322), then 0321,
+-- then 0320, then 0319 down to 0314, each in its own transaction, newest
+-- first (0320's revert puts 0319's mantle_narrow_one_way back, whose body
+-- this file must have restored the reads of first).
 --
 -- Run it as the superuser, in one transaction:
 --   docker exec mantle_web cat /app/packages/db/rollback/0321_identity_gateway.revert.sql \

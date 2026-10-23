@@ -5,10 +5,10 @@
 -- 0320 refuses only the narrow system role (and, for mantle_ws_system_work,
 -- a session whose own role is the narrow or a viewer role), which an older
 -- image's product writes never meet in a refused direction: a rollback of
--- one image needs NOT this file. Order when reverting several: 0320 first,
--- then 0319 down to 0314, each in its own transaction, newest first (0319's
--- revert puts 0318's mantle_narrow_one_way back, so 0320's must run before
--- it).
+-- one image needs NOT this file. Order when reverting several: every newer
+-- one first (0326 down to 0321), then 0320, then 0319 down to 0314, each in
+-- its own transaction, newest first (0319's revert puts 0318's
+-- mantle_narrow_one_way back, so 0320's must run before it).
 --
 -- Run it as the superuser, in one transaction:
 --   docker exec mantle_web cat /app/packages/db/rollback/0320_narrow_row_rules.revert.sql \

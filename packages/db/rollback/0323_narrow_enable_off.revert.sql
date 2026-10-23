@@ -7,8 +7,9 @@
 -- the narrow route would be refused, so a box that rolls back one image
 -- with the narrow switch on runs this file first (with the switch off, the
 -- default on production boxes, it needs none). Order when reverting
--- several: 0323 first, then 0322, 0321, 0320, then 0319 down to 0314, each
--- in its own transaction, newest first.
+-- several: every newer one first (0326 down to 0324), then 0323, then 0322,
+-- 0321, 0320, then 0319 down to 0314, each in its own transaction, newest
+-- first.
 --
 -- It takes 'off:is_default' and 'off:backup_enabled' out of every
 -- mantle_narrow_one_way trigger, and 'off:enabled' out of every one but

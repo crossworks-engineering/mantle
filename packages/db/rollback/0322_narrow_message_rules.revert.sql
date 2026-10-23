@@ -5,9 +5,10 @@
 -- 0322 refuses only the narrow system role (and counts the same break by a
 -- narrow reason off the narrow route), which an older image's product
 -- writes never meet in a refused direction: a rollback of one image needs
--- NOT this file. Order when reverting several: 0322 first, then 0321, then
--- 0320, then 0319 down to 0314, each in its own transaction, newest first
--- (0320's revert drops the guard this file puts back).
+-- NOT this file. Order when reverting several: every newer one first (0326
+-- down to 0323), then 0322, then 0321, then 0320, then 0319 down to 0314,
+-- each in its own transaction, newest first (0320's revert drops the guard
+-- this file puts back).
 --
 -- Run it as the superuser, in one transaction:
 --   docker exec mantle_web cat /app/packages/db/rollback/0322_narrow_message_rules.revert.sql \
