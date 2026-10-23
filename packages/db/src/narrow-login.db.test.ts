@@ -422,7 +422,7 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
       ['default_transaction_read_only', 'on'],
       ['default_transaction_isolation', 'serializable'],
       ['row_security', 'off'],
-      ['statement_timeout', '50'],
+      ['statement_timeout', '1000'],
       ['lock_timeout', '1'],
       ['idle_in_transaction_session_timeout', '600000'],
       ['idle_session_timeout', '600000'],
@@ -454,8 +454,15 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
     const read = `select ${stored.map(([n]) => `current_setting('${n}') as "${n}"`).join(', ')},
                          current_setting('transaction_read_only') as ro`;
     // A session without the startup parameters takes them: read only, and
-    // a statement cut short (the auditor's P4).
-    const raw = postgres(narrowUrlOf(), { max: 1, prepare: false, onnotice: () => {} });
+    // a statement cut short (the auditor's P4). No type fetch: on a busy
+    // box the driver's own first query could meet the stored timeout and,
+    // with exit_on_error on, end the session before the cell's statements.
+    const raw = postgres(narrowUrlOf(), {
+      max: 1,
+      prepare: false,
+      fetch_types: false,
+      onnotice: () => {},
+    });
     // The route reads the system pool's session-start values before a
     // narrow connect (systemStartup); the pool takes them at connect.
     await nr.systemStartup(su);
@@ -468,9 +475,9 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         exit_on_error: 'on',
         array_nulls: 'off',
       });
-      // Cut short at 50 ms, and with exit_on_error on the error ends the
+      // Cut short at 1 s, and with exit_on_error on the error ends the
       // session too (the driver then answers the close).
-      const cut = (await failure(raw.unsafe('select pg_sleep(0.2)'))) as { code?: string };
+      const cut = (await failure(raw.unsafe('select pg_sleep(1.5)'))) as { code?: string };
       expect(['57014', 'CONNECTION_CLOSED']).toContain(cut.code);
       // The pool's session: every one at the value the app runs with.
       const [row] = await pool.unsafe<Record<string, string>[]>(read);
@@ -480,7 +487,8 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         expect(want[name], name).toBeDefined();
       }
       expect(row!.ro).toBe('off');
-      await pool.unsafe('select pg_sleep(0.2)');
+      // Past the stored timeout: the pool's own runs.
+      await pool.unsafe('select pg_sleep(1.5)');
     } finally {
       await raw.end();
       await pool.end();
