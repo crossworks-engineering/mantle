@@ -11,7 +11,7 @@
  *    refusal, the caller's not_found, no_acting_login, read_only) a 403,
  *    anything else null.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { adminMembershipChange, adminMembershipRefusal, type LoginTx } from './login-update';
 
 /** A stand-in transaction: the Admin lookup answers `member`, the definer
@@ -140,5 +140,26 @@ describe('adminMembershipRefusal', () => {
     }
     // A 42501 that is no definer refusal (a permission error) is not mapped.
     expect(adminMembershipRefusal(pgc('permission denied for table users', '42501'))).toBeNull();
+  });
+
+  it('says no_acting_login and not_found in the log by code, the other 403s not (r7 app LOW-1)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const code of ['no_acting_login', 'not_found']) {
+        warn.mockClear();
+        expect(adminMembershipRefusal(pg(`mantle_ws:${code} mantle_ws_add_user: x`))?.status).toBe(
+          403,
+        );
+        expect(warn, code).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0]![0]), code).toContain(`mantle_ws:${code}`);
+      }
+      warn.mockClear();
+      for (const code of ['read_only', 'forbidden', 'last_moderator']) {
+        adminMembershipRefusal(pg(`mantle_ws:${code} mantle_ws_add_user: x`));
+      }
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

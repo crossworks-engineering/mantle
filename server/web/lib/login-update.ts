@@ -411,6 +411,12 @@ export function definerRefusal(err: unknown): string | null {
  *  by name so the answer never hangs on the SQLSTATE alone). */
 const CALLER_REFUSALS: ReadonlySet<string> = new Set(['not_found', 'no_acting_login', 'read_only']);
 
+/** The caller refusals that mean the spot's wiring, not the caller, may be
+ *  wrong: the definer found no acting login (the gateway sends one at
+ *  `login-credential` in every check mode) or no user row for it. Still a
+ *  403, but said in the log by its code, so a regression there is seen. */
+const WIRING_REFUSALS: ReadonlySet<string> = new Set(['not_found', 'no_acting_login']);
+
 /** The refusals that say the caller lacks the users area. */
 const USERS_AREA_REFUSALS: ReadonlySet<string> = new Set([
   'admin_users_only',
@@ -440,6 +446,11 @@ export function adminMembershipRefusal(
     };
   }
   if (CALLER_REFUSALS.has(code) || pgErrorCode(err) === '42501') {
+    if (WIRING_REFUSALS.has(code)) {
+      console.warn(
+        `[users] admin membership refused mantle_ws:${code}: answered 403; check the login-credential spot sends the acting login`,
+      );
+    }
     return {
       status: 403,
       reason: 'forbidden',
