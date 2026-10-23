@@ -14,13 +14,16 @@
  * order for overlapping patterns).
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   aliasMismatches,
   analyzeRouteFile,
   handlerPolicy,
   handlerSwitches,
+  routeDirSegments,
+  specPattern,
+  specRouteFile,
   type HandlerCallers,
   type HandlerSwitches,
   type RouteFileReads,
@@ -115,13 +118,20 @@ function analysisOf(absFile: string, seen: Set<string> = new Set()): RouteFileRe
   return reads;
 }
 
+/** A path from server/web (posix) of an absolute one. */
+function webRel(absFile: string): string {
+  return relative(webRoot, absFile).split('\\').join('/');
+}
+
+/** Whether a path from server/web (posix) is a file. */
+const existsInWeb = (rel: string) => existsSync(join(webRoot, rel));
+
 /** The route file `spec` names from `absFile`, if it names one (a
- *  relative route file); else null. */
+ *  relative route file; route-callers.ts specRouteFile, which refuses a
+ *  route file named by a path that is not relative); else null. */
 function routeFileAt(absFile: string, spec: string): string | null {
-  if (!spec.startsWith('.')) return null;
-  const base = resolve(dirname(absFile), spec);
-  const target = ['.ts', '.tsx'].map((x) => base + x).find((f) => existsSync(f));
-  return target && /\/route\.tsx?$/.test(target) ? target : null;
+  const target = specRouteFile(webRel(absFile), spec, existsInWeb);
+  return target ? join(webRoot, target) : null;
 }
 
 /** Each method to the switch it is served under, per route file
@@ -142,39 +152,10 @@ function switchesOf(absFile: string, seen: Set<string> = new Set()): HandlerSwit
   return switches;
 }
 
-/** The route pattern of a route file (its directory under app/, route
- *  groups dropped): the pattern only, as toEntry builds it. */
-function patternOfFile(absFile: string): string {
-  return '/' + routeSegments(absFile).segments.join('/');
-}
-
-function routeSegments(absFile: string): {
-  segments: string[];
-  catchAll: string | null;
-  catchAllOptional: boolean;
-} {
-  const rel = relative(appDir, dirname(absFile)).split('\\').join('/');
-  const rawSegs = rel === '' ? [] : rel.split('/');
-  const segments: string[] = [];
-  let catchAll: string | null = null;
-  let catchAllOptional = false;
-  for (const seg of rawSegs) {
-    if (seg.startsWith('(') && seg.endsWith(')')) continue; // route group
-    let m: RegExpMatchArray | null;
-    if ((m = seg.match(/^\[\[\.\.\.(.+)\]\]$/))) {
-      catchAll = m[1]!;
-      catchAllOptional = true;
-      segments.push('*');
-    } else if ((m = seg.match(/^\[\.\.\.(.+)\]$/))) {
-      catchAll = m[1]!;
-      segments.push('*');
-    } else if ((m = seg.match(/^\[(.+)\]$/))) {
-      segments.push(`:${m[1]}`);
-    } else {
-      segments.push(seg);
-    }
-  }
-  return { segments, catchAll, catchAllOptional };
+/** The route segments of a route file (its directory under app/; one
+ *  spelling, route-callers.ts routeDirSegments). */
+function routeSegments(absFile: string) {
+  return routeDirSegments(relative(appDir, dirname(absFile)).split('\\').join('/'));
 }
 
 function toEntry(absFile: string): Entry {
@@ -187,10 +168,9 @@ function toEntry(absFile: string): Entry {
   // A declared alias is the route file the handler comes from (round 3
   // LOW-1): the boot checks the base is served and declared, this that it
   // is the one re-exported.
-  const aliases = aliasMismatches(src, file, policy, (spec) => {
-    const target = routeFileAt(absFile, spec);
-    return target ? patternOfFile(target) : null;
-  });
+  const aliases = aliasMismatches(src, file, policy, (spec) =>
+    specPattern(file, spec, existsInWeb),
+  );
   if (aliases.length) throw new Error(`[gen-route-manifest] ${aliases.join('; ')}`);
   return {
     file,

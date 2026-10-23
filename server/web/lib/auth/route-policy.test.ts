@@ -20,7 +20,7 @@
  * pattern, method and a path spelled with escapes.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -35,7 +35,7 @@ import {
   type GateCaller,
 } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
-import { reExportedHandlers } from '../../scripts/route-callers';
+import { reExportedHandlers, specPattern } from '../../scripts/route-callers';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
 import { isPublicPath } from '../auth-constants';
@@ -235,15 +235,19 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       // method there (a HEAD the GET handler answers: its GET's, under the
       // row's own method); a row with none has a handler of its own (or no
       // base route). The generator holds a declared aliasOf to the same.
-      const from = reExportedHandlers(src, file)[m];
-      const target = from
-        ? relative(webRoot, resolve(dirname(file), from.spec))
-            .split(sep)
-            .join('/')
-        : null;
-      const basePattern = target
-        ? manifest.find((e) => e.file === `${target}.ts` || e.file === `${target}.tsx`)?.pattern
+      const rel = relative(webRoot, file).split(sep).join('/');
+      const from = reExportedHandlers(src, rel)[m];
+      // The one resolver of a `from` spec (route-callers.ts specPattern),
+      // the generator's and the codemod's; the manifest serves what it names.
+      const basePattern = from
+        ? (specPattern(rel, from.spec, (f) => existsSync(join(webRoot, f))) ?? undefined)
         : undefined;
+      if (basePattern !== undefined) {
+        expect(
+          manifest.some((e) => e.pattern === basePattern),
+          basePattern,
+        ).toBe(true);
+      }
       expect(from === undefined || from.name === m, row.key).toBe(true);
       expect(basePattern !== undefined ? `${row.method} ${basePattern}` : null, row.key).toBe(
         row.aliasOf,

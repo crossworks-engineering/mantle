@@ -1126,6 +1126,97 @@ export function reExportedHandlers(src: string, file: string): ReExportedHandler
   return out;
 }
 
+/** The route segments of a route file's directory under app/ (`rel`,
+ *  posix, '' for app itself): route groups dropped, `[x]` as `:x`, a
+ *  catch-all (`[...x]`, optional `[[...x]]`) as `*`. The generator's
+ *  pattern of every route file, and the pattern a handler's `from` spec
+ *  resolves to (specPattern): one spelling. */
+export function routeDirSegments(rel: string): {
+  segments: string[];
+  catchAll: string | null;
+  catchAllOptional: boolean;
+} {
+  const rawSegs = rel === '' ? [] : rel.split('/');
+  const segments: string[] = [];
+  let catchAll: string | null = null;
+  let catchAllOptional = false;
+  for (const seg of rawSegs) {
+    if (seg.startsWith('(') && seg.endsWith(')')) continue; // route group
+    let m: RegExpMatchArray | null;
+    if ((m = seg.match(/^\[\[\.\.\.(.+)\]\]$/))) {
+      catchAll = m[1]!;
+      catchAllOptional = true;
+      segments.push('*');
+    } else if ((m = seg.match(/^\[\.\.\.(.+)\]$/))) {
+      catchAll = m[1]!;
+      segments.push('*');
+    } else if ((m = seg.match(/^\[(.+)\]$/))) {
+      segments.push(`:${m[1]}`);
+    } else {
+      segments.push(seg);
+    }
+  }
+  return { segments, catchAll, catchAllOptional };
+}
+
+/** Whether `file` (posix, from server/web) is a route file: app/**\/route.ts(x). */
+const ROUTE_FILE = /^app\/(?:.*\/)?route\.tsx?$/;
+
+/** The route pattern of a route file (posix, from server/web:
+ *  `app/api/notes/[id]/route.ts` is `/api/notes/:id`); null where `file`
+ *  is no route file. */
+export function routeFilePattern(file: string): string | null {
+  if (!ROUTE_FILE.test(file)) return null;
+  const dir = posix.dirname(file).slice('app'.length).replace(/^\//, '');
+  return '/' + routeDirSegments(dir).segments.join('/');
+}
+
+/**
+ * The route file a module spec of the route file `file` names (both posix,
+ * from server/web), or null where it names none (a lib module, a
+ * package). `exists` says whether a path from server/web is a file. A
+ * spec that names a route file other than by a relative path (`@/app/...`
+ * or an absolute path; a spec whose last segment is `route`) is refused,
+ * it throws (round 4, LOW-D): the generator follows a route file's
+ * handlers and reads, and checks an alias, only through a relative one,
+ * so another spelling would read as no route file. One resolver for the
+ * generator, the codemod and route-policy.test.ts (round 4, LOW-E).
+ */
+export function specRouteFile(
+  file: string,
+  spec: string,
+  exists: (rel: string) => boolean,
+): string | null {
+  if (!spec.startsWith('./') && !spec.startsWith('../')) {
+    const local = spec.startsWith('@/') ? spec.slice(2) : null;
+    const named =
+      /(^|\/)route(\.tsx?)?$/.test(spec) ||
+      (local !== null &&
+        [local, `${local}.ts`, `${local}.tsx`].some((f) => ROUTE_FILE.test(f) && exists(f)));
+    if (named) {
+      throw new Error(
+        `${file}: imports the route file ${spec} by a path that is not relative: write it relative (./ or ../), so the generator follows it`,
+      );
+    }
+    return null;
+  }
+  const base = posix.normalize(posix.join(posix.dirname(file), spec));
+  const found = (/\.tsx?$/.test(base) ? [base] : [`${base}.ts`, `${base}.tsx`]).find(exists);
+  return found && ROUTE_FILE.test(found) ? found : null;
+}
+
+/** The route pattern a module spec of the route file `file` names
+ *  (specRouteFile, then routeFilePattern), or null where it names no
+ *  route file. */
+export function specPattern(
+  file: string,
+  spec: string,
+  exists: (rel: string) => boolean,
+): string | null {
+  const target = specRouteFile(file, spec, exists);
+  return target ? routeFilePattern(target) : null;
+}
+
 /**
  * Where a route file's declared `aliasOf` is not the route its handler
  * comes from (plan v3.2 S9, round 3 LOW-1): each declared method's alias
@@ -1149,7 +1240,13 @@ export function aliasMismatches(
     if (!p) continue;
     const declared = Object.hasOwn(p, 'aliasOf') ? (p as { aliasOf?: string }).aliasOf : undefined;
     const from = reExported[m];
-    const pattern = from ? patternOf(from.spec) : null;
+    let pattern: string | null = null;
+    try {
+      pattern = from ? patternOf(from.spec) : null;
+    } catch (e) {
+      out.push(errorMessage(e));
+      continue;
+    }
     const actual = from && pattern !== null ? `${from.name} ${pattern}` : null;
     if (declared === undefined && actual !== null) {
       out.push(`${file}: ${m} re-exports the handler of ${actual} and declares no aliasOf`);

@@ -8,7 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { buildRouteRow, type RouteCaller } from '../lib/auth/route-policy';
-import { aliasMismatches, handlerPolicy, reExportedHandlers } from './route-callers';
+import {
+  aliasMismatches,
+  handlerPolicy,
+  reExportedHandlers,
+  routeFilePattern,
+  specPattern,
+  specRouteFile,
+} from './route-callers';
 import {
   CannotExpress,
   OWN_THINGS,
@@ -283,12 +290,17 @@ describe('an alias is the route its file re-exports (LOW-1)', () => {
   const ALIAS_FILE = 'app/api/v1/notes/route.ts';
   const src = (decl: string, head = "export { GET, POST } from '../../notes/route';\n") =>
     `${IMPORT}\n${head}${decl}\n`;
-  const patternOf = (spec: string) =>
-    spec === '../../notes/route'
-      ? '/api/notes'
-      : spec === '../../pages/route'
-        ? '/api/pages'
-        : null;
+  // The one resolver (route-callers.ts specPattern) over a tree of these
+  // files.
+  const FILES = new Set([
+    ALIAS_FILE,
+    'app/api/notes/route.ts',
+    'app/api/pages/route.ts',
+    'app/api/notes/[id]/route.ts',
+    'lib/notes.ts',
+  ]);
+  const exists = (f: string) => FILES.has(f);
+  const patternOf = (spec: string) => specPattern(ALIAS_FILE, spec, exists);
   const V1 = { pattern: '/api/v1/notes', methods: ['GET', 'POST'] };
   const read = (text: string) => handlerPolicy(text, ALIAS_FILE, V1);
 
@@ -320,6 +332,42 @@ describe('an alias is the route its file re-exports (LOW-1)', () => {
 });`,
     );
     expect(aliasMismatches(text, ALIAS_FILE, read(text), patternOf)).toEqual([]);
+  });
+
+  it('one resolver of a spec to its route pattern (round 4, LOW-E)', () => {
+    expect(patternOf('../../notes/route')).toBe('/api/notes');
+    expect(patternOf('../../notes/[id]/route')).toBe('/api/notes/:id');
+    expect(patternOf('../../notes/route.ts')).toBe('/api/notes');
+    // A lib module, a package, a file that is not there: no route file.
+    expect(specRouteFile(ALIAS_FILE, '../../../../lib/notes', exists)).toBeNull();
+    expect(specRouteFile(ALIAS_FILE, '../../notes/route', exists)).toBe('app/api/notes/route.ts');
+    expect(patternOf('../../../../lib/notes')).toBeNull();
+    expect(patternOf('@mantle/std')).toBeNull();
+    expect(patternOf('@/lib/notes')).toBeNull();
+    expect(patternOf('../../gone/route')).toBeNull();
+    // The pattern of a route file: groups dropped, params, catch-alls.
+    expect(routeFilePattern('app/(api)/api/x/[id]/route.ts')).toBe('/api/x/:id');
+    expect(routeFilePattern('app/api/files/[...path]/route.ts')).toBe('/api/files/*');
+    expect(routeFilePattern('app/api/f/[[...path]]/route.tsx')).toBe('/api/f/*');
+    expect(routeFilePattern('lib/route.ts')).toBeNull();
+  });
+
+  it('refuses a route file named by a path that is not relative (round 4, LOW-D)', () => {
+    for (const spec of ['@/app/api/notes/route', '@/app/api/notes/route.ts', '/abs/app/route']) {
+      expect(() => patternOf(spec), spec).toThrow(/by a path that is not relative/);
+    }
+    // The alias check reports it as a mismatch: the generator and the
+    // codemod refuse the file.
+    const text = src(
+      "export const policy = routePolicy({ GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' } });",
+      "export { GET } from '@/app/api/notes/route';\n",
+    );
+    const policy = handlerPolicy(text, ALIAS_FILE, { pattern: '/api/v1/notes', methods: ['GET'] });
+    expect(aliasMismatches(text, ALIAS_FILE, policy, patternOf)).toEqual([
+      expect.stringMatching(
+        /imports the route file @\/app\/api\/notes\/route by a path that is not relative/,
+      ),
+    ]);
   });
 
   it('refuses an alias of another route, a missing one, and one with a handler of its own', () => {
