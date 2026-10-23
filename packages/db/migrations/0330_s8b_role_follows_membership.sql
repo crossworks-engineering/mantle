@@ -548,8 +548,12 @@ CREATE OR REPLACE FUNCTION "public"."mantle_login_role_guard"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  -- This function's own owner: the migrator, who made it in the migration
+  -- that made the membership definers, and so their owner too (migrate
+  -- reassigns no function). Named by itself, so the guard reaches no
+  -- function a role writing auth.users would need EXECUTE on.
   IF current_user = (SELECT p."proowner"::regrole::name FROM pg_catalog.pg_proc p
-                      WHERE p."oid" = '"public"."mantle_ws_add_user"(uuid,uuid,uuid,boolean)'::regprocedure)
+                      WHERE p."oid" = '"public"."mantle_login_role_guard"()'::regprocedure)
      OR coalesce((SELECT r."rolsuper" FROM pg_catalog.pg_roles r WHERE r."rolname" = current_user), false) THEN
     RETURN NEW;
   END IF;

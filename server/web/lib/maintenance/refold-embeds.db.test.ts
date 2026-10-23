@@ -216,8 +216,12 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
                values (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
     });
     // The page is granted to Team and Admin; its embed to neither.
+    // The shared Admin workspace may have been there before the page was
+    // made (another file made it), so the page may hold its home grant
+    // there already.
     await admin`insert into item_grants (node_id, workspace_id, is_home) values
-      (${granted}, ${ws.admin}, true), (${granted}, ${ws.team}, false)`;
+      (${granted}, ${ws.admin}, true), (${granted}, ${ws.team}, false)
+      on conflict (node_id, workspace_id) do nothing`;
   }, 60_000);
 
   afterAll(async () => {

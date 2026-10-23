@@ -72,6 +72,18 @@ async function run(
 const roleExists = async (sql: postgres.Sql, role: string) =>
   (await sql<{ on: boolean }[]>`select to_regrole(${role}) is not null as on`)[0]!.on;
 
+/** Whether `role` holds `priv` on auth.users (INSERT) or on its role
+ *  column (UPDATE): the narrow role's rights there are column-level since
+ *  S7b and name no role column and no INSERT, so its write is refused by
+ *  those rights (42501 permission denied) before the guard is asked. */
+const holds = async (sql: postgres.Sql, role: string, priv: 'INSERT' | 'UPDATE') =>
+  (
+    await sql<{ on: boolean }[]>`
+      select case when ${priv} = 'INSERT'
+                  then has_table_privilege(${role}, 'auth.users', 'INSERT')
+                  else has_column_privilege(${role}, 'auth.users', 'role', 'UPDATE') end as on`
+  )[0]!.on;
+
 describe.skipIf(!URL)('the role guard: only the membership definers write the role (0330)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
@@ -101,6 +113,13 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
     expect((await sql`select 1 from auth.users`).length).toBe(0);
     for (const role of [RUNTIME_ROLE, NARROW_ROLE]) {
       if (!(await roleExists(sql, role))) continue;
+      if (!(await holds(sql, role, 'INSERT'))) {
+        // No INSERT on auth.users at all (the narrow role): no login of any
+        // kind, the guard never asked.
+        const none = await run(sql, role, insertLogin('admin', true));
+        expect(none.ok ? '' : none.state, role).toBe('42501');
+        continue;
+      }
       const first = await run(sql, role, insertLogin('admin', true));
       expect(first, role).toEqual({ ok: true, v: expect.anything() });
       const second = await run(sql, role, async (tx) => {
@@ -144,11 +163,12 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
       expect(demote.ok ? '' : demote.state, role).toBe('42501');
       const made = await run(sql, role, insertLogin('admin'));
       expect(made.ok ? '' : made.state, role).toBe('42501');
-      if (role !== WRITER) {
-        // The guard's own refusal (these roles hold UPDATE and INSERT).
+      // The guard's own refusal where the role holds the right (the runtime
+      // role); where it does not (the write role, the narrow role's column
+      // rights) the right refuses first.
+      if (await holds(sql, role, 'UPDATE')) {
         expect(promote.ok ? '' : promote.msg, role).toMatch(/^mantle_role:membership_only/);
-        expect(made.ok ? '' : made.msg, role).toMatch(/^mantle_role:membership_only/);
-        // The role left as it is, and a member login, pass.
+        // The role left as it is passes.
         const same = await run(
           sql,
           role,
@@ -156,6 +176,10 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
             tx`update auth.users set role = role, display_name = 'x' where id = ${L.adm} returning role`,
         );
         expect(same, role).toEqual({ ok: true, v: [{ role: 'admin' }] });
+      }
+      if (await holds(sql, role, 'INSERT')) {
+        expect(made.ok ? '' : made.msg, role).toMatch(/^mantle_role:membership_only/);
+        // A member login passes.
         expect((await run(sql, role, insertLogin('member'))).ok, role).toBe(true);
       }
     }
@@ -290,19 +314,36 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
     expect(await refused(RUNTIME_ROLE, exit(L.adm), add(team))).toMatch(
       /^42501 mantle_ws:no_acting_login/,
     );
-    // The write role is no system session: it may not act for an acting
-    // login it set itself.
+    // The write role and the narrow role, each logged in as itself (the
+    // system session test reads session_user, which SET ROLE leaves the
+    // superuser): the write role is no system session, so the acting login
+    // it sets itself is never taken; the narrow role may not run the
+    // definers, nor the helper.
+    const rr = await import('./runtime-role');
+    const v = await import('./viewer');
+    const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
+    const opts = { max: 1, prepare: false, onnotice: () => {} } as const;
+    const asLogin = async (url: string, q: (tx: postgres.TransactionSql) => Promise<unknown>) => {
+      const on = postgres(url, opts);
+      try {
+        const out = await run(on, null, q, exit(L.adm));
+        return out.ok ? 'WROTE' : `${out.state} ${out.msg.split(':').slice(0, 2).join(':')}`;
+      } finally {
+        await on.end();
+      }
+    };
     if (await roleExists(sql, WRITER)) {
-      expect(await refused(WRITER, exit(L.adm), add(adminWs))).toMatch(/^42501 /);
-      expect(await refused(WRITER, exit(L.adm), add(adminWs))).not.toBe('WROTE');
+      const wr = v.viewerDatabaseUrl(scratch!.url, 'write', v.viewerRolePassword(KEY, 'write'));
+      const who = await asLogin(wr, (tx) => tx`select session_user::text as s`);
+      expect(who).toBe('WROTE');
+      expect(await asLogin(wr, add(adminWs))).toMatch(/^42501 mantle_ws:no_acting_login/);
     }
-    // The narrow role may not run the definers, nor the helper.
     if (await roleExists(sql, NARROW_ROLE)) {
-      expect(await refused(NARROW_ROLE, exit(L.adm), add(adminWs))).toMatch(/^42501 /);
+      const nl = rr.runtimeDatabaseUrl(scratch!.url, rr.narrowRolePassword(KEY), NARROW_ROLE);
+      expect(await asLogin(nl, add(adminWs))).toMatch(/^42501 /);
       expect(
-        await refused(
-          NARROW_ROLE,
-          exit(L.adm),
+        await asLogin(
+          nl,
           (tx) => tx`select mantle_ws_exit_login('x', ${brain}::uuid, ${adminWs}::uuid)`,
         ),
       ).toMatch(/^42501 /);

@@ -228,8 +228,7 @@ export async function applyLoginChange(
     // A promotion settles the login's personal space (space_items, a content
     // table) in this transaction: at the spot below the caller's own
     // statements run (settlePromotionOnNarrow answers null off the narrow
-    // route); on a narrow exit with no spot, through its definer (0317).
-    const promotes = toAdmin;
+    // route).
     // A role change or a contact link writes a rights column the narrow
     // login may not (a role change is an add to or a removal from Admin by
     // its membership definer, which writes auth.users role and asks the
@@ -245,6 +244,11 @@ export async function applyLoginChange(
     // A rename too (round 13b): the display name reaches the prompts as the
     // user's name, so the narrow login holds no write of it.
     const roleChange = change.role !== undefined && change.role !== target.role;
+    // Only a real promotion settles (a login already admin by membership
+    // was settled when it was made one, and an admin's items are never team
+    // drafts), so the settle runs at the spot below, never on the narrow
+    // route, whose role may not run its definer.
+    const promotes = roleChange && toAdmin;
     const credential =
       roleChange ||
       changes.contactId !== undefined ||
@@ -252,8 +256,11 @@ export async function applyLoginChange(
       changes.displayName !== undefined;
     // A disable or a session end of the owner or an Admin user runs at the
     // spot too (0327: the narrow login may not move their disabled_at or
-    // session epoch); onLoginHoldSpot asks the hold's own definer.
-    const holdWrite = changes.disabledAt !== undefined || endSessions;
+    // session epoch); onLoginHoldSpot asks the hold's own definer. So does a
+    // lockout with no role change (a request naming the role 'member' a
+    // login already has): its token, device and code writes are held for
+    // such a login too (0327, 0328).
+    const holdWrite = changes.disabledAt !== undefined || endSessions || lockingOut;
     const atCredentialSpot = (fn: () => Promise<void>) =>
       credential
         ? onFullSystemRoute('login-credential', fn)

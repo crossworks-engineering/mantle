@@ -872,10 +872,11 @@ describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)',
 
   it('notes a call the narrow role may not run, in an exit routed narrow only', async () => {
     takeNarrowWrites();
-    const id = randomUUID();
-    // mantle_login_is_admin: the runtime role's, never the narrow role's.
+    // mantle_role_drift: the runtime role's, never the narrow role's (a
+    // count; mantle_login_is_admin, the cell's call before, is a read the
+    // narrow role may run since the role follows Admin membership, 0330).
     await v.asSystem(
-      () => m.db.execute(sqlTag`select "public"."mantle_login_is_admin"(${id}::uuid) as a`),
+      () => m.db.execute(sqlTag`select "public"."mantle_role_drift"() as a`),
       'admin-area',
     );
     await expect.poll(() => fnNotes().length > 0 || null, { timeout: 5000 }).toBe(true);
@@ -886,7 +887,7 @@ describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)',
       'admin-area',
     );
     await v.asSystem(
-      () => m.db.execute(sqlTag`select "public"."mantle_login_is_admin"(${id}::uuid) as a`),
+      () => m.db.execute(sqlTag`select "public"."mantle_role_drift"() as a`),
       'app-data',
     );
     await new Promise((r) => setTimeout(r, 300));
@@ -895,11 +896,10 @@ describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)',
 
   it('reads the calls inside a transaction of that exit', async () => {
     takeNarrowWrites();
-    const id = randomUUID();
     await v.asSystem(
       () =>
         m.db.transaction(async (tx) => {
-          await tx.execute(sqlTag`select "public"."mantle_login_is_admin"(${id}::uuid) as a`);
+          await tx.execute(sqlTag`select "public"."mantle_role_drift"() as a`);
         }),
       'admin-area',
     );
@@ -907,8 +907,7 @@ describe.skipIf(!URL)('the would-refuse count reads refused calls (switch off)',
       .poll(
         () =>
           takeNarrowWrites().some(
-            (w) =>
-              w.check === 'narrow-would-refuse' && w.detail === 'fn:mantle_login_is_admin EXECUTE',
+            (w) => w.check === 'narrow-would-refuse' && w.detail === 'fn:mantle_role_drift EXECUTE',
           ) || null,
         { timeout: 5000 },
       )
