@@ -525,3 +525,121 @@ from`, an imported handler exported by name; a wrapper is not one), and
 4. Each of the 102 placeholders is decided (a check or a reason), then
    the lint forbids the string. The 21 'self' ones first: they are the
    writes whose path or body names another party's thing.
+
+## Part 0 round 4: the own things, the effect exceptions, the aliases, one resolver
+
+The re-audit of round 3 (8.5/10, merge after fixes; 'lists' mode proven
+identical again, 5908 method-set cases equal) left one medium residual,
+five low inputs and one informational one. Still tooling only: no route
+file and no list's contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
+
+### What changed, per round 4 input
+
+- MED-1 residual, the login's own things: three of round 3's five
+  OWN_THINGS reach past the login in their handlers, so the path's param
+  is not only the login's own: `/api/access-keys/:id` (an Admin user
+  revokes any login's key), `/api/telegram/my-chats/:id` (a Moderator or a
+  users-area Admin acts on another login's chat) and
+  `/api/push/subscriptions/:id` (an Admin user deletes a member's device
+  by its owner id). They leave OWN_THINGS
+  (scripts/route-declarations.ts) and take ITEM_NONE_PLACEHOLDER. The two
+  that stay were read again: `/api/member/push/subscriptions/:id`
+  (loginPushUnpair deletes by the member's login id and the id, else 404)
+  and `/api/member/mcp/clients/:id` (disconnectLoginClient by the member's
+  anchor and login, else 404). The test that held the opposite
+  (route-declarations.test.ts, the 'self' reason test) now holds the three
+  to the placeholder and pins OWN_THINGS to the two.
+- LOW-A, the key area at boot: route-policy.ts declaredFacts holds a
+  declared `keyArea` to api-v1.ts API_V1_ROUTES while that table exists,
+  as `base` is held: a v1 row the table names declares its area (or
+  'self', for whoami), the same one, and a row it does not name declares
+  none. Refused otherwise, at boot.
+- LOW-B, the effect exception: a read is stated only on a POST, a write
+  only on a GET or HEAD. The type (route-declaration.ts: a POST's policy
+  may carry `effect: { read }`, a PUT, PATCH, DELETE or OPTIONS's may not)
+  and validateMethodPolicy both refuse the rest (`READS_BY_EXCEPTION`).
+  A test pins the lists' own exceptions (route-scope.ts READ_POSTS and
+  WRITE_GETS) to the same: each a POST, each a GET.
+- LOW-C, an alias is its base's row: declaredFacts refuses an alias whose
+  class, area, effect or item (the param and need, or the `none` reason)
+  is not its base's. Its open, creates and limits it may not declare at
+  all (round 2), so each field the handler decides is the base's.
+- LOW-D, a route file named by a path that is not relative: refused.
+  `@/app/.../route` (or any spec whose last segment is `route`, or an `@/`
+  path to a route file) throws in route-callers.ts specRouteFile, so the
+  generator fails on it wherever it follows a route file (the handlers'
+  reads, the switches, the alias check), and aliasMismatches reports it
+  for the codemod. No route file names another so today.
+- LOW-E, one resolver: route-callers.ts `routeDirSegments` (a route
+  directory's segments, the generator's own spelling, moved there),
+  `routeFilePattern`, `specRouteFile` and `specPattern` (a `from` spec of
+  a route file to the route pattern it names). The generator, the codemod
+  and route-policy.test.ts each call specPattern; the codemod's own
+  manifest map and the test's own resolve are gone.
+- INFO, the caller from the checked copy: buildRoutePolicy reads each
+  route's declaration once (validateRoutePolicy) into its checked copy, and
+  every row of the route, its HEAD and an alias's base are built from that
+  copy. buildRouteRow holds the declared named caller to the handler's
+  from the copy (RowFacts `declaredCaller`), never from the module's
+  value. A test with a getter that answers differently on a second read
+  builds both rows from the first answer.
+
+### Measured (the branch at the round 4 fix, main v0.300.132 under it)
+
+| | |
+|---|---|
+| route files | 418 |
+| rows | 819 |
+| declarations (methods declared) | 572 |
+| writes with `item: { none }` | 326 |
+| of them, the placeholder reason | 105 (was 102) |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
+| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+
+### The dry run (a throwaway detached worktree)
+
+- main first (fe06d3037): the manifest generated and every row dumped;
+  then the same worktree at the branch's round 4 head: the rows equal, as
+  the table says.
+- `--check`: 819 of 819 equal, 105 placeholders, 418 files to write.
+  `--write`: 418 files written (+3498 lines). A second `--check` (which
+  regenerates the manifest, so the generator's alias check and the one
+  resolver ran on all 25 aliases): 819 of 819, 105 placeholders, 0 files
+  to write.
+- On the written tree, 'lists' mode: tsc 0, prettier on server/web/app 0,
+  eslint on server/web/app with `route-policy-declared` at 'error' 0
+  errors (the one warning is the unused disable in a database test, as
+  before). The full vitest suite, DATABASE_URL unset: 877 files passed,
+  285 skipped (the database files), 0 failed. So the new boot holds (the
+  key area to the table, an alias to its base) passed over every row of
+  the real written manifest: route-policy-declarations.test.ts builds them
+  in 'declarations' mode from it.
+- With `ROUTE_POLICY_SOURCE = 'declarations'`: 24 failed, the same tests
+  as round 3: served-route.test.ts (its stand-in modules want
+  `standInModules`) and the 7 files whose tests build a manifest by hand
+  without declarations (gate.test.ts 19, route-policy.test.ts 4 and its
+  gate describe, gate-caller, gate-login, gate-login-update, gate-route,
+  item-write-encoded). The round 4 tests passed under the flip.
+
+### Gates
+
+On the Mac, DATABASE_URL unset, on the branch's head (the exit codes below).
+
+### Left (parts 1 to 3), as round 4 leaves it
+
+1. Part 1, after feat/s7b-b2 merges (round 3's LOW-4 merge note stands:
+   keep both histories in scripts/arch-scoreboard.pins.json
+   `routePolicyLists` and in no-policy-name-lists.mjs ROUTE_LIST_PINS,
+   the number 14): `--check` (expect 819 of 819 and 105 placeholders; a
+   moved count names the merged routes), `--write`, `route-policy-declared`
+   to 'warn'.
+2. Part 2: as round 2 says (the hand-built test manifests,
+   `standInModules` in served-route.test.ts, the flip, the rule to
+   'error', `row.audit` in auditMutation, the area check fold).
+3. Part 3: as round 3 says. When API_V1_ROUTES leaves the policy (its
+   matching half stays), the boot's holds of `base` and `keyArea` to it go
+   with it, and the declarations are the one source.
+4. Each of the 105 placeholders is decided (a check or a reason), then
+   the lint forbids the string. The 24 'self' ones first: the writes whose
+   path or body names another party's thing, the three of round 4 among
+   them.
