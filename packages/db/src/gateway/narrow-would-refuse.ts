@@ -11,9 +11,11 @@ import { TtlCache } from '@mantle/std';
 import { actorSetting, currentActor, noteNarrowWouldRefuse } from '../actor';
 import { NARROW_ROLE } from '../runtime-role';
 import { sqlCode } from '../sql-text';
-import { CALLED_FN } from './narrow-route';
 
 type PgSql = ReturnType<typeof postgres>;
+
+/** A call of a function by name in a statement's text (literals blanked). */
+export const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
 
 /** Which mantle_* functions the narrow role may EXECUTE, by name, read
  *  from the catalog (its grants and PUBLIC's), kept ten minutes (a migrate

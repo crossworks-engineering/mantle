@@ -225,18 +225,18 @@ export async function deleteLandedNode(
   )[0];
   if (!row) return { ok: false, error: 'node not found' };
 
-  // Traces first (no FK to nodes; trace_steps cascade from traces), at the
-  // item delete's spot: the narrow login holds no DELETE of traces.
-  await onFullSystemRoute('integrity-delete', () =>
-    db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId))),
-  );
+  // Traces first (no FK to nodes; trace_steps cascade from traces), inside
+  // the item delete's spot: the narrow login holds no DELETE of traces.
+  const dropTraces = () =>
+    db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId)));
 
   if (row.type === 'file') {
     // The item's delete on the full route from the narrow exit (plan v3.2
     // S7a, FULL_ROUTE_SPOTS 'integrity-delete'), here and below.
-    const res = await onFullSystemRoute('integrity-delete', () =>
-      deleteFileById({ ownerId, fileId: nodeId }),
-    );
+    const res = await onFullSystemRoute('integrity-delete', async () => {
+      await dropTraces();
+      return deleteFileById({ ownerId, fileId: nodeId });
+    });
     if (!res.ok) {
       // No silent cascade here: point the operator at the confirm flow.
       const error =
@@ -253,12 +253,13 @@ export async function deleteLandedNode(
   }
 
   // Heads first (workspaces plan V4).
-  await onFullSystemRoute('integrity-delete', () =>
-    withDeadlockRetry(() =>
+  await onFullSystemRoute('integrity-delete', async () => {
+    await dropTraces();
+    return withDeadlockRetry(() =>
       withNodeDeleteHeads([nodeId], async (tx) => {
         await tx.delete(nodes).where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
       }),
-    ),
-  );
+    );
+  });
   return { ok: true, type: row.type };
 }

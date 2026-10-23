@@ -25,6 +25,7 @@ import {
 } from '@mantle/runtime/assistant';
 import { claimMemberTurn, recordTeamAccess, releaseMemberTurn } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import type { ChatCaller } from './auth';
 import { chatAdmin, type ChatAgent } from './assistant-chat';
 import { getDbosClient } from './dbos-client';
@@ -122,7 +123,7 @@ export async function queueWorkspaceTurn(o: {
       // until the day turns); the enqueue's own error is the answer.
       if (fresh) {
         await releaseMemberTurn(loginId, turnId).catch((e: unknown) =>
-          console.error('[workspace-turn] could not give the slot back:', errorMessage(e)),
+          log('workspace-turn').error(`could not give the slot back: ${errorMessage(e)}`),
         );
       }
       throw err;

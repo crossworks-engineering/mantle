@@ -37,7 +37,7 @@ import { actingLoginNow } from '../viewer';
 import { ACTOR_SQL_TAG, NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
 import { narrowSendable } from './narrow-sendable';
-import { noteWouldRefuseCalls, wouldRefuseTx } from './narrow-would-refuse';
+import { CALLED_FN, noteWouldRefuseCalls, wouldRefuseTx } from './narrow-would-refuse';
 import {
   lazyQuery,
   resetActorSqlFor,
@@ -181,9 +181,6 @@ function refusedQueryOf(err: unknown): string {
   }
   return '?';
 }
-
-/** A call of a function by name in a statement's text (literals blanked). */
-export const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
 
 /** Tests only: count the mantle_* functions a narrow statement calls by
  *  name, as uses `fn:<name>` (the measurement of the role's EXECUTE). A

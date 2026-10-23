@@ -77,6 +77,7 @@ import {
   currentTrace,
   createTracePrelude,
   withTracePrelude,
+  log,
 } from '@mantle/tracing';
 import { personProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
@@ -580,7 +581,7 @@ async function runTeamTurnSteps(
         const spent = closed.tokens;
         if (ledgerTurnId && spent && spent.in + spent.out > 0) {
           await settleMemberTurn(loginId, ledgerTurnId, spent.in + spent.out).catch((e: unknown) =>
-            console.error('[team-turn] could not stamp the turn tokens on its slot:', e),
+            log('team-turn').error('could not stamp the turn tokens on its slot:', e),
           );
         }
       }

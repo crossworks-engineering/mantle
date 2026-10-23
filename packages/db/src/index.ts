@@ -55,7 +55,6 @@ export {
   loginHasArea,
   loginAreas,
   loginHoldsAdmin,
-  loginHeldFromNarrow,
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,
@@ -274,6 +273,7 @@ export {
 export { narrowNeedsSpot } from './narrow-writes';
 export { NARROW_TABLE_SPOTS, narrowSpotFor, onNarrowSpots } from './narrow-spots';
 export { onLoginHoldSpot } from './login-hold';
+export { loginHeldFromNarrow } from './gateway/scope-answers';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
