@@ -32,8 +32,8 @@
 --    is the superuser. A rollback still runs the revert first: it is
 --    mandatory (the guard refuses the older image's role writes, and only
 --    the revert puts back the bridge that adds).
--- 3a. mantle_ws_migrate_bridged (the workspaces switch's first part, 0286):
---    its body byte for byte, but the Admin rows the bridge wrote (a row,
+-- 3a. mantle_ws_migrate_bridged (the workspaces switch's first part, 0286;
+--    its flag signed by 0327): its live body byte for byte, but the Admin rows the bridge wrote (a row,
 --    Moderator, and a 'bridge.login' event per admin login) are written by
 --    the switch itself. Before the switch the role is the only record of
 --    who is an admin, so the switch reads it once; a brain switched after
@@ -374,7 +374,8 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_ws_remove_user"(uuid, uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
--- The switch's first part (0286's body; only its users step changes): it
+-- The switch's first part (its live body: 0286's with the derivation flag
+-- signed as 0327 rewrote it; only its users step changes): it
 -- wrote Admin's rows through the bridge, a no-op now.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate_bridged"()
  RETURNS TABLE(section text, subject text, metric text, n bigint)
@@ -453,10 +454,10 @@ BEGIN
     SELECT n."id" FROM "public"."nodes" n WHERE n."owner_id" = brain));
 
   -- Facts learned in chat: admin only today, so Admin.
-  PERFORM set_config('mantle.acl_internal', 'on', true);
+  PERFORM "public"."mantle_acl_on"();
   UPDATE "public"."facts" f SET "read_ws" = ARRAY[admin_ws]
    WHERE f."source_node_id" IS NULL AND f."owner_id" = brain AND f."read_ws" = '{}'::uuid[];
-  PERFORM set_config('mantle.acl_internal', '', true);
+  PERFORM "public"."mantle_acl_restore"('');
 
   -- Assistants: the persona (the enabled admin-level responder, highest
   -- priority, a shared one before a login's own) on Admin; the team

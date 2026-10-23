@@ -6,7 +6,7 @@
 -- (0286, the Admin row in step with the role), mantle_login_is_admin_user
 -- (0306, role admin AND membership), mantle_ws_add_user and
 -- mantle_ws_remove_user (0307, no role write), mantle_ws_migrate_bridged
--- (0286, its users step through the bridge), mantle_login_is_admin and
+-- (0286 as 0327 left it, its users step through the bridge), mantle_login_is_admin and
 -- mantle_area_rule (0304's own bodies, the same answers, off the seat), and
 -- drops the role guard (users_role_guard and its function: that image
 -- writes the role from the app's pools) and the four functions 0330 added
@@ -178,7 +178,8 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
--- The switch's first part, 0286's body (its users step calls the bridge,
+-- The switch's first part, its body before 0330 (0286's, the derivation
+-- flag signed as 0327 rewrote it; its users step calls the bridge,
 -- which is put back above).
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate_bridged"()
  RETURNS TABLE(section text, subject text, metric text, n bigint)
@@ -244,10 +245,10 @@ BEGIN
     SELECT n."id" FROM "public"."nodes" n WHERE n."owner_id" = brain));
 
   -- Facts learned in chat: admin only today, so Admin.
-  PERFORM set_config('mantle.acl_internal', 'on', true);
+  PERFORM "public"."mantle_acl_on"();
   UPDATE "public"."facts" f SET "read_ws" = ARRAY[admin_ws]
    WHERE f."source_node_id" IS NULL AND f."owner_id" = brain AND f."read_ws" = '{}'::uuid[];
-  PERFORM set_config('mantle.acl_internal', '', true);
+  PERFORM "public"."mantle_acl_restore"('');
 
   -- Assistants: the persona (the enabled admin-level responder, highest
   -- priority, a shared one before a login's own) on Admin; the team
