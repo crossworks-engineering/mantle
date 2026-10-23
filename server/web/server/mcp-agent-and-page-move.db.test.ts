@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { teamWorkspaceSql } from '@mantle/db/test-support';
+import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
@@ -119,7 +119,9 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
       vi.fn(async () => new Response('offline in this test', { status: 503 })),
     );
     m = await import('@mantle/db');
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+    // Admin logins: on the superuser (the role guard, 0330, lets no app
+    // pool insert one; the runtime-role lane's pool is the runtime role).
+    await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${second}, ${`${tag}-s@example.invalid`}, 'x', false, 'admin', 'Second Admin'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
