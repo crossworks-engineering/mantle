@@ -4,8 +4,8 @@
 --
 -- 0324 refuses only the narrow system role an INSERT that names a switch
 -- on (and counts one by a narrow reason off the narrow route). Order when
--- reverting several: 0325 first, then 0324, 0323, 0322, 0321, 0320, then
--- 0319 down to 0314, each in its own transaction, newest first.
+-- reverting several: 0326 first, then 0325, 0324, 0323, 0322, 0321, 0320,
+-- then 0319 down to 0314, each in its own transaction, newest first.
 --
 -- It takes INSERT out of every mantle_narrow_one_way_trg trigger (none
 -- fired on INSERT before 0324) and reverses 0324's two replaces in
@@ -44,14 +44,25 @@ $do$;
 DO $do$
 DECLARE
   def text;
+  was text;
 BEGIN
   def := pg_catalog.pg_get_functiondef('"public"."mantle_narrow_one_way"()'::regprocedure);
+  -- Each replace must match: a body that no longer reads as 0324 left it
+  -- stops the revert here (nothing is changed) instead of passing unreverted.
+  was := def;
   def := replace(def,
     E'  IF TG_OP IN (''UPDATE'', ''INSERT'') THEN\n    n := to_jsonb(NEW);\n  END IF;',
     E'  IF TG_OP = ''UPDATE'' THEN\n    n := to_jsonb(NEW);\n  END IF;');
+  IF def = was THEN
+    RAISE EXCEPTION '0324 revert: mantle_narrow_one_way has no INSERT test on NEW as 0324 left it';
+  END IF;
+  was := def;
   def := replace(def,
     E'      IF TG_OP = ''INSERT'' AND kind <> ''off'' THEN\n        CONTINUE;\n      ELSIF kind = ''keepif'' THEN\n        CONTINUE;\n',
     E'      IF kind = ''keepif'' THEN\n        CONTINUE;\n');
+  IF def = was THEN
+    RAISE EXCEPTION '0324 revert: mantle_narrow_one_way has no INSERT skip as 0324 left it';
+  END IF;
   EXECUTE def;
 END
 $do$;
