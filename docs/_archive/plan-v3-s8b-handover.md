@@ -647,3 +647,181 @@ edit-on still running at the handover. Read them with
   a quiet box, and the matrix whole (its budget fails whenever six lanes
   run). Then all 0 but the journal cell on one head.
 - Nothing else open from round 5's list. The rebase checklist above stands.
+
+## Round 6 (builder, 2026-10-23 night)
+
+Work list: the rebase onto main v0.300.137 (b2 and b3 merged), the round 4
+rebase checklist, the b2/b3 holds against membership, the refold race, then
+the whole gate set on one head.
+
+### The rebase
+
+- **One squashed commit, not 21 replayed** (`f1fcfda6b`, its body lists the
+  21 original subjects; the old head 23c2beb2d stays as the local branch
+  `s8b-r5-backup`, not pushed, and in the workstation mirror). Main removed
+  `adminActTx` (24ecee5b3: a definer call in a login's scope is one select,
+  `loginDefinerCall`, never a callback), and the Users screen's role change
+  and admin login create were built on it in every round; replaying commit
+  by commit meant resolving the same four files seven times against an API
+  that is gone. Authorship kept (jason@schoeman.me).
+- Conflicts: `_journal.json`; `update-prod.md` (both entries kept, 0330's
+  says its revert comes first when going below b2 or b3);
+  `member-turn-ledger.db.test.ts` (main's superuser client);
+  `admin-membership.db.test.ts` (main's acting login line with this
+  branch's answers); `runtime-role.ts` and its test (H1);
+  `ws-user-definers.db.test.ts` (the bridge's EXECUTE: the runtime role
+  only, as b2); the pins; the users route, `login-create.ts`,
+  `login-update.ts` (H2).
+- **0399 is 0330** (`c9e3659ee`): the file, its revert, the journal entry
+  (idx 330, `when` 1790199880000, above 0329's 1790199820000), the revert's
+  ledger line and every reference. The placeholder's journal cell passes.
+
+### The checklist
+
+- **H1.** `mantle_ws_add_user` and `mantle_ws_remove_user` are off the
+  narrow role (round 3's EXECUTE dropped; b2's NARROW_DENIED_FUNCTIONS
+  entries kept); the bridge, the Moderator tick, the chat set and the
+  onboarding attach stay as b2 left them. The narrow list is main's plus
+  two read definers this branch added: `mantle_login_role` (the Users
+  screen reads its target before the spot) and `mantle_login_is_admin` (the
+  peers area). The spot `login-credential` is reworded to name the Admin
+  membership definers.
+- **H2.** `applyLoginChange` keys the spot on a role change
+  (`change.role` against `target.role`, which membership gives), not on
+  the deleted `changes.role`; the whole transaction, the definer in it,
+  runs there. `insertLoginWithWorkspaces` runs both branches inside the
+  spot. A promotion now settles the space only on a real role change, so
+  always at the spot, where `settlePromotionOnNarrow` answers null (a
+  request naming the role the login has settled again before: the narrow
+  role may not run the settle definer, which the actor-on lane met). A
+  lockout with no role change (a request naming 'member' for a member)
+  takes the login hold's spot (`onLoginHoldSpot`), as a disable does.
+- **What stands in for adminActTx.** With no scope the two membership
+  definers take the exit's acting login (`mantle_ws_exit_login`, 0330),
+  0315's rule: only from a system session that is not the narrow login,
+  only on the Admin workspace, only an enabled login, and they ask the
+  area rule of that login for the users area where a scope asks its own.
+  The gateway sends the acting login at the `login-credential` spot in
+  every check mode (`actingLoginAtSpot`, as at `acting-login`): on a narrow
+  exit with the actor check off the spot's entry is no request exit, so
+  the definer met none (the actor-off lane). The Users route is a listed
+  caller of `applyLoginChange` (FULL_ROUTE_SPOT_CALLBACKS). Cells in
+  `role-guard.db.test.ts`: the runtime role with an Admin user that holds
+  the users area adds and removes and names it; the area off, a member, a
+  disabled login, read-only, another workspace, the write role logged in
+  as itself, and the narrow role are refused; no app role may run the
+  helper.
+- **I3.** b2's two role readers are named in the catalog cell:
+  `mantle_space_settle_promotion` (0317, runs after the add wrote the role
+  in the same transaction) and `mantle_narrow_login_held` (0327, holds a
+  login whose role OR Admin seat says admin: the stricter while drift is
+  left). `sqlRoleReaders` 16 to 15 (the membership-only
+  `mantle_login_is_admin_user`).
+- **b2's bodies.** b2 redefined none of `mantle_ws_add_user`,
+  `mantle_ws_remove_user`, `mantle_login_is_admin`, `mantle_area_rule`;
+  0327 rewrote `mantle_ws_migrate_bridged` in place (the derivation flag
+  signed: `mantle_acl_on`, `mantle_acl_restore`). 0330 takes that live
+  body and its revert puts the same back (migrate's identity check failed
+  on the raw 0286 form). The role guard names its own owner (the
+  migrator, who made the definers) instead of `mantle_ws_add_user`, so the
+  trigger walker finds no function a writer of auth.users would need. The
+  narrow role's rights on auth.users are column-level since b2 and name no
+  role column and no INSERT: its role write is refused by those rights
+  before the guard (the cells say so per role).
+- `mantle_identity_leaks()` 0 and `mantle_acl_flag_leaks()` 0 (the forge
+  proof's catalog check; migrate asserts both).
+
+### b2 and b3 holds against membership (item 2)
+
+`mantle_narrow_login_held` holds the owner, a login whose role is admin,
+or any user of the Admin workspace. With the role written by the
+membership definers the two agree, and the predicate holds both while any
+drift is left, so no hold loosens. The role change runs at the
+`login-credential` spot (the full route), so no hold refuses its own
+lockout writes; a disable, a session end and a lockout without a role
+change go through `onLoginHoldSpot` as b2 made them. Both switch states:
+users-lockout, session-epoch, login-create, workspaces, role-guard and
+narrow-area-routes ran with the switch on and off, and in the runtime-role
+and actor-off lanes (all pass); the narrow area sweep runs both ways
+inside itself.
+
+### The refold race (item 3)
+
+refold-embeds made the shared anchor's Admin workspace when none was there
+and dropped it at its end, while another file on the shared anchor
+(ensureAdminUsers makes it when none is there and never removes it) could
+have Admin users standing in it. It now takes the workspace the same way
+and never removes it; its grant there tolerates the anchor's own home
+grant, and it removes only its own Team. (login-facts, named in round 5,
+runs on a database of its own: it was never the other side.)
+
+### Changed answers (round 6)
+
+| what                                                  | main / round 5                                                                                 | now                                                                                               |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Users screen role change, admin login create          | main: the app writes the role, the bridge adds; r5: definer in the caller's scope (adminActTx) | the definer with the exit's acting login at the spot: the same caller check, the same event actor |
+| a PATCH naming the role the login already has         | at the credential spot, the space settled again (a no-op)                                      | no spot, no settle; 200 both                                                                      |
+| a lockout with no role change ('member' for a member) | main: at the credential spot                                                                   | at the login hold's spot when the login is held, else the exit's own route                        |
+
+No answer is looser.
+
+### Pins (round 6)
+
+`sqlRoleReaders` 16 to 15, `historyCodeComments` 2347 to 2345 (this
+branch's two). The narrow call scan's pins: adminFacts' one definer
+decided (a viewer-role read in the login's scope), the role change's two
+calls in `login-update.ts`, the calls of `mantle_login_is_admin` (narrow
+now) and the bridge (no caller) out.
+
+### Gates (round 6)
+
+Code head **fb5bea978** (the handover commit after it is docs only).
+
+Mac: `pnpm verify` 0 (typecheck, lint, format, docs, arch, boot smoke, full
+unit 889 files incl. migrations-journal, the DB lanes skipping) and
+`pnpm -C server/web build` 0.
+
+Workstation (`~/s8b/r6-run.sh`, `~/s8b/suite-nofsync.sh`: fsync off on the
+throwaway clusters, MANTLE_CHECK_FLOOR=keep; files `~/s8b/x-f*`):
+
+| lane                              | exit | note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| shard 1/2                         | 1    | users-list-route timed out under load; alone: in `x-ft*` (see below)                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| shard 2/2                         | 0    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| actor-off                         | 1    | a4-guard-sweep: the token route's 429 said Retry-After 59, not 60 (a second into the window under load); alone 0 (`x-ftaoffc190c9`, 8 of 8)                                                                                                                                                                                                                                                                                                                                                |
+| actor-on                          | 0    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| edit-on                           | 0    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| runtime-role                      | 0    | 316 files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| serial                            | 0    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| matrix                            | 0    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| switch-off full                   | RUN  | see the end of this section                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| runtime-role-off full             | RUN  | see the end of this section                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| forge proof                       | 0    | 147 refused of 147 (135 42501, 12 40001; b3's 138 + 9 S8b forms), 32 written of 32 (30 + 2 reads), 12 flag forms of 12; identity sweep 272 no change (270 + the 2 narrow reads), 17 refused; leaks 0 and 0                                                                                                                                                                                                                                                                                 |
+| rollback drill (`~/s8b/drill.sh`) | 0    | main v0.300.137 then 0330: guard refuses the runtime role's role write and admin insert; the Users screen's add at the spot writes; a member as acting login refused; N-1 boot on 0330 without the revert: its role write refused (the revert is mandatory); revert 0330: ledger 329, guard and the four functions gone, the bridge's body back byte for byte (md5 as main's); N-1 after the revert: role write plus bridge, admin insert both write; roll forward: ledger 330, guard back |
+
+The S8b forge forms (in `~/s8b/kit/forge.sql`, a copy of b3's): a role
+raised or lowered by hand, an admin login inserted, a member added to or
+an Admin user removed from Admin through a self-set acting login or a
+self-set owner scope, the exit-login helper, the demote-only bridge and
+the Admin seat asked directly: all refused; the display role and the
+Admin test read: allowed.
+
+### Left
+
+- Read `x-foff` and `x-frroff` (switch-off full and runtime-role-off full
+  on fb5bea978) and `x-ft*` (users-list-route alone); on round 6's
+  earlier head 49f25cb30 switch-off full was 0 and runtime-role-off full
+  failed only the same a4 Retry-After line.
+- Then the CEO's full re-audit. Before the merge on every box:
+  `scripts/arch-scoreboard-box.sh` shows `s8b_precondition_met yes`.
+- Delete the local branch `s8b-r5-backup` after the merge.
+
+### Doubts
+
+- The squash loses the per-round history on the branch (kept in the
+  commit body and here).
+- `mantle_ws_exit_login` trusts `mantle.acting_login` from any system
+  session (the runtime role's own SET), as 0315's definers do: a raw
+  runtime-role session could name any Admin user. The same trust as b2's.
+- The guard knows the definers' owner as its own owner: true while
+  migrate reassigns no function (it reassigns only the ACL marker).
