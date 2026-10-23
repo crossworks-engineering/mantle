@@ -95,7 +95,7 @@ BEGIN
       'CREATE TRIGGER mantle_actor_check BEFORE INSERT OR UPDATE OR DELETE ON public.%I '
       'FOR EACH STATEMENT EXECUTE FUNCTION public.mantle_actor_check_stmt()', t);
     IF "public"."mantle_actor_check_box_mode"() = 'off' THEN
-      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_actor_check', t);
+      EXECUTE format('ALTER TABLE %I.%I DISABLE TRIGGER mantle_actor_check', 'public', t);
     END IF;
     EXECUTE format(
       'CREATE OR REPLACE TRIGGER mantle_edit_check_ro BEFORE INSERT OR UPDATE OR DELETE ON public.%I '
@@ -106,8 +106,8 @@ BEGIN
       'FOR EACH STATEMENT WHEN (current_setting(''mantle.actor'', true) = ''contact:rw'') '
       'EXECUTE FUNCTION public.mantle_edit_contact_stmt()', t);
     IF "public"."mantle_check_box_mode"('edit_check') = 'off' THEN
-      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_edit_check_ro', t);
-      EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER mantle_edit_check_contact', t);
+      EXECUTE format('ALTER TABLE %I.%I DISABLE TRIGGER mantle_edit_check_ro', 'public', t);
+      EXECUTE format('ALTER TABLE %I.%I DISABLE TRIGGER mantle_edit_check_contact', 'public', t);
     END IF;
   END LOOP;
 END $$;

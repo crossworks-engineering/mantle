@@ -1468,6 +1468,15 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
 };
 
+/** The matrix tables a database may still lack while it migrates, as
+ *  COLUMNS_ADDED_LATE for columns: a whole-table grant and the write role's
+ *  sync skip them while missing, each logged. Any other missing matrix
+ *  table is an error. */
+export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
+  'public.presents', // 0331
+  'public.present_revisions', // 0331
+]);
+
 /** The grants' column filter over the columns that exist (`present`, as
  *  `<schema>.<table>.<column>`): a missing late column is skipped and
  *  logged, any other missing one throws. */
@@ -1477,6 +1486,20 @@ export function grantColumnFilter(
 ): ColumnExists {
   const logged = new Set<string>();
   return (table, column) => {
+    // '*': the table itself (a grant on the whole table).
+    if (column === '*') {
+      for (const k of present) if (k.startsWith(`${table}.`)) return true;
+      if (!TABLES_ADDED_LATE.has(table)) {
+        throw new Error(
+          `the access matrix names ${table}, which this database lacks: migrate it first`,
+        );
+      }
+      if (!logged.has(table)) {
+        logged.add(table);
+        log(`[access-matrix] ${table} is not in this database yet: its grant is skipped`);
+      }
+      return false;
+    }
     if (present.has(`${table}.${column}`)) return true;
     const key = `${table}.${column}`;
     if (!(COLUMNS_ADDED_LATE[table] ?? []).includes(column)) {
@@ -1502,6 +1525,7 @@ export function userGrantStatements(
   for (const t of ACCESS_MATRIX) {
     const read = userReadFor(t);
     if (read === 'none') continue;
+    if (read === 'all' && !has(t.table, '*')) continue;
     const named = read === 'all' ? null : read.filter((c) => has(t.table, c));
     if (named && named.length === 0) continue;
     const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;
@@ -1616,6 +1640,7 @@ export function writeGrantStatements(
   for (const t of ACCESS_MATRIX.filter(writeRoleWrites)) {
     const write = writeColumnsFor(t);
     if (write === 'none') continue;
+    if (!has(t.table, '*')) continue;
     const named = write === 'all' ? null : write.filter((c) => has(t.table, c));
     if (named && named.length === 0) continue;
     const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;
@@ -2056,7 +2081,16 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
             or tg.tgname like 'mantle\\_edit\\_check\\_%')
        and tg.tgname::text <> all(${[...EDIT_CHECK_MIGRATION_TRIGGERS]}::text[])
        and n.nspname in ('public', 'auth')`;
-  const tables = [...new Set([...WRITE_ROLE_TABLES, ...others.map((r) => r.t)])].sort();
+  const wanted = [...new Set([...WRITE_ROLE_TABLES, ...others.map((r) => r.t)])].sort();
+  // A table added late (TABLES_ADDED_LATE) that a database migrated part
+  // way lacks has nothing to sync yet.
+  const missing = new Set(
+    (
+      await sql<{ t: string }[]>`
+        select t from unnest(${wanted}::text[]) t where to_regclass(t) is null`
+    ).map((r) => r.t),
+  );
+  const tables = wanted.filter((t) => !(missing.has(t) && TABLES_ADDED_LATE.has(t)));
   for (const table of tables) {
     const t = byTable.get(table);
     const write = t ? writeRoleWrites(t) : false;

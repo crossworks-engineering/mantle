@@ -113,11 +113,13 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
 
   it('a text change waits for the quiet period, a colour change costs nothing, the flush announces once', async () => {
     const p = await presents.createPresent(owner, { source: canvas(`${tag} Quiet`, 'start') });
-    const due = async () =>
-      (
-        await admin<{ due: Date | null }[]>`
+    const due = async () => {
+      const at = (
+        await admin<{ due: Date | string | null }[]>`
           select index_due_at as due from presents where node_id = ${p.id}`
       )[0]!.due;
+      return at === null ? null : new Date(at);
+    };
     expect(await due()).toBeNull();
 
     // A colour: the text is the same, nothing waits.

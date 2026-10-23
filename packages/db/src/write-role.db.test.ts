@@ -517,13 +517,14 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(none.map((r) => r.t)).toEqual([]);
   });
 
-  it('the matrix splits the content tables in two: 19 write tables, 9 system only', () => {
+  it('the matrix splits the content tables in two: 21 write tables, 9 system only', () => {
     expect([...WRITE_ROLE_TABLES, ...WRITE_ROLE_SYSTEM_ONLY].sort()).toEqual(
       [...contentTables].sort(),
     );
     // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots;
-    // plan v3 S3 the two gap tables (profiles, app_table_exports).
-    expect(WRITE_ROLE_TABLES).toHaveLength(19);
+    // plan v3 S3 the two gap tables (profiles, app_table_exports); Present
+    // (0331) the canvas and its kept versions.
+    expect(WRITE_ROLE_TABLES).toHaveLength(21);
     expect(WRITE_ROLE_SYSTEM_ONLY).toHaveLength(9);
   });
 
