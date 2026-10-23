@@ -824,3 +824,117 @@ Admin test read: allowed.
   runtime-role session could name any Admin user. The same trust as b2's.
 - The guard knows the definers' owner as its own owner: true while
   migrate reassigns no function (it reassigns only the ACL marker).
+
+## Round 7 (builder, 2026-10-24 night)
+
+Work list: the two r6 re-audits (DB 8.5, app 8.5): DB MED-1 and LOW-1 to
+LOW-4, app L1 to L7, then the whole gate set on one head.
+
+### What changed, per item
+
+1. **DB MED-1.** 0330's drift DO block now raises 42501 when an enabled
+   login (not a former client) holds an Admin seat but not role admin, the
+   one direction that 0330 makes looser (0306 asked the role AND the seat;
+   from 0330 the seat alone decides). The message names the count; the
+   HINT names the repair (on the image one release back: take the login
+   out of Admin, or give it role admin first, then migrate again) and the
+   select that lists the logins. Role admin without a seat stays the
+   NOTICE (narrower under 0330). The order: a brain still off workspaces
+   has no Admin workspace at 0330, so no seat and nothing to refuse; its
+   switch runs after migrate (the boot step, `server/main.ts`) through
+   0330's `mantle_ws_migrate_bridged`, which seats exactly the role admin
+   logins. A switched brain wrote its seats at 0252 or a boot long before.
+   Cells (`role-guard.db.test.ts`, "0330 refuses the migrate on the looser
+   drift only", each on a database stopped before 0330): a seated member
+   refuses (42501, 0330 rolled back whole: no guard); the repair (role
+   written) then migrates, with the role admin login outside Admin left as
+   the NOTICE's drift 1; a brain off workspaces migrates and its switch
+   after migrate leaves drift 0 with the role admin login seated.
+2. **DB LOW-1.** `mantle_bridge_login` returns at once for
+   `mantle_brain_id()`, and reads the login's own role only (the
+   former-client override is gone: former clients are members since 0272).
+   Cell: a former-client row for the anchor and for an Admin user, then the
+   bridge as the runtime role: both stay in Admin.
+3. **DB LOW-2.** `mantle_ws_exit_login` takes `mantle_ws_system_work`'s
+   role test: a session that SET ROLE to another role (the write role, a
+   viewer role, the narrow role) is that role, and its acting login is
+   never taken. Cells: the runtime role then SET LOCAL ROLE to the write
+   role, and a real runtime login then SET ROLE to the write role: both
+   `42501 mantle_ws:no_acting_login`.
+4. **DB LOW-3.** Catalog cell: the guard, `mantle_ws_add_user` and
+   `mantle_ws_remove_user` have one owner.
+5. **DB LOW-4.** The stale "bridge is a no-op" comments say it only
+   demotes now.
+6. **App L1.** One mapper (`adminMembershipRefusal`, login-update.ts) for
+   both routes: the last Moderator is the 409; the users-area refusals are
+   403 `users-area`; any other `mantle_ws:` refusal with SQLSTATE 42501,
+   and the caller's own `not_found`, `no_acting_login`, `read_only`, are
+   403 `forbidden`. A target's refusal (`user_not_found`, `not_user`,
+   `already_user`) and a 42501 that is no definer refusal are not mapped.
+   POST /api/users now answers the mapper's status (it took only 403
+   before). Cells: the mapper (unit) and the POST route with five refusals.
+7. **App L2.** `push/store.ts`: the admin push devices ask
+   `loginIsAdmin`; a login push's member and the admin device list ask the
+   display role (`loginRole`). Cells (`admin-subscriptions.db.test.ts`): a
+   role admin login with no Admin seat gets no admin push and is not in the
+   admin device list; its own live device is listed for a login push; an
+   Admin user's never is. The push DB files seat their admins
+   (`ensureAdminUsers` on the superuser's client). `loginRoleDecisionReads`
+   19 to 16.
+8. **App L3.** `packages/db/src/gateway/acting-login-spot.test.ts` (no
+   database): with the actor check off and the switch on, a request exit
+   and an asSystem exit at `login-credential` send the acting login and
+   the full route in actorParams, where no request exit answers; another
+   spot sends nothing. Mutation run: with 'login-credential' taken out of
+   `actingLoginAtSpot` two of its three cells fail (put back).
+9. **App L4.** `loginRole(id)` in `lib/auth/admin-seat.ts` (the display
+   role, `mantle_login_role`); the pair code's peek, the token login's
+   shown role, `loadLoginTarget` and the Users list use it; the doc names
+   three helpers.
+10. **App L5.** eslint: `@mantle/db/test-support` (and a package's
+    relative `./test-support`) is refused in shipped code, static and
+    dynamic imports; the bench (`server/api/src/bench`) and scripts are
+    exempt. Probed with two throwaway files (both refused, removed).
+11. **App L6.** `role-guard.db.test.ts` also runs the guard and the exit
+    login through a real `mantle_runtime` login (session_user the runtime
+    role): its role write and admin insert are refused by the guard, a
+    member insert passes, the exit adds and names the caller. Where the
+    role has no login on the cluster the cells skip, but never in the
+    runtime-role lane (the cell asserts that). The users-lockout promotion
+    cell asserts the Admin row's `added_by` and the `user.add` event's
+    actor are the caller.
+12. **App L7.** The one table of changed answers, main (v0.300.137)
+    against this branch, below.
+
+### Changed answers, main against the branch (item 12)
+
+"Drift" is a login whose role column and Admin seat disagree. Since 0330
+the membership definers write the column with the seat in one
+transaction and the role guard refuses every other app writer, so new
+drift comes only from a superuser's hand write. The looser kind (a seat
+without role admin) now refuses the migrate (item 1), so no box reaches
+this image with it; the narrower kind (role admin, no seat) is the
+NOTICE and the precondition script's count.
+
+| what                                                                                                                        | main                                                                                    | branch                                                                                                                             | kind                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| who is an Admin user: `mantle_login_is_admin_user`, adminFacts, the session (resolvedFor, adminLogin)                       | role admin AND a seat, enabled                                                          | a seat, enabled                                                                                                                    | equal at drift 0                                                                                      |
+| the same for a seat without role admin                                                                                      | not Admin                                                                               | Admin                                                                                                                              | WIDER, drift only; the migrate refuses                                                                |
+| the same for role admin without a seat                                                                                      | not Admin (the pair)                                                                    | not Admin                                                                                                                          | equal                                                                                                 |
+| `mantle_access_key_revoke` (another login's key) and `mantle_access_keys_seen` (every key) via `mantle_login_is_admin_user` | the pair                                                                                | the seat                                                                                                                           | as the three rows above                                                                               |
+| the token login's, the pair code's, the OAuth grants' and ownerFromBearer's Admin path; a peer's bound login                | the pair (or the role, for the member paths)                                            | the seat (`loginIsAdmin`), the display role for the member paths                                                                   | as above; role admin without a seat is a member now (narrower for Admin, its own member paths)        |
+| the admin push devices, the admin device list, a login push's member                                                        | the role column                                                                         | the seat (`loginIsAdmin`), the display role (`loginRole`)                                                                          | equal at drift 0; role admin without a seat: no admin push (narrower), its own login pushes (its own) |
+| the display role (Users list and target, the token login's answer, the pair code's peek)                                    | the role column                                                                         | `mantle_login_role` (a seat, enabled or not)                                                                                       | equal at drift 0                                                                                      |
+| the Users screen's role change                                                                                              | the app writes the column, the bridge adds or removes; event `bridge.login`, actor NULL | the definer at `login-credential` with the exit's acting login; event `user.add`/`user.remove`, the caller as actor and `added_by` | same membership, better record                                                                        |
+| an admin login create                                                                                                       | inserted as admin, bridged (`added_by` NULL)                                            | inserted as member, added by the caller                                                                                            | same membership                                                                                       |
+| role change or admin create by a caller without the users area, or no Admin seat, or read-only                              | the route's gate only                                                                   | 403 (`users-area` or `forbidden`), nothing written                                                                                 | STRICTER                                                                                              |
+| a PATCH naming the role the login has                                                                                       | at the credential spot, a settle (no-op)                                                | no spot, no settle; 200 both                                                                                                       | equal                                                                                                 |
+| a lockout with no role change                                                                                               | at the credential spot                                                                  | at the login hold's spot when held, else the exit's own route                                                                      | equal answers                                                                                         |
+| any app role writing `auth.users.role`, or inserting an admin login                                                         | allowed by the table grants (runtime role)                                              | refused by the guard (the first owner row excepted)                                                                                | STRICTER                                                                                              |
+| `mantle_bridge_login`                                                                                                       | adds and removes by role; a former client read as no role                               | demote only; never the anchor; the login's own role                                                                                | STRICTER                                                                                              |
+| the narrow role's EXECUTE                                                                                                   | main's list                                                                             | plus two read definers: `mantle_login_role`, `mantle_login_is_admin` (a fact about a login id)                                     | WIDER read, named in round 6 (the Users screen reads its target before the spot; the peers area)      |
+| the two membership definers with no scope from a system session                                                             | system work only (`no_acting_login` else)                                               | also the exit's acting login, Admin workspace only, enabled, the users area by the area rule; never after a SET ROLE               | WIDER caller set, each checked as a scope's caller is                                                 |
+| the migrate                                                                                                                 | (no 0330)                                                                               | refuses on a seat without role admin; NOTICE on role admin without a seat                                                          | new refusal                                                                                           |
+
+No answer is looser at drift 0, and the one looser drift answer cannot
+reach a box: item 1 stops its migrate.
