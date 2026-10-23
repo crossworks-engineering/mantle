@@ -184,4 +184,3 @@ export function onNarrowSpots<T>(
   );
   return run();
 }
-

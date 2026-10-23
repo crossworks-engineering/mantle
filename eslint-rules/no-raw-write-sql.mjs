@@ -68,9 +68,11 @@ export const RAW_WRITE_PINS = {
   // The narrow route sends the caller's statement as it is (as role-runner.ts),
   // alone and in a narrow transaction (narrowTxClient), and on its login
   // pool with no actor bound (narrowLoginStatement; with an actor, through
-  // actor-sql.ts settingsPipeline), and off the narrow route inside a
-  // transaction whose calls the would-refuse count reads (wouldRefuseTx).
-  'packages/db/src/gateway/narrow-route.ts': 6,
+  // actor-sql.ts settingsPipeline).
+  'packages/db/src/gateway/narrow-route.ts': 5,
+  // Off the narrow route, a transaction's statement as it is, its calls
+  // read by the would-refuse count (wouldRefuseTx).
+  'packages/db/src/gateway/narrow-would-refuse.ts': 1,
   'packages/db/src/gateway/pools.ts': 2,
   'packages/db/src/gateway/role-runner.ts': 3,
   'packages/db/src/gateway/role-tx.ts': 1,

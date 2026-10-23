@@ -94,7 +94,11 @@ describe('planMigrations', () => {
   });
 
   it('refuses an entry from 0314 on whose stamp ran under another hash', () => {
-    const j = [...journal, { idx: 314, tag: '0314_m314', when: 230 }, { idx: 315, tag: '0315_m315', when: 240 }];
+    const j = [
+      ...journal,
+      { idx: 314, tag: '0314_m314', when: 230 },
+      { idx: 315, tag: '0315_m315', when: 240 },
+    ];
     const ms = [...migrations, mig(230), mig(240)];
     const p = planMigrations(ms, j, [
       ...ledger([100, 120, 200, 210, 220, 240]),
