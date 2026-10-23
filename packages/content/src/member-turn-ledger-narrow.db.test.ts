@@ -47,6 +47,7 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
   let rr: typeof import('@mantle/db/runtime-role');
   let v: typeof import('@mantle/db/viewer');
   let ledger: typeof import('./member-turn-ledger');
+  let ts: typeof import('@mantle/db/test-support');
   let anchor = '';
   const pat = randomUUID();
   const sam = randomUUID();
@@ -55,7 +56,7 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
   const KEY = () => process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
 
   beforeAll(async () => {
-    const ts = await import('@mantle/db/test-support');
+    ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     su = superuserClient(scratch.url, 1);
     anchor = await ts.ensureTestAnchor(su);
@@ -123,6 +124,11 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
           (e: unknown) => sqlState(e) ?? 'error',
         );
       expect(old).toBe('42501');
+      // The one refusal this cell meant: taken, so the run's check (a right
+      // the narrow role does not hold, met on the narrow route) sees none.
+      const denied = ts.takeNarrowDenials();
+      expect(denied).toHaveLength(1);
+      expect(denied[0]!.what).toMatch(/permission denied for table member_turn_ledger/);
       expect(await claim(pat, `${tag}.a`)).toEqual({ ok: true, fresh: true });
       expect(await claim(pat, `${tag}.a`)).toEqual({ ok: true, fresh: false });
       expect(await claim(pat, `${tag}.b`)).toEqual({ ok: true, fresh: true });

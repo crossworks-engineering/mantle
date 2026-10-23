@@ -108,10 +108,12 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
   });
 
   it('refuses over the token budget from the login’s member chat traces only', async () => {
+    // The data as text, cast in SQL: the superuser client prepares, and a
+    // string bound as jsonb would be stored as a JSON string.
     await admin`insert into traces (owner_id, kind, subject_kind, status, tokens_in, tokens_out, data) values
-      (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::jsonb),
-      (${anchor}, 'responder_turn', 'team_turn', 'success', 5000, 5000, ${JSON.stringify({ login_id: pat })}::jsonb),
-      (${anchor}, 'responder_turn', 'chat', 'success', 90000, 0, ${JSON.stringify({ login_id: sam })}::jsonb)`;
+      (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::text::jsonb),
+      (${anchor}, 'responder_turn', 'team_turn', 'success', 5000, 5000, ${JSON.stringify({ login_id: pat })}::text::jsonb),
+      (${anchor}, 'responder_turn', 'chat', 'success', 90000, 0, ${JSON.stringify({ login_id: sam })}::text::jsonb)`;
     expect(await ledger.memberTokensSince(anchor, sam, since)).toBe(1000);
     expect(await claim(sam, 'sam.b', 100, 1000)).toEqual({
       ok: false,
