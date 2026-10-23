@@ -48,7 +48,7 @@
 #     needs 8); the same counts over the epoch
 #     before; the narrow switch as the app container has it (on, off,
 #     unset: the image's default, or "?"); and real use since the epoch,
-#     counts only (member chat turns, Admin-area audited actions, active
+#     counts only (member chat turns, audited actions, active
 #     logins: a 0 with no traffic proves nothing);
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
@@ -340,8 +340,8 @@ SQL
 # Real use since the narrow epoch (counts only; the b3 rule reads the
 # would-refuse counts against it: a 0 with no traffic proves nothing):
 # member chat turns (the member turn ledger; rows older than its own keep
-# window are gone), Admin-area writes (audit_log rows: the areas' recorded
-# actions), and active logins (distinct logins that sent a chat message or
+# window are gone), audited actions (every audit_log row: the areas' and
+# the logins' recorded actions, not only the Admin areas'), and active logins (distinct logins that sent a chat message or
 # made an audited action). All time on a box with no epoch.
 traffic=$(q <<'SQL' || true
 with e as (select coalesce((select max(at) from public.actor_check_misses
@@ -452,7 +452,7 @@ for check in content-write cascade-delete denied would-refuse would-refuse-table
   shift || true
 done
 set -- $traffic
-for what in member-turns admin-area-writes active-logins; do
+for what in member-turns audited-actions active-logins; do
   printf '  %-34s %s\n' "narrow_traffic_since_epoch:$what" "$(num "${1:-}")"
   shift || true
 done

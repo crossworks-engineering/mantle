@@ -190,7 +190,7 @@ run as a superuser, or the server is older than Postgres 16), it warns
 that the narrow role was not made or given its login, so unless an
 earlier migrate did every narrow statement fails closed, and names the
 fix: migrate as a superuser on Postgres 16 or later, or the per-box kill
-switch `MANTLE_NARROW_SYSTEM=0` with the app services recreated
+switch `MANTLE_NARROW_SYSTEM=0` and a full `docker compose up -d`
 (`narrowLoginWarning`, migrator-steps.ts). The
 narrow route's own pool logs in as it (below), whatever the system pool
 logs in as: with `MANTLE_DB_RUNTIME_ROLE` off (the system pool is the
@@ -1115,17 +1115,21 @@ settings areas, workers), each count 0 at its end, and each count 0 on
 every other box; a release rolled to that box in between starts its own
 epoch and the day again. A fresh epoch on a quiet box reads 0 and proves
 nothing, so the day is of that busy box: the script prints that use as
-counts (`narrow_traffic_since_epoch:member-turns`, `:admin-area-writes`,
+counts (`narrow_traffic_since_epoch:member-turns`, `:audited-actions`
+(every `audit_log` row since the epoch),
 `:active-logins`) and the switch as the app container has it
 (`narrow_switch`: on, off, unset or `?`). The script also prints the epoch
 before (`narrow_prev_epoch:*`, from the second latest epoch row to the
-latest), so a reset shows what the one before it saw. b3 flips the default
-on the version that ran the day, never on a later one that has not. A path
+latest), so a reset shows what the one before it saw. The release shape
+(which release carries the default to a box, and after which day's counts)
+is decided by the CEO per box, recorded in
+[update-prod.md](update-prod.md) before that box rolls. A path
 too rare to run in a day (a yearly job, a recovery tool) is not proven by
 it; it rests on the switch-on suites above. The fallback after the flip is
 per box and is the switch itself, not a code roll: `MANTLE_NARROW_SYSTEM=0`
-in the stack's `.env` and the app services recreated (`docker compose up
--d`), the full route again for every system write. Only migrate or an operator writes an epoch row: 0327's
+in the stack's `.env` and a full `docker compose up -d` (migrate first,
+which takes the role's login, then the app), the full route again for
+every system write. Only migrate or an operator writes an epoch row: 0327's
 guard refuses the narrow role a `narrow-epoch` row or a miss row dated
 ahead (directly or through `mantle_actor_miss_log`).
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so

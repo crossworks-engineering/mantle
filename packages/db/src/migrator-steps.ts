@@ -112,7 +112,7 @@ export function narrowLoginWarning(
     `  WARNING MANTLE_NARROW_SYSTEM is on, but the narrow role (mantle_system_narrow) was not made ` +
     `or given its login (${why}): unless an earlier migrate did, every narrow statement fails ` +
     `closed. Run migrate as a superuser on Postgres 16 or later, or set MANTLE_NARROW_SYSTEM=0 ` +
-    `in the stack's .env and recreate the app services (docker compose up -d)`
+    `in the stack's .env and run a full docker compose up -d (migrate first, then the app)`
   );
 }
 
