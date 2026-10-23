@@ -1,6 +1,6 @@
 /**
  * The transaction the member turn ledger's definers run in (migration
- * 0325, plan v3.2 S7b part b2 round 14d). The ledger is written only by
+ * 0325). The ledger is written only by
  * mantle_member_turn_claim and mantle_member_turn_release, which take the
  * login from the identity gateway (mantle_scope_login_id), never as an
  * argument. This opens one transaction on the system pool in that login's

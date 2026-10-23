@@ -1,7 +1,6 @@
 /**
- * The member turn ledger behind its two definers (migration 0325, plan v3.2
- * S7b part b2 round 14d), on a migrated scratch database with the narrow
- * switch on:
+ * The member turn ledger behind its two definers (migration 0325), on a
+ * migrated scratch database with the narrow switch on:
  *
  *  - a limited member's chat request claims, counts and gives back its own
  *    slot (the cap holds), where the statements before 0325 (systemDb
