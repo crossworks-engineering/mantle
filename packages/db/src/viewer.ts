@@ -1306,13 +1306,16 @@ export function systemDbOnSpot(): boolean {
   return fullRouteSpotNow.getStore() !== undefined;
 }
 
-/** The acting login of work at the acting-login spot (onFullSystemRoute),
- *  or null: the gateway's SET carries it in every check mode there
- *  (gateway/actor-sql.ts actorParams), since its definers refuse a missing
- *  one (0322). A turn's exit is no request exit (requestExitActingLogin), so
+/** The acting login of work at the acting-login spot, or at the
+ *  login-credential spot (onFullSystemRoute), or null: the gateway's SET
+ *  carries it in every check mode there (gateway/actor-sql.ts actorParams),
+ *  since their definers refuse a missing one (0322; the Admin membership
+ *  definers with no scope, 0330). At a spot on a narrow exit the exit's
+ *  entry is the spot's own, no request exit (requestExitActingLogin), so
  *  with the check off nothing else would send it. */
 export function actingLoginAtSpot(): string | null {
-  return fullRouteSpotNow.getStore() === 'acting-login' ? actingLoginNow() : null;
+  const spot = fullRouteSpotNow.getStore();
+  return spot === 'acting-login' || spot === 'login-credential' ? actingLoginNow() : null;
 }
 
 /**

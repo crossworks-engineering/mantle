@@ -235,8 +235,11 @@ export function actorParams(): ActorParams | null {
   // will read (the second part's definers), whatever the mode. And work at
   // the acting-login spot (round 13b): its definers refuse a missing acting
   // login (0322), and a turn's exit is no request exit, so with the check
-  // off its acting login went nowhere. Only that spot's statements gain
-  // the SET in off; every other path sends exactly what it sent.
+  // off its acting login went nowhere. So does work at the
+  // login-credential spot on a narrow exit (the Admin membership definers
+  // with no scope, 0330): its entry is the spot's, no request exit. Only
+  // those two spots' statements gain the SET in off; every other path sends
+  // exactly what it sent.
   if (
     mode === 'off' &&
     !isWorkspaceSystemActor(actor) &&
