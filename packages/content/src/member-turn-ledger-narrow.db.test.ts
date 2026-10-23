@@ -165,6 +165,42 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
     await su`delete from member_turn_ledger where turn_id = ${`${tag}.sam`}`;
   });
 
+  it("no login actor: the scope's login binds the call (a Telegram turn's shape); one definer call only", async () => {
+    const tag = randomUUID().slice(0, 8);
+    const before = await rows();
+    const scope = Object.freeze({
+      kind: 'user' as const,
+      loginId: pat,
+      ws: Object.freeze([ws]),
+      modWs: Object.freeze([]),
+    });
+    // A system actor (no login) in pat's turn scope: a claim for sam is
+    // refused before any statement; one for pat runs.
+    const viaScope = await m
+      .runAsActor(m.systemActor('tg-turn'), () =>
+        m.withTurnScope(scope, () => claim(sam, `${tag}.s`)),
+      )
+      .then(
+        () => 'ok',
+        (e: Error) => e.message,
+      );
+    expect(viaScope).toMatch(/not the request's own/);
+    expect(await rows()).toBe(before);
+    // Another statement beside the definer call: refused before it is sent.
+    const { sql } = await import('drizzle-orm');
+    for (const q of [
+      sql`select mantle_member_turn_release(${`${tag}.x`}::text), mantle_member_turn_release(${`${tag}.y`}::text)`,
+      sql`select mantle_member_turn_release(${`${tag}.x`}::text) where pg_sleep(0) is not null`,
+    ]) {
+      const shaped = await inRequest(pat, () => m.loginDefinerCall(pat, 'own', q)).then(
+        () => 'ok',
+        (e: Error) => e.message,
+      );
+      expect(shaped).toMatch(/only one select of a mantle_\* definer/);
+    }
+    expect(await rows()).toBe(before);
+  });
+
   it("the release takes back only the scope login's own row of the last five minutes", async () => {
     const tag = randomUUID().slice(0, 8);
     await su`insert into member_turn_ledger (turn_id, owner_id, login_id, created_at) values

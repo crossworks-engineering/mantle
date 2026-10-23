@@ -13,21 +13,37 @@
  *    so no stamp or audit row names the login.
  *  - `own`: the login only, no workspaces (the ledger is the login's own).
  *
- * Its rules: the login is a uuid, compared without case; in a request or
- * turn whose bound actor is a login, it is that login (a request never acts
- * in another login's scope; a Telegram turn, system work, names its chat's
- * paired login, checked before); and the statement is one select of a
- * mantle_* function (a definer call), never a callback that could run
- * anything else in that scope.
+ * Its rules: the login is a uuid, compared without case; it is the login
+ * the call runs for wherever one is bound: a login actor's, the acting
+ * login of the request's or turn's exit (an Admin area exit's system
+ * actor), and the open scope's login (a Telegram turn, system work, runs
+ * in its chat's paired login's scope). A request never acts in another
+ * login's scope. And the statement is exactly one select of one mantle_*
+ * function whose arguments are bound parameters only (a definer call):
+ * no other call, table or clause beside it, never a callback that could
+ * run anything else in that scope.
  */
 import type { SQL } from 'drizzle-orm';
 import { RuntimeFaultError, UUID_RE } from '@mantle/std';
 import { currentActor } from './actor';
 import { loginScopeFor, systemPoolTxInScope } from './client';
 import { getAdminDb } from './gateway/pools';
+import { actingLoginNow, currentWorkspaceScope } from './viewer';
 
-/** One select of a mantle_* function, one statement. */
-const DEFINER_CALL = /^\s*select\b[^;]*?"?\bmantle_[a-z0-9_]+"?\s*\([^;]*$/is;
+/** A column the definer answers, optionally cast (`share_id::text`). */
+const COL = String.raw`[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)?`;
+/** An argument: a bound parameter, optionally cast (`$2::uuid[]`). */
+const ARG = String.raw`\$[0-9]+(?:::[a-z_][a-z0-9_]*(?:\[\])?)?`;
+
+/** Exactly one select of one mantle_* function, its arguments bound
+ *  parameters only: `select [<cols> from] mantle_x($1, $2::uuid) [as n]`.
+ *  Anything else beside it (another call, a table, a where) is refused. */
+export const DEFINER_CALL = new RegExp(
+  String.raw`^\s*select\s+(?:${COL}(?:\s*,\s*${COL})*\s+from\s+)?` +
+    String.raw`(?:"?public"?\.)?"?mantle_[a-z0-9_]+"?\s*\(\s*(?:${ARG}(?:\s*,\s*${ARG})*)?\s*\)` +
+    String.raw`(?:\s+as\s+[a-z_][a-z0-9_]*)?\s*$`,
+  'i',
+);
 
 /** The SQL text of a drizzle query. */
 function textOf(query: SQL): string {
@@ -49,7 +65,12 @@ export async function loginDefinerCall<R>(
   if (!UUID_RE.test(loginId)) throw new Error('loginDefinerCall: the login is no uuid');
   const login = loginId.toLowerCase();
   const actor = currentActor();
-  if (actor?.kind === 'login' && actor.loginId.toLowerCase() !== login) {
+  const bound = [
+    actor?.kind === 'login' ? actor.loginId : null,
+    actingLoginNow(),
+    currentWorkspaceScope()?.loginId ?? null,
+  ];
+  if (bound.some((b) => b !== null && b.toLowerCase() !== login)) {
     throw new RuntimeFaultError("loginDefinerCall: the login is not the request's own");
   }
   if (!DEFINER_CALL.test(textOf(query))) {

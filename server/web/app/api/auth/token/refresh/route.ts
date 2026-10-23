@@ -1,6 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
-import { db, authUsers, mobileTokens, pushSubscriptions, and, eq, isNull, sql } from '@mantle/db';
+import {
+  db,
+  authUsers,
+  mobileTokens,
+  pushSubscriptions,
+  and,
+  eq,
+  isNull,
+  onLoginHoldSpot,
+  sql,
+} from '@mantle/db';
 import {
   ROTATE_WHEN_UNDER_SECONDS,
   buildMobileToken,
@@ -207,42 +217,47 @@ export async function POST(req: Request) {
 
   const newJti = randomUUID();
   const minted = buildMobileToken(row.userId, newJti, ttlSeconds);
-  const rotated = await db.transaction(async (tx) => {
-    // The login row, locked: End sessions, a password change and a disable
-    // all update it first (endLoginSessions), so one of the two waits. If
-    // they went first the epoch has moved and nothing is minted; if this
-    // goes first they revoke the new token with the rest.
-    const locked = (await tx.execute(
-      sql`select session_epoch as epoch, disabled_at from auth.users
+  // The owner's or an Admin user's device rotation on a narrow exit (its
+  // old token revoked): at the spot login-credential (0326's hold on
+  // grants); elsewhere as it is.
+  const rotated = await onLoginHoldSpot(row.userId, () =>
+    db.transaction(async (tx) => {
+      // The login row, locked: End sessions, a password change and a disable
+      // all update it first (endLoginSessions), so one of the two waits. If
+      // they went first the epoch has moved and nothing is minted; if this
+      // goes first they revoke the new token with the rest.
+      const locked = (await tx.execute(
+        sql`select session_epoch as epoch, disabled_at from auth.users
            where id = ${row.userId} for share`,
-    )) as unknown as Array<{ epoch: number; disabled_at: Date | null }>;
-    if (!locked[0] || Number(locked[0].epoch) !== row.sessionEpoch || locked[0].disabled_at) {
-      return false;
-    }
-    const claimed = await tx
-      .update(mobileTokens)
-      .set({ revokedAt: new Date(), rotatedTo: newJti })
-      .where(and(eq(mobileTokens.id, jti), isNull(mobileTokens.revokedAt)))
-      .returning({ id: mobileTokens.id });
-    if (claimed.length === 0) return false;
-    await tx.insert(mobileTokens).values({
-      id: newJti,
-      userId: row.userId,
-      label: row.label,
-      expiresAt: minted.expiresAt,
-      // Unused until its first real use (getBearerLogin stamps it): until
-      // then a retry with the old token is answered with this one again.
-      lastUsedAt: null,
-      signedInAt,
-    });
-    // The push devices the old token enrolled follow the new one: a device
-    // is pushed to only while its token is live.
-    await tx
-      .update(pushSubscriptions)
-      .set({ tokenId: newJti })
-      .where(eq(pushSubscriptions.tokenId, jti));
-    return true;
-  });
+      )) as unknown as Array<{ epoch: number; disabled_at: Date | null }>;
+      if (!locked[0] || Number(locked[0].epoch) !== row.sessionEpoch || locked[0].disabled_at) {
+        return false;
+      }
+      const claimed = await tx
+        .update(mobileTokens)
+        .set({ revokedAt: new Date(), rotatedTo: newJti })
+        .where(and(eq(mobileTokens.id, jti), isNull(mobileTokens.revokedAt)))
+        .returning({ id: mobileTokens.id });
+      if (claimed.length === 0) return false;
+      await tx.insert(mobileTokens).values({
+        id: newJti,
+        userId: row.userId,
+        label: row.label,
+        expiresAt: minted.expiresAt,
+        // Unused until its first real use (getBearerLogin stamps it): until
+        // then a retry with the old token is answered with this one again.
+        lastUsedAt: null,
+        signedInAt,
+      });
+      // The push devices the old token enrolled follow the new one: a device
+      // is pushed to only while its token is live.
+      await tx
+        .update(pushSubscriptions)
+        .set({ tokenId: newJti })
+        .where(eq(pushSubscriptions.tokenId, jti));
+      return true;
+    }),
+  );
   if (!rotated) {
     refused('lost-the-race');
     return unauthorized();

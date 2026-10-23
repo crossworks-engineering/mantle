@@ -24,7 +24,13 @@
 --    mantle_narrow_login_held). The users area's disable and session end of
 --    such a login run at the full-route spot login-credential (the app asks
 --    the same definer). Off the narrow route the same change by a narrow
---    reason is counted (0319's report branch), not refused.
+--    reason is counted (0319's report branch), not refused. The same hold
+--    on their grants (mantle_narrow_token_hold): a revoke of their access
+--    key, OAuth token or device token, a delete of their open OAuth code,
+--    and a delete of an MCP client a live grant of theirs rides on
+--    (mantle_narrow_client_held: the delete cascades). And a key's
+--    revoked_by is never rewritten by the narrow role on a key already
+--    revoked.
 -- 3. actor_check_misses: the narrow role may insert miss rows (its own
 --    count), and the box counts start from the latest narrow-epoch row,
 --    so a forged epoch (or a row dated ahead) hid every count. The narrow
@@ -211,6 +217,107 @@ DROP TRIGGER IF EXISTS "mantle_narrow_login_hold_trg" ON "auth"."users";
 --> statement-breakpoint
 CREATE TRIGGER "mantle_narrow_login_hold_trg" BEFORE UPDATE OF "disabled_at", "session_epoch" ON "auth"."users"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_login_hold"();
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_client_held"(client uuid)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  -- A definer (it asks mantle_narrow_login_held per row). Whether removing
+  -- the MCP client would end a held login's grant: a live token or an open
+  -- code of the owner or an Admin user on it (the delete cascades to both).
+  -- No identity read.
+  SELECT EXISTS (SELECT 1 FROM "public"."oauth_access_tokens" t
+                  WHERE t."client_id" = "mantle_narrow_client_held"."client"
+                    AND t."revoked_at" IS NULL
+                    AND "public"."mantle_narrow_login_held"(t."actor_id"))
+      OR EXISTS (SELECT 1 FROM "public"."oauth_auth_codes" c
+                  WHERE c."client_id" = "mantle_narrow_client_held"."client"
+                    AND "public"."mantle_narrow_login_held"(c."actor_id"))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_narrow_client_held"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_token_hold"()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  who text := coalesce("public"."mantle_identity_actor"(), '');
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+  o jsonb := to_jsonb(OLD);
+  n jsonb;
+  held boolean;
+BEGIN
+  -- The 0326 hold, part 2 (2's sibling): a revoke of the owner's or an
+  -- Admin user's key, token or device, a delete of their open OAuth code,
+  -- and a delete of an MCP client a live grant of theirs rides on, are
+  -- held from the narrow role (the users area ends such a login's
+  -- sessions at the spot login-credential). And on the narrow role a
+  -- key's revoked_by is written only with its revoke, never rewritten on
+  -- a key already revoked.
+  IF TG_OP = 'UPDATE' THEN
+    n := to_jsonb(NEW);
+    IF (o -> 'revoked_at') IS NOT DISTINCT FROM (n -> 'revoked_at')
+       AND (o -> 'revoked_by') IS NOT DISTINCT FROM (n -> 'revoked_by') THEN
+      RETURN NEW;
+    END IF;
+    IF current_user = 'mantle_system_narrow'
+       AND (o -> 'revoked_by') IS DISTINCT FROM (n -> 'revoked_by')
+       AND (o ->> 'revoked_at') IS NOT NULL THEN
+      RAISE EXCEPTION 'the narrow system role may not rewrite %.revoked_by', TG_TABLE_NAME
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  IF current_user <> 'mantle_system_narrow'
+     AND NOT ("public"."mantle_narrow_counted"(who)
+              AND current_user::text = own_role
+              AND coalesce(current_setting('mantle.route', true), '') <> 'full') THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+  held := CASE TG_TABLE_NAME
+    WHEN 'oauth_clients' THEN "public"."mantle_narrow_client_held"((o ->> 'id')::uuid)
+    WHEN 'access_keys' THEN "public"."mantle_narrow_login_held"((o ->> 'login_id')::uuid)
+    WHEN 'mobile_tokens' THEN "public"."mantle_narrow_login_held"((o ->> 'user_id')::uuid)
+    ELSE "public"."mantle_narrow_login_held"((o ->> 'actor_id')::uuid)
+  END;
+  IF held AND current_user = 'mantle_system_narrow' THEN
+    RAISE EXCEPTION 'the narrow system role may not revoke or remove a grant of the owner or an Admin user (%)', TG_TABLE_NAME
+      USING ERRCODE = '42501';
+  END IF;
+  -- Report only (0319): the same write by a narrow reason's actor off the
+  -- narrow route, not at a spot, is counted as one the role would refuse.
+  IF held THEN
+    RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% %', who, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_narrow_token_hold"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."access_keys";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE UPDATE OF "revoked_at", "revoked_by" ON "public"."access_keys"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_access_tokens";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE UPDATE OF "revoked_at" ON "public"."oauth_access_tokens"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."mobile_tokens";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE UPDATE OF "revoked_at" ON "public"."mobile_tokens"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_auth_codes";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE DELETE ON "public"."oauth_auth_codes"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_clients";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE DELETE ON "public"."oauth_clients"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_miss_guard"()
   RETURNS trigger LANGUAGE plpgsql

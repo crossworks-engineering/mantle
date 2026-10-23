@@ -33,9 +33,12 @@ import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
+import { applyJournal } from './migrate-runner';
 import {
   NARROW_ROLE,
   NARROW_WOULD_REFUSE_TRIGGERS,
+  applyNarrowWouldRefuse,
+  dropNarrowWouldRefuse,
   ensureRuntimeRoles,
   runtimeDatabaseUrl,
   runtimeRolePassword,
@@ -281,4 +284,84 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
       await su`delete from public.provider_alerts where owner_id = ${anchor}`;
     }
   });
+
+  it('a migration that drops or retypes a watched column applies over a migrated database; the triggers come back after it', async () => {
+    const upd = NARROW_WOULD_REFUSE_TRIGGERS.UPDATE;
+    const watched = async (col: string) => {
+      const [r] = await su<{ n: number }[]>`
+        select count(*)::int as n from pg_trigger g
+          join pg_attribute a on a.attrelid = g.tgrelid and a.attnum = any(g.tgattr::int2[])
+         where g.tgrelid = 'public.agents'::regclass and g.tgname = ${upd} and a.attname = ${col}`;
+      return r!.n;
+    };
+    const onAgents = async () =>
+      (
+        await su<{ name: string }[]>`
+          select tgname::text as name from pg_trigger
+           where tgrelid = 'public.agents'::regclass and not tgisinternal
+             and tgname = any(${Object.values(NARROW_WOULD_REFUSE_TRIGGERS)}::text[]) order by 1`
+      ).map((r) => r.name);
+    // Two columns the narrow role may not update, so the UPDATE OF trigger
+    // watches them, as a migrated box's watches its real ones.
+    await su.unsafe(
+      `alter table public.agents add column zz_drop_probe text, add column zz_type_probe text`,
+    );
+    await applyNarrowWouldRefuse(su);
+    expect(await watched('zz_drop_probe')).toBe(1);
+    expect(await watched('zz_type_probe')).toBe(1);
+    const before = await onAgents();
+    expect(before).toContain(upd);
+    // What a later migration meets with the triggers left in place: 2BP01
+    // for the drop, 0A000 for the retype (the column is in a trigger).
+    expect(await inTx(su, ['alter table public.agents drop column zz_drop_probe'])).toBe('2BP01');
+    expect(
+      await inTx(su, ['alter table public.agents alter column zz_type_probe type varchar(64)']),
+    ).toBe('0A000');
+    // Through the runner (migrate.ts's own loop): the triggers are dropped
+    // before the first pending migration, the migration applies.
+    const when = 9_000_000_000_000;
+    const lines: string[] = [];
+    const applied = await applyJournal(
+      su,
+      [
+        {
+          folderMillis: when,
+          hash: `zz-probe-${randomUUID()}`,
+          sql: [
+            'alter table public.agents drop column zz_drop_probe',
+            'alter table public.agents alter column zz_type_probe type varchar(64)',
+          ],
+        },
+      ],
+      [{ idx: 9999, tag: '9999_zz_probe', when }],
+      { log: (l) => lines.push(l), warn: (l) => lines.push(l) },
+    );
+    expect(applied).toBe(1);
+    expect(await onAgents()).toEqual([]);
+    // afterMigrations' step makes them again, the same set, from the grants.
+    await applyNarrowWouldRefuse(su);
+    expect(await onAgents()).toEqual(before);
+    expect(await watched('zz_type_probe')).toBe(1);
+    // A failed migration puts them back (best effort) and fails the run.
+    const err = await applyJournal(
+      su,
+      [{ folderMillis: when + 1, hash: `zz-fail-${randomUUID()}`, sql: ['select 1/0'] }],
+      [{ idx: 10000, tag: '10000_zz_fail', when: when + 1 }],
+      { log: () => {}, warn: () => {} },
+    ).then(
+      () => null,
+      (e: { code?: string }) => e.code ?? 'error',
+    );
+    expect(err).toBe('22012');
+    expect(await onAgents()).toEqual(before);
+    // No pending migration: nothing dropped (no table lock on a migrate
+    // that applies nothing).
+    expect(await applyJournal(su, [], [], { log: () => {}, warn: () => {} })).toBe(0);
+    expect(await onAgents()).toEqual(before);
+    await su.unsafe('alter table public.agents drop column zz_type_probe cascade');
+    await applyNarrowWouldRefuse(su);
+    expect(await dropNarrowWouldRefuse(su)).toBeGreaterThan(0);
+    await applyNarrowWouldRefuse(su);
+    expect(await onAgents()).toEqual(before);
+  }, 120_000);
 });

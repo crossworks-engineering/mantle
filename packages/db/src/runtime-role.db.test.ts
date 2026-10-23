@@ -732,6 +732,64 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(ddl).toEqual([]);
   });
 
+  it('every function a plain trigger reaches on a narrow-writable table is narrow-executable', async () => {
+    // A trigger function that is not a definer runs as the role that wrote
+    // the row, so on a table the narrow role may write, every mantle_
+    // function it reaches needs the narrow role's EXECUTE (or the write
+    // fails 42501 with the switch on, and the switch-off count, which
+    // reads only statement text, never sees it). Walked through plain
+    // functions; a definer reached needs EXECUTE itself (the caller's
+    // right) but its own calls run as its owner, so the walk stops there.
+    // A name in the body counts as a call (comments dropped): an
+    // over-count only, never a miss of a plain call.
+    type Fn = { oid: number; fn: string; name: string; src: string; definer: boolean; ok: boolean };
+    const fns: Fn[] = await admin<Fn[]>`
+      select p.oid::int as oid, p.oid::regprocedure::text as fn, p.proname as name,
+             coalesce(p.prosrc, '') as src, p.prosecdef as definer,
+             has_function_privilege(${NARROW_ROLE}, p.oid, 'EXECUTE') as ok
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and p.prokind = 'f'`;
+    const byOid = new Map(fns.map((f) => [f.oid, f]));
+    const byName = new Map<string, Fn[]>();
+    for (const f of fns) byName.set(f.name, [...(byName.get(f.name) ?? []), f]);
+    const triggers = await admin<{ t: string; tg: string; fn: number }[]>`
+      select c.oid::regclass::text as t, g.tgname::text as tg, g.tgfoid::int as fn
+        from pg_trigger g
+        join pg_class c on c.oid = g.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        join pg_proc p on p.oid = g.tgfoid
+       where not g.tgisinternal and not p.prosecdef
+         and n.nspname = any(${[...APP_SCHEMAS]}::text[])
+         and (has_table_privilege(${NARROW_ROLE}, c.oid, 'INSERT')
+              or has_table_privilege(${NARROW_ROLE}, c.oid, 'DELETE')
+              or has_any_column_privilege(${NARROW_ROLE}, c.oid, 'UPDATE'))`;
+    // The narrow role writes plain-triggered tables, so the cell has work.
+    expect(triggers.length).toBeGreaterThan(10);
+    const word = /\b[a-z_][a-z0-9_]*\b/gi;
+    const code = (src: string) => src.replace(/--[^\n]*/g, '');
+    const missing = new Set<string>();
+    for (const tr of triggers) {
+      const root = byOid.get(tr.fn);
+      if (!root) continue; // a function outside the app's schemas (none today)
+      // The trigger function itself is not checked at fire time (its
+      // EXECUTE was checked when the trigger was made); what it calls is.
+      const seen = new Set<number>([root.oid]);
+      const queue = [root];
+      while (queue.length > 0) {
+        const f = queue.shift()!;
+        for (const w of new Set(code(f.src).match(word) ?? [])) {
+          for (const g of byName.get(w.toLowerCase()) ?? []) {
+            if (seen.has(g.oid) || !g.name.startsWith('mantle_')) continue;
+            seen.add(g.oid);
+            if (!g.ok) missing.add(`${tr.t} ${tr.tg} -> ${g.fn}`);
+            if (!g.definer) queue.push(g);
+          }
+        }
+      }
+    }
+    expect([...missing].sort()).toEqual([]);
+  });
+
   it('every table of public and auth is mantle_owner’s, and the marker', async () => {
     const stray = await admin<{ rel: string; owner: string }[]>`
       select c.oid::regclass::text as rel, pg_get_userbyid(c.relowner) as owner

@@ -40,7 +40,9 @@
 #     the switch is on), and the tables the last names, since the
 #     release's epoch (the latest narrow-epoch row: migrate writes one per
 #     version; all time on a box with none), and that epoch's version and
-#     time;
+#     time; and whether the count can count at all: its derived triggers'
+#     number and the actor check's mode (b3 needs triggers above 0 and the
+#     mode warn or on: a box can read 0 counts with no counter);
 #   - whether the stack's .env has a MANTLE_DB_RUNTIME_ROLE line at all (1
 #     or 0; the updater and roll.sh write one, S4a), n/a with no readable
 #     .env.
@@ -229,6 +231,24 @@ select count(*) filter (where check_name = 'narrow-content-write')
            and w.n = 2 and at >= w.lo and at < w.hi) m;
 SQL
 )
+# Whether the would-refuse count can count at all (b3 needs both): the
+# number of its derived triggers (migrate makes them from the narrow
+# role's grants, runtime-role.ts applyNarrowWouldRefuse; 0 on a box before
+# 0319 or after a failed migrate) and the actor check's mode as the
+# database holds it (the counts are written only with it warn or on). A
+# box can read 0 counts with no counter: these two say whether it has one.
+narrow_triggers=$(q <<SQL || true
+select count(*) from pg_trigger
+ where not tgisinternal
+   and tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
+                  'mantle_narrow_would_refuse_upd');
+SQL
+)
+narrow_mode=$(q <<SQL || true
+select coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
+SQL
+)
+case "$narrow_mode" in off | warn | on) ;; *) narrow_mode='?' ;; esac
 # The epoch the narrow counts start from: its version and time (UTC), or
 # none. A hand-written epoch's detail is the operator's reason, free text,
 # so only a plain version is printed and anything else reads "reset".
@@ -307,6 +327,8 @@ case "$narrow_epoch" in
   *[!0-9A-Za-z.:\ -]*) narrow_epoch='?' ;;
 esac
 printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
+printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
+printf '  %-34s %s\n' narrow_counter_actor_check "$narrow_mode"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"

@@ -69,6 +69,20 @@ DROP TRIGGER IF EXISTS "mantle_narrow_miss_guard_trg" ON "public"."actor_check_m
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_miss_guard"();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."access_keys";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_access_tokens";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."mobile_tokens";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_auth_codes";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."oauth_clients";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_narrow_token_hold"();
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_narrow_client_held"(uuid);
+--> statement-breakpoint
 DROP TRIGGER IF EXISTS "mantle_narrow_login_hold_trg" ON "auth"."users";
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_login_hold"();

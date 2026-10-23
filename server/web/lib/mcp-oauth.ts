@@ -20,6 +20,7 @@ import {
   authUsers,
   db,
   onFullSystemRoute,
+  onLoginHoldSpot,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -327,10 +328,14 @@ export async function exchangeAuthCode(input: {
     .where(and(eq(oauthAuthCodes.codeHash, codeHash), gt(oauthAuthCodes.expiresAt, new Date())))
     .limit(1);
   if (!peek) return { ok: false, error: 'invalid_grant' };
-  return db.transaction(async (tx) => {
-    await lockOauthActor(tx, peek.actorId);
-    return exchangeClaimed(tx, codeHash, input);
-  });
+  // The owner's or an Admin user's code is burned at the spot
+  // login-credential on a narrow exit (0326's hold on grants).
+  return onLoginHoldSpot(peek.actorId, () =>
+    db.transaction(async (tx) => {
+      await lockOauthActor(tx, peek.actorId);
+      return exchangeClaimed(tx, codeHash, input);
+    }),
+  );
 }
 
 async function exchangeClaimed(

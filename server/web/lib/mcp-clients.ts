@@ -6,7 +6,14 @@
  * owner; the ownerId scope is belt-and-braces.
  */
 import { and, count, eq, gt, isNull, max, min } from 'drizzle-orm';
-import { db, oauthAccessTokens, oauthAuthCodes, oauthClients } from '@mantle/db';
+import {
+  db,
+  oauthAccessTokens,
+  oauthAuthCodes,
+  oauthClients,
+  onClientHoldSpot,
+  onLoginHoldSpot,
+} from '@mantle/db';
 import { lockOauthActor } from './oauth-lock';
 
 export type ConnectedClient = {
@@ -65,7 +72,11 @@ export async function disconnectClient(ownerId: string, clientId: string): Promi
     .where(and(eq(oauthAccessTokens.clientId, clientId), eq(oauthAccessTokens.ownerId, ownerId)))
     .limit(1);
   if (!owned) return false;
-  await db.delete(oauthClients).where(eq(oauthClients.id, clientId));
+  // A client a live grant of the owner or an Admin user rides on is
+  // removed at the spot login-credential on a narrow exit (0326's hold).
+  await onClientHoldSpot(clientId, () =>
+    db.delete(oauthClients).where(eq(oauthClients.id, clientId)),
+  );
   return true;
 }
 
@@ -124,23 +135,27 @@ export async function disconnectLoginClient(
   actorId: string,
   clientId: string,
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    await lockOauthActor(tx, actorId);
-    const revoked = await tx
-      .update(oauthAccessTokens)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(oauthAccessTokens.clientId, clientId),
-          eq(oauthAccessTokens.ownerId, ownerId),
-          eq(oauthAccessTokens.actorId, actorId),
-          isNull(oauthAccessTokens.revokedAt),
-        ),
-      )
-      .returning({ id: oauthAccessTokens.id });
-    await tx
-      .delete(oauthAuthCodes)
-      .where(and(eq(oauthAuthCodes.clientId, clientId), eq(oauthAuthCodes.actorId, actorId)));
-    return revoked.length > 0;
-  });
+  // The owner's or an Admin user's own grants on a narrow exit: at the
+  // spot login-credential (0326's hold on grants).
+  return onLoginHoldSpot(actorId, () =>
+    db.transaction(async (tx) => {
+      await lockOauthActor(tx, actorId);
+      const revoked = await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(oauthAccessTokens.clientId, clientId),
+            eq(oauthAccessTokens.ownerId, ownerId),
+            eq(oauthAccessTokens.actorId, actorId),
+            isNull(oauthAccessTokens.revokedAt),
+          ),
+        )
+        .returning({ id: oauthAccessTokens.id });
+      await tx
+        .delete(oauthAuthCodes)
+        .where(and(eq(oauthAuthCodes.clientId, clientId), eq(oauthAuthCodes.actorId, actorId)));
+      return revoked.length > 0;
+    }),
+  );
 }

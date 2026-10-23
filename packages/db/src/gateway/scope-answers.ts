@@ -152,6 +152,25 @@ export async function loginHeldFromNarrow(loginId: string): Promise<boolean> {
 }
 
 /**
+ * Whether removing the MCP client `clientId` would end a live grant of a
+ * login held from the narrow login (0326's hold on grants,
+ * mantle_narrow_client_held: the delete cascades to its tokens and codes).
+ * Such a removal runs at the spot login-credential. On a failure it
+ * answers yes, so the write takes the spot (never a refusal).
+ */
+export async function clientHeldFromNarrow(clientId: string): Promise<boolean> {
+  if (!UUID_RE.test(clientId)) return true;
+  try {
+    const rows = (await getAdminDb().execute(
+      sqlTag`select "public"."mantle_narrow_client_held"(${clientId}::uuid) as h`,
+    )) as unknown as { h: boolean }[];
+    return rows[0]?.h !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1), never the admin role alone (a
  * login taken out of Admin keeps its role): mantle_login_is_admin (0304).

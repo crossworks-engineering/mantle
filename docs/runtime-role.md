@@ -925,9 +925,18 @@ function the narrow role may not EXECUTE (its grants and PUBLIC's, read
 from the catalog once every ten minutes, `has_function_privilege`) is
 noted as `narrow-would-refuse <actor> fn:<name> EXECUTE`, beside the
 database's own count of refused writes. Inside a transaction of such an
-exit its statements and savepoints are read too. Not read: a call made by
-a trigger or a definer (the role needs no EXECUTE there) and a name built
-at run time (dynamic SQL); the switch-on suites cover those.
+exit its statements and savepoints are read too. Not read: a call made
+inside a function (a definer's calls run as its owner, so the role needs
+no EXECUTE there) and a name built at run time (dynamic SQL); the
+switch-on suites cover those. A trigger function that is not a definer is
+the exception: it runs as the role that wrote the row, so every
+`mantle_<name>` it reaches (through other plain functions, never past a
+definer) needs the narrow role's EXECUTE when the table is one the role
+may write. No statement shows that call, so neither reading sees it; a
+catalog cell holds it instead (`runtime-role.db.test.ts`, "every function
+a plain trigger reaches on a narrow-writable table is narrow-executable"),
+read from `pg_trigger` and the function bodies, so a new trigger is
+covered without a list.
 
 Its cost is the reading alone: a statement with no `mantle_` in it is not
 lexed. Measured on the workstation (`a2a-round-trips.db.test.ts`, the scan
@@ -964,6 +973,22 @@ role ends when its client disconnects, or by
 `select pg_terminate_backend(pid) from pg_stat_activity where usename = 'mantle_system_narrow'`
 as the superuser.
 
+The derived triggers hold columns. An `AFTER UPDATE OF <columns>`
+trigger records each column as a dependency, so a migration that drops a
+column or changes its type would fail on every migrated box (and not in
+CI, whose fresh database has no trigger yet). So migrate drops every
+derived would-refuse trigger before its first pending migration
+(`dropNarrowWouldRefuse`, from `applyJournal`) and makes them again from
+the grants after the last (`applyNarrowWouldRefuse`, in
+`afterMigrations`); a migration that fails puts them back on its way out.
+A migrate with nothing pending touches none of them. Each table's triggers
+change in a transaction of their own, `lock_timeout` 3 s, retried on a
+lock wait or a deadlock (the old app is still serving during a roll). The
+rule for migration authors: nothing to do; a hand-run revert that drops or
+retypes a column on a table outside the actor check runs
+`select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
+first and drops those on its table (the next migrate makes them again).
+
 Reverting the narrow migrations by hand (before pinning an older image;
 one image back needs none): newest first, each file in its own
 transaction, `0326_narrow_lockout_and_ledger_tokens`,
@@ -993,13 +1018,20 @@ default flip waits for; read a box's `actor_check=` line before its 0s. The
 default flip (S7b part b3) waits for 0 since the epoch of the release
 that will flip: every box rolled to that release (its
 `narrow_misses_since_epoch` names that version) and each count 0 since
-its epoch, not since some older one. The epoch must also be old enough and have
+its epoch, not since some older one. A 0 counts only where the counter
+exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
+makes; 0 on a box before 0319 or after a failed migrate) and
+`narrow_counter_actor_check` warn or on. b3 needs both on every box. The epoch must also be old enough and have
 seen traffic: at least 7 days since it (a soak), with the box's usual
 work in them (member and Admin turns, the users, keys and settings areas,
 workers); a fresh epoch on a quiet box reads 0 and proves nothing. The
 script also prints the epoch before (`narrow_prev_epoch:*`, from the
 second latest epoch row to the latest), so a reset shows what the one
-before it saw. Only migrate or an operator writes an epoch row: 0326's
+before it saw. The soak is of one version: b3 flips the default on the
+version that soaked, never on a later one that has not (a release after
+the soak starts its own epoch and its own 7 days). A path too rare to run
+in 7 days (a yearly job, a recovery tool) is not proven by the soak; it
+rests on the switch-on suites above. Only migrate or an operator writes an epoch row: 0326's
 guard refuses the narrow role a `narrow-epoch` row or a miss row dated
 ahead (directly or through `mantle_actor_miss_log`).
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, mobileTokens, authUsers, and, eq } from '@mantle/db';
+import { db, mobileTokens, authUsers, and, eq, onLoginHoldSpot } from '@mantle/db';
 import { forgetRequestLogins, ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
@@ -43,7 +43,11 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
     .limit(1);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  await db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti));
+  // The owner's or an Admin user's device is revoked at the spot
+  // login-credential on a narrow exit (0326's hold on grants).
+  await onLoginHoldSpot(targetId, () =>
+    db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti)),
+  );
   // The request may have come in on this token (A4 step 3a audit L1).
   forgetRequestLogins();
   await forgetRelayDevices([

@@ -438,6 +438,9 @@ describe('the narrow system role rights', () => {
       'public.mantle_contact_sharing(uuid,uuid[])',
       'public.mantle_login_areas(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
+      // 0326: the hold on a login's grants asks whether an MCP client
+      // carries a live grant of the owner or an Admin user.
+      'public.mantle_narrow_client_held(uuid)',
       // 0326: the hold on auth.users (a trigger as the narrow role) asks
       // whether a login is the owner or an Admin user, a read definer.
       'public.mantle_narrow_login_held(uuid)',

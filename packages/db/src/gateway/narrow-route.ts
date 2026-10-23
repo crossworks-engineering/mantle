@@ -184,7 +184,10 @@ function refusedQueryOf(err: unknown): string {
 
 /** Tests only: count the mantle_* functions a narrow statement calls by
  *  name, as uses `fn:<name>` (the measurement of the role's EXECUTE). A
- *  function a trigger or a definer calls needs no EXECUTE of the role. */
+ *  function a definer calls needs no EXECUTE of the role; one a plain
+ *  (not definer) trigger function reaches does, and is not in any
+ *  statement's text: runtime-role.db.test.ts holds those against the
+ *  catalog. */
 function noteNarrowFunctions(query: string): void {
   if (env('NODE_ENV') !== 'test') return;
   // Read on the code, where a quoted name keeps its name characters: the

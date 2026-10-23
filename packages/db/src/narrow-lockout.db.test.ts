@@ -305,10 +305,36 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
       ).map((r) => r.d);
     const before = await snapshot();
     const dir = join(__dirname, '..', 'migrations');
-    const files = readdirSync(dir)
-      .filter((f) => /^03(1[4-9]|2[0-6])_.*\.sql$/.test(f))
-      .sort();
-    expect(files.length).toBe(13);
+    // The narrow set by name, from the journal (never by number: a
+    // renumber at a rebase must not swap in another branch's migration or
+    // drop the last of these).
+    const names = [
+      'acting_login_definers',
+      'structure_item_definer',
+      'promotion_agent_definers',
+      'narrow_observe_definer_frames',
+      'narrow_one_way_columns',
+      'narrow_would_refuse',
+      'narrow_row_rules',
+      'identity_gateway',
+      'narrow_message_rules',
+      'narrow_enable_off',
+      'narrow_off_on_insert',
+      'member_turn_ledger_definers',
+      'narrow_lockout_and_ledger_tokens',
+    ];
+    const journal = (
+      JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {
+        entries: { idx: number; tag: string }[];
+      }
+    ).entries;
+    const tags = journal
+      .filter((e) => names.includes(e.tag.replace(/^[0-9]+_/, '')))
+      .sort((a, b) => a.idx - b.idx)
+      .map((e) => e.tag);
+    expect(tags.map((t) => t.replace(/^[0-9]+_/, ''))).toEqual(names);
+    const files = tags.map((t) => `${t}.sql`);
+    expect(files.filter((f) => !readdirSync(dir).includes(f))).toEqual([]);
     for (const f of files) {
       const parts = readFileSync(join(dir, f), 'utf8').split('--> statement-breakpoint');
       await su.begin(async (tx) => {

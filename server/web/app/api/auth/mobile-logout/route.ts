@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { db, authUsers, mobileTokens, eq } from '@mantle/db';
+import { db, authUsers, mobileTokens, eq, onLoginHoldSpot } from '@mantle/db';
 import { forgetRequestLogins, verifyMobileToken } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteTokenSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -51,7 +51,11 @@ export async function POST(req: Request) {
       row.expiresAt.getTime() > Date.now() &&
       (claims.ep === undefined || claims.ep === row.sessionEpoch);
     if (row && live) {
-      await db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti));
+      // The owner's or an Admin user's own device on a narrow exit: at the
+      // spot login-credential (0326's hold on grants).
+      await onLoginHoldSpot(row.userId, () =>
+        db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti)),
+      );
       // This request's own token: a later guard read finds it afresh (L1).
       forgetRequestLogins();
       // Only the devices THIS token enrolled. The web and desktop client
