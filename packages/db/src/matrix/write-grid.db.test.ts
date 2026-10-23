@@ -130,6 +130,9 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       if (kind === 'page') await tx`insert into pages (node_id) values (${id})`;
       if (kind === 'draw') await tx`insert into draws (node_id) values (${id})`;
       if (kind === 'table') await tx`insert into tables (node_id) values (${id})`;
+      if (kind === 'present') {
+        await tx`insert into presents (node_id, source, meta) values (${id}, '<html></html>', '{}')`;
+      }
       if (kind === 'app' && !opts.bare) {
         await tx`insert into apps (node_id, data_read_only) values (${id}, ${!!opts.informational})`;
         await tx`insert into app_databases (owner_id, app_node_id, storage_path)
