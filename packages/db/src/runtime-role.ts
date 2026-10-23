@@ -1644,10 +1644,12 @@ async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuse
      order by 1`;
 }
 
-/** The statements that bring one table's derived triggers to its grants
+/** A change that brings one table's derived triggers to its grants. */
+type TriggerChange = { drop: string } | { create: string; on: string };
+
+/** The changes that bring one table's derived triggers to its grants
  *  (none when they already match). */
-function wouldRefuseChanges(r: WouldRefuseRow): string[] {
-  const fire = 'FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()';
+function wouldRefuseChanges(r: WouldRefuseRow): TriggerChange[] {
   const want = new Map<string, string>();
   if (r.ins) want.set(NARROW_WOULD_REFUSE_TRIGGERS.INSERT, 'INSERT');
   if (r.del) want.set(NARROW_WOULD_REFUSE_TRIGGERS.DELETE, 'DELETE');
@@ -1657,7 +1659,7 @@ function wouldRefuseChanges(r: WouldRefuseRow): string[] {
       `UPDATE OF ${r.cols.map((c) => quotedIdent(c)).join(', ')}`,
     );
   }
-  const out: string[] = [];
+  const out: TriggerChange[] = [];
   for (const name of Object.values(NARROW_WOULD_REFUSE_TRIGGERS)) {
     const has = r.have.includes(name);
     const on = want.get(name);
@@ -1666,10 +1668,25 @@ function wouldRefuseChanges(r: WouldRefuseRow): string[] {
       on !== undefined &&
       (name !== NARROW_WOULD_REFUSE_TRIGGERS.UPDATE || r.haveCols.join() === r.cols.join());
     if (same) continue;
-    if (has) out.push(`DROP TRIGGER "${name}" ON ${r.t}`);
-    if (on) out.push(`CREATE TRIGGER "${name}" AFTER ${on} ON ${r.t} ${fire}`);
+    if (has) out.push({ drop: name });
+    if (on) out.push({ create: name, on });
   }
   return out;
+}
+
+/** Make one table's changes (wouldRefuseChanges), in the caller's
+ *  transaction. Names are the fixed trigger names; the table is the
+ *  catalog's own regclass text. */
+async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[]): Promise<void> {
+  for (const c of changes) {
+    if ('drop' in c) {
+      await tx.unsafe(`DROP TRIGGER "${c.drop}" ON ${t}`);
+    } else {
+      await tx.unsafe(
+        `CREATE TRIGGER "${c.create}" AFTER ${c.on} ON ${t} FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()`,
+      );
+    }
+  }
 }
 
 /**
@@ -1705,7 +1722,7 @@ export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
       // changes is what the table has now.
       const [now] = await wouldRefuseRows(tx, r.t);
       if (!now) return;
-      for (const stmt of wouldRefuseChanges(now)) await tx.unsafe(stmt);
+      await applyTriggerChanges(tx, now.t, wouldRefuseChanges(now));
     });
   }
 }

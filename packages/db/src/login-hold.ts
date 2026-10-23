@@ -18,7 +18,16 @@ import { onFullSystemRoute, systemRouteNow } from './viewer';
  * write is at the spot and the would-refuse count does not see it.
  */
 export async function onLoginHoldSpot<T>(loginId: string, write: () => PromiseLike<T>): Promise<T> {
-  if (systemRouteNow() !== 'narrow' || !(await loginHeldFromNarrow(loginId))) return await write();
+  return atHoldSpot(() => loginHeldFromNarrow(loginId), write);
+}
+
+/** The one place the hold takes the spot: on the narrow route, when
+ *  `held` says yes. */
+async function atHoldSpot<T>(
+  held: () => Promise<boolean>,
+  write: () => PromiseLike<T>,
+): Promise<T> {
+  if (systemRouteNow() !== 'narrow' || !(await held())) return await write();
   return onFullSystemRoute('login-credential', write);
 }
 
