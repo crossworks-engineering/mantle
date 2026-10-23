@@ -259,9 +259,9 @@ Reuse the app frame plumbing, minus the bridge:
     shared canvas, so a fake form inside cannot pass as the brain's own UI.
   - Closing the link, or deleting the file, stops it at once.
 
-  Open item for the audit: a public canvas shows the LATEST saved version,
-  so an agent edit goes live to the public at once. If that is a concern,
-  a share can pin a revision once revisions exist (open question 4).
+  A shared canvas always shows the LATEST save, so an agent edit goes live
+  to every link at once (decided 2026-10-23: it is a file, and a shared file
+  behaves this way; no pinned versions).
 
 ## 6. Libraries policy
 
@@ -533,12 +533,52 @@ same view. Safety rules: section 5.3.
   `ArtifactView` (client `assistant/assistant-turn-parts.tsx` line 82)
   renders the live frame with an "Open" button. Telegram, the phone and
   voice get the poster PNG.
-- **Slides (later, parked work untouched):** the parked deck model is JSON
-  elements on a 1920x1080 stage with a Reveal.js player and a
-  `slide_render` PNG via the same sidecar. A canvas becomes one more element
-  type, `{ type: 'canvas', fileId, region }`, rendered by the same frame.
-  Presenter can also author a whole slide as a 1920x1080 canvas. No change
-  to the Slides branches is needed for canvases to ship first.
+- **Slides:** see section 8.4.
+
+### 8.4 Overlap with the parked Slides workspace
+
+The parked Slides plan (branches only, never merged) is a free-canvas,
+PowerPoint-style editor: a structured JSON deck on a 1920x1080 stage,
+named regions on a 12x6 grid, our own drag, resize, rotate and snap layer,
+a smallest text size of 24 units, Reveal.js 6 as the player, and a
+`slide_render` PNG through the browser sidecar so agents can see their
+slides. Most of its cost and risk sits in the human editing layer.
+
+A canvas already covers most of what a deck needs: a deck is one `.canvas`
+that uses reveal.js, one `<section>` per slide on the 1920x1080 stage.
+What it does NOT give is hands-on editing: people change a canvas by asking
+Presenter, or by editing the HTML source.
+
+|                                  | A. Keep both                                                 | B. Canvas replaces Slides                                     | **C. Canvas first, Slides later only if needed**      |
+| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------- |
+| What ships                       | Slides editor plus canvases; a deck can hold canvas elements | Decks are reveal.js canvases; the Slides branches are retired | Decks are reveal.js canvases now; Slides stays parked |
+| Human editing                    | Full drag-and-drop                                           | Ask the agent, or edit source                                 | Ask the agent, plus a light text edit (below)         |
+| Build cost                       | Highest: two features, one complex editor                    | Lowest                                                        | Low now, decide later with real use                   |
+| Animation, charts, 3D in slides  | Only inside canvas elements                                  | Everywhere                                                    | Everywhere                                            |
+| Consistency (fonts, sizes, grid) | Enforced by the JSON model                                   | Taught by the skill, checked by the render                    | Taught by the skill, checked by the render            |
+
+**Recommend C.** Keep from the Slides plan what is cheap and proven: the
+1920x1080 stage, the 12x6 grid as CSS classes, the 24-unit smallest text,
+Reveal.js as the player, and the agent looking at its own render. These
+become a deck template and rules in the `canvas_authoring` skill. Let real
+use show whether people need drag-and-drop before the editor is built.
+
+**Light text edit (a later phase, small).** Most hand edits to a deck are
+a typo, a number or a title. A canvas can mark text it allows to be edited
+with `data-edit="<id>"`. In an "Edit text" mode the host tells the frame to
+make those elements editable; on save the frame posts the new text back,
+and the server patches only those elements in the source. The bridge
+carries text only, from the owner's own view, never on a share. That gives
+most of the hands-on value without a layout editor.
+
+**Export.** PDF works through the sidecar (reveal.js has a print layout,
+like `/print/pages` today). PPTX from HTML is poor in every tool; if PPTX
+matters, that is the strongest reason to resume the structured Slides
+model.
+
+If Slides resumes later, a canvas is still one element type there,
+`{ type: 'canvas', fileId, region }`, rendered by the same frame. Nothing
+in this proposal needs a change on the Slides branches.
 
 ## 9. Open questions for Jason
 
@@ -550,8 +590,8 @@ same view. Safety rules: section 5.3.
    now, with the one-line routing rule, and decide on a merge after the
    eval numbers.
 3. ~~Public shares of canvases in v1?~~ **Decided 2026-10-23: yes, the live
-   canvas, full screen** (sections 5.3 and 8.2). Still open: should a
-   public link follow the latest save, or a pinned revision?
+   canvas, full screen** (sections 5.3 and 8.2), always the latest save,
+   like any shared file.
 4. **History:** keep the last 10 revisions, or plain overwrite like files?
 5. **Library set:** approve the set in section 6.1, now with Alpine.js. Is GSAP's licence
    fine for a public, commercially licensed repo, or is Motion enough?
@@ -559,6 +599,9 @@ same view. Safety rules: section 5.3.
 7. **The sidecar:** it is optional in `docker-compose.core.yml`. Make it
    required wherever Presenter is enabled, or accept "no render" on such
    boxes?
+8. **Slides:** canvas first and Slides stays parked (option C, section
+   8.4), or retire the Slides branches now (option B)? Is PPTX export a
+   must? That is the one need that favours the structured Slides model.
 
 ## 10. Phased plan (rough sizes, one developer)
 
@@ -568,6 +611,7 @@ same view. Safety rules: section 5.3.
 | P1 Format and viewer | `canvas` ext, MIME, `TEXT_EXTS`; frame routes (owner + share) and ticket; `/canvas-runtime/` with the vendored set and import map; extractor for indexing; Files live viewer with Maximise, Full screen, Replay and Source; contract bump (share-ui frame builder, client-types) | both  | 4 to 6 days |
 | P2 Agent             | `canvas` and `canvas-read` groups and tools; `/render/canvas/:id` + `canvas_render` with console capture; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                         | brain | 4 to 5 days |
 | P3 Embeds            | `canvas:` page embed + poster fallback for print, DOCX, email and `/s`; `show_canvas` chat card; public, contact and login shares as a full-screen `/s` view with the pill, rate limit and owner-only poster fill                                                                | both  | 3 to 4 days |
+| P3b Decks            | Deck template and rules in `canvas_authoring` (stage, grid, text size, reveal.js); PDF export of a deck via the sidecar; "Edit text" mode with `data-edit`                                                                                                                       | both  | 3 to 5 days |
 | P4 Later             | Revisions; Slides element (when Slides resumes); optional bundle tree; `canvas_export` zip                                                                                                                                                                                       | both  | per item    |
 
 Each phase lands with an independent read-only security audit on a fixed
