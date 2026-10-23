@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { buildRouteRow, type RouteCaller } from '../lib/auth/route-policy';
+import { READ_POSTS, WRITE_GETS } from '../lib/auth/route-scope';
 import {
   aliasMismatches,
   handlerPolicy,
@@ -264,6 +265,12 @@ describe('rowDeclaration', () => {
     ] as const) {
       expect(reason(m, p, reads), `${m} ${p}`).toBe(ITEM_NONE_PLACEHOLDER);
     }
+  });
+
+  it("the lists' effect exceptions are ones a declaration can state (round 4, LOW-B)", () => {
+    // A read only on a POST, a write only on a GET (its HEAD with it).
+    for (const k of READ_POSTS) expect(k, k).toMatch(/^POST \//);
+    for (const k of WRITE_GETS) expect(k, k).toMatch(/^GET \//);
   });
 
   it('states an effect exception with the reason of its own route', () => {
