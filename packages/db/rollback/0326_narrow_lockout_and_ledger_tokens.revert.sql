@@ -92,6 +92,10 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_member_turn_claim"(text, uuid, timestamptz, integer, bigint) FROM PUBLIC;
 --> statement-breakpoint
+-- migrate's derived would-refuse trigger names the column (0319's
+-- UPDATE OF list); the next migrate derives it again from the grants.
+DROP TRIGGER IF EXISTS "mantle_narrow_would_refuse_upd" ON "public"."member_turn_ledger";
+--> statement-breakpoint
 ALTER TABLE "public"."member_turn_ledger" DROP COLUMN IF EXISTS "tokens";
 --> statement-breakpoint
 -- Off the ledger: the next roll forward applies 0326 again (re-runnable).
