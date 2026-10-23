@@ -1,0 +1,19 @@
+{
+  "file": "samples/flow-review-loop.json",
+  "template": "flow",
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "consoleErrors": [],
+  "network": [],
+  "staticProblems": [],
+  "stats": {
+    "nodes": 8,
+    "edges": 9,
+    "crossings": 0
+  },
+  "size": {
+    "width": 424,
+    "height": 1100
+  }
+}

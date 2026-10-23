@@ -1,0 +1,22 @@
+{
+  "file": "samples/pid-feed-drum.json",
+  "template": "pid",
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "consoleErrors": [],
+  "network": [],
+  "staticProblems": [],
+  "stats": {
+    "equipment": 3,
+    "lines": 6,
+    "instruments": 4,
+    "signals": 3,
+    "valves": 7,
+    "crossings": 0
+  },
+  "size": {
+    "width": 1144,
+    "height": 652
+  }
+}
