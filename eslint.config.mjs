@@ -193,8 +193,14 @@ export default tseslint.config(
         {
           // The database's test fixtures (scratch databases, the superuser
           // client, the Admin seat by hand) likewise (S8b r6 app L5).
-          selector: 'ImportExpression[source.value=/test-support$/]',
+          selector: 'ImportExpression[source.value=/test-support/]',
           message: 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+        },
+        {
+          // The A8 matrix fixtures (src/matrix/test-support, exported as
+          // @mantle/db/matrix/a8-*): S8b r7 app LOW-4.
+          selector: 'ImportExpression[source.value=/^@mantle.db.matrix.a8-/]',
+          message: 'test fixtures only: the A8 matrix fixtures are for tests',
         },
       ],
     },
@@ -492,10 +498,16 @@ export default tseslint.config(
             },
             {
               // The database's test fixtures (the superuser client, the
-              // Admin seat by hand, scratch databases): S8b r6 app L5.
-              group: ['@mantle/db/test-support', './test-support', '../test-support'],
+              // Admin seat by hand, scratch databases): S8b r6 app L5; any
+              // depth and any file in a test-support folder (r7 LOW-4).
+              regex: '(^|/)test-support(/|$)',
               message:
                 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+            },
+            {
+              // The A8 matrix fixtures (src/matrix/test-support): r7 LOW-4.
+              regex: '^@mantle/db/matrix/a8-(grid|tool-cells|tool-content)$',
+              message: 'test fixtures only: the A8 matrix fixtures are for tests',
             },
           ],
         },
@@ -591,10 +603,16 @@ export default tseslint.config(
             },
             {
               // S8b r6 app L5: the database's test fixtures (the superuser
-              // client, the Admin seat by hand) never reach shipped code.
-              group: ['@mantle/db/test-support'],
+              // client, the Admin seat by hand) never reach shipped code;
+              // any path into a test-support folder too (r7 LOW-4).
+              regex: '(^|/)test-support(/|$)',
               message:
                 'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+            },
+            {
+              // The A8 matrix fixtures (src/matrix/test-support): r7 LOW-4.
+              regex: '^@mantle/db/matrix/a8-(grid|tool-cells|tool-content)$',
+              message: 'test fixtures only: the A8 matrix fixtures are for tests',
             },
           ],
         },
