@@ -93,6 +93,20 @@ export class RuntimeFaultError extends Error {
   }
 }
 
+/**
+ * The error and the errors it wraps (`.cause`, as drizzle wraps the
+ * driver's), outermost first, at most `max` deep: the one walk every
+ * cause-reading check takes (an error that is not an object ends it).
+ */
+export function causeChain(err: unknown, max = 5): object[] {
+  const out: object[] = [];
+  for (let e: unknown = err; typeof e === 'object' && e !== null && out.length < max;) {
+    out.push(e);
+    e = (e as { cause?: unknown }).cause;
+  }
+  return out;
+}
+
 function runtimeFaultShaped(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as { runtimeFault?: unknown }).runtimeFault === true;
 }

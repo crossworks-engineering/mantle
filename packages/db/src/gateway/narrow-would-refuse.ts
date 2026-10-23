@@ -11,11 +11,17 @@ import { TtlCache } from '@mantle/std';
 import { actorSetting, currentActor, noteNarrowWouldRefuse } from '../actor';
 import { NARROW_ROLE } from '../runtime-role';
 import { sqlCode } from '../sql-text';
+import { NarrowRouteRefusedError, narrowSendable } from './narrow-sendable';
 
 type PgSql = ReturnType<typeof postgres>;
 
-/** A call of a function by name in a statement's text (literals blanked). */
-export const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
+/** A call of a `mantle_*` function by name in a statement's text (literals
+ *  blanked), bare or as public.mantle_* (quoted or not): the one call
+ *  pattern the would-refuse count, the switch-on measurement and the static
+ *  scan (test-support/narrow-write-scan.ts) read. A name after any other
+ *  schema's dot is not read. Global: take a copy (`new RegExp(CALLED_FN)`)
+ *  where `exec` is looped. */
+export const CALLED_FN = /(?<![\w.$"])(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/gi;
 
 /** Which mantle_* functions the narrow role may EXECUTE, by name, read
  *  from the catalog (its grants and PUBLIC's), kept ten minutes (a migrate
@@ -91,14 +97,52 @@ export function noteWouldRefuseCalls(base: PgSql, query: string): void {
   });
 }
 
-/** A transaction's client whose statements are read by noteWouldRefuseCalls
- *  (the switch off, on a route that would be narrow), savepoints included. */
+/**
+ * A statement the narrow route would take, sent off it (the switch off):
+ * the text check the route runs first (narrowSendable) is run here too and
+ * a refusal noted as narrow-would-refuse `text:<what>` (no blind spot for
+ * the text check, b3 checklist), then its calls (noteWouldRefuseCalls).
+ * Never holds the statement back. `tagged`: a tagged template's text, its
+ * values joined as `$1` (as narrowTxClient reads it).
+ */
+export function noteWouldRefuseStatement(base: PgSql, query: string, tagged = false): void {
+  try {
+    narrowSendable(query, tagged);
+  } catch (err) {
+    const actor = currentActor();
+    noteNarrowWouldRefuse(actor ? actorSetting(actor) : 'none', `${textReason(err)} TEXT`);
+  }
+  noteWouldRefuseCalls(base, query);
+}
+
+/** The text check's refusal as one word, `text:<what>` (the count's detail
+ *  is "<what> <op>", split on spaces): e.g. `text:a-do-block`. */
+export function textReason(err: unknown): string {
+  const what = err instanceof NarrowRouteRefusedError ? err.what : 'unread';
+  const slug = what
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `text:${slug || 'unread'}`;
+}
+
+/** A transaction's client whose statements are read by
+ *  noteWouldRefuseStatement (the switch off, on a route that would be
+ *  narrow), tagged templates and savepoints included. */
 export function wouldRefuseTx(tx: PgSql, base: PgSql): PgSql {
   return new Proxy(tx, {
+    apply(target, thisArg, args: unknown[]) {
+      const first = args[0] as { raw?: unknown } | undefined;
+      if (Array.isArray(first) && 'raw' in first) {
+        noteWouldRefuseStatement(base, (first as string[]).join('$1'), true);
+      }
+      return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
+    },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          noteWouldRefuseCalls(base, query);
+          noteWouldRefuseStatement(base, query);
           return target.unsafe(query, args as never[], opts as never);
         };
       }

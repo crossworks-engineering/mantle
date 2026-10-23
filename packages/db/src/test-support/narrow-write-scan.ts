@@ -28,6 +28,7 @@ import { join, relative } from 'node:path';
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import { ACCESS_MATRIX, narrowMayWrite } from '../access-matrix';
+import { CALLED_FN } from '../gateway/narrow-would-refuse';
 import { insertTurnsOn, NARROW_VALUE_SPOTS, turnsOn } from '../narrow-writes';
 
 export type ScannedWrite = {
@@ -498,11 +499,18 @@ export function scanCalls(
   const inSpot = (at: number) => all.some(([a, b]) => at > a && at < b);
   const lineOf = (at: number) => src.slice(0, at).split('\n').length;
   const out: ScannedCall[] = [];
-  const re = /(?<![\w.$])(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/g;
+  // The one call pattern (CALLED_FN), read case-sensitively here: a file's
+  // template text also holds env names (MANTLE_MASTER_KEY) before a paren.
+  const re = new RegExp(CALLED_FN.source, 'g');
   for (const [a, b] of templateSpans(src)) {
     const text = src.slice(a, b);
     for (let m = re.exec(text); m; m = re.exec(text)) {
-      out.push({ file, line: lineOf(a + m.index), fn: m[1]!, atSpot: inSpot(a + m.index) });
+      out.push({
+        file,
+        line: lineOf(a + m.index),
+        fn: m[1]!,
+        atSpot: inSpot(a + m.index),
+      });
     }
     re.lastIndex = 0;
   }

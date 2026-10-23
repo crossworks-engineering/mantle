@@ -16,9 +16,12 @@ import { runsOutsideTransaction } from './actor-sql';
  *  transaction block (DDL, maintenance), or one that ends or opens a
  *  transaction (it would run past the role's transaction-local SET). */
 export class NarrowRouteRefusedError extends RuntimeFaultError {
+  /** What the text check refused (the would-refuse count's `text:` reason). */
+  readonly what: string;
   constructor(what: string) {
     super(`narrow system route: ${what} is refused on the narrow role`);
     this.name = 'NarrowRouteRefusedError';
+    this.what = what;
   }
 }
 

@@ -20,7 +20,7 @@
  */
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
-import { RuntimeFaultError } from '@mantle/std';
+import { RuntimeFaultError, causeChain } from '@mantle/std';
 import { pgErrorCode, refusalOf } from '../pg-error';
 import {
   actorCheckMode,
@@ -37,7 +37,7 @@ import { actingLoginNow } from '../viewer';
 import { ACTOR_SQL_TAG, NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
 import { narrowSendable } from './narrow-sendable';
-import { CALLED_FN, noteWouldRefuseCalls, wouldRefuseTx } from './narrow-would-refuse';
+import { CALLED_FN, noteWouldRefuseStatement, wouldRefuseTx } from './narrow-would-refuse';
 import {
   lazyQuery,
   resetActorSqlFor,
@@ -122,12 +122,8 @@ function noteNarrowDenial(err: unknown): void {
   // Once per error: a statement's denial is noted where it is met, not
   // again as the savepoint's or the transaction's error (the same error, or
   // a wrapper whose cause it is).
-  const chain: object[] = [];
-  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
-    if (notedDenials.has(e)) return;
-    chain.push(e);
-    e = (e as { cause?: unknown }).cause;
-  }
+  const chain = causeChain(err);
+  if (chain.some((e) => notedDenials.has(e))) return;
   for (const e of chain) notedDenials.add(e);
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';
@@ -150,34 +146,26 @@ const notedDenials = new WeakSet<object>();
 const narrowRaised = new WeakSet<object>();
 
 function markNarrowRaised(err: unknown): void {
-  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
-    narrowRaised.add(e);
-    e = (e as { cause?: unknown }).cause;
-  }
+  for (const e of causeChain(err)) narrowRaised.add(e);
 }
 
 /** Whether `err` (or an error on its cause chain) was raised on the narrow
  *  route. */
 export function raisedOnNarrow(err: unknown): boolean {
-  for (let e: unknown = err, i = 0; typeof e === 'object' && e !== null && i < 5; i++) {
-    if (narrowRaised.has(e)) return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
+  return causeChain(err).some((e) => narrowRaised.has(e));
 }
 
 /** Tests only: the start of the refused statement's text, from the
  *  driver's error or the one it is the cause of. */
 function refusedQueryOf(err: unknown): string {
-  type Carried = { query?: unknown; parameters?: unknown; cause?: unknown };
-  for (let e = err as Carried | undefined, i = 0; e && i < 4; i++) {
+  type Carried = { query?: unknown; parameters?: unknown };
+  for (const e of causeChain(err, 4) as Carried[]) {
     if (typeof e.query === 'string') {
       const params = Array.isArray(e.parameters)
         ? e.parameters.slice(0, 6).map((v) => String(v).slice(0, 40))
         : [];
       return `${e.query.replace(/\s+/g, ' ').slice(0, 240)} [${params.join(', ')}]`;
     }
-    e = e.cause as typeof e;
   }
   return '?';
 }
@@ -457,21 +445,27 @@ function watchedQuery(q: QueryLike, onError: (err: unknown) => void) {
  * its error is seen only when it ends the transaction.
  */
 function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
+  // The text check's refusal is the statement's error too: seen by
+  // `onError` (noted, and the transaction's first error) in both branches.
+  const sendable = (text: string, tagged: boolean) => {
+    try {
+      narrowSendable(text, tagged);
+    } catch (err) {
+      onError(err);
+      throw err;
+    }
+    noteNarrowFunctions(text);
+  };
   return new Proxy(t, {
     apply(target, thisArg, args: unknown[]) {
       const first = args[0] as { raw?: unknown } | undefined;
-      if (Array.isArray(first) && 'raw' in first) {
-        const text = (first as string[]).join('$1');
-        narrowSendable(text, true);
-        noteNarrowFunctions(text);
-      }
+      if (Array.isArray(first) && 'raw' in first) sendable((first as string[]).join('$1'), true);
       return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          narrowSendable(query);
-          noteNarrowFunctions(query);
+          sendable(query, false);
           return watchedQuery(target.unsafe(query, args as never[], opts as never), onError);
         };
       }
@@ -566,8 +560,9 @@ export function narrowRouteClient(
         return (query: string, args?: unknown[], opts?: unknown) => {
           if (!narrowNow()) {
             // The switch off, on a route that would be narrow: the calls
-            // the role could not make are counted (noteWouldRefuseCalls).
-            if (wouldNarrow()) noteWouldRefuseCalls(base, query);
+            // the role could not make and the text the route would not send
+            // are counted (noteWouldRefuseStatement).
+            if (wouldNarrow()) noteWouldRefuseStatement(base, query);
             return target.unsafe(query, args as never[], opts as never);
           }
           // Tracked: closeDb waits for it (trackPipeline).

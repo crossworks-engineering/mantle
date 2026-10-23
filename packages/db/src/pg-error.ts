@@ -12,7 +12,7 @@
  *
  * These helpers walk the error and up to three causes below it.
  */
-import { ConflictError, InputError, findDatabaseError } from '@mantle/std';
+import { ConflictError, InputError, causeChain, findDatabaseError } from '@mantle/std';
 
 /** How deep isBusy looks for a BusyError on the cause chain. */
 const MAX_DEPTH = 4;
@@ -177,11 +177,7 @@ export function isCheckViolation(err: unknown): boolean {
  *  show a person as SQL (folder audit review F7). */
 export function isBusy(err: unknown): boolean {
   // Ours, or one a query builder wrapped (drizzle: the cause).
-  let e: unknown = err;
-  for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
-    if (e instanceof BusyError) return true;
-    e = (e as PgLike).cause;
-  }
+  if (causeChain(err, MAX_DEPTH).some((e) => e instanceof BusyError)) return true;
   const code = pgErrorCode(err);
   return code === '40P01' || code === '55P03';
 }
@@ -233,12 +229,7 @@ export function busyMessage(err: unknown, fallback: string = BUSY_MESSAGE): stri
  *  again (120 s on the system and user pools), and nothing rolled back that a
  *  second run could get past. */
 export function isPoolBusy(err: unknown): boolean {
-  let e: unknown = err;
-  for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
-    if (e instanceof PoolBusyError) return true;
-    e = (e as PgLike).cause;
-  }
-  return false;
+  return causeChain(err, MAX_DEPTH).some((e) => e instanceof PoolBusyError);
 }
 
 /**
