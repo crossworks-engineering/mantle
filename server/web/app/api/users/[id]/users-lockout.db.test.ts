@@ -355,6 +355,21 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     const bundles = await admin<Row[]>`
       select 1 from space_item_bundles where root_id = ${submitted}`;
     expect(bundles).toHaveLength(0);
+    // S8b (r6 app L6): the promotion is an add to Admin by its definer, in
+    // the caller's name: the role written, the row's added_by and the
+    // event's actor are the caller (the exit's acting login), not the system.
+    const [after] = await admin<Row[]>`
+      select u.role, wu.added_by::text as added_by, wu.moderator,
+             (select array_agg(e.actor_id::text) from workspace_events e
+               where e.workspace_id = w.id and e.action = 'user.add'
+                 and e.subject->>'login' = u.id::text
+                 and e.at >= wu.added_at) as actors
+        from auth.users u
+        join workspace_users wu on wu.login_id = u.id
+        join workspaces w on w.id = wu.workspace_id
+       where u.id = ${cal} and w.is_admin and w.archived_at is null
+         and w.owner_id = mantle_brain_id()`;
+    expect(after).toEqual({ role: 'admin', added_by: anchor, moderator: true, actors: [anchor] });
     await admin`delete from nodes where owner_id = ${space}`;
   });
 
