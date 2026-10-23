@@ -342,7 +342,14 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       case 'delete':
         return count(await tx`delete from nodes where id = ${id}`);
       case 'deleteContent': {
-        const table = kind === 'page' ? 'pages' : kind === 'draw' ? 'draws' : 'tables';
+        const table =
+          kind === 'page'
+            ? 'pages'
+            : kind === 'draw'
+              ? 'draws'
+              : kind === 'present'
+                ? 'presents'
+                : 'tables';
         return count(await tx.unsafe(`delete from ${table} where node_id = $1`, [id]));
       }
       case 'openLink':
