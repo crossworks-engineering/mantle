@@ -718,7 +718,7 @@ a time:
 ROLE`, `SET SESSION AUTHORIZATION`, `set_config('role', ...)`, a `role`
   clause); and a role's or this database's default
   (`ALTER ROLE ... SET`, `ALTER DATABASE ... SET`, read from
-  `pg_db_role_setting`) of an identity key or the role. A statement built
+  `pg_db_role_setting`) of an identity key or the role (the role only as a per-database viewer login takes its pool role). A statement built
   whole at run time is not read: the readers answer the narrow role no
   identity whatever it sets.
   migrate fails on any leak, inside each migration's own transaction

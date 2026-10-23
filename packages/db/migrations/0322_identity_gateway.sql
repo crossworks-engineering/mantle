@@ -318,10 +318,13 @@ BEGIN
   END LOOP;
   -- A role's or this database's default (ALTER ROLE / ALTER DATABASE ...
   -- SET): every session of that role starts with the value, set by no
-  -- function. Only the non-identity keys; never the role.
+  -- function. Only the non-identity keys; the role only as a per-database
+  -- login takes its pool role (runtime-role.ts, viewer roles per
+  -- database): a role it may SET, no superuser and none of the system
+  -- roles.
   FOR f IN
     SELECT coalesce(r.rolname::text, 'every role') || ' in ' || coalesce(d.datname::text, 'every database') AS obj,
-           x.c
+           s.setrole AS who_oid, x.c
       FROM pg_db_role_setting s
       LEFT JOIN pg_roles r ON r.oid = s.setrole
       LEFT JOIN pg_database d ON d.oid = s.setdatabase
@@ -331,6 +334,13 @@ BEGIN
     k := lower(split_part(f.c, '=', 1));
     CONTINUE WHEN k NOT IN ('role', 'session_authorization')
               AND (k NOT LIKE 'mantle.%' OR k = ANY (plain) OR k = 'mantle.check_lowered');
+    CONTINUE WHEN k = 'role' AND f.who_oid <> 0
+              AND EXISTS (SELECT 1 FROM pg_roles t
+                           WHERE t.rolname = btrim(substr(f.c, length(split_part(f.c, '=', 1)) + 2), '"')
+                             AND NOT t.rolsuper
+                             AND t.rolname NOT IN ('mantle_system', 'mantle_owner', 'mantle_runtime',
+                                                   'mantle_system_narrow')
+                             AND pg_has_role(f.who_oid, t.oid, 'SET'));
     kind := 'default'; object := f.obj; detail := 'a default sets ' || f.c;
     RETURN NEXT;
   END LOOP;
