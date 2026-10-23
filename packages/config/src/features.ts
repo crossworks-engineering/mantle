@@ -98,12 +98,13 @@ export const FEATURES = {
     default: false,
     doc: 'the crash-test harness in server/api',
   },
-  // Environment switch whose default the caller knows.
+  // On by default (plan v3.2 S7b): only an off word turns it off.
   narrowSystem: {
     env: 'MANTLE_NARROW_SYSTEM',
-    default: 'context',
-    doc: 'the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow (default: on in tests and development, off in production; plan v3.2 S7a)',
+    default: true,
+    doc: 'the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow (on everywhere since plan v3.2 S7b; 0, off or false is the per-box kill switch)',
   },
+  // Environment switch whose default the caller knows.
   mcpTerminal: {
     env: 'MANTLE_MCP_TERMINAL',
     default: 'context',

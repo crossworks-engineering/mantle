@@ -355,10 +355,61 @@ of `'all'`, `'read'` and `'none'` tables.
 
 ### The narrow route
 
-`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default in tests and
-development, off by default in production; read once per process when the
-system pool opens, and a production process logs it with the pool's login.
-Off, every statement runs as before. On, a statement the system pool sends
+`MANTLE_NARROW_SYSTEM` (feature `narrowSystem`): on by default everywhere
+since S7b part b3 (production, development and tests); `0`, `off` or `false`
+turns it off on a box (the kill switch, below). Read once per process when
+the system pool opens, and a production process logs it with the pool's
+login; migrate reads it too and gives the role its login only while it is
+on. Off, every statement runs as before.
+
+#### The kill switch
+
+Per box, with no image change: set `MANTLE_NARROW_SYSTEM=0` in the box's
+`.env` (`off` and `false` read the same), then `docker compose up -d`.
+Compose passes the switch to the migrate gate and to every app process
+(x-app-env), so migrate runs first and makes `mantle_system_narrow`
+`NOLOGIN` again, and each process starts on the full route (its boot line
+says `narrow system route off`). Nothing in the database changes: the
+column rights, the definers and the one-way rules stay, and hold only the
+narrow role, which then runs nothing. To turn it back on, remove the line
+(or set `1`) and `docker compose up -d` again. A process that reads the
+switch on while migrate saw it off fails its narrow statements closed and
+names the fix (`NARROW_LOGIN_FIX`); compose cannot produce that, since both
+read the same `.env`.
+
+What the default means for each shape:
+
+- A fresh install: on. Compose's `MANTLE_NARROW_SYSTEM` is empty, so
+  migrate gives the role its login (its password derived from
+  `MANTLE_MASTER_KEY`, which compose requires) and the app opens the narrow
+  pool on its first narrow statement. `MANTLE_DB_RUNTIME_ROLE` may be off:
+  the narrow pool logs in as the narrow role either way.
+- Per-database mode (`MANTLE_VIEWER_ROLES_PER_DATABASE`, several brains on
+  one cluster): on, on the S7a route. The role has no login there (one
+  password cannot be every brain's), so the system pool takes the role per
+  transaction, with the hold check and the text check as the boundary.
+- An existing box rolled to this release: on at that roll, with nothing set
+  in its `.env`. Before the fleet flip the CEO reads the box counts
+  (`scripts/arch-scoreboard-box.sh`) at 0 under the owner's rule (The
+  narrow write count, below); the list is in
+  docs/_archive/plan-v3-s7b-handover.md, part b3. The flip release also
+  carries the b3 checklist (0328's wider grant hold, the text check
+  counted, the box script's new lines): those ran on no box before it, and
+  the switch is their fallback too.
+- A box pinned back to an image before b3 (b2, v0.300.133 or .134): that
+  image reads an unset switch as off in production, so the pin alone takes
+  the box off the narrow route; a box that set `MANTLE_NARROW_SYSTEM=1`
+  keeps it on (the one image back paragraph below says what that needs).
+
+The kill switch's cells: `runtime-role.test.ts` (unset on in every
+environment; `0`, `off`, `false` off in production too; read once per
+process), `narrow-route.db.test.ts` ("off: every reason runs as the pool
+login": an asSystem exit, its transaction and a request exit all on the
+pool's own login), the full DB suite run with `MANTLE_NARROW_SYSTEM=0`, and
+the drill's rows (migrate with the switch unset gives the role its login;
+with `0` or `off` it takes it away).
+
+On, a statement the system pool sends
 for an exit routed `'narrow'` runs as `mantle_system_narrow`
 (`packages/db/src/gateway/narrow-route.ts`):
 
@@ -1043,8 +1094,9 @@ retypes a column on a table outside the actor check runs
 `select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
 first and drops those on its table (the next migrate makes them again).
 
-One image back needs no revert with the narrow switch off (the
-default): every report branch asks one predicate,
+One image back needs no revert with the narrow switch off
+(`MANTLE_NARROW_SYSTEM=0`; or unset on an image before b3, whose default
+is off in production): every report branch asks one predicate,
 `mantle_narrow_report(who, held, id)`, which answers false when the role
 may not run a reader it asks (the older image's migrate grants the runtime
 role its own list, without this release's held readers), so the sign-in

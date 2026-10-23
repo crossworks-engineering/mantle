@@ -730,6 +730,28 @@ sets `MANTLE_DB_RUNTIME_ROLE=1` in its `.env` (only then does migrate give
 a fresh backup first: the steps, the checks and the rollback are in
 [runtime-role.md](runtime-role.md). Hand psql below stays the superuser.
 
+## The narrow system route on by default (S7b) and its kill switch
+
+From the release that carries S7b part b3, `MANTLE_NARROW_SYSTEM` is on
+when unset: the system work of an Admin area exit runs as
+`mantle_system_narrow`, on a pool that logs in as it (migrate gives the role
+its login at the roll). Before the fleet flip, the box counts must read 0 on
+the box (`scripts/arch-scoreboard-box.sh`; the list is in
+docs/_archive/plan-v3-s7b-handover.md, part b3).
+
+The kill switch, per box, no image change:
+
+```sh
+# ~/mantle/.env
+MANTLE_NARROW_SYSTEM=0      # off and false read the same
+docker compose up -d        # migrate first (the role loses its login), then the app
+docker logs mantle_web 2>&1 | grep 'narrow system route'   # "... narrow system route off"
+```
+
+To turn it back on, remove the line (or set `1`) and `docker compose up -d`
+again. The detail, and what a fresh install and per-database mode do, is in
+[runtime-role.md](runtime-role.md), "The kill switch".
+
 ## Hand psql on a box: name the operator actor (arch A2a, migration 0275)
 
 Every statement carries who it runs as (docs/actors.md). The app sets it
@@ -1328,7 +1350,8 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   takes 0311 off the ledger (the S13 handover in docs/_archive/).
 
 - **Below the narrow system role's containment (plan v3.2 S7b parts b2
-  and b3, migrations 0315 to 0328):** with `MANTLE_NARROW_SYSTEM` off (the default)
+  and b3, migrations 0315 to 0328):** with `MANTLE_NARROW_SYSTEM` off (`0`;
+  unset reads on from b3, off on the b2 image in production)
   the image one back works with them in place: no revert (an image older
   than one back needs the reverts below whatever the switch). With it on, the
   older image's grants leave the narrow role without this release's held
