@@ -4941,18 +4941,23 @@ Mac on each pushed head: typecheck, lint, format, docs, arch, unit (pnpm
 verify) 0 on 464d556a7. Workstation (`~/s7b-b2/r16-run.sh`, units
 `s7b-b2r16-r16<name>`, results by `~/s7b-b2/r16-res.sh r16<name>`):
 
-| run                                                                       | head      | result                                                                                               |
-| ------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| identity-gateway, acl-flag, narrow-would-refuse, runtime-role.db, lockout | 464d556a7 | 0 (5 files)                                                                                          |
-| member ledger narrow, login-definer, users-lockout, devices, oauth, admin | 464d556a7 | 1: users-lockout's disable 15 s timeout in the group; alone 0 (4.3 s, the first import of the route) |
-| narrow-area-sweep                                                         | 464d556a7 | 1: SPOT_ROWS only (two new keys, pinned in eece67987)                                                |
-| runtime-role suite (rrole)                                                | 464d556a7 | see r16rrole (was running at the handover)                                                           |
-| lockout + identity-gateway, sweep, ledger group, users-lockout alone      | 76a5ddc5e | launched at the handover (r16t40bf9e, r16t1af07e, r16tba825a, r16t6a295d)                            |
+| run                                                                        | head      | result                                                                                                   |
+| -------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- |
+| identity-gateway, acl-flag, narrow-would-refuse, runtime-role.db, lockout  | 464d556a7 | 0 (5 files)                                                                                              |
+| member ledger narrow, login-definer, users-lockout, devices, oauth, admin  | 464d556a7 | 1: users-lockout's disable 15 s timeout in the group; alone 0 (4.3 s, the first import of the route)     |
+| narrow-area-sweep                                                          | 464d556a7 | 1: SPOT_ROWS only (two new keys, pinned in eece67987)                                                    |
+| runtime-role suite (rrole)                                                 | 464d556a7 | see r16rrole (was running at the handover)                                                               |
+| narrow-area-sweep (the two L5 rows, SPOT_ROWS pinned)                      | 76a5ddc5e | 0 (2 files)                                                                                              |
+| ledger narrow, login-definer, devices, oauth, clients, admin acts          | 76a5ddc5e | 0 (11 files)                                                                                             |
+| users-lockout alone                                                        | 76a5ddc5e | 0                                                                                                        |
+| narrow-lockout (the grant-hold cell, real narrow login) + identity-gateway | 0b10bc029 | 0 (the first launch on 76a5ddc5e failed on its own fixture: a key hash the table's check refuses; fixed) |
 
 ### Left (round 16b)
 
-1. Read r16rrole and the four 76a5ddc5e runs; fix what is real
-   (users-lockout's disable only under load so far).
+1. Read r16rrole (the runtime-role suite on 464d556a7, still running at
+   the handover; it predates only test-only commits and the merge-branch
+   check). users-lockout's disable timed out only in a busy group; alone
+   it passed twice.
 2. INFO not done: the catalog load failure noting a miss row
    (narrow-would-refuse.ts:44); narrowBegin's outer catch noting
    non-narrow 42501s (narrow-route.ts ~537); one cause walker; the scan
