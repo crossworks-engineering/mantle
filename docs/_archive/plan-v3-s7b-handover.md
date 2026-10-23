@@ -5409,3 +5409,26 @@ Workstation (`TAG=r17b ~/s7b-b2/r17b/r17b-run.sh <sha> <names>`, units
   they hold until the next migrate (the boot line names any). A key the
   pool does not fix could reach narrow sessions until then; the readers
   still give it no identity.
+
+## Part b3
+
+Branch feat/s7b-b3, from main v0.300.134 (444d91373). Inputs: the brief's
+"b3 brief" (items 1 to 5), the b2 audits' b3 checklists and the owner's
+decision of 2026-10-23 (no 7-day soak: one working day of real use on the
+busiest box, 0 elsewhere, the counter whole). The default flip is the last
+code commit, alone; this section's gate table names it.
+
+The list of box counts the CEO must read before the fleet flip, per box
+(`scripts/arch-scoreboard-box.sh <box>`), all since the epoch of the
+release on the box:
+
+- `narrow_misses:content-write`, `:cascade-delete`, `:denied`,
+  `:would-refuse` 0 (the would-refuse count now includes `text:` reasons);
+- `fail_open_misses:all` 0;
+- `narrow_counter_triggers` above 0, `narrow_counter_missing_triggers` 0,
+  `narrow_counter_actor_check` warn or on, `narrow_counter_held_readers`
+  yes;
+- `narrow_traffic_since_epoch:member-turns` and `:active-logins` above 0
+  on the busiest box (a 0 count with no traffic proves nothing);
+- `narrow_switch` unset or on after the roll (off only where a box chose
+  the kill switch).
