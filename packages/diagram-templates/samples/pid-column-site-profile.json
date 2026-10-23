@@ -1,0 +1,291 @@
+{
+  "template": "pid",
+  "title": "Stabiliser column overhead and bottoms",
+  "description": "Column C-201 with its overhead condenser, reflux drum and reflux pump, steam reboiler on the bottoms, product to storage; drawn to an example site profile.",
+  "sheet": {
+    "number": "EX-PID-0201",
+    "revision": "B"
+  },
+  "profile": {
+    "name": "Example site (generic)",
+    "lineNumber": {
+      "pattern": "^(?<size>[0-9./]+\")-(?<service>[A-Z]{1,4})-(?<seq>[0-9]{4})-(?<class>[A-Z][0-9A-Z]{2,5})$",
+      "example": "4\"-P-2001-A1A",
+      "enforce": "error"
+    },
+    "colourByService": true,
+    "serviceColours": {
+      "ST": "series-4",
+      "CW": "series-2",
+      "CWR": "series-2",
+      "FL": "series-3"
+    },
+    "symbols": {
+      "normallyClosed": "filled",
+      "checkValve": "filled",
+      "corners": "square",
+      "crossing": "gap"
+    },
+    "instrumentFirstLetters": {
+      "X": "Site variable (vendor package)"
+    }
+  },
+  "equipment": [
+    {
+      "id": "C-201",
+      "type": "column",
+      "service": "STABILISER"
+    },
+    {
+      "id": "E-201",
+      "type": "shell-tube-exchanger",
+      "service": "OVERHEAD CONDENSER"
+    },
+    {
+      "id": "V-202",
+      "type": "horizontal-drum",
+      "service": "REFLUX DRUM"
+    },
+    {
+      "id": "P-203",
+      "type": "centrifugal-pump",
+      "service": "REFLUX PUMP"
+    },
+    {
+      "id": "E-204",
+      "type": "exchanger",
+      "service": "REBOILER",
+      "row": "below"
+    },
+    {
+      "id": "TK-205",
+      "type": "tank",
+      "service": "PRODUCT TANK",
+      "column": 3
+    }
+  ],
+  "offpage": [
+    {
+      "id": "FEED-2",
+      "direction": "in",
+      "sheet": "1",
+      "text": "FROM V-101"
+    },
+    {
+      "id": "CW-S",
+      "direction": "in",
+      "sheet": "6",
+      "text": "CW SUPPLY"
+    },
+    {
+      "id": "CW-R",
+      "direction": "out",
+      "sheet": "6",
+      "text": "CW RETURN"
+    },
+    {
+      "id": "STM",
+      "direction": "in",
+      "sheet": "7",
+      "text": "LP STEAM"
+    },
+    {
+      "id": "COND",
+      "direction": "out",
+      "sheet": "7",
+      "text": "CONDENSATE"
+    }
+  ],
+  "lines": [
+    {
+      "number": "4\"-P-2001-A1A",
+      "from": "FEED-2",
+      "to": "C-201",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "6\"-P-2002-A1A",
+      "from": "C-201",
+      "fromPort": "top",
+      "to": "E-201"
+    },
+    {
+      "number": "4\"-P-2003-A1A",
+      "from": "E-201",
+      "to": "V-202"
+    },
+    {
+      "number": "3\"-P-2004-A1A",
+      "from": "V-202",
+      "to": "P-203",
+      "fromPort": "bottom"
+    },
+    {
+      "number": "3\"-P-2005-A1A",
+      "from": "P-203",
+      "to": "C-201",
+      "toPort": "right",
+      "inline": [
+        {
+          "type": "check"
+        },
+        {
+          "type": "control",
+          "tag": "FV-201",
+          "fail": "FO"
+        }
+      ]
+    },
+    {
+      "number": "4\"-P-2006-A1A",
+      "from": "C-201",
+      "fromPort": "bottom",
+      "to": "TK-205",
+      "inline": [
+        {
+          "type": "control",
+          "tag": "LV-202",
+          "fail": "FC"
+        }
+      ]
+    },
+    {
+      "number": "3\"-P-2007-A1A",
+      "from": "C-201",
+      "fromPort": "bottom",
+      "to": "E-204"
+    },
+    {
+      "number": "3\"-P-2008-A1A",
+      "from": "E-204",
+      "to": "C-201",
+      "toPort": "right"
+    },
+    {
+      "number": "6\"-CW-2009-B2A",
+      "from": "CW-S",
+      "to": "E-201",
+      "toPort": "bottom",
+      "weight": "secondary"
+    },
+    {
+      "number": "6\"-CW-2010-B2A",
+      "from": "E-201",
+      "fromPort": "top",
+      "to": "CW-R",
+      "weight": "secondary"
+    },
+    {
+      "number": "2\"-ST-2011-C3A",
+      "from": "STM",
+      "to": "E-204",
+      "toPort": "top",
+      "weight": "secondary",
+      "inline": [
+        {
+          "type": "control",
+          "tag": "TV-203",
+          "actuator": "piston",
+          "fail": "FC"
+        }
+      ]
+    },
+    {
+      "number": "1\"-ST-2012-C3A",
+      "from": "E-204",
+      "fromPort": "bottom",
+      "to": "COND",
+      "weight": "secondary",
+      "inline": [
+        {
+          "type": "gate",
+          "closed": true
+        }
+      ]
+    }
+  ],
+  "instruments": [
+    {
+      "tag": "FT-201",
+      "on": "3\"-P-2005-A1A"
+    },
+    {
+      "tag": "FIC-201",
+      "location": "control-room",
+      "display": "shared"
+    },
+    {
+      "tag": "LT-202",
+      "on": "C-201"
+    },
+    {
+      "tag": "LIC-202",
+      "location": "control-room",
+      "display": "shared",
+      "focal": true
+    },
+    {
+      "tag": "TT-203",
+      "on": "C-201"
+    },
+    {
+      "tag": "TIC-203",
+      "location": "control-room",
+      "display": "shared"
+    },
+    {
+      "tag": "PI-204",
+      "on": "V-202"
+    }
+  ],
+  "signals": [
+    {
+      "from": "FT-201",
+      "to": "FIC-201",
+      "type": "electric"
+    },
+    {
+      "from": "FIC-201",
+      "to": "FV-201",
+      "type": "pneumatic"
+    },
+    {
+      "from": "LT-202",
+      "to": "LIC-202",
+      "type": "electric"
+    },
+    {
+      "from": "LIC-202",
+      "to": "LV-202",
+      "type": "pneumatic"
+    },
+    {
+      "from": "TT-203",
+      "to": "TIC-203",
+      "type": "electric"
+    },
+    {
+      "from": "TIC-203",
+      "to": "TV-203",
+      "type": "pneumatic"
+    }
+  ],
+  "circuits": [
+    {
+      "id": "C-08",
+      "label": "CIRCUIT C-08 BOTTOMS",
+      "lines": [
+        "3\"-P-2007-A1A",
+        "3\"-P-2008-A1A"
+      ],
+      "equipment": [
+        "E-204"
+      ],
+      "colour": "series-5"
+    }
+  ]
+}

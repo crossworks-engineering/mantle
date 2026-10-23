@@ -1,0 +1,35 @@
+{
+  "template": "pid",
+  "title": "Feed surge drum level control",
+  "description": "Feed enters the surge drum V-101; transfer pumps P-101A/B send it on through level control valve LV-101 to sheet 2, with a relief valve to flare.",
+  "sheet": { "number": "PID-0001", "revision": "A" },
+  "equipment": [
+    { "id": "V-101", "type": "vertical-vessel", "service": "FEED SURGE DRUM" },
+    { "id": "P-101A", "type": "centrifugal-pump", "service": "TRANSFER PUMP" },
+    { "id": "P-101B", "type": "centrifugal-pump", "service": "STANDBY" }
+  ],
+  "offpage": [
+    { "id": "FEED", "direction": "in", "sheet": "1", "text": "FROM UNIT 1" },
+    { "id": "TO-2", "direction": "out", "sheet": "2", "text": "TO E-201" },
+    { "id": "FLARE", "direction": "out", "sheet": "9", "text": "TO FLARE HEADER" }
+  ],
+  "lines": [
+    { "number": "6\"-P-1001-CS150", "from": "FEED", "to": "V-101", "inline": [{ "type": "gate" }] },
+    { "number": "4\"-P-1002-CS150", "from": "V-101", "to": "P-101A", "inline": [{ "type": "gate" }] },
+    { "number": "4\"-P-1012-CS150", "from": "V-101", "to": "P-101B", "inline": [{ "type": "gate", "closed": true }] },
+    { "number": "3\"-P-1003-CS150", "from": "P-101A", "to": "TO-2", "inline": [{ "type": "check" }, { "type": "control", "tag": "LV-101", "fail": "FC", "focal": true }] },
+    { "number": "3\"-P-1013-CS150", "from": "P-101B", "to": "TO-2", "inline": [{ "type": "check" }] },
+    { "number": "2\"-FL-1004-CS150", "from": "V-101", "fromPort": "top", "to": "FLARE", "weight": "secondary", "inline": [{ "type": "relief", "tag": "PSV-101" }] }
+  ],
+  "instruments": [
+    { "tag": "LT-101", "on": "V-101" },
+    { "tag": "LIC-101", "location": "control-room", "display": "shared", "setpoint": "SP 50 %", "focal": true },
+    { "tag": "PI-102", "on": "3\"-P-1003-CS150" },
+    { "tag": "LAH-103", "location": "control-room", "display": "shared" }
+  ],
+  "signals": [
+    { "from": "LT-101", "to": "LIC-101", "type": "electric" },
+    { "from": "LIC-101", "to": "LV-101", "type": "electric" },
+    { "from": "LT-101", "to": "LAH-103", "type": "data" }
+  ]
+}

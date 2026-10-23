@@ -1,0 +1,28 @@
+{
+  "template": "flow",
+  "title": "Present canvas rendering",
+  "description": "A canvas is stored on the brain, served into a sandboxed frame with no network, and turned into a poster by the browser sidecar.",
+  "direction": "right",
+  "groups": [
+    { "id": "brain", "label": "Brain" },
+    { "id": "sandbox", "label": "Sandboxed frame, no network", "kind": "security" }
+  ],
+  "nodes": [
+    { "id": "agent", "label": "Presenter agent", "tag": "agent", "kind": "input" },
+    { "id": "api", "label": "Present API", "sublabel": "/api/presents", "group": "brain" },
+    { "id": "db", "label": "presents table", "sublabel": "source, poster", "kind": "store", "shape": "cylinder", "group": "brain" },
+    { "id": "runtime", "label": "Canvas runtime", "sublabel": "/canvas-runtime/", "group": "brain" },
+    { "id": "frame", "label": "Canvas frame", "sublabel": "allow-scripts only", "kind": "focal", "group": "sandbox" },
+    { "id": "sidecar", "label": "Browser sidecar", "sublabel": "headless Chromium", "kind": "external" },
+    { "id": "viewer", "label": "Viewer", "kind": "input" }
+  ],
+  "edges": [
+    { "from": "agent", "to": "api", "label": "save", "tone": "link" },
+    { "from": "api", "to": "db", "label": "source" },
+    { "from": "db", "to": "frame", "label": "html" },
+    { "from": "runtime", "to": "frame", "label": "import map" },
+    { "from": "api", "to": "sidecar", "label": "render", "style": "dashed" },
+    { "from": "sidecar", "to": "db", "label": "poster png", "style": "dashed" },
+    { "from": "frame", "to": "viewer", "label": "live view" }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "template": "flow",
+  "title": "Draw, look, fix",
+  "description": "How an agent drafts a diagram: write the data, render it, inspect the picture and the warnings, and fix the data until it is clean.",
+  "direction": "down",
+  "nodes": [
+    { "id": "ask", "label": "Request arrives", "shape": "pill", "kind": "input" },
+    { "id": "pick", "label": "Pick a template", "sublabel": "flow or pid" },
+    { "id": "fill", "label": "Write the data", "sublabel": "nodes, edges, groups" },
+    { "id": "render", "label": "Render in Chromium", "sublabel": "mantle_browser" },
+    { "id": "valid", "label": "Data valid?", "shape": "diamond" },
+    { "id": "clean", "label": "Picture clean?", "shape": "diamond" },
+    { "id": "save", "label": "Save SVG + PNG to the page", "kind": "focal" },
+    { "id": "done", "label": "Done", "shape": "pill" }
+  ],
+  "edges": [
+    { "from": "ask", "to": "pick" },
+    { "from": "pick", "to": "fill" },
+    { "from": "fill", "to": "render" },
+    { "from": "render", "to": "valid" },
+    { "from": "valid", "to": "fill", "label": "no: errors", "style": "dashed" },
+    { "from": "valid", "to": "clean", "label": "yes" },
+    { "from": "clean", "to": "fill", "label": "no: warnings", "style": "dashed" },
+    { "from": "clean", "to": "save", "label": "yes", "tone": "accent" },
+    { "from": "save", "to": "done" }
+  ],
+  "legend": { "dashed": "Back to the data", "accent": "Main path" }
+}
