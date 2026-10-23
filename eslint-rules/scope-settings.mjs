@@ -78,6 +78,10 @@ export const SYSTEM_POOL_SCOPE_PINS = {
     count: 1,
     why: 'systemPoolProp (withSystemPoolInWriteScope transactions)',
   },
+  'packages/db/src/member-turn-tx.ts': {
+    count: 1,
+    why: "memberTurnTx: the member turn ledger's definers (0325) take the login from the scope, the request's own (or a Telegram chat's paired login), on the system pool",
+  },
   'packages/db/src/gateway/viewer-scope.ts': {
     count: 1,
     why: 'createHomeFallback (the login only, for mantle_ws_private_workspace)',

@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { superuserClient } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -17,6 +18,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
   let m: typeof import('@mantle/db');
   let ledger: typeof import('./member-turn-ledger');
   let admin: (strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>;
+  let su: ReturnType<typeof superuserClient> | undefined;
   const tag = `ledger-${randomUUID().slice(0, 8)}`;
   const anchor = randomUUID();
   const pat = randomUUID();
@@ -37,7 +39,10 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     ledger = await import('./member-turn-ledger');
-    admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
+    // The superuser, not the app's pool: on the runtime role (the
+    // runtime-role lane) the pool only reads the ledger since 0325.
+    su = superuserClient(URL!, 2);
+    admin = su as unknown as typeof admin;
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${`anchor-${tag}@example.invalid`}, 'x', 'admin'),
       (${pat}, ${`pat-${tag}@example.invalid`}, 'x', 'member'),
@@ -49,6 +54,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     await admin`delete from traces where owner_id = ${anchor}`;
     await admin`delete from auth.users where id in (${pat}, ${sam}, ${anchor})`;
     await m.closeDb();
+    await su?.end();
   });
 
   it('counts a turn once, however often it is retried, and refuses past the cap', async () => {
@@ -64,7 +70,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
   });
 
   it('gives a released slot back', async () => {
-    await ledger.releaseMemberTurn(tid('pat.c'));
+    await ledger.releaseMemberTurn(pat, tid('pat.c'));
     expect(await claim(pat, 'pat.e')).toEqual({ ok: true, fresh: true });
   });
 

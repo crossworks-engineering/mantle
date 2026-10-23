@@ -723,6 +723,27 @@ a time:
   no row (a transaction that changed a row has a transaction id). A write
   the narrow login may make shows as one (the control).
 
+### The member turn ledger
+
+A login that is not an Admin user takes a slot of its daily turn cap and
+token budget for each chat turn, summary and transcription
+(`member_turn_ledger`). Since 0325 the ledger is written only by two
+definers: `mantle_member_turn_claim` (the whole claim: the per-login lock,
+a retried turn id admitted and not counted again, the day's turns against
+the cap, the login's member chat tokens against the budget, the row) and
+`mantle_member_turn_release` (a slot given back when its turn's enqueue
+failed: the scope login's own row, made in the last five minutes, only).
+Neither takes a login: each reads the scope's own login through the
+identity gateway, which the app sets on the system pool for that login
+only (`memberTurnTx`, packages/db `member-turn-tx.ts`: the request's own
+login, or a Telegram chat's paired login). The runtime role runs them and
+only reads the table; the narrow role, the write role and the workspace
+role may run neither and write nothing there, so a forged narrow session
+can clear no login's slot (its own or another's) and make none. Before
+0325 the app's own statements wrote the table on the system pool, which
+inside a member's chat request is the narrow route: refused with the
+switch on.
+
 ### The narrow role's message rows
 
 The turn writes its message rows (`assistant_messages`) on the narrow
@@ -848,11 +869,14 @@ as the superuser.
 
 Reverting the narrow migrations by hand (before pinning an older image;
 one image back needs none): newest first, each file in its own
-transaction, `0324_narrow_off_on_insert`, `0323_narrow_enable_off`,
+transaction, `0325_member_turn_ledger_definers`,
+`0324_narrow_off_on_insert`, `0323_narrow_enable_off`,
 `0322_narrow_message_rules`, `0321_identity_gateway`,
 `0320_narrow_row_rules`, then
 `0319_narrow_would_refuse`, `0318`, `0317`, `0316`, `0315`, `0314` (each in
-`packages/db/rollback/`): 0324's revert takes INSERT out of the one-way
+`packages/db/rollback/`): 0325's revert drops the two ledger definers (an
+older image writes the ledger itself, its own migrate grants the runtime
+role the writes again), 0324's revert takes INSERT out of the one-way
 triggers and its two replaces out of `mantle_narrow_one_way` (0323's then
 takes the switch rules out), 0322's revert puts 0320's message guard back
 (which 0320's revert then drops), 0321's revert puts the direct reads back into the

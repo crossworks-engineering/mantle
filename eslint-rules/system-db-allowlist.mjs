@@ -22,7 +22,8 @@ export const SYSTEM_DB_ALLOWLIST = [
   // The contact share trail (0214): written for any visitor, like the above.
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
-  // member_turn_ledger writes and the member chat traces' token sums (audit F09).
+  // The member chat traces' token sums (audit F09); the ledger itself is
+  // written through its definers (0325, member-turn-tx.ts).
   'packages/content/src/member-turn-ledger.ts',
   'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',

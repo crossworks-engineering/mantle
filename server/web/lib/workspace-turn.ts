@@ -116,7 +116,7 @@ export async function queueWorkspaceTurn(o: {
       );
     } catch (err) {
       // Not queued: give the slot back (only one this request took).
-      if (fresh) await releaseMemberTurn(turnId).catch(() => undefined);
+      if (fresh) await releaseMemberTurn(loginId, turnId).catch(() => undefined);
       throw err;
     }
     // A reused key lands on the turn that key started: DBOS keeps the first

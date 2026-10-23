@@ -1187,7 +1187,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.audit_log', 'system'),
   userOnly('public.app_access_log', 'system'),
   none('public.team_access_log', 'system'),
-  none('public.member_turn_ledger', 'system'),
+  // The member turn ledger (0182): written only by its two definers
+  // (0325, the request's or chat's own login from the identity gateway),
+  // which the runtime role runs; it reads the table, never writes it.
+  { ...none('public.member_turn_ledger', 'system'), runtime: 'read' },
   none('public.embedding_cache', 'system'),
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner

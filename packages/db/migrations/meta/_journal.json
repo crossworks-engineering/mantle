@@ -2276,6 +2276,13 @@
       "when": 1790198800000,
       "tag": "0324_narrow_off_on_insert",
       "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1790198860000,
+      "tag": "0325_member_turn_ledger_definers",
+      "breakpoints": true
     }
   ]
 }

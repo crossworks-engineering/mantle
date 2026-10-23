@@ -110,16 +110,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: 'writeAcceptedSnapshots: only snapshotOf, reached from makeSnapshotCopies (systemWork: the boot step and its script)',
   },
-  'packages/content/src/member-turn-ledger.ts delete public.member_turn_ledger': {
-    n: 2,
-    tag: 'reaches-narrow',
-    why: "would be refused (42501) on the narrow route: a member's chat request (POST /api/assistant/turn, threads, continue, summarize, transcribe) claims or releases its slot through systemDb inside the login's request scope; the Telegram turn's claim runs outside any scope (full)",
-  },
-  'packages/content/src/member-turn-ledger.ts insert public.member_turn_ledger': {
-    n: 1,
-    tag: 'reaches-narrow',
-    why: "would be refused (42501) on the narrow route: claimMemberTurn's systemDb transaction inside a member's chat request scope (POST /api/assistant/turn, threads, continue, summarize, transcribe); the Telegram turn's claim runs outside any scope (full)",
-  },
   'packages/content/src/pdf-passwords.ts update public.pdf_passwords [last_used_at,updated_at]': {
     n: 1,
     tag: 'covered-across-files',
@@ -597,6 +587,10 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_may_manage_home:
     'runs as its caller and is taken from PUBLIC: called in a login scope or on the full route',
+  mantle_member_turn_claim:
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
+  mantle_member_turn_release:
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
   mantle_name_taken:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_page_folder_id:
@@ -733,6 +727,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/link-serve.ts mantle_item_embeds': 1,
   'packages/content/src/link-serve.ts mantle_ws_admin_id': 1,
   'packages/content/src/member-invites.ts mantle_bridge_login': 1,
+  'packages/content/src/member-turn-ledger.ts mantle_member_turn_claim': 1,
+  'packages/content/src/member-turn-ledger.ts mantle_member_turn_release': 1,
   'packages/content/src/pages/read.ts mantle_page_folder_id': 1,
   'packages/content/src/profile-preferences.ts mantle_profile_writable': 1,
   'packages/content/src/recall-native.ts mantle_recall_retarget': 1,

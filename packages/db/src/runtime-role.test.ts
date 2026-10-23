@@ -613,7 +613,8 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 });
 
 /** The narrow role's table counts: `all` only goes down. */
-const NARROW_COUNTS = { all: 97, read: 36, none: 8 };
+// Round 14d: member_turn_ledger to read (0325: its definers write it).
+const NARROW_COUNTS = { all: 96, read: 37, none: 8 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

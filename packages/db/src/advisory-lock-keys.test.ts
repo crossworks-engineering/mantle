@@ -80,10 +80,44 @@ function locksIn(text: string): Lock[] {
   return out;
 }
 
+/**
+ * Locks that moved into a definer (a migration's SQL): the file of main
+ * takes none now, and the definer takes the same function of the same hash
+ * of the same text (the recorded key's prefix and the same login, its uuid
+ * text), so an image of either side still waits for the other's.
+ */
+const MOVED_TO_SQL: Record<string, { sql: string; prefix: string }> = {
+  // The member turn ledger's claim (round 14d): mantle_member_turn_claim
+  // locks on its scope login, the login claimMemberTurn locked on.
+  'packages/content/src/member-turn-ledger.ts': {
+    sql: 'packages/db/migrations/0325_member_turn_ledger_definers.sql',
+    prefix: 'member-turn:',
+  },
+};
+
+/** The locks a definer's SQL takes: pg_catalog.<fn>(pg_catalog.<hash>(
+ *  '<prefix>' || <login>::text, 0)). */
+function sqlLocksIn(text: string): Lock[] {
+  const re =
+    /pg_catalog\.(pg_(?:try_)?advisory_xact_lock)\(\s*pg_catalog\.(hashtext(?:extended)?)\('([^']*)' \|\| \w+::text(?:, 0)?\)\)/g;
+  return [...text.matchAll(re)].map((m) => ({
+    fn: m[1]!,
+    hash: m[2] as Lock['hash'],
+    key: `\`${m[3]}\${loginId}\``,
+  }));
+}
+
 describe('advisory lock keys (A10 #15)', () => {
   for (const [file, locks] of Object.entries(RECORDED)) {
     it(`${file} takes the locks recorded on main`, () => {
-      expect(locksIn(readFileSync(join(ROOT, file), 'utf8'))).toEqual(locks);
+      const moved = MOVED_TO_SQL[file];
+      if (!moved) {
+        expect(locksIn(readFileSync(join(ROOT, file), 'utf8'))).toEqual(locks);
+        return;
+      }
+      expect(locksIn(readFileSync(join(ROOT, file), 'utf8'))).toEqual([]);
+      expect(locks.every((l) => l.key.startsWith(`\`${moved.prefix}`))).toBe(true);
+      expect(sqlLocksIn(readFileSync(join(ROOT, moved.sql), 'utf8'))).toEqual(locks);
     });
   }
 });

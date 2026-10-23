@@ -249,6 +249,10 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0315)',
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0316)",
+  'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
+    "member-turn-tx.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0325)",
+  'public.mantle_member_turn_release(text)':
+    "member-turn-tx.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0325)",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
     "agents.ts deleteAgent: an assistant deleted, with or without its conversation, on the assistants area's narrow exit; the definer holds the rule (0316)",
 };
@@ -348,6 +352,10 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "the default assistants attached at onboarding (workspaces-migrate.ts attachDefaultAssistants in the login's scope): needs that login, so it runs at the full-route spot acting-login (round 13c: the fifth such definer, met by the onboarding cells with the switch on; on the narrow role it refused every call after 0321)",
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
+  'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
+    "a member chat turn's slot (0325): runs on the system pool in the login's own scope (member-turn-tx.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
+  'public.mantle_member_turn_release(text)':
+    "a member chat turn's slot given back (0325): the same rule as the claim; a narrow session may not clear any login's daily cap",
   'public.mantle_bridge_login(uuid)':
     "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':

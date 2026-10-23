@@ -376,6 +376,7 @@ export {
   wsRuleOf,
 } from './pg-error';
 export { adminActTx } from './admin-act';
+export { memberTurnTx } from './member-turn-tx';
 export {
   snapshotCopyOf,
   isSnapshotCopy,

@@ -19,8 +19,8 @@
  * closes, so the budget can be passed by the turns already queued (at most the
  * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice.
  */
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
-import { advisoryXactLock, memberTurnLedger, systemDb, traces } from '@mantle/db';
+import { and, eq, gte, sql } from 'drizzle-orm';
+import { memberTurnTx, systemDb, traces } from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 export type MemberTurnLimits = {
@@ -48,9 +48,6 @@ export function memberDailyLimits(): MemberTurnLimits {
     dailyTokens: envNum('MANTLE_MEMBER_DAILY_TOKENS'),
   };
 }
-
-/** How long ledger rows are kept: well past the one day the cap reads. */
-const LEDGER_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Tokens (in + out) of this login's member chat turns since `since`, from
  *  their `responder_turn` traces (run-team-turn.ts stamps `login_id`). */
@@ -80,6 +77,12 @@ export async function memberTokensSince(
  * Admit a member chat turn and write it to the ledger, or refuse it with the
  * limit it would pass. Call BEFORE the turn is enqueued; on an enqueue that
  * fails, `releaseMemberTurn` gives the slot back.
+ *
+ * The whole claim is one definer call (mantle_member_turn_claim, migration
+ * 0325) in `loginId`'s own scope on the system pool (memberTurnTx): the
+ * definer takes the login from that scope, never as an argument, under the
+ * per-login lock, so two sends at once cannot both take the last slot. The
+ * narrow role holds no right on the ledger and may not run the definers.
  */
 export async function claimMemberTurn(args: {
   ownerId: string;
@@ -89,44 +92,27 @@ export async function claimMemberTurn(args: {
   limits: MemberTurnLimits;
 }): Promise<ClaimMemberTurnResult> {
   const { ownerId, loginId, turnId, since, limits } = args;
-  return systemDb.transaction(async (tx) => {
-    await advisoryXactLock(tx, `member-turn:${loginId}`, 'hashtextextended');
-    const [seen] = await tx
-      .select({ turnId: memberTurnLedger.turnId })
-      .from(memberTurnLedger)
-      .where(eq(memberTurnLedger.turnId, turnId))
-      .limit(1);
-    if (seen) return { ok: true as const, fresh: false };
-
-    const [counted] = await tx
-      .select({ n: sql<number>`count(*)::int` })
-      .from(memberTurnLedger)
-      .where(and(eq(memberTurnLedger.loginId, loginId), gte(memberTurnLedger.createdAt, since)));
-    const used = counted?.n ?? 0;
-    if (used >= limits.dailyTurns) return { ok: false as const, reason: 'daily_cap', used };
-
-    if (limits.dailyTokens > 0) {
-      const tokens = await memberTokensSince(ownerId, loginId, since);
-      if (tokens >= limits.dailyTokens) {
-        return { ok: false as const, reason: 'token_budget', used: tokens };
-      }
-    }
-
-    await tx.insert(memberTurnLedger).values({ turnId, ownerId, loginId }).onConflictDoNothing();
-    // Housekeeping on the login's own rows: the cap reads one day.
-    await tx
-      .delete(memberTurnLedger)
-      .where(
-        and(
-          eq(memberTurnLedger.loginId, loginId),
-          lt(memberTurnLedger.createdAt, new Date(Date.now() - LEDGER_KEEP_MS)),
-        ),
-      );
-    return { ok: true as const, fresh: true };
-  }) as Promise<ClaimMemberTurnResult>;
+  const rows = (await memberTurnTx(loginId, (tx) =>
+    tx.execute(
+      sql`select ok, fresh, reason, used from mantle_member_turn_claim(${turnId}::text,
+          ${ownerId}::uuid, ${since.toISOString()}::timestamptz, ${limits.dailyTurns}::integer,
+          ${limits.dailyTokens}::bigint)`,
+    ),
+  )) as unknown as { ok: boolean; fresh: boolean; reason: string | null; used: string | null }[];
+  const r = rows[0];
+  if (!r) throw new Error('claimMemberTurn: the claim answered nothing');
+  if (r.ok) return { ok: true, fresh: r.fresh };
+  const used = Number(r.used ?? 0);
+  return r.reason === 'token_budget'
+    ? { ok: false, reason: 'token_budget', used }
+    : { ok: false, reason: 'daily_cap', used };
 }
 
-/** Give a claimed slot back: the enqueue it was claimed for failed. */
-export async function releaseMemberTurn(turnId: string): Promise<void> {
-  await systemDb.delete(memberTurnLedger).where(eq(memberTurnLedger.turnId, turnId));
+/** Give a claimed slot back: the enqueue it was claimed for failed. Only
+ *  `loginId`'s own row, and only one claimed in the last five minutes
+ *  (mantle_member_turn_release, 0325). */
+export async function releaseMemberTurn(loginId: string, turnId: string): Promise<void> {
+  await memberTurnTx(loginId, (tx) =>
+    tx.execute(sql`select mantle_member_turn_release(${turnId}::text)`),
+  );
 }

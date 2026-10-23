@@ -26,8 +26,8 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     h.claimed.push(a.turnId);
     return h.claim;
   }),
-  releaseMemberTurn: vi.fn(async (id: string) => {
-    h.released.push(id);
+  releaseMemberTurn: vi.fn(async (login: string, id: string) => {
+    h.released.push(`${login} ${id}`);
   }),
 }));
 
@@ -145,6 +145,8 @@ describe('workspace turns: the daily budget (audit F09)', () => {
     h.enqueueFails = true;
     const r = await send(login('member', '99999999-9999-4999-8999-999999999999'), 'q', 'k3');
     expect(r.status).toBe(500);
-    expect(h.released).toEqual(['ws-99999999-9999-4999-8999-999999999999.k3']);
+    expect(h.released).toEqual([
+      '99999999-9999-4999-8999-999999999999 ws-99999999-9999-4999-8999-999999999999.k3',
+    ]);
   });
 });
