@@ -187,8 +187,13 @@ describe.skipIf(!URL)(
       await scratch?.drop();
     });
 
-    it('the matrix marks exactly the four workspace tables runtime read', () => {
-      expect(runtimeReadOnlyTables().sort()).toEqual([...TABLES].sort());
+    it('the matrix marks exactly the four workspace tables runtime read, and the member turn ledger', () => {
+      // The ledger too since 0325: its two definers write it, the runtime
+      // role only reads it (member-turn-ledger-narrow.db.test.ts holds its
+      // live grants).
+      expect(runtimeReadOnlyTables().sort()).toEqual(
+        [...TABLES, 'public.member_turn_ledger'].sort(),
+      );
     });
 
     it('live grants: SELECT and no write on the four, for the runtime role and every role it may become', async () => {
