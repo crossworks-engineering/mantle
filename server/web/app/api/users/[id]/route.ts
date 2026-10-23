@@ -61,12 +61,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   let done: LoginChangeDone | LoginChangeRefusal;
   try {
     done = roleChange
-      ? await applyLoginChange(
-          user,
-          target,
-          body,
-          undefined,
-          (tx) => adminMembershipChange(tx, targetId, role === 'admin'),
+      ? await applyLoginChange(user, target, body, undefined, (tx) =>
+          adminMembershipChange(tx, targetId, role === 'admin'),
         )
       : await applyLoginChange(user, target, body);
   } catch (err) {
