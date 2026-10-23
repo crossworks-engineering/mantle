@@ -49,16 +49,16 @@ several graphics libraries, but they are bundled into the owner UI as React
 components, or run server side. The mini-app sandbox allows only React,
 react-dom, lucide-react and our small UI kit.
 
-| Library                                                                                               | Where                                                       | What it does today                                                                                                                              | Agent-usable in a no-network iframe?                                                     |
-| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `@excalidraw/excalidraw` 0.18.1                                                                       | `server/web/package.json`, client `client/web/package.json` | The `draw` editor (`client/web/components/draw/excalidraw-canvas.tsx`); server re-render via the sidecar ([docs/draw.md](../draw.md) section 4) | No. A full editor app. Agents only read drawings (`draw-read`: `draw_list`, `draw_get`)  |
-| `katex` 0.19 / 0.18                                                                                   | `server/web`, `packages/share-ui`, client `client/web`      | Page maths, formulas                                                                                                                            | CSS only: app frames load `/share-runtime/katex/katex.min.css`; the JS is not importable |
-| `recharts` 3.x                                                                                        | client `client/web`, `packages/web-ui` (`src/ui/chart.tsx`) | Dashboard charts                                                                                                                                | No. Owner UI only                                                                        |
-| `@xyflow/react` 12 + `dagre`                                                                          | client `client/web`                                         | Studio graph, recall graph, trace view                                                                                                          | No. Owner UI only                                                                        |
-| `thinking-orbs`, `@firecms/neat` (WebGL), hand-written WebGL in `packages/web-ui/src/drift/engine.ts` | client, share-ui                                            | Loader orb, backdrops                                                                                                                           | No. Decorative UI                                                                        |
-| `@resvg/resvg-wasm` 2.6.2                                                                             | `packages/content` (`draw-png-render.ts`)                   | Server SVG to PNG                                                                                                                               | Server side only                                                                         |
-| `puppeteer-core` + `ghcr.io/browserless/chromium:v2.57.0`                                             | `server/web`, `docker-compose.yml` service `browser`        | PDF export, draw re-render, draw PNG (`server/web/lib/render-pdf.ts`, `render-draw-png.ts`, `render-sandbox.ts`)                                | Server side; the base for `present_render`                                               |
-| `esbuild`                                                                                             | `server/web`, `packages/app-build`                          | Bundles mini apps                                                                                                                               | Build tool                                                                               |
+| Library                                                                                                   | Where                                                                 | What it does today                                                                                                                              | Agent-usable in a no-network iframe?                                                     |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `@excalidraw/excalidraw` 0.18.1                                                                           | `server/web/package.json`, client `client/web/package.json`           | The `draw` editor (`client/web/components/draw/excalidraw-canvas.tsx`); server re-render via the sidecar ([docs/draw.md](../draw.md) section 4) | No. A full editor app. Agents only read drawings (`draw-read`: `draw_list`, `draw_get`)  |
+| `katex` 0.19 / 0.18                                                                                       | `server/web`, `packages/share-ui`, client `client/web`                | Page maths, formulas                                                                                                                            | CSS only: app frames load `/share-runtime/katex/katex.min.css`; the JS is not importable |
+| `recharts` 3.x                                                                                            | client `client/web`, the client's web-ui package (`src/ui/chart.tsx`) | Dashboard charts                                                                                                                                | No. Owner UI only                                                                        |
+| `@xyflow/react` 12 + `dagre`                                                                              | client `client/web`                                                   | Studio graph, recall graph, trace view                                                                                                          | No. Owner UI only                                                                        |
+| `thinking-orbs`, `@firecms/neat` (WebGL), hand-written WebGL in the client's web-ui `src/drift/engine.ts` | client, share-ui                                                      | Loader orb, backdrops                                                                                                                           | No. Decorative UI                                                                        |
+| `@resvg/resvg-wasm` 2.6.2                                                                                 | `packages/content` (`draw-png-render.ts`)                             | Server SVG to PNG                                                                                                                               | Server side only                                                                         |
+| `puppeteer-core` + `ghcr.io/browserless/chromium:v2.57.0`                                                 | `server/web`, `docker-compose.yml` service `browser`                  | PDF export, draw re-render, draw PNG (`server/web/lib/render-pdf.ts`, `render-draw-png.ts`, `render-sandbox.ts`)                                | Server side; the base for `present_render`                                               |
+| `esbuild`                                                                                                 | `server/web`, `packages/app-build`                                    | Bundles mini apps                                                                                                                               | Build tool                                                                               |
 
 **Not shipped anywhere** (checked every `package.json` in both repos):
 d3, three, gsap, motion / framer-motion, anime, lottie, konva, pixi, fabric,
@@ -524,16 +524,17 @@ of it, and do not touch these worktrees):
 Pieces on the brain branch worth COPYING into Present (not merging: the
 branch is three weeks behind main):
 
-- the node-type pattern: `packages/db/migrations/0229_node_type_deck.sql`,
-  `0230_decks.sql`, `packages/db/src/schema/decks.ts`. Main has since used
+- the node-type pattern: the branch's migrations 0229_node_type_deck.sql and
+  0230_decks.sql and its schema/decks.ts. Main has since used
   0229 and 0230 for other migrations, so Present takes the next free
   numbers;
 - the row-only kind wiring: `packages/tools/src/builtins-tree.ts`,
   `builtins-search.ts`, `builtins.ts` edits for a new kind;
-- the sidecar PNG path: `server/web/lib/render-slide.ts`,
-  `packages/tools/src/slide-render-bridge.ts`,
-  `server/web/server/pages/slides-render.tsx`,
-  `server/web/server/islands/slide-render.ts`. This is close to what
+- the sidecar PNG path, on the branch only (`git show
+feat/slides-phase1:<path>`): server/web/lib/render-slide.ts,
+  packages/tools/src/slide-render-bridge.ts,
+  server/web/server/pages/slides-render.tsx,
+  server/web/server/islands/slide-render.ts. This is close to what
   `present_render` and the poster need.
 
 The client branches hold the editor and the deck renderer. Present v1 needs

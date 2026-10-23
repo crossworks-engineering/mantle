@@ -384,6 +384,19 @@ export function fontFamilyValue(key: string | null | undefined): string | null {
 }
 
 /**
+ * The always-loaded Inter faces (served from `/Inter/`) and the root font
+ * vars that name them, for a document the owner UI does not render: the
+ * share and print shell, and the Present canvas frame. Put it AFTER the
+ * compiled stylesheet: themes.css declares a fallback `--font-sans` on
+ * :root, and this must win the cascade (same specificity, so source order).
+ */
+export const INTER_FONT_FACE_CSS = `
+@font-face{font-family:'InterVariable';font-style:normal;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-VariableFont_opsz,wght.woff2') format('woff2')}
+@font-face{font-family:'InterVariable';font-style:italic;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-Italic-VariableFont_opsz,wght.woff2') format('woff2')}
+:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-sans-base:'InterVariable',ui-sans-serif,system-ui,sans-serif}
+`.trim();
+
+/**
  * `@font-face` rules for every library face, injected once server-side (root
  * layout + the share/print shell) so the declarations are present on first
  * paint (no FOUT wait) yet the files stay lazily fetched. Deterministic (no

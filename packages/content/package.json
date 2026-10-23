@@ -31,6 +31,7 @@
     "./store-sweep": "./src/store-sweep.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",
+    "./presents": "./src/presents.ts",
     "./calculate": "./src/calculate.ts",
     "./tree": "./src/tree/index.ts",
     "./test-support": "./src/test-support.ts"

@@ -1,7 +1,7 @@
 # A10 part 2 fold 1: every write route and body, recorded on main (v0.300.41)
 # BEFORE the move. Written once (A10_BODY_SWEEP_RECORD=1); a10-body-sweep.test.ts
 # reads it back and holds every cell to it, or to a named change.
-# cells: 2154
+# cells: 2178
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1358,6 +1358,30 @@ PATCH /api/pending/:id owner empty => 400 application/json {"error":"decision: I
 PATCH /api/pending/:id owner nul => 400 application/json {"error":"decision: Invalid option: expected one of \"approve\"|\"reject\" (expected { decision: approve|reject, answer?, answers? })"}
 PATCH /api/pending/:id owner array => 400 application/json {"error":"body: Invalid input: expected object, received array (expected { decision: approve|reject, answer?, answers? })"}
 PATCH /api/pending/:id owner chunked => 400 application/json {"error":"decision: Invalid option: expected one of \"approve\"|\"reject\" (expected { decision: approve|reject, answer?, answers? })"}
+POST /api/presents owner valid => 500 application/json {"error":"internal error"}
+POST /api/presents owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/presents owner empty => 500 application/json {"error":"internal error"}
+POST /api/presents owner nul => 500 application/json {"error":"internal error"}
+POST /api/presents owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/presents owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/presents/:id owner valid => 404 application/json {"error":"not found"}
+PATCH /api/presents/:id owner malformed => 400 application/json {"error":"invalid JSON"}
+PATCH /api/presents/:id owner empty => 404 application/json {"error":"not found"}
+PATCH /api/presents/:id owner nul => 404 application/json {"error":"not found"}
+PATCH /api/presents/:id owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+PATCH /api/presents/:id owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+DELETE /api/presents/:id owner valid => 404 application/json {"error":"not found"}
+DELETE /api/presents/:id owner malformed => 404 application/json {"error":"not found"}
+DELETE /api/presents/:id owner empty => 404 application/json {"error":"not found"}
+DELETE /api/presents/:id owner nul => 404 application/json {"error":"not found"}
+DELETE /api/presents/:id owner array => 404 application/json {"error":"not found"}
+DELETE /api/presents/:id owner chunked => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner valid => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner malformed => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner empty => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner nul => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner array => 404 application/json {"error":"not found"}
+POST /api/presents/:id/frame-ticket owner chunked => 404 application/json {"error":"not found"}
 PUT /api/profile owner valid => 400 application/json {"error":"Set timezone or locale (or both) before saving."}
 PUT /api/profile owner malformed => 400 application/json {"error":"Set timezone or locale (or both) before saving."}
 PUT /api/profile owner empty => 400 application/json {"error":"Set timezone or locale (or both) before saving."}

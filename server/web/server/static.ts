@@ -42,6 +42,32 @@ export function mountStatic(app: Hono, publicDir: string = join(webRoot, 'public
     );
   });
   app.use('/app-runtime/*', serveStatic({ root }));
+  // The canvas runtime (Present, packages/app-build canvas-runtime.ts): the
+  // same rules for its content-hashed modules. The manifest and the stable
+  // paths (Plotly, reveal.js stylesheets) revalidate, so a release that
+  // upgrades a library reaches every canvas.
+  app.use('/canvas-runtime/*', async (c, next) => {
+    await next();
+    if (!c.res.ok) return;
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header(
+      'Cache-Control',
+      /\/[\w-]+-[A-Z0-9]{8}\.js$/.test(c.req.path)
+        ? CACHE_CONTROL.publicImmutable
+        : CACHE_CONTROL.revalidate,
+    );
+  });
+  app.use('/canvas-runtime/*', serveStatic({ root }));
+  // Fonts and the share stylesheet's assets, CORS-open: a font is a CORS
+  // fetch, and a sandboxed frame (a canvas, a mini app) has the opaque
+  // origin 'null', so without this every face it names failed to load and
+  // the frame fell back to system fonts. Library assets, no user data.
+  for (const prefix of ['/share-runtime/*', '/fonts/*', '/Inter/*']) {
+    app.use(prefix, async (c, next) => {
+      await next();
+      if (c.res.ok) c.header('Access-Control-Allow-Origin', '*');
+    });
+  }
   // Explicit prefixes only — a catch-all serveStatic would stat the filesystem
   // on every API request. share-runtime/ is the /s island bundle (H2).
   // excalidraw-assets/ is the drawing fonts the draw render surface

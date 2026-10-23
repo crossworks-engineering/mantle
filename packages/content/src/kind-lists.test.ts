@@ -40,6 +40,8 @@ describe('kind lists derived from the registry', () => {
         'task',
         'event',
         'recall',
+        // Present (0330): a workspace kind like draw.
+        'present',
       ]),
     );
     expect(isWorkspaceKind('task')).toBe(true);
@@ -86,6 +88,8 @@ describe('kind lists derived from the registry', () => {
       'secrets',
       'apps',
       'recall',
+      // Present, appended.
+      'present',
     ]);
   });
 

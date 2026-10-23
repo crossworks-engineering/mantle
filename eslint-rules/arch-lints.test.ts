@@ -462,9 +462,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     const rows = [...buildRoutePolicy(routeManifest).values()];
     const unread = rows.filter((r) => !r.caller && !r.public && !r.page).map((r) => r.key);
     expect(unread).toEqual([]);
-    // The pins: rows with a caller, of all the rows.
-    expect(rows.filter((r) => r.caller).length).toBe(761);
-    expect(rows.length).toBe(819);
+    // The pins: rows with a caller, of all the rows. Present (+12): the
+    // list, item, revisions, frame-ticket and frame rows, with their HEADs.
+    expect(rows.filter((r) => r.caller).length).toBe(773);
+    expect(rows.length).toBe(831);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

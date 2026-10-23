@@ -18,6 +18,7 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/tables', 'tables'],
   ['/pages', 'pages'],
   ['/recall', 'recall'],
+  ['/present', 'present'],
   ['/draw', 'draw'],
   ['/notes', 'notes'],
   ['/files', 'files'],

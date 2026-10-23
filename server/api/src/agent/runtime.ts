@@ -57,6 +57,7 @@ import {
 } from '@mantle/telegram';
 
 import { sweepLegacyTables } from '@mantle/content/table-storage';
+import { flushDuePresentIndex } from '@mantle/content/presents';
 
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { runDurableStep, startTrace } from '@mantle/tracing';
@@ -979,6 +980,19 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   logger.info(
     `table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`,
   );
+
+  // Present canvases (docs/proposals/canvas-files.md section 4.3): a save
+  // never announces itself; it marks the canvas due a quiet period ahead,
+  // and this re-indexes each one once that period passes. Never one
+  // extractor pass per save.
+  startTicker({
+    name: 'present index flush',
+    everyMs: 60_000,
+    run: () => flushDuePresentIndex(),
+    onSuccess: (n) => {
+      if (n > 0) logger.info(`present index flush: ${n} canvas(es) re-indexed after quiet period`);
+    },
+  });
 
   await assertEmbeddingModelConsistency(owner);
   await drainPending(opts.enqueueTelegramTurn);

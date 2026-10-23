@@ -1078,6 +1078,22 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ],
     writer: 'content',
   },
+  // A Present canvas (0331): the draw rules, with no draft (a save is live).
+  {
+    table: 'public.presents',
+    writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: { item: 'node_id', delete: 'manage' },
+    user: 'all',
+    writer: 'content',
+  },
+  // Its last ten sources: written and pruned by an edit of the canvas.
+  {
+    table: 'public.present_revisions',
+    writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: { item: 'node_id', delete: 'edit' },
+    user: 'all',
+    writer: 'content',
+  },
   {
     table: 'public.tables',
     writeCheck: { kind: 'edit', item: 'node_id' },

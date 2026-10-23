@@ -49,6 +49,8 @@ function paramAt(pattern: string, seg: number): string | null {
  *  no reason here is one the codemod cannot say (it names it). */
 const EFFECT_REASONS: Readonly<Record<string, string>> = {
   'POST /api/formulas/:id/evaluate': "a formula's calculator: it evaluates and stores nothing",
+  'POST /api/presents/:id/frame-ticket':
+    "a canvas's frame ticket: it reads the canvas and mints a ticket, it stores nothing",
   'GET /api/mcp-connectors/oauth/callback':
     "an MCP connector's OAuth callback: it stores the tokens the provider gave",
   'GET /api/microsoft/oauth/callback':

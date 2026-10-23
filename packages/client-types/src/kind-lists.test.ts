@@ -173,22 +173,37 @@ export const RECORDED = {
  *  set in registry order (the code asks membership only, or the order is
  *  only how a schema prints). */
 export const CHANGES = {
+  // Present (0330), a new kind: every list it joins, at once. Its corpus
+  // starts empty, and a save re-extracts only after the quiet period
+  // (@mantle/content presents), so joining the extract set is no burst.
+  DEFAULT_EXTRACT_TYPES: {
+    add: ['present'],
+    why: 'Present: a canvas is indexed by its text (title, description, visible text)',
+  },
   LANDED_TYPES: {
-    add: ['email_thread', 'documentation', 'location'],
+    add: ['email_thread', 'documentation', 'location', 'present'],
     why:
       'named fix: the three kinds the extractor reads that the integrity view ' +
-      'could not see. Visibility only: the extract set is unchanged.',
+      'could not see. Visibility only: the extract set is unchanged. Present ' +
+      'joins as it joins the extract set',
   },
   SEARCH_NODES_TYPE_ENUM: {
     order: true,
-    why: 'the same 17 kinds in registry order: the tool schema prints them so',
+    add: ['present'],
+    why:
+      'the same 17 kinds in registry order: the tool schema prints them so. ' + 'Present makes 18',
   },
   MCP_SEARCH_TYPE_ENUM: {
     order: true,
+    add: ['present'],
     why:
       'the same 17 kinds in registry order (`page` after `telegram_message`): ' +
       'the MCP tools/list snapshots (packages/mcp-core/src/__snapshots__) moved ' +
-      'by that one line, and every connection hash with it',
+      'by that one line, and every connection hash with it. Present makes 18',
+  },
+  PEER_PICKER_EXCLUDED: {
+    add: ['present'],
+    why: 'Present: not offered to a linked brain yet (no peer share in P1)',
   },
 } as const satisfies Partial<
   Record<keyof typeof RECORDED, { add?: readonly string[]; order?: true; why: string }>
@@ -342,9 +357,11 @@ describe('the hand kind lists, derived from the registry', () => {
     for (const name of Object.keys(CHANGES) as (keyof typeof CHANGES)[]) {
       const was = RECORDED[name] as readonly string[];
       const now = derived()[name] as readonly string[];
-      if ('order' in CHANGES[name]) {
+      const change: { add?: readonly string[]; order?: true } = CHANGES[name];
+      if (change.order) {
         expect(now.join(), `${name}: the order moved`).not.toBe(was.join());
-        expect(set(now), `${name}: the same set`).toEqual(set(was));
+        // The same set, but for the kinds added since (a new kind).
+        expect(set(now), `${name}: the same set`).toEqual(set([...was, ...(change.add ?? [])]));
       } else {
         expect(set(now).join(), `${name}: the set moved`).not.toBe(set(was).join());
       }
@@ -358,15 +375,17 @@ describe('the hand kind lists, derived from the registry', () => {
     }
   });
 
-  it('the search enums keep their 17 kinds: searchable plus secret', () => {
-    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(RECORDED.SEARCH_NODES_TYPE_ENUM));
-    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(RECORDED.MCP_SEARCH_TYPE_ENUM));
+  it('the search enums keep their 18 kinds: searchable plus secret (Present made 18)', () => {
+    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(expected().SEARCH_NODES_TYPE_ENUM as string[]));
+    expect(set(SEARCH_TOOL_KINDS)).toEqual(set(expected().MCP_SEARCH_TYPE_ENUM as string[]));
+    expect(SEARCH_TOOL_KINDS).toHaveLength(18);
     const searchable = ITEM_KIND_NAMES.filter((t) => ITEM_KINDS[t].searchable);
     expect(set(SEARCH_TOOL_KINDS)).toEqual(set([...searchable, 'secret']));
   });
 
-  it('the extract set is not widened: LANDED_TYPES grew, DEFAULT_EXTRACT_TYPES did not', () => {
-    expect(set(EXTRACT_KINDS)).toEqual(set(RECORDED.DEFAULT_EXTRACT_TYPES));
+  it('the extract set is not widened but by a CHANGES entry (Present, a new kind)', () => {
+    expect(set(EXTRACT_KINDS)).toEqual(set(expected().DEFAULT_EXTRACT_TYPES as string[]));
+    expect(CHANGES.DEFAULT_EXTRACT_TYPES.add).toEqual(['present']);
   });
 
   it('the accepted kinds are the Library kinds (one list until library goes)', () => {

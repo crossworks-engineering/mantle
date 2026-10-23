@@ -103,3 +103,13 @@ export async function buildAppCss(source: AppSource): Promise<string> {
   const min = await esbuild.transform(css, { loader: 'css', minify: true });
   return min.code;
 }
+
+/**
+ * A Present canvas's utility CSS (docs/proposals/canvas-files.md section
+ * 6.3): the same compile as an app's, over the canvas's one HTML document,
+ * so `class="rounded-lg bg-card p-6"` works with no CDN and no in-browser
+ * Tailwind. Run on save; the result is stored beside the source.
+ */
+export async function buildCanvasCss(html: string): Promise<string> {
+  return buildAppCss({ entry: 'index.html', files: { 'index.html': html } });
+}

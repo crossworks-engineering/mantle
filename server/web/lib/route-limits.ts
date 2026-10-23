@@ -154,6 +154,13 @@ export const RATE_LIMITS = {
     'starts (frame tickets)',
     'Keep the app open instead of reloading it.',
   ),
+  // A view of a Present canvas, one ticket per frame load: the app rule.
+  memberCanvasFrameTicket: appLimit(
+    'member-canvas-frame-ticket',
+    30,
+    'canvas loads (frame tickets)',
+    'Keep the canvas open instead of reloading it.',
+  ),
   memberDbBroker: appLimit(
     'member-db-broker',
     600,
@@ -243,6 +250,7 @@ export const ROUTE_GATES: ReadonlyMap<string, RouteGates> = new Map<string, Rout
   ['POST /api/member/push/connect', { rateLimit: ['pushEnrol'] }],
   ['POST /api/member/push/subscriptions', { rateLimit: ['pushEnrol'] }],
   ['POST /api/apps/:id/frame-ticket', { rateLimit: ['memberFrameTicket'] }],
+  ['POST /api/presents/:id/frame-ticket', { rateLimit: ['memberCanvasFrameTicket'] }],
   ['POST /api/apps/:id/db-broker', { rateLimit: ['memberDbBroker'] }],
   ['POST /api/apps/:id/tool-broker', { rateLimit: ['memberToolBroker'] }],
   ['GET /api/files/files/:id', { rateLimit: ['memberBytes', 'memberThumbs'] }],

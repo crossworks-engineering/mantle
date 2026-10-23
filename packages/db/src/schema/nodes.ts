@@ -41,6 +41,7 @@ export const nodeType = pgEnum('node_type', [
   'formula',
   'draw',
   'recall',
+  'present',
 ]);
 
 export const nodes = pgTable(

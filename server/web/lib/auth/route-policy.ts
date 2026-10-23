@@ -230,6 +230,8 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
 export const FRAME_ROWS: ReadonlySet<string> = new Set([
   '/api/apps/:id/frame',
   '/api/member/apps/:id/frame',
+  // A Present canvas (a canvas's ticket only: session.ts frameTicketOf).
+  '/api/presents/:id/frame',
 ]);
 
 /**

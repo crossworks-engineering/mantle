@@ -787,6 +787,42 @@ export const ITEM_KINDS = {
     documentTitle: false,
     indexed: {},
   },
+  // A Present canvas (docs/proposals/canvas-files.md): an agent-written HTML
+  // document in the `presents` sidecar. P1 is the workspace only: no public
+  // link, contact or peer share, context ref or export yet (P3 adds them).
+  // `source` re-extracts, but a save never announces it at once: the
+  // quiet-period flush (@mantle/content presents) does, at most once per
+  // quiet period, so ten saves in a minute are one model call.
+  present: {
+    class: 'workspace',
+    tree: {
+      kind: 'present',
+      root: 'present',
+      order: 12,
+      liveOrder: 12,
+      sorts: ['updated', 'name'],
+      shareable: true,
+    },
+    publicLink: false,
+    contactShare: false,
+    peerShare: false,
+    searchable: true,
+    route: { content: '/api/presents', v1: null },
+    teamHidden: false,
+    library: false,
+    extract: true,
+    corpusMap: false,
+    contextRef: false,
+    embeds: false,
+    mentionTarget: false,
+    linkServes: false,
+    exportAs: false,
+    accepted: false,
+    searchTool: true,
+    peerPick: false,
+    documentTitle: false,
+    indexed: { title: 'embed', source: 'extract', look: false, tags: false },
+  },
 } as const satisfies Record<string, KindSpec>;
 
 type Kinds = typeof ITEM_KINDS;

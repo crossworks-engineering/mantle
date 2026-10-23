@@ -6,7 +6,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { db, nodes, emails, pages, tables, draws, type AiWorker } from '@mantle/db';
+import { db, nodes, emails, pages, tables, draws, presents, type AiWorker } from '@mantle/db';
 import {
   extOf,
   mimeForExt,
@@ -219,6 +219,18 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     if (!row) return node.title;
     const text = drawSceneText((row.scene ?? {}) as Record<string, unknown>, row.fileRefs);
     return text.trim() ? text : node.title;
+  }
+  // ─── Presents — the canvas's derived text ─────────────────────────────
+  // `presents.source_text` is the canvas's title, description and visible
+  // text (content-core canvasText), written by every save. Read as stored:
+  // the quiet-period flush announces a canvas only after its text settled.
+  if (node.type === 'present') {
+    const [row] = await db
+      .select({ sourceText: presents.sourceText })
+      .from(presents)
+      .where(eq(presents.nodeId, node.id))
+      .limit(1);
+    return row?.sourceText?.trim() ? row.sourceText : node.title;
   }
   // ─── Documentation — the markdown body, cached in data.content ────────
   // Docs are synced from disk (one node per .md file). The full markdown is

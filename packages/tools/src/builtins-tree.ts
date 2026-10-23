@@ -50,7 +50,7 @@ const KIND_PROP = {
   type: 'string',
   enum: TREE_TOOL_KINDS,
   description:
-    "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools.",
+    "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools.",
 } as const;
 
 const FOLDER_ID_PROP = {
