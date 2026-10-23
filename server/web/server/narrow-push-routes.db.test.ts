@@ -5,8 +5,10 @@
  * session), with the owner's and a member's device present. Each answers
  * 200 and the rows are gone; the owner's device (a held login, 0328) is
  * removed at the spot login-credential, the member's by the narrow login
- * itself; no statement is refused by the narrow role (vitest.setup.ts
- * fails a test on any denial). The relay is stubbed (no network).
+ * itself (its statements counted on the narrow route as
+ * system:http:login-self); no statement is refused by the narrow role
+ * (vitest.setup.ts fails a test on any denial). The relay is stubbed (no
+ * network).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/narrow-push-routes.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -117,12 +119,11 @@ describe.skipIf(!URL)('the push device routes on the narrow route', () => {
     expect(await b.json()).toEqual({ ok: true });
     // A member's device: the narrow login removes it, no spot.
     expect(ts.takeSpotUses()).not.toContain('login-credential');
+    // On the narrow route: the device bearer's own reason (login-self)
+    // sent its statements there, the held lookup among them.
     const uses = ts.takeNarrowUses();
-    console.log('NARROW_USES', JSON.stringify(uses));
-    expect(
-      Object.entries(uses).filter(([actor, n]) => !actor.startsWith('fn:') && n > 0),
-      'the member device delete ran on the narrow route',
-    ).not.toEqual([]);
+    expect(uses['system:http:login-self'] ?? 0, JSON.stringify(uses)).toBeGreaterThan(0);
+    expect(uses['fn:mantle_narrow_login_held'] ?? 0, JSON.stringify(uses)).toBeGreaterThan(0);
     expect(await left([mine, theirs])).toBe(0);
   });
 
