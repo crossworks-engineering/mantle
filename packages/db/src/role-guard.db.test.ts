@@ -12,6 +12,12 @@
  *  - mantle_bridge_login demotes only: a login whose role is not admin
  *    leaves Admin (the row, a 'bridge.login' event); a role admin login
  *    outside Admin is not added;
+ *  - with no scope (an Admin area exit at the full-route spot), the
+ *    membership definers act for the exit's acting login: the runtime
+ *    role with an Admin user that holds the users area adds and removes
+ *    and names it; the area off, a member, a disabled login, a read-only
+ *    caller, another workspace, the write role and the narrow role are
+ *    refused; no app role may run the helper (mantle_ws_exit_login);
  *  - the Admin seat (mantle_admin_seat): mantle_login_is_admin and
  *    mantle_area_rule answer as 0304's own bodies over a grid of logins,
  *    mantle_login_role says admin for any user of Admin, no app role
@@ -185,6 +191,130 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
       as,
     );
     expect(out).toEqual({ ok: true, v: ['admin', 'member'] });
+  });
+
+  it('with no scope, the definers act for the exit`s acting login: a system session, Admin only, the users area', async () => {
+    if (!(await roleExists(sql, RUNTIME_ROLE))) return;
+    // An Admin user with the users area off, and a disabled Admin user: in
+    // this transaction only (run() rolls it back).
+    const noU = randomUUID();
+    const dis = randomUUID();
+    const fixtures = async (tx: postgres.TransactionSql) => {
+      await tx`insert into auth.users (id, email, password_hash, is_owner, role, disabled_at) values
+        (${noU}, ${`${tag}-nou@example.test`}, 'x', false, 'admin', null),
+        (${dis}, ${`${tag}-dis@example.test`}, 'x', false, 'admin', now())`;
+      await tx`insert into workspace_users (workspace_id, login_id, moderator, limits) values
+        (${adminWs}, ${noU}, true, '{"areas": {"users": false}}'::jsonb),
+        (${adminWs}, ${dis}, true, '{}'::jsonb)`;
+    };
+    // What a request exit's system actor sends (the gateway's own SET).
+    const exit = (acting: string) => ({
+      'mantle.actor': 'system:http:area',
+      'mantle.write_mode': 'rw',
+      'mantle.acting_login': acting,
+    });
+    const team = (
+      await sql<{ id: string }[]>`insert into workspaces (owner_id, name)
+        values (${brain}, ${`${tag} team`}) returning id::text as id`
+    )[0]!.id;
+    const add = (ws: string) => (tx: postgres.TransactionSql) =>
+      tx`select mantle_ws_add_user(${brain}::uuid, ${ws}::uuid, ${L.mem}::uuid, true)`;
+    const remove = (tx: postgres.TransactionSql) =>
+      tx`select mantle_ws_remove_user(${brain}::uuid, ${adminWs}::uuid, ${L.adm}::uuid)`;
+    const roleOf = async (tx: postgres.TransactionSql, id: string) =>
+      (await tx<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]!.role;
+    const lastActor = async (tx: postgres.TransactionSql, id: string) =>
+      (
+        await tx<{ a: string | null; act: string }[]>`
+          select actor_id::text as a, action as act from workspace_events
+           where workspace_id = ${adminWs} and subject->>'login' = ${id} and at = now()`
+      )[0];
+    // The runtime role (the system pool at the spot), an Admin user with the
+    // users area: the add and the removal run, write the role, name the caller.
+    const added = await run(
+      sql,
+      RUNTIME_ROLE,
+      async (tx) => {
+        await add(adminWs)(tx);
+        return [await roleOf(tx, L.mem), await lastActor(tx, L.mem)];
+      },
+      exit(L.adm),
+    );
+    expect(added).toEqual({
+      ok: true,
+      v: ['admin', { a: L.adm, act: 'user.add' }],
+    });
+    const removed = await run(
+      sql,
+      RUNTIME_ROLE,
+      async (tx) => {
+        await remove(tx);
+        return [await roleOf(tx, L.adm), await lastActor(tx, L.adm)];
+      },
+      exit(brain),
+    );
+    expect(removed).toEqual({ ok: true, v: ['member', { a: brain, act: 'user.remove' }] });
+    const refused = async (
+      role: string,
+      settings: Record<string, string>,
+      q: (tx: postgres.TransactionSql) => Promise<unknown>,
+    ) => {
+      const out = await run(
+        sql,
+        role,
+        async (tx) => {
+          await tx`reset role`;
+          await fixtures(tx);
+          await tx.unsafe(`set local role "${role}"`);
+          return q(tx);
+        },
+        settings,
+      );
+      return out.ok ? 'WROTE' : `${out.state} ${out.msg.split(':').slice(0, 2).join(':')}`;
+    };
+    // The acting login holds Admin but not the users area: refused.
+    expect(await refused(RUNTIME_ROLE, exit(noU), add(adminWs))).toMatch(
+      /^42501 mantle_ws:admin_users_only/,
+    );
+    // A member (no Admin seat) as the acting login: refused, nothing learnt.
+    expect(await refused(RUNTIME_ROLE, exit(L.mem), remove)).toMatch(/^P0002 mantle_ws:not_found/);
+    // A disabled acting login: refused.
+    expect(await refused(RUNTIME_ROLE, exit(dis), add(adminWs))).toMatch(
+      /^42501 mantle_ws:no_acting_login/,
+    );
+    // A read-only caller: refused.
+    expect(
+      await refused(RUNTIME_ROLE, { ...exit(L.adm), 'mantle.write_mode': 'ro' }, add(adminWs)),
+    ).toMatch(/^42501 mantle_ws:read_only/);
+    // Another workspace than Admin: the acting login is never taken there.
+    expect(await refused(RUNTIME_ROLE, exit(L.adm), add(team))).toMatch(
+      /^42501 mantle_ws:no_acting_login/,
+    );
+    // The write role is no system session: it may not act for an acting
+    // login it set itself.
+    if (await roleExists(sql, WRITER)) {
+      expect(await refused(WRITER, exit(L.adm), add(adminWs))).toMatch(/^42501 /);
+      expect(await refused(WRITER, exit(L.adm), add(adminWs))).not.toBe('WROTE');
+    }
+    // The narrow role may not run the definers, nor the helper.
+    if (await roleExists(sql, NARROW_ROLE)) {
+      expect(await refused(NARROW_ROLE, exit(L.adm), add(adminWs))).toMatch(/^42501 /);
+      expect(
+        await refused(
+          NARROW_ROLE,
+          exit(L.adm),
+          (tx) => tx`select mantle_ws_exit_login('x', ${brain}::uuid, ${adminWs}::uuid)`,
+        ),
+      ).toMatch(/^42501 /);
+    }
+    // No app role may run the helper itself.
+    for (const role of [RUNTIME_ROLE, NARROW_ROLE, WRITER, 'mantle_view_user']) {
+      if (!(await roleExists(sql, role))) continue;
+      const [r] = await sql<{ may: boolean }[]>`
+        select has_function_privilege(${role}, 'public.mantle_ws_exit_login(text,uuid,uuid)',
+                                      'EXECUTE') as may`;
+      expect(r!.may, role).toBe(false);
+    }
   });
 
   it('keeps 0272`s CHECK: admin and member only, the anchor an admin', async () => {
