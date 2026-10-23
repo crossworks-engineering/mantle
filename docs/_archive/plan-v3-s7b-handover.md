@@ -4713,3 +4713,137 @@ then starts s7b-b2r15b-r15ematrix).
 3. The Telegram token note (item 5) and the item_grants acl_internal
    doubt (item 6): the CEO's calls.
 4. The renumber at the rebase (unchanged from round 15).
+
+## Part b2, round 15c: the derivation flag signed, the A5 timeout's cause
+
+Same branch. Inputs: the brief's "b2 round 15c inputs" (the CEO's
+item_grants call, items 1 to 3). Code heads: 43325a693 (the flag),
+9e47d5f1a (a test file put back).
+
+### The item_grants flag (mantle.acl_internal): real
+
+A pg18 cell on a migrated 615deca31 database, a folder `forge.f1` shared
+with workspace W (its item derived a W row through the folder):
+
+| session                                     | heads check | unshare the folder from W | the item after it           |
+| ------------------------------------------- | ----------- | ------------------------- | --------------------------- |
+| write role, Admin scope, flag unset         | on          | 40001 (heads not held)    | unchanged                   |
+| write role, Admin scope, flag set by itself | on          | written, no heads check   | keeps W's row, read_ws W    |
+| runtime role, flag set by itself            | on          | written, no heads check   | keeps W's row, read_ws W    |
+| either, flag set, a folder grant added      | on          | written, no heads check   | the new workspace never set |
+
+So a session that set the flag itself skipped the heads check and the
+folder propagation: an unshared folder's items stayed readable in the
+workspace. On the runtime role it adds no power (with the flag it may
+already write derived rows and read_ws itself, by 0290's design; checked
+in the same cell); on the write role it is a real class hole.
+
+Fix (0326 part 4, edited in place, never run on a box): the nine
+functions that set the flag now sign it. `mantle_acl_on()` sets the flag
+`on` and `mantle.acl_sig`, a mark keyed by the heads key and the
+transaction (`mantle_heads_mac`); `mantle_acl_saved()` and
+`mantle_acl_restore(saved)` keep and put back both (restore never
+signs), so the mark is valid only inside one of those functions. The two
+item_grants triggers ask `mantle_acl_signed()`. The bodies are rewritten
+in place by a DO block (as 0321's) that asserts its end state, so a
+second run passes; the revert puts them back the same way and checks it
+put back eleven. The bare flag still reads `on`, so the derived-column
+guards (paired with `mantle_owner_role()`) and an older image's marker
+are unchanged (no N-1 change). `mantle_acl_flag_leaks()` is the catalog
+check, run with 0321's by `identityLeaks` (so migrate fails on a row): a
+body that sets the flag or its mark itself, reads them outside the three
+readers, or decides from `mantle_acl_internal()` outside
+`mantle_acl_writer()`, and any policy, trigger condition, default, check
+or view that reads them. 0321 edited in place for one line: the
+non-identity key list names `mantle.acl_sig` (and the flag's reason says
+what is true now). The four helpers are revoked from PUBLIC; no app role
+may run them (a cell).
+
+After the fix, the same cell for both roles, by a direct write, through
+`mantle_grant_change`, and an insert, with the flag forged two ways (`on`;
+`on` with a mark from another transaction): heads check on, 40001 every
+time; heads check warn, the change reaches the item every time.
+
+Cells: `packages/db/src/acl-flag.db.test.ts` (17: the forged flags, the
+signed control, no role runs the helpers, no leak, four planted leaks
+found); workspaces-check.db.test.ts plants its drift with
+`mantle_acl_on()` (a derivation's own write). The forge proof
+(`~/s7b-b2/r15c/proof15c.sh`, `acl-forms.sh`) adds 24 flag forms.
+
+### Item 1: the A5 timeout (w7-int-fix, Azure provision)
+
+Measured, not a lock, a pool slot or a role step:
+
+- While the provision ran in a full shard 1 (a watcher polling
+  pg_stat_activity and pg_locks every second): no lock wait, no blocking
+  pid, the narrow and runtime roles unchanged (LOGIN, password), the
+  event loop never late. The active statements, its own and the other
+  files', sat on `LWLock WALWrite`, `IO WalWrite` and `IO WalSync` at
+  `commit`.
+- The provision is about 1,400 transactions (about 390 of them write):
+  1,386 on 615deca31 and 1,446 on bdf64f52a (round 14's audited head),
+  with the same time alone at the same moment (6.2 s each). Round 15
+  added no work to it.
+- The same A5 alone, same moment, load 17: 10.0 s with fsync on, 3.6 s
+  with fsync off. In a full shard 1 with fsync off: 1.9 s. The old head's
+  matrix alone (fsync on) missed its tool budget again (334 s against
+  210 s); on 9e47d5f1a with fsync off it passed in minutes.
+
+Cause: each write commit waits for its WAL flush, and the six lanes'
+clusters (and the box's other users) share one disk, so a commit-heavy
+test's time follows the disk's flush latency. Why it shows from round 15
+on is not proven; likely the WAL round 15 added to shard 1 beside it
+(narrow-lockout.db.test.ts: three scratch databases and a 13-migration
+re-run). Fix: the throwaway test
+clusters run with `fsync=off` (`~/s7b-b2/r15c/suite-nofsync.sh`, used by
+`r15c-run.sh`): no timeout raised, no test changed. The CEO's call: the
+same flag in `~/s7b-b2/suite.sh` for every later run. CI's runners have
+their own disks (not changed). Product note, not done (out of scope):
+onboarding's provision makes one transaction per seeded row; a
+transaction per seeder would cut it on real boxes too.
+
+### Item 2: r15e (615deca31, fsync on)
+
+s1 0 (A5 5.8 s), s2 0, actor-off 0, actor-on 0, edit-on 0, runtime-role
+0, serial 0, switch off full 0, round 8 proof 0, forge proof 0 (106
+refused, 23 written), drill 0. Runtime role off full 1: workspaces-migrate
+"waits at most 10 s for a lock" (the load-only cell of round 15b). Matrix
+alone 1: the tool budget (334 s, load). a6b passed in both shards; no
+rerun needed.
+
+### Pins and migrations
+
+No pin moved. No new migration: 0326 edited in place (part 4) and 0321
+(one key and one reason). Revert order unchanged (0326 first).
+
+### Gates on 9e47d5f1a (code; fsync off on the test clusters)
+
+Mac (on 43325a693, the pre-push verify, and the web build; 9e47d5f1a only
+puts back one test file): typecheck, lint, format, docs, arch, boot
+smoke, unit, web build: all 0.
+
+Workstation (units s7b-b2r15c-r15f<name>, results
+~/s7b-b2/x-r15f<name>.exit and .log, launcher `TAG=r15f
+~/s7b-b2/r15c-run.sh <sha> <names>`; every .log.setup names 9e47d5f1a):
+
+| gate                   | 9e47d5f1a                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| shard 1/2              | 0 (591 files; A5 1.9 s)                                                                                                                                                        |
+| shard 2/2              | 0 (590 files)                                                                                                                                                                  |
+| actor-off              | 0 (first launch hit a docker port collision before it ran; relaunched)                                                                                                         |
+| actor-on               | 0                                                                                                                                                                              |
+| edit-on                | 0                                                                                                                                                                              |
+| runtime-role           | 0                                                                                                                                                                              |
+| serial                 | 0                                                                                                                                                                              |
+| switch off, full       | 0 (1181 files; first launch hit the same port collision; relaunched)                                                                                                           |
+| runtime role off, full | 0 (1181 files)                                                                                                                                                                 |
+| matrix                 | 0                                                                                                                                                                              |
+| round 8 proof          | 0 (16 refused, 2 written)                                                                                                                                                      |
+| forge proof            | 0: 118 refused (106 + 12 flag forms, every one 42501 or 40001), 23 written, 12 flag forms propagated; identity sweep 268 no change, 17 refused; leaks 0 and 0; public rights 0 |
+| drill                  | 0 (0326's revert put back eleven bodies; N-1 and roll forward as round 15b)                                                                                                    |
+
+### Left
+
+1. The CEO's call on fsync=off for the shared kit (`suite.sh`).
+2. The renumber at the rebase (unchanged).
+3. Backlog (CEO decision): Telegram member tokens toward the budget.
