@@ -191,7 +191,7 @@ SQL
 # either route; a sign of content going away under narrow work, not a
 # refusal to come: the cascade runs as the table's owner, so the role's
 # rights never stop it. narrow-denied: a right the role does not hold, met
-# on the narrow route. narrow-would-refuse (migration 0320, S7b part b2
+# on the narrow route, or a text the route's check refused (text:<what>). narrow-would-refuse (migration 0320, S7b part b2
 # round 9): a write by a narrow reason off the narrow route that the role
 # would refuse once the switch is on (a table or column privilege it does
 # not hold, or 0319's one-way rules), per actor, table and operation; the

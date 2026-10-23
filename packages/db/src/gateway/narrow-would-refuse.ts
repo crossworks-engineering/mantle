@@ -11,7 +11,7 @@ import { TtlCache } from '@mantle/std';
 import { actorSetting, currentActor, noteNarrowWouldRefuse } from '../actor';
 import { NARROW_ROLE } from '../runtime-role';
 import { sqlCode } from '../sql-text';
-import { NarrowRouteRefusedError, narrowSendable } from './narrow-sendable';
+import { sendOrNote } from './narrow-denial';
 
 type PgSql = ReturnType<typeof postgres>;
 
@@ -99,32 +99,15 @@ export function noteWouldRefuseCalls(base: PgSql, query: string): void {
 
 /**
  * A statement the narrow route would take, sent off it (the switch off):
- * the text check the route runs first (narrowSendable) is run here too and
- * a refusal noted as narrow-would-refuse `text:<what>` (no blind spot for
- * the text check, b3 checklist), then its calls (noteWouldRefuseCalls).
- * Never holds the statement back. `tagged`: a tagged template's text, its
- * values joined as `$1` (as narrowTxClient reads it).
+ * the text check the route runs first is run here too and a refusal
+ * counted as narrow-would-refuse `text:<what>` (sendOrNote, the one helper
+ * for both switch states), then its calls (noteWouldRefuseCalls). Never
+ * holds the statement back. `tagged`: a tagged template's text, its values
+ * joined as `$1` (as narrowTxClient reads it).
  */
 export function noteWouldRefuseStatement(base: PgSql, query: string, tagged = false): void {
-  try {
-    narrowSendable(query, tagged);
-  } catch (err) {
-    const actor = currentActor();
-    noteNarrowWouldRefuse(actor ? actorSetting(actor) : 'none', `${textReason(err)} TEXT`);
-  }
+  sendOrNote(query, tagged, false);
   noteWouldRefuseCalls(base, query);
-}
-
-/** The text check's refusal as one word, `text:<what>` (the count's detail
- *  is "<what> <op>", split on spaces): e.g. `text:a-do-block`. */
-export function textReason(err: unknown): string {
-  const what = err instanceof NarrowRouteRefusedError ? err.what : 'unread';
-  const slug = what
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  return `text:${slug || 'unread'}`;
 }
 
 /** A transaction's client whose statements are read by

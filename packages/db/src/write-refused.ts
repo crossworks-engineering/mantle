@@ -19,7 +19,7 @@
  * driver error, so the code can sit on the cause rather than the top object.
  */
 import { narrowRouteNow } from './gateway/pools';
-import { raisedOnNarrow } from './gateway/narrow-route';
+import { raisedOnNarrow } from './gateway/narrow-denial';
 import { pgErrorCode } from './pg-error';
 import { systemRouteNow } from './viewer';
 

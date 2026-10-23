@@ -740,6 +740,11 @@ describe.skipIf(!URL)('the narrow route logs in as the narrow role (plan v3.2 S7
         ).toBeInstanceOf(ns.NarrowRouteRefusedError);
       }
     }
+    // Each refusal noted once on the route, as the text check's.
+    const { takeNarrowDenials } = await import('./actor');
+    const denied = takeNarrowDenials();
+    expect(denied).toHaveLength(names.length * 2);
+    for (const d of denied) expect(d.what, d.what).toMatch(/^text:[a-z0-9-]+ \| /);
   });
 
   it('the acting login: a request exit carries it on the narrow route, and on the full route with the check off', async () => {

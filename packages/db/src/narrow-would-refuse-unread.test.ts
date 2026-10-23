@@ -4,7 +4,9 @@
  * nothing refused), and the failed load is not kept.
  */
 import { describe, expect, it } from 'vitest';
-import { takeNarrowWrites } from './actor';
+import { takeNarrowDenials, takeNarrowWrites } from './actor';
+import { noteNarrowDenial, sendOrNote } from './gateway/narrow-denial';
+import { NarrowRouteRefusedError } from './gateway/narrow-sendable';
 import {
   CALLED_FN,
   noteWouldRefuseCalls,
@@ -85,6 +87,51 @@ describe('the would-refuse call reading, catalog unread', () => {
     const got = takeNarrowWrites().map((w) => w.detail);
     expect(got).toContain('text:a-do-block TEXT');
     expect(got).toContain('fn:mantle_denied EXECUTE');
+  });
+
+  it('one text check helper for both switch states: on the route a refusal is a noted denial (text:<what>) and thrown; off it counted and sent', () => {
+    takeNarrowWrites();
+    takeNarrowDenials();
+    // On the route: thrown, noted once as a denial, nothing counted as
+    // would-refuse.
+    let thrown: unknown = null;
+    try {
+      sendOrNote('do $$ begin perform 1; end $$', false, true);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(NarrowRouteRefusedError);
+    // The same error met again (a savepoint's, the transaction's, or
+    // drizzle's wrapper whose cause it is) is not noted twice.
+    noteNarrowDenial(thrown);
+    noteNarrowDenial(new Error('Failed query', { cause: thrown }));
+    expect(takeNarrowDenials().map((d) => d.what)).toEqual(['text:a-do-block | ?']);
+    expect(takeNarrowWrites()).toEqual([]);
+    // Off the route the first is counted and sent; on it the second throws.
+    let other: unknown = null;
+    try {
+      sendOrNote('set role postgres', true, false);
+      sendOrNote('commit', false, true);
+    } catch (err) {
+      other = err;
+    }
+    expect(other).toBeInstanceOf(NarrowRouteRefusedError);
+    expect(takeNarrowDenials().map((d) => d.what)).toEqual([
+      'text:a-transaction-control-statement | ?',
+    ]);
+    // Off the route: counted (a tagged template's text too), no denial.
+    expect(takeNarrowWrites().map((w) => `${w.check} ${w.detail}`)).toEqual([
+      'narrow-would-refuse text:a-role-change TEXT',
+    ]);
+    sendOrNote('select 1', false, true);
+    sendOrNote('select 1', false, false);
+    expect(takeNarrowDenials()).toEqual([]);
+    expect(takeNarrowWrites()).toEqual([]);
+    // A wrapper noted before its cause: the text refusal read on the chain.
+    noteNarrowDenial(
+      new Error('Failed query', { cause: new NarrowRouteRefusedError('a DO block') }),
+    );
+    expect(takeNarrowDenials().map((d) => d.what)).toEqual(['text:a-do-block | ?']);
   });
 
   it('reads public.mantle_* and bare mantle_* calls only (one call pattern)', () => {

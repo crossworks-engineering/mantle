@@ -577,7 +577,11 @@ content-writing definer (`NARROW_SYSTEM_FUNCTIONS` is its whole list).
 
 A right the narrow role does not hold, met on the route, is noted every
 time, a caught one too: a miss row (check `narrow-denied`) on a box, and in
-tests a failure (`vitest.setup.ts`). `MANTLE_NARROW_DUMP=<file>` lists the
+tests a failure (`vitest.setup.ts`). So is a statement the text check
+refused before it was sent (detail `text:<what>`, e.g. `text:a-do-block`):
+one helper (`sendOrNote`, gateway/narrow-denial.ts) runs the text check
+and notes its refusal in both switch states, a denial on the route and a
+`narrow-would-refuse` count off it. `MANTLE_NARROW_DUMP=<file>` lists the
 route's uses by actor and its denials per test file: how each reason was
 measured. A denial is a measurement result: the reason routes full with its
 why, or the table is granted narrowly with a reason, never widened for a
@@ -984,7 +988,8 @@ to keep than it saves.
 
 With the switch on, every 42501 a narrow statement meets is noted as
 `narrow-denied`: a privilege gap, and a refusal a row rule, a guard or a
-definer raises with that code. Such an error is marked where it is met, so
+definer raises with that code; and every text check refusal, as
+`text:<what>` (it carries no SQLSTATE: nothing was sent). Such an error is marked where it is met, so
 a caller that skips a write a read-only database refuses
 (`isWriteRefused`, `bestEffortWrite`) never skips the narrow role's
 refusal, systemDb inside a scope included.

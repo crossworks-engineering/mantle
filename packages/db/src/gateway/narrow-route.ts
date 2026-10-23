@@ -20,14 +20,12 @@
  */
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
-import { RuntimeFaultError, causeChain } from '@mantle/std';
-import { pgErrorCode, refusalOf } from '../pg-error';
+import { RuntimeFaultError } from '@mantle/std';
+import { pgErrorCode } from '../pg-error';
 import {
   actorCheckMode,
   actorSetting,
   currentActor,
-  noteActorMiss,
-  noteTestNarrowDenial,
   noteTestNarrowUse,
   writeModeOf,
 } from '../actor';
@@ -36,7 +34,7 @@ import { NARROW_LOGIN_FIX, NARROW_ROLE } from '../runtime-role';
 import { actingLoginNow } from '../viewer';
 import { ACTOR_SQL_TAG, NARROW_SQL_TAG, firstModeReadNow } from './check-mode';
 import { sqlCode } from '../sql-text';
-import { narrowSendable } from './narrow-sendable';
+import { noteNarrowDenial, sendOrNote } from './narrow-denial';
 import { CALLED_FN, noteWouldRefuseStatement, wouldRefuseTx } from './narrow-would-refuse';
 import {
   lazyQuery,
@@ -106,70 +104,6 @@ async function narrowSettingsSql(takeRole: boolean): Promise<string | null> {
   return `${NARROW_SQL_TAG} ${setActorSql(params)}${takeRole ? `, ${role}` : ''}`;
 }
 
-/**
- * A right the narrow role does not hold, met on the narrow route: noted
- * every time, a caught one too (the measurement: route the reason full with
- * its why, or grant narrowly). Tests record it (vitest.setup.ts fails the
- * test, as on a write-role gap); elsewhere it is a miss row (check
- * 'narrow-denied'). The caller's error stays its error.
- */
-function noteNarrowDenial(err: unknown): void {
-  markNarrowRaised(err);
-  // Every 42501: a privilege gap, and a row rule's, a guard's or a
-  // definer's refusal (the re-audit's L1: only the first was noted).
-  const what = refusalOf(err);
-  if (!what) return;
-  // Once per error: a statement's denial is noted where it is met, not
-  // again as the savepoint's or the transaction's error (the same error, or
-  // a wrapper whose cause it is).
-  const chain = causeChain(err);
-  if (chain.some((e) => notedDenials.has(e))) return;
-  for (const e of chain) notedDenials.add(e);
-  const actor = currentActor();
-  const who = actor ? actorSetting(actor) : 'none';
-  if (env('NODE_ENV') === 'test') {
-    // The refused statement's text too (postgres.js puts it on its error),
-    // so the measurement names the writer.
-    noteTestNarrowDenial(who, `${what.slice(0, 200)} | ${refusedQueryOf(err)}`);
-    return;
-  }
-  noteActorMiss({ source: 'ts', check: 'narrow-denied', actor: who, detail: what.slice(0, 200) });
-}
-
-/** The denials already noted (noteNarrowDenial). */
-const notedDenials = new WeakSet<object>();
-
-/** Errors raised by a statement on the narrow route (noteNarrowDenial
- *  marks each on its cause chain), so a caller can tell the narrow role's
- *  refusal from a read-only database wherever it is caught (isWriteRefused:
- *  systemDb inside a turn or request scope runs narrow with no exit). */
-const narrowRaised = new WeakSet<object>();
-
-function markNarrowRaised(err: unknown): void {
-  for (const e of causeChain(err)) narrowRaised.add(e);
-}
-
-/** Whether `err` (or an error on its cause chain) was raised on the narrow
- *  route. */
-export function raisedOnNarrow(err: unknown): boolean {
-  return causeChain(err).some((e) => narrowRaised.has(e));
-}
-
-/** Tests only: the start of the refused statement's text, from the
- *  driver's error or the one it is the cause of. */
-function refusedQueryOf(err: unknown): string {
-  type Carried = { query?: unknown; parameters?: unknown };
-  for (const e of causeChain(err, 4) as Carried[]) {
-    if (typeof e.query === 'string') {
-      const params = Array.isArray(e.parameters)
-        ? e.parameters.slice(0, 6).map((v) => String(v).slice(0, 40))
-        : [];
-      return `${e.query.replace(/\s+/g, ' ').slice(0, 240)} [${params.join(', ')}]`;
-    }
-  }
-  return '?';
-}
-
 /** Tests only: count the mantle_* functions a narrow statement calls by
  *  name, as uses `fn:<name>` (the measurement of the role's EXECUTE). A
  *  function a definer calls needs no EXECUTE of the role; one a plain
@@ -194,9 +128,10 @@ function noteNarrowUse(): void {
 }
 
 /**
- * One statement outside a transaction on the narrow route: BEGIN, the SET
- * (narrowSettingsSql), the statement, the hold check (narrowHeld) and
- * COMMIT, pipelined on one reserved connection of the system pool (one
+ * One statement outside a transaction on the narrow route, its text checked
+ * first on both pools (sendOrNote: a refusal noted and thrown, nothing
+ * sent): BEGIN, the SET (narrowSettingsSql), the statement, the hold check
+ * (narrowHeld) and COMMIT, pipelined on one reserved connection of the system pool (one
  * round trip). A failing statement aborts the transaction, the COMMIT then
  * rolls back, and the first error is thrown.
  */
@@ -207,7 +142,7 @@ export async function narrowStatement(
   mode: QueryMode,
   pool: PgSql | null = null,
 ): Promise<unknown> {
-  narrowSendable(query);
+  sendOrNote(query, false, true);
   noteNarrowUse();
   noteNarrowFunctions(query);
   if (pool) {
@@ -445,11 +380,12 @@ function watchedQuery(q: QueryLike, onError: (err: unknown) => void) {
  * its error is seen only when it ends the transaction.
  */
 function narrowTxClient(t: PgSql, onError: (err: unknown) => void): PgSql {
-  // The text check's refusal is the statement's error too: seen by
-  // `onError` (noted, and the transaction's first error) in both branches.
+  // The text check's refusal (noted where it is met, sendOrNote) is the
+  // statement's error too: seen by `onError` (the transaction's first
+  // error) in both branches.
   const sendable = (text: string, tagged: boolean) => {
     try {
-      narrowSendable(text, tagged);
+      sendOrNote(text, tagged, true);
     } catch (err) {
       onError(err);
       throw err;

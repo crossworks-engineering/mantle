@@ -7,7 +7,7 @@
  * deliberate code; narrow-route.ts sends what passes.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { RuntimeFaultError } from '@mantle/std';
+import { RuntimeFaultError, causeChain } from '@mantle/std';
 import { SESSION_LASTING_FUNCTIONS, SQL_TEXT_RUNNERS } from '../read-sql';
 import { sqlCode } from '../sql-text';
 import { runsOutsideTransaction } from './actor-sql';
@@ -23,6 +23,25 @@ export class NarrowRouteRefusedError extends RuntimeFaultError {
     this.name = 'NarrowRouteRefusedError';
     this.what = what;
   }
+}
+
+/** The text check's refusal as one word, `text:<what>` (the counts'
+ *  detail is "<what> <op>", split on spaces): e.g. `text:a-do-block`. */
+export function textReason(err: unknown): string {
+  const what = err instanceof NarrowRouteRefusedError ? err.what : 'unread';
+  const slug = what
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `text:${slug || 'unread'}`;
+}
+
+/** The text check's refusal on `err` or its cause chain (drizzle wraps
+ *  it), as textReason reads it; else null. */
+export function textRefusalOf(err: unknown): string | null {
+  const refused = causeChain(err).find((e) => e instanceof NarrowRouteRefusedError);
+  return refused ? textReason(refused) : null;
 }
 
 /** A transaction-control verb at the start of any statement of the text

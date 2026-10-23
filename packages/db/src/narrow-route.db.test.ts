@@ -76,6 +76,14 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         throw Object.assign(new Error('rollback'), { u: r!.u });
       })
       .catch((err: { u?: string }) => err.u ?? String(err));
+  /** The denials noted since the last take: each a text check's refusal
+   *  (`text:<what>`, noted on the route since it is a bug of the statement),
+   *  none a right the role lacks. */
+  const textDenialsOnly = () => {
+    const denied = actor.takeNarrowDenials();
+    expect(denied.length).toBeGreaterThan(0);
+    for (const d of denied) expect(d.what, d.what).toMatch(/^text:[a-z0-9-]+ \| /);
+  };
   /** The pool reads the switch once, when it opens. */
   const reopen = async (on: boolean) => {
     await m.closeDb();
@@ -276,7 +284,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         stmt,
       ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it('refuses a role change, a session setting and transaction control, by text, alone and in a transaction', async () => {
@@ -352,7 +360,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       'admin-area',
     );
     expect((timeout as unknown as { t: string }[])[0]!.t).not.toBe('1234ms');
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it('refuses the escapes no literal shows: a built role name, bound parameters, a DO block, pg_settings', async () => {
@@ -407,7 +415,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     ]) {
       await v.asSystem(() => m.db.transaction((tx) => tx.execute(stmt)), 'admin-area');
     }
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it("refuses the a3 audit's forms, each of which leaves the role on Postgres when sent unguarded", async () => {
@@ -508,7 +516,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
       'admin-area',
     );
     expect(scoped).toEqual({ u: NARROW, ws: '{}' });
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it('reads the text as Postgres does (one reader, sql-text.ts): each form leaves the role unguarded, and is refused', async () => {
@@ -561,7 +569,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
         stmt,
       ).toBeInstanceOf(ns.NarrowRouteRefusedError);
     }
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it("refuses a call whose effect outlives the transaction (each lasts past COMMIT sent unguarded); the transaction's own advisory locks are sent", async () => {
@@ -654,7 +662,7 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
              and database = (select oid from pg_database where datname = current_database())`
       )[0]!.n,
     ).toBe(0);
-    expect(actor.takeNarrowDenials()).toEqual([]);
+    textDenialsOnly();
   });
 
   it('a begin whose work returns an array of statements sends them all before the COMMIT and answers their results, on every route', async () => {
@@ -787,6 +795,47 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(err).not.toBeInstanceOf(nr.NarrowRoleLeftError);
     expect(err).toMatchObject({ code: '42501' });
     expect(actor.takeNarrowDenials()).toHaveLength(1);
+  });
+
+  it('notes a text refusal on the route once, as text:<what>: alone, in a transaction, a tagged template and a savepoint', async () => {
+    actor.takeNarrowDenials();
+    const pools = await import('./gateway/pools');
+    // One after another: the notes' order is the sends'.
+    const refused = [
+      // Alone (narrowStatement: on the login pool and the SET route alike).
+      () => v.asSystem(() => m.db.execute(sql.raw('commit')), 'admin-area'),
+      // A transaction's statement.
+      () =>
+        v.asSystem(
+          () => m.db.transaction((tx) => tx.execute(sql.raw('set role none'))),
+          'admin-area',
+        ),
+      // A tagged template in a narrow transaction.
+      () =>
+        v.asSystem(
+          () =>
+            nr.narrowBegin(pools.rawAdminSql(), [
+              async (tx: postgres.TransactionSql) => {
+                await tx`do $$ begin perform 1; end $$`;
+              },
+            ]),
+          'admin-area',
+        ),
+      // A savepoint's statement.
+      () =>
+        v.asSystem(
+          () => m.db.transaction((tx) => tx.transaction((sp) => sp.execute(sql.raw('vacuum')))),
+          'admin-area',
+        ),
+    ];
+    for (const send of refused)
+      expect(await failure(send())).toBeInstanceOf(ns.NarrowRouteRefusedError);
+    expect(actor.takeNarrowDenials().map((d) => d.what.split(' | ')[0])).toEqual([
+      'text:a-transaction-control-statement',
+      'text:a-role-change',
+      'text:a-do-block',
+      'text:a-statement-outside-a-transaction',
+    ]);
   });
 
   it('does not note a 42501 the work threw that no narrow statement raised', async () => {
