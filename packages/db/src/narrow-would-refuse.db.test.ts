@@ -21,7 +21,10 @@
  *    (mantle.route = 'narrow', gateway/pools.ts getScopeMarkedDb) when the
  *    role would refuse it, with the actor check off and in warn; an
  *    allowed write (the product's own provider_alerts upsert) is not; the
- *    same write outside a scope or at a spot is not.
+ *    same write outside a scope or at a spot is not;
+ *  - a scratch database stopped between 0320 and 0328 (no derivation to
+ *    make the triggers from) is made without them, and the rest of the
+ *    migrations makes them, the counter whole.
  *
  * The runtime role's login (current_user = session_user), as on every
  * fleet box.
@@ -32,7 +35,11 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support';
+import {
+  createMigratedScratchDatabase,
+  createScratchDatabaseBefore,
+  ensureTestAnchor,
+} from './test-support';
 import { applyJournal } from './migrate-runner';
 import {
   NARROW_ROLE,
@@ -366,4 +373,33 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
     await applyNarrowWouldRefuse(su);
     expect(await onAgents()).toEqual(before);
   }, 120_000);
+});
+
+describe.skipIf(!URL)('a scratch database stopped between 0320 and 0328', () => {
+  it('is made without the would-refuse triggers; the rest of the migrations makes them, the counter whole', async () => {
+    const scratch = await createScratchDatabaseBefore(URL!, '0328_narrow_hold_wider');
+    const su = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    const read = async () =>
+      (
+        await su<{ stmt: boolean; counter: boolean; n: number }[]>`
+          select to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is not null as stmt,
+                 to_regprocedure('public.mantle_narrow_counter_missing()') is not null as counter,
+                 (select count(*)::int from pg_trigger
+                   where not tgisinternal and tgname = any(${Object.values(NARROW_WOULD_REFUSE_TRIGGERS)}::text[])) as n`
+      )[0]!;
+    try {
+      expect(await read()).toEqual({ stmt: true, counter: false, n: 0 });
+      await scratch.migrateRest();
+      const after = await read();
+      expect(after.counter).toBe(true);
+      expect(after.n).toBeGreaterThan(0);
+      const [m] = await su<
+        { n: number }[]
+      >`select public.mantle_narrow_counter_missing()::int as n`;
+      expect(m!.n).toBe(0);
+    } finally {
+      await su.end();
+      await scratch.drop();
+    }
+  }, 300_000);
 });

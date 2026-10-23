@@ -111,11 +111,18 @@ describe.skipIf(!URL)('the push device routes on the narrow route', () => {
     expect(a.status, await a.clone().text()).toBe(200);
     expect(await a.json()).toEqual({ ok: true });
     expect(ts.takeSpotUses()).toContain('login-credential');
+    ts.takeNarrowUses();
     const b = await del(theirs);
     expect(b.status, await b.clone().text()).toBe(200);
     expect(await b.json()).toEqual({ ok: true });
     // A member's device: the narrow login removes it, no spot.
     expect(ts.takeSpotUses()).not.toContain('login-credential');
+    const uses = ts.takeNarrowUses();
+    console.log('NARROW_USES', JSON.stringify(uses));
+    expect(
+      Object.entries(uses).filter(([actor, n]) => !actor.startsWith('fn:') && n > 0),
+      'the member device delete ran on the narrow route',
+    ).not.toEqual([]);
     expect(await left([mine, theirs])).toBe(0);
   });
 
