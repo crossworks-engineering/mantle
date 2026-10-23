@@ -938,3 +938,74 @@ NOTICE and the precondition script's count.
 
 No answer is looser at drift 0, and the one looser drift answer cannot
 reach a box: item 1 stops its migrate.
+
+### Gates (round 7)
+
+Code head **58a3563a4** (the handover commits after it are docs only). An
+earlier code head, e4833c0fb, failed three actor-off cells that were real:
+the catalog cell of auth.users and `role` names (the exit login's
+`current_setting('role')`, now named there as a session role read, not a
+column read), and the definers' DDL reach scan (a comment saying "SET
+ROLE" in the exit login, reached from the bridge through a definer named
+in a comment; both reworded). Fixed in 58a3563a4.
+
+Mac: `pnpm verify` 0 (typecheck, lint, format, docs, arch, boot smoke, full
+unit 890 files, the DB lanes skipping) and `pnpm -C server/web build` 0,
+both on 58a3563a4.
+
+Workstation (`~/s8b/r6-run.sh` with TAG r7b, fsync off on the throwaway
+clusters, MANTLE_CHECK_FLOOR=keep; files `~/s8b/x-r7b*`, the alone reruns
+`~/s8b/x-r7c*`). The box was shared with another session's suites (load
+average 30 to 55 on 24 cores), so every failure below was a timeout or a
+time budget, and each one passed when rerun alone:
+
+| lane                  | exit | note                                                                                                                                                                                                                                                                                                                                         |
+| --------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shard 1/2             | 1    | w6b-fix2 two 15 s timeouts (M-2, L-4); alone 0 (`x-r7cs1c`, 6 of 6, M-2 3.0 s). The same file on the r6 head under the same load: M-2 3.3 to 9.4 s, on this head 3.4 to 13.4 s, alternating in one lane (`x-r7mf*`, `x-r7m2*`): load, no path of M-2 changed                                                                                 |
+| shard 2/2             | 1    | route-callers, w7a-tool-sweep (the 5 s table_sql limit), w7-int-fix3: alone 0 (`x-r7cs2`, 3 files, 68 tests)                                                                                                                                                                                                                                 |
+| actor-off             | 1    | db-restore-run (120 s timeout), scratch-drop (timing): alone 0 (`x-r7caoff`, 21 tests)                                                                                                                                                                                                                                                       |
+| actor-on              | 1    | a6b-exit-sweep 15 s timeout: alone 0 (`x-r7caon`)                                                                                                                                                                                                                                                                                            |
+| edit-on               | 1    | s13-folder-trail-sweep, w6b-fix5 15 s timeouts: alone 0 (`x-r7ceon`)                                                                                                                                                                                                                                                                         |
+| runtime-role          | 1    | grants.db 15 s timeout: alone 0 (`x-r7crrole`); 316 files                                                                                                                                                                                                                                                                                    |
+| serial                | 0    |                                                                                                                                                                                                                                                                                                                                              |
+| matrix                | 1    | the tool cells' time budget only (251 s against 210 s); rerun 0 (`x-r7cmatrix`, 4 files)                                                                                                                                                                                                                                                     |
+| switch-off full       | 1    | gate-caller (7 timeouts and one CORS cell after them), share-link-brokers: alone 0 (`x-r7ctoff3999fd`, 33 tests); 1195 files, 14567 passed                                                                                                                                                                                                   |
+| runtime-role-off full | 1    | gate-caller: one 15 s timeout and a device token touch count after it (1 against 2): alone 0 (`x-r7crroffg`, 24 of 24); 1195 files, 14573 passed. A first launch died on a host port race (exit 93, no tests run) and was relaunched                                                                                                         |
+| forge proof           | 0    | 155 refused of 155 (142 42501, 12 40001, 1 25P02), 33 written of 33, 24 flag forms of 24; identity sweep 272 no change, 17 refused; leaks 0 and 0                                                                                                                                                                                            |
+| rollback drill        | 0    | `drill.sh` as round 6: guard, the Users screen's add at the spot, N-1 on 0330 refused, revert (bridge md5 as main's), N-1 writes, roll forward                                                                                                                                                                                               |
+| drill7 (MED-1)        | 0    | `drill7.sh`: round 6's drill plus, on the reverted schema, a seat planted without role admin: the roll forward through the real migrate.ts exits 1 ("mantle S8b: 1 enabled login(s) hold an Admin seat without role admin"), ledger stays 329, no guard; the seat taken away (N-1's demotion), the roll forward is 0, ledger 330, guard back |
+
+The forge kit gained the round 7 forms (`~/s8b/kit/forge.sql`, the round
+6 copy kept as `forge-r6.sql`; `kit/r7-runtime-forms.sql`, run by
+`proof.sh` as the REAL runtime login with its derived password): as the
+narrow login, a former-client row for the anchor (42501), the bridge on the
+anchor (42501), the write role taken then a member added through a self-set
+acting login (the SET ROLE itself refused, so 25P02 on the add); as the
+runtime login, the anchor and an Admin user taken out of Admin by a
+former-client row and the bridge (both kept: 42501 from the form's own
+check), the write role taken then a member added through the acting login
+(42501), a role raised by hand and an admin insert (42501, the guard), and
+the control: the Users screen's add with the anchor as acting login and no
+role switch (written).
+
+### Left
+
+- Nothing of round 7's list. The CEO's full re-audit (the MED fix).
+- Before the merge on every box: `scripts/arch-scoreboard-box.sh` shows
+  `s8b_precondition_met yes` (the migrate now refuses the looser drift on
+  its own, the precondition still reads both).
+- Delete the local branch `s8b-r5-backup` after the merge.
+
+### Doubts
+
+- The 46 "changed, the oracle denies" lines in the matrix log print in the
+  passing runs too (e4833c0fb's and the rerun): a8-surfaces' known list, not
+  this branch's; I did not trace them further.
+- The narrow forge's SET ROLE form reports 25P02, not 42501: the narrow
+  login may not take the write role at all, so the add after it never runs.
+  The meaningful form is the runtime login's (42501 from the exit login).
+- The real-runtime-login cells in role-guard skip where the runtime role
+  has no login on the cluster; the runtime-role lane asserts it never
+  skips there, and it ran there.
+- `mantle_ws_exit_login` still trusts `mantle.acting_login` from any
+  system session that has not switched roles (round 6's doubt stands).
