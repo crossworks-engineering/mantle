@@ -146,6 +146,31 @@ describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
           set mantle.create_ws = '' as $$ select '' $$`);
         await t.unsafe(`create function public.r16_set_f() returns text language sql volatile as
           $$ select set_config('mantle.actor', 'system:x', true) $$`);
+        // The SET forms the next re-audit named: quoted and spaced names,
+        // a RESET, a dynamic SET, the role by SET, set_config and a SET
+        // clause, and a role's default; an UPDATE of a column named role
+        // is not one.
+        await t.unsafe(`create function public.leak_set_quoted() returns void language plpgsql volatile as
+          $$ begin set local "mantle"."acting_login" = '00000000-0000-4000-8000-000000000001'; end $$`);
+        await t.unsafe(`create function public.leak_set_spaced() returns void language plpgsql volatile as
+          $$ begin set mantle . login_id = '00000000-0000-4000-8000-000000000001'; end $$`);
+        await t.unsafe(`create function public.leak_reset() returns void language plpgsql volatile as
+          $$ begin reset mantle.scope_login; end $$`);
+        await t.unsafe(`create function public.leak_set_dynamic(k text) returns void language plpgsql volatile as
+          $$ begin execute format('set local %I = %L', k, 'x'); end $$`);
+        await t.unsafe(`create function public.leak_set_concat(k text) returns void language plpgsql volatile as
+          $$ begin execute 'set local ' || k || ' = ''x'''; end $$`);
+        await t.unsafe(`create function public.leak_set_role() returns void language plpgsql volatile as
+          $$ begin set local role mantle_runtime; end $$`);
+        await t.unsafe(`create function public.leak_set_auth() returns text language sql volatile as
+          $$ select set_config('session_authorization', 'postgres', true) $$`);
+        await t.unsafe(`create function public.leak_clause_role() returns text language sql volatile
+          set role = 'mantle_runtime' as $$ select '' $$`);
+        await t.unsafe(
+          `alter role current_user set mantle.acting_login = '00000000-0000-4000-8000-000000000001'`,
+        );
+        await t.unsafe(`create function public.leak_update_ok(u uuid) returns void language sql volatile as
+          $$ update auth.users set role = 'member' where id = u $$`);
         // A setting the check allows: no row for it.
         await t.unsafe(`create function public.r16_set_ok() returns text language sql volatile as
           $$ select set_config('mantle.keep_updated_at', 'on', true) $$`);
@@ -172,10 +197,20 @@ describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
       'r16_set_d()',
       'r16_set_e()',
       'r16_set_f()',
+      'leak_set_quoted()',
+      'leak_set_spaced()',
+      'leak_reset()',
+      'leak_set_dynamic(text)',
+      'leak_set_concat(text)',
+      'leak_set_role()',
+      'leak_set_auth()',
+      'leak_clause_role()',
+      ' in every database',
     ]) {
       expect(objects).toContain(want);
     }
     expect(objects).not.toContain('r16_set_ok()');
+    expect(objects).not.toContain('leak_update_ok(');
   });
 
   it('a migration that leaves a leak fails before its commit and leaves nothing', async () => {

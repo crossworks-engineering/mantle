@@ -711,6 +711,16 @@ a time:
   workspace switch's keys, the notify toggles, `role`); an unknown key
   counts as an identity key; a body that builds a key at run time must be
   named with why (the check modes, the once-per-transaction markers).
+  What a function sets is read too: `set_config` and `SET` or `RESET` of
+  an identity key (the name quoted or spaced in any part), a function's
+  own `SET` clause, a `SET` whose name is built at run time (`EXECUTE
+'SET ' || ...`, `format('SET %I ...')`), and the session's role (`SET
+ROLE`, `SET SESSION AUTHORIZATION`, `set_config('role', ...)`, a `role`
+  clause); and a role's or this database's default
+  (`ALTER ROLE ... SET`, `ALTER DATABASE ... SET`, read from
+  `pg_db_role_setting`) of an identity key or the role. A statement built
+  whole at run time is not read: the readers answer the narrow role no
+  identity whatever it sets.
   migrate fails on any leak, inside each migration's own transaction
   before its commit (so a migration that leaves one leaves nothing) and
   again after the grants (`afterMigrations`), so a new function is covered
@@ -976,14 +986,19 @@ as the superuser.
 The derived triggers hold columns. An `AFTER UPDATE OF <columns>`
 trigger records each column as a dependency, so a migration that drops a
 column or changes its type would fail on every migrated box (and not in
-CI, whose fresh database has no trigger yet). So migrate drops every
-derived would-refuse trigger before its first pending migration
+CI, whose fresh database has no trigger yet). So migrate drops the
+derived UPDATE OF triggers before its first pending migration
 (`dropNarrowWouldRefuse`, from `applyJournal`) and makes them again from
 the grants after the last (`applyNarrowWouldRefuse`, in
 `afterMigrations`); a migration that fails puts them back on its way out.
-A migrate with nothing pending touches none of them. Each table's triggers
-change in a transaction of their own, `lock_timeout` 3 s, retried on a
-lock wait or a deadlock (the old app is still serving during a roll). The
+Only the UPDATE OF triggers are dropped (an INSERT or DELETE trigger
+holds no column), so a migrate with a migration pending takes a short lock
+twice on each table that has one, and none on the rest; a migrate with
+nothing pending touches none of them. The drop runs inside the same guard
+as the migrations: one that stops part way makes them again too. Each
+table's triggers change in a transaction of their own, `lock_timeout` 3 s,
+retried on a lock wait or a deadlock (the old app is still serving during
+a roll). The
 rule for migration authors: nothing to do; a hand-run revert that drops or
 retypes a column on a table outside the actor check runs
 `select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
@@ -1035,7 +1050,10 @@ that will flip: every box rolled to that release (its
 its epoch, not since some older one. A 0 counts only where the counter
 exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
 makes; 0 on a box before 0320 or after a failed migrate) and
-`narrow_counter_actor_check` warn or on. b3 needs both on every box. The epoch must also be old enough and have
+`narrow_counter_actor_check` warn or on, and
+`narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
+call for, less the ones there: a migrate stopped part way can leave the
+total above 0 with one table blind). b3 needs all three on every box. The epoch must also be old enough and have
 seen traffic: at least 7 days since it (a soak), with the box's usual
 work in them (member and Admin turns, the users, keys and settings areas,
 workers); a fresh epoch on a quiet box reads 0 and proves nothing. The

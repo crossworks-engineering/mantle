@@ -272,27 +272,67 @@ BEGIN
         CONTINUE WHEN f.pub AND f.name = ANY (dynamic);
         kind := 'function'; object := f.sig; detail := 'sets a key built at run time: ' || arg;
         RETURN NEXT;
+      ELSIF k IN ('role', 'session_authorization') THEN
+        kind := 'function'; object := f.sig; detail := 'sets the session''s role (' || k || ')';
+        RETURN NEXT;
       ELSIF k LIKE 'mantle.%' AND NOT (k = ANY (plain)) AND k <> 'mantle.check_lowered'
             AND NOT (k = 'mantle.actor' AND f.sig = ANY (actor_setters)) THEN
         kind := 'function'; object := f.sig; detail := 'sets ' || k;
         RETURN NEXT;
       END IF;
     END LOOP;
-    FOR m IN SELECT regexp_matches(body, '\mset\s+(?:local\s+|session\s+)?"?(mantle\.[a-z0-9_]+)', 'gi') LOOP
-      k := lower(m[1]);
+    -- SET and RESET of a key, the name quoted or spaced in any part
+    -- ("mantle"."actor", mantle . actor).
+    FOR m IN SELECT regexp_matches(body, '\m(?:re)?set\s+(?:local\s+|session\s+)?("?mantle"?\s*\.\s*"?[a-z0-9_]+"?)', 'gi') LOOP
+      k := lower(regexp_replace(m[1], '[\s"]', '', 'g'));
       CONTINUE WHEN k = ANY (plain) OR k = 'mantle.check_lowered';
       kind := 'function'; object := f.sig; detail := 'sets ' || k || ' by SET';
       RETURN NEXT;
     END LOOP;
+    -- SET ROLE, SET SESSION AUTHORIZATION and their RESET: the session's
+    -- own role is what the readers and every count ask. At a statement's
+    -- start (or a string's, for EXECUTE), so an UPDATE's SET of a column
+    -- named role is not one.
+    IF body ~* '(?:^|;|''|\mbegin|\mthen|\melse|\mloop|\mexception)\s*(?:re)?set\s+(?:local\s+|session\s+)?(?:"role"|"session_authorization"|(?:role|authorization|session_authorization)\M)' THEN
+      kind := 'function'; object := f.sig; detail := 'sets the session''s role by SET';
+      RETURN NEXT;
+    END IF;
+    -- A SET whose name is built at run time (EXECUTE 'SET ' || ..., or
+    -- format('SET %I ...')). A statement built whole at run time is not
+    -- read here: the readers answer the narrow role no identity whatever
+    -- it sets, and it can make no function.
+    IF body ~* '\mexecute\s+(?:format\s*\(\s*)?''\s*(?:re)?set\s+(?:local\s+|session\s+)?(?:%|''\s*\|\|)' THEN
+      kind := 'function'; object := f.sig; detail := 'sets a key by a SET built at run time';
+      RETURN NEXT;
+    END IF;
     FOREACH c IN ARRAY f.cfg LOOP
       k := lower(split_part(c, '=', 1));
-      CONTINUE WHEN k NOT LIKE 'mantle.%' OR k = ANY (plain) AND k <> 'mantle.create_stamp';
+      CONTINUE WHEN k NOT IN ('role', 'session_authorization')
+                AND (k NOT LIKE 'mantle.%' OR k = ANY (plain) AND k <> 'mantle.create_stamp');
       CONTINUE WHEN f.sig = ANY (blankers)
                 AND k IN ('mantle.create_ws', 'mantle.private_ws', 'mantle.create_stamp')
                 AND substr(c, length(split_part(c, '=', 1)) + 2) = '';
       kind := 'function'; object := f.sig; detail := 'its SET clause sets ' || c;
       RETURN NEXT;
     END LOOP;
+  END LOOP;
+  -- A role's or this database's default (ALTER ROLE / ALTER DATABASE ...
+  -- SET): every session of that role starts with the value, set by no
+  -- function. Only the non-identity keys; never the role.
+  FOR f IN
+    SELECT coalesce(r.rolname::text, 'every role') || ' in ' || coalesce(d.datname::text, 'every database') AS obj,
+           x.c
+      FROM pg_db_role_setting s
+      LEFT JOIN pg_roles r ON r.oid = s.setrole
+      LEFT JOIN pg_database d ON d.oid = s.setdatabase
+      CROSS JOIN LATERAL unnest(s.setconfig) AS x(c)
+     WHERE s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database()))
+  LOOP
+    k := lower(split_part(f.c, '=', 1));
+    CONTINUE WHEN k NOT IN ('role', 'session_authorization')
+              AND (k NOT LIKE 'mantle.%' OR k = ANY (plain) OR k = 'mantle.check_lowered');
+    kind := 'default'; object := f.obj; detail := 'a default sets ' || f.c;
+    RETURN NEXT;
   END LOOP;
   -- Function bodies.
   FOR f IN

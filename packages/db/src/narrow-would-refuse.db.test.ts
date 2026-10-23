@@ -337,7 +337,9 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
       { log: (l) => lines.push(l), warn: (l) => lines.push(l) },
     );
     expect(applied).toBe(1);
-    expect(await onAgents()).toEqual([]);
+    // Only the UPDATE OF trigger went (the INSERT and DELETE ones hold no
+    // column, so their tables are not locked for this).
+    expect(await onAgents()).toEqual(before.filter((n) => n !== upd));
     // afterMigrations' step makes them again, the same set, from the grants.
     await applyNarrowWouldRefuse(su);
     expect(await onAgents()).toEqual(before);

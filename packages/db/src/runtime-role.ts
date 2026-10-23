@@ -1699,7 +1699,9 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
  * the rest when a narrow reason makes them off the narrow route. A
  * trigger is made, changed or dropped only when it differs from the
  * grants (the next migrate after a grant moves follows it), so a migrate
- * with no grant change takes no table lock. Partitions follow their
+ * with nothing pending and no grant change takes no table lock; one with
+ * a migration pending drops and makes again each UPDATE OF trigger (a
+ * short lock per such table, twice). Partitions follow their
  * parent's trigger. Skipped on a schema before 0320.
  *
  * Table by table, each in its own transaction with lock_timeout 3 s and a
@@ -1707,9 +1709,9 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
  * the old app is still serving, and one long transaction holding every
  * table's lock could stall its writes or deadlock with them. An UPDATE OF
  * trigger records its columns as dependencies, so a migration that drops
- * or retypes one of them would fail: migrate drops these triggers before
- * the first pending migration (dropNarrowWouldRefuse, from applyJournal)
- * and this step makes them again after the last.
+ * or retypes one of them would fail: migrate drops the UPDATE OF
+ * triggers before the first pending migration (dropNarrowWouldRefuse,
+ * from applyJournal) and this step makes them again after the last.
  */
 export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
   const [fn] = await sql<{ ok: boolean }[]>`
@@ -1728,27 +1730,28 @@ export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
 }
 
 /**
- * Drop every derived would-refuse trigger (migrate, before the first
- * pending migration: an UPDATE OF trigger holds its columns, so a
+ * Drop the derived would-refuse UPDATE OF triggers (migrate, before the
+ * first pending migration: an UPDATE OF trigger holds its columns, so a
  * migration that drops or retypes one would fail on every migrated box,
- * while a fresh database, CI's, has none yet). Table by table as
+ * while a fresh database, CI's, has none yet). Only those: an INSERT or
+ * DELETE trigger holds no column (a dropped table takes its triggers
+ * with it), so those tables are not locked for this. Table by table as
  * applyNarrowWouldRefuse; afterMigrations makes them again. Returns how
  * many tables it changed. A database before 0320 has none.
  */
 export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
-  const names = Object.values(NARROW_WOULD_REFUSE_TRIGGERS);
+  const name = NARROW_WOULD_REFUSE_TRIGGERS.UPDATE;
   const tables = await sql<{ t: string }[]>`
     select distinct c.oid::regclass::text as t
       from pg_trigger g join pg_class c on c.oid = g.tgrelid
-     where not g.tgisinternal and g.tgname = any(${names}::text[])
+     where not g.tgisinternal and g.tgname = ${name}
      order by 1`;
   for (const { t } of tables) {
     await perTableStep(sql, async (tx) => {
-      const have = await tx<{ name: string }[]>`
-        select g.tgname::text as name from pg_trigger g
-         where g.tgrelid = to_regclass(${t}) and not g.tgisinternal
-           and g.tgname = any(${names}::text[])`;
-      for (const { name } of have) await tx.unsafe(`DROP TRIGGER "${name}" ON ${t}`);
+      const [has] = await tx<{ n: number }[]>`
+        select count(*)::int as n from pg_trigger g
+         where g.tgrelid = to_regclass(${t}) and not g.tgisinternal and g.tgname = ${name}`;
+      if ((has?.n ?? 0) > 0) await tx.unsafe(`DROP TRIGGER "${name}" ON ${t}`);
     });
   }
   return tables.length;

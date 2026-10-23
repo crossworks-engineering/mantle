@@ -244,6 +244,36 @@ select count(*) from pg_trigger
                   'mantle_narrow_would_refuse_upd');
 SQL
 )
+# The derived triggers the narrow role's grants call for (runtime-role.ts
+# wouldRefuseRows) less the ones there: 0 when the counter is whole. A
+# trigger dropped and never made again (a migrate stopped part way) shows
+# here, though the total above stays above 0. "?" before 0320.
+narrow_missing=$(q <<'SQL' || true
+with t as (
+  select c.oid,
+         has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'INSERT') is false as ins,
+         has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'DELETE') is false as del,
+         array(select a.attnum from pg_attribute a
+                where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+                  and has_column_privilege(to_regrole('mantle_system_narrow'), c.oid, a.attnum, 'UPDATE') is false
+                order by a.attnum) as cols
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p') and not c.relispartition
+     and to_regrole('mantle_system_narrow') is not null
+     and not exists (select 1 from pg_trigger g
+                      where g.tgrelid = c.oid and g.tgname = 'mantle_actor_check' and not g.tgisinternal)
+)
+select case when to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is null then null else
+  (select count(*) from t where ins and not exists (
+     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_ins'))
+  + (select count(*) from t where del and not exists (
+     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_del'))
+  + (select count(*) from t where cardinality(t.cols) > 0 and not exists (
+     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_upd'
+        and (select array_agg(x order by x) from unnest(g.tgattr::int2[]) x) = t.cols))
+end;
+SQL
+)
 narrow_mode=$(q <<SQL || true
 select coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
 SQL
@@ -328,6 +358,7 @@ case "$narrow_epoch" in
 esac
 printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
 printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
+printf '  %-34s %s\n' narrow_counter_missing_triggers "$(num "$narrow_missing")"
 printf '  %-34s %s\n' narrow_counter_actor_check "$narrow_mode"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
