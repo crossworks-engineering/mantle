@@ -107,14 +107,16 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     await admin`delete from auth.users where id = ${who}`;
   });
 
-  it('refuses over the token budget from the login’s member chat traces only', async () => {
-    // The data as text, cast in SQL: the superuser client prepares, and a
-    // string bound as jsonb would be stored as a JSON string.
+  it('refuses over the token budget from the login’s own slots, never from traces (0326)', async () => {
+    // Traces count nothing now: a member chat trace of sam's with 1000.
     await admin`insert into traces (owner_id, kind, subject_kind, status, tokens_in, tokens_out, data) values
-      (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::text::jsonb),
-      (${anchor}, 'responder_turn', 'team_turn', 'success', 5000, 5000, ${JSON.stringify({ login_id: pat })}::text::jsonb),
-      (${anchor}, 'responder_turn', 'chat', 'success', 90000, 0, ${JSON.stringify({ login_id: sam })}::text::jsonb)`;
+      (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::text::jsonb)`;
     expect(await ledger.memberTokensSince(anchor, sam, since)).toBe(1000);
+    expect(await claim(sam, 'sam.a', 100, 1000)).toEqual({ ok: true, fresh: true });
+    // The slot's own tokens, stamped at the turn's close.
+    expect(await ledger.settleMemberTurn(sam, tid('sam.a'), 1000)).toBe(true);
+    // Not another login's slot.
+    expect(await ledger.settleMemberTurn(pat, tid('sam.a'), 9_000_000)).toBe(false);
     expect(await claim(sam, 'sam.b', 100, 1000)).toEqual({
       ok: false,
       reason: 'token_budget',
