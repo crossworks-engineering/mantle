@@ -1587,21 +1587,21 @@ const TRIGGER_RETRY_CODES = new Set(['55P03', '40P01']);
 /** One table's trigger step in its own transaction, `lock_timeout` 3 s,
  *  retried on a lock wait or a deadlock (as syncWriteRoleRules). */
 async function perTableStep(sql: Sql, step: (tx: Sql) => Promise<void>): Promise<void> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await withRoleRetry(() =>
+  // Eight tries, one second apart, on a lock wait or a deadlock only.
+  await withRetry(
+    () =>
+      withRoleRetry(() =>
         sql.begin(async (tx) => {
           await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
           await step(tx as unknown as Sql);
         }),
-      );
-      return;
-    } catch (err) {
-      const code = (err as { code?: string }).code ?? '';
-      if (attempt >= 8 || !TRIGGER_RETRY_CODES.has(code)) throw err;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-  }
+      ),
+    {
+      retries: 7,
+      retryOn: ({ error }) => TRIGGER_RETRY_CODES.has((error as { code?: string }).code ?? ''),
+      delayMs: () => 1000,
+    },
+  );
 }
 
 type WouldRefuseRow = {
