@@ -54,6 +54,7 @@ import {
   methodEffect,
   splitRouteKey,
   validateMethodPolicy,
+  validateRoutePolicy,
   type MethodPolicy,
   type NamedCaller,
   type RoutePolicyDeclaration,
@@ -691,6 +692,9 @@ type RowFacts = Readonly<{
   audit: 'own' | null;
   /** Whether the row is named for a caller kind (callerServes). */
   named: (kind: NamedCaller) => boolean;
+  /** The named caller kind a declaration states (`caller`), read from
+   *  its checked copy; null from the lists, which state none. */
+  declaredCaller: NamedCaller | null;
 }>;
 
 /** The facts of a row from the lists (step 1). `m` is the row's method,
@@ -757,6 +761,7 @@ function listedFacts(
     // every pattern and the params that could spell a listed prefix).
     audit: isAuditSelfLogged(path) && auditsAsWrite(m, effect) ? 'own' : null,
     named: (kind) => listNamed(kind, `${answeredAs} ${pattern}`, pattern),
+    declaredCaller: null,
   };
 }
 
@@ -813,6 +818,36 @@ function declaredFacts(
       b.pattern,
       b.method,
     );
+    // An alias runs its base's handler, so it is the base's row in all the
+    // handler decides (round 4, LOW-C): its class, area, effect and item
+    // are the base's, or the declaration is refused. (Its open, creates and
+    // limits it may not declare: they are read from the base, above.)
+    if (d.aliasOf !== undefined) {
+      const baseEffect = base.effect
+        ? Object.hasOwn(base.effect, 'read')
+          ? 'read'
+          : 'write'
+        : methodEffect(b.method);
+      const areaOf = (p: MethodPolicy) => (p.class === 'area' ? p.area : null);
+      const itemOf = (p: MethodPolicy) =>
+        p.item === undefined
+          ? 'none declared'
+          : p.item.none !== undefined
+            ? `none: ${p.item.none}`
+            : `${p.item.param} ${p.item.need}`;
+      for (const [what, mine, theirs] of [
+        ['class', d.class, base.class],
+        ['area', areaOf(d), areaOf(base)],
+        ['effect', effect, baseEffect],
+        ['item', itemOf(d), itemOf(base)],
+      ] as const) {
+        if (mine !== theirs) {
+          bad(
+            `the ${what} ${String(mine)} on an alias of ${baseKey}, whose ${what} is ${String(theirs)}`,
+          );
+        }
+      }
+    }
   }
   const from = base ?? d;
   // A v1 row admits a login as its base does: the owner lists only.
@@ -833,6 +868,17 @@ function declaredFacts(
     });
   }
   const keyArea = d.keyArea;
+  // While the key table names each v1 row's key area (api-v1.ts
+  // API_V1_ROUTES `area`, `self`), a declared one is that one, and a row
+  // the table names declares it (round 4, LOW-A, as `base` above): the
+  // gate's key check reads the table, the row's facts the declaration.
+  const v1 = pattern.startsWith('/api/v1/') ? v1Route(m, pattern) : null;
+  const tableKey = v1 ? `${v1.self === true ? 'self' : 'area'} ${String(v1.area)}` : 'none';
+  const declaredKey =
+    keyArea === undefined ? 'none' : keyArea === 'self' ? 'self null' : `area ${String(keyArea)}`;
+  if (declaredKey !== tableKey) {
+    bad(`the key area ${declaredKey}, where the key table (API_V1_ROUTES) says ${tableKey}`);
+  }
   return {
     scope,
     listed: d.class,
@@ -857,6 +903,7 @@ function declaredFacts(
     // where that GET writes).
     audit: d.audit === 'own' && auditsAsWrite(m, effect) ? 'own' : null,
     named: (kind) => d.caller === kind,
+    declaredCaller: d.caller ?? null,
   };
 }
 
@@ -954,9 +1001,10 @@ export function buildRouteRow(
   // A declared named caller is the one the code reads (the generator's
   // caller facts), both ways: callerServes refuses a named kind the row
   // does not declare, and this a declared kind its handler does not read.
-  if (opts.declared?.caller !== undefined && opts.declared.caller !== caller) {
+  // Read from the checked copy (declaredFacts), never the module's value.
+  if (facts.declaredCaller !== null && facts.declaredCaller !== caller) {
     throw new Error(
-      `ROUTE_POLICY: ${key} declares the caller ${opts.declared.caller}, but its handler reads ${caller ?? 'none'}`,
+      `ROUTE_POLICY: ${key} declares the caller ${facts.declaredCaller}, but its handler reads ${caller ?? 'none'}`,
     );
   }
   const routeSwitch = opts.switch ?? null;
@@ -1083,11 +1131,18 @@ export function buildRoutePolicy(
   // A page has no route file, so no declaration: its row is the lists'.
   const declared = source === 'declarations' && !opts.page;
   // Each row's declaration by `METHOD pattern` (a HEAD the GET handler
-  // answers: its GET's), for an alias's base.
+  // answers: its GET's), for an alias's base. Each route's declaration is
+  // read once, here, into its checked copy (validateRoutePolicy): every row
+  // of the route, its HEAD and an alias of it are built from that one copy,
+  // never from the module's value again (round 4, INFO).
   const byKey = new Map<string, MethodPolicy>();
+  const checked = new Map<RouteManifestEntry, RoutePolicyDeclaration>();
   if (declared) {
     for (const entry of manifest) {
-      for (const [m, p] of Object.entries(entry.policy ?? {})) {
+      if (entry.policy === undefined) continue;
+      const copy = validateRoutePolicy(entry.policy, entry.pattern, entry.methods);
+      checked.set(entry, copy);
+      for (const [m, p] of Object.entries(copy)) {
         if (p) byKey.set(`${m} ${entry.pattern}`, p as MethodPolicy);
       }
     }
@@ -1122,7 +1177,9 @@ export function buildRoutePolicy(
       // Part 2: every method a route file exports declares its policy;
       // one that does not is refused at boot (and by lint,
       // route-plumbing.mjs route-policy-declared).
-      const policy = declared ? entry.policy?.[as as keyof RoutePolicyDeclaration] : undefined;
+      const policy = declared
+        ? checked.get(entry)?.[as as keyof RoutePolicyDeclaration]
+        : undefined;
       if (declared && !policy) {
         throw new Error(`ROUTE_POLICY: ${m} ${entry.pattern} declares no policy for ${as}`);
       }

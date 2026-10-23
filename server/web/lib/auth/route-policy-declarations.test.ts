@@ -441,6 +441,89 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     );
   });
 
+  it("LOW-C (round 4): an alias is its base's row in class, area, effect and item", () => {
+    // Each field the handler decides, one at a time: refused.
+    const keyed = (d: Record<string, unknown>) =>
+      build(
+        entry('/api/notes', ['POST'], { POST: { class: 'content', open: 'owner', item: none } }),
+        entry('/api/v1/notes', ['POST'], { POST: d } as RoutePolicyDeclaration),
+      );
+    const ok = { class: 'content', item: none, keyArea: 'notes', aliasOf: 'POST /api/notes' };
+    expect(keyed(ok).get('POST /api/v1/notes')).toMatchObject({ aliasOf: 'POST /api/notes' });
+    expect(() => keyed({ ...ok, class: 'self' })).toThrow(/the class self on an alias/);
+    expect(() => keyed({ ...ok, class: 'area', area: 'settings' })).toThrow(
+      /the class area on an alias/,
+    );
+    expect(() => keyed({ ...ok, item: { none: 'another reason' } })).toThrow(
+      /the item none: another reason on an alias of POST \/api\/notes, whose item is none: a test row/,
+    );
+    const readOnly = { ...ok } as Record<string, unknown>;
+    delete readOnly.item;
+    expect(() => keyed({ ...readOnly, effect: { read: 'reads only' } })).toThrow(
+      /the effect read on an alias of POST \/api\/notes, whose effect is write/,
+    );
+    // An area alias whose area is not its base's.
+    const areaBase = entry('/api/notes', ['POST'], {
+      POST: { class: 'area', area: 'settings', item: none },
+    });
+    expect(() =>
+      build(
+        areaBase,
+        entry('/api/v1/notes', ['POST'], {
+          POST: { ...ok, class: 'area', area: 'users' },
+        } as RoutePolicyDeclaration),
+      ),
+    ).toThrow(/the area users on an alias of POST \/api\/notes, whose area is settings/);
+  });
+
+  it('LOW-A (round 4): a v1 row declares the key area the key table names, and only it', () => {
+    const base = entry('/api/notes', ['GET'], { GET: { class: 'content', open: 'owner' } });
+    const v1 = (pattern: string, d: Record<string, unknown>) =>
+      build(base, entry(pattern, ['GET'], { GET: d } as RoutePolicyDeclaration));
+    const alias = { class: 'content', aliasOf: 'GET /api/notes' };
+    expect(
+      v1('/api/v1/notes', { ...alias, keyArea: 'notes' }).get('GET /api/v1/notes'),
+    ).toMatchObject({ keyArea: 'notes', keySelf: false });
+    // Another area, no area, every area, or the key itself: refused.
+    for (const keyArea of ['tasks', null, 'self']) {
+      expect(() => v1('/api/v1/notes', { ...alias, keyArea }), String(keyArea)).toThrow(
+        /where the key table \(API_V1_ROUTES\) says area notes/,
+      );
+    }
+    expect(() => v1('/api/v1/notes', alias)).toThrow(/the key area none, where the key table/);
+    // whoami: the key itself, as the table says.
+    const whoami = (d: Record<string, unknown>) =>
+      build(
+        entry('/api/v1/whoami', ['GET'], { GET: d } as RoutePolicyDeclaration, { GET: 'login' }),
+      );
+    expect(
+      whoami({ class: 'content', open: 'any', keyArea: 'self' }).get('GET /api/v1/whoami'),
+    ).toMatchObject({ keyArea: null, keySelf: true });
+    expect(() => whoami({ class: 'content', open: 'any', keyArea: null })).toThrow(
+      /the key area area null, where the key table \(API_V1_ROUTES\) says self null/,
+    );
+  });
+
+  it('INFO (round 4): the named caller is read from the checked copy, once', () => {
+    // A getter that answers publicLogin to the first read and another kind
+    // after: the checked copy holds the first answer, and the row is built
+    // from it alone.
+    let reads = 0;
+    const d = {
+      class: 'public',
+      get caller() {
+        reads += 1;
+        return reads === 1 ? 'publicLogin' : 'cookieUpgrade';
+      },
+    };
+    const rows = build(
+      entry('/api/auth/x', ['GET'], { GET: d } as unknown as RoutePolicyDeclaration, {
+        GET: 'publicLogin',
+      }),
+    );
+    expect(rows.get('GET /api/auth/x')).toMatchObject({ caller: 'publicLogin' });
+  });
+
   it('a named caller is the one the code reads, both ways', () => {
     const pub = (caller: RouteCaller | null, d: Record<string, unknown>) =>
       build(
