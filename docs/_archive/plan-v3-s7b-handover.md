@@ -4554,3 +4554,162 @@ behind the lanes at hand-over). Everything else not read at hand-over.
    Expect the forge proof at 106 refused / 23 allowed.
 2. The not-done INFO items above, and the Telegram claim cell.
 3. The renumber at the rebase (MED-4/DB MED-3 data part).
+
+## Part b2, round 15b: round 15's runs read, the call reading's cost, the Telegram claim cell
+
+Same branch. Inputs: the brief's "b2 round 15b inputs" (items 1 to 6).
+Code heads: bbe0b5930 (fixes), 07ecb96b2 (Telegram cell), 9656c3424 and
+2f82f83e3 (revert checks and notes), 6ae330ddb (docs), 65b5bbc79 (the
+fail-open wait).
+
+### Round 15's runs on 8a0df9238
+
+Every run named 8a0df9238 in its setup log (the drill 03f3cae73). Read:
+actor-on 0, edit-on 0, serial 0, the forge proof 0 (106 refused, 23
+written), the round 8 proof 0, the drill 0 (on 03f3cae73). Red, and what
+each was:
+
+- Two stale cells, real, fixed in bbe0b5930. narrow-route.db.test.ts
+  wrote `delete from public.traces where false` as its allowed system
+  write; round 15 took traces' DELETE off the narrow list, so the cell
+  now deletes pairing codes (on the list). role-readers-catalog.db.test.ts
+  found 0326's `mantle_narrow_login_hold` naming `auth.users` and `role`:
+  its NOTICE text spelled the table out and its own-role CASE reads
+  `current_setting('role')`. Not a role reader; the notice now names its
+  table by `TG_TABLE_SCHEMA` and `TG_TABLE_NAME` as 0319, 0320 and 0322
+  do (0326 edited in place: never run on a box). Seen in actor-off,
+  switch-off full and runtime-role.
+- Load only, rerun alone: shard 1/2 w7-int-fix A5 (15 s timeout; alone
+  1.3 s, 12/12), shard 2/2 a2a "page save: off is not stable" (a late
+  detached write; alone 3/3), switch-off workspaces-migrate "waits at most
+  10 s for a lock" (in the full set on 65b5bbc79 below), matrix's tool
+  cell budget (364 s against 210 s at load 22; its oracle lines are the
+  known list, the same 46 as round 14e's green run).
+- Actor-off on 6ae330ddb: once the A4 guard sweep's snapshot gained a
+  429 rate-limited answer (a timing window, under load), and once alone
+  the fail-open cells: the typed write's miss row landed after the cell's
+  fixed one-second wait and was counted by the next cell. The cells now
+  wait for their rows (65b5bbc79). Not a narrow change.
+
+### Item 3: the cost of the switch-off call reading
+
+`calledMantleFunctions` (gateway/narrow-would-refuse.ts) is the reading
+alone, pure; a new cell in a2a-round-trips.db.test.ts times it over every
+statement each path sends (an upper bound: only a would-be-narrow route's
+statements are read), best of five. Workstation, 6ae330ddb:
+
+| path             | statements | with mantle_ (lexed) | reading a run |
+| ---------------- | ---------- | -------------------- | ------------- |
+| tree load        | 13         | 3                    | 163 us        |
+| item open        | 9          | 2                    | 51 us         |
+| search           | 23         | 3                    | 55 us         |
+| chat turn start  | 125        | 8                    | 87 us         |
+| MCP tool call    | 37         | 7                    | 26 us         |
+| page save        | 17         | 2                    | 46 us         |
+| member page save | 22         | 3                    | 51 us         |
+
+Mac micro-measure: a statement with no `mantle_` 0.1 us (not lexed), a
+short one with calls 4 us, an 18 KB statement 213 us. Not material: no
+cache per statement text (it would cost more to keep than it saves). The
+cell fails above 1 ms a path. docs/runtime-role.md says so.
+
+### Item 4: the "every narrow 42501" note and false reds
+
+The note is made only on the narrow route (the four call sites in
+narrow-route.ts); a row rule's refusal on the app's pools (user pool,
+write role) is never noted, so their deliberate refusals make no noise.
+In every suite of both full sets the only "met a right
+mantle_system_narrow does not hold" failure was the stale traces cell
+above. Cells that meet a narrow refusal on purpose drain it
+(takeNarrowDenials).
+
+### Item 5: the Telegram member claim on a real DB
+
+telegram-w7d.db.test.ts drives handleTelegramMessage (only the model and
+the Bot API faked): a member's turn takes its slot through
+mantle_member_turn_claim under the turn's own actor (turn id
+`tg-<message id>`, tokens 0), at the cap the chat gets the one plain
+reply and no turn and no slot, and an Admin user's turn takes none. Green
+alone with the switch on (07ecb96b2), and in the full sets.
+
+Found while writing it: a Telegram member turn's tokens never count toward
+the daily token budget. Its trace is `subject_kind = 'telegram_message'`,
+0325 summed `team_turn` traces only, and 0326's settle runs at a member
+chat turn's close (run-team-turn.ts), not a Telegram one. Not a change
+from main; the turn cap does hold. The fix would be a settle at the
+Telegram turn's trace close with `tg-<id>` (rule 9: it changes what a
+member's Telegram use may cost, so it is the CEO's call).
+
+### Item 6: INFO
+
+Done: 0324's revert stops if either replace no longer matches (the drill
+ran it: matched); the revert order notes of 0320 to 0325 name the newer
+reverts first (0326 down); 0321's reason for `mantle.acl_internal` says
+what is true: the derivation guards pair it with `mantle_owner_role()`
+(the narrow role is no member), and it is read alone only by the
+item_grants triggers, a content table the narrow role may not write.
+Not done (churn across four migrations and runtime-role.ts): one
+`mantle_session_role()` for the own-role CASEs (0321's
+`mantle_identity_narrow()` is already that test for the readers) and one
+report-branch predicate; for the next migration that touches them.
+
+Doubt for the CEO, not narrow: `mantle_item_grants_refresh_trg` and
+`mantle_item_grants_propagate_trg` (0241) read `mantle_acl_internal()`
+alone, so a session that sets `mantle.acl_internal` itself skips the
+heads requirement on an item_grants write and the propagation. The
+narrow role writes no item_grants; the write role does (members' grant
+changes). Read-proof only, no cell.
+
+### Pins
+
+None moved. No migration added; 0326 (its NOTICE line) and 0321 (one
+reason comment) edited in place, both never run on any box. Test support
+exports `calledMantleFunctions`.
+
+### Gates
+
+Mac, all 0 on 65b5bbc79 (typecheck, lint, format, docs, arch, web build,
+unit 880 files / 11360 tests); 615deca31 changes one DB test file only.
+
+Workstation (units s7b-b2r15b-<tag><name>, results
+~/s7b-b2/x-<tag><name>.exit and .log; launcher ~/s7b-b2/r15b-run.sh, the
+r15-run.sh names, plus `rt` for the round-trip report):
+
+| gate                   | 6ae330ddb (r15b)                                                                               | 65b5bbc79 (r15d)                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| shard 1/2              | 1: w7-int-fix A5 timeout                                                                       | 1: the same                                  |
+| shard 2/2              | 0                                                                                              | 1: a6b rule-in-query timeout                 |
+| actor-off              | 1: A4 sweep 429 (alone: fail-open late row, fixed)                                             | 1: stored-settings cell (fixed in 615deca31) |
+| actor-on               | 0                                                                                              | 0                                            |
+| edit-on                | 0                                                                                              | 0                                            |
+| runtime-role           | 0                                                                                              | running at hand-over                         |
+| serial                 | 0                                                                                              | 0                                            |
+| switch off, full       | 0                                                                                              | running at hand-over                         |
+| runtime role off, full | 0                                                                                              | running at hand-over                         |
+| round 8 proof          | 0 (16 refused, 2 written)                                                                      | 0                                            |
+| forge proof            | 0: 106 refused, 23 written; identity sweep 268 no change, 17 refused; leaks 0; public rights 0 | 0: the same numbers                          |
+| drill                  | 0 (0324's checked revert matched)                                                              | 0                                            |
+| matrix                 | not run alone yet                                                                              | not run alone yet                            |
+
+The full set was launched again on 615deca31 at hand-over (tag r15e:
+x-r15e*.exit), and the matrix alone after it (unit
+s7b-b2r15b-r15ematrixwait waits for the r15e lanes, at most 150 min,
+then starts s7b-b2r15b-r15ematrix).
+
+### Left
+
+1. Shard 1/2, w7-int-fix A5 (Azure provision): 15 s timeout in every
+   shard 1 since round 15 (8a0df9238, 6ae330ddb, 65b5bbc79), 2.5 to 4 s
+   in every round 14 shard 1, 1.3 s alone. Not load alone: something
+   round 15 added waits under concurrency. Look first at what holds a
+   wait the provision meets while other files run (a narrow reserve held
+   by another statement of the same process, the per-database or
+   cluster-wide role steps other files run: the stored-settings and
+   password cells' `ensureRuntimeRoles`, the narrow set re-run in
+   narrow-lockout.db.test.ts), with a probe of pg_locks and the pools'
+   waits while it hangs.
+2. Read r15e on 615deca31 and the matrix alone; a6b rule-in-query alone
+   if it times out again.
+3. The Telegram token note (item 5) and the item_grants acl_internal
+   doubt (item 6): the CEO's calls.
+4. The renumber at the rebase (unchanged from round 15).
