@@ -151,7 +151,9 @@ describe('adminMembershipRefusal', () => {
           403,
         );
         expect(warn, code).toHaveBeenCalledTimes(1);
-        expect(String(warn.mock.calls[0]![0]), code).toContain(`mantle_ws:${code}`);
+        const line = String(warn.mock.calls[0]![0]);
+        expect(line.startsWith('[users] '), code).toBe(true);
+        expect(line, code).toContain(`mantle_ws:${code}`);
       }
       warn.mockClear();
       for (const code of ['read_only', 'forbidden', 'last_moderator']) {

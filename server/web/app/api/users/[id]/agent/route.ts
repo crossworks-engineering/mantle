@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
+import { loginRole } from '@/lib/auth/admin-seat';
 import {
   agentForReader,
   cloneAgentForUser,
@@ -35,7 +36,8 @@ const PutBody = z.object({
 
 async function targetUser(id: string) {
   const [row] = await db
-    .select({ id: authUsers.id, email: authUsers.email, role: authUsers.role })
+    // The display role (mantle_login_role): Admin membership, not the column.
+    .select({ id: authUsers.id, email: authUsers.email, role: loginRole(authUsers.id) })
     .from(authUsers)
     .where(eq(authUsers.id, id))
     .limit(1);

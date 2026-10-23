@@ -36,6 +36,7 @@ import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 import { liveAdminWorkspace, loginRole } from '@/lib/auth/admin-seat';
+import { log } from '@mantle/tracing';
 
 /**
  * One change to a login row (PATCH /api/users/:id), and the role change the
@@ -447,8 +448,8 @@ export function adminMembershipRefusal(
   }
   if (CALLER_REFUSALS.has(code) || pgErrorCode(err) === '42501') {
     if (WIRING_REFUSALS.has(code)) {
-      console.warn(
-        `[users] admin membership refused mantle_ws:${code}: answered 403; check the login-credential spot sends the acting login`,
+      log('users').warn(
+        `admin membership refused mantle_ws:${code}: answered 403; check the login-credential spot sends the acting login`,
       );
     }
     return {

@@ -24,6 +24,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { brainIdField } from '@/lib/brain-identity';
 import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { loginRole } from '@/lib/auth/admin-seat';
 
 /**
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,
@@ -135,7 +136,8 @@ export async function POST(req: Request) {
       signedInAt: mobileTokens.signedInAt,
       email: authUsers.email,
       disabledAt: authUsers.disabledAt,
-      role: authUsers.role,
+      // The display role (mantle_login_role): Admin membership, not the column.
+      role: loginRole(authUsers.id),
       sessionEpoch: authUsers.sessionEpoch,
     })
     .from(mobileTokens)

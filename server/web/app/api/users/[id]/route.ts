@@ -122,7 +122,6 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
       id: authUsers.id,
       email: authUsers.email,
       isOwner: authUsers.isOwner,
-      role: authUsers.role,
     })
     .from(authUsers)
     .where(eq(authUsers.id, targetId))
