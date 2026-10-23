@@ -695,6 +695,13 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
     sql`insert into auth.users (id, email, password_hash, is_owner, role)
         values (${id}, ${`${tag}-${id.slice(0, 8)}@example.test`}, 'x', false, ${role})`;
 
+  /** The migrate's refusal (null when it went through). */
+  const refusal = (db: Awaited<ReturnType<typeof createScratchDatabaseBefore>>) =>
+    db.migrateRest().then(
+      () => null,
+      (e: unknown) => e as { code?: string; message?: string },
+    );
+
   afterAll(async () => {
     for (const db of dbs) await db.drop();
   });
@@ -705,22 +712,18 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
       await ensureTestAnchor(sql);
       const seated = randomUUID(); // a seat, role member: the looser drift
       const unseated = randomUUID(); // role admin, no seat: the narrower drift
-      const disabled = randomUUID(); // a seat, role member, disabled: not counted
       await login(sql, seated, 'member');
       await login(sql, unseated, 'admin');
-      await login(sql, disabled, 'member');
-      await sql`update auth.users set disabled_at = now() where id = ${disabled}`;
-      await ensureAdminUsers(sql, [seated, disabled]);
-      const err = await db.migrateRest().then(
-        () => null,
-        (e: unknown) => e as { code?: string; message?: string },
-      );
+      await ensureAdminUsers(sql, [seated]);
+      const err = await refusal(db);
       expect(err?.code).toBe('42501');
-      expect(err?.message).toMatch(/^mantle S8b: 1 enabled login\(s\) hold an Admin seat/);
+      expect(err?.message).toMatch(
+        /^mantle S8b: 1 login\(s\) hold an Admin seat without role admin/,
+      );
       // 0330 rolled back whole: no guard, the membership-only fact not in.
       expect(await guardThere(sql)).toBe(false);
-      // The repair the message names (the image one release back's
-      // promotion: the role written, the seat already there).
+      // The second repair the hint names, a grant (the image one release
+      // back's promotion: the role written, the seat already there).
       await sql`update auth.users set role = 'admin' where id = ${seated}`;
       await db.migrateRest();
       expect(await guardThere(sql)).toBe(true);
@@ -734,6 +737,45 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
       await sql.end();
     }
   }, 300_000);
+
+  // r7 DB LOW-B and LOW-A: a disabled login's seat makes it an Admin user on
+  // its re-enable (which writes no role), and a former client is a member
+  // like any other login: each alone refuses. The first repair the hint
+  // names (the seat taken away) then lets the migrate through.
+  it('a disabled member with a seat refuses, and so does a re-enabled former client with a seat and role member', async () => {
+    for (const kind of ['disabled', 'former client'] as const) {
+      const { db, sql } = await open();
+      try {
+        const brain = await ensureTestAnchor(sql);
+        const id = randomUUID();
+        await login(sql, id, 'member');
+        if (kind === 'disabled') {
+          await sql`update auth.users set disabled_at = now() where id = ${id}`;
+        } else {
+          // Archived as a client once, enabled again since (disabled_at null).
+          await sql`insert into archive_client_logins (login_id, email, created_at, disabled_at, session_epoch)
+                    values (${id}, ${`${tag}-arc-${id.slice(0, 8)}@example.test`}, now(), now(), 0)`;
+        }
+        await ensureAdminUsers(sql, [id]);
+        const err = await refusal(db);
+        expect(err?.code, kind).toBe('42501');
+        expect(err?.message, kind).toMatch(/^mantle S8b: 1 login\(s\) hold an Admin seat/);
+        expect(await guardThere(sql), kind).toBe(false);
+        // The first repair: the seat taken away (as the older image's
+        // removal does), the role left member.
+        await sql`delete from workspace_users u using workspaces w
+                   where u.workspace_id = w.id and w.owner_id = ${brain} and w.is_admin
+                     and u.login_id = ${id}`;
+        await db.migrateRest();
+        expect(await guardThere(sql), kind).toBe(true);
+        const [r] = await sql<{ role: string; admin: boolean }[]>`
+          select mantle_login_role(${id}::uuid) as role, mantle_login_is_admin_user(${id}::uuid) as admin`;
+        expect(r, kind).toEqual({ role: 'member', admin: false });
+      } finally {
+        await sql.end();
+      }
+    }
+  }, 600_000);
 
   it('a brain still off workspaces migrates; its switch after migrate seats the role admin logins, no drift', async () => {
     const { db, sql } = await open();
