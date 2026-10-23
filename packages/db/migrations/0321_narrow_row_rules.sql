@@ -54,8 +54,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   report boolean := false;
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
   o jsonb;
   n jsonb;
   arg text;
@@ -68,9 +66,7 @@ BEGIN
     -- (or on a statement marked mantle.route = 'narrow') off the narrow
     -- route (the switch off), not at a spot, is counted as one the narrow
     -- role would refuse, and runs.
-    IF "public"."mantle_narrow_counted"(who)
-       AND current_user::text = own_role
-       AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
+    IF "public"."mantle_narrow_report"(who) THEN
       report := true;
     ELSIF TG_OP = 'DELETE' THEN
       RETURN OLD;

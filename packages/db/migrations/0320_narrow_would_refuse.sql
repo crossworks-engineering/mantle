@@ -38,6 +38,9 @@
 -- takes those with the switch on whatever the actor, and their actor is
 -- the login's, which no narrow reason names. mantle_narrow_counted says
 -- both; 0312's content and cascade counts (0318's bodies) take it too.
+-- Every report branch asks one predicate, mantle_narrow_report(who): the
+-- count, the session's own role, not at a spot, and a role that may not
+-- run what it reads answers false (never a refusal).
 --
 -- Re-runnable. Revert: packages/db/rollback/0320_narrow_would_refuse.revert.sql.
 
@@ -51,19 +54,58 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_counted"(who text)
       OR coalesce(current_setting('mantle.route', true), '') = 'narrow'
 $$;
 --> statement-breakpoint
+-- The one report predicate: every report branch asks it. A write by a
+-- narrow reason's actor, or on a statement marked mantle.route = 'narrow'
+-- (mantle_narrow_counted), made by the session's own role (the role it SET,
+-- else its login: inside a definer or a foreign key's cascade current_user
+-- is the owner, not counted), not at a declared spot (mantle.route =
+-- 'full'). `held` and `id` name a hold to test as well (0327 gives them
+-- their meaning; here a hold is never named). A role that may not run a
+-- function the test reads answers false: the write runs uncounted and is
+-- never refused for it (an older image's migrate grants the runtime role
+-- its own list, without this release's readers). The first test is
+-- mantle_narrow_counted's own and needs nothing, so a write no narrow
+-- reason makes pays no subtransaction. Open to every role, as PUBLIC's
+-- functions are: it reads the session's own settings and asks readers that
+-- check their own EXECUTE.
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_report"(who text, held text DEFAULT NULL, id uuid DEFAULT NULL)
+  RETURNS boolean LANGUAGE plpgsql STABLE
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+BEGIN
+  IF coalesce(who, '') NOT LIKE 'system:%'
+     AND coalesce(current_setting('mantle.route', true), '') <> 'narrow' THEN
+    RETURN false;
+  END IF;
+  BEGIN
+    IF NOT ("public"."mantle_narrow_counted"(coalesce(who, ''))
+            AND current_user::text = own_role
+            AND coalesce(current_setting('mantle.route', true), '') <> 'full') THEN
+      RETURN false;
+    END IF;
+    IF held IS NULL THEN
+      RETURN true;
+    END IF;
+    RAISE EXCEPTION 'mantle_narrow_report: unknown hold %', held USING ERRCODE = '22023';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RETURN false;
+  END;
+END
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   seen_key text := 'mantle.narrow_would_' || TG_TABLE_SCHEMA || '_' || TG_TABLE_NAME;
-  -- The session's own role (0318's): the role it SET, else its login.
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
 BEGIN
-  IF "public"."mantle_narrow_counted"(who)
-     AND current_user::text = own_role
-     AND coalesce(current_setting('mantle.route', true), '') <> 'full'
+  IF "public"."mantle_narrow_report"(who)
      AND position(TG_OP IN coalesce(current_setting(seen_key, true), '')) = 0 THEN
     PERFORM set_config(seen_key, coalesce(current_setting(seen_key, true), '') || TG_OP || ' ', true);
     RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% %', who, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
@@ -80,8 +122,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   report boolean := false;
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
   o jsonb;
   n jsonb;
   arg text;
@@ -93,9 +133,7 @@ BEGIN
     -- (or on a statement marked mantle.route = 'narrow')
     -- off the narrow route (the switch off), not at a spot, is counted as
     -- one the narrow role would refuse, and runs.
-    IF "public"."mantle_narrow_counted"(who)
-       AND current_user::text = own_role
-       AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
+    IF "public"."mantle_narrow_report"(who) THEN
       report := true;
     ELSE
       RETURN NEW;
@@ -158,18 +196,11 @@ DECLARE
   seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME;
   narrow_key text := 'mantle.narrow_missed_' || TG_TABLE_NAME;
   who text := coalesce(current_setting('mantle.actor', true), '');
-  -- The session's own role: the role it SET, else its login. A definer
-  -- changes current_user, never this (a variable: plpgsql ends an IF's
-  -- test at its first THEN, a CASE's included).
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
   mode text;
 BEGIN
   IF who <> '' THEN
     IF who LIKE 'system:%' OR coalesce(current_setting('mantle.route', true), '') = 'narrow' THEN
-      IF "public"."mantle_narrow_counted"(who)
-         AND current_user::text = own_role
-         AND coalesce(current_setting('mantle.route', true), '') <> 'full'
+      IF "public"."mantle_narrow_report"(who)
          AND coalesce(current_setting(narrow_key, true), '') <> TG_OP THEN
         PERFORM set_config(narrow_key, TG_OP, true);
         RAISE NOTICE 'mantle narrow write: narrow-content-write % % %', who, TG_TABLE_NAME, TG_OP;
@@ -198,16 +229,9 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_cascade_stmt"()
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
-  -- The session's own role: the role it SET, else its login. A definer
-  -- changes current_user, never this (a variable: plpgsql ends an IF's
-  -- test at its first THEN, a CASE's included).
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
 BEGIN
   IF pg_trigger_depth() = 1 AND who <> '' THEN
-    IF "public"."mantle_narrow_counted"(who)
-       AND current_user::text = own_role
-       AND coalesce(current_setting('mantle.route', true), '') <> 'full'
+    IF "public"."mantle_narrow_report"(who)
        AND EXISTS (SELECT 1 FROM gone) THEN
       RAISE NOTICE 'mantle narrow write: narrow-cascade-delete % % DELETE', who, TG_TABLE_NAME;
     END IF;

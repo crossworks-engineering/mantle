@@ -989,8 +989,21 @@ retypes a column on a table outside the actor check runs
 `select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
 first and drops those on its table (the next migrate makes them again).
 
-Reverting the narrow migrations by hand (before pinning an older image;
-one image back needs none): newest first, each file in its own
+One image back needs no revert with the narrow switch off (the
+default): every report branch asks one predicate,
+`mantle_narrow_report(who, held, id)`, which answers false when the role
+may not run a reader it asks (the older image's migrate grants the runtime
+role its own list, without this release's held readers), so the sign-in
+and sign-out writes (a device token's rotation, a phone's sign-out, a key
+or token revoke, a disable, an End sessions, an MCP client's removal, an
+OAuth code's burn) write, uncounted; the drill's N-1 rows run each as the
+runtime role with the actor check on. With the switch on, the older
+image's grants also leave the narrow role without those readers, so its
+holds refuse (42501, fail closed) every write they guard, a member's too:
+set `MANTLE_NARROW_SYSTEM=0` with the older image.
+
+Reverting the narrow migrations by hand (before pinning an image older
+than one back, or to keep the switch on one back): newest first, each file in its own
 transaction, `0327_narrow_lockout_and_ledger_tokens`,
 `0326_member_turn_ledger_definers`,
 `0325_narrow_off_on_insert`, `0324_narrow_enable_off`,
@@ -998,7 +1011,8 @@ transaction, `0327_narrow_lockout_and_ledger_tokens`,
 `0321_narrow_row_rules`, then
 `0320_narrow_would_refuse`, `0319`, `0318`, `0317`, `0316`, `0315` (each in
 `packages/db/rollback/`): 0327's revert drops the settle definer, the
-login hold and the miss guard, puts 0326's claim back (the budget from the
+login and grant holds and the miss guard, puts 0320's report predicate
+back (no hold named), puts 0326's claim back (the budget from the
 traces) and drops the ledger's tokens column; 0326's revert drops the two ledger definers (an
 older image writes the ledger itself, its own migrate grants the runtime
 role the writes again), 0325's revert takes INSERT out of the one-way

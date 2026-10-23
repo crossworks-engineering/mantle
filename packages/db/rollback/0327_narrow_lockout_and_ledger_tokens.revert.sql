@@ -4,8 +4,9 @@
 --
 -- It puts the derivation flag back as it was (the nine functions that set
 -- it and the two item_grants triggers read it bare again; the signing
--- helpers and their catalog check go), drops the settle definer, the login
--- hold and the miss guard (with their triggers), puts back 0326's claim
+-- helpers and their catalog check go), puts 0320's report predicate back
+-- (no hold named), drops the settle definer, the login and grant holds and
+-- the miss guard (with their triggers), puts back 0326's claim
 -- (the token budget from the member chat traces) and drops the ledger's
 -- tokens column. 0322's non-identity key list keeps 'mantle.acl_sig' (a
 -- key nothing sets then). An image of 0326 calls the claim with the same
@@ -68,6 +69,37 @@ DROP FUNCTION IF EXISTS "public"."mantle_acl_on"();
 DROP TRIGGER IF EXISTS "mantle_narrow_miss_guard_trg" ON "public"."actor_check_misses";
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_miss_guard"();
+--> statement-breakpoint
+-- 0320's report predicate back (no hold named) before the held readers go.
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_report"(who text, held text DEFAULT NULL, id uuid DEFAULT NULL)
+  RETURNS boolean LANGUAGE plpgsql STABLE
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+BEGIN
+  IF coalesce(who, '') NOT LIKE 'system:%'
+     AND coalesce(current_setting('mantle.route', true), '') <> 'narrow' THEN
+    RETURN false;
+  END IF;
+  BEGIN
+    IF NOT ("public"."mantle_narrow_counted"(coalesce(who, ''))
+            AND current_user::text = own_role
+            AND coalesce(current_setting('mantle.route', true), '') <> 'full') THEN
+      RETURN false;
+    END IF;
+    IF held IS NULL THEN
+      RETURN true;
+    END IF;
+    RAISE EXCEPTION 'mantle_narrow_report: unknown hold %', held USING ERRCODE = '22023';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RETURN false;
+  END;
+END
+$$;
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."access_keys";
 --> statement-breakpoint

@@ -303,6 +303,131 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     await su`delete from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})`;
   });
 
+  it('with the held readers taken from the runtime role (an older image`s grants) every sign-in and sign-out write writes, uncounted; the narrow login`s holds refuse', async () => {
+    // One image back, the older image's migrate grants the runtime role its
+    // own list: the two held readers are not on it. The report branches ask
+    // them through mantle_narrow_report, which answers false on a 42501.
+    const readers = [
+      'public.mantle_narrow_login_held(uuid)',
+      'public.mantle_narrow_client_held(uuid)',
+    ];
+    const client = randomUUID();
+    const tokId = randomUUID();
+    const keyId = randomUUID();
+    const devA = randomUUID();
+    const devB = randomUUID();
+    const tag = randomUUID().slice(0, 8);
+    await su`insert into oauth_clients (id, redirect_uris) values (${client}, ${['https://n1.example.test/cb']})`;
+    await su`insert into oauth_access_tokens (id, token_hash, owner_id, actor_id, client_id, expires_at)
+             values (${tokId}, ${`${tag}-t`}, ${anchor}, ${anchor}, ${client}, now() + interval '1 day')`;
+    await su`insert into oauth_auth_codes (code_hash, client_id, owner_id, actor_id, code_challenge, redirect_uri, expires_at)
+             values (${`${tag}-code`}, ${client}, ${anchor}, ${member}, 'x', 'https://c.example.test/cb', now() + interval '5 minutes')`;
+    await su`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
+             values (${keyId}, 'k', ${member}, ${keyId.replace(/-/g, '').slice(0, 8)},
+                     ${createHash('sha256').update(`${tag}-k`).digest('hex')}, 'read')`;
+    for (const d of [devA, devB]) {
+      await su`insert into mobile_tokens (id, user_id, label, expires_at)
+               values (${d}, ${member}, 'phone', now() + interval '1 day')`;
+    }
+    await su.unsafe(
+      `REVOKE EXECUTE ON FUNCTION ${readers.join(', ')} FROM mantle_runtime, ${NARROW_ROLE}`,
+    );
+    try {
+      counted();
+      const set = (who: string, mark = false) =>
+        `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true), ` +
+        `set_config('mantle.actor_check', 'on', true)` +
+        (mark ? `, set_config('mantle.route', 'narrow', true)` : '');
+      const self = 'system:http:login-self';
+      const area = 'system:http:admin-area';
+      const writes: [string, string, string, boolean][] = [
+        [
+          'a device token rotated',
+          self,
+          `update mobile_tokens set revoked_at = now() where id = '${devA}'`,
+          false,
+        ],
+        [
+          'a phone signed out',
+          self,
+          `update mobile_tokens set revoked_at = now() where id = '${devB}'`,
+          false,
+        ],
+        [
+          'a member key revoked',
+          area,
+          `update access_keys set revoked_at = now(), revoked_by = '${anchor}' where id = '${keyId}'`,
+          false,
+        ],
+        [
+          'a member disabled',
+          area,
+          `update auth.users set disabled_at = now(), session_epoch = session_epoch + 1 where id = '${victim}'`,
+          false,
+        ],
+        [
+          'the owner`s sessions ended (held)',
+          area,
+          `update auth.users set session_epoch = session_epoch + 1 where id = '${anchor}'`,
+          false,
+        ],
+        [
+          'the owner`s MCP token revoked (held)',
+          area,
+          `update oauth_access_tokens set revoked_at = now() where id = '${tokId}'`,
+          false,
+        ],
+        [
+          'an OAuth code burned',
+          area,
+          `delete from oauth_auth_codes where code_hash = '${tag}-code'`,
+          false,
+        ],
+        [
+          'a member key revoked, the statement marked narrow',
+          'login:x',
+          `update access_keys set revoked_at = now() where id = '${keyId}'`,
+          true,
+        ],
+        [
+          'an MCP client removed (held)',
+          area,
+          `delete from oauth_clients where id = '${client}'`,
+          false,
+        ],
+      ];
+      for (const [what, who, stmt, mark] of writes) {
+        expect(await run(rt, [set(who, mark), stmt]), what).toBeNull();
+      }
+      expect(counted()).toEqual([]);
+      // Fail closed on the narrow login: a member's disable it could make
+      // is refused while it may not run the reader.
+      expect(
+        await run(nl, [`update auth.users set disabled_at = now() where id = '${member}'`]),
+      ).toBe('42501');
+      expect(
+        await run(nl, [`update mobile_tokens set revoked_at = now() where id = '${devA}'`]),
+      ).toBe('42501');
+    } finally {
+      await su.unsafe(
+        `GRANT EXECUTE ON FUNCTION ${readers.join(', ')} TO mantle_runtime, ${NARROW_ROLE}`,
+      );
+      await su`delete from oauth_clients where id = ${client}`;
+      await su`delete from access_keys where id = ${keyId}`;
+      await su`delete from mobile_tokens where id in (${devA}, ${devB})`;
+    }
+    // With the readers back, the same held write by a narrow reason counts.
+    expect(
+      await run(rt, [
+        `select set_config('mantle.actor', 'system:http:admin-area', true), set_config('mantle.write_mode', 'rw', true)`,
+        `update auth.users set session_epoch = session_epoch + 1 where id = '${anchor}'`,
+      ]),
+    ).toBeNull();
+    expect(counted()).toEqual([
+      `${PREFIX}narrow-would-refuse system:http:admin-area auth.users UPDATE`,
+    ]);
+  });
+
   const scopeOf = (login: string) => `select set_config('mantle.scope_login', '${login}', true)`;
   const ledgerRows = async () =>
     (

@@ -82,8 +82,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_guard"()
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce("public"."mantle_identity_actor"(), '');
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
   report boolean := false;
   why text;
   o jsonb;
@@ -96,9 +94,7 @@ BEGIN
   IF current_user <> 'mantle_system_narrow' THEN
     -- Report only (0320): the same row by a narrow reason off the narrow
     -- route, not at a spot, is counted and runs.
-    IF "public"."mantle_narrow_counted"(who)
-       AND current_user::text = own_role
-       AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
+    IF "public"."mantle_narrow_report"(who) THEN
       report := true;
     ELSE
       RETURN NEW;

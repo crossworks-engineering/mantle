@@ -24,7 +24,10 @@
 --    mantle_narrow_login_held). The users area's disable and session end of
 --    such a login run at the full-route spot login-credential (the app asks
 --    the same definer). Off the narrow route the same change by a narrow
---    reason is counted (0320's report branch), not refused. The same hold
+--    reason is counted (0320's one report predicate, mantle_narrow_report,
+--    replaced here to name the hold: a role that may not run the held
+--    reader, as an older image's runtime role, writes uncounted), not
+--    refused. The same hold
 --    on their grants (mantle_narrow_token_hold): a revoke of their access
 --    key, OAuth token or device token, a delete of their open OAuth code,
 --    and a delete of an MCP client a live grant of theirs rides on
@@ -183,8 +186,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_login_hold"()
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce("public"."mantle_identity_actor"(), '');
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
 BEGIN
   IF OLD."disabled_at" IS NOT DISTINCT FROM NEW."disabled_at"
      AND OLD."session_epoch" IS NOT DISTINCT FROM NEW."session_epoch" THEN
@@ -199,13 +200,10 @@ BEGIN
   END IF;
   -- Report only (0320): the same change by a narrow reason's actor off the
   -- narrow route, not at a spot, is counted as one the role would refuse.
-  -- Nested, so the held test (a definer call) runs only for such a write.
-  IF "public"."mantle_narrow_counted"(who)
-     AND current_user::text = own_role
-     AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
-    IF "public"."mantle_narrow_login_held"(OLD."id") THEN
-      RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% UPDATE', who, TG_TABLE_SCHEMA, TG_TABLE_NAME;
-    END IF;
+  -- The held test rides the one report predicate, so a role that may not
+  -- run it (an older image's grants) writes, uncounted.
+  IF "public"."mantle_narrow_report"(who, 'login', OLD."id") THEN
+    RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% UPDATE', who, TG_TABLE_SCHEMA, TG_TABLE_NAME;
   END IF;
   RETURN NEW;
 END
@@ -236,16 +234,61 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_client_held"(uuid) FROM PUBLIC;
 --> statement-breakpoint
+-- 0320's one report predicate, the two holds named: 'login' asks
+-- mantle_narrow_login_held(id), 'client' mantle_narrow_client_held(id).
+-- Both are definers taken from PUBLIC; an older image's migrate grants the
+-- runtime role its own list without them, and the 42501 that a role which
+-- may not run one raises answers false here (the write runs, uncounted),
+-- never a refusal of a sign-in or sign-out write.
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_report"(who text, held text DEFAULT NULL, id uuid DEFAULT NULL)
+  RETURNS boolean LANGUAGE plpgsql STABLE
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  -- The session's own role: the role it SET, else its login. A definer
+  -- changes current_user, never this (a variable: plpgsql ends an IF's
+  -- test at its first THEN, a CASE's included).
+  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
+                        ELSE current_setting('role') END;
+BEGIN
+  IF coalesce(who, '') NOT LIKE 'system:%'
+     AND coalesce(current_setting('mantle.route', true), '') <> 'narrow' THEN
+    RETURN false;
+  END IF;
+  BEGIN
+    IF NOT ("public"."mantle_narrow_counted"(coalesce(who, ''))
+            AND current_user::text = own_role
+            AND coalesce(current_setting('mantle.route', true), '') <> 'full') THEN
+      RETURN false;
+    END IF;
+    IF held IS NULL THEN
+      RETURN true;
+    END IF;
+    IF held = 'login' THEN
+      RETURN coalesce("public"."mantle_narrow_login_held"(id), false);
+    END IF;
+    IF held = 'client' THEN
+      RETURN coalesce("public"."mantle_narrow_client_held"(id), false);
+    END IF;
+    RAISE EXCEPTION 'mantle_narrow_report: unknown hold %', held USING ERRCODE = '22023';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RETURN false;
+  END;
+END
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_token_hold"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
 DECLARE
   who text := coalesce("public"."mantle_identity_actor"(), '');
-  own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
-                        ELSE current_setting('role') END;
   o jsonb := to_jsonb(OLD);
   n jsonb;
-  held boolean;
+  kind text := CASE WHEN TG_TABLE_NAME = 'oauth_clients' THEN 'client' ELSE 'login' END;
+  id uuid := (CASE TG_TABLE_NAME
+                WHEN 'oauth_clients' THEN o ->> 'id'
+                WHEN 'access_keys' THEN o ->> 'login_id'
+                WHEN 'mobile_tokens' THEN o ->> 'user_id'
+                ELSE o ->> 'actor_id' END)::uuid;
 BEGIN
   -- The 0327 hold, part 2 (2's sibling): a revoke of the owner's or an
   -- Admin user's key, token or device, a delete of their open OAuth code,
@@ -267,25 +310,21 @@ BEGIN
         USING ERRCODE = '42501';
     END IF;
   END IF;
-  IF current_user <> 'mantle_system_narrow'
-     AND NOT ("public"."mantle_narrow_counted"(who)
-              AND current_user::text = own_role
-              AND coalesce(current_setting('mantle.route', true), '') <> 'full') THEN
-    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
-  END IF;
-  held := CASE TG_TABLE_NAME
-    WHEN 'oauth_clients' THEN "public"."mantle_narrow_client_held"((o ->> 'id')::uuid)
-    WHEN 'access_keys' THEN "public"."mantle_narrow_login_held"((o ->> 'login_id')::uuid)
-    WHEN 'mobile_tokens' THEN "public"."mantle_narrow_login_held"((o ->> 'user_id')::uuid)
-    ELSE "public"."mantle_narrow_login_held"((o ->> 'actor_id')::uuid)
-  END;
-  IF held AND current_user = 'mantle_system_narrow' THEN
-    RAISE EXCEPTION 'the narrow system role may not revoke or remove a grant of the owner or an Admin user (%)', TG_TABLE_NAME
-      USING ERRCODE = '42501';
-  END IF;
+  IF current_user = 'mantle_system_narrow' THEN
+    IF kind = 'client' THEN
+      IF "public"."mantle_narrow_client_held"(id) THEN
+        RAISE EXCEPTION 'the narrow system role may not revoke or remove a grant of the owner or an Admin user (%)', TG_TABLE_NAME
+          USING ERRCODE = '42501';
+      END IF;
+    ELSIF "public"."mantle_narrow_login_held"(id) THEN
+      RAISE EXCEPTION 'the narrow system role may not revoke or remove a grant of the owner or an Admin user (%)', TG_TABLE_NAME
+        USING ERRCODE = '42501';
+    END IF;
   -- Report only (0320): the same write by a narrow reason's actor off the
   -- narrow route, not at a spot, is counted as one the role would refuse.
-  IF held THEN
+  -- The held test rides the one report predicate, so a role that may not
+  -- run it (an older image's grants) writes, uncounted.
+  ELSIF "public"."mantle_narrow_report"(who, kind, id) THEN
     RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% %', who, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
   END IF;
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
