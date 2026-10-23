@@ -1,9 +1,10 @@
 # Proposal: the Present workspace (agent-drawn HTML canvases) and a Presenter agent
 
-Status: proposal only, 2026-10-23. Nothing here is built. The Slides work
-stays parked on its branches. This doc started as "`.canvas` files in
-/files"; after review with Jason it became a workspace of its own, Present,
-which also takes the place of the planned Slides workspace (section 9).
+Status: proposal, decisions taken with Jason on 2026-10-23 (section 10).
+Nothing here is built. The Slides work stays parked on its branches
+(section 9.1). This doc started as "`.canvas` files in /files"; after review
+it became a workspace of its own, Present, which also takes the place of
+the planned Slides workspace.
 
 ## 1. Recommendation (read this first)
 
@@ -36,6 +37,10 @@ which also takes the place of the planned Slides workspace (section 9).
 7. **The browser sidecar that already exists** (browserless Chromium,
    driven by `puppeteer-core`) renders the poster after each save and hands
    the agent a PNG plus console errors, so it sees and fixes its own work.
+8. **Agent driven, for now** (Jason, 2026-10-23). Present has no drawing or
+   design tools: no layout editor, no drag and drop, no text editing in
+   place. People change a canvas by asking Presenter (in chat or the
+   Assist panel). The Source view is read-only.
 
 ## 2. Jason's question: what do we already ship?
 
@@ -108,7 +113,7 @@ the scene, derived text for search, an SVG snapshot that is a cache, an
 etag. Present mirrors it:
 
 ```
-nodes.type = 'present'            (name to confirm, open question 6)
+nodes.type = 'present'            (decision 6)
 presents
   node_id      uuid PK, FK nodes ON DELETE CASCADE
   source       text   the HTML document (source of truth), max 1 MB
@@ -126,7 +131,7 @@ presents
 - **No draft, no commit.** `rev` guards against two writers at once; it is
   not a review step.
 - **Revisions:** keep the last 10 `source` versions in a small side table,
-  so a bad agent rewrite can be undone (open question 4). Shares still
+  so a bad agent rewrite can be undone (decision 4). Shares still
   always show the latest.
 
 ### 4.2 The canvas document
@@ -230,8 +235,9 @@ Reuse the app frame plumbing, minus the bridge:
   cannot even fire GETs at our own API. `'unsafe-eval'` is for Alpine.js
   (section 6.1).
 - Messages: the parent accepts `ready` and `error` from its own iframe
-  (`e.source` checked, as apps do) and sends `theme`. The text-edit mode
-  (section 9.3) adds one message, owner view only. Nothing else.
+  (`e.source` checked, as apps do) and sends `theme`. Nothing else. (A
+  later text-edit mode, section 9.3, would add one message, owner view
+  only.)
 - Posters everywhere else mean no live frames in pages or chat, so a busy
   page never runs ten canvases at once.
 
@@ -398,8 +404,8 @@ header (`client/web/components/layout/item-header.tsx`):
 - **Full screen**: the browser Fullscreen API on the frame only, for
   presenting. Esc leaves. For a deck, arrow keys and swipes move slides.
 - **Replay**: reloads the frame, so an animation starts again.
-- **Edit text**: section 9.3.
-- **Source**: the HTML in a text view (edit for those who may edit).
+- **Source**: the HTML in a read-only text view. Changes go through
+  Presenter (agent driven, section 1 item 8).
 - **Share**, **Download `.canvas`**, **Assist** (Presenter, as Appsmith backs
   the Apps Assist panel).
 
@@ -446,7 +452,7 @@ has one).
   cooldown on failure; public routes are cache-only.
 - No sidecar on the box (it is profile-gated in `docker-compose.core.yml`):
   pages and chat show a title card with Open instead of a picture, and the
-  agent works blind. Open question 7.
+  agent works blind. Decision 7: the sidecar is required when Present is on.
 
 ## 8. The Presenter agent
 
@@ -480,7 +486,7 @@ existing brains get it through the normal reconcile:
 | `present_render`                        | Render in the sidecar at a size and time (or a slide); return a PNG the model can see plus console errors and uncaught exceptions |
 | `show_present`                          | The poster card in chat (section 7.3)                                                                                             |
 | `present_import` / `present_export`     | `.canvas` file to item, item to `.canvas` file                                                                                    |
-| `present_revisions` / `present_restore` | The last 10 versions (if approved)                                                                                                |
+| `present_revisions` / `present_restore` | The last 10 versions (decision 4)                                                                                                 |
 
 ### 8.3 Routing, so the owner assistant stops struggling
 
@@ -494,8 +500,7 @@ Edit `specialist_routing` (prompts.ts line 406):
 - **Appsmith**: only when it needs live data, saved input, or tools.
 
 Also add Presenter to `visual_answers`, and two cases (a P&ID ask, a deck
-ask) to `eval:route`, so the routing is measured. Open question 2 asks
-whether Draftsman later folds into Presenter.
+ask) to `eval:route`, so the routing is measured. Decision 2: a merge of Draftsman into Presenter is decided after those numbers.
 
 ## 9. Slides: Present takes its place
 
@@ -507,6 +512,33 @@ our own drag, resize, rotate and snap layer, smallest text 24 units,
 Reveal.js 6 as the player, and a `slide_render` PNG through the sidecar.
 Most of its cost and risk is the hands-on editing layer.
 
+Where that work sits today (checked 2026-10-23; do not merge or push any
+of it, and do not touch these worktrees):
+
+| Repo           | Branch                | Head                                     | Worktree                              |
+| -------------- | --------------------- | ---------------------------------------- | ------------------------------------- |
+| mantle (brain) | `feat/slides-phase1`  | `0970d223c`, 15 commits, last 2026-10-03 | none on this machine now; branch only |
+| mantle-client  | `feat/slides`         | `4706a301`                               | `.claude/worktrees/slides`            |
+| mantle-client  | `spike/slides-phase0` | `be53c2cf`                               | `.claude/worktrees/slides-phase0`     |
+
+Pieces on the brain branch worth COPYING into Present (not merging: the
+branch is three weeks behind main):
+
+- the node-type pattern: `packages/db/migrations/0229_node_type_deck.sql`,
+  `0230_decks.sql`, `packages/db/src/schema/decks.ts`. Main has since used
+  0229 and 0230 for other migrations, so Present takes the next free
+  numbers;
+- the row-only kind wiring: `packages/tools/src/builtins-tree.ts`,
+  `builtins-search.ts`, `builtins.ts` edits for a new kind;
+- the sidecar PNG path: `server/web/lib/render-slide.ts`,
+  `packages/tools/src/slide-render-bridge.ts`,
+  `server/web/server/pages/slides-render.tsx`,
+  `server/web/server/islands/slide-render.ts`. This is close to what
+  `present_render` and the poster need.
+
+The client branches hold the editor and the deck renderer. Present v1 needs
+neither (agent driven), so nothing there is required now.
+
 ### 9.2 Decks in Present
 
 A deck is a canvas that uses reveal.js, one `<section>` per slide. From the
@@ -516,7 +548,10 @@ classes, the 24-unit smallest text, reveal.js as the player, and the agent
 checking its own render slide by slide. Slides get animation, charts and 3D
 everywhere, which the JSON model only had inside embedded elements.
 
-### 9.3 Hands-on editing, small first
+### 9.3 Hands-on editing: not now
+
+Present v1 is agent driven (section 1 item 8). What follows is only the
+smallest next step, if real use asks for it.
 
 Most hand edits are a typo, a number or a title. A canvas marks editable
 text with `data-edit="<id>"`. In **Edit text** mode the host tells the frame
@@ -532,28 +567,33 @@ the parked Slides branches are the place to take it from.
 
 PDF through the sidecar (reveal.js has a print layout, like `/print/pages`
 today). PPTX from HTML is poor in every tool; if PPTX is a must, that is the
-one strong reason to bring back the structured deck model (open question
-8).
+one strong reason to bring back the structured deck model. Not a must for
+now (section 10).
 
-## 10. Open questions for Jason
+## 10. Decisions (Jason, 2026-10-23)
 
-1. ~~One file or a bundle?~~ Settled by the workspace: one HTML document per
-   item in the sidecar; `.canvas` is the export and import file.
-2. **Presenter beside Draftsman, or one visual specialist?** My pick:
-   Presenter now, the one-line routing rule, decide on a merge after the
-   eval numbers.
-3. ~~Public shares?~~ **Decided 2026-10-23:** live, full screen, always the
-   latest save.
-4. **Revisions:** keep the last 10 versions for undo, or none?
-5. **Library set:** approve section 6.1. Is GSAP's licence fine for a
-   public, commercially licensed repo, or is Motion enough?
-6. **Names:** the workspace "Present", the agent "Presenter", the node type
-   `present`, the item a "canvas"? All placeholders.
-7. **The sidecar:** it is optional in `docker-compose.core.yml`. Make it
-   required when Present is on, or accept title cards and blind authoring?
-8. **Slides branches:** retire them now (Present replaces them), or keep
-   them parked as the source for a later layout editor? Is PPTX export a
-   must?
+1. **Storage:** one HTML document per item in the `presents` sidecar;
+   `.canvas` is the export and import file. No folder bundle.
+2. **Presenter beside Draftsman.** Draftsman keeps page charts and
+   diagrams; Presenter takes every other visual. Decide on a merge after
+   the `eval:route` numbers.
+3. **Shares:** live, full screen, always the latest save.
+4. **Revisions:** keep the last 10 versions for undo. Shares still show the
+   latest.
+5. **Libraries:** the set in section 6.1, with Alpine.js. **Motion only for
+   animation; GSAP stays out** unless its licence is later cleared for a
+   public, commercially licensed repo.
+6. **Names:** workspace "Present", agent "Presenter" (slug `presenter`),
+   node type `present`, an item is a "canvas", the file is `.canvas`.
+7. **The sidecar is required when Present is on**, because posters are now
+   the main way a canvas shows outside its own view. Without it the box
+   shows title cards and the agent works blind; the settings page should
+   say so.
+8. **Slides:** the branches stay parked as reference (section 9.1), never
+   merged. Present replaces the Slides workspace. **PPTX export is not a
+   must for now;** PDF is enough.
+9. **Agent driven only:** no drawing or design tools in v1; Source is
+   read-only; text editing in place (section 9.3) waits for real use.
 
 ## 11. Phased plan (rough sizes, one developer)
 
@@ -561,10 +601,10 @@ one strong reason to bring back the structured deck model (open question
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------ |
 | P0 Spike            | A hand-written canvas in a throwaway table; frame route with the CSP; open it in the client. Prove sandbox, theme message, import map, fonts                                                                                                                                                                                                                                                                                                                                                                                                       | both  | 2 days       |
 | P1 Workspace        | `present` node type + `presents` sidecar (migration); routes (list, get, create, update, delete, frame); folders, workspace grants, delete and cleanup, backup, search kind; `/canvas-runtime/` with the set and import map; CSS compile on save; extractor with the quiet-period ingest; client: nav entry, `/present` list, `/present/<id>` live view with Maximise, Full screen, Replay, Source; contract bump. New node type: the client-types publish and the client pin bump land in the same release, or the client's node-type icons break | both  | 8 to 10 days |
-| P2 Agent and poster | Sidecar render route, `present_render` with console capture, the poster cache; `present`, `present-read`, `present-admin` groups and tools; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                                                                                                                                                                                                                                                         | brain | 5 to 6 days  |
+| P2 Agent and poster | Sidecar render route (copy the Slides branch `render-slide.ts` path), `present_render` with console capture, the poster cache; `present`, `present-read`, `present-admin` groups and tools; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                                                                                                                                                                                                         | brain | 5 to 6 days  |
 | P3 Reach            | Poster embeds: `present:` in pages, `show_present` in chat, PDF, DOCX, email, page shares; share links full screen with pill and rate limit; `.canvas` export and import                                                                                                                                                                                                                                                                                                                                                                           | both  | 4 to 5 days  |
-| P4 Decks            | Deck template in the skill; PDF export of a deck; Edit text mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | both  | 3 to 5 days  |
-| Later               | Revisions UI; slide-level embeds; drag-and-drop layout mode if needed; brain images inside canvases                                                                                                                                                                                                                                                                                                                                                                                                                                                | both  | per item     |
+| P4 Decks            | Deck template in the skill (reuse the Slides grid, text size and stage); PDF export of a deck                                                                                                                                                                                                                                                                                                                                                                                                                                                      | both  | 3 to 5 days  |
+| Later               | Revisions UI; slide-level embeds; Edit text mode and drag-and-drop layout, only if real use asks; brain images inside canvases                                                                                                                                                                                                                                                                                                                                                                                                                     | both  | per item     |
 
 The vendored library runtime shared with mini apps is its own change and
 should land before or with P1.
