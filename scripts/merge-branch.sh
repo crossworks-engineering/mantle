@@ -109,6 +109,42 @@ else
       if (isNaN(n) || n <= lastNum) bad.push(`${e.tag}: number at or below main\x27s last (${String(lastNum).padStart(width, "0")})`);
       if (w <= lastWhen) bad.push(`${e.tag}: when ${w} at or below main\x27s last (${lastWhen})`);
     }
+    // The own earlier stamps of the branch (its reflog: every head it had, so
+    // the heads before a rebase too): a database that ran an earlier build
+    // of the branch (a test or drill cluster) has a ledger row at each.
+    // After a renumber every new entry must sit above them all, or the
+    // runner reads a restamped entry as applied (the same when) or as a
+    // gap below its mark.
+    const mainWhens = new Set(main.map((e) => Number(e.when) || 0));
+    const nowWhens = new Set(mine.map((e) => Number(e.when) || 0));
+    let heads = [];
+    try {
+      heads = execFileSync("git", ["log", "-g", "--format=%H", branch], { encoding: "utf8" })
+        .split("\n")
+        .filter(Boolean)
+        .slice(0, 400);
+    } catch {
+      heads = [];
+    }
+    let stale = 0;
+    for (const sha of new Set(heads)) {
+      let old = [];
+      try {
+        old = JSON.parse(execFileSync("git", ["show", `${sha}:${journal}`], { encoding: "utf8" })).entries ?? [];
+      } catch {
+        continue;
+      }
+      for (const e of old) {
+        const w = Number(e.when) || 0;
+        if (!mainWhens.has(w) && !nowWhens.has(w) && w > stale) stale = w;
+      }
+    }
+    for (const e of mine.filter((e) => !seen.has(e.tag))) {
+      const w = Number(e.when) || 0;
+      if (stale > 0 && w <= stale) {
+        bad.push(`${e.tag}: when ${w} at or below the branch\x27s own earlier stamps (${stale}): restamp the whole new set above them`);
+      }
+    }
     // A new migration file the journal does not name is a clash too.
     const files = (ref) =>
       execFileSync("git", ["ls-tree", "--name-only", `${ref}:packages/db/migrations`], { encoding: "utf8" })

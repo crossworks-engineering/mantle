@@ -141,8 +141,11 @@ export function gapRefusal(gaps: readonly MigrationGap[]): string {
     `(merge order) or its journal when is stamped too low. Apply it by hand in a ` +
     `transaction (as system:migration) and record it in drizzle.__drizzle_migrations ` +
     `with its hash and when, or restamp it above the mark in a new release; then run again. ` +
-    `A stamp that ran under another hash: find what ran under it (the ledger row's hash), ` +
-    `revert that by its revert file (which takes its ledger row out), then run again.`
+    `A stamp that ran under another hash: find what ran under it (the ledger row's hash) and ` +
+    `revert it by hand in a transaction: its own SQL undone, then its ledger row deleted by the ` +
+    `stamp named here (delete from drizzle.__drizzle_migrations where created_at = <when>). ` +
+    `A revert file deletes the row by the stamp it carries now, which is not the stamp an ` +
+    `earlier build of a renumbered branch wrote. Then run again.`
   );
 }
 
