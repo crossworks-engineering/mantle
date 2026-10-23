@@ -318,7 +318,7 @@ export const ORACLE_WRITE_ACTIONS: readonly OracleWriteAction[] = [
 function actionApplies(kind: string, action: OracleWriteAction): boolean {
   switch (action) {
     case 'deleteContent':
-      return kind === 'page' || kind === 'draw' || kind === 'table';
+      return kind === 'page' || kind === 'draw' || kind === 'table' || kind === 'present';
     case 'appCode':
     case 'appCreate':
     case 'appLower':

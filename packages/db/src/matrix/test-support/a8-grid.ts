@@ -86,6 +86,7 @@ const CONTENT_TABLE: Readonly<Record<string, string>> = {
   table: 'tables',
   app: 'apps',
   recall: 'recall_maps',
+  present: 'presents',
 };
 
 /** The draft column of a kind (editDraft). */
@@ -101,6 +102,7 @@ const CONTENT: Readonly<Record<string, { table: string; column: string }>> = {
   page: { table: 'pages', column: 'doc' },
   draw: { table: 'draws', column: 'scene' },
   table: { table: 'tables', column: 'data' },
+  present: { table: 'presents', column: 'source' },
 };
 
 /** The least formula spec that parses (packages/content-core formula-spec). */
@@ -381,6 +383,9 @@ export async function makeA8Item(
     if (kind === 'page') await tx`insert into pages (node_id, doc) values (${id}, '{"v":0}')`;
     if (kind === 'draw') await tx`insert into draws (node_id, scene) values (${id}, '{"v":0}')`;
     if (kind === 'table') await tx`insert into tables (node_id, data) values (${id}, '{"v":0}')`;
+    if (kind === 'present') {
+      await tx`insert into presents (node_id, source, meta) values (${id}, '<html></html>', '{}')`;
+    }
     if (kind === 'app') {
       await tx`insert into apps (node_id) values (${id})`;
       await tx`insert into app_databases (owner_id, app_node_id, storage_path)

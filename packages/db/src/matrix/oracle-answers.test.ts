@@ -14,14 +14,16 @@ import { describe, expect, it } from 'vitest';
 import { ORACLES, oracleAnswerDiff, oracleAnswerHash } from './oracle-answers';
 
 const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256: string }>> = {
-  a1: { inputs: 336, sha256: '68b48619289c835a0d5221c535f5dcddbca87935eb3ec2ac2c5fcbb9e4d6e216' },
+  // Present (a new workspace kind): its inputs added, every earlier answer
+  // unchanged (checked with --against before taking the hashes).
+  a1: { inputs: 360, sha256: 'ed3e8588ce99cad2e14175e9374362ca922c1549940632b45ad9f602304a2d78' },
   'a1-folders': {
     inputs: 18,
     sha256: 'b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461',
   },
   a3a: {
-    inputs: 41_216,
-    sha256: 'ac88c09d1fbd4a501c1847ce384d5b111113f612d94f29c0fedcb6510f5a5e38',
+    inputs: 44_160,
+    sha256: '042599d65731af8bacdd3cb86d73ca141963fe73ad0bda80a479aa2b02d9ad57',
   },
   'a3a-detail': {
     inputs: 1_472,
@@ -33,8 +35,8 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // and a page's draft edit, at root and in the folder (homeModerator,
   // writeGrant) and homed in Admin (owner, admin). No other answer moved.
   a8: {
-    inputs: 314_496,
-    sha256: 'e9f19dbc359ace7c1a9a7dbaa57d860cfa1f89c98d7b95ae04c57588674b36f0',
+    inputs: 336_960,
+    sha256: 'f84b23b68d7918be15c75e5152c11fcaa1e5962ca2736587759fcb955685a7d0',
   },
 };
 
