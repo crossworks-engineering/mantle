@@ -659,3 +659,83 @@ commit, per the standing rule.
    the lint forbids the string. The 24 'self' ones first: the writes whose
    path or body names another party's thing, the three of round 4 among
    them.
+
+## Part 0 rebase: onto main, and an alias held to its base in every key
+
+The re-audit of round 4 (9/10, merge after the narrow-route work lands)
+left one low input for part 1 and a merge note. That work (S7b parts b2
+and b3) is on main (v0.300.135, f6f6dad47), so the branch is rebased onto
+it. Still tooling only: no route file and no list's contents edited,
+ROUTE_POLICY_SOURCE stays 'lists'.
+
+### The rebase
+
+16 commits replayed, authorship kept. Two conflicts, both the expected
+merge note:
+
+- scripts/arch-scoreboard.pins.json `routePolicyLists`: the value 14
+  (main's 15, less public-session-routes.ts, which part 0 round 2 took out
+  of the count). The note keeps both histories: this branch's 15 to 14
+  first, then main's 16 to 15 (the narrow area sweep's LOGIN_SELF_ROWS
+  gone, its entries from the route table) and main's 15 to 16 before it.
+  `historyCodeComments` is main's (2347): the branch moves it by none,
+  so nothing re-pinned.
+- eslint-rules/no-policy-name-lists.mjs ROUTE_LIST_PINS comment: both
+  histories, main's LOGIN_SELF_ROWS paragraph and then this branch's
+  public-session-routes.ts one. The pins themselves merged clean.
+
+Main added no route file and edited no list file the codemod reads (its
+auth change is session.ts only), so the numbers did not move: 418 route
+files, 819 rows (the connector-options route was already under the
+branch).
+
+### What changed after the rebase
+
+- The alias held to its base in every key: route-policy.ts
+  declaredFacts compared an alias with its base in class, area, effect and
+  item only. It now walks DECLARED_KEYS: each key but the alias's own
+  (route-declaration.ts `ALIAS_OWN`: `aliasOf` and `keyArea`) and the ones
+  read from the base (`ALIAS_COPIES`: open, creates, limits, refused on an
+  alias as before) must say what the base's says, declared on both or on
+  neither: so makesItems, audit, public, scope and caller are held too,
+  and a key added to the shape later is held by default. The effect is
+  compared as the row's (the method's or the stated exception), the item
+  as its param and need or its `none` reason, as before. The cell
+  (route-policy-declarations.test.ts, "an alias says every key its base
+  declares") refuses each held key one at a time and checks that its list
+  of keys is DECLARED_KEYS less ALIAS_OWN and ALIAS_COPIES, so a new key
+  needs a cell. In 'lists' mode no alias row differs from its base's in
+  any of these (42 alias rows, HEAD included, compared field by field),
+  so the codemod's output passes the new hold.
+
+### Measured (the branch on main v0.300.135)
+
+| | |
+|---|---|
+| route files | 418 |
+| rows | 819 |
+| declarations (methods declared) | 572 |
+| writes with `item: { none }` | 326 |
+| of them, the placeholder reason | 105 |
+| aliases written | 25 files |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
+| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+
+### The dry run (a throwaway detached worktree)
+
+- main first (f6f6dad47): the manifest generated and every row dumped;
+  the branch's rows (after the rebase) compared with them, as the table
+  says.
+- The same worktree at the alias fix's head (055a04def): `--check` 819 of
+  819 equal, 105 placeholders, 418 files to write; `--write` 418 files
+  (+3498 lines); a second `--check` 819 of 819, 105 placeholders, 0 files
+  to write.
+- On the written tree, 'lists' mode: tsc 0, prettier on server/web/app 0,
+  eslint on server/web/app with `route-policy-declared` at 'error' 0
+  errors (the one warning, the unused disable in a database test, as
+  before). The S9 tests (route-declaration, route-policy-declarations,
+  route-policy, route-declarations, route-plumbing, arch-lints,
+  route-loader, served-route): 8 files, 168 tests passed. So the new hold
+  ran over every alias of the real written manifest:
+  route-policy-declarations.test.ts builds every row in 'declarations'
+  mode from it.
