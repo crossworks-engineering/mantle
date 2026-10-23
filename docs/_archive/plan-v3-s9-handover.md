@@ -623,7 +623,23 @@ file and no list's contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
 
 ### Gates
 
-On the Mac, DATABASE_URL unset, on the branch's head (the exit codes below).
+On the Mac, DATABASE_URL unset, all on the one head that carries this
+section:
+
+- `pnpm -r typecheck`: 0
+- `pnpm lint`: 0 (the one warning, the unused eslint-disable in
+  contact-sharing-routes.db.test.ts, as on main)
+- `pnpm format:check`: 0
+- `pnpm docs:check`: 0
+- `pnpm arch:check`: 0 (routePolicyLists 14, historyCodeComments 2333:
+  the round 4 code says what each check holds, not the round it came from)
+- `pnpm -C server/web build`: 0
+- `vitest run` (the whole suite): 0 (877 files passed, 285 skipped: the
+  database files, which need the workstation)
+
+No database test was needed: no SQL, no migration. The database suites
+(the workstation lanes) are the merge gate on a fresh clone of the pushed
+commit, per the standing rule.
 
 ### Left (parts 1 to 3), as round 4 leaves it
 
