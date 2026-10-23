@@ -739,7 +739,13 @@ its login at the roll). Before the fleet flip, the box counts must read 0 on
 the box (`scripts/arch-scoreboard-box.sh`; the list is in
 docs/_archive/plan-v3-s7b-handover.md, part b3).
 
-The kill switch, per box, no image change:
+The release shape (which release carries the default to a box, and after
+which day's counts) is decided by the CEO per box, and written here
+before that box rolls.
+
+The kill switch, per box, no image change. It takes a full
+`docker compose up -d`: migrate must run first to take the role's login,
+so restarting the app containers alone is not enough:
 
 ```sh
 # ~/mantle/.env
@@ -1353,22 +1359,26 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   and b3, migrations 0315 to 0328):** with `MANTLE_NARROW_SYSTEM` off (`0`;
   unset reads on from b3, off on the b2 image in production)
   the image one back works with them in place: no revert (an image older
-  than one back needs the reverts below whatever the switch). With it on, the
-  older image's grants leave the narrow role without this release's held
-  readers, so its sign-in and sign-out holds refuse every write they guard
-  (fail closed). Then pin in one of two ways. Either set
+  than one back needs the reverts below whatever the switch). With it on,
+  pinning the b2 image (one back) needs only 0328's revert: b2's own
+  migrations (0315 to 0327) give the narrow role its held readers, and
+  0328's wider hold would refuse the push device deletes b2
+  sends outside the spot (fail closed). An image older than b2 lacks the
+  held readers too, so its sign-in and sign-out holds refuse every write
+  they guard. Then pin in one of two ways. Either set
   `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as `MANTLE_IMAGE_TAG` and
   run one `docker compose up -d` for both, so no container of the older
-  image runs with the switch on; or revert 0328 down to 0315 first, newest
-  first, each file in its own transaction, while the newer image is still
-  up, as the superuser:
+  image runs with the switch on; or revert first (0328 alone for b2; 0328
+  down to 0315 for an image older than b2), newest first, each file in its
+  own transaction, while the newer image is still up, as the superuser
+  (the loop below is the full list; stop after 0328 for b2):
   `for f in 0328_narrow_hold_wider 0327_narrow_lockout_and_ledger_tokens 0326_member_turn_ledger_definers 0325_narrow_off_on_insert 0324_narrow_enable_off 0323_narrow_message_rules 0322_identity_gateway 0321_narrow_row_rules 0320_narrow_would_refuse 0319_narrow_one_way_columns 0318_narrow_observe_definer_frames 0317_promotion_agent_definers 0316_structure_item_definer 0315_acting_login_definers; do docker exec mantle_web cat /app/packages/db/rollback/$f.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 || break; done`,
   then pin the older tag straight away (or stop mantle_web first): a
   restart in between applies them again. Each revert takes its migration
   off the ledger. Why and the order: docs/runtime-role.md (reverting the
   narrow migrations by hand). After b3 flips the default, the fallback on a
-  box is the switch alone (`MANTLE_NARROW_SYSTEM=0`, the app services
-  recreated), not a pin.
+  box is the switch alone (`MANTLE_NARROW_SYSTEM=0` and a full
+  `docker compose up -d`), not a pin.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

@@ -365,7 +365,9 @@ on. Off, every statement runs as before.
 #### The kill switch
 
 Per box, with no image change: set `MANTLE_NARROW_SYSTEM=0` in the box's
-`.env` (`off` and `false` read the same), then `docker compose up -d`.
+`.env` (`off` and `false` read the same), then a full `docker compose up
+-d` (restarting the app containers alone runs no migrate, so the role
+keeps its login).
 Compose passes the switch to the migrate gate and to every app process
 (x-app-env), so migrate runs first and makes `mantle_system_narrow`
 `NOLOGIN` again, and each process starts on the full route (its boot line
@@ -1106,11 +1108,15 @@ OAuth code's burn) write, uncounted; the drill's N-1 rows run each as the
 runtime role with the actor check on. With the switch on, the older
 image's grants also leave the narrow role without those readers, so its
 holds refuse (42501, fail closed) every write they guard, a member's too.
-So with the switch on, pinning any image older than this release (one
-back or more) takes one of two forms: set `MANTLE_NARROW_SYSTEM=0` in the
-same `.env` edit as `MANTLE_IMAGE_TAG` and one `docker compose up -d` for
-both (no container of the older image ever runs with the switch on), or
-revert 0328 down to 0315 first (below), then pin. The switch alone, with
+The b2 image (one back) is the exception: its own migrations (0315 to
+0327) grant the held readers, and with the switch on only 0328's wider
+hold stands in its way (it refuses the push device deletes b2 sends
+outside the spot). So with the switch on, pinning b2 takes one of
+two forms: set `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as
+`MANTLE_IMAGE_TAG` and one `docker compose up -d` for both (no container
+of the older image ever runs with the switch on), or revert 0328 alone
+first (below), then pin; an image older than b2 takes the same switch
+edit, or the reverts of 0328 down to 0315. The switch alone, with
 no pin, is the fallback for a narrow refusal on this release
 (update-prod.md's rollback floors say the same).
 
