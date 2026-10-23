@@ -20,7 +20,7 @@
  */
 import type postgres from 'postgres';
 import { env } from '@mantle/config';
-import { RuntimeFaultError } from '@mantle/std';
+import { RuntimeFaultError, TtlCache } from '@mantle/std';
 import { permissionGapOf, pgErrorCode } from '../pg-error';
 import {
   actorCheckMode,
@@ -172,30 +172,28 @@ function noteNarrowFunctions(query: string): void {
 }
 
 /** Which mantle_* functions the narrow role may EXECUTE, by name, read
- *  from the catalog (its grants and PUBLIC's), and when. */
-let narrowExec: { at: number; can: ReadonlyMap<string, boolean> } | null = null;
+ *  from the catalog (its grants and PUBLIC's), kept ten minutes (a migrate
+ *  changes it). */
+const narrowExec = new TtlCache<'can', ReadonlyMap<string, boolean>>({ ttlMs: 10 * 60_000 });
 let narrowExecLoad: Promise<ReadonlyMap<string, boolean>> | null = null;
-/** How long the catalog's answer is kept (a migrate changes it). */
-const NARROW_EXEC_TTL_MS = 10 * 60_000;
 
-/** The catalog's answer, loaded once per TTL on the system pool (no
- *  actor: a catalog read). Empty when the role is not there. */
+/** The catalog's answer, loaded on the system pool (no actor: a catalog
+ *  read). Empty when the role is not there. */
 function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
-  if (narrowExec && Date.now() - narrowExec.at < NARROW_EXEC_TTL_MS) {
-    return Promise.resolve(narrowExec.can);
-  }
+  const kept = narrowExec.get('can');
+  if (kept) return Promise.resolve(kept);
   narrowExecLoad ??= (async () => {
     try {
       const rows = (await base.unsafe(
-        `select p.proname::text as name,
-                bool_or(has_function_privilege('${NARROW_ROLE}', p.oid, 'EXECUTE')) as ok
+        `select p.proname::text as name, bool_or(has_function_privilege($1, p.oid, $2)) as ok
            from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname like 'mantle\\_%'
           group by 1`,
+        [NARROW_ROLE, 'EXECUTE'],
       )) as unknown as { name: string; ok: boolean }[];
       const can = new Map(rows.map((r) => [r.name, r.ok] as const));
-      narrowExec = { at: Date.now(), can };
+      narrowExec.set('can', can);
       return can;
     } catch {
       return new Map<string, boolean>();

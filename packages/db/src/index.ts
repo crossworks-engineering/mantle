@@ -272,7 +272,8 @@ export {
   type TableAccess,
 } from './access-matrix';
 export { narrowNeedsSpot } from './narrow-writes';
-export { NARROW_TABLE_SPOTS, narrowSpotFor, onLoginHoldSpot, onNarrowSpots } from './narrow-spots';
+export { NARROW_TABLE_SPOTS, narrowSpotFor, onNarrowSpots } from './narrow-spots';
+export { onLoginHoldSpot } from './login-hold';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
   PROVIDER_ALERT_VISIBLE_AFTER_MS,

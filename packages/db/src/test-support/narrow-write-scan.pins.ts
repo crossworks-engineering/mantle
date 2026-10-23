@@ -591,6 +591,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
   mantle_member_turn_release:
     "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
+  mantle_member_turn_settle:
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx (a team turn's close, 0326), the system pool in the login's own scope, never a narrow statement",
   mantle_name_taken:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_page_folder_id:
@@ -729,6 +731,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/member-invites.ts mantle_bridge_login': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_claim': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_release': 1,
+  'packages/content/src/member-turn-ledger.ts mantle_member_turn_settle': 1,
   'packages/content/src/pages/read.ts mantle_page_folder_id': 1,
   'packages/content/src/profile-preferences.ts mantle_profile_writable': 1,
   'packages/content/src/recall-native.ts mantle_recall_retarget': 1,
