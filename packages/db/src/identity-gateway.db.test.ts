@@ -213,6 +213,44 @@ describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
     expect(objects).not.toContain('leak_update_ok(');
   });
 
+  it("the narrow role's own stored defaults are not read; another role's are", async () => {
+    // The narrow login may store a default on itself (ALTER ROLE
+    // current_user SET), every database's and this one's: it must not fail
+    // every migrate. Migrate takes them back; the readers give it no
+    // identity whatever it sets. The same default on the runtime role is
+    // found.
+    const found = await su
+      .begin(async (t) => {
+        await t.unsafe(`set local role mantle_system_narrow`);
+        await t.unsafe(`alter role current_user set role = 'none'`);
+        await t.unsafe(`do $$ begin
+          execute format('alter role current_user in database %I set role = %L',
+                         current_database(), 'mantle_system_narrow');
+        end $$`);
+        await t.unsafe(`reset role`);
+        const own = await t<{ n: number }[]>`
+          select count(*)::int as n from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
+           where r.rolname = 'mantle_system_narrow'`;
+        const narrowRows = await identityLeaks(t as unknown as postgres.Sql);
+        await t.unsafe(`alter role mantle_runtime set role = 'none'`);
+        const runtimeRows = await identityLeaks(t as unknown as postgres.Sql);
+        throw Object.assign(new Error('rollback'), {
+          out: { own: own[0]?.n ?? 0, narrowRows, runtimeRows },
+        });
+      })
+      .catch((e: { out?: unknown }) => {
+        if (!e.out) throw e;
+        return e.out as {
+          own: number;
+          narrowRows: { object: string }[];
+          runtimeRows: { object: string }[];
+        };
+      });
+    expect(found.own).toBe(2);
+    expect(found.narrowRows.filter((r) => r.object.includes('mantle_system_narrow'))).toEqual([]);
+    expect(found.runtimeRows.map((r) => r.object)).toContain('mantle_runtime in every database');
+  });
+
   it('a migration that leaves a leak fails before its commit and leaves nothing', async () => {
     const { applyJournal } = await import('./migrate-runner');
     // Above every journal stamp (the scratch copy may keep no ledger).

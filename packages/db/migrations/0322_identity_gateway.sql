@@ -321,7 +321,12 @@ BEGIN
   -- function. Only the non-identity keys; the role only as a per-database
   -- login takes its pool role (runtime-role.ts, viewer roles per
   -- database): a role it may SET, no superuser and none of the system
-  -- roles.
+  -- roles. Not read: the narrow role's own rows. Its login may store any
+  -- default on itself (ALTER ROLE current_user SET role, or an identity
+  -- key), which would fail every migrate here; on it the readers answer no
+  -- identity whatever it sets, its pool fixes the settings that matter at
+  -- each connect, and migrate takes every one back each run
+  -- (runtime-role.ts resetNarrowRoleSettings; the boot line names any).
   FOR f IN
     SELECT coalesce(r.rolname::text, 'every role') || ' in ' || coalesce(d.datname::text, 'every database') AS obj,
            s.setrole AS who_oid, x.c
@@ -330,6 +335,7 @@ BEGIN
       LEFT JOIN pg_database d ON d.oid = s.setdatabase
       CROSS JOIN LATERAL unnest(s.setconfig) AS x(c)
      WHERE s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database()))
+       AND r.rolname IS DISTINCT FROM 'mantle_system_narrow'
   LOOP
     k := lower(split_part(f.c, '=', 1));
     CONTINUE WHEN k NOT IN ('role', 'session_authorization')
