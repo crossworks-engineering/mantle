@@ -162,6 +162,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   'contact_find',
   'contact_get',
   'contact_list',
+  'diagram_guide',
+  'diagram_types',
   'draw_get',
   'draw_list',
   'email_get',

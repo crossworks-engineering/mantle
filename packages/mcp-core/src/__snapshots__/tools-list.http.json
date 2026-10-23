@@ -7341,6 +7341,49 @@
   }
  },
  {
+  "name": "diagram_types",
+  "description": "List every diagram and chart type the design system can draw, each with one line on when to use it, plus the semantic patterns (behaviour-first routing) and the import notations. Call it first when drawing, pick ONE type, then call `diagram_guide` for that type. Reads static guide files; changes nothing.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "diagram_guide",
+  "description": "Return the drawing instructions for one diagram type: the Mantle medium rules (static SVG, system fonts), the shared style guide, layout budget, core SVG primitives and output sizes, then the type's own guide, then this brain's site profile for the type when it keeps one (`files/diagrams/profiles/<type>.md`, which wins over the base guide). Call it after `diagram_types` and before drawing. Draw several types in one task? Pass `shared: false` after the first call to skip the shared rules you already hold. Reads only; changes nothing.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "type": "string",
+     "description": "The diagram type from `diagram_types`, e.g. 'architecture', 'bar', 'pid'."
+    },
+    "pattern": {
+     "type": "string",
+     "description": "A semantic pattern from `diagram_types` when behaviour carries the meaning, e.g. 'fan-in-queue'. Adds that pattern's rules."
+    },
+    "import": {
+     "type": "string",
+     "enum": [
+      "mermaid",
+      "drawio",
+      "excalidraw"
+     ],
+     "description": "Redrawing a diagram from another notation: adds its import guide and the fidelity ledger."
+    },
+    "shared": {
+     "type": "boolean",
+     "description": "Include the shared rules. False when an earlier call in this task already returned them."
+    }
+   },
+   "required": [
+    "type"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
   "name": "file_create",
   "description": "Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.",
   "inputSchema": {

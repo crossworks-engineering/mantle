@@ -159,6 +159,7 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './builtins-formulas';
 export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
+export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, parsePlan } from './builtins-runs';
