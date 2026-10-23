@@ -454,8 +454,13 @@ export function buildAppFrameTicket(opts: {
    *  /api/apps/members/:id/test/frame accepts it, and every other frame
    *  route refuses it. Owner surface only (needs `actorId`). */
   reviewTest?: boolean;
+  /** A Present canvas's frame (`cv`): `appId` is then the present's id. Only
+   *  verifyCanvasFrameTicket accepts it, and verifyAppFrameTicket refuses
+   *  it, so a canvas ticket never opens an app frame, nor the reverse. */
+  canvas?: boolean;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
+  if (opts.canvas) claims.cv = 1;
   if (opts.shareId) claims.sh = opts.shareId;
   if (opts.shareId && opts.contact) {
     claims.cid = opts.contact.contactId;
@@ -495,12 +500,22 @@ export type AppFrameTicket = {
   actorId?: string;
   /** An admin's test run of a member's app: only the test frame accepts it. */
   reviewTest?: boolean;
+  /** A Present canvas's ticket (`appId` names the present). */
+  canvas?: true;
 };
 
-export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
+export function verifyAppFrameTicket(
+  value: string,
+  opts: { canvas?: boolean } = {},
+): AppFrameTicket | null {
   const claims = verifySigned(value, 'f');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
+  // A canvas ticket opens a canvas frame only, an app ticket an app frame
+  // only: each verifier refuses the other's.
+  if (claims.cv !== undefined && claims.cv !== 1) return null;
+  if ((claims.cv === 1) !== (opts.canvas === true)) return null;
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
+  if (claims.cv === 1) out.canvas = true;
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
   if (typeof claims.act === 'string' && !out.shareId && !out.loginId) out.actorId = claims.act;
@@ -531,6 +546,30 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
     return null;
   }
   return out;
+}
+
+/** Mint the frame ticket of a Present canvas (GET /api/presents/:id/frame):
+ *  the app-frame ticket shape, bound to one present, marked as a canvas's. An
+ *  Admin user's names the login (`actorId`); a member's names its login
+ *  (`loginId`), and the frame re-checks it. */
+export function buildCanvasFrameTicket(opts: {
+  ownerId: string;
+  presentId: string;
+  actorId?: string;
+  loginId?: string;
+}): string {
+  return buildAppFrameTicket({
+    ownerId: opts.ownerId,
+    appId: opts.presentId,
+    ...(opts.actorId ? { actorId: opts.actorId } : {}),
+    ...(opts.loginId ? { loginId: opts.loginId } : {}),
+    canvas: true,
+  });
+}
+
+/** Verify a canvas frame ticket: a canvas's only (see verifyAppFrameTicket). */
+export function verifyCanvasFrameTicket(value: string): AppFrameTicket | null {
+  return verifyAppFrameTicket(value, { canvas: true });
 }
 
 // ── App tool confirmations ───────────────────────────────────────────────────

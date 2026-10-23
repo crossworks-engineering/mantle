@@ -43,7 +43,8 @@
       "documentation",
       "journal",
       "formula",
-      "draw"
+      "draw",
+      "present"
      ]
     },
     "tags": {
@@ -1444,9 +1445,10 @@
       "contacts",
       "secrets",
       "apps",
-      "recall"
+      "recall",
+      "present"
      ],
-     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools."
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
     }
    },
    "required": [
@@ -1474,9 +1476,10 @@
       "contacts",
       "secrets",
       "apps",
-      "recall"
+      "recall",
+      "present"
      ],
-     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools."
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
     },
     "name": {
      "type": "string",
@@ -1545,9 +1548,10 @@
       "contacts",
       "secrets",
       "apps",
-      "recall"
+      "recall",
+      "present"
      ],
-     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools."
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
     },
     "folder_id": {
      "type": "string",
@@ -1611,9 +1615,10 @@
       "contacts",
       "secrets",
       "apps",
-      "recall"
+      "recall",
+      "present"
      ],
-     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools."
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
     },
     "item_ids": {
      "minItems": 1,
@@ -1663,9 +1668,10 @@
       "contacts",
       "secrets",
       "apps",
-      "recall"
+      "recall",
+      "present"
      ],
-     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools."
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
     },
     "folder_id": {
      "type": "string",

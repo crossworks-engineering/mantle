@@ -272,6 +272,8 @@ describe('member route lists (A1: generated from the kind registry)', () => {
         '/api/tasks',
         '/api/events',
         '/api/recall/maps',
+        // Present (P1)
+        '/api/presents',
       ]),
     );
   });
@@ -317,6 +319,11 @@ describe('member route lists (A1: generated from the kind registry)', () => {
         'GET /api/recall/maps/:id/cards/:card',
         'GET /api/recall/maps/:id/revisions',
         'POST /api/formulas/:id/evaluate',
+        // Present (P1): a canvas, its kept versions and its frame ticket.
+        'GET /api/presents',
+        'GET /api/presents/:id',
+        'GET /api/presents/:id/revisions',
+        'POST /api/presents/:id/frame-ticket',
       ]),
     );
   });
@@ -389,6 +396,10 @@ describe('member route lists (A1: generated from the kind registry)', () => {
         'POST /api/recall/maps/:id/cards/reorder',
         'POST /api/recall/maps/:id/cards/:card/prompt',
         'POST /api/recall/revisions/:id/restore',
+        // Present (P1)
+        'POST /api/presents',
+        'PATCH /api/presents/:id',
+        'DELETE /api/presents/:id',
       ]),
     );
   });
@@ -409,6 +420,8 @@ describe('member route lists (A1: generated from the kind registry)', () => {
         'POST /api/events',
         'POST /api/formulas',
         'POST /api/recall/maps',
+        // Present (P1)
+        'POST /api/presents',
       ]),
     );
   });

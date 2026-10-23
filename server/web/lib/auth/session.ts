@@ -89,6 +89,7 @@ import {
   decodeUnverifiedClaims,
   verifyAppFrameTicket,
   verifyAssetToken,
+  verifyCanvasFrameTicket,
   verifyMobileToken,
   verifyRenderToken,
   verifySessionCookie,
@@ -1251,9 +1252,17 @@ function assetRequest(row: RouteRow): Request {
 /** The frame ticket a frame document's `?t=` carries, verified, or null
  *  (pure: the signature and the claims, no lookup). */
 function frameTicketOf(req: Request): AppFrameTicket | null {
-  const t = new URL(req.url).searchParams.get('t');
-  return t ? verifyAppFrameTicket(t) : null;
+  const url = new URL(req.url);
+  const t = url.searchParams.get('t');
+  if (!t) return null;
+  // A canvas frame takes a canvas's ticket only, every other frame an app's.
+  return CANVAS_FRAME_PATH.test(url.pathname)
+    ? verifyCanvasFrameTicket(t)
+    : verifyAppFrameTicket(t);
 }
+
+/** The Present canvas frame document (route-policy.ts FRAME_ROWS). */
+const CANVAS_FRAME_PATH = /^\/api\/presents\/[^/]+\/frame$/;
 
 /** The answer of the guard of the row's caller kind (the guard itself, run
  *  once). A gone row (RouteRow.gone, a retired route's 410 stub) is

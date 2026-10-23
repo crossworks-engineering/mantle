@@ -51,13 +51,18 @@ export const TOOL_LIST_PINS = {
  *  keyed like the area entries, so narrow-area-sweep.entries.ts holds no
  *  list (1 to 0). The route declarations (plan v3.2), part 0 round 2:
  *  public-session-routes.ts leaves the count, the session sweep's test
- *  data, not a policy (arch-counts.mjs ROUTE_LISTS_NOT_POLICY). */
+ *  data, not a policy (arch-counts.mjs ROUTE_LISTS_NOT_POLICY).
+ *  Present (canvas frames), route-policy.ts 1 to 2, reviewed: FRAME_ROWS
+ *  names the frame documents a ticket opens with no login; a third entry
+ *  (the canvas frame) made it count. It is the list buildRouteRow reads
+ *  the 'frame' caller from, ROUTE_POLICY's own check, not a policy beside
+ *  it. */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
-  'server/web/lib/auth/route-policy.ts': 1,
+  'server/web/lib/auth/route-policy.ts': 2,
   'server/web/lib/auth/route-scope.ts': 4,
   'server/web/lib/body-limit.ts': 1,
   'server/web/lib/route-limits.ts': 1,

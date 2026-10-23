@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "app-runtime": "node ../../packages/app-build/scripts/build-runtime.ts",
+    "canvas-runtime": "node ../../packages/app-build/scripts/build-canvas-runtime.ts",
     "apps:push": "tsx --env-file-if-exists=./.env.local scripts/apps-push.ts",
     "backfill:block-ids": "tsx --env-file-if-exists=./.env.local scripts/backfill-block-ids.ts",
     "backfill:conversation": "tsx --env-file-if-exists=./.env.local scripts/backfill-conversation.ts",
@@ -22,7 +23,7 @@
     "excalidraw-assets": "node scripts/copy-excalidraw-assets.mjs",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",
     "extract:images-backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-images-backfill.ts",
-    "generate": "pnpm run app-runtime && pnpm run route-manifest && pnpm run excalidraw-assets && pnpm run share-runtime",
+    "generate": "pnpm run app-runtime && pnpm run canvas-runtime && pnpm run route-manifest && pnpm run excalidraw-assets && pnpm run share-runtime",
     "maintain": "tsx --env-file-if-exists=./.env.local scripts/maintain.ts",
     "onboard": "tsx --env-file-if-exists=./.env.local scripts/onboard.ts",
     "models:drift": "tsx --env-file-if-exists=./.env.local scripts/models-drift.ts",

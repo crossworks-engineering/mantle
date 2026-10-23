@@ -613,8 +613,9 @@ chat logins (11):
   POST /api/assistant/threads/:id/continue
   POST /api/assistant/threads/:id/summarize
   POST /api/assistant/turn
-frame (a frame ticket) (1):
+frame (a frame ticket) (2):
   GET /api/apps/:id/frame
+  GET /api/presents/:id/frame
 link (a share token) (2):
   GET /s/:token/bundle/css
   GET /s/:token/frame
@@ -627,7 +628,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (118):
+owner rows open to members (124):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -637,6 +638,7 @@ owner rows open to members (118):
   DELETE /api/formulas/:id
   DELETE /api/notes/:id
   DELETE /api/pages/:id
+  DELETE /api/presents/:id
   DELETE /api/recall/maps/:id
   DELETE /api/recall/maps/:id/cards/:card
   DELETE /api/tables/:id
@@ -663,6 +665,9 @@ owner rows open to members (118):
   GET /api/pages/:id
   GET /api/pages/:id/backlinks
   GET /api/pages/:id/descendant-count
+  GET /api/presents
+  GET /api/presents/:id
+  GET /api/presents/:id/revisions
   GET /api/recall/maps
   GET /api/recall/maps/:id
   GET /api/recall/maps/:id/cards/:card
@@ -698,6 +703,7 @@ owner rows open to members (118):
   PATCH /api/formulas/:id
   PATCH /api/notes/:id
   PATCH /api/pages/:id
+  PATCH /api/presents/:id
   PATCH /api/recall/maps/:id
   PATCH /api/tables/:id
   PATCH /api/tasks/:id
@@ -721,6 +727,7 @@ owner rows open to members (118):
   POST /api/pages/:id/commit
   POST /api/pages/:id/discard-draft
   POST /api/pages/:id/move
+  POST /api/presents
   POST /api/recall/maps
   POST /api/recall/maps/:id/cards
   POST /api/recall/maps/:id/cards/:card/prompt

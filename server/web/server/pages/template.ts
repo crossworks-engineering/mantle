@@ -1,4 +1,4 @@
-import { displayFontFaceCss } from '@mantle/client-types/display-fonts';
+import { INTER_FONT_FACE_CSS, displayFontFaceCss } from '@mantle/client-types/display-fonts';
 import {
   appearanceFontAttrs,
   appearanceFontVars,
@@ -50,11 +50,7 @@ export function scriptSafeJson(value: unknown): string {
  * A brain's own choices arrive as inline style on `<html>` (see htmlAttrs), and
  * inline style outranks these `:root` rules, so this block is purely the floor.
  */
-const FONT_CSS = `
-@font-face{font-family:'InterVariable';font-style:normal;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-VariableFont_opsz,wght.woff2') format('woff2')}
-@font-face{font-family:'InterVariable';font-style:italic;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-Italic-VariableFont_opsz,wght.woff2') format('woff2')}
-:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-sans-base:'InterVariable',ui-sans-serif,system-ui,sans-serif}
-`.trim();
+const FONT_CSS = INTER_FONT_FACE_CSS;
 
 export type PageMeta = {
   title: string;

@@ -3,7 +3,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules.",
   "tools": {
    "count": 283,
-   "sha256": "4e9407fa0a4e4d1a0b28ea625a005cbd589b1adec58b9d3deef8e290fdeadd5d"
+   "sha256": "b2f709d3dd1ce41440b181e13ece1208e7fe5dc9a434e90a8a1053da1254d1d6"
   },
   "calls": [
    {
@@ -660,7 +660,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 284,
-   "sha256": "c3c34e7fc92edab8520cfce68ac027cbc730277c1d4bbb00c7bdbbf2d9f6f3cd"
+   "sha256": "02a6afe1e92920dbc731f575a295d8196bec454c19807f85916c2b32a9ca785d"
   },
   "calls": [
    {
@@ -1488,7 +1488,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 182,
-   "sha256": "53fae088bb2a32f1ef559eeac1e99d5de394fb7b0afc0f0d074a4613e36f7f38"
+   "sha256": "3cddb111dfb2099e303534c9380ededea3ab29cb2294cc39a2b11db11676732f"
   },
   "calls": [
    {
@@ -2359,7 +2359,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 67,
-   "sha256": "5a8baec7861adf897c794979c5dda1c61313305c45dc2c603e47d937fbae70ca"
+   "sha256": "6b965c2dfac32c4e03802a52b3546308e26c4837d93ea312f310ecb9c9665366"
   },
   "calls": [
    {
@@ -2932,7 +2932,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 182,
-   "sha256": "39e86774b4b0d9846ae90b1b5466a4e05d22e3735e7deec0dfeb46412e42c243"
+   "sha256": "943f65ab67ea61399e42a65368a4176d03c7a85350d14ff1fd2243ae4069c807"
   },
   "calls": [
    {
@@ -4357,7 +4357,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 66,
-   "sha256": "70271c5c4fcff97d4d6b85caa7d680a5db700d31f0936a0c0f41b0f135f4efac"
+   "sha256": "cb16b01062d7b2e84ed652cc905ce263e5217628bc9b597c990fe53b5b5ef48d"
   },
   "calls": [
    {
@@ -4940,7 +4940,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 191,
-   "sha256": "ff867c88f2d7ce188c5f2a293c26d4833dde70a01e580fefc318bde4804f7d11"
+   "sha256": "d83f354e4b74d6d967b93079bcddb9054790e7e61478d24b07d923f5f546541a"
   },
   "calls": [
    {
@@ -5740,7 +5740,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 150,
-   "sha256": "fed548d960e48d0ebe4070aa8cc6c9bbf30d3792fed7f4e369704d28d4527771"
+   "sha256": "8821e388c5102addecabffec2acc9ed8ae2a50d5441b5bd0e3b0322b499d70be"
   },
   "calls": [
    {

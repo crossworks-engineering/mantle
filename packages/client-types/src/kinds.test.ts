@@ -44,6 +44,8 @@ describe('the kind registry', () => {
       'formula',
       'draw',
       'recall',
+      // Present (0330), appended.
+      'present',
     ]);
   });
 
@@ -61,6 +63,7 @@ describe('the kind registry', () => {
         'task',
         'event',
         'recall',
+        'present',
       ]),
     );
     expect(kindsWhere((s) => s.class === 'conversation')).toEqual(['telegram_message']);
@@ -116,6 +119,8 @@ describe('derived lists, pinned to their value before the registry', () => {
       'contacts',
       'secrets',
       'recall',
+      // Present, appended: every earlier index kept.
+      'present',
     ]);
   });
 
@@ -206,6 +211,13 @@ describe('derived lists, pinned to their value before the registry', () => {
         shareable: false,
         sorts: ['name', 'updated'],
       },
+      present: {
+        kind: 'present',
+        root: 'present',
+        nodeType: 'present',
+        shareable: true,
+        sorts: ['updated', 'name'],
+      },
     });
   });
 
@@ -228,6 +240,7 @@ describe('derived lists, pinned to their value before the registry', () => {
         'journal',
         'formula',
         'draw',
+        'present',
       ]),
     );
   });

@@ -92,6 +92,9 @@ const OWNER_FRAME_RE = /^\/api\/apps\/[^/]+\/frame$/;
 /** The member-surface frame document (member logins Phase 4b): same ticket
  *  carve; the route accepts only a MEMBER ticket (`mem` claim). */
 const MEMBER_FRAME_RE = /^\/api\/member\/apps\/[^/]+\/frame$/;
+/** A Present canvas's frame document: the same ticket carve (a canvas
+ *  ticket, `cv`; the route refuses an app's). */
+const CANVAS_FRAME_RE = /^\/api\/presents\/[^/]+\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -565,8 +568,11 @@ function gateHandler(): MiddlewareHandler {
 
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
-    // acceptance: these two paths only, GET only, kind 'f' only.
-    if ((OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) && req.method === 'GET') {
+    // acceptance: these three paths only, GET only, kind 'f' only.
+    if (
+      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path) || CANVAS_FRAME_RE.test(path)) &&
+      req.method === 'GET'
+    ) {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
         return proceed('token');

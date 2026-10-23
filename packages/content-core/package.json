@@ -12,6 +12,7 @@
     "./block-diff": "./src/block-diff.ts",
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",
+    "./canvas": "./src/canvas.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
     "./formula-dimensions": "./src/formula-dimensions.ts",

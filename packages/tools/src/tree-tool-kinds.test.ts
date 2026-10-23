@@ -20,6 +20,8 @@ describe('TREE_TOOL_KINDS', () => {
       'secrets',
       'apps',
       'recall',
+      // Present, appended.
+      'present',
     ]);
   });
 });

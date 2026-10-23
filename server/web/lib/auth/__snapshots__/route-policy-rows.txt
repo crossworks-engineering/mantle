@@ -34,6 +34,7 @@ DELETE /api/pages/:id class=content scope=content caller=owner gone=false
 DELETE /api/pdf-passwords/:id class=area scope=area:keys caller=owner gone=false
 DELETE /api/peers/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
+DELETE /api/presents/:id class=content scope=content caller=owner gone=false
 DELETE /api/profile/logo class=self scope=self caller=owner gone=false
 DELETE /api/profile/photo class=self scope=self caller=owner gone=false
 DELETE /api/push/subscriptions/:id class=self scope=self caller=owner gone=false
@@ -208,6 +209,10 @@ GET /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=fal
 GET /api/peers/nodes class=area scope=area:connectors caller=owner gone=false
 GET /api/pending class=area scope=area:settings caller=owner gone=false
 GET /api/pending/:id class=area scope=area:settings caller=owner gone=false
+GET /api/presents class=content scope=content caller=owner gone=false
+GET /api/presents/:id class=content scope=content caller=owner gone=false
+GET /api/presents/:id/frame class=content scope=content caller=frame gone=false
+GET /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 GET /api/profile class=self scope=self caller=owner gone=false
 GET /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 GET /api/profile/reminder-channel class=self scope=self caller=owner gone=false
@@ -455,6 +460,10 @@ HEAD /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=fa
 HEAD /api/peers/nodes class=area scope=area:connectors caller=owner gone=false
 HEAD /api/pending class=area scope=area:settings caller=owner gone=false
 HEAD /api/pending/:id class=area scope=area:settings caller=owner gone=false
+HEAD /api/presents class=content scope=content caller=owner gone=false
+HEAD /api/presents/:id class=content scope=content caller=owner gone=false
+HEAD /api/presents/:id/frame class=content scope=content caller=frame gone=false
+HEAD /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 HEAD /api/profile class=self scope=self caller=owner gone=false
 HEAD /api/profile/photo class=self scope=self caller=ownerAsset gone=false
 HEAD /api/profile/reminder-channel class=self scope=self caller=owner gone=false
@@ -580,6 +589,7 @@ PATCH /api/openapi-connectors/:slug class=area scope=area:connectors caller=owne
 PATCH /api/pages/:id class=content scope=content caller=ownerAtRead gone=false
 PATCH /api/peers/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/pending/:id class=area scope=area:settings caller=owner gone=false
+PATCH /api/presents/:id class=content scope=content caller=owner gone=false
 PATCH /api/recall/maps/:id class=content scope=content caller=owner gone=false
 PATCH /api/secrets/:id class=area scope=area:keys caller=owner gone=false
 PATCH /api/settings/worker-groups/:id class=area scope=area:settings caller=owner gone=false
@@ -731,6 +741,8 @@ POST /api/pdf-passwords class=area scope=area:keys caller=owner gone=false
 POST /api/peers class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/rotate class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
+POST /api/presents class=content scope=content caller=owner gone=false
+POST /api/presents/:id/frame-ticket class=content scope=content caller=owner gone=false
 POST /api/push/connect class=self scope=self caller=owner gone=false
 POST /api/push/reset class=self scope=self caller=owner gone=false
 POST /api/push/subscriptions class=self scope=self caller=owner gone=false

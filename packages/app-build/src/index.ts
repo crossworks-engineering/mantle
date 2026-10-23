@@ -319,6 +319,7 @@ export function lintRuntimeImports(
  *  `declaredToolSlugs` is supplied, undeclared `host.tools.call` slugs are
  *  appended to the build's warnings (see lintToolRefs). */
 export { loadRuntimeExports } from './runtime-exports';
+export { buildCanvasCss } from './css';
 
 export async function buildApp(
   source: AppSource,

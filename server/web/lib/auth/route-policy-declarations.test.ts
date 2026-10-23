@@ -134,7 +134,12 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
       expect(findsNoLogin(declared.get(key)!, 'declarations'), key).toBe(fromLists);
       if (fromLists) noLogin.push(key);
     }
-    expect(noLogin.sort()).toEqual(['GET /api/apps/:id/frame', 'HEAD /api/apps/:id/frame']);
+    expect(noLogin.sort()).toEqual([
+      'GET /api/apps/:id/frame',
+      'GET /api/presents/:id/frame',
+      'HEAD /api/apps/:id/frame',
+      'HEAD /api/presents/:id/frame',
+    ]);
   });
 
   it("each of the login's own things is a 'self' write the manifest serves (MED-1)", () => {

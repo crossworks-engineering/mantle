@@ -174,6 +174,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'same-origin internal',
     why: 'the app sandbox default fetcher: browser calls to the box own routes',
   },
+  'packages/share-ui/src/canvas-sandbox.tsx': {
+    kind: 'same-origin internal',
+    why: 'the canvas sandbox default fetcher: the frame ticket, a browser call to the box own route',
+  },
   'packages/share-ui/src/formula-calculator.tsx': {
     kind: 'same-origin internal',
     why: 'a browser call to the share page own /s route',

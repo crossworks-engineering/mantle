@@ -95,6 +95,8 @@ server/web/.app-dbs/
 
 # Generated shared mini-app runtime (packages/app-build → build:runtime, via pre(dev|build))
 server/web/public/app-runtime/
+# Generated canvas runtime (packages/app-build → canvas-runtime, via generate)
+server/web/public/canvas-runtime/
 
 # Embedded agent-os repo (not part of this project)
 /agent-os/

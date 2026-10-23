@@ -44,6 +44,7 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/pages', 'content'],
   ['/api/notes', 'content'],
   ['/api/draws', 'content'],
+  ['/api/presents', 'content'],
   ['/api/tables', 'content'],
   ['/api/files', 'content'],
   ['/api/tree', 'content'],
@@ -169,7 +170,11 @@ export function routeClass(pattern: string): RouteClass | null {
 }
 
 /** POST routes that only read: scoped like a GET. */
-export const READ_POSTS: ReadonlySet<string> = new Set(['POST /api/formulas/:id/evaluate']);
+export const READ_POSTS: ReadonlySet<string> = new Set([
+  'POST /api/formulas/:id/evaluate',
+  // A canvas's frame ticket: it reads the canvas and mints, writes nothing.
+  'POST /api/presents/:id/frame-ticket',
+]);
 
 /** GET routes that write (A4 step 3b must-do, the 3a audit's L5): a
  *  connector's OAuth callback stores the tokens it was given (the browser
@@ -253,6 +258,10 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'POST /api/formulas/:id/evaluate',
   'GET /api/recall/maps/:id/cards/:card',
   'GET /api/recall/maps/:id/revisions',
+  // A Present canvas's frame ticket (a READ_POSTS entry) and its kept
+  // versions, in the login's scope.
+  'POST /api/presents/:id/frame-ticket',
+  'GET /api/presents/:id/revisions',
   // The landing page of the current workspace (task d78e7bde): every login
   // lands on it, in its own scope.
   'GET /api/home',
