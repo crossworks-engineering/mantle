@@ -160,6 +160,10 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       });
       createdInstance = true;
     }
+    // The route's first import is the whole of the first cell's time (4 to
+    // 12 s on a busy box, the same on main; the PATCH itself 22 to 30 ms):
+    // load it here, under the hook's budget, so a cell times its handler.
+    await import('./route');
   }, 60_000);
 
   afterAll(async () => {
