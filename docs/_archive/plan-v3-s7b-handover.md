@@ -4533,7 +4533,20 @@ containers removed by name). ~/s7b-b2/r15-run.sh <sha> <names>, plus
 `t=<files>` / `toff=<files>` for single files: s1 s2 aoff aon eon rrole
 serial off rroff matrix proof pf drill. The forge kit: ~/s7b-b2/r15/
 (mk15.sh, add15.sql: 12 new refused forms and 2 allowed; 106 refused and
-23 allowed in all). The drill reverts 0326 first. Not read at hand-over.
+23 allowed in all). The drill reverts 0326 first.
+
+Read at hand-over: serial 0 on 8a0df9238. The drill on 8a0df9238 was red
+and found a real fault: 0326's revert could not drop the ledger's tokens
+column, because migrate's derived would-refuse trigger
+(mantle_narrow_would_refuse_upd, 0319's UPDATE OF list) names it; the
+reverts after it then ran with 0326 still applied and the roll forward
+was refused (gaps below 0326's stamp, the planner doing its job). Fixed in
+03f3cae73 (the revert drops that trigger first; the next migrate derives
+it again; reproduced and checked on a scratch pg18, ~/s7b-b2/r15/rev15.sh).
+03f3cae73 changes only that revert file (no suite reads it but
+rollback-when.test.ts, 0 on the Mac), so the other gates stand on
+8a0df9238; the drill was relaunched on 03f3cae73 (x-r15drill.exit, queued
+behind the lanes at hand-over). Everything else not read at hand-over.
 
 ### Left
 
