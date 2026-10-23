@@ -132,6 +132,26 @@ function loginFactFailed(err: unknown): false {
 }
 
 /**
+ * Whether the narrow login may not change `loginId`'s disabled_at or
+ * session_epoch (0326's hold): the owner, an admin by role, or a user of the
+ * Admin workspace, disabled or not (mantle_narrow_login_held, the same
+ * definer the hold asks). A disable or a session end of such a login runs
+ * at the spot login-credential. Asked on the system pool; on a failure it
+ * answers yes, so the write takes the spot (never a refusal).
+ */
+export async function loginHeldFromNarrow(loginId: string): Promise<boolean> {
+  if (!UUID_RE.test(loginId)) return true;
+  try {
+    const rows = (await getAdminDb().execute(
+      sqlTag`select "public"."mantle_narrow_login_held"(${loginId}::uuid) as h`,
+    )) as unknown as { h: boolean }[];
+    return rows[0]?.h !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1), never the admin role alone (a
  * login taken out of Admin keeps its role): mantle_login_is_admin (0304).

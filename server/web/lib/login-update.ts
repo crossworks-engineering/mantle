@@ -7,6 +7,7 @@ import {
   and,
   authUsers,
   onFullSystemRoute,
+  onLoginHoldSpot,
   eq,
   isNull,
   mobileTokens,
@@ -235,8 +236,16 @@ export async function applyLoginChange(
       changes.contactId !== undefined ||
       changes.disabledAt === null ||
       changes.displayName !== undefined;
+    // A disable or a session end of the owner or an Admin user runs at the
+    // spot too (0326: the narrow login may not move their disabled_at or
+    // session epoch); onLoginHoldSpot asks the hold's own definer.
+    const holdWrite = changes.disabledAt !== undefined || endSessions;
     const atCredentialSpot = (fn: () => Promise<void>) =>
-      credential ? onFullSystemRoute('login-credential', fn) : fn();
+      credential
+        ? onFullSystemRoute('login-credential', fn)
+        : holdWrite
+          ? onLoginHoldSpot(targetId, fn)
+          : fn();
     await atCredentialSpot(() =>
       db.transaction(async (tx) => {
         if (firstInTx) await firstInTx(tx);

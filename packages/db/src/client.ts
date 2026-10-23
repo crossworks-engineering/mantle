@@ -76,6 +76,7 @@ export {
   loginActorNow,
   loginAreas,
   loginHasArea,
+  loginHeldFromNarrow,
   loginHoldsAdmin,
   moderatorSeatsNow,
   scopeHasArea,

@@ -14,6 +14,7 @@ import bcrypt from 'bcryptjs';
 import {
   db,
   onFullSystemRoute,
+  onLoginHoldSpot,
   mayEditSql,
   mayManageSql,
   accessKeys,
@@ -2646,14 +2647,17 @@ export async function endLoginSessions(
   // committed its first step already (a new password), and leaving the old
   // sessions alive after it must not happen silently. A second failure is
   // thrown: the request fails loudly (409 busy), never a quiet success.
+  // The owner's or an Admin user's sessions end at the spot
+  // login-credential on a narrow exit (0326: the narrow login may not move
+  // their session epoch).
   let epoch: number | null;
   try {
-    epoch = await db.transaction((tx) => run(tx));
+    epoch = await onLoginHoldSpot(loginId, () => db.transaction((tx) => run(tx)));
   } catch (err) {
     if (!isBusy(err) && pgErrorCode(err) !== '57014') throw err;
     ended.length = 0;
     unbound.length = 0;
-    epoch = await db.transaction((tx) => run(tx));
+    epoch = await onLoginHoldSpot(loginId, () => db.transaction((tx) => run(tx)));
   }
   // The request's logins are found afresh on the next guard read (L1).
   forgetRequestLogins();

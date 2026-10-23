@@ -486,6 +486,14 @@ function noteNarrowWrite(text: string): void {
   noteActorMiss(miss);
 }
 
+/** A call the narrow role could not make (a function it may not EXECUTE),
+ *  sent off the narrow route (the switch off) by a statement that route
+ *  would take: counted as the database counts a refused write (0319), so
+ *  the would-refuse count has no blind spot for refused calls. */
+export function noteNarrowWouldRefuse(actor: string, detail: string): void {
+  noteNarrowWrite(`narrow-would-refuse ${actor} ${detail}`);
+}
+
 /** gateway/pools.ts's onnotice: a trigger's miss becomes a miss, a narrow
  *  write count a miss row of its own check; anything else is printed as
  *  postgres.js prints notices by default. */

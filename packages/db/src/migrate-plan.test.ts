@@ -92,4 +92,27 @@ describe('planMigrations', () => {
     expect(p.pending.map((m) => m.folderMillis)).toEqual([220]);
     expect(p.gaps).toEqual([]);
   });
+
+  it('refuses an entry from 0314 on whose stamp ran under another hash', () => {
+    const j = [...journal, { idx: 314, tag: '0314_m314', when: 230 }, { idx: 315, tag: '0315_m315', when: 240 }];
+    const ms = [...migrations, mig(230), mig(240)];
+    const p = planMigrations(ms, j, [
+      ...ledger([100, 120, 200, 210, 220, 240]),
+      { hash: 'another-branch', created_at: '230' },
+    ]);
+    expect(p.gaps).toEqual([
+      { idx: 314, tag: '0314_m314', when: 230, hash: 'h230', refused: true, otherHash: true },
+    ]);
+    expect(gapRefusal(p.gaps)).toContain('that stamp ran here under another hash');
+  });
+
+  it('counts an entry from 0314 on as applied when its hash ran under another stamp', () => {
+    const j = [...journal, { idx: 314, tag: '0314_m314', when: 230 }];
+    const p = planMigrations([...migrations, mig(230)], j, [
+      ...ledger([100, 120, 200, 210, 220]),
+      { hash: 'h230', created_at: '90' },
+      { hash: 'other', created_at: '230' },
+    ]);
+    expect(p.gaps).toEqual([]);
+  });
 });

@@ -253,6 +253,10 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "member-turn-tx.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0325)",
   'public.mantle_member_turn_release(text)':
     "member-turn-tx.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0325)",
+  'public.mantle_member_turn_settle(text,bigint)':
+    "member-turn-tx.ts: a member chat turn's model tokens stamped on its slot at the turn's close, the scope login's own row only, only up; the token budget reads them (0326)",
+  'public.mantle_narrow_login_held(uuid)':
+    "login-update.ts and session.ts: whether a login's disable or session end runs at the spot login-credential (the owner or an Admin user, 0326's hold); also read by that hold's report branch",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
     "agents.ts deleteAgent: an assistant deleted, with or without its conversation, on the assistants area's narrow exit; the definer holds the rule (0316)",
 };
@@ -273,6 +277,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
  * spot (viewer.ts FULL_ROUTE_SPOTS).
  */
 export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_narrow_login_held(uuid)':
+    "0326's hold on auth.users (a trigger that runs as the narrow role): a read definer that answers whether a login is the owner or an Admin user; no identity read",
   'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)':
     "0320's assistant_messages guard on the narrow role's insert (the turn's message rows): a read definer that answers whether the row is consistent",
   'public.mantle_brain_id()':
@@ -356,6 +362,8 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "a member chat turn's slot (0325): runs on the system pool in the login's own scope (member-turn-tx.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
   'public.mantle_member_turn_release(text)':
     "a member chat turn's slot given back (0325): the same rule as the claim; a narrow session may not clear any login's daily cap",
+  'public.mantle_member_turn_settle(text,bigint)':
+    "a member chat turn's tokens stamped on its slot (0326): the same rule as the claim; a narrow session may not lower its own count or raise another login's",
   'public.mantle_bridge_login(uuid)':
     "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':

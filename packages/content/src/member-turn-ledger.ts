@@ -15,9 +15,11 @@
  *     cap, and its `responder_turn` tokens since then against the budget;
  *   - an admitted turn is written, so it counts from this moment.
  *
- * The token budget reads finished traces: a turn's tokens land when its trace
- * closes, so the budget can be passed by the turns already queued (at most the
- * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice.
+ * The token budget reads the ledger's own tokens: a turn's model tokens are
+ * stamped on its slot when its trace closes (settleMemberTurn, migration
+ * 0326), so the budget can be passed by the turns already queued (at most the
+ * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice. It
+ * never reads the traces: the narrow login writes those, not the ledger.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { memberTurnTx, systemDb, traces } from '@mantle/db';
@@ -49,8 +51,10 @@ export function memberDailyLimits(): MemberTurnLimits {
   };
 }
 
-/** Tokens (in + out) of this login's member chat turns since `since`, from
- *  their `responder_turn` traces (run-team-turn.ts stamps `login_id`). */
+/** Tokens (in + out) of this login's member chat turns since `since`, as
+ *  their `responder_turn` traces recorded them (run-team-turn.ts stamps
+ *  `login_id`). A record to show, never the budget: the budget sums the
+ *  ledger's tokens (settleMemberTurn), which no narrow session can change. */
 export async function memberTokensSince(
   ownerId: string,
   loginId: string,
@@ -115,4 +119,20 @@ export async function releaseMemberTurn(loginId: string, turnId: string): Promis
   await memberTurnTx(loginId, (tx) =>
     tx.execute(sql`select mantle_member_turn_release(${turnId}::text)`),
   );
+}
+
+/** Stamp a member chat turn's model tokens (in + out) on its slot, at the
+ *  turn's close: only `loginId`'s own row with that id, only up
+ *  (mantle_member_turn_settle, 0326). The token budget sums these. False
+ *  when the login holds no such slot (an Admin user's turn takes none). */
+export async function settleMemberTurn(
+  loginId: string,
+  turnId: string,
+  tokens: number,
+): Promise<boolean> {
+  const n = Math.max(0, Math.floor(tokens));
+  const rows = (await memberTurnTx(loginId, (tx) =>
+    tx.execute(sql`select mantle_member_turn_settle(${turnId}::text, ${n}::bigint) as hit`),
+  )) as unknown as { hit: boolean }[];
+  return rows[0]?.hit === true;
 }

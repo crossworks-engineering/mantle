@@ -59,6 +59,12 @@ export type StartTraceInit = {
    *  written first, and their tokens + cost count toward this trace. Consumed:
    *  a second trace given the same prelude (an image-fallback retry) gets none. */
   prelude?: TracePrelude;
+  /** Handed the trace's model tokens (in, out) when it closes, success or
+   *  failure: what the close writes to the row. For a caller that must
+   *  keep the count where the trace row's writers cannot change it (the
+   *  member turn ledger's tokens, migration 0326). Late usage after the
+   *  close is not in it. */
+  onClose?: (tokens: { in: number; out: number }) => void;
 };
 
 export type StartStepInit = {
@@ -825,6 +831,13 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
           turnSeqCounters.delete(turnId);
         }
         const duration = Date.now() - ctx.startedAtMs;
+        if (init.onClose) {
+          try {
+            init.onClose({ in: ctx.tokens.in, out: ctx.tokens.out });
+          } catch (err) {
+            logErr('close hook', err);
+          }
+        }
         const write = systemDb
           .update(traces)
           .set({

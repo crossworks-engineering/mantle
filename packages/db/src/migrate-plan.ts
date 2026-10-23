@@ -25,6 +25,19 @@
 /** The first migration number whose gap refuses the run. */
 export const GAP_REFUSED_FROM = 290;
 
+/**
+ * The first migration number whose ledger row must carry its own hash.
+ * From here on a journal entry whose `when` the ledger holds under ANOTHER
+ * hash (and whose own hash the ledger does not hold under any stamp) is
+ * refused: another migration ran under that stamp (two branches claimed
+ * the same number and `when`, and one ran on this database), or the file
+ * was edited in place after it ran; either way its SQL never ran here and
+ * the runner would skip it for ever. Below it, an edit in place stays
+ * counted as applied (historic boxes carry some). From 0314 on, a
+ * migration is never edited in place: a change is a new migration.
+ */
+export const HASH_REFUSED_FROM = 314;
+
 /** A journal entry (migrations/meta/_journal.json). */
 export type JournalEntry = { idx: number; tag: string; when: number };
 
@@ -41,6 +54,8 @@ export type MigrationGap = {
   when: number;
   hash: string;
   refused: boolean;
+  /** Its `when` is in the ledger under another hash (HASH_REFUSED_FROM). */
+  otherHash?: true;
 };
 
 export type MigrationPlan<M extends PlannedMigration> = {
@@ -59,12 +74,16 @@ export function planMigrations<M extends PlannedMigration>(
 ): MigrationPlan<M> {
   const appliedWhen = new Set<number>();
   const appliedHash = new Set<string>();
+  const hashesAt = new Map<number, Set<string>>();
   let lastWhen = -1;
   for (const row of ledger) {
     appliedHash.add(row.hash);
     if (row.created_at == null) continue;
     const when = Number(row.created_at);
     appliedWhen.add(when);
+    let at = hashesAt.get(when);
+    if (!at) hashesAt.set(when, (at = new Set()));
+    at.add(row.hash);
     if (when > lastWhen) lastWhen = when;
   }
   const byWhen = new Map(journal.map((e) => [e.when, e] as const));
@@ -75,9 +94,23 @@ export function planMigrations<M extends PlannedMigration>(
       pending.push(m);
       continue;
     }
-    if (appliedWhen.has(m.folderMillis) || appliedHash.has(m.hash)) continue;
     const e = byWhen.get(m.folderMillis);
     const idx = e?.idx ?? -1;
+    if (appliedHash.has(m.hash)) continue;
+    if (appliedWhen.has(m.folderMillis)) {
+      // Its stamp ran under another hash: from HASH_REFUSED_FROM on that is
+      // another migration's run (or an edit in place), refused.
+      if (idx < HASH_REFUSED_FROM) continue;
+      gaps.push({
+        idx,
+        tag: e?.tag ?? `when ${m.folderMillis}`,
+        when: m.folderMillis,
+        hash: m.hash,
+        refused: true,
+        otherHash: true,
+      });
+      continue;
+    }
     gaps.push({
       idx,
       tag: e?.tag ?? `when ${m.folderMillis}`,
@@ -97,11 +130,19 @@ export function gapRefusal(gaps: readonly MigrationGap[]): string {
   return (
     `migrate: refused. ${refused.length} migration(s) were never applied here but sit at or ` +
     `below the highest one applied, so the runner would skip them for ever: ` +
-    refused.map((g) => `${g.tag} (when ${g.when})`).join(', ') +
+    refused
+      .map((g) =>
+        g.otherHash
+          ? `${g.tag} (when ${g.when}: that stamp ran here under another hash)`
+          : `${g.tag} (when ${g.when})`,
+      )
+      .join(', ') +
     `. Nothing was applied. A lower-numbered migration landed after a higher one ` +
     `(merge order) or its journal when is stamped too low. Apply it by hand in a ` +
     `transaction (as system:migration) and record it in drizzle.__drizzle_migrations ` +
-    `with its hash and when, or restamp it above the mark in a new release; then run again.`
+    `with its hash and when, or restamp it above the mark in a new release; then run again. ` +
+    `A stamp that ran under another hash: find what ran under it (the ledger row's hash), ` +
+    `revert that by its revert file (which takes its ledger row out), then run again.`
   );
 }
 

@@ -147,9 +147,27 @@ BEGIN
     EXECUTE def;
     got := got || f.name;
   END LOOP;
-  IF (SELECT array_agg(x ORDER BY x) FROM unnest(got) x)
-     IS DISTINCT FROM (SELECT array_agg(x ORDER BY x) FROM unnest(want) x) THEN
-    RAISE EXCEPTION '0321: rewrote %, expected %', got, want;
+  -- The end state, not the count rewritten (a second run rewrites none):
+  -- nothing outside the expected set was rewritten, every one of the set
+  -- is there, and no function but the readers reads the two in the form
+  -- rewritten here (any other form is the catalog check's, below).
+  IF EXISTS (SELECT 1 FROM unnest(got) x WHERE x <> ALL (want)) THEN
+    RAISE EXCEPTION '0321: rewrote %, expected only %', got, want;
+  END IF;
+  IF EXISTS (SELECT 1 FROM unnest(want) w
+              WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_proc p
+                  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'public' AND p.proname = w)) THEN
+    RAISE EXCEPTION '0321: one of % is missing', want;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public'
+                AND (p.prosrc LIKE '%current_setting(''mantle.acting_login'', true)%'
+                     OR p.prosrc LIKE '%current_setting(''mantle.actor'', true)%')
+                AND p.proname NOT LIKE 'mantle\_identity\_%') THEN
+    RAISE EXCEPTION '0321: a function still reads the acting login or the actor directly';
   END IF;
 END
 $do$;

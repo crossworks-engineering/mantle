@@ -2283,6 +2283,13 @@
       "when": 1790198860000,
       "tag": "0325_member_turn_ledger_definers",
       "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1790198920000,
+      "tag": "0326_narrow_lockout_and_ledger_tokens",
+      "breakpoints": true
     }
   ]
 }

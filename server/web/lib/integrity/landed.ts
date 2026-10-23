@@ -225,8 +225,11 @@ export async function deleteLandedNode(
   )[0];
   if (!row) return { ok: false, error: 'node not found' };
 
-  // Traces first (no FK to nodes; trace_steps cascade from traces).
-  await db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId)));
+  // Traces first (no FK to nodes; trace_steps cascade from traces), at the
+  // item delete's spot: the narrow login holds no DELETE of traces.
+  await onFullSystemRoute('integrity-delete', () =>
+    db.delete(traces).where(and(eq(traces.subjectId, nodeId), eq(traces.ownerId, ownerId))),
+  );
 
   if (row.type === 'file') {
     // The item's delete on the full route from the narrow exit (plan v3.2

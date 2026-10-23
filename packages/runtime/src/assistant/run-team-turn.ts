@@ -63,6 +63,7 @@ import {
   defaultWorkspaceAssistant,
   workspaceAssistantFor,
   type ThreadMessage,
+  settleMemberTurn,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
 import { durableAttachmentsFor } from './inline-images';
@@ -114,6 +115,11 @@ export type RunTeamTurnOptions = {
    *  now is refused. Absent: the login's default
    *  (defaultWorkspaceAssistant). */
   agentSlug?: string;
+  /** The turn's slot in the member turn ledger (its workflow id), when the
+   *  enqueue claimed one (a login that is not an Admin user): the turn's
+   *  model tokens are stamped on it at the trace's close (settleMemberTurn,
+   *  0326), and the token budget sums them. */
+  ledgerTurnId?: string;
 };
 
 /** A CLIENT login's turn (client logins C4). Client chat went in W5c: the
@@ -475,6 +481,8 @@ async function runTeamTurnSteps(
 
       let capturedTraceId: string | null = null;
       let outcome: ResponderLoopResult;
+      // The trace's tokens at its close, for the ledger slot (onClose).
+      const closed: { tokens: { in: number; out: number } | null } = { tokens: null };
       try {
         outcome = await startTrace(
           {
@@ -486,6 +494,9 @@ async function runTeamTurnSteps(
             subjectId: inbound.id,
             subjectKind: 'team_turn',
             agentId: agent.id,
+            onClose: (t) => {
+              closed.tokens = t;
+            },
             data: {
               surface: 'team',
               contact_id: null,
@@ -562,6 +573,15 @@ async function runTeamTurnSteps(
             emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
           retireAbort();
           throw err;
+        }
+      } finally {
+        // Success or failure: the tokens the turn spent count on its slot.
+        const ledgerTurnId = options.ledgerTurnId;
+        const spent = closed.tokens;
+        if (ledgerTurnId && spent && spent.in + spent.out > 0) {
+          await settleMemberTurn(loginId, ledgerTurnId, spent.in + spent.out).catch((e: unknown) =>
+            console.error('[team-turn] could not stamp the turn tokens on its slot:', e),
+          );
         }
       }
 

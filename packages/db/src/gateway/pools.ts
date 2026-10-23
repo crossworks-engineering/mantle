@@ -208,6 +208,8 @@ export function getAdminDb(): PostgresJsDatabase<typeof schema> {
     sql,
     () => narrow && systemRouteNow() === 'narrow',
     narrowPoolSql,
+    // The switch off, an exit routed narrow: its refused calls are counted.
+    () => !narrow && systemRouteNow() === 'narrow',
   );
   adminActorSql = withActor;
   const client = drizzle(withActor, { schema });
@@ -328,6 +330,8 @@ export function getScopeMarkedDb(): PostgresJsDatabase<typeof schema> {
       sql,
       () => (poolNarrow ?? false) && systemRouteNow() === 'narrow',
       narrowPoolSql,
+      // Every statement here would take the narrow route were the switch on.
+      () => !(poolNarrow ?? false),
     ),
     { schema },
   ));

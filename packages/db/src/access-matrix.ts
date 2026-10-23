@@ -665,8 +665,8 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'tokens_in',
       'tokens_out',
     ],
-    delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by a login turn, system:admin-area, system:http:admin-area',
+    delete: false,
+    why: "measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area. No DELETE: the one delete (integrity landed.ts, a node's traces with the node) runs at the spot integrity-delete. Nothing decides from a trace: the member token budget reads the turn ledger's own tokens (0326), which the narrow role may not write",
   },
 });
 
@@ -842,8 +842,6 @@ export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.fre
     "a turn's live stream events (INSERT measured, round 13b): a delete and reinsert gives the narrow login nothing a plain insert does not: an event replays to the browser of the turn's owner, never a prompt or a right, and expires within 15 minutes",
   'public.pdf_passwords':
     'the owner stores a PDF password (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: it opens a PDF the brain already holds, never a right',
-  'public.traces':
-    "a trace records what ran; a forged one is a false record (S7c), never a right: nothing executes, grants or sends from a trace's owner, login, assistant or workspace",
 });
 
 /**

@@ -106,6 +106,8 @@ export async function queueWorkspaceTurn(o: {
         loginId,
         agentSlug: agent.slug,
         ...(o.streamId ? { streamId: o.streamId } : {}),
+        // The slot this turn claimed: its tokens are stamped there (0326).
+        ...(limited ? { ledgerTurnId: turnId } : {}),
       },
     };
     const client = await getDbosClient();

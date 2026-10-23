@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * One row per member chat turn, written when the turn is QUEUED (migration
@@ -18,6 +18,9 @@ export const memberTurnLedger = pgTable(
     ownerId: uuid('owner_id').notNull(),
     loginId: uuid('login_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The turn's model tokens (in + out), stamped at its close by
+     *  mantle_member_turn_settle (0326); the token budget sums them. */
+    tokens: bigint('tokens', { mode: 'number' }).default(0).notNull(),
   },
   (t) => [index('member_turn_ledger_login_idx').on(t.loginId, t.createdAt)],
 );
