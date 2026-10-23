@@ -123,6 +123,18 @@ describe('GET /api/presents/:id/frame through the pipeline', () => {
     expect(res).toEqual({ status: 401, body: 'frame ticket required' });
   });
 
+  it('a canvas ticket lives 30 seconds (it sits in a URL the canvas can read)', async () => {
+    const query = canvasTicket({ actorId: ANCHOR });
+    vi.useFakeTimers({ now: Date.now() + 31_000, toFake: ['Date'] });
+    try {
+      const res = await frame(path, query);
+      expect(res.status).toBe(401);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(h.rendered).toEqual([]);
+  });
+
   it("an invalid ticket, or none: the gate's 401, before the handler", async () => {
     for (const query of ['t=not-a-ticket', null]) {
       const res = await frame(path, query);

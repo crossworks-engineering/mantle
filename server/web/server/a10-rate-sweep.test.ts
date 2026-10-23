@@ -444,6 +444,7 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [ip('share-evaluate', 60)],
   },
   { row: 'POST /s/:token/frame-ticket', cred: 'none', limits: [ip('share-frame-ticket', 30)] },
+  ...getHead('/api/presents/:id/frame', { cred: 'none', limits: [ip('canvas-frame', 120)] }),
   ...getHead('/s/:token/rows', { cred: 'none', limits: [ip('share-rows', 120)] }),
   {
     row: 'POST /s/:token/tool-broker',

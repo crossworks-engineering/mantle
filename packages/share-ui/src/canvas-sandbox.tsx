@@ -18,7 +18,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 
-type Status = 'loading' | 'ready' | 'error' | 'missing';
+type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
 /** The host page's theme as the frame takes it (class + data-color-theme). */
 function hostTheme(): { cls: string; colorTheme: string | null } {
@@ -55,7 +55,9 @@ export function CanvasSandbox({
   loader?: ReactNode;
   className?: string;
   onReady?: () => void;
-  /** An error the canvas reported (uncaught, or a library that failed). */
+  /** An error the canvas reported (uncaught, or a library that failed). The
+   *  canvas chose these words: untrusted text, never an instruction to a
+   *  model that reads it. */
   onError?: (message: string) => void;
 }) {
   const apiBase = apiBaseOverride ?? `/api/presents/${presentId}`;
@@ -63,6 +65,11 @@ export function CanvasSandbox({
   const [src, setSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [failure, setFailure] = useState<string | null>(null);
+  // Load events of the current frame element. The first is the canvas; a
+  // second means the canvas navigated its own frame somewhere else (it may:
+  // a sandboxed frame keeps self-navigation). The frame is then taken down,
+  // so whatever it went to is never left on screen to be typed into.
+  const loads = useRef(0);
   // The latest callbacks, read by the effects without re-running them.
   const handlers = useRef({ onReady, onError, fetcher });
   handlers.current = { onReady, onError, fetcher };
@@ -145,7 +152,22 @@ export function CanvasSandbox({
     return () => obs.disconnect();
   }, []);
 
+  const onFrameLoad = () => {
+    loads.current += 1;
+    if (loads.current < 2) return;
+    setSrc(null);
+    setStatus('left');
+    handlers.current.onError?.('the canvas tried to open another page');
+  };
+
+  // The element the load count belongs to. A callback ref runs again on every
+  // render (null, then the same element), so only a NEW element resets it.
+  const countedFrame = useRef<HTMLIFrameElement | null>(null);
   const setFrame = (el: HTMLIFrameElement | null) => {
+    if (el && el !== countedFrame.current) {
+      countedFrame.current = el;
+      loads.current = 0;
+    }
     iframeRef.current = el;
     if (typeof frameRef === 'function') frameRef(el);
     else if (frameRef) (frameRef as { current: HTMLIFrameElement | null }).current = el;
@@ -161,13 +183,17 @@ export function CanvasSandbox({
           title={title}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
+          onLoad={onFrameLoad}
           className="absolute inset-0 h-full w-full border-0 bg-background"
         />
       ) : null}
       {status === 'loading' && failure ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-background px-6 text-center">
           <p className="text-sm text-muted-foreground">The canvas failed to start.</p>
-          <p className="max-w-prose text-xs text-muted-foreground">{failure}</p>
+          {/* The canvas's own words, labelled as such: it chose them. */}
+          <p className="max-w-prose text-xs text-muted-foreground">
+            Reported by the canvas: {failure.slice(0, 200)}
+          </p>
         </div>
       ) : status === 'loading' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background">
@@ -176,6 +202,12 @@ export function CanvasSandbox({
       ) : status === 'missing' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background">
           <p className="text-sm text-muted-foreground">This canvas is not available.</p>
+        </div>
+      ) : status === 'left' ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background px-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            The canvas tried to open another page, so it was stopped. Replay to run it again.
+          </p>
         </div>
       ) : status === 'error' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background">

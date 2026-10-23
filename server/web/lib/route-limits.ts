@@ -161,6 +161,9 @@ export const RATE_LIMITS = {
     'canvas loads (frame tickets)',
     'Keep the canvas open instead of reloading it.',
   ),
+  /** A canvas frame document, per address: its ticket is in its URL and the
+   *  canvas can read it, so a replay within the ticket's life is bounded. */
+  canvasFrame: perIp('canvas-frame', 120),
   memberDbBroker: appLimit(
     'member-db-broker',
     600,
@@ -251,6 +254,7 @@ export const ROUTE_GATES: ReadonlyMap<string, RouteGates> = new Map<string, Rout
   ['POST /api/member/push/subscriptions', { rateLimit: ['pushEnrol'] }],
   ['POST /api/apps/:id/frame-ticket', { rateLimit: ['memberFrameTicket'] }],
   ['POST /api/presents/:id/frame-ticket', { rateLimit: ['memberCanvasFrameTicket'] }],
+  ['GET /api/presents/:id/frame', { rateLimit: ['canvasFrame'] }],
   ['POST /api/apps/:id/db-broker', { rateLimit: ['memberDbBroker'] }],
   ['POST /api/apps/:id/tool-broker', { rateLimit: ['memberToolBroker'] }],
   ['GET /api/files/files/:id', { rateLimit: ['memberBytes', 'memberThumbs'] }],

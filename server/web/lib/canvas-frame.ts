@@ -97,6 +97,9 @@ export async function renderCanvasFrame(
       // any parsing (section 5.2).
       'content-security-policy': buildCanvasFrameCsp(requestOrigin(req), frameAncestors()),
       'x-content-type-options': 'nosniff',
+      // No DNS lookups ahead of a navigation a canvas names (a prefetch is
+      // a lookup the CSP does not see).
+      'x-dns-prefetch-control': 'off',
       // No Cache-Control here: /api answers no-store by default.
       'referrer-policy': 'no-referrer',
     },
