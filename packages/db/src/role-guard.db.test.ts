@@ -561,9 +561,7 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
         await tx`reset role`;
         await tx`insert into archive_client_logins (login_id, email, created_at, session_epoch)
                  values (${id}, ${`${tag}-arc@example.test`}, now(), 0) on conflict do nothing`;
-        if (await roleExists(sql, RUNTIME_ROLE)) {
-          await tx.unsafe(`set local role "${RUNTIME_ROLE}"`);
-        }
+        await tx.unsafe(`set local role "${RUNTIME_ROLE}"`);
         await tx`select mantle_bridge_login(${id}::uuid)`;
         const [r] = await tx<{ row: boolean }[]>`
           select exists (select 1 from workspace_users u
