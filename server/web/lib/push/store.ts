@@ -15,6 +15,7 @@ import {
   pushSubscriptions,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
+import { loginIsAdmin, loginRole } from '@/lib/auth/admin-seat';
 import { relayDeleteDevice } from './relay-client';
 
 export interface PushInstanceSecret {
@@ -126,7 +127,8 @@ export async function listAdminSubscriptions(
     .where(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
-        eq(authUsers.role, 'admin'),
+        // An Admin user now, the login enabled (membership decides, S8b).
+        loginIsAdmin(authUsers.id),
         isNull(authUsers.disabledAt),
         or(
           isNull(pushSubscriptions.tokenId),
@@ -158,7 +160,8 @@ export async function listLoginSubscriptions(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
         eq(pushSubscriptions.loginId, loginId),
-        eq(authUsers.role, 'member'),
+        // Not an Admin user (membership decides, S8b): a member.
+        sql`${loginRole(authUsers.id)} = 'member'`,
         isNull(authUsers.disabledAt),
         eq(mobileTokens.userId, loginId),
         tokenLive(),
@@ -177,7 +180,8 @@ export async function listAdminDeviceList(ownerId: string): Promise<DeviceRow[]>
     .where(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
-        or(isNull(pushSubscriptions.loginId), eq(authUsers.role, 'admin')),
+        // An Admin user's device, enabled or not (the display role, S8b).
+        or(isNull(pushSubscriptions.loginId), sql`${loginRole(authUsers.id)} = 'admin'`),
       ),
     );
   return rows as DeviceRow[];

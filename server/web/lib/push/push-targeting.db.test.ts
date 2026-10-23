@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { asSuperuser } from '@mantle/db/test-support';
+import { asSuperuser, ensureAdminUsers, superuserClient } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -129,6 +129,15 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', ${role})`;
     }
     await sql`update auth.users set disabled_at = now() where id = ${goneAdmin}`;
+    // An admin is a user of the Admin workspace (membership decides, S8b),
+    // seated on the superuser's own client (the app pools only read the
+    // workspace tables under the runtime role).
+    const su = superuserClient(URL!);
+    try {
+      await ensureAdminUsers(su, [admin1, admin2, admin3, goneAdmin]);
+    } finally {
+      await su.end();
+    }
     await device(brain, admin1, 'admin1-legacy', null);
     await device(brain, admin2, 'admin2-live', await token(admin2));
     await device(brain, admin3, 'admin3-revoked', await token(admin3, { revoked: true }));
