@@ -59,6 +59,16 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
       await new Promise((r) => setTimeout(r, 20));
     }
   };
+  /** The rows once they read as `want` (polled up to 10 s), else as they
+   *  are then. */
+  const rowsLanded = async (want: Record<string, number>) => {
+    let got = await rowsBySite();
+    for (let i = 0; i < 100 && JSON.stringify(got) !== JSON.stringify(want); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      got = await rowsBySite();
+    }
+    return got;
+  };
   const inWriteRequest = <T>(fn: () => Promise<T>): Promise<T> =>
     v.runInRequestSlot(async () => {
       const scope = Object.freeze({
@@ -108,8 +118,11 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
         .set({ provider: 'x' })
         .where(sql`false`);
     });
-    await settle();
-    expect(await rowsBySite()).toEqual({ 'fail-open:typed-write': 1 });
+    // Waits for the row itself (up to 10 s): a row that lands after a
+    // fixed wait would be counted by the next cell instead.
+    expect(await rowsLanded({ 'fail-open:typed-write': 1 })).toEqual({
+      'fail-open:typed-write': 1,
+    });
     fo.takeFailOpenHits();
   });
 
@@ -136,11 +149,8 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
       expect(await m.scopeHoldsAdmin()).toBe(true);
       expect(await m.scopeHasArea('settings')).toBe(true);
     });
-    await settle();
-    expect(await rowsBySite()).toEqual({
-      'fail-open:scope-holds-admin': 1,
-      'fail-open:scope-has-area': 1,
-    });
+    const want = { 'fail-open:scope-holds-admin': 1, 'fail-open:scope-has-area': 1 };
+    expect(await rowsLanded(want)).toEqual(want);
     fo.takeFailOpenHits();
   });
 });
