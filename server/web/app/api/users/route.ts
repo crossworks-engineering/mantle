@@ -203,10 +203,14 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    // The membership definer refused the caller (no users area): a 403.
+    // The membership definer refused the caller: a 403 (the one mapper the
+    // role change uses too).
     const refused = adminMembershipRefusal(err);
-    if (refused?.status === 403) {
-      return NextResponse.json({ error: refused.error, reason: refused.reason }, { status: 403 });
+    if (refused) {
+      return NextResponse.json(
+        { error: refused.error, reason: refused.reason },
+        { status: refused.status },
+      );
     }
     return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 });
   }

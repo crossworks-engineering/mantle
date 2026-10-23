@@ -67,7 +67,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       : await applyLoginChange(user, target, body);
   } catch (err) {
     // The definer's refusal: the last Moderator of Admin (409), or a caller
-    // it refuses, one without the users area (403).
+    // it refuses (403: no users area, no Admin seat, a read-only or no
+    // acting login, any other 42501).
     const refused = adminMembershipRefusal(err);
     if (refused) {
       return NextResponse.json(

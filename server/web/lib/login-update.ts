@@ -3,6 +3,7 @@ import { LOGIN_ROLES, isLoginRole, type LoginRole } from '@mantle/client-types/r
 import {
   isCheckViolation,
   isUniqueViolation,
+  pgErrorCode,
   db,
   and,
   authUsers,
@@ -404,22 +405,45 @@ export function definerRefusal(err: unknown): string | null {
   return null;
 }
 
+/** The caller refusals of the membership definers that carry no 42501:
+ *  the caller is no user of the workspace (P0002 `not_found`, the seat
+ *  lookup), and the two the exit's acting login raises (42501 already, kept
+ *  by name so the answer never hangs on the SQLSTATE alone). */
+const CALLER_REFUSALS: ReadonlySet<string> = new Set(['not_found', 'no_acting_login', 'read_only']);
+
+/** The refusals that say the caller lacks the users area. */
+const USERS_AREA_REFUSALS: ReadonlySet<string> = new Set([
+  'admin_users_only',
+  'admin_only',
+  'forbidden',
+]);
+
 /** The answer for a membership definer's refusal of the Users screen's
  *  role change or admin login create, or null for any other error: the
  *  last Moderator of Admin is the old last-admin 409; a caller the definer
- *  refuses (no users area, not an Admin user: 42501) is a 403, not a 500. */
+ *  refuses is a 403, not a 500: any `mantle_ws:` refusal with SQLSTATE
+ *  42501, and the caller's own not_found, no_acting_login and read_only.
+ *  The one mapper of both routes (PATCH /api/users/[id], POST /api/users). */
 export function adminMembershipRefusal(
   err: unknown,
 ): { status: 403 | 409; reason: string; error: string } | null {
   const code = definerRefusal(err);
+  if (code === null) return null;
   if (code === 'last_moderator') {
     return { status: 409, reason: 'last-admin', error: LAST_ADMIN_MESSAGE };
   }
-  if (code === 'admin_users_only' || code === 'admin_only' || code === 'forbidden') {
+  if (USERS_AREA_REFUSALS.has(code)) {
     return {
       status: 403,
       reason: 'users-area',
       error: 'Changing who is an admin needs the users area.',
+    };
+  }
+  if (CALLER_REFUSALS.has(code) || pgErrorCode(err) === '42501') {
+    return {
+      status: 403,
+      reason: 'forbidden',
+      error: 'You may not change who is an admin.',
     };
   }
   return null;

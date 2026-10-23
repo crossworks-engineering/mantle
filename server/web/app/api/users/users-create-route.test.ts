@@ -176,6 +176,23 @@ describe('POST /api/users, the insert refused', () => {
     expect(h.txCount).toBe(0);
   });
 
+  it('answers 403 when the membership definer refuses the caller (r6 app L1, one mapper)', async () => {
+    for (const [code, state] of [
+      ['no_acting_login', '42501'],
+      ['read_only', '42501'],
+      ['not_found', 'P0002'],
+      ['admin_users_only', '42501'],
+      ['owner_stays_admin', '42501'],
+    ] as const) {
+      h.insertError = Object.assign(new Error('Failed query: select mantle_ws_add_user(...)'), {
+        cause: { code: state, message: `mantle_ws:${code} mantle_ws_add_user: x` },
+      });
+      const { POST } = await import('./route');
+      const res = await POST(post(BODY));
+      expect(res.status, code).toBe(403);
+    }
+  });
+
   it('still answers 500 for any other database error', async () => {
     h.insertError = drizzleError('23503');
     const { POST } = await import('./route');

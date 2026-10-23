@@ -7,7 +7,9 @@
  *  - any other refusal is thrown on (the savepoint is not released);
  *  - nothing runs when membership already says what the change asks;
  *  - adminMembershipRefusal: the last Moderator is the 409 last-admin, a
- *    caller the definer refuses (no users area) a 403, anything else null.
+ *    caller the definer refuses (no users area, any 42501 mantle_ws
+ *    refusal, the caller's not_found, no_acting_login, read_only) a 403,
+ *    anything else null.
  */
 import { describe, expect, it } from 'vitest';
 import { adminMembershipChange, adminMembershipRefusal, type LoginTx } from './login-update';
@@ -111,5 +113,32 @@ describe('adminMembershipRefusal', () => {
     }
     expect(adminMembershipRefusal(pg('mantle_ws:archived mantle_ws_add_user: x'))).toBeNull();
     expect(adminMembershipRefusal(new Error('connection lost'))).toBeNull();
+  });
+
+  it('any 42501 mantle_ws refusal, and the caller`s not_found, no_acting_login and read_only, is a 403 (r6 app L1)', () => {
+    const pgc = (message: string, code: string) => ({
+      message: 'wrapped',
+      cause: { message, code },
+    });
+    for (const code of ['not_found', 'no_acting_login', 'read_only']) {
+      expect(adminMembershipRefusal(pg(`mantle_ws:${code} mantle_ws_add_user: x`)), code).toEqual(
+        expect.objectContaining({ status: 403, reason: 'forbidden' }),
+      );
+    }
+    for (const code of ['owner_stays_admin', 'self_demote', 'something_new']) {
+      expect(
+        adminMembershipRefusal(pgc(`mantle_ws:${code} mantle_ws_remove_user: x`, '42501')),
+        code,
+      ).toEqual(expect.objectContaining({ status: 403 }));
+    }
+    // A target's refusal is not the caller's: no 403 by name alone.
+    for (const code of ['user_not_found', 'not_user', 'already_user']) {
+      expect(
+        adminMembershipRefusal(pgc(`mantle_ws:${code} mantle_ws_add_user: x`, 'P0002')),
+        code,
+      ).toBeNull();
+    }
+    // A 42501 that is no definer refusal (a permission error) is not mapped.
+    expect(adminMembershipRefusal(pgc('permission denied for table users', '42501'))).toBeNull();
   });
 });
