@@ -138,7 +138,7 @@ brain with the agent's normal read tools first).
         content="Process flow for the unit 3 feed section, pumps P-301A/B to exchanger E-302."
       />
       <meta name="canvas:size" content="1600x900" />
-      <!-- design size; the host scales to fit -->
+      <!-- design size, or "fill" for a responsive layout (section 8.1) -->
     </head>
     <body>
       ...
@@ -245,10 +245,23 @@ Reuse the app frame plumbing, minus the bridge:
 - **Private data baked in.** A canvas carries whatever data the agent put in
   it. Sharing it is the same explicit act as sharing a file; workspace rules
   for members apply as for any file.
-- **Public shares.** Technically safe with the frame route above, but it
-  puts agent-written script in front of anonymous visitors on the brain's
-  domain. Recommend v1: shares to logins and contacts only; public links
-  show the PNG poster. Open question 3.
+- **Public shares (decided 2026-10-23: public links show the live canvas,
+  full screen).** This puts agent-written script in front of anonymous
+  visitors on the brain's domain, so the share path must hold these rules:
+  - The same frame CSP and `sandbox` as everywhere else; the frame is
+    served from `/s/<token>/canvas-frame` with a short-lived ticket, exactly
+    like a shared app frame.
+  - No server work from a public view: the public path never starts a
+    Chromium render (the draw rule in [docs/draw.md](../draw.md) section
+    4); the poster used for link previews is filled by owner paths only.
+  - A rate limit on the frame route (`RATE_LIMITS` + `ROUTE_GATES`).
+  - A small host pill on the page (as shared apps have) that says it is a
+    shared canvas, so a fake form inside cannot pass as the brain's own UI.
+  - Closing the link, or deleting the file, stops it at once.
+
+  Open item for the audit: a public canvas shows the LATEST saved version,
+  so an agent edit goes live to the public at once. If that is a concern,
+  a share can pin a revision once revisions exist (open question 4).
 
 ## 6. Libraries policy
 
@@ -466,12 +479,51 @@ Presenter later, which would leave one visual specialist.
 
 ## 8. Embedding
 
-- **Files workspace:** add a `.canvas` branch to `FilePreviewBody`
-  (client `client/web/app/(app)/files/file-editor.tsx` lines 385 to 444)
-  before the `isText` text view, with a "Source" toggle that falls back to
-  the existing text editor. Add the label in
-  `packages/web-ui/src/lib/mime-label.ts`. There is no viewer registry today,
-  so this is a branch, not a plug-in.
+### 8.1 Files workspace: open it live (Jason, 2026-10-23)
+
+Clicking a `.canvas` in `/files` opens the **full live canvas**, scripts
+and animation running, in the item's content area. Not a thumbnail, not
+the source.
+
+- **Where:** a `.canvas` branch in `FilePreviewBody` (client
+  `client/web/app/(app)/files/file-editor.tsx` lines 385 to 444), placed
+  BEFORE the `isText` text view, so the text editor no longer wins. Label in
+  `packages/web-ui/src/lib/mime-label.ts`. There is no viewer registry
+  today, so this is a branch, not a plug-in.
+- **Header actions,** on the standard item header
+  (`client/web/components/layout/item-header.tsx`):
+  - **Maximise** with the existing `FocusToggle`
+    (`client/web/components/layout/focus-toggle.tsx`): hides the shell and
+    the folders exactly as Pages and the other kinds do, Esc leaves. Same
+    slot, same icon.
+  - **Full screen**: the browser Fullscreen API on the canvas frame only,
+    for presenting. Esc leaves. The parent calls it, so the frame needs no
+    extra permission.
+  - **Replay**: reloads the frame, so an animation starts again.
+  - **Source**: switches to the existing text view of the HTML (read for
+    everyone, edit for those who may edit the file).
+  - **Share**: the existing share action.
+- **Fit:** `canvas:size="1600x900"` scales the design to fit the space with
+  letterboxing, so a diagram or slide looks the same at every size.
+  `canvas:size="fill"` gives the canvas the whole viewport and lets it lay
+  itself out, as a mini app does.
+- **Mobile:** the same live frame (the client and the phone app use the
+  same frame route).
+
+### 8.2 Public share: full screen
+
+A shared canvas copies the shared-app layout that exists today: `/s/<token>`
+skips the share shell and renders the frame at `h-dvh` with a small
+floating pill (`server/web/server/pages/share.tsx`, the `app` case, around
+lines 219 and 269). So a public link opens straight into the canvas, full
+window, scripts running. The pill carries a full-screen button and the
+"shared canvas" label. The file share presenter
+(`packages/share-ui/src/file-presenter.tsx`) gets a `canvas` branch, since
+today any non-media file there shows as a download. Contact shares use the
+same view. Safety rules: section 5.3.
+
+### 8.3 Other places
+
 - **Pages:** markdown `![title](canvas:<file-id>)`, mirroring the existing
   `draw:<id>` image embed (client `page-editor/image.ts`). Human-writable,
   per the Pages dialect principle. In the editor it is a sandboxed iframe
@@ -497,8 +549,9 @@ Presenter later, which would leave one visual specialist.
    specialists can recreate the routing confusion. My pick: new Presenter
    now, with the one-line routing rule, and decide on a merge after the
    eval numbers.
-3. **Public shares of canvases in v1?** My pick: no, poster PNG on public
-   links; live canvases for logins and contacts.
+3. ~~Public shares of canvases in v1?~~ **Decided 2026-10-23: yes, the live
+   canvas, full screen** (sections 5.3 and 8.2). Still open: should a
+   public link follow the latest save, or a pinned revision?
 4. **History:** keep the last 10 revisions, or plain overwrite like files?
 5. **Library set:** approve the set in section 6.1, now with Alpine.js. Is GSAP's licence
    fine for a public, commercially licensed repo, or is Motion enough?
@@ -509,13 +562,13 @@ Presenter later, which would leave one visual specialist.
 
 ## 10. Phased plan (rough sizes, one developer)
 
-| Phase                | Scope                                                                                                                                                                                                                                                | Repo  | Size        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------- |
-| P0 Spike             | A hand-written `.canvas` in Files; frame route with the CSP; open it in the client. Prove the sandbox, theme message, import map                                                                                                                     | both  | 1 to 2 days |
-| P1 Format and viewer | `canvas` ext, MIME, `TEXT_EXTS`; frame routes (owner + share) and ticket; `/canvas-runtime/` with the vendored set and import map; extractor for indexing; Files viewer branch + source toggle; contract bump (share-ui frame builder, client-types) | both  | 4 to 6 days |
-| P2 Agent             | `canvas` and `canvas-read` groups and tools; `/render/canvas/:id` + `canvas_render` with console capture; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                             | brain | 4 to 5 days |
-| P3 Embeds            | `canvas:` page embed + poster fallback for print, DOCX, email and `/s`; `show_canvas` chat card; shares to logins and contacts                                                                                                                       | both  | 3 to 4 days |
-| P4 Later             | Revisions; Slides element (when Slides resumes); optional bundle tree; `canvas_export` zip                                                                                                                                                           | both  | per item    |
+| Phase                | Scope                                                                                                                                                                                                                                                                            | Repo  | Size        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------- |
+| P0 Spike             | A hand-written `.canvas` in Files; frame route with the CSP; open it in the client. Prove the sandbox, theme message, import map                                                                                                                                                 | both  | 1 to 2 days |
+| P1 Format and viewer | `canvas` ext, MIME, `TEXT_EXTS`; frame routes (owner + share) and ticket; `/canvas-runtime/` with the vendored set and import map; extractor for indexing; Files live viewer with Maximise, Full screen, Replay and Source; contract bump (share-ui frame builder, client-types) | both  | 4 to 6 days |
+| P2 Agent             | `canvas` and `canvas-read` groups and tools; `/render/canvas/:id` + `canvas_render` with console capture; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                         | brain | 4 to 5 days |
+| P3 Embeds            | `canvas:` page embed + poster fallback for print, DOCX, email and `/s`; `show_canvas` chat card; public, contact and login shares as a full-screen `/s` view with the pill, rate limit and owner-only poster fill                                                                | both  | 3 to 4 days |
+| P4 Later             | Revisions; Slides element (when Slides resumes); optional bundle tree; `canvas_export` zip                                                                                                                                                                                       | both  | per item    |
 
 Each phase lands with an independent read-only security audit on a fixed
 commit, as for other security-sensitive work, since this is the first
