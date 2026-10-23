@@ -4847,3 +4847,138 @@ Workstation (units s7b-b2r15c-r15f<name>, results
 1. The CEO's call on fsync=off for the shared kit (`suite.sh`).
 2. The renumber at the rebase (unchanged).
 3. Backlog (CEO decision): Telegram member tokens toward the budget.
+
+## Part b2, round 16 (part a): the re-audits' fixes (handed over before the rebase)
+
+Same branch. Inputs: the brief's "b2 round 16 inputs", parts A (app
+side, 8.5/10) and B (DB side, 8/10, one MED). This builder did part (a)
+of the round's order (the fixes, with the touched suites) and hands over
+before (b), the rebase, at about 120 tool calls. No migration number
+moved yet.
+
+### Done
+
+- DB MED-1 (the derived triggers hold columns): migrate drops every
+  derived would-refuse trigger before the first pending migration
+  (`dropNarrowWouldRefuse`, called from `applyJournal`) and makes them
+  again from the grants after the last (`applyNarrowWouldRefuse`, in
+  `afterMigrations`); a migration that fails puts them back on its way
+  out; a migrate with nothing pending touches none. Cell
+  (`narrow-would-refuse.db.test.ts`, last): on a migrated database two
+  watched columns on agents, a direct drop (2BP01) and retype (0A000)
+  fail as the audit said, the same through the runner apply, the
+  triggers come back the same set, a failed migration leaves them, an
+  empty run drops none. Doc: runtime-role.md, "The derived triggers hold
+  columns" (the rule, and what a hand-run revert does).
+- DB LOW-1: the trigger build left applyRuntimeGrants' one transaction:
+  one transaction per table, `SET LOCAL lock_timeout = '3s'`, retried
+  (withRetry, 8 tries a second apart) on 55P03 and 40P01; each table read
+  again inside its own transaction.
+- App L4 + DB LOW-2 (a held login's grants): 0326 (edited in place, never
+  run on a box) gains `mantle_narrow_token_hold`, a plain BEFORE trigger
+  on access_keys (UPDATE OF revoked_at, revoked_by), oauth_access_tokens
+  and mobile_tokens (UPDATE OF revoked_at), oauth_auth_codes and
+  oauth_clients (DELETE): the narrow role may not revoke or remove a
+  grant of the owner or an Admin user, nor remove an MCP client a live
+  grant of theirs rides on (`mantle_narrow_client_held`, a read definer:
+  the delete cascades); a key's revoked_by is never rewritten on a key
+  already revoked (the INFO). Off the narrow route the same write by a
+  narrow reason is counted (0319's report branch). The revert drops both.
+  Product sites run at the spot login-credential when held, through
+  `onLoginHoldSpot` (now a login or `{ client }`, one spot holder): the
+  devices route (`DELETE /api/users/:id/devices/:jti`), the phone's
+  sign-out, the device token rotation, a login's grants on one MCP
+  client, the MCP client removal, the OAuth code burn. Both functions
+  are on the narrow EXECUTE list and the runtime list (the trigger runs
+  as the writer). Cells: `narrow-lockout.db.test.ts` (the real narrow
+  login: ten forms refused 42501 and rows unchanged, a member's four
+  revokes pass, off the route counted, at a spot not).
+- App L1 (calls inside plain trigger functions): a catalog cell in
+  `runtime-role.db.test.ts` walks every non-definer trigger function on a
+  table the narrow role may write, through plain functions (a definer
+  reached is checked for EXECUTE and not walked past), and requires
+  narrow EXECUTE on every `mantle_` function reached: green, nothing
+  missing. Comments corrected (runtime-role.md, narrow-route.ts, the
+  NARROW_SYSTEM_FUNCTIONS header).
+- App L2: the lockout re-run cell picks the narrow set by name from the
+  journal and asserts the thirteen names in order (a renumber cannot swap
+  in another branch's migration).
+- App L3: `loginDefinerCall` refuses unless the login is every bound
+  login: a login actor's, the exit's acting login, and the open scope's
+  login (a Telegram turn's shape). `DEFINER_CALL` is now exactly one
+  select of one `mantle_` function, its arguments bound parameters only
+  (columns may be cast and named). Cells: unit (the seven real shapes
+  pass, eight forms with another call, table, clause or statement
+  refused); DB (`member-turn-ledger-narrow.db.test.ts`: a system actor in
+  another login's scope refused, two shapes refused, rows unchanged).
+- App L5: the sweep drives `PATCH /api/users/:id {disabled:true}` on an
+  Admin user and the owner's `POST /api/auth/logout {everywhere:true}`
+  (last in a pass): equal both ways, landed (disabled; epoch moved, no
+  live device), nothing refused; both pinned at login-credential in
+  SPOT_ROWS, with the device revoke and the MCP client removal (four new
+  keys, all login-credential).
+- DB LOW-3: `mantle_identity_leaks` (0321, edited in place) reads what a
+  function sets: a body's set_config or SET of an identity key, a key
+  built at run time (outside the three marker functions), and a
+  function's own SET clause naming one; the actor only by its two
+  setters; the structure definer's clause only blanks its three create
+  keys. Planted forms in `identity-gateway.db.test.ts` (six found, an
+  allowed key not); the live catalog reads no leak.
+- DB LOW-4: the box script prints `narrow_counter_triggers` and
+  `narrow_counter_actor_check`; runtime-role.md says b3 needs triggers
+  above 0 and the mode warn or on on every box.
+- DB LOW-5: merge-branch.sh refuses a new migration stamped at or below
+  any of the branch's own earlier stamps (every head in its reflog, so
+  the heads before a rebase); the planner's refusal text says how to
+  clear a stale stamp by hand (a revert file deletes by the stamp it
+  carries now).
+- INFO soak wording (runtime-role.md): b3 flips only the version that
+  soaked; a rare path rests on the switch-on suites.
+
+### Gates so far (touched suites, switch on, fsync off clusters)
+
+Mac on each pushed head: typecheck, lint, format, docs, arch, unit (pnpm
+verify) 0 on 464d556a7. Workstation (`~/s7b-b2/r16-run.sh`, units
+`s7b-b2r16-r16<name>`, results by `~/s7b-b2/r16-res.sh r16<name>`):
+
+| run                                                                       | head      | result                                                                                               |
+| ------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
+| identity-gateway, acl-flag, narrow-would-refuse, runtime-role.db, lockout | 464d556a7 | 0 (5 files)                                                                                          |
+| member ledger narrow, login-definer, users-lockout, devices, oauth, admin | 464d556a7 | 1: users-lockout's disable 15 s timeout in the group; alone 0 (4.3 s, the first import of the route) |
+| narrow-area-sweep                                                         | 464d556a7 | 1: SPOT_ROWS only (two new keys, pinned in eece67987)                                                |
+| runtime-role suite (rrole)                                                | 464d556a7 | see r16rrole (was running at the handover)                                                           |
+| lockout + identity-gateway, sweep, ledger group, users-lockout alone      | 76a5ddc5e | launched at the handover (r16t40bf9e, r16t1af07e, r16tba825a, r16t6a295d)                            |
+
+### Left (round 16b)
+
+1. Read r16rrole and the four 76a5ddc5e runs; fix what is real
+   (users-lockout's disable only under load so far).
+2. INFO not done: the catalog load failure noting a miss row
+   (narrow-would-refuse.ts:44); narrowBegin's outer catch noting
+   non-narrow 42501s (narrow-route.ts ~537); one cause walker; the scan
+   regex against CALLED_FN. Identity readers' search_path: not pinned,
+   on purpose (a SET clause stops a SQL reader inlining into the row
+   policies; they call only schema-qualified and pg_catalog functions,
+   and no app role may create in any schema or in pg_temp).
+3. The forge kit (`~/s7b-b2/r15c/proof15c.sh`): add the grant-hold forms
+   and the SET leak forms; copy the edited 0321 and 0326 into the kit if
+   it applies its own copies.
+4. (b) THE REBASE onto origin/main (main's last: 0314_ws_connector_options,
+   when 1790198160000; b2's own high mark 1790198860000): renumber
+   0314-0326 to 0315-0327 (files, journal tags and idx, rollback files),
+   restamp the whole set above 1790198920000 (0315 at 1790198980000, then
+   +60000 each), each revert's ledger delete to its new stamp, the
+   numeric references (comments, docs, pins, the lockout cell's names are
+   by name already), viewer.ts / viewer-scope.ts FULL_ROUTE_SPOTS
+   conflicts, the call-scan decision for main's
+   mantle_ws_connector_options (a login scope through the gateway
+   readers), team-app Table writes with the switch on. merge-branch.sh's
+   new check then reads the old stamps from the reflog.
+5. Checklist for any database that ran a b2 build: only the workstation's
+   throwaway test and drill clusters (dev and every fleet box never ran
+   a b2 migration). Drop those clusters; a kept one needs its ledger rows
+   at the old stamps (1790198220000 to 1790198860000 and b2's 0314 at
+   1790198160000, which is main's 0314's stamp too) deleted by hand
+   after reverting by the old files.
+6. (c) the full gate set on the rebased head, forge proof (new forms) and
+   the drill.

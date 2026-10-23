@@ -26,7 +26,7 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/narrow-lockout.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
@@ -211,8 +211,10 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
     await code(c2, member, 'member');
     const key = (id: string, login: string, revoked = false) =>
       su`insert into access_keys (id, name, login_id, key_prefix, key_hash, access, revoked_at, revoked_by)
-         values (${id}, 'k', ${login}, ${`p${id.slice(0, 6)}`}, ${`${tag}-${id}`}, 'read',
+         values (${id}, 'k', ${login}, ${id.replace(/-/g, '').slice(0, 8)},
+                 ${createHash('sha256').update(`${tag}-${id}`).digest('hex')}, 'read',
                  ${revoked ? new Date() : null}, ${revoked ? login : null})`;
+    const keyIds = [ids.aOwner, ids.aAdmin, ids.aMember, ids.aRevoked];
     await key(ids.aOwner, anchor);
     await key(ids.aAdmin, adminByRole);
     await key(ids.aMember, member);
@@ -231,7 +233,7 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
             (select coalesce(string_agg(code_hash, '|' order by code_hash), '')
                from oauth_auth_codes where client_id in (${c1}, ${c2})) || '#' ||
             (select coalesce(string_agg(id::text || coalesce(revoked_at::text, '-') || coalesce(revoked_by::text, '-'), '|' order by id), '')
-               from access_keys where key_hash like ${`${tag}-%`}) || '#' ||
+               from access_keys where id in ${su(keyIds)}) || '#' ||
             (select coalesce(string_agg(id::text || coalesce(revoked_at::text, '-'), '|' order by id), '')
                from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})) || '#' ||
             (select count(*)::text from oauth_clients where id in (${c1}, ${c2}))) as h`
@@ -297,7 +299,7 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
     expect(await run(rt, [set(true), `delete from oauth_clients where id = '${c1}'`])).toBeNull();
     expect(counted()).toEqual([]);
     await su`delete from oauth_clients where id in (${c1}, ${c2})`;
-    await su`delete from access_keys where key_hash like ${`${tag}-%`}`;
+    await su`delete from access_keys where id in ${su(keyIds)}`;
     await su`delete from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})`;
   });
 
