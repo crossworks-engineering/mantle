@@ -450,7 +450,6 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
       'asCallActorOrSpot',
       'atActingLogin',
       'atCredentialSpot',
-      'onClientHoldSpot',
       'onLoginHoldSpot',
       'onSpot',
     ]);

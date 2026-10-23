@@ -6,14 +6,7 @@
  * owner; the ownerId scope is belt-and-braces.
  */
 import { and, count, eq, gt, isNull, max, min } from 'drizzle-orm';
-import {
-  db,
-  oauthAccessTokens,
-  oauthAuthCodes,
-  oauthClients,
-  onClientHoldSpot,
-  onLoginHoldSpot,
-} from '@mantle/db';
+import { db, oauthAccessTokens, oauthAuthCodes, oauthClients, onLoginHoldSpot } from '@mantle/db';
 import { lockOauthActor } from './oauth-lock';
 
 export type ConnectedClient = {
@@ -74,7 +67,7 @@ export async function disconnectClient(ownerId: string, clientId: string): Promi
   if (!owned) return false;
   // A client a live grant of the owner or an Admin user rides on is
   // removed at the spot login-credential on a narrow exit (0326's hold).
-  await onClientHoldSpot(clientId, () =>
+  await onLoginHoldSpot({ client: clientId }, () =>
     db.delete(oauthClients).where(eq(oauthClients.id, clientId)),
   );
   return true;

@@ -85,9 +85,7 @@ export const RAW_WRITE_PINS = {
   'packages/db/src/item-acl.ts': 2,
   // 9: migrate's revoke of a default-privilege entry naming PUBLIC or the
   // narrow role (defaultAclRevoke: identifiers quoted by quotedIdent).
-  // 10: migrate drops the derived would-refuse triggers before pending
-  // migrations (dropNarrowWouldRefuse: catalog names, fixed trigger names).
-  'packages/db/src/runtime-role.ts': 10,
+  'packages/db/src/runtime-role.ts': 9,
   'packages/db/src/scope-readable.ts': 5,
   'packages/db/src/viewer-roles.ts': 3,
   'packages/db/src/workspace-live.ts': 1,

@@ -17,31 +17,15 @@ import { onFullSystemRoute, systemRouteNow } from './viewer';
  * route the exit picked, not the switch, so with the switch off the same
  * write is at the spot and the would-refuse count does not see it.
  */
-export async function onLoginHoldSpot<T>(loginId: string, write: () => PromiseLike<T>): Promise<T> {
-  return atHoldSpot(() => loginHeldFromNarrow(loginId), write);
-}
-
-/** The one place the hold takes the spot: on the narrow route, when
- *  `held` says yes. */
-async function atHoldSpot<T>(
-  held: () => Promise<boolean>,
+export async function onLoginHoldSpot<T>(
+  who: string | { client: string },
   write: () => PromiseLike<T>,
 ): Promise<T> {
+  // A login, or an MCP client (`{ client }`: its removal cascades to its
+  // tokens and codes, held when a live grant of a held login rides on it,
+  // clientHeldFromNarrow).
+  const held = () =>
+    typeof who === 'string' ? loginHeldFromNarrow(who) : clientHeldFromNarrow(who.client);
   if (systemRouteNow() !== 'narrow' || !(await held())) return await write();
-  return onFullSystemRoute('login-credential', write);
-}
-
-/**
- * Run `write` (an MCP client's removal: oauth_clients, cascading to its
- * tokens and codes) at the spot login-credential when the exit's route is
- * the narrow one and a live grant of a held login rides on the client
- * (clientHeldFromNarrow), else as it is.
- */
-export async function onClientHoldSpot<T>(
-  clientId: string,
-  write: () => PromiseLike<T>,
-): Promise<T> {
-  if (systemRouteNow() !== 'narrow' || !(await clientHeldFromNarrow(clientId)))
-    return await write();
   return onFullSystemRoute('login-credential', write);
 }

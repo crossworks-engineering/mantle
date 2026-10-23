@@ -291,7 +291,8 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     from: 'packages/db/src/login-hold.ts',
     // And the same hold on their grants: a device revoked (the users area's
     // devices, the phone's own sign-out, a device token's rotation), a
-    // login's grants on one MCP client ended, an OAuth code burned.
+    // login's grants on one MCP client ended, an OAuth code burned, an MCP
+    // client removed that a live grant of theirs rides on.
     callers: [
       'server/web/app/api/auth/mobile-logout/route.ts',
       'server/web/app/api/auth/token/refresh/route.ts',
@@ -302,13 +303,7 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
       'server/web/lib/mcp-oauth.ts',
     ],
   },
-  // 0326's hold on grants: an MCP client a live grant of the owner or an
-  // Admin user rides on (its removal cascades to the grant).
-  onClientHoldSpot: {
-    spot: 'login-credential',
-    from: 'packages/db/src/login-hold.ts',
-    callers: ['server/web/lib/mcp-clients.ts'],
-  },
+
   // Two local arrows the check found once it read arrow functions: each
   // runs its own file's functions only.
   asCallActorOrSpot: {
