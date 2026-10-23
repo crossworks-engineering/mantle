@@ -513,8 +513,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_trash_act:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_bridge_login:
-    'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_check_note:
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_client_sourced_among:
@@ -577,8 +575,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_login_connector_rows:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_login_is_admin:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
   mantle_mail_branch_holds:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_mark_created_client_sourced:
@@ -611,6 +607,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_scope_has_area:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
+  mantle_scope_admin_facts:
+    "a read definer granted to the viewer roles: adminFacts' one call in the login's own scope (server/web lib/auth/login.ts, 0330), never on the narrow route",
   mantle_scope_is_admin:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_secret_put:
@@ -730,7 +728,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/entity-dedup.ts mantle_entity_merge_rows': 1,
   'packages/content/src/link-serve.ts mantle_item_embeds': 1,
   'packages/content/src/link-serve.ts mantle_ws_admin_id': 1,
-  'packages/content/src/member-invites.ts mantle_bridge_login': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_claim': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_release': 1,
   'packages/content/src/member-turn-ledger.ts mantle_member_turn_settle': 1,
@@ -757,7 +754,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/db/src/gateway/heads.ts mantle_lock_heads_more': 1,
   'packages/db/src/gateway/heads.ts mantle_lock_heads_nested': 1,
   'packages/db/src/gateway/heads.ts mantle_lock_subtree_heads': 1,
-  'packages/db/src/gateway/scope-answers.ts mantle_login_is_admin': 1,
   'packages/db/src/gateway/scope-answers.ts mantle_scope_has_area': 1,
   'packages/db/src/gateway/scope-answers.ts mantle_scope_is_admin': 1,
   'packages/db/src/gateway/spot-definers.ts mantle_space_settle_promotion': 1,
@@ -795,9 +791,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/agent-telegram.ts mantle_tg_my_chats': 1,
   'server/web/lib/assistant-inbox.ts mantle_read_cursor_mark': 1,
   'server/web/lib/assistant-inbox.ts mantle_read_cursors': 1,
-  'server/web/lib/auth/login-row.ts mantle_login_is_admin': 1,
-  'server/web/lib/auth/login.ts mantle_scope_has_area': 1,
-  'server/web/lib/auth/login.ts mantle_scope_is_admin': 1,
+  'server/web/lib/auth/login.ts mantle_scope_admin_facts': 1,
   'server/web/lib/grants.ts mantle_grant_change': 1,
   'server/web/lib/grants.ts mantle_grant_counts': 1,
   'server/web/lib/grants.ts mantle_grant_move_home': 1,
@@ -807,12 +801,11 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/grants.ts mantle_ws_admin_id': 1,
   'server/web/lib/grants.ts mantle_ws_live': 1,
   'server/web/lib/grants.ts mantle_ws_names': 2,
+  'server/web/lib/login-update.ts mantle_ws_add_user': 1,
+  'server/web/lib/login-update.ts mantle_ws_remove_user': 1,
   'server/web/lib/maintenance/doc-reindex.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/ocr-rescan.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/refold-embeds.ts mantle_embed_host': 1,
-  'server/web/lib/mcp-oauth.ts mantle_login_is_admin': 1,
-  'server/web/lib/pair-code.ts mantle_login_is_admin': 1,
-  'server/web/lib/token-login.ts mantle_login_is_admin': 1,
   'server/web/lib/workspace-ticks.ts mantle_ws_set_moderator': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_attach_assistants': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_migrate_locked': 1,
