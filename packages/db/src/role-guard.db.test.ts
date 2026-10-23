@@ -26,6 +26,9 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/role-guard.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NARROW_ROLE, RUNTIME_ROLE, runtimeRoleOn } from './runtime-role';
@@ -771,6 +774,68 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
         const [r] = await sql<{ role: string; admin: boolean }[]>`
           select mantle_login_role(${id}::uuid) as role, mantle_login_is_admin_user(${id}::uuid) as admin`;
         expect(r, kind).toEqual({ role: 'member', admin: false });
+      } finally {
+        await sql.end();
+      }
+    }
+  }, 600_000);
+
+  // r7 DB LOW-C: the revert puts back what 0330 dropped as main has it: the
+  // three bridge functions (body, owner, rights) everywhere, the two
+  // bridge triggers only on a brain that never took the switch (no
+  // nodes_levels_frozen), and mantle_role_drift's 0304 body. The rollback
+  // drill diffs the whole schema; this cell also takes the unswitched path.
+  it('the revert puts the bridges back as they stood, the triggers only where the switch never ran', async () => {
+    const REVERT = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'rollback',
+      `${TAG}.revert.sql`,
+    );
+    const statements = readFileSync(REVERT, 'utf8')
+      .split('--> statement-breakpoint')
+      .map((st) => st.trim())
+      .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '');
+    const catalog = async (sql: postgres.Sql) =>
+      sql<{ what: string; v: string }[]>`
+        select p.proname::text as what,
+               md5(p.prosrc) || ' ' || pg_get_userbyid(p.proowner) || ' ' ||
+               coalesce(p.proacl::text, '-') || ' ' || p.prosecdef::text as v
+          from pg_proc p
+         where p.pronamespace = 'public'::regnamespace
+           and p.proname in ('mantle_bridge_connector', 'mantle_bridge_connector_trg',
+                             'mantle_bridge_login_trg', 'mantle_role_drift')
+        union all
+        select t.tgname::text, pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text
+          from pg_trigger t
+         where t.tgname in ('users_zz_bridge', 'tool_groups_zz_bridge')
+         order by 1`;
+    for (const switched of [true, false]) {
+      const { db, sql } = await open();
+      try {
+        if (!switched) {
+          // A brain that never took the switch, as 0251 left it.
+          await sql`drop trigger if exists nodes_levels_frozen on public.nodes`;
+          await sql.unsafe(`CREATE TRIGGER "tool_groups_zz_bridge"
+            AFTER INSERT OR DELETE OR UPDATE OF "audience", "enabled", "integration", "slug", "owner_id"
+            ON "public"."tool_groups"
+            FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_connector_trg"()`);
+          await sql.unsafe(`CREATE TRIGGER "users_zz_bridge" AFTER INSERT OR UPDATE OF "role" ON auth.users
+            FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_login_trg"()`);
+        }
+        const before = await catalog(sql);
+        expect(before.filter((r) => r.what.endsWith('_zz_bridge')).length, String(switched)).toBe(
+          switched ? 0 : 2,
+        );
+        await db.migrateRest();
+        expect(
+          (await catalog(sql)).map((r) => r.what),
+          String(switched),
+        ).toEqual(['mantle_role_drift']);
+        await sql.begin(async (tx) => {
+          for (const st of statements) await tx.unsafe(st);
+        });
+        expect(await catalog(sql), String(switched)).toEqual(before);
       } finally {
         await sql.end();
       }
