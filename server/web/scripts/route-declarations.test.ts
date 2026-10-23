@@ -243,7 +243,7 @@ describe('rowDeclaration', () => {
       OWN_THINGS['/api/member/push/subscriptions/:id'],
     );
     expect(reason('DELETE', '/api/member/mcp/clients/:id', 'member')).toMatch(/own MCP clients/);
-    // Round 4 (MED-1 residual): a handler that reaches past the login is
+    // A handler that reaches past the login is
     // not the login's own thing, whatever the path says. An Admin user
     // revokes any login's key; a Moderator or a users-area Admin acts on
     // another login's Telegram chat; an Admin user deletes a member's
@@ -267,7 +267,7 @@ describe('rowDeclaration', () => {
     }
   });
 
-  it("the lists' effect exceptions are ones a declaration can state (round 4, LOW-B)", () => {
+  it("the lists' effect exceptions are ones a declaration can state", () => {
     // A read only on a POST, a write only on a GET (its HEAD with it).
     for (const k of READ_POSTS) expect(k, k).toMatch(/^POST \//);
     for (const k of WRITE_GETS) expect(k, k).toMatch(/^GET \//);
@@ -341,7 +341,7 @@ describe('an alias is the route its file re-exports (LOW-1)', () => {
     expect(aliasMismatches(text, ALIAS_FILE, read(text), patternOf)).toEqual([]);
   });
 
-  it('one resolver of a spec to its route pattern (round 4, LOW-E)', () => {
+  it('one resolver of a spec to its route pattern', () => {
     expect(patternOf('../../notes/route')).toBe('/api/notes');
     expect(patternOf('../../notes/[id]/route')).toBe('/api/notes/:id');
     expect(patternOf('../../notes/route.ts')).toBe('/api/notes');
@@ -359,7 +359,7 @@ describe('an alias is the route its file re-exports (LOW-1)', () => {
     expect(routeFilePattern('lib/route.ts')).toBeNull();
   });
 
-  it('refuses a route file named by a path that is not relative (round 4, LOW-D)', () => {
+  it('refuses a route file named by a path that is not relative', () => {
     for (const spec of ['@/app/api/notes/route', '@/app/api/notes/route.ts', '/abs/app/route']) {
       expect(() => patternOf(spec), spec).toThrow(/by a path that is not relative/);
     }

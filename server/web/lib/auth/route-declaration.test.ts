@@ -56,7 +56,7 @@ export const typed = [
     POST: { class: 'content', effect: { write: 'x' }, item: none },
   }),
   routePolicy({
-    // @ts-expect-error a read exception on a method other than POST (round 4, LOW-B)
+    // @ts-expect-error a read exception on a method other than POST
     PATCH: { class: 'content', effect: { read: 'x' } },
   }),
   routePolicy({
@@ -177,7 +177,7 @@ describe('validateMethodPolicy: the one validator', () => {
     ).not.toThrow();
   });
 
-  it('an effect exception: read only on a POST, write only on a GET or HEAD (round 4, LOW-B)', () => {
+  it('an effect exception: read only on a POST, write only on a GET or HEAD', () => {
     const read = { class: 'content', effect: { read: 'computes only' } };
     expect(() => validateMethodPolicy(read, '/api/x', 'POST')).not.toThrow();
     for (const m of ['PUT', 'PATCH', 'DELETE', 'OPTIONS']) {

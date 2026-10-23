@@ -441,7 +441,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     );
   });
 
-  it("LOW-C (round 4): an alias is its base's row in class, area, effect and item", () => {
+  it("an alias is its base's row in class, area, effect and item", () => {
     // Each field the handler decides, one at a time: refused.
     const keyed = (d: Record<string, unknown>) =>
       build(
@@ -476,7 +476,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     ).toThrow(/the area users on an alias of POST \/api\/notes, whose area is settings/);
   });
 
-  it('LOW-A (round 4): a v1 row declares the key area the key table names, and only it', () => {
+  it('a v1 row declares the key area the key table names, and only it', () => {
     const base = entry('/api/notes', ['GET'], { GET: { class: 'content', open: 'owner' } });
     const v1 = (pattern: string, d: Record<string, unknown>) =>
       build(base, entry(pattern, ['GET'], { GET: d } as RoutePolicyDeclaration));
@@ -504,7 +504,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     );
   });
 
-  it('INFO (round 4): the named caller is read from the checked copy, once', () => {
+  it('the named caller is read from the checked copy, once', () => {
     // A getter that answers publicLogin to the first read and another kind
     // after: the checked copy holds the first answer, and the row is built
     // from it alone.

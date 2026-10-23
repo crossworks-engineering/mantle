@@ -819,7 +819,7 @@ function declaredFacts(
       b.method,
     );
     // An alias runs its base's handler, so it is the base's row in all the
-    // handler decides (round 4, LOW-C): its class, area, effect and item
+    // handler decides: its class, area, effect and item
     // are the base's, or the declaration is refused. (Its open, creates and
     // limits it may not declare: they are read from the base, above.)
     if (d.aliasOf !== undefined) {
@@ -870,7 +870,7 @@ function declaredFacts(
   const keyArea = d.keyArea;
   // While the key table names each v1 row's key area (api-v1.ts
   // API_V1_ROUTES `area`, `self`), a declared one is that one, and a row
-  // the table names declares it (round 4, LOW-A, as `base` above): the
+  // the table names declares it (as `base` above): the
   // gate's key check reads the table, the row's facts the declaration.
   const v1 = pattern.startsWith('/api/v1/') ? v1Route(m, pattern) : null;
   const tableKey = v1 ? `${v1.self === true ? 'self' : 'area'} ${String(v1.area)}` : 'none';
@@ -1134,7 +1134,7 @@ export function buildRoutePolicy(
   // answers: its GET's), for an alias's base. Each route's declaration is
   // read once, here, into its checked copy (validateRoutePolicy): every row
   // of the route, its HEAD and an alias of it are built from that one copy,
-  // never from the module's value again (round 4, INFO).
+  // never from the module's value again.
   const byKey = new Map<string, MethodPolicy>();
   const checked = new Map<RouteManifestEntry, RoutePolicyDeclaration>();
   if (declared) {

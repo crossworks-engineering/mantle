@@ -56,8 +56,7 @@ type WriteMethod = Exclude<DeclaredMethod, ReadMethod>;
 
 /** The one method that may state it reads (an effect exception `read`):
  *  a POST that only computes, as a GET with a body would (the formula
- *  calculator). A PUT, PATCH, DELETE or OPTIONS always writes (round 4,
- *  LOW-B); a GET or HEAD may state it writes (`write`), no other. */
+ *  calculator). A PUT, PATCH, DELETE or OPTIONS always writes; a GET or HEAD may state it writes (`write`), no other. */
 export const READS_BY_EXCEPTION = 'POST';
 type OtherWriteMethod = Exclude<WriteMethod, typeof READS_BY_EXCEPTION>;
 

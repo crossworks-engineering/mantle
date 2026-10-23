@@ -1177,10 +1177,10 @@ export function routeFilePattern(file: string): string | null {
  * package). `exists` says whether a path from server/web is a file. A
  * spec that names a route file other than by a relative path (`@/app/...`
  * or an absolute path; a spec whose last segment is `route`) is refused,
- * it throws (round 4, LOW-D): the generator follows a route file's
+ * it throws: the generator follows a route file's
  * handlers and reads, and checks an alias, only through a relative one,
  * so another spelling would read as no route file. One resolver for the
- * generator, the codemod and route-policy.test.ts (round 4, LOW-E).
+ * generator, the codemod and route-policy.test.ts.
  */
 export function specRouteFile(
   file: string,
@@ -1240,7 +1240,7 @@ export function aliasMismatches(
     if (!p) continue;
     const declared = Object.hasOwn(p, 'aliasOf') ? (p as { aliasOf?: string }).aliasOf : undefined;
     const from = reExported[m];
-    let pattern: string | null = null;
+    let pattern: string | null;
     try {
       pattern = from ? patternOf(from.spec) : null;
     } catch (e) {

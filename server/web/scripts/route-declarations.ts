@@ -60,7 +60,7 @@ const EFFECT_REASONS: Readonly<Record<string, string>> = {
  *  and by nothing else, so no item of another party is in the path. A
  *  'self' write with any other param takes ITEM_NONE_PLACEHOLDER: its
  *  path may name another party's thing (a grant, a workspace's member, a
- *  thread), to be decided. Not here (round 4, MED-1): an access key (an
+ *  thread), to be decided. Not here: an access key (an
  *  Admin user revokes any login's key), a Telegram chat of /my-chats (a
  *  Moderator or a users-area Admin acts on another login's chat) and the
  *  owner's push device route (an Admin user deletes a member's device by
