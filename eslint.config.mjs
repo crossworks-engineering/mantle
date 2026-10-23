@@ -643,6 +643,34 @@ export default tseslint.config(
     },
   },
   {
+    // The A8 tool list is test support (only the A8 coverage and tool cells
+    // tests import it): it may name the A8 matrix fixtures' types, nothing
+    // else the server block refuses.
+    files: ['server/web/server/a8-tools.list.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/client/web/**', '@mantle/client-web*'],
+              message: 'server tier must not import the client app',
+            },
+            {
+              group: ['@mantle/content/test-support'],
+              message: 'test fixtures only: a route calls the Admin act definers',
+            },
+            {
+              regex: '(^|/)test-support(/|$)',
+              message:
+                'test fixtures only: @mantle/db/test-support is for tests, bench and scripts',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // The server's tests may use the test-support entry (above).
     files: ['server/**/*.test.{ts,tsx}'],
     rules: {
