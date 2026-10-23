@@ -50,6 +50,22 @@ function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
   return narrowExecLoad;
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * The mantle_* functions a statement calls by name, read on its code (the
+ * literals blanked). A statement with no `mantle_` anywhere is not lexed
+ * (most of a turn's statements: well under a microsecond each); one that
+ * has it costs a few microseconds (measured per path in
+ * a2a-round-trips.db.test.ts, the scan cost cell).
+ */
+export function calledMantleFunctions(query: string): ReadonlySet<string> {
+  if (!/mantle_/i.test(query)) return NONE;
+  const names = new Set<string>();
+  for (const m of sqlCode(query).code.matchAll(CALLED_FN)) names.add(m[1]!.toLowerCase());
+  return names;
+}
+
 /**
  * A statement the narrow route would take, sent off it (the switch off):
  * each mantle_* function it calls by name that the narrow role may not
@@ -59,9 +75,7 @@ function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
  * the statement back.
  */
 export function noteWouldRefuseCalls(base: PgSql, query: string): void {
-  if (!/mantle_/i.test(query)) return;
-  const names = new Set<string>();
-  for (const m of sqlCode(query).code.matchAll(CALLED_FN)) names.add(m[1]!.toLowerCase());
+  const names = calledMantleFunctions(query);
   if (names.size === 0) return;
   const actor = currentActor();
   const who = actor ? actorSetting(actor) : 'none';

@@ -178,7 +178,7 @@ BEGIN
      AND current_user::text = own_role
      AND coalesce(current_setting('mantle.route', true), '') <> 'full' THEN
     IF "public"."mantle_narrow_login_held"(OLD."id") THEN
-      RAISE NOTICE 'mantle narrow write: narrow-would-refuse % auth.users UPDATE', who;
+      RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% UPDATE', who, TG_TABLE_SCHEMA, TG_TABLE_NAME;
     END IF;
   END IF;
   RETURN NEW;
