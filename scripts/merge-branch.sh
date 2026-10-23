@@ -115,18 +115,31 @@ else
     // After a renumber every new entry must sit above them all, or the
     // runner reads a restamped entry as applied (the same when) or as a
     // gap below its mark.
+    // The heads come from the branch reflog and, when that is empty (a
+    // fresh clone, an expired reflog), from the copy of the branch on
+    // origin (its reflog, then its history) and the branch commits that
+    // touched the journal. An earlier entry counts by its tag and stamp:
+    // the same tag at the same stamp is the same migration.
     const mainWhens = new Set(main.map((e) => Number(e.when) || 0));
-    const nowWhens = new Set(mine.map((e) => Number(e.when) || 0));
-    let heads = [];
-    try {
-      heads = execFileSync("git", ["log", "-g", "--format=%H", branch], { encoding: "utf8" })
-        .split("\n")
-        .filter(Boolean)
-        .slice(0, 400);
-    } catch {
-      heads = [];
-    }
+    const nowPairs = new Set(mine.map((e) => `${e.tag}@${Number(e.when) || 0}`));
+    const lines = (args) => {
+      try {
+        return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+          .split("\n")
+          .filter(Boolean);
+      } catch {
+        return [];
+      }
+    };
+    const remote = `refs/remotes/origin/${branch}`;
+    const heads = [
+      ...lines(["log", "-g", "--format=%H", branch]),
+      ...lines(["log", "-g", "--format=%H", remote]),
+      ...lines(["log", "--format=%H", branch, "--", journal]),
+      ...lines(["log", "--format=%H", remote, "--", journal]),
+    ].slice(0, 1200);
     let stale = 0;
+    const oldTags = new Map();
     for (const sha of new Set(heads)) {
       let old = [];
       try {
@@ -136,13 +149,24 @@ else
       }
       for (const e of old) {
         const w = Number(e.when) || 0;
-        if (!mainWhens.has(w) && !nowWhens.has(w) && w > stale) stale = w;
+        if (mainWhens.has(w) || nowPairs.has(`${e.tag}@${w}`)) continue;
+        if (w > stale) stale = w;
+        if (!oldTags.has(w)) oldTags.set(w, new Set());
+        oldTags.get(w).add(e.tag);
       }
     }
+    const nowCount = new Map();
+    for (const e of mine) nowCount.set(Number(e.when) || 0, (nowCount.get(Number(e.when) || 0) ?? 0) + 1);
     for (const e of mine.filter((e) => !seen.has(e.tag))) {
       const w = Number(e.when) || 0;
       if (stale > 0 && w <= stale) {
         bad.push(`${e.tag}: when ${w} at or below the branch\x27s own earlier stamps (${stale}): restamp the whole new set above them`);
+      }
+      if (oldTags.has(w)) {
+        bad.push(`${e.tag}: when ${w} was ${[...oldTags.get(w)].join(", ")} in an earlier head of the branch`);
+      }
+      if ((nowCount.get(w) ?? 0) > 1 || mainWhens.has(w)) {
+        bad.push(`${e.tag}: when ${w} is another migration\x27s too`);
       }
     }
     // A new migration file the journal does not name is a clash too.

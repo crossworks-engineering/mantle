@@ -56,7 +56,7 @@
 -- login-credential on the system pool's own login.
 --
 -- CREATE OR REPLACE keeps each function's grants. No table, row or
--- trigger changes; no LLM work. Re-runnable. The `when` sits above 0313's.
+-- trigger changes; no LLM work. Re-runnable. The `when` sits above main's 0314's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 -- A system session (called inside a definer, so current_user is the
