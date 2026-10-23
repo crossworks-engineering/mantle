@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a DWG keeps each block's attribute tags together
+
+- **Fix:** the DWG/DXF indexer stored each block attribute as its own text
+  row and dropped the tag name, so a line-number block's `LINENO` and
+  `CIRCUIT` became two unrelated labels and the line-to-circuit link was
+  lost. The registry workbook now has a **Blocks** tab: one row per block
+  that carries attributes, one column per tag, with its layer, handle and
+  X/Y. The text digest lists the same blocks as one line each
+  (`LineNumber: LINENO=…, CIRCUIT=…`), so search finds the pair. Texts is
+  unchanged. Needs the new `mantle-media` image; existing drawings get the
+  tab when they are indexed again.
+
 ## Unreleased: the Files tree rail opens in milliseconds on a large brain
 
 - **Fix:** the Files tree rail (and the `folder_list` tool's whole tree)

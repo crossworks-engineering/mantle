@@ -148,11 +148,16 @@ export async function maybeAutoTableSpreadsheet(
           ? `Texts holds the annotation strings the registry kept (TRUNCATED at` +
             ` its cap — the drawing carries more)`
           : `Texts is every annotation string`;
+        const blocksClaim = sheets.some((s) => s.name === 'Blocks')
+          ? ` Blocks has one row per attribute-bearing block with one column per` +
+            ` attribute tag, so tags of the same block stay together (a LineNumber` +
+            ` block's LINENO and CIRCUIT are one row).`
+          : '';
         description =
           `AutoCAD ${fileExt.toUpperCase()} model-space registry. Layers counts entities per layer;` +
           ` ${textsClaim} with its layer and model-space X/Y` +
-          ` (drawing units); Counts totals entities by type. Vector geometry` +
-          ` beyond text positions is not in this table.`;
+          ` (drawing units); Counts totals entities by type.${blocksClaim} Vector geometry` +
+          ` beyond text and block positions is not in this table.`;
       }
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);

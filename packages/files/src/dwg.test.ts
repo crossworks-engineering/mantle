@@ -181,6 +181,67 @@ describe('parseDwgToGrids', () => {
     }
   });
 
+  it('keeps a block’s attribute tags together on the Blocks tab', async () => {
+    // The circuitized-P&ID shape: LINENO and CIRCUIT on one LineNumber block.
+    // Flattened into Texts they are two unrelated rows; here they share one.
+    stubSidecar({
+      ...sidecarReply(),
+      blocks: [
+        {
+          block: 'LineNumber',
+          layer: 'LINE_TAGS',
+          handle: '9A1',
+          x: 10,
+          y: 20,
+          attribs: { LINENO: 'N90010-10-6"', CIRCUIT: 'Circuit 90000-010-01', STANDARD: '' },
+        },
+        {
+          block: 'LineNumber',
+          layer: 'LINE_TAGS',
+          handle: '9A2',
+          x: 30,
+          y: 40,
+          attribs: { LINENO: 'N90011-10-4"', CIRCUIT: 'Circuit 90000-011-01' },
+        },
+        // A tag named like a fixed column is renamed, never merged into it.
+        { block: 'Valve', layer: 'VALVES', handle: '9A3', x: 5, y: 6, attribs: { X: 'gate' } },
+        // A block whose attributes are all blank is not a row.
+        { block: 'Empty', layer: 'L', handle: '9A4', x: 0, y: 0, attribs: { TAG: '' } },
+      ],
+    });
+    try {
+      const bytes = dwgFixture(15);
+      const grids = await parseDwgToGrids(bytes);
+      expect(grids.sheets.map((g) => g.name)).toEqual(['Layers', 'Texts', 'Blocks', 'Counts']);
+      const blocks = grids.sheets.find((g) => g.name === 'Blocks')!;
+      expect(blocks.columns.map((c) => c.name)).toEqual([
+        'Block',
+        'Layer',
+        'Handle',
+        'X',
+        'Y',
+        'CIRCUIT',
+        'LINENO',
+        'X (attribute)',
+      ]);
+      expect(blocks.rows).toEqual([
+        ['LineNumber', 'LINE_TAGS', '9A1', 10, 20, 'Circuit 90000-010-01', 'N90010-10-6"', ''],
+        ['LineNumber', 'LINE_TAGS', '9A2', 30, 40, 'Circuit 90000-011-01', 'N90011-10-4"', ''],
+        ['Valve', 'VALVES', '9A3', 5, 6, '', '', 'gate'],
+      ]);
+      expect(grids.capped).toBe(false);
+
+      // The digest carries the pair as one retrievable line.
+      const digest = await parseDwg(bytes);
+      expect(digest).toContain('Block attributes (3 blocks, 3 unique):');
+      expect(digest).toContain('LineNumber: LINENO=N90010-10-6", CIRCUIT=Circuit 90000-010-01');
+      expect(digest).not.toContain('STANDARD=');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('threads the registry cap bit through (finding 12)', async () => {
     stubSidecar({ ...sidecarReply(), capped: true });
     try {

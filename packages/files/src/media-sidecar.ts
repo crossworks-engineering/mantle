@@ -526,6 +526,18 @@ export type DwgTextEntity = {
   y: number | null;
 };
 
+/** One INSERT that carries attributes, its ATTRIB values keyed by TAG. On
+ *  circuitized P&IDs a `LineNumber` block holds `LINENO` and `CIRCUIT` side
+ *  by side; this record is the only place that pairing survives. */
+export type DwgBlockEntity = {
+  block: string;
+  layer: string;
+  handle: string;
+  x: number | null;
+  y: number | null;
+  attribs: Record<string, string>;
+};
+
 export type DwgRender = {
   /** Which converter produced the DXF the registry and render came from —
    *  'none' when the upload already WAS a DXF and ezdxf read it natively. */
@@ -538,6 +550,9 @@ export type DwgRender = {
   capped: boolean;
   layers: Array<{ name: string; count: number }>;
   texts: DwgTextEntity[];
+  /** Attribute-bearing INSERTs; empty from a sidecar image older than the
+   *  blocks field (the reply simply lacks it). */
+  blocks: DwgBlockEntity[];
   counts: Record<string, number>;
   /** Model-space raster; null when the render step failed (registry-only). */
   png: Buffer | null;
@@ -557,6 +572,7 @@ const T_DWG_RENDER = 240_000 + BACKSTOP_MS;
 const DWG_WIRE_MAX_BYTES = 80 * 1024 * 1024;
 const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
 const DWG_TEXTS_MAX = 20_000;
+const DWG_BLOCKS_MAX = 20_000;
 
 /**
  * Parse AND raster an AutoCAD drawing's model space via the sidecar
@@ -631,6 +647,25 @@ export async function mediaDwgRender(
           y: typeof t.y === 'number' ? t.y : null,
         });
       }
+      const blocks: DwgBlockEntity[] = [];
+      for (const rawBlock of Array.isArray(body.blocks) ? body.blocks : []) {
+        if (blocks.length >= DWG_BLOCKS_MAX) break;
+        const b = rawBlock as Record<string, unknown>;
+        if (!b.attribs || typeof b.attribs !== 'object') continue;
+        const attribs: Record<string, string> = {};
+        for (const [tag, value] of Object.entries(b.attribs as Record<string, unknown>)) {
+          if (tag && typeof value === 'string') attribs[tag] = value;
+        }
+        if (!Object.values(attribs).some(Boolean)) continue;
+        blocks.push({
+          block: typeof b.block === 'string' ? b.block : '',
+          layer: typeof b.layer === 'string' ? b.layer : '',
+          handle: typeof b.handle === 'string' ? b.handle : '',
+          x: typeof b.x === 'number' ? b.x : null,
+          y: typeof b.y === 'number' ? b.y : null,
+          attribs,
+        });
+      }
       const layers: Array<{ name: string; count: number }> = [];
       for (const rawLayer of Array.isArray(body.layers) ? body.layers : []) {
         const l = rawLayer as Record<string, unknown>;
@@ -654,6 +689,7 @@ export async function mediaDwgRender(
           capped: body.capped === true,
           layers,
           texts,
+          blocks,
           counts,
           png,
           renderError:

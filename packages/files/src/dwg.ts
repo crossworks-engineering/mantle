@@ -90,6 +90,16 @@ const DIGEST_LAYERS = 400;
 const DIGEST_LABEL_CHARS = 12_000;
 /** Row ceiling for the Texts tab of the auto-imported registry workbook. */
 const MAX_TEXT_ROWS = 20_000;
+/** Character budget for the block-attribute list in the digest. */
+const DIGEST_BLOCK_CHARS = 8_000;
+const DIGEST_BLOCK_LINE_CHARS = 400;
+/** Row ceiling for the Blocks tab. */
+const MAX_BLOCK_ROWS = 20_000;
+/** Attribute-tag columns on the Blocks tab, most frequent tags first. A
+ *  title block can carry dozens of tags; the cap keeps the grid usable. */
+const MAX_BLOCK_TAG_COLUMNS = 40;
+/** The Blocks tab's own columns; a tag with one of these names is renamed. */
+const BLOCK_FIXED_COLUMNS = ['Block', 'Layer', 'Handle', 'X', 'Y'];
 
 /** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
  *  One dial for DWG and DXF — same sidecar route, same rasteriser.
@@ -214,6 +224,35 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
     }
     if (shown < ordered.length) out.push(`  … ${ordered.length - shown} more unique labels`);
   }
+
+  // One line per attribute-bearing block, its tags kept together: this is
+  // what makes "which circuit is line N25060" a retrievable sentence rather
+  // than two unrelated labels.
+  const blockCounts = new Map<string, number>();
+  for (const b of r.blocks) {
+    const pairs = Object.entries(b.attribs)
+      .filter(([, v]) => v)
+      .map(([tag, v]) => `${tag}=${v}`)
+      .join(', ');
+    const line = `  - ${b.block || '(unnamed block)'}: ${pairs}`.slice(0, DIGEST_BLOCK_LINE_CHARS);
+    blockCounts.set(line, (blockCounts.get(line) ?? 0) + 1);
+  }
+  if (blockCounts.size) {
+    const ordered = [...blockCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    );
+    out.push('', `Block attributes (${r.blocks.length} blocks, ${blockCounts.size} unique):`);
+    let spent = 0;
+    let shown = 0;
+    for (const [line, n] of ordered) {
+      const shownLine = n > 1 ? `${line} (×${n})` : line;
+      if (spent + shownLine.length > DIGEST_BLOCK_CHARS) break;
+      out.push(shownLine);
+      spent += shownLine.length;
+      shown++;
+    }
+    if (shown < ordered.length) out.push(`  … ${ordered.length - shown} more unique blocks`);
+  }
   return out.join('\n');
 }
 
@@ -267,6 +306,8 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
       rows: r.texts.slice(0, MAX_TEXT_ROWS).map((t) => [t.text, t.layer, t.x, t.y]),
     });
   }
+  const blocks = blocksSheet(r);
+  if (blocks.sheet) sheets.push(blocks.sheet);
   const countRows = Object.entries(r.counts).sort((a, b) => b[1] - a[1]);
   if (countRows.length) {
     sheets.push({
@@ -278,12 +319,61 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
       rows: countRows,
     });
   }
-  return { sheets, capped: r.capped || r.texts.length > MAX_TEXT_ROWS };
+  return { sheets, capped: r.capped || r.texts.length > MAX_TEXT_ROWS || blocks.capped };
+}
+
+/**
+ * The Blocks tab: one row per attribute-bearing INSERT, one column per
+ * attribute TAG, so a LineNumber block's LINENO and CIRCUIT sit in the same
+ * row (`SELECT "LINENO", "CIRCUIT" FROM "Blocks" WHERE "Block" =
+ * 'LineNumber'`). Tags are the union across blocks, most frequent first,
+ * capped at MAX_BLOCK_TAG_COLUMNS; a block lacking a tag gets ''.
+ */
+function blocksSheet(r: DwgRender): { sheet: ParsedSheet | null; capped: boolean } {
+  if (!r.blocks.length) return { sheet: null, capped: false };
+  const tagCounts = new Map<string, number>();
+  for (const b of r.blocks) {
+    for (const [tag, v] of Object.entries(b.attribs)) {
+      if (v) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+    }
+  }
+  const tags = [...tagCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag]) => tag);
+  const kept = tags.slice(0, MAX_BLOCK_TAG_COLUMNS);
+  // Column names must be unique, case-insensitively, against the fixed ones too.
+  const taken = new Set(BLOCK_FIXED_COLUMNS.map((c) => c.toLowerCase()));
+  const tagColumns = kept.map((tag) => {
+    let name = tag;
+    for (let n = 1; taken.has(name.toLowerCase()); n++) {
+      name = n === 1 ? `${tag} (attribute)` : `${tag} (attribute ${n})`;
+    }
+    taken.add(name.toLowerCase());
+    return name;
+  });
+  return {
+    sheet: {
+      name: 'Blocks',
+      columns: [
+        { name: 'Block', type: 'text' },
+        { name: 'Layer', type: 'text' },
+        { name: 'Handle', type: 'text' },
+        { name: 'X', type: 'number' },
+        { name: 'Y', type: 'number' },
+        ...tagColumns.map((name) => ({ name, type: 'text' as const })),
+      ],
+      rows: r.blocks
+        .slice(0, MAX_BLOCK_ROWS)
+        .map((b) => [b.block, b.layer, b.handle, b.x, b.y, ...kept.map((t) => b.attribs[t] ?? '')]),
+    },
+    capped: r.blocks.length > MAX_BLOCK_ROWS || tags.length > kept.length,
+  };
 }
 
 /**
  * Registry workbook tabs for the auto-table pass: Layers, Texts (with model
- * coordinates — the geometry phase's feed), and entity-type Counts.
+ * coordinates — the geometry phase's feed), Blocks (attribute tags kept
+ * together per block), and entity-type Counts.
  */
 export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
   return parseCadToGrids(bytes, 'DWG');

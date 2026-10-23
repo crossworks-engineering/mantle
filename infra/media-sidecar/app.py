@@ -1174,6 +1174,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     max_texts = 20_000
     max_text_len = 512
     max_layers = 1_000
+    max_blocks = 20_000
 
     def try_parse(path: str):
         try:
@@ -1237,8 +1238,10 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     layer_counts: dict = {}
     type_counts: dict = {}
     texts = []
+    blocks = []
     entities = 0
     texts_capped = False
+    blocks_capped = False
 
     def add_text(entity, layer: str) -> None:
         """Harvest one text-bearing entity into `texts` under the shared caps."""
@@ -1275,21 +1278,49 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             # Block ATTRIBs carry the real content on attribute-driven
             # drawings (title blocks, circuit/line-number tags) — a top-level
             # TEXT/MTEXT sweep alone misses hundreds of values per file.
+            # Each attrib also lands in `blocks` keyed by its TAG, one record
+            # per INSERT: on circuitized P&IDs a LineNumber block holds
+            # LINENO and CIRCUIT side by side, and the flat Texts list loses
+            # that pairing (found on a client brain 2026-10-23).
+            attribs: dict = {}
             for attrib in getattr(e, "attribs", None) or []:
                 try:
                     type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
                     add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
+                    tag = str(getattr(attrib.dxf, "tag", "") or "").strip()
+                    value = " ".join(str(attrib.dxf.text or "").split())[:max_text_len]
+                    if tag and not attribs.get(tag):
+                        attribs[tag] = value
                 except Exception:
                     continue
+            if any(attribs.values()):
+                if len(blocks) >= max_blocks:
+                    blocks_capped = True
+                else:
+                    try:
+                        point = e.dxf.insert
+                        blocks.append(
+                            {
+                                "block": str(e.dxf.name or ""),
+                                "layer": layer,
+                                "handle": str(getattr(e.dxf, "handle", "") or ""),
+                                "x": round(float(point[0]), 1),
+                                "y": round(float(point[1]), 1),
+                                "attribs": attribs,
+                            }
+                        )
+                    except Exception:
+                        pass
 
     layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     index = {
         "converter": converter,
         "version": doc.dxfversion,
         "entities": entities,
-        "capped": texts_capped or len(layers) > max_layers,
+        "capped": texts_capped or blocks_capped or len(layers) > max_layers,
         "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
         "texts": texts,
+        "blocks": blocks,
         "counts": type_counts,
         "render_error": None,
     }
