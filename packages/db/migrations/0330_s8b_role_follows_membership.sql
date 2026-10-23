@@ -24,7 +24,8 @@
 --    change, an invite) right after writing the role, and must not fail.
 --    Its demotion writes role member and calls the bridge, which takes the
 --    login out of Admin (the row, and a 'bridge.login' event, as 0286's
---    bridge wrote them); it never adds a row. So that image's promotion or
+--    bridge wrote them); it never adds a row, never takes the anchor out,
+--    and reads the login's own role only (no former-client override). So that image's promotion or
 --    admin login create lands as drift the other way (role admin, no Admin
 --    row): not Admin to every membership reader, and not to that image
 --    either (0306's pair asks both), so narrow. Where the role guard below
@@ -74,6 +75,9 @@
 --    first owner row (is_owner, role admin, the table empty: the first-run
 --    signup; with an owner there, the single-owner index answers). So no app role writes the column but through the definers,
 --    whatever its table grants. A guard, not a writer: it changes no row.
+-- 9. The precondition at migrate time (the DO block at the end): an
+--    enabled login with an Admin seat but not role admin refuses the
+--    migrate; the other drift is a NOTICE.
 --
 -- Identity is read only through the readers (mantle_scope_login_id,
 -- mantle_scope_ws), never current_setting directly.
@@ -93,14 +97,18 @@ DECLARE
   gone int;
 BEGIN
   -- Demote only since S8b: the membership definers add (0286's lookup and
-  -- its removal half, byte for byte; its add half is gone).
+  -- its removal half; its add half is gone).
+  -- The anchor stays in Admin, as mantle_ws_remove_user keeps it (0272's
+  -- CHECK makes its role admin anyway; this does not lean on that).
+  IF login IS NOT DISTINCT FROM "public"."mantle_brain_id"() THEN RETURN; END IF;
   SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
    WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin';
   IF admin_ws IS NULL THEN RETURN; END IF;
+  -- The login's own role decides, nothing else: 0286 read a former client
+  -- (archive_client_logins) as no role, which a row there could use to take
+  -- an Admin user out of Admin. Former clients are members since 0272, so
+  -- their role says the same without it.
   SELECT u."role" INTO r FROM auth.users u WHERE u."id" = login;
-  IF EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = login) THEN
-    r := NULL;
-  END IF;
   -- A login that is not role admin is not a user of Admin.
   DELETE FROM "public"."workspace_users" u
    WHERE u."login_id" = login AND u."workspace_id" = admin_ws AND coalesce(r, '') <> 'admin';
@@ -219,6 +227,16 @@ BEGIN
      OR "public"."mantle_scope_active"()
      OR NOT "public"."mantle_system_session"()
      OR session_user = 'mantle_system_narrow'
+     -- A system session that SET ROLE to another role (the write role, a
+     -- viewer role) is that role now: mantle_ws_system_work's own test.
+     OR (CASE WHEN current_setting('role') = 'none' THEN session_user::text
+              ELSE current_setting('role') END) NOT IN (
+          SELECT x FROM unnest(ARRAY['mantle_system', 'mantle_runtime', 'mantle_owner',
+                                     current_user::text]) x
+          UNION ALL
+          SELECT r."rolname"::text FROM pg_catalog.pg_roles r WHERE r."rolsuper")
+     OR (CASE WHEN current_setting('role') = 'none' THEN session_user::text
+              ELSE current_setting('role') END) = 'mantle_system_narrow'
      OR owner IS DISTINCT FROM "public"."mantle_brain_id"()
      OR NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
                      WHERE w."id" = ws AND w."owner_id" = owner AND w."is_admin") THEN
@@ -375,8 +393,8 @@ $$;
 REVOKE ALL ON FUNCTION "public"."mantle_ws_remove_user"(uuid, uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
 -- The switch's first part (its live body: 0286's with the derivation flag
--- signed as 0327 rewrote it; only its users step changes): it
--- wrote Admin's rows through the bridge, a no-op now.
+-- signed as 0327 rewrote it; only its users step changes): it wrote
+-- Admin's rows through the bridge, which only demotes now.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate_bridged"()
  RETURNS TABLE(section text, subject text, metric text, n bigint)
  LANGUAGE plpgsql
@@ -428,7 +446,7 @@ BEGIN
   -- now ends as every brain switched before, and the proof below sees the
   -- members' reach through Team. mantle_ws_migrate makes Team a normal
   -- workspace at the end (mantle_ws_team_normal).
-  -- (S8b: the bridge is a no-op now, so its Admin step is written here: on
+  -- (S8b: the bridge only demotes now, so its Admin step is written here: on
   -- the Admin workspace just made, a row and an event per admin login, as
   -- the bridge wrote them. Before the switch the role is the only record
   -- of who is an admin; from here membership decides and the definers keep
@@ -586,22 +604,39 @@ DROP TRIGGER IF EXISTS "users_role_guard" ON "auth"."users";
 CREATE TRIGGER "users_role_guard" BEFORE INSERT OR UPDATE OF "role" ON "auth"."users"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_login_role_guard"();
 --> statement-breakpoint
--- The precondition, read at migrate time (numbers only, writes nothing):
+-- The precondition, read at migrate time (numbers only):
 -- role drift (mantle_role_drift: enabled logins whose role disagrees with
 -- Admin membership; and the same over every login, disabled ones too,
 -- whose role the display reads) and brains without a live Admin
 -- workspace. Each must be 0 on a box before this image rolls there:
 -- scripts/arch-scoreboard-box.sh prints all three before the roll
 -- (role_drift, role_drift_all_logins, brains_without_admin_workspace, and
--- s8b_precondition_met). This NOTICE is the after-the-fact record: migrate
+-- s8b_precondition_met). The NOTICE is the after-the-fact record: migrate
 -- (packages/db/src/migrate.ts) sets no onnotice, so postgres.js prints it
 -- to the migrate output (the container's log: `docker logs mantle_web 2>&1
 -- | grep 'mantle S8b'`).
+--
+-- One direction of drift refuses the migrate (42501, this file rolls back
+-- whole): an enabled login (not a former client) with an Admin seat but a
+-- role other than admin. Before 0330 such a login was no Admin user (0306
+-- asked the role AND the seat); from here membership alone decides, so it
+-- would become one: a looser answer. Repair before the roll, on the image
+-- one release back: take it out of Admin (the Users screen's demotion, or
+-- mantle_ws_remove_user), or give it role admin first (the Users screen's
+-- promotion); then migrate again. The other direction (role admin, no
+-- seat) is narrower under 0330 and stays a NOTICE.
+--
+-- The order: a brain still off workspaces has no Admin workspace, so no
+-- seat and nothing to refuse here; its switch runs after migrate (the boot
+-- step, server/main.ts) through mantle_ws_migrate_bridged above, which
+-- seats exactly the role admin logins, so it ends with no drift either
+-- way. A switched brain wrote its seats long before (0252 or a boot).
 DO $$
 DECLARE
   drift int := "public"."mantle_role_drift"();
   drift_all int;
   no_admin int;
+  looser int;
 BEGIN
   SELECT count(*)::int INTO drift_all
     FROM "auth"."users" l
@@ -612,7 +647,18 @@ BEGIN
    WHERE o."is_owner"
      AND NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
                       WHERE w."owner_id" = o."id" AND w."is_admin" AND w."archived_at" IS NULL);
+  SELECT count(*)::int INTO looser
+    FROM "auth"."users" l
+   WHERE l."disabled_at" IS NULL
+     AND NOT EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = l."id")
+     AND NOT coalesce(l."role" = 'admin', false)
+     AND "public"."mantle_login_is_admin"(l."id");
   RAISE NOTICE 'mantle S8b: role drift % (enabled logins), % (all logins); brains without a live Admin workspace %',
     drift, drift_all, no_admin;
+  IF looser > 0 THEN
+    RAISE EXCEPTION 'mantle S8b: % enabled login(s) hold an Admin seat without role admin; membership alone would make them Admin users', looser
+      USING ERRCODE = '42501',
+            HINT = 'On the image one release back, take each out of Admin (the Users screen, or mantle_ws_remove_user) or give it role admin first, then migrate again. The logins: select l.id from auth.users l where l.disabled_at is null and l.role <> ''admin'' and mantle_login_is_admin(l.id).';
+  END IF;
 END
 $$;

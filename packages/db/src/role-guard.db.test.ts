@@ -28,8 +28,14 @@
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NARROW_ROLE, RUNTIME_ROLE } from './runtime-role';
-import { createMigratedScratchDatabase, ensureAdminUsers, ensureTestAnchor } from './test-support';
+import { NARROW_ROLE, RUNTIME_ROLE, runtimeRoleOn } from './runtime-role';
+import {
+  createMigratedScratchDatabase,
+  createScratchDatabaseBefore,
+  ensureAdminUsers,
+  ensureTestAnchor,
+  runWorkspacesSwitch,
+} from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const WRITER = 'mantle_write_user';
@@ -83,6 +89,32 @@ const holds = async (sql: postgres.Sql, role: string, priv: 'INSERT' | 'UPDATE')
                   then has_table_privilege(${role}, 'auth.users', 'INSERT')
                   else has_column_privilege(${role}, 'auth.users', 'role', 'UPDATE') end as on`
   )[0]!.on;
+
+const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
+
+/** A client logged in as the runtime role itself (session_user
+ *  mantle_runtime, as the app's system pool under MANTLE_DB_RUNTIME_ROLE),
+ *  or null where the role has no login on this cluster (the lanes without
+ *  the runtime role: the runtime-role lane runs every cell of this file
+ *  through such a pool too). */
+async function runtimeLogin(sql: postgres.Sql, url: string): Promise<postgres.Sql | null> {
+  const [r] = await sql<{ on: boolean }[]>`
+    select coalesce((select rolcanlogin from pg_roles where rolname = ${RUNTIME_ROLE}), false) as on`;
+  if (!r!.on) return null;
+  const rr = await import('./runtime-role');
+  const on = postgres(rr.runtimeDatabaseUrl(url, rr.runtimeRolePassword(KEY), RUNTIME_ROLE), {
+    max: 1,
+    prepare: false,
+    onnotice: () => {},
+  });
+  try {
+    await on`select 1`;
+  } catch {
+    await on.end();
+    return null;
+  }
+  return on;
+}
 
 describe.skipIf(!URL)('the role guard: only the membership definers write the role (0330)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
@@ -181,6 +213,39 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
         expect(made.ok ? '' : made.msg, role).toMatch(/^mantle_role:membership_only/);
         // A member login passes.
         expect((await run(sql, role, insertLogin('member'))).ok, role).toBe(true);
+      }
+    }
+    // The same through a real runtime login (session_user mantle_runtime,
+    // not a superuser's SET ROLE): the guard's own refusal, and a member
+    // insert passes.
+    const rt = await runtimeLogin(sql, scratch!.url);
+    // The runtime-role lane logs in as the runtime role: never skipped there.
+    if (!rt) expect(runtimeRoleOn()).toBe(false);
+    if (rt) {
+      try {
+        const promote = await run(
+          rt,
+          null,
+          (tx) => tx`update auth.users set role = 'admin' where id = ${L.mem}`,
+        );
+        expect(promote.ok ? '' : `${promote.state} ${promote.msg}`).toMatch(
+          /^42501 mantle_role:membership_only/,
+        );
+        const demote = await run(
+          rt,
+          null,
+          (tx) => tx`update auth.users set role = 'member' where id = ${L.adm}`,
+        );
+        expect(demote.ok ? '' : `${demote.state} ${demote.msg}`).toMatch(
+          /^42501 mantle_role:membership_only/,
+        );
+        const made = await run(rt, null, insertLogin('admin'));
+        expect(made.ok ? '' : `${made.state} ${made.msg}`).toMatch(
+          /^42501 mantle_role:membership_only/,
+        );
+        expect((await run(rt, null, insertLogin('member'))).ok).toBe(true);
+      } finally {
+        await rt.end();
       }
     }
     // The superuser (the migrator here) may: the guard lets it through.
@@ -314,6 +379,53 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
     expect(await refused(RUNTIME_ROLE, exit(L.adm), add(team))).toMatch(
       /^42501 mantle_ws:no_acting_login/,
     );
+    // A system session that SET ROLE to the write role is the write role
+    // now (r6 DB LOW-2): its acting login is never taken, as
+    // mantle_ws_system_work's test.
+    expect(
+      await refused(RUNTIME_ROLE, exit(L.adm), async (tx) => {
+        await tx.unsafe(`set local role "${WRITER}"`);
+        return add(adminWs)(tx);
+      }),
+    ).toMatch(/^42501 mantle_ws:no_acting_login/);
+    // Through a real runtime login: the exit runs and names the caller;
+    // after SET ROLE to the write role (where the runtime role may) it is
+    // refused the same way.
+    const rt = await runtimeLogin(sql, scratch!.url);
+    // The runtime-role lane logs in as the runtime role: never skipped there.
+    if (!rt) expect(runtimeRoleOn()).toBe(false);
+    if (rt) {
+      try {
+        const viaRuntime = await run(
+          rt,
+          null,
+          async (tx) => {
+            await add(adminWs)(tx);
+            return [await roleOf(tx, L.mem), await lastActor(tx, L.mem)];
+          },
+          exit(L.adm),
+        );
+        expect(viaRuntime).toEqual({ ok: true, v: ['admin', { a: L.adm, act: 'user.add' }] });
+        const [m] = await sql<{ may: boolean }[]>`
+          select pg_has_role(${RUNTIME_ROLE}, ${WRITER}, 'MEMBER') as may`;
+        if (m!.may) {
+          const out = await run(
+            rt,
+            null,
+            async (tx) => {
+              await tx.unsafe(`set local role "${WRITER}"`);
+              return add(adminWs)(tx);
+            },
+            exit(L.adm),
+          );
+          expect(out.ok ? 'WROTE' : `${out.state} ${out.msg}`).toMatch(
+            /^42501 mantle_ws:no_acting_login/,
+          );
+        }
+      } finally {
+        await rt.end();
+      }
+    }
     // The write role and the narrow role, each logged in as itself (the
     // system session test reads session_user, which SET ROLE leaves the
     // superuser): the write role is no system session, so the acting login
@@ -321,7 +433,6 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
     // definers, nor the helper.
     const rr = await import('./runtime-role');
     const v = await import('./viewer');
-    const KEY = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
     const opts = { max: 1, prepare: false, onnotice: () => {} } as const;
     const asLogin = async (url: string, q: (tx: postgres.TransactionSql) => Promise<unknown>) => {
       const on = postgres(url, opts);
@@ -356,6 +467,19 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
                                       'EXECUTE') as may`;
       expect(r!.may, role).toBe(false);
     }
+  });
+
+  it('the guard and the two membership definers share one owner (r6 DB LOW-3)', async () => {
+    // The guard lets its own owner through as the definers' owner: true
+    // only while one role owns all three.
+    const owners = await sql<{ fn: string; owner: string }[]>`
+      select p.oid::regprocedure::text as fn, p.proowner::regrole::text as owner
+        from pg_proc p
+       where p.oid in ('public.mantle_login_role_guard()'::regprocedure,
+                       'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)'::regprocedure,
+                       'public.mantle_ws_remove_user(uuid,uuid,uuid)'::regprocedure)`;
+    expect(owners).toHaveLength(3);
+    expect(new Set(owners.map((o) => o.owner)).size, JSON.stringify(owners)).toBe(1);
   });
 
   it('keeps 0272`s CHECK: admin and member only, the anchor an admin', async () => {
@@ -425,6 +549,38 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
     // Again: nothing left to take, no second event.
     await sql`select mantle_bridge_login(${L.demoted}::uuid)`;
     expect(await state(L.demoted)).toEqual({ row: false, events: 1 });
+  });
+
+  it('never takes the anchor out, nor an Admin user a former-client row names (r6 DB LOW-1)', async () => {
+    const [b] = await sql<{ id: string }[]>`select mantle_brain_id()::text as id`;
+    for (const id of [b!.id, L.adm]) {
+      // A former-client row for the login (written by the superuser here;
+      // whoever can write one), then the bridge as the runtime role, which
+      // may run it (an image one release back calls it).
+      const out = await run(sql, RUNTIME_ROLE, async (tx) => {
+        await tx`reset role`;
+        await tx`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+                 values (${id}, ${`${tag}-arc@example.test`}, now(), 0) on conflict do nothing`;
+        if (await roleExists(sql, RUNTIME_ROLE)) {
+          await tx.unsafe(`set local role "${RUNTIME_ROLE}"`);
+        }
+        await tx`select mantle_bridge_login(${id}::uuid)`;
+        const [r] = await tx<{ row: boolean }[]>`
+          select exists (select 1 from workspace_users u
+                          where u.workspace_id = ${adminWs} and u.login_id = ${id}) as row`;
+        return r!.row;
+      });
+      expect(out, id === b!.id ? 'anchor' : 'admin').toEqual({ ok: true, v: true });
+    }
+    // The anchor even with a role other than admin in the row (0272's CHECK
+    // refuses that, so the guard is the early return, asked directly).
+    const [src] = await sql<{ body: string }[]>`
+      select prosrc as body from pg_proc
+       where oid = 'public.mantle_bridge_login(uuid)'::regprocedure`;
+    expect(src!.body).toMatch(
+      /IF login IS NOT DISTINCT FROM "public"\."mantle_brain_id"\(\) THEN RETURN;/,
+    );
+    expect(src!.body).not.toMatch(/archive_client_logins/);
   });
 
   it('never adds: a role admin login outside Admin stays outside', async () => {
@@ -519,4 +675,90 @@ describe.skipIf(!URL)('the Admin seat answers as 0304`s bodies (0330 gateway)', 
        where p.oid = 'public.mantle_admin_seat(uuid)'::regprocedure`;
     expect(f).toEqual({ lang: 'sql', vol: 's', secdef: false, config: null });
   });
+});
+
+describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB MED-1)', () => {
+  const TAG = '0330_s8b_role_follows_membership';
+  const tag = `rm${randomUUID().slice(0, 8)}`;
+  const dbs: Awaited<ReturnType<typeof createScratchDatabaseBefore>>[] = [];
+  const open = async () => {
+    const db = await createScratchDatabaseBefore(URL!, TAG);
+    dbs.push(db);
+    return { db, sql: postgres(db.url, { max: 1, prepare: false, onnotice: () => {} }) };
+  };
+  const guardThere = async (sql: postgres.Sql) =>
+    (
+      await sql<{ on: boolean }[]>`
+        select exists (select 1 from pg_trigger t
+                        where t.tgrelid = 'auth.users'::regclass
+                          and t.tgname = 'users_role_guard') as on`
+    )[0]!.on;
+  const login = (sql: postgres.Sql, id: string, role: 'admin' | 'member') =>
+    sql`insert into auth.users (id, email, password_hash, is_owner, role)
+        values (${id}, ${`${tag}-${id.slice(0, 8)}@example.test`}, 'x', false, ${role})`;
+
+  afterAll(async () => {
+    for (const db of dbs) await db.drop();
+  });
+
+  it('an Admin seat without role admin refuses (42501, nothing written); repaired, it migrates; role admin without a seat does not refuse', async () => {
+    const { db, sql } = await open();
+    try {
+      await ensureTestAnchor(sql);
+      const seated = randomUUID(); // a seat, role member: the looser drift
+      const unseated = randomUUID(); // role admin, no seat: the narrower drift
+      const disabled = randomUUID(); // a seat, role member, disabled: not counted
+      await login(sql, seated, 'member');
+      await login(sql, unseated, 'admin');
+      await login(sql, disabled, 'member');
+      await sql`update auth.users set disabled_at = now() where id = ${disabled}`;
+      await ensureAdminUsers(sql, [seated, disabled]);
+      const err = await db.migrateRest().then(
+        () => null,
+        (e: unknown) => e as { code?: string; message?: string },
+      );
+      expect(err?.code).toBe('42501');
+      expect(err?.message).toMatch(/^mantle S8b: 1 enabled login\(s\) hold an Admin seat/);
+      // 0330 rolled back whole: no guard, the membership-only fact not in.
+      expect(await guardThere(sql)).toBe(false);
+      // The repair the message names (the image one release back's
+      // promotion: the role written, the seat already there).
+      await sql`update auth.users set role = 'admin' where id = ${seated}`;
+      await db.migrateRest();
+      expect(await guardThere(sql)).toBe(true);
+      const [r] = await sql<{ drift: number; seated: boolean; unseated: boolean }[]>`
+        select mantle_role_drift() as drift,
+               mantle_login_is_admin_user(${seated}::uuid) as seated,
+               mantle_login_is_admin_user(${unseated}::uuid) as unseated`;
+      // The narrower drift is left (the NOTICE counts it); nobody looser.
+      expect(r).toEqual({ drift: 1, seated: true, unseated: false });
+    } finally {
+      await sql.end();
+    }
+  }, 300_000);
+
+  it('a brain still off workspaces migrates; its switch after migrate seats the role admin logins, no drift', async () => {
+    const { db, sql } = await open();
+    try {
+      const brain = await ensureTestAnchor(sql);
+      const adm = randomUUID();
+      const mem = randomUUID();
+      await login(sql, adm, 'admin');
+      await login(sql, mem, 'member');
+      const [w] = await sql<{ n: number }[]>`
+        select count(*)::int as n from workspaces where owner_id = ${brain} and is_admin`;
+      expect(w!.n).toBe(0);
+      await db.migrateRest();
+      expect(await guardThere(sql)).toBe(true);
+      // The boot's switch, after migrate (server/main.ts).
+      await runWorkspacesSwitch(db.url);
+      const [r] = await sql<{ drift: number; adm: boolean; mem: boolean; owner: boolean }[]>`
+        select mantle_role_drift() as drift, mantle_login_is_admin(${adm}::uuid) as adm,
+               mantle_login_is_admin(${mem}::uuid) as mem,
+               mantle_login_is_admin(${brain}::uuid) as owner`;
+      expect(r).toEqual({ drift: 0, adm: true, mem: false, owner: true });
+    } finally {
+      await sql.end();
+    }
+  }, 300_000);
 });
