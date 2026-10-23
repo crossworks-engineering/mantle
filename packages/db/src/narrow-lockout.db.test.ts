@@ -288,15 +288,21 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
   });
 
   it('every narrow migration runs again over its own end state and leaves it as it was', async () => {
+    // Each function (by signature, with its rights) and trigger (by
+    // table and name), sorted: a re-run that drops and makes an object
+    // again shows only if its text or rights change.
     const snapshot = async () =>
       (
-        await su<{ h: string }[]>`
-          select md5(coalesce((select string_agg(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, ''), '|' order by p.oid)
-                                from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                               where n.nspname = 'public' and p.proname like 'mantle\\_%' and p.prokind = 'f'), '')
-                 || coalesce((select string_agg(pg_get_triggerdef(t.oid), '|' order by t.oid)
-                                from pg_trigger t where not t.tgisinternal), '')) as h`
-      )[0]!.h;
+        await su<{ d: string }[]>`
+          select p.oid::regprocedure::text || ' ' || coalesce(p.proacl::text, '') || ' '
+                 || md5(pg_get_functiondef(p.oid)) as d
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname like 'mantle\\_%' and p.prokind = 'f'
+          union all
+          select t.tgrelid::regclass::text || ' ' || t.tgname || ' ' || md5(pg_get_triggerdef(t.oid))
+            from pg_trigger t where not t.tgisinternal
+           order by 1`
+      ).map((r) => r.d);
     const before = await snapshot();
     const dir = join(__dirname, '..', 'migrations');
     const files = readdirSync(dir)
@@ -310,7 +316,7 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
         for (const p of parts) if (p.trim()) await tx.unsafe(p);
       });
     }
-    expect(await snapshot()).toBe(before);
+    expect(await snapshot()).toEqual(before);
   });
 });
 

@@ -181,7 +181,12 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
       })
       .catch((e: { moved?: number }) => e.moved);
     expect(moved).toBe(1);
-    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`]);
+    // Two rules broken, two notes of the one row (the box count reads them
+    // distinct): 0318's up:session_epoch, and 0326's hold (the owner's).
+    expect(counted()).toEqual([
+      `${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`,
+      `${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`,
+    ]);
     // At a spot: written, not counted.
     expect(await inTx(rt, [actorSql(who, true), lower])).toBeNull();
     expect(counted()).toEqual([]);

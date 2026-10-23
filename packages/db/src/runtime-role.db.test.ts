@@ -611,9 +611,18 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
       )) as { u: string; n: number; w: number }[];
       expect(me, who).toEqual({ u: NARROW_ROLE, n: all!.n, w: all!.w });
       // A system table on the allowlist: written (access-matrix.ts
-      // NARROW_WRITES: traces' delete).
-      expect(await asNarrow(conn, 'delete from public.traces where false'), who).toEqual([]);
+      // NARROW_WRITES: trace_steps' insert).
+      expect(
+        await asNarrow(
+          conn,
+          'insert into public.trace_steps (trace_id) select trace_id from public.trace_steps where false',
+        ),
+        who,
+      ).toEqual([]);
       for (const stmt of [
+        // traces: no DELETE since 0326's round (the integrity delete runs
+        // at its spot).
+        'delete from public.traces where false',
         // A system table's write the allowlist leaves out: audit_log is
         // INSERT only (round 8).
         'delete from public.audit_log where false',
