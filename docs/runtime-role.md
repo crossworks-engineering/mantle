@@ -184,7 +184,14 @@ as the runtime role follows its own switch: `LOGIN` with a password derived
 from `MANTLE_MASTER_KEY` (HKDF, the runtime role's scheme with its own
 label, `runtime-role:mantle_system_narrow`), `NOLOGIN` with no password
 otherwise, and always `NOLOGIN` in per-database mode (one cluster, several
-brains: one password cannot be every brain's). Migrate logs which. The
+brains: one password cannot be every brain's). Migrate logs which. When
+the switch is on but migrate could not run the roles step (it does not
+run as a superuser, or the server is older than Postgres 16), it warns
+that the narrow role was not made or given its login, so unless an
+earlier migrate did every narrow statement fails closed, and names the
+fix: migrate as a superuser on Postgres 16 or later, or the per-box kill
+switch `MANTLE_NARROW_SYSTEM=0` with the app services recreated
+(`narrowLoginWarning`, migrator-steps.ts). The
 narrow route's own pool logs in as it (below), whatever the system pool
 logs in as: with `MANTLE_DB_RUNTIME_ROLE` off (the system pool is the
 superuser) the narrow pool still logs in as the narrow role, so a fresh
