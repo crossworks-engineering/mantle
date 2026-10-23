@@ -138,7 +138,7 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
     // The model: a fake provider that answers who it is, never a real call.
     const voice = await import('@mantle/voice');
     voice.registerChatAdapter({
-      providerId: PROVIDER,
+      providerId: PROVIDER as never,
       adapterName: `${tag}-fake-chat`,
       chat: async (o) => {
         asked.push(o.model);
