@@ -118,7 +118,13 @@ export async function queueWorkspaceTurn(o: {
       );
     } catch (err) {
       // Not queued: give the slot back (only one this request took).
-      if (fresh) await releaseMemberTurn(loginId, turnId).catch(() => undefined);
+      // A failed give-back is logged, never hidden (the slot then counts
+      // until the day turns); the enqueue's own error is the answer.
+      if (fresh) {
+        await releaseMemberTurn(loginId, turnId).catch((e: unknown) =>
+          console.error('[workspace-turn] could not give the slot back:', errorMessage(e)),
+        );
+      }
       throw err;
     }
     // A reused key lands on the turn that key started: DBOS keeps the first

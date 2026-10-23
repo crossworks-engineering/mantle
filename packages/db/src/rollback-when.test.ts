@@ -23,7 +23,7 @@ describe('every revert file names its own migration journal when', () => {
       const tag = f.slice(0, -'.revert.sql'.length);
       const text = readFileSync(join(DIR, 'rollback', f), 'utf8');
       for (const m of text.matchAll(
-        /DELETE FROM "drizzle"\."__drizzle_migrations" WHERE "created_at" = (\d+)/g,
+        /DELETE FROM "drizzle"\."__drizzle_migrations" WHERE "?created_at"? = (\d+)/gi,
       )) {
         checked++;
         if (Number(m[1]) !== when.get(tag)) {

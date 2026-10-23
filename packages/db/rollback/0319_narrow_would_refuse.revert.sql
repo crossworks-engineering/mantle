@@ -153,4 +153,4 @@ REVOKE ALL ON FUNCTION "public"."mantle_narrow_cascade_stmt"() FROM PUBLIC;
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_counted"(text);
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE created_at = 1790198460000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198460000;

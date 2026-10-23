@@ -211,6 +211,24 @@ select count(*) filter (where check_name = 'narrow-content-write')
                                 where check_name = 'narrow-epoch'), '-infinity')) m;
 SQL
 )
+# The same counts over the epoch before (from the second latest epoch row
+# to the latest): a release that reset the count shows what the one
+# before it saw (0 0 0 0 0 with fewer than two epochs).
+narrow_prev=$(q <<SQL || true
+with e as (select at from public.actor_check_misses where check_name = 'narrow-epoch'
+            order by at desc, id desc limit 2),
+     w as (select min(at) as lo, max(at) as hi, count(*) as n from e)
+select count(*) filter (where check_name = 'narrow-content-write')
+    || ' ' || count(*) filter (where check_name = 'narrow-cascade-delete')
+    || ' ' || count(*) filter (where check_name = 'narrow-denied')
+    || ' ' || count(*) filter (where check_name = 'narrow-would-refuse')
+    || ' ' || count(distinct split_part(detail, ' ', 1)) filter (where check_name = 'narrow-would-refuse')
+  from (select distinct check_name, actor, detail from public.actor_check_misses, w
+         where check_name in ('narrow-content-write', 'narrow-cascade-delete', 'narrow-denied',
+                              'narrow-would-refuse')
+           and w.n = 2 and at >= w.lo and at < w.hi) m;
+SQL
+)
 # The epoch the narrow counts start from: its version and time (UTC), or
 # none. A hand-written epoch's detail is the operator's reason, free text,
 # so only a plain version is printed and anything else reads "reset".
@@ -292,6 +310,11 @@ printf '  %-34s %s\n' narrow_misses_since_epoch "$narrow_epoch"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
+  shift || true
+done
+set -- $narrow_prev
+for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
+  printf '  %-34s %s\n' "narrow_prev_epoch:$check" "$(num "${1:-}")"
   shift || true
 done
 REMOTE
