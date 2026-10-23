@@ -877,6 +877,10 @@ describe.skipIf(!URL)(
       'DELETE /api/users/:id': ['login-credential'],
       // 0326's hold on grants: the sample login is an Admin user.
       'DELETE /api/users/:id/devices/:jti': ['login-credential'],
+      // 0326's hold: an Admin user's disable, and the owner's own sign-out
+      // everywhere (its epoch, keys, grants and devices).
+      [ADMIN_DISABLE]: ['login-credential'],
+      [OWNER_LOGOUT_ALL]: ['login-credential'],
       [AZURE_PROVISION]: [
         'acting-login',
         'assistant-grant',
