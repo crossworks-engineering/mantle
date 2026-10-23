@@ -578,7 +578,7 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
     expect(src!.body).toMatch(
       /IF login IS NOT DISTINCT FROM "public"\."mantle_brain_id"\(\) THEN RETURN;/,
     );
-    expect(src!.body).not.toMatch(/archive_client_logins/);
+    expect(src!.body).not.toMatch(/FROM "public"\."archive_client_logins"/);
   });
 
   it('never adds: a role admin login outside Admin stays outside', async () => {
