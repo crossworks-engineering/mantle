@@ -649,6 +649,21 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     for (const p of procs) byName.set(p.fn, [...(byName.get(p.fn) ?? []), p]);
     const problems: string[] = [];
     const CALL = /(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?\s*\(/g;
+    // A function whose calls sit inside its own insufficient_privilege
+    // guard: a role that may not run one is answered there, never refused
+    // (each with why; its body must still hold the guard).
+    const GUARDED: Record<string, string> = {
+      mantle_narrow_report:
+        'the one report predicate: a role that may not run a held reader (this write role, an older image`s runtime role) answers false and its write runs uncounted',
+    };
+    for (const [fn, why] of Object.entries(GUARDED)) {
+      expect(why.length).toBeGreaterThan(10);
+      for (const p of byName.get(fn) ?? []) {
+        expect(code(p.src), fn).toMatch(
+          /EXCEPTION\s+WHEN\s+insufficient_privilege\s+THEN\s+RETURN\s+false/i,
+        );
+      }
+    }
     for (const root of Object.keys(CALLER_RIGHTS)) {
       // The function and every caller-rights function it reaches.
       const seen = new Set<string>();
@@ -669,7 +684,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
             const callee = m[1]!;
             const defs = byName.get(callee);
             if (!defs || callee === fn) continue;
-            if (!defs.some((d) => d.ok))
+            if (!defs.some((d) => d.ok) && !(fn in GUARDED))
               problems.push(`${root} -> ${callee}: no EXECUTE for ${WRITER}`);
             if (defs.some((d) => !d.secdef)) queue.push(callee);
           }
