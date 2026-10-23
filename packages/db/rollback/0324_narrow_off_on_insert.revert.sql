@@ -4,8 +4,8 @@
 --
 -- 0324 refuses only the narrow system role an INSERT that names a switch
 -- on (and counts one by a narrow reason off the narrow route). Order when
--- reverting several: 0324 first, then 0323, 0322, 0321, 0320, then 0319
--- down to 0314, each in its own transaction, newest first.
+-- reverting several: 0325 first, then 0324, 0323, 0322, 0321, 0320, then
+-- 0319 down to 0314, each in its own transaction, newest first.
 --
 -- It takes INSERT out of every mantle_narrow_one_way_trg trigger (none
 -- fired on INSERT before 0324) and reverses 0324's two replaces in
