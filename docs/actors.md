@@ -330,7 +330,7 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - `mantle_login_area` is the area rule or, with no Admin workspace, yes. S4.
 - A definer asked with no scope answers as the system pool would;
   `mantle_grant_change` then takes the caller from its `actor`. S2, S7.
-- The seven Admin acts' definers (0308, 0310) run by `adminActTx` on the
+- The seven Admin acts' definers (0308, 0310) run by `loginDefinerCall` on the
   system pool: the write role holds no EXECUTE on them yet. S7.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - `Login` has no kind or role (`adminFacts`); its legacy shapes do. S8.

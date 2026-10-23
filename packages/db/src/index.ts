@@ -377,8 +377,7 @@ export {
   isRefusedRight,
   wsRuleOf,
 } from './pg-error';
-export { adminActTx } from './admin-act';
-export { memberTurnTx } from './member-turn-tx';
+export { loginDefinerCall, type LoginDefinerScope } from './login-definer';
 export {
   snapshotCopyOf,
   isSnapshotCopy,

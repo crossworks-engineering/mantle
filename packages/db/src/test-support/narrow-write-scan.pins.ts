@@ -588,11 +588,11 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
   mantle_may_manage_home:
     'runs as its caller and is taken from PUBLIC: called in a login scope or on the full route',
   mantle_member_turn_claim:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in loginDefinerCall, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
   mantle_member_turn_release:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in loginDefinerCall, the system pool in the login's own scope (systemPoolTxInScope), never a narrow statement",
   mantle_member_turn_settle:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in memberTurnTx (a team turn's close, 0326), the system pool in the login's own scope, never a narrow statement",
+    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS) and denied to the narrow role by name: called only in loginDefinerCall (a team turn's close, 0326), the system pool in the login's own scope, never a narrow statement",
   mantle_name_taken:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_page_folder_id:

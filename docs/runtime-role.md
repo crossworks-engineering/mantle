@@ -735,7 +735,7 @@ the cap, the login's member chat tokens against the budget, the row) and
 failed: the scope login's own row, made in the last five minutes, only).
 Neither takes a login: each reads the scope's own login through the
 identity gateway, which the app sets on the system pool for that login
-only (`memberTurnTx`, packages/db `member-turn-tx.ts`: the request's own
+only (`loginDefinerCall`, packages/db `login-definer.ts`: the request's own
 login, or a Telegram chat's paired login). The runtime role runs them and
 only reads the table; the narrow role, the write role and the workspace
 role may run neither and write nothing there, so a forged narrow session

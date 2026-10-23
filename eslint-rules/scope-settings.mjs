@@ -70,17 +70,13 @@ export const SCOPE_SETTING_PINS = {
 
 /** @type {Record<string, { count: number, why: string }>} */
 export const SYSTEM_POOL_SCOPE_PINS = {
-  'packages/db/src/admin-act.ts': {
-    count: 1,
-    why: "adminActTx: an Admin act's definer (0308) asks the request's own login, on the system pool in c1",
-  },
   'packages/db/src/gateway/handles.ts': {
     count: 1,
     why: 'systemPoolProp (withSystemPoolInWriteScope transactions)',
   },
-  'packages/db/src/member-turn-tx.ts': {
+  'packages/db/src/login-definer.ts': {
     count: 1,
-    why: "memberTurnTx: the member turn ledger's definers (0325) take the login from the scope, the request's own (or a Telegram chat's paired login), on the system pool",
+    why: "loginDefinerCall: one definer call that takes its login from the scope (an Admin act's, 0308 and 0310, in the login's live workspaces; the member turn ledger's, 0325 and 0326, the login only), the request's own login (or a Telegram chat's paired login), on the system pool",
   },
   'packages/db/src/gateway/viewer-scope.ts': {
     count: 1,

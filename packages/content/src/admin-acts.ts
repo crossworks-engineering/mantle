@@ -2,7 +2,7 @@
  * Four Admin acts as definers (workspaces arch plan v3.2, part c1;
  * migration 0308): a contact's sharing, Revoke all of a contact's shares,
  * sharing an item with contacts, and an entity merge. Each calls its
- * SECURITY DEFINER function in the acting login's scope (adminActTx,
+ * SECURITY DEFINER function in the acting login's scope (loginDefinerCall,
  * @mantle/db), and the function checks inside that the login is an Admin
  * user with the Admin workspace in its scope (mantle_admin_act_brain); a
  * member's scope, or none, is refused there with 42501. The routes call
@@ -10,8 +10,8 @@
  * contact-shares.ts, entity-dedup.ts) call the same SQL bodies for system
  * work, without the check.
  */
-import { sql } from 'drizzle-orm';
-import { adminActTx, type AppSnapshotCode } from '@mantle/db';
+import { sql, type SQL } from 'drizzle-orm';
+import { loginDefinerCall, type AppSnapshotCode } from '@mantle/db';
 import { defineDomainError, findDatabaseError } from '@mantle/std';
 import { contactSharingAct, type ContactSharingAction } from './contact-share-codes';
 import type { ContactSharingActResult } from './contact-share-codes';
@@ -41,11 +41,12 @@ defineDomainError(AdminActRefusedError, {
   }),
 });
 
-/** adminActTx, with the definer's refusal of the login as
+/** One Admin act's definer call in `loginId`'s scope (loginDefinerCall,
+ *  'admin'), its rows; the definer's refusal of the login as
  *  AdminActRefusedError (any other error as it is). */
-async function asAdmin<T>(loginId: string, fn: Parameters<typeof adminActTx<T>>[1]): Promise<T> {
+async function asAdmin<R>(loginId: string, query: SQL): Promise<R[]> {
   try {
-    return await adminActTx(loginId, fn);
+    return await loginDefinerCall<R>(loginId, 'admin', query);
   } catch (err) {
     const pg = findDatabaseError(err) as { code?: unknown; detail?: unknown } | null;
     if (
@@ -67,13 +68,11 @@ export async function adminContactSharing(
   action: ContactSharingAction,
 ): Promise<ContactSharingActResult> {
   return contactSharingAct(contactId, action, (codeHash) =>
-    asAdmin(loginId, async (tx) => {
-      const rows = (await tx.execute(
-        sql`select outcome, revoked from mantle_contact_sharing_set(
-              ${contactId}::uuid, ${action}, ${codeHash})`,
-      )) as unknown as { outcome: string; revoked: number }[];
-      return rows[0]!;
-    }),
+    asAdmin<{ outcome: string; revoked: number }>(
+      loginId,
+      sql`select outcome, revoked from mantle_contact_sharing_set(
+            ${contactId}::uuid, ${action}, ${codeHash})`,
+    ).then((rows) => rows[0]!),
   );
 }
 
@@ -84,12 +83,11 @@ export async function adminRevokeAllContactShares(
   loginId: string,
   contactId: string,
 ): Promise<number | null> {
-  return asAdmin(loginId, async (tx) => {
-    const rows = (await tx.execute(
-      sql`select mantle_contact_shares_revoke_all(${contactId}::uuid) as n`,
-    )) as unknown as { n: number | null }[];
-    return rows[0]?.n ?? null;
-  });
+  const rows = await asAdmin<{ n: number | null }>(
+    loginId,
+    sql`select mantle_contact_shares_revoke_all(${contactId}::uuid) as n`,
+  );
+  return rows[0]?.n ?? null;
 }
 
 /** POST /api/shares/contacts: one item shared with contacts, as `loginId`
@@ -102,14 +100,11 @@ export async function adminCreateContactShares(
   canWrite: boolean,
 ): Promise<CreatedContactShare[]> {
   return contactShareAct(contactIds, (a) =>
-    asAdmin(
+    asAdmin<ContactShareActRow>(
       loginId,
-      async (tx) =>
-        (await tx.execute(
-          sql`select share_id::text, contact_id::text, token, refused
-                from mantle_share_with_contacts(${nodeId}::uuid, ${a.contacts}::uuid[],
-                       ${a.tokens}::text[], ${canWrite}, ${a.kinds}::text[])`,
-        )) as unknown as ContactShareActRow[],
+      sql`select share_id::text, contact_id::text, token, refused
+            from mantle_share_with_contacts(${nodeId}::uuid, ${a.contacts}::uuid[],
+                   ${a.tokens}::text[], ${canWrite}, ${a.kinds}::text[])`,
     ),
   );
 }
@@ -121,12 +116,11 @@ export async function adminMergeEntities(
   canonicalId: string,
   dupId: string,
 ): Promise<boolean> {
-  return asAdmin(loginId, async (tx) => {
-    const rows = (await tx.execute(
-      sql`select mantle_entity_merge(${canonicalId}::uuid, ${dupId}::uuid) as ok`,
-    )) as unknown as { ok: boolean }[];
-    return rows[0]?.ok === true;
-  });
+  const rows = await asAdmin<{ ok: boolean }>(
+    loginId,
+    sql`select mantle_entity_merge(${canonicalId}::uuid, ${dupId}::uuid) as ok`,
+  );
+  return rows[0]?.ok === true;
 }
 
 // ── Part c2 (migration 0310): the item gate's three Admin acts ─────────────
@@ -139,12 +133,11 @@ export async function adminCloseShare(
   loginId: string,
   shareId: string,
 ): Promise<'closed' | 'gone' | 'no-area'> {
-  return asAdmin(loginId, async (tx) => {
-    const rows = (await tx.execute(
-      sql`select mantle_share_close_admin(${shareId}::uuid) as outcome`,
-    )) as unknown as { outcome: 'closed' | 'gone' | 'no-area' }[];
-    return rows[0]!.outcome;
-  });
+  const rows = await asAdmin<{ outcome: 'closed' | 'gone' | 'no-area' }>(
+    loginId,
+    sql`select mantle_share_close_admin(${shareId}::uuid) as outcome`,
+  );
+  return rows[0]!.outcome;
 }
 
 /** What "Can write" on a contact share answered
@@ -160,14 +153,16 @@ export async function adminSetContactShareCanWrite(
   shareId: string,
   canWrite: boolean,
 ): Promise<ContactShareWriteOutcome> {
-  return asAdmin(loginId, async (tx) => {
-    const rows = (await tx.execute(
-      sql`select outcome, contact::text as contact
-            from mantle_share_contact_write_set(${shareId}::uuid, ${canWrite})`,
-    )) as unknown as { outcome: ContactShareWriteOutcome['outcome']; contact: string | null }[];
-    const r = rows[0]!;
-    return r.outcome === 'ok' ? { outcome: 'ok', contactId: r.contact! } : { outcome: r.outcome };
-  });
+  const rows = await asAdmin<{
+    outcome: ContactShareWriteOutcome['outcome'];
+    contact: string | null;
+  }>(
+    loginId,
+    sql`select outcome, contact::text as contact
+          from mantle_share_contact_write_set(${shareId}::uuid, ${canWrite})`,
+  );
+  const r = rows[0]!;
+  return r.outcome === 'ok' ? { outcome: 'ok', contactId: r.contact! } : { outcome: r.outcome };
 }
 
 /** The snapshot a restore needs, as mantle_app_trash_act answers it. */
@@ -191,29 +186,28 @@ export async function adminAppTrashAct(
   appId: string,
   act: 'purge' | 'restore',
 ): Promise<AppTrashOutcome> {
-  return asAdmin(loginId, async (tx) => {
-    const rows = (await tx.execute(
-      sql`select outcome, seq, code, db_path, schema_version, member_era
-            from mantle_app_trash_act(${appId}::uuid, ${act})`,
-    )) as unknown as {
-      outcome: AppTrashOutcome['outcome'];
-      seq: number | null;
-      code: AppSnapshotCode | null;
-      db_path: string | null;
-      schema_version: number | null;
-      member_era: boolean | null;
-    }[];
-    const r = rows[0]!;
-    if (r.outcome !== 'restore') return { outcome: r.outcome };
-    return {
-      outcome: 'restore',
-      row: {
-        seq: r.seq!,
-        code: r.code,
-        dbPath: r.db_path,
-        schemaVersion: r.schema_version,
-        memberEra: r.member_era === true,
-      },
-    };
-  });
+  const rows = await asAdmin<{
+    outcome: AppTrashOutcome['outcome'];
+    seq: number | null;
+    code: AppSnapshotCode | null;
+    db_path: string | null;
+    schema_version: number | null;
+    member_era: boolean | null;
+  }>(
+    loginId,
+    sql`select outcome, seq, code, db_path, schema_version, member_era
+          from mantle_app_trash_act(${appId}::uuid, ${act})`,
+  );
+  const r = rows[0]!;
+  if (r.outcome !== 'restore') return { outcome: r.outcome };
+  return {
+    outcome: 'restore',
+    row: {
+      seq: r.seq!,
+      code: r.code,
+      dbPath: r.db_path,
+      schemaVersion: r.schema_version,
+      memberEra: r.member_era === true,
+    },
+  };
 }

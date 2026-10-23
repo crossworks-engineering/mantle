@@ -196,10 +196,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
     // An Admin act's definer (migration 0308) is a use of the database: in
     // the handler, the forced failure, as its transaction met it before.
-    adminActTx: (async (_login: string, fn: (tx: unknown) => Promise<unknown>) => {
+    loginDefinerCall: (async (_login: string, _scope: string, stmt: unknown) => {
       if (faults.inHandler && faults.make) throw faults.make();
-      return fn(db);
-    }) as unknown as typeof real.adminActTx,
+      return (db as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(stmt);
+    }) as unknown as typeof real.loginDefinerCall,
   };
 });
 vi.mock('../lib/workspaces', async (importOriginal) => ({

@@ -250,11 +250,11 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0316)",
   'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
-    "member-turn-tx.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0325)",
+    "login-definer.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0325)",
   'public.mantle_member_turn_release(text)':
-    "member-turn-tx.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0325)",
+    "login-definer.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0325)",
   'public.mantle_member_turn_settle(text,bigint)':
-    "member-turn-tx.ts: a member chat turn's model tokens stamped on its slot at the turn's close, the scope login's own row only, only up; the token budget reads them (0326)",
+    "login-definer.ts: a member chat turn's model tokens stamped on its slot at the turn's close, the scope login's own row only, only up; the token budget reads them (0326)",
   'public.mantle_narrow_login_held(uuid)':
     "login-update.ts and session.ts: whether a login's disable or session end runs at the spot login-credential (the owner or an Admin user, 0326's hold); also read by that hold's report branch",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
@@ -359,7 +359,7 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
   'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
-    "a member chat turn's slot (0325): runs on the system pool in the login's own scope (member-turn-tx.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
+    "a member chat turn's slot (0325): runs on the system pool in the login's own scope (login-definer.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
   'public.mantle_member_turn_release(text)':
     "a member chat turn's slot given back (0325): the same rule as the claim; a narrow session may not clear any login's daily cap",
   'public.mantle_member_turn_settle(text,bigint)':

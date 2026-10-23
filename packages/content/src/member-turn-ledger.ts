@@ -22,7 +22,7 @@
  * never reads the traces: the narrow login writes those, not the ledger.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
-import { memberTurnTx, systemDb, traces } from '@mantle/db';
+import { loginDefinerCall, systemDb, traces } from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 export type MemberTurnLimits = {
@@ -83,7 +83,7 @@ export async function memberTokensSince(
  * fails, `releaseMemberTurn` gives the slot back.
  *
  * The whole claim is one definer call (mantle_member_turn_claim, migration
- * 0325) in `loginId`'s own scope on the system pool (memberTurnTx): the
+ * 0325) in `loginId`'s own scope on the system pool (loginDefinerCall): the
  * definer takes the login from that scope, never as an argument, under the
  * per-login lock, so two sends at once cannot both take the last slot. The
  * narrow role holds no right on the ledger and may not run the definers.
@@ -96,13 +96,18 @@ export async function claimMemberTurn(args: {
   limits: MemberTurnLimits;
 }): Promise<ClaimMemberTurnResult> {
   const { ownerId, loginId, turnId, since, limits } = args;
-  const rows = (await memberTurnTx(loginId, (tx) =>
-    tx.execute(
-      sql`select ok, fresh, reason, used from mantle_member_turn_claim(${turnId}::text,
-          ${ownerId}::uuid, ${since.toISOString()}::timestamptz, ${limits.dailyTurns}::integer,
-          ${limits.dailyTokens}::bigint)`,
-    ),
-  )) as unknown as { ok: boolean; fresh: boolean; reason: string | null; used: string | null }[];
+  const rows = await loginDefinerCall<{
+    ok: boolean;
+    fresh: boolean;
+    reason: string | null;
+    used: string | null;
+  }>(
+    loginId,
+    'own',
+    sql`select ok, fresh, reason, used from mantle_member_turn_claim(${turnId}::text,
+        ${ownerId}::uuid, ${since.toISOString()}::timestamptz, ${limits.dailyTurns}::integer,
+        ${limits.dailyTokens}::bigint)`,
+  );
   const r = rows[0];
   if (!r) throw new Error('claimMemberTurn: the claim answered nothing');
   if (r.ok) return { ok: true, fresh: r.fresh };
@@ -116,9 +121,7 @@ export async function claimMemberTurn(args: {
  *  `loginId`'s own row, and only one claimed in the last five minutes
  *  (mantle_member_turn_release, 0325). */
 export async function releaseMemberTurn(loginId: string, turnId: string): Promise<void> {
-  await memberTurnTx(loginId, (tx) =>
-    tx.execute(sql`select mantle_member_turn_release(${turnId}::text)`),
-  );
+  await loginDefinerCall(loginId, 'own', sql`select mantle_member_turn_release(${turnId}::text)`);
 }
 
 /** Stamp a member chat turn's model tokens (in + out) on its slot, at the
@@ -131,8 +134,10 @@ export async function settleMemberTurn(
   tokens: number,
 ): Promise<boolean> {
   const n = Math.max(0, Math.floor(tokens));
-  const rows = (await memberTurnTx(loginId, (tx) =>
-    tx.execute(sql`select mantle_member_turn_settle(${turnId}::text, ${n}::bigint) as hit`),
-  )) as unknown as { hit: boolean }[];
+  const rows = await loginDefinerCall<{ hit: boolean }>(
+    loginId,
+    'own',
+    sql`select mantle_member_turn_settle(${turnId}::text, ${n}::bigint) as hit`,
+  );
   return rows[0]?.hit === true;
 }

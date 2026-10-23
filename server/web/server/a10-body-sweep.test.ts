@@ -195,21 +195,22 @@ vi.mock('@mantle/db', async (importOriginal) => {
     // reads above: no such contact or entity to revoke or merge. The share
     // act wrote in a transaction on main, which wants a database: it throws
     // as that did. Only the statement's text chunks are read.
-    adminActTx: (async (_login: string, fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        execute: async (stmt: { queryChunks?: unknown[] }) => {
-          const text = (stmt?.queryChunks ?? [])
-            .map((c) => {
-              const v = (c as { value?: unknown } | null)?.value;
-              return Array.isArray(v) ? v.join('') : '';
-            })
-            .join(' ');
-          if (text.includes('mantle_share_with_contacts')) {
-            throw new Error('DATABASE_URL must be set');
-          }
-          return [];
-        },
-      })) as unknown as typeof real.adminActTx,
+    loginDefinerCall: (async (
+      _login: string,
+      _scope: string,
+      stmt: { queryChunks?: unknown[] },
+    ) => {
+      const text = (stmt?.queryChunks ?? [])
+        .map((c) => {
+          const v = (c as { value?: unknown } | null)?.value;
+          return Array.isArray(v) ? v.join('') : '';
+        })
+        .join(' ');
+      if (text.includes('mantle_share_with_contacts')) {
+        throw new Error('DATABASE_URL must be set');
+      }
+      return [];
+    }) as unknown as typeof real.loginDefinerCall,
   };
 });
 // The library's item check (assertItemRight, @mantle/db item-rights.ts)
@@ -384,7 +385,7 @@ function changeKind(cell: string, main: string, now: string): string | null {
     return 'code-first (Admin act definer, 0308: the code is made before the contact is asked)';
   }
   // An Admin user's share close is a definer (migration 0310): the close
-  // with the users area is asked of the database first (adminActTx), which
+  // with the users area is asked of the database first (loginDefinerCall), which
   // the stand-in does not answer, where main's gate let the close through
   // and its revoke read no row through the stand-in. The real answers:
   // s6-c2-admin-acts.db.test.ts.
@@ -396,7 +397,7 @@ function changeKind(cell: string, main: string, now: string): string | null {
     return 'close-first (Admin act definer, 0310: the close is asked of the database first)';
   }
   // The deleted-app trash is a definer too (0310): a restore asks it for
-  // the check and the snapshot first (adminActTx), where main read the
+  // the check and the snapshot first (loginDefinerCall), where main read the
   // stand-in's snapshot row, which holds no code (its 409).
   if (
     now === OPAQUE &&
