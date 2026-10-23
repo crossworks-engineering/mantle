@@ -739,3 +739,44 @@ branch).
   ran over every alias of the real written manifest:
   route-policy-declarations.test.ts builds every row in 'declarations'
   mode from it.
+- The full vitest suite on the written tree, 'lists' mode, DATABASE_URL
+  unset: 888 files passed, 304 skipped (the database files), 0 failed.
+- The throwaway worktree was removed by its exact path.
+
+### Gates
+
+On the Mac, DATABASE_URL unset, on 73ec8db99 (the alias fix and this
+section's first part; the commit after it adds only these lines):
+
+- `pnpm -r typecheck`: 0
+- `pnpm lint`: 0 (the one warning, the unused eslint-disable in
+  contact-sharing-routes.db.test.ts, as on main)
+- `pnpm format:check`: 0
+- `pnpm docs:check`: 0
+- `pnpm arch:check`: 0 (routePolicyLists 14, historyCodeComments 2347,
+  main's)
+- `pnpm -C server/web build`: 0
+- `vitest run` (the whole suite): 0 (888 files passed, 304 skipped: the
+  database files, which need the workstation)
+
+No SQL and no migration, so no database test was needed here; the
+database suites (the workstation lanes) are the merge gate on a fresh
+clone of the pushed commit, per the standing rule.
+
+### Left (parts 1 to 3), as the rebase leaves it
+
+1. Merge (the CEO's): feat/s9-p0 onto main, ff-only.
+2. Part 1: `--check` (819 of 819 and 105 placeholders today; a moved
+   count names the routes merged since), `--write`,
+   `route-policy-declared` to 'warn'.
+3. Part 2: as round 2 says (the hand-built test manifests,
+   `standInModules` in served-route.test.ts, the flip, the rule to
+   'error', `row.audit` in auditMutation, the area check fold), with the
+   round 4 audit's notes: one effect-to-read/write helper in
+   route-policy.ts (declaredFacts computes it twice), v1Base reading
+   v1Route's GET-for-HEAD lookup, and one reader of a route file's
+   exported methods (today the regex, the lint's AST and
+   reExportedHandlers).
+4. Part 3: as round 3 says.
+5. Each of the 105 placeholders decided (a check or a reason), then the
+   lint forbids the string; the 24 'self' ones first.
