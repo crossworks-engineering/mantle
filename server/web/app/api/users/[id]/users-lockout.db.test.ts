@@ -95,6 +95,18 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     actor: { id: actorId, email: `${tag}@example.invalid`, displayName: null, isOwner: false },
   });
   const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  /** A users area handler as the gate runs it: in the caller's Admin area
+   *  request exit (the narrow route with the switch on), whose acting login
+   *  the gateway sends; the Admin membership definers take it with no
+   *  scope. */
+  const inExit =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    (...args: A): Promise<R> =>
+      m.runInRequestSlot(async () => {
+        m.setRequestActor(m.loginActor((h.caller as { actor: { id: string } }).actor.id, 'rw'));
+        m.noteRequestSystem('area');
+        return fn(...args);
+      });
   const json = (method: string, body: unknown) =>
     new Request('http://x/api/users', {
       method,
@@ -218,7 +230,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await enroll(anchor, `${tag}-anchor-1`);
     await assign(bea, `${tag}-bea-pa`);
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     const res = await PATCH(json('PATCH', { disabled: true }), ctx(bea));
     expect(res.status).toBe(200);
     expect(await devicesOf(bea)).toEqual([]);
@@ -232,7 +244,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await enroll(cal, `${tag}-cal-1`);
     await assign(cal, `${tag}-cal-pa`);
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     const res = await PATCH(json('PATCH', { role: 'member' }), ctx(cal));
     expect(res.status).toBe(200);
     expect(await devicesOf(cal)).toEqual([]);
@@ -256,7 +268,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await enroll(eve, `${tag}-eve-1`);
     await assign(eve, `${tag}-eve-pa`);
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     expect((await PATCH(json('PATCH', { displayName: 'Eve' }), ctx(eve))).status).toBe(200);
     expect(await devicesOf(eve)).toEqual([`${tag}-eve-1`]);
     expect(h.relayDeleted).toEqual([]);
@@ -270,7 +282,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     deeSpace = sp?.id as string;
     expect(sp?.orphaned_at).toBeNull();
     h.caller = as(anchor);
-    const { DELETE } = await import('./route');
+    const DELETE = inExit((await import('./route')).DELETE);
     const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx(dee));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -297,7 +309,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   it('a member login cannot be given a personal assistant; an admin can', async () => {
     h.caller = as(anchor);
-    const { PUT } = await import('./agent/route');
+    const PUT = inExit((await import('./agent/route')).PUT);
     const body = { name: `${tag} helper`, sourceAgentId: ids.source };
     const refused = await PUT(json('PUT', body), ctx(cal)); // cal is a member now
     expect(refused.status).toBe(400);
@@ -328,7 +340,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await admin`insert into space_item_bundles (root_id, node_id, position)
       values (${submitted}, ${submitted}, 0), (${submitted}, ${kept}, 1)`;
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     expect((await PATCH(json('PATCH', { role: 'admin' }), ctx(cal))).status).toBe(200);
     const rows = await admin<Row[]>`
       select node_id, sharing, review_state, submitted_at from space_items
@@ -349,7 +361,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   describe('contact links', () => {
     it('refuse a node that is not a contact, and a contact of another brain', async () => {
       h.caller = as(anchor);
-      const { PATCH } = await import('./route');
+      const PATCH = inExit((await import('./route')).PATCH);
       for (const contactId of [ids.notContact, ids.foreignContact]) {
         const res = await PATCH(json('PATCH', { contactId }), ctx(eve));
         expect(res.status, contactId).toBe(400);
@@ -358,7 +370,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
     it('refuse a contact already linked to another login (409); relinking the same login is fine', async () => {
       h.caller = as(anchor);
-      const { PATCH } = await import('./route');
+      const PATCH = inExit((await import('./route')).PATCH);
       expect((await PATCH(json('PATCH', { contactId: ids.contact }), ctx(bea))).status).toBe(200);
       const taken = await PATCH(json('PATCH', { contactId: ids.contact }), ctx(eve));
       expect(taken.status).toBe(409);
@@ -378,7 +390,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
       select id, email, created_at, session_epoch from auth.users where id = ${former}`;
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     const res = await PATCH(json('PATCH', { disabled: false }), ctx(former));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
@@ -402,7 +414,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await admin`update archive_client_logins set contact_id = ${ids.formerContact}
                  where login_id = ${former}`;
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     const res = await PATCH(json('PATCH', { contactId: ids.formerContact }), ctx(eve));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
@@ -454,7 +466,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   it('a caller without the users area: the definer refuses the role change, 403 (S8b round 4, L3)', async () => {
     h.caller = as(noU);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     const before = { fay: await adminState(fay), gus: await adminState(gus) };
     for (const [id, role] of [
       [fay, 'member'],
@@ -467,7 +479,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     // Nothing moved: no row, no role, no event.
     expect({ fay: await adminState(fay), gus: await adminState(gus) }).toEqual(before);
     // The admin login create is the same refusal (POST /api/users).
-    const { POST } = await import('../route');
+    const POST = inExit((await import('../route')).POST);
     const made = await POST(
       json('POST', {
         email: `${tag}-nou-made@example.invalid`,
@@ -487,7 +499,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   it('decides from membership, so drift is put right (S8b round 4, L2)', async () => {
     h.caller = as(anchor);
-    const { PATCH } = await import('./route');
+    const PATCH = inExit((await import('./route')).PATCH);
     // hal: role admin, no Admin row. Made admin: membership says member, so
     // the change adds it; the definer writes the role (main: no change).
     expect(await adminState(hal)).toEqual({ role: 'admin', in_admin: false, events: 0 });

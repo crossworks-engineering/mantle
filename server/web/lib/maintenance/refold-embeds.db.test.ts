@@ -73,10 +73,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   const plain = randomUUID();
   const parent = randomUUID();
   const member = randomUUID();
-  const ws: { admin: string; team: string } = { admin: randomUUID(), team: randomUUID() };
-  /** Whether this file made the anchor's Admin workspace (else another
-   *  file on the shared anchor did, and keeps it). */
-  let ownAdmin = true;
+  const ws: { admin: string; team: string } = { admin: '', team: randomUUID() };
   const vec = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
   const vecLit = `[${vec.join(',')}]`;
   const deps = {
@@ -201,20 +198,20 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
     await boss.start();
     await boss.stop({ graceful: false, timeout: 5_000 });
-    // The anchor has one Admin workspace (workspaces_one_admin_uq): another
-    // file on the shared anchor (login-facts) may have made it first, so
-    // this one takes it, and makes one only when there is none.
+    // The anchor has one Admin workspace (workspaces_one_admin_uq), shared
+    // by every file on the shared anchor (ensureAdminUsers makes it when
+    // none is there and never removes it): this file takes it the same way
+    // and never removes it either, so no other file loses it mid-run (the
+    // race of a file that made it, then dropped it at its end while
+    // another file's Admin users stood in it).
     await wsFixture(async (tx) => {
-      await tx`lock table workspaces in share row exclusive mode`;
+      await tx`insert into workspaces (owner_id, name, is_admin)
+               values (${anchor}, 'Admin', true) on conflict do nothing`;
       const [a] = await tx<{ id: string }[]>`
-        select id::text as id from workspaces where owner_id = ${anchor} and is_admin`;
-      if (a) {
-        ws.admin = a.id;
-        ownAdmin = false;
-      } else {
-        await tx`insert into workspaces (id, owner_id, name, is_admin)
-                 values (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true)`;
-      }
+        select id::text as id from workspaces
+         where owner_id = ${anchor} and is_admin and archived_at is null`;
+      if (!a) throw new Error('refold-embeds: the anchor has no live Admin workspace');
+      ws.admin = a.id;
       await tx`insert into workspaces (id, owner_id, name, is_admin)
                values (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
     });
@@ -230,16 +227,15 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     await admin`delete from node_mixed_summaries where node_id in (${unheld}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent})`;
     await admin`delete from nodes where id in (${unheld}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent}, ${file})`;
     // Items other test files made on the shared anchor meanwhile may have
-    // taken a home here: their rows go with the workspaces, in one
+    // taken a home in its Team: their rows go with it, in one
     // transaction that holds new grants back (an insert between the two
     // deletes broke the second under load).
     await wsFixture(async (tx) => {
       await tx`lock table item_grants in exclusive mode`;
-      const mine = ownAdmin ? [ws.admin, ws.team] : [ws.team];
-      await tx`delete from item_grants where workspace_id = any (${mine}::uuid[])`;
-      if (!ownAdmin)
-        await tx`delete from item_grants where workspace_id = ${ws.admin} and node_id = ${granted}`;
-      await tx`delete from workspaces where id = any (${mine}::uuid[])`;
+      // Its own Team only; the shared Admin workspace stays (its grant
+      // here went with the node's grants above).
+      await tx`delete from item_grants where workspace_id = ${ws.team}`;
+      await tx`delete from workspaces where id = ${ws.team}`;
     });
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;
