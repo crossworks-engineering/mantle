@@ -521,12 +521,15 @@ export async function narrowBegin(
     firstError ??= { err };
     noteNarrowDenial(err);
   };
+  const workThrew: { err?: unknown } = {}; // noted only where met (seen)
   try {
     return await (on.begin as (...a: unknown[]) => Promise<unknown>)(
       ...args.slice(0, -1),
       async (t: PgSql) => {
         const set = setSql === null ? t : settingsFirst(t, () => setSql);
-        const value = await workResult(work(narrowTxClient(set, seen)));
+        const value = await Promise.resolve()
+          .then(() => workResult(work(narrowTxClient(set, seen))))
+          .catch((err: unknown) => Promise.reject((workThrew.err = err)));
         try {
           await narrowHeld(set);
         } catch (err) {
@@ -537,7 +540,7 @@ export async function narrowBegin(
       },
     );
   } catch (err) {
-    noteNarrowDenial(err);
+    if (!('err' in workThrew) || workThrew.err !== err) noteNarrowDenial(err);
     throw pool ? narrowLoginError(err) : err;
   }
 }

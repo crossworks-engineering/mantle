@@ -21,11 +21,12 @@ export const CALLED_FN = /\b(?:"?public"?\s*\.\s*)?"?(mantle_[a-z0-9_]+)"?\s*\(/
  *  from the catalog (its grants and PUBLIC's), kept ten minutes (a migrate
  *  changes it). */
 const narrowExec = new TtlCache<'can', ReadonlyMap<string, boolean>>({ ttlMs: 10 * 60_000 });
-let narrowExecLoad: Promise<ReadonlyMap<string, boolean>> | null = null;
+let narrowExecLoad: Promise<ReadonlyMap<string, boolean> | null> | null = null;
 
 /** The catalog's answer, loaded on the system pool (no actor: a catalog
- *  read). Empty when the role is not there. */
-function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
+ *  read). Empty when the role is not there; null when the catalog could
+ *  not be read (not kept: the next statement tries again). */
+function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean> | null> {
   const kept = narrowExec.get('can');
   if (kept) return Promise.resolve(kept);
   narrowExecLoad ??= (async () => {
@@ -34,6 +35,7 @@ function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
         `select p.proname::text as name, bool_or(has_function_privilege($1, p.oid, $2)) as ok
            from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+           join pg_catalog.pg_roles r on r.rolname = $1
           where n.nspname = 'public' and p.proname like 'mantle\\_%'
           group by 1`,
         [NARROW_ROLE, 'EXECUTE'],
@@ -42,7 +44,9 @@ function narrowExecutable(base: PgSql): Promise<ReadonlyMap<string, boolean>> {
       narrowExec.set('can', can);
       return can;
     } catch {
-      return new Map<string, boolean>();
+      // Not an empty answer: the caller counts every call it read as
+      // unread, so a failed load never reads as nothing refused.
+      return null;
     } finally {
       narrowExecLoad = null;
     }
@@ -81,7 +85,8 @@ export function noteWouldRefuseCalls(base: PgSql, query: string): void {
   const who = actor ? actorSetting(actor) : 'none';
   void narrowExecutable(base).then((can) => {
     for (const name of names) {
-      if (can.get(name) === false) noteNarrowWouldRefuse(who, `fn:${name} EXECUTE`);
+      if (can === null) noteNarrowWouldRefuse(who, `fn:${name} UNREAD`);
+      else if (can.get(name) === false) noteNarrowWouldRefuse(who, `fn:${name} EXECUTE`);
     }
   });
 }

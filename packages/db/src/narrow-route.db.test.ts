@@ -789,6 +789,37 @@ describe.skipIf(!URL)('the narrow system route (plan v3.2 S7a)', () => {
     expect(actor.takeNarrowDenials()).toHaveLength(1);
   });
 
+  it('does not note a 42501 the work threw that no narrow statement raised', async () => {
+    // Another pool's refusal (here its shape) thrown out of a narrow
+    // transaction's work: the caller gets it, nothing is noted as narrow.
+    const elsewhere = Object.assign(new Error('permission denied for table nodes'), {
+      code: '42501',
+    });
+    const err = await failure(
+      v.asSystem(
+        () =>
+          m.db.transaction(async (tx) => {
+            await tx.execute(sql`select 1`);
+            throw elsewhere;
+          }),
+        'admin-area',
+      ),
+    );
+    expect(err).toBe(elsewhere);
+    expect(actor.takeNarrowDenials()).toHaveLength(0);
+    // A narrow statement's own refusal thrown out of the work: noted once.
+    await failure(
+      v.asSystem(
+        () =>
+          m.db.transaction(async (tx) => {
+            await tx.execute(sql`update public.nodes set title = title where false`);
+          }),
+        'admin-area',
+      ),
+    );
+    expect(actor.takeNarrowDenials()).toHaveLength(1);
+  });
+
   it('off: every reason runs as the pool login', async () => {
     await reopen(false);
     try {
