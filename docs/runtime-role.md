@@ -240,9 +240,9 @@ Its rights, made equal to the access matrix at every migrate inside
   at another host (narrow-allowlist.db.test.ts). The runs worker checks a
   run's maker too: an item of a run that names neither its assistant nor
   its login, or a login that is gone, never runs. With the switch off,
-  migration 0319 counts, report only, each write a narrow reason makes on
+  migration 0320 counts, report only, each write a narrow reason makes on
   the full route that the role would refuse (a table or column privilege,
-  0318's one-way rules): `narrow-would-refuse` miss rows, read by
+  0319's one-way rules): `narrow-would-refuse` miss rows, read by
   scripts/arch-scoreboard-box.sh; its triggers are derived from the role's
   live grants on every migrate, so an allowed write fires none. A
   `systemDb` write inside a login's turn or request scope (which the narrow
@@ -283,7 +283,7 @@ Its rights, made equal to the access matrix at every migrate inside
   group made, removed or its tools changed at `tool-group-grant` (S7b part
   b2 round 6). The model routes, keys and a group's integration stay
   writable: outbound configuration, as `api_keys`;
-- one way on the columns a right is taken back by (migration 0318,
+- one way on the columns a right is taken back by (migration 0319,
   `mantle_narrow_one_way`, a BEFORE UPDATE trigger that holds only the
   narrow role): a revoke (`revoked_at` of access keys, OAuth tokens, device
   tokens, invites and peer shares) and a disable are never cleared, a
@@ -299,13 +299,13 @@ Its rights, made equal to the access matrix at every migrate inside
   DB suite; `MANTLE_NARROW_DUMP`'s `fn:<name>` uses, quoted names counted):
   what narrow statements call by name, ten today (the read definers
   of the login-self routes, the Admin area's approvals and the email
-  discover; `mantle_brain_id`; 0320's message guard read). No writer on an
+  discover; `mantle_brain_id`; 0321's message guard read). No writer on an
   area exit is left on it: the five that need the exit's login
   (`mantle_ws_set_moderator`, `mantle_tg_chat_set`, the structure and
   assistant delete definers, and `mantle_ws_attach_assistants`, the
   onboarding attach) run at the full-route spot `acting-login` through one
   helper, `atActingLogin` (gateway/acting-login.ts), each caller's own
-  transaction inside it (0321: the identity readers answer no login on the
+  transaction inside it (0322: the identity readers answer no login on the
   narrow role). A secret's sealed row is written by the structure helper
   itself; its caller passes only the sealed value, no statement;
   `mantle_bridge_login` left it with the role change, and the promotion
@@ -502,8 +502,8 @@ the settings area write `profiles`, the write role's own-login table, with
 no scope to carry), `integrity-delete` (the landed delete), and the
 others the list names. S7b moves each to the write role in the caller's
 scope or to a definer. Two spots are not content writes but rights the
-narrow login may not hold (S7b part b2, the interim audit of 0314 and
-0315): `login-credential` (a new login, a role change, a contact link and a
+narrow login may not hold (S7b part b2, the interim audit of 0315 and
+0316): `login-credential` (a new login, a role change, a contact link and a
 password, with the Admin rows `mantle_bridge_login` keeps in step: the
 whole transaction on the system pool's own login) and `structure-no-login`
 (a structure item in a narrow exit that acts for no login, above). Outside
@@ -514,10 +514,10 @@ The structure items an Admin area's narrow exit makes, edits and removes
 item and the folders above one, and the events a calendar synced, which
 its unsubscribe removes) left the spots in S7b part b2: on the
 narrow route each write is one call of `mantle_structure_item` (migration
-0315, `gateway/structure-item.ts`). Its KIND is one of a fixed list that
+0316, `gateway/structure-item.ts`). Its KIND is one of a fixed list that
 fixes the item's type, the area its writer must hold (keys, connectors or
 settings), the operations open to it and where a new one lands; the caller
-must be a system session with no scope (0314's rule), name the acting
+must be a system session with no scope (0315's rule), name the acting
 login, and that login must hold the kind's area (`mantle_area_rule`). The
 narrow role runs it and holds no right on `nodes`. Anywhere else (a
 login's scope, a full reason, the switch off) the app's own statements run
@@ -525,7 +525,7 @@ as before; the definer does what they did (the row, the heads, the index
 reset), so placement and readers are the same.
 
 Two more left the spots in part b2's third round, each for a definer of
-its own with the same caller rule (migration 0316,
+its own with the same caller rule (migration 0317,
 `gateway/spot-definers.ts`): a login made admin on the users area's exit
 gets its personal space's shared and submitted items back as private
 drafts (`mantle_space_settle_promotion`, the users area; it refuses a
@@ -627,7 +627,7 @@ heartbeat's turn that answers none) it acts for none, and the structure
 items then run the app's own statements at the full-route spot
 `structure-no-login`, as before their definer.
 
-The definers that act for a login with no scope take it (migration 0314):
+The definers that act for a login with no scope take it (migration 0315):
 `mantle_tg_chat_set` (the assistants area's Telegram block and unpair) and
 `mantle_access_key_revoke`. In a scope the scope's own login rules, as
 before. With no scope the call must come from a system session, and the
@@ -665,7 +665,7 @@ the login (`mantle.login_id`, `mantle.scope_login`), the workspaces
 one of them directly trusted whatever the session said: the re-audits made a
 member Moderator through a self-set login and workspace, and deleted an
 assistant through a self-set acting login, both as the narrow login. The
-rule (migration 0321) closes the class in the database, not one function at
+rule (migration 0322) closes the class in the database, not one function at
 a time:
 
 - One gateway. Only the readers read an identity setting:
@@ -715,7 +715,7 @@ a time:
   before its commit (so a migration that leaves one leaves nothing) and
   again after the grants (`afterMigrations`), so a new function is covered
   with no list to keep.
-- The derivation's flag (`mantle.acl_internal`, 0326 part 4). Not an
+- The derivation's flag (`mantle.acl_internal`, 0327 part 4). Not an
   identity, but a session setting a check trusted: the item_grants
   triggers skipped the heads check and the folder propagation while it
   was on, so a write role session (or the runtime role) that set it
@@ -747,7 +747,7 @@ a time:
 
 A login that is not an Admin user takes a slot of its daily turn cap and
 token budget for each chat turn, summary and transcription
-(`member_turn_ledger`). Since 0325 the ledger is written only by two
+(`member_turn_ledger`). Since 0326 the ledger is written only by two
 definers: `mantle_member_turn_claim` (the whole claim: the per-login lock,
 a retried turn id admitted and not counted again, the day's turns against
 the cap, the login's member chat tokens against the budget, the row) and
@@ -760,11 +760,11 @@ login, or a Telegram chat's paired login). The runtime role runs them and
 only reads the table; the narrow role, the write role and the workspace
 role may run neither and write nothing there, so a forged narrow session
 can clear no login's slot (its own or another's) and make none. Before
-0325 the app's own statements wrote the table on the system pool, which
+0326 the app's own statements wrote the table on the system pool, which
 inside a member's chat request is the narrow route: refused with the
 switch on.
 
-The token budget reads the ledger's own tokens since 0326, never the
+The token budget reads the ledger's own tokens since 0327, never the
 traces: the narrow role inserts and updates traces (a turn's record), so a
 forged narrow session could zero its own member chat traces or raise
 another login's to lock it out. A team turn's model tokens (in + out, what
@@ -772,16 +772,16 @@ its trace's close writes) are stamped on its slot at that close by
 `mantle_member_turn_settle(turn, tokens)`: the scope login's own row only,
 only up (a retried close writes the same count or more). The runtime role
 runs it (`loginDefinerCall`), the narrow role may not, and no role but the
-definers' owner writes the column. A slot claimed before 0326 carries 0
-tokens, so on the day 0326 lands the budget counts from then. Late usage
+definers' owner writes the column. A slot claimed before 0327 carries 0
+tokens, so on the day 0327 lands the budget counts from then. Late usage
 added to a trace after its close is not on the slot: the budget is a brake
 on a runaway, not an invoice. The narrow role holds no DELETE of traces
 either (the integrity screen's delete of a node's traces runs at its spot
 `integrity-delete`).
 
-Rolling the release that adds 0325: between the migrate and the restart of
+Rolling the release that adds 0326: between the migrate and the restart of
 each app process, an older process still writes the ledger itself, which
-the runtime role may no longer do (0325's image takes those writes away in
+the runtime role may no longer do (0326's image takes those writes away in
 its migrate): its member claims are refused (42501, a 500 on that member's
 chat send) until it restarts. `docker compose up -d` right after the
 migrate (the roll script does both) keeps the window to the restart; no
@@ -790,7 +790,7 @@ member slot is lost, only that send.
 ### The login hold
 
 The narrow role may update `auth.users.disabled_at` and `session_epoch`
-(the users area disables a login and ends its sessions). Migration 0326's
+(the users area disables a login and ends its sessions). Migration 0327's
 hold (`mantle_narrow_login_hold`, BEFORE UPDATE OF those two columns)
 refuses it either column on the brain owner's row, an admin by role, or a
 user of the Admin workspace, disabled or not (`mantle_narrow_login_held`, a
@@ -800,7 +800,7 @@ users area's disable and session end of such a login runs at the spot
 `login-credential` (`onLoginHoldSpot`, packages/db `login-hold.ts`, which
 asks the same definer; endLoginSessions and applyLoginChange go through
 it). Off the narrow route the same change by a narrow reason is counted
-(0319's notice), at the spot it is not. When the S8b rebase lands, Admin
+(0320's notice), at the spot it is not. When the S8b rebase lands, Admin
 here keeps meaning the Admin workspace's users; the role column test is
 the older name of the same thing.
 
@@ -808,7 +808,7 @@ the older name of the same thing.
 
 The turn writes its message rows (`assistant_messages`) on the narrow
 route, so the narrow role keeps INSERT and an UPDATE of `text`, `model`,
-`status` and `data`. Migration 0322's guard (a BEFORE INSERT OR UPDATE row
+`status` and `data`. Migration 0323's guard (a BEFORE INSERT OR UPDATE row
 trigger, so ON CONFLICT, MERGE and COPY meet it too) holds the shape: a row
 names this brain, an assistant of this brain (never none), that
 assistant's workspace (NULL only for an Admin workspace assistant) and a
@@ -817,7 +817,7 @@ user; for the Admin workspace the owner or an Admin user only). A row
 whose status is not `pending` is never rewritten (a finished turn's text is
 what later turns read as history), but for the follow-up suggestion in its
 data; a settled row never goes back to pending. Off the narrow route the
-same break by a narrow reason is counted (0319's notice) and runs.
+same break by a narrow reason is counted (0320's notice) and runs.
 
 ### The narrow write count
 
@@ -831,7 +831,7 @@ misses (at most one per check, actor and table an hour).
   a write whose actor is a narrow reason's (`mantle_narrow_actor`: the
   `AS_SYSTEM_ROUTE` and `REQUEST_SYSTEM_ROUTE` reasons routed narrow, pinned
   equal by `narrow-observe.test.ts`) AND `current_user` is the session's own
-  role, the role it SET or else its login (migration 0317; 0312 asked
+  role, the role it SET or else its login (migration 0318; 0312 asked
   `current_user = session_user`, which a superuser-owned definer met on the
   per-database fallback: the full route, where the narrow role was refused
   before any trigger, a definer runs as its owner, a cascade as the table's
@@ -842,7 +842,7 @@ misses (at most one per check, actor and table an hour).
   migration made runs as that superuser, and its writes count too.
 - `narrow-cascade-delete`: a delete from `auth.users`, `spaces` or `agents`
   by a narrow reason's actor, not at a spot, on either route, not inside a
-  definer (the same own-role test, 0317), once per
+  definer (the same own-role test, 0318), once per
   statement (their foreign keys cascade or set null into content tables as
   the owner, past the role's own rights). A sign of content going away
   under narrow work, not a refusal to come: turning the role on does not
@@ -855,14 +855,14 @@ misses (at most one per check, actor and table an hour).
 `narrow_misses:cascade-delete` and `narrow_misses:denied` (distinct check,
 actor and table rows since the release's epoch, below; numbers only), and
 `narrow_misses:would-refuse` and `narrow_misses:would-refuse-tables`
-(migration 0319: the writes the
-role would refuse, made with the switch off; like 0317's counts it asks
+(migration 0320: the writes the
+role would refuse, made with the switch off; like 0318's counts it asks
 for the session's own role, so a definer's own writes are left out on the
 narrow route and with the runtime role on, and counted on a system pool
 logged in as the superuser that owns the definers, where the two are one
 role (the "Exact with the runtime role on" note above: read those boxes'
-counts with that in mind), and 0320's row rules (a heartbeat's books, an enable,
-the owner's and an Admin user's row) count through 0319's report branch).
+counts with that in mind), and 0321's row rules (a heartbeat's books, an enable,
+the owner's and an Admin user's row) count through 0320's report branch).
 
 The counts are read since the release's epoch, so a release that fixed a
 cause starts again from 0. The epoch is a row of `actor_check_misses`
@@ -991,21 +991,21 @@ first and drops those on its table (the next migrate makes them again).
 
 Reverting the narrow migrations by hand (before pinning an older image;
 one image back needs none): newest first, each file in its own
-transaction, `0326_narrow_lockout_and_ledger_tokens`,
-`0325_member_turn_ledger_definers`,
-`0324_narrow_off_on_insert`, `0323_narrow_enable_off`,
-`0322_narrow_message_rules`, `0321_identity_gateway`,
-`0320_narrow_row_rules`, then
-`0319_narrow_would_refuse`, `0318`, `0317`, `0316`, `0315`, `0314` (each in
-`packages/db/rollback/`): 0326's revert drops the settle definer, the
-login hold and the miss guard, puts 0325's claim back (the budget from the
-traces) and drops the ledger's tokens column; 0325's revert drops the two ledger definers (an
+transaction, `0327_narrow_lockout_and_ledger_tokens`,
+`0326_member_turn_ledger_definers`,
+`0325_narrow_off_on_insert`, `0324_narrow_enable_off`,
+`0323_narrow_message_rules`, `0322_identity_gateway`,
+`0321_narrow_row_rules`, then
+`0320_narrow_would_refuse`, `0319`, `0318`, `0317`, `0316`, `0315` (each in
+`packages/db/rollback/`): 0327's revert drops the settle definer, the
+login hold and the miss guard, puts 0326's claim back (the budget from the
+traces) and drops the ledger's tokens column; 0326's revert drops the two ledger definers (an
 older image writes the ledger itself, its own migrate grants the runtime
-role the writes again), 0324's revert takes INSERT out of the one-way
-triggers and its two replaces out of `mantle_narrow_one_way` (0323's then
-takes the switch rules out), 0322's revert puts 0320's message guard back
-(which 0320's revert then drops), 0321's revert puts the direct reads back into the
-bodies 0320 and 0319 wrote, and 0319's revert puts 0318's
+role the writes again), 0325's revert takes INSERT out of the one-way
+triggers and its two replaces out of `mantle_narrow_one_way` (0324's then
+takes the switch rules out), 0323's revert puts 0321's message guard back
+(which 0321's revert then drops), 0322's revert puts the direct reads back into the
+bodies 0321 and 0320 wrote, and 0320's revert puts 0319's
 `mantle_narrow_one_way` back, so each must run before the next.
 
 Every one of these counts needs the actor check in warn or on (the
@@ -1020,7 +1020,7 @@ that will flip: every box rolled to that release (its
 `narrow_misses_since_epoch` names that version) and each count 0 since
 its epoch, not since some older one. A 0 counts only where the counter
 exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
-makes; 0 on a box before 0319 or after a failed migrate) and
+makes; 0 on a box before 0320 or after a failed migrate) and
 `narrow_counter_actor_check` warn or on. b3 needs both on every box. The epoch must also be old enough and have
 seen traffic: at least 7 days since it (a soak), with the box's usual
 work in them (member and Admin turns, the users, keys and settings areas,
@@ -1031,7 +1031,7 @@ before it saw. The soak is of one version: b3 flips the default on the
 version that soaked, never on a later one that has not (a release after
 the soak starts its own epoch and its own 7 days). A path too rare to run
 in 7 days (a yearly job, a recovery tool) is not proven by the soak; it
-rests on the switch-on suites above. Only migrate or an operator writes an epoch row: 0326's
+rests on the switch-on suites above. Only migrate or an operator writes an epoch row: 0327's
 guard refuses the narrow role a `narrow-epoch` row or a miss row dated
 ahead (directly or through `mantle_actor_miss_log`).
 `narrow-observe.db.test.ts` holds the cells (as the runtime role, so
@@ -1247,7 +1247,7 @@ refuses a brain not on workspaces.
   may update (`email_accounts.imap_included_folders`, `ms_drive_scopes`,
   `ms_drives.delta_link`) choose what a feed brings in, never a right or
   a destination, and stay until then with that reason.
-- Migrations from 0314 on are never edited in place: the planner refuses
+- Migrations from 0315 on are never edited in place: the planner refuses
   a journal entry whose `when` the ledger holds under another hash
   (`HASH_REFUSED_FROM`, migrate-plan.ts), so a stamp two branches shared,
   or an edit after a box ran it, stops the migrate with its name instead of

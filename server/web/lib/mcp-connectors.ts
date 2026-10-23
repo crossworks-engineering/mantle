@@ -232,7 +232,7 @@ export async function updateMcpConnector(
   }
 
   // A group's integration, configuring login and enable (where its calls,
-  // token and vault refs go; an enable is a grant, 0320) are not the narrow
+  // token and vault refs go; an enable is a grant, 0321) are not the narrow
   // login's: the full-route spot tool-config (access-matrix.ts NARROW_WRITES).
   let [updated] = await onFullSystemRoute('tool-config', () =>
     db

@@ -1,6 +1,6 @@
 -- The narrow role's message rows (assistant_messages), the full guard
 -- (the narrow login part b2, round 13b, item B: the re-audit's DB MED-B, two app
--- LOWs, DB LOW-1). 0320's guard checked only an insert, let a row
+-- LOWs, DB LOW-1). 0321's guard checked only an insert, let a row
 -- with no assistant through, let a row name a workspace its assistant is
 -- not in, and read a NULL workspace (the Admin workspace) as no rule at
 -- all. The narrow role is the turn's hot path, so the INSERT stays; what
@@ -23,13 +23,13 @@
 --    what later turns read as history, so it is never rewritten.
 -- 3. Off the narrow route (the switch off) the same break by a narrow
 --    reason (or on a statement marked mantle.route = 'narrow'), not at a
---    spot, is counted as one the narrow role would refuse (0319's report
+--    spot, is counted as one the narrow role would refuse (0320's report
 --    notice), and runs.
 --
 -- The narrow role's EXECUTE of mantle_narrow_message_ok stays (runtime-
 -- role.ts NARROW_SYSTEM_FUNCTIONS). Re-runnable. No table or row changes;
--- no LLM work. Revert: packages/db/rollback/0322_narrow_message_rules.revert.sql
--- (0320's guard back), before 0321's.
+-- no LLM work. Revert: packages/db/rollback/0323_narrow_message_rules.revert.sql
+-- (0321's guard back), before 0322's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_ok"(
@@ -94,7 +94,7 @@ BEGIN
   -- As the caller: the narrow role's own writes are checked; a definer's
   -- (current_user its owner) are not.
   IF current_user <> 'mantle_system_narrow' THEN
-    -- Report only (0319): the same row by a narrow reason off the narrow
+    -- Report only (0320): the same row by a narrow reason off the narrow
     -- route, not at a spot, is counted and runs.
     IF "public"."mantle_narrow_counted"(who)
        AND current_user::text = own_role

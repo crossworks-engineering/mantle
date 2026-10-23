@@ -87,10 +87,10 @@ function locksIn(text: string): Lock[] {
  * text), so an image of either side still waits for the other's.
  */
 const MOVED_TO_SQL: Record<string, { sql: string; prefix: string }> = {
-  // The member turn ledger's claim (0325): mantle_member_turn_claim
+  // The member turn ledger's claim (0326): mantle_member_turn_claim
   // locks on its scope login, the login claimMemberTurn locked on.
   'packages/content/src/member-turn-ledger.ts': {
-    sql: 'packages/db/migrations/0325_member_turn_ledger_definers.sql',
+    sql: 'packages/db/migrations/0326_member_turn_ledger_definers.sql',
     prefix: 'member-turn:',
   },
 };

@@ -471,7 +471,7 @@ async function notifyPaired(args: {
  * definer then takes the scope's own login only), on the narrow or full
  * system route on the assistants area's route (no scope: the definer takes
  * only the acting login the gateway sends, the request's, and only from a
- * system session, migration 0314). A chat the caller may not
+ * system session, migration 0315). A chat the caller may not
  * touch, or none, answers no row: not found, so a caller who may not
  * moderate the bot learns nothing about its chats.
  */
@@ -487,7 +487,7 @@ export async function setChatPairing(args: {
   // Not a login: nobody's chat (the rule never names one).
   if (!UUID_RE.test(actorLoginId)) return notFound;
   // The definer needs the acting login, which the identity readers answer
-  // only off the narrow role (0321): the full-route spot acting-login on the
+  // only off the narrow role (0322): the full-route spot acting-login on the
   // assistants area's narrow exit; in a login's scope it runs as it is.
   const rows = await atActingLogin(() =>
     db.transaction(

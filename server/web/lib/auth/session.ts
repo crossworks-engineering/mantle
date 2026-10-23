@@ -2648,7 +2648,7 @@ export async function endLoginSessions(
   // sessions alive after it must not happen silently. A second failure is
   // thrown: the request fails loudly (409 busy), never a quiet success.
   // The owner's or an Admin user's sessions end at the spot
-  // login-credential on a narrow exit (0326: the narrow login may not move
+  // login-credential on a narrow exit (0327: the narrow login may not move
   // their session epoch).
   let epoch: number | null;
   try {

@@ -1,8 +1,8 @@
 /**
- * The derivation's flag on item_grants (migration 0326 part 4, plan v3.2
+ * The derivation's flag on item_grants (migration 0327 part 4, plan v3.2
  * S7b part b2): mantle.acl_internal is a session setting, and the
  * item_grants triggers read it alone (the heads check and the folder
- * propagation are skipped while it is on). Before 0326 a write role
+ * propagation are skipped while it is on). Before 0327 a write role
  * session (an Admin scope) or the runtime role that set it itself
  * unshared a folder and the folder's item stayed readable in that
  * workspace. Now the functions that set it sign it (mantle_acl_on), the
@@ -38,7 +38,7 @@ type Flag = 'none' | 'on' | 'stale';
 type Op = 'delete' | 'definer' | 'insert';
 type Got = { code: string; child: string[] };
 
-describe.skipIf(!URL)('0326: the derivation flag is signed (item_grants)', () => {
+describe.skipIf(!URL)('0327: the derivation flag is signed (item_grants)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let su: ReturnType<typeof postgres>;
   let owner = '';

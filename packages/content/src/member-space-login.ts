@@ -38,7 +38,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 export async function settleSpaceOnPromotion(tx: Tx, loginId: string): Promise<number> {
   // On the users area's narrow exit: the definer, the same statements
-  // (mantle_space_settle_promotion, 0316).
+  // (mantle_space_settle_promotion, 0317).
   const settled = await settlePromotionOnNarrow(tx, loginId);
   if (settled !== null) return settled;
   const rows = await tx

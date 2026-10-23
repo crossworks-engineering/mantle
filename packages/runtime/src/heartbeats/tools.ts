@@ -234,7 +234,7 @@ const heartbeat_snooze: BuiltinToolDef = {
       return { ok: false, error: target.error };
     }
     // A snooze may move the next fire earlier, which the narrow login may
-    // not (0320: next_fire_at only forward): the full-route spot
+    // not (0321: next_fire_at only forward): the full-route spot
     // heartbeat-maker.
     await heartbeatRow(() =>
       onFullSystemRoute('heartbeat-maker', () =>

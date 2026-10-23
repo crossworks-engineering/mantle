@@ -105,10 +105,10 @@ export async function afterMigrations(
   runtime: RuntimeRolesOutcome,
   log: StepLog = consoleLog,
 ): Promise<void> {
-  // The identity gateway's catalog check (0321): no function, policy or
+  // The identity gateway's catalog check (0322): no function, policy or
   // trigger condition reads an identity setting outside the readers. Fatal:
   // a definer that trusts a session's own login is a hole on every role.
-  // A database stopped before 0321 (an old-migration cell) has no check yet.
+  // A database stopped before 0322 (an old-migration cell) has no check yet.
   await assertNoIdentityLeaks(sql, (line) => log.info(line));
 
   // The viewer roles' grants come from the access matrix, re-applied every

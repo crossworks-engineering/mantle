@@ -1,17 +1,17 @@
--- Rollback of 0320_narrow_row_rules: what an operator runs BEFORE pinning
+-- Rollback of 0321_narrow_row_rules: what an operator runs BEFORE pinning
 -- an image older than the one that added it, if they want its rules gone.
 -- Not a migration: nothing runs it on its own.
 --
--- 0320 refuses only the narrow system role (and, for mantle_ws_system_work,
+-- 0321 refuses only the narrow system role (and, for mantle_ws_system_work,
 -- a session whose own role is the narrow or a viewer role), which an older
 -- image's product writes never meet in a refused direction: a rollback of
 -- one image needs NOT this file. Order when reverting several: every newer
--- one first (0326 down to 0321), then 0320, then 0319 down to 0314, each in
--- its own transaction, newest first (0319's revert puts 0318's
--- mantle_narrow_one_way back, so 0320's must run before it).
+-- one first (0327 down to 0322), then 0321, then 0320 down to 0315, each in
+-- its own transaction, newest first (0320's revert puts 0319's
+-- mantle_narrow_one_way back, so 0321's must run before it).
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0320_narrow_row_rules.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0321_narrow_row_rules.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -31,7 +31,7 @@ DROP FUNCTION IF EXISTS "public"."mantle_narrow_message_guard"();
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_message_ok"(uuid, uuid, uuid, uuid);
 --> statement-breakpoint
--- 0319's body (no DELETE rules, no fwd, fwdn, nofrom, off or keepif).
+-- 0320's body (no DELETE rules, no fwd, fwdn, nofrom, off or keepif).
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
@@ -47,7 +47,7 @@ DECLARE
   i int;
 BEGIN
   IF current_user <> 'mantle_system_narrow' THEN
-    -- Report only (0319): the same row change by a narrow reason's actor
+    -- Report only (0320): the same row change by a narrow reason's actor
     -- (or on a statement marked mantle.route = 'narrow')
     -- off the narrow route (the switch off), not at a spot, is counted as
     -- one the narrow role would refuse, and runs.
@@ -107,7 +107,7 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_one_way"() FROM PUBLIC;
 --> statement-breakpoint
--- The agents trigger as 0318 made it.
+-- The agents trigger as 0319 made it.
 DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."agents";
 --> statement-breakpoint
 CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE UPDATE ON "public"."agents"
@@ -128,5 +128,5 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_ws_system_work"(text) FROM PUBLIC;
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0320 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198520000;
+-- Off the ledger: the next roll forward applies 0321 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199340000;

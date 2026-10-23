@@ -19,7 +19,7 @@ export const memberTurnLedger = pgTable(
     loginId: uuid('login_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     /** The turn's model tokens (in + out), stamped at its close by
-     *  mantle_member_turn_settle (0326); the token budget sums them. */
+     *  mantle_member_turn_settle (0327); the token budget sums them. */
     tokens: bigint('tokens', { mode: 'number' }).default(0).notNull(),
   },
   (t) => [index('member_turn_ledger_login_idx').on(t.loginId, t.createdAt)],

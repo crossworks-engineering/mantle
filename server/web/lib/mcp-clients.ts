@@ -66,7 +66,7 @@ export async function disconnectClient(ownerId: string, clientId: string): Promi
     .limit(1);
   if (!owned) return false;
   // A client a live grant of the owner or an Admin user rides on is
-  // removed at the spot login-credential on a narrow exit (0326's hold).
+  // removed at the spot login-credential on a narrow exit (0327's hold).
   await onLoginHoldSpot({ client: clientId }, () =>
     db.delete(oauthClients).where(eq(oauthClients.id, clientId)),
   );
@@ -129,7 +129,7 @@ export async function disconnectLoginClient(
   clientId: string,
 ): Promise<boolean> {
   // The owner's or an Admin user's own grants on a narrow exit: at the
-  // spot login-credential (0326's hold on grants).
+  // spot login-credential (0327's hold on grants).
   return onLoginHoldSpot(actorId, () =>
     db.transaction(async (tx) => {
       await lockOauthActor(tx, actorId);

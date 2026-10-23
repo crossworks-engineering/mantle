@@ -155,7 +155,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     // The handler runs as the HTTP gate runs it (the session guard is
     // stubbed here, so no scope is entered): a request whose login acts on
     // its own things with no scope, the acting login the gateway sends (plan
-    // v3.2 S7b, 0314: with no scope the definer takes only that login).
+    // v3.2 S7b, 0315: with no scope the definer takes only that login).
     return m.runInRequestSlot(() => {
       m.setRequestActor(m.loginActor(login, 'rw'));
       m.noteRequestSystem('login-self');

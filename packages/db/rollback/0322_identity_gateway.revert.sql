@@ -1,18 +1,18 @@
--- Rollback of 0321_identity_gateway: what an operator runs BEFORE pinning
+-- Rollback of 0322_identity_gateway: what an operator runs BEFORE pinning
 -- an image older than the one that added it, if they want the identity
 -- gateway gone. Not a migration: nothing runs it on its own.
 --
--- 0321 changes what the readers answer only on the narrow system role, and
+-- 0322 changes what the readers answer only on the narrow system role, and
 -- requires the acting login where a definer read it; an older image's
 -- product writes reach those definers on the full route with the acting
 -- login sent, so a rollback of one image needs NOT this file. Order when
--- reverting several: every newer one first (0326 down to 0322), then 0321,
--- then 0320, then 0319 down to 0314, each in its own transaction, newest
--- first (0320's revert puts 0319's mantle_narrow_one_way back, whose body
+-- reverting several: every newer one first (0327 down to 0323), then 0322,
+-- then 0321, then 0320 down to 0315, each in its own transaction, newest
+-- first (0321's revert puts 0320's mantle_narrow_one_way back, whose body
 -- this file must have restored the reads of first).
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0321_identity_gateway.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0322_identity_gateway.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -37,7 +37,7 @@ BEGIN
     def := replace(def, 'coalesce("public"."mantle_identity_actor"(), '''')',
                    'coalesce(current_setting(''mantle.actor'', true), '''')');
     IF def LIKE '%mantle_identity_%' THEN
-      RAISE EXCEPTION '0321 revert: % still names a reader', f.name;
+      RAISE EXCEPTION '0322 revert: % still names a reader', f.name;
     END IF;
     EXECUTE def;
   END LOOP;
@@ -87,5 +87,5 @@ DROP FUNCTION IF EXISTS "public"."mantle_identity_actor"();
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_identity_narrow"();
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0321 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198580000;
+-- Off the ledger: the next roll forward applies 0322 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199400000;

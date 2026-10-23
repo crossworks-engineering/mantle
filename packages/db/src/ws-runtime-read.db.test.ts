@@ -188,7 +188,7 @@ describe.skipIf(!URL)(
     });
 
     it('the matrix marks exactly the four workspace tables runtime read, and the member turn ledger', () => {
-      // The ledger too since 0325: its two definers write it, the runtime
+      // The ledger too since 0326: its two definers write it, the runtime
       // role only reads it (member-turn-ledger-narrow.db.test.ts holds its
       // live grants).
       expect(runtimeReadOnlyTables().sort()).toEqual(

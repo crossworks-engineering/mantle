@@ -38,7 +38,7 @@ export async function setDriveEnabled(
   const set = { enabled, updatedAt: new Date() };
   const write = () => db.update(msDrives).set(set).where(eq(msDrives.id, driveDbId));
   // A turn-on (the drive syncs again, its files are ingested): the
-  // full-route spot feed-enable (0323: enabled only off on the narrow login).
+  // full-route spot feed-enable (0324: enabled only off on the narrow login).
   await onNarrowSpots(msDrives, 'update', set, write);
   return true;
 }

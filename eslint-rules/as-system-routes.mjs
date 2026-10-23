@@ -151,7 +151,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // helper (atActingLogin, FULL_ROUTE_SPOT_CALLBACKS).
   'packages/db/src/gateway/acting-login.ts': ['acting-login'],
   'packages/embeddings/src/reembed.ts': ['reembed'],
-  // A disable or session end of the owner or an Admin user (0326's hold:
+  // A disable or session end of the owner or an Admin user (0327's hold:
   // onLoginHoldSpot, asked by session.ts and login-update.ts).
   'packages/db/src/login-hold.ts': ['login-credential'],
   'server/web/lib/auth/session.ts': ['login-credential'],
@@ -185,7 +185,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/pending-queue.ts': ['pending-park'],
   'server/web/app/api/dev-tools/queue-approval/route.ts': ['pending-park'],
   'packages/files/src/docs.ts': ['docs-root'],
-  // A content feed switched on (0323: enabled only off on the narrow login).
+  // A content feed switched on (0324: enabled only off on the narrow login).
   'packages/calendar/src/manage.ts': ['feed-enable'],
   'packages/microsoft/src/drives/manage.ts': ['feed-enable'],
   'server/web/lib/worker-groups.ts': ['agent-group-grant'],
@@ -273,7 +273,7 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
   atActingLogin: {
     spot: 'acting-login',
     from: 'packages/db/src/gateway/acting-login.ts',
-    // The five definers that need the exit's acting login (0321): each
+    // The five definers that need the exit's acting login (0322): each
     // caller opens its own transaction and calls its one definer.
     callers: [
       'packages/db/src/gateway/structure-item.ts',
@@ -283,7 +283,7 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
       'server/web/lib/workspaces.ts',
     ],
   },
-  // 0326's hold: a disable or session end of the owner or an Admin user.
+  // 0327's hold: a disable or session end of the owner or an Admin user.
   // Each caller passes its own transaction (the login's sessions ended, the
   // users area's change of that login).
   onLoginHoldSpot: {

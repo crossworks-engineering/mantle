@@ -2,7 +2,7 @@
 -- proven open as the real narrow login (session_user mantle_system_narrow)
 -- by the full re-audit of the database side.
 --
--- 1. mantle_narrow_one_way (0318, 0319's report branch kept) takes more
+-- 1. mantle_narrow_one_way (0319, 0320's report branch kept) takes more
 --    rules and also runs BEFORE DELETE. New rules:
 --      'fwd:<col>'        a timestamp once set is never cleared nor moved
 --                         earlier;
@@ -15,7 +15,7 @@
 --      'keepif:<col>:<v>' (DELETE) a row whose <col> reads <v> is never
 --                         deleted.
 --    A refused write raises 42501 and changes nothing; off the narrow
---    route the same break by a narrow reason is counted (0319).
+--    route the same break by a narrow reason is counted (0320).
 -- 2. heartbeats: fire_count only up, last_fired_at only forward,
 --    next_fire_at only forward or to NULL (never re-armed), and status
 --    never from completed, cancelled or paused back to active: the
@@ -44,8 +44,8 @@
 --    role or the write role.
 --
 -- Re-runnable. No table or row changes; no LLM work. Revert:
--- packages/db/rollback/0320_narrow_row_rules.revert.sql. The `when` sits
--- 60 above 0319's.
+-- packages/db/rollback/0321_narrow_row_rules.revert.sql. The `when` sits
+-- 60 above 0320's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()
@@ -64,7 +64,7 @@ DECLARE
   i int;
 BEGIN
   IF current_user <> 'mantle_system_narrow' THEN
-    -- Report only (0319): the same row change by a narrow reason's actor
+    -- Report only (0320): the same row change by a narrow reason's actor
     -- (or on a statement marked mantle.route = 'narrow') off the narrow
     -- route (the switch off), not at a spot, is counted as one the narrow
     -- role would refuse, and runs.

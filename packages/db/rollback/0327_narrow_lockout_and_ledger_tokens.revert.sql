@@ -1,21 +1,21 @@
--- Rollback of 0326_narrow_lockout_and_ledger_tokens: what an operator runs
+-- Rollback of 0327_narrow_lockout_and_ledger_tokens: what an operator runs
 -- BEFORE pinning an image older than the one that added it. Not a
 -- migration: nothing runs it on its own.
 --
 -- It puts the derivation flag back as it was (the nine functions that set
 -- it and the two item_grants triggers read it bare again; the signing
 -- helpers and their catalog check go), drops the settle definer, the login
--- hold and the miss guard (with their triggers), puts back 0325's claim
+-- hold and the miss guard (with their triggers), puts back 0326's claim
 -- (the token budget from the member chat traces) and drops the ledger's
--- tokens column. 0321's non-identity key list keeps 'mantle.acl_sig' (a
--- key nothing sets then). An image of 0325 calls the claim with the same
+-- tokens column. 0322's non-identity key list keeps 'mantle.acl_sig' (a
+-- key nothing sets then). An image of 0326 calls the claim with the same
 -- arguments; an older image writes the ledger itself and never reads the
 -- column. Order when reverting several:
--- 0326 first, then 0325, 0324, 0323, 0322, 0321, 0320, then 0319 down to
--- 0314, each in its own transaction, newest first.
+-- 0327 first, then 0326, 0325, 0324, 0323, 0322, 0321, then 0320 down to
+-- 0315, each in its own transaction, newest first.
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0326_narrow_lockout_and_ledger_tokens.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0327_narrow_lockout_and_ledger_tokens.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -46,13 +46,13 @@ BEGIN
     def := replace(def, '"public"."mantle_acl_restore"('''')', 'set_config(''mantle.acl_internal'', '''', true)');
     def := replace(def, '"public"."mantle_acl_signed"()', '"public"."mantle_acl_internal"()');
     IF def ~ '"public"\."mantle_acl_(on|saved|restore|signed)"' THEN
-      RAISE EXCEPTION '0326 revert: % calls a flag helper in a form not put back', f.name;
+      RAISE EXCEPTION '0327 revert: % calls a flag helper in a form not put back', f.name;
     END IF;
     EXECUTE def;
     n := n + 1;
   END LOOP;
   IF n <> 11 THEN
-    RAISE EXCEPTION '0326 revert: put back % bodies, expected 11 (nine setters, two triggers)', n;
+    RAISE EXCEPTION '0327 revert: put back % bodies, expected 11 (nine setters, two triggers)', n;
   END IF;
 END
 $do$;
@@ -111,7 +111,7 @@ BEGIN
      OR "mantle_member_turn_claim"."daily_tokens" IS NULL THEN
     RAISE EXCEPTION 'mantle_member_turn_claim: a missing argument' USING ERRCODE = '22023';
   END IF;
-  -- The key claimMemberTurn took before 0325, so an image of either side
+  -- The key claimMemberTurn took before 0326, so an image of either side
   -- waits for the other's claim on the same login.
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('member-turn:' || login::text, 0));
@@ -156,11 +156,11 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_member_turn_claim"(text, uuid, timestamptz, integer, bigint) FROM PUBLIC;
 --> statement-breakpoint
--- migrate's derived would-refuse trigger names the column (0319's
+-- migrate's derived would-refuse trigger names the column (0320's
 -- UPDATE OF list); the next migrate derives it again from the grants.
 DROP TRIGGER IF EXISTS "mantle_narrow_would_refuse_upd" ON "public"."member_turn_ledger";
 --> statement-breakpoint
 ALTER TABLE "public"."member_turn_ledger" DROP COLUMN IF EXISTS "tokens";
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0326 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198920000;
+-- Off the ledger: the next roll forward applies 0327 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199700000;

@@ -1,11 +1,11 @@
 /**
- * The definers that act for a login with no scope (migration 0314, plan
+ * The definers that act for a login with no scope (migration 0315, plan
  * v3.2 S7b part b2): mantle_tg_chat_set and mantle_access_key_revoke take
  * only the acting login the gateway sends, and only from a system session
  * (session_user the runtime role, the narrow role or a superuser). The
  * write role clearing its own scope and setting mantle.acting_login itself
  * is refused (the b1 audit's E4). In a scope the scope's own login rules,
- * as before. The other definers that take a login with no scope (0314's
+ * as before. The other definers that take a login with no scope (0315's
  * header) each get a cell: none writes for the login it is given.
  */
 import { randomUUID } from 'node:crypto';
@@ -16,7 +16,7 @@ import { createMigratedScratchDatabase, ensureTestAnchor } from './test-support'
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('0314: with no scope, only the acting login from a system session', () => {
+describe.skipIf(!URL)('0315: with no scope, only the acting login from a system session', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let rr: typeof import('./runtime-role');
   let v: typeof import('./viewer');
@@ -94,7 +94,7 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
       if (name) expect(me!.s).toBe(name);
       // The narrow role may run the Telegram definer only (its EXECUTE);
       // the key revoke is the write role's and the system pool's.
-      // Since 0321 the narrow role runs neither (the full-route spot
+      // Since 0322 the narrow role runs neither (the full-route spot
       // acting-login): its call is refused before the rule.
       if (on === nl) {
         expect(await call(on, tg(login), [acting(login)]), `${who} tg, its own`).toMatch(
@@ -168,7 +168,7 @@ describe.skipIf(!URL)('0314: with no scope, only the acting login from a system 
     expect(await call(su, tg(other), pre)).toMatch(/^42501: .*only the scope's own login/);
   });
 
-  it("the other definers that take a login with no scope (0314's header): none writes for the login it is given", async () => {
+  it("the other definers that take a login with no scope (0315's header): none writes for the login it is given", async () => {
     // Each called with no scope as the superuser (every right), a login
     // that is no login of this brain, the brain as its owner argument:
     // refused, or it runs and changes no row (pg_stat_xact_* read before

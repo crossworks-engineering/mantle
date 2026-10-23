@@ -1,23 +1,23 @@
--- Rollback of 0323_narrow_enable_off: what an operator runs BEFORE pinning
+-- Rollback of 0324_narrow_enable_off: what an operator runs BEFORE pinning
 -- an image older than the one that added it, if they want its rules gone.
 -- Not a migration: nothing runs it on its own.
 --
--- 0323 refuses only the narrow system role a turn-on (and counts one by a
+-- 0324 refuses only the narrow system role a turn-on (and counts one by a
 -- narrow reason off the narrow route); an older image's product turn-ons on
 -- the narrow route would be refused, so a box that rolls back one image
 -- with the narrow switch on runs this file first (with the switch off, the
 -- default on production boxes, it needs none). Order when reverting
--- several: every newer one first (0326 down to 0324), then 0323, then 0322,
--- 0321, 0320, then 0319 down to 0314, each in its own transaction, newest
+-- several: every newer one first (0327 down to 0325), then 0324, then 0323,
+-- 0322, 0321, then 0320 down to 0315, each in its own transaction, newest
 -- first.
 --
 -- It takes 'off:is_default' and 'off:backup_enabled' out of every
 -- mantle_narrow_one_way trigger, and 'off:enabled' out of every one but
--- 0320's four (agents, tool_groups, channels, telegram_accounts); a trigger
+-- 0321's four (agents, tool_groups, channels, telegram_accounts); a trigger
 -- left with no rule is dropped.
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0323_narrow_enable_off.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0324_narrow_enable_off.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -58,5 +58,5 @@ BEGIN
 END
 $do$;
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0323 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198700000;
+-- Off the ledger: the next roll forward applies 0324 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199520000;

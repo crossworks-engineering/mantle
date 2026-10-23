@@ -1,7 +1,7 @@
 -- Three holes the full re-audits found in what the narrow login may
 -- write (plan v3.2 S7b part b2), each closed in the database:
 --
--- 1. The member token budget read the login's member chat traces (0325),
+-- 1. The member token budget read the login's member chat traces (0326),
 --    a table the narrow role may update and insert: a forged narrow
 --    session could lower its own tokens (or take its traces' login away)
 --    to pass the budget, or raise another login's to lock it out of its
@@ -24,7 +24,7 @@
 --    mantle_narrow_login_held). The users area's disable and session end of
 --    such a login run at the full-route spot login-credential (the app asks
 --    the same definer). Off the narrow route the same change by a narrow
---    reason is counted (0319's report branch), not refused. The same hold
+--    reason is counted (0320's report branch), not refused. The same hold
 --    on their grants (mantle_narrow_token_hold): a revoke of their access
 --    key, OAuth token or device token, a delete of their open OAuth code,
 --    and a delete of an MCP client a live grant of theirs rides on
@@ -53,7 +53,7 @@
 --    the propagation run. mantle.acl_internal itself still reads 'on' (the
 --    guards pair it with mantle_owner_role(); an older image's marker is
 --    the same), so nothing else changes. mantle_acl_flag_leaks() is the
---    catalog check (migrate's leak check reads it with 0321's): a body
+--    catalog check (migrate's leak check reads it with 0322's): a body
 --    that sets either key itself, or decides from the flag alone, fails it.
 --
 -- When the S8b rebase lands, "Admin user" here keeps the Admin workspace's
@@ -62,8 +62,8 @@
 -- Re-runnable. One column added (member_turn_ledger.tokens, 0 on every
 -- row); no other table or row change; eleven function bodies rewritten in
 -- place (4), each otherwise as it was; no LLM work. Revert:
--- packages/db/rollback/0326_narrow_lockout_and_ledger_tokens.revert.sql
--- (first, before 0325's). The `when` sits 60000 above 0325's.
+-- packages/db/rollback/0327_narrow_lockout_and_ledger_tokens.revert.sql
+-- (first, before 0326's). The `when` sits 60000 above 0326's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 ALTER TABLE "public"."member_turn_ledger" ADD COLUMN IF NOT EXISTS "tokens" bigint DEFAULT 0 NOT NULL;
@@ -88,7 +88,7 @@ BEGIN
      OR "mantle_member_turn_claim"."daily_tokens" IS NULL THEN
     RAISE EXCEPTION 'mantle_member_turn_claim: a missing argument' USING ERRCODE = '22023';
   END IF;
-  -- The key claimMemberTurn took before 0325, so an image of either side
+  -- The key claimMemberTurn took before 0326, so an image of either side
   -- waits for the other's claim on the same login.
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('member-turn:' || login::text, 0));
@@ -197,7 +197,7 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
-  -- Report only (0319): the same change by a narrow reason's actor off the
+  -- Report only (0320): the same change by a narrow reason's actor off the
   -- narrow route, not at a spot, is counted as one the role would refuse.
   -- Nested, so the held test (a definer call) runs only for such a write.
   IF "public"."mantle_narrow_counted"(who)
@@ -247,7 +247,7 @@ DECLARE
   n jsonb;
   held boolean;
 BEGIN
-  -- The 0326 hold, part 2 (2's sibling): a revoke of the owner's or an
+  -- The 0327 hold, part 2 (2's sibling): a revoke of the owner's or an
   -- Admin user's key, token or device, a delete of their open OAuth code,
   -- and a delete of an MCP client a live grant of theirs rides on, are
   -- held from the narrow role (the users area ends such a login's
@@ -283,7 +283,7 @@ BEGIN
     RAISE EXCEPTION 'the narrow system role may not revoke or remove a grant of the owner or an Admin user (%)', TG_TABLE_NAME
       USING ERRCODE = '42501';
   END IF;
-  -- Report only (0319): the same write by a narrow reason's actor off the
+  -- Report only (0320): the same write by a narrow reason's actor off the
   -- narrow route, not at a spot, is counted as one the role would refuse.
   IF held THEN
     RAISE NOTICE 'mantle narrow write: narrow-would-refuse % %.% %', who, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
@@ -433,38 +433,38 @@ BEGIN
     END IF;
     IF def LIKE '%set_config(''mantle.acl_internal''%' OR def LIKE '%current_setting(''mantle.acl_internal''%'
        OR def LIKE '%"public"."mantle_acl_internal"()%' THEN
-      RAISE EXCEPTION '0326: % sets or reads the derivation flag in a form not rewritten', f.name;
+      RAISE EXCEPTION '0327: % sets or reads the derivation flag in a form not rewritten', f.name;
     END IF;
     EXECUTE def;
     got := got || f.name;
   END LOOP;
   IF EXISTS (SELECT 1 FROM unnest(got) x WHERE x <> ALL (setters || readers)) THEN
-    RAISE EXCEPTION '0326: rewrote %, expected only % and %', got, setters, readers;
+    RAISE EXCEPTION '0327: rewrote %, expected only % and %', got, setters, readers;
   END IF;
   IF EXISTS (SELECT 1 FROM unnest(setters || readers) w
               WHERE NOT EXISTS (
                 SELECT 1 FROM pg_catalog.pg_proc p
                   JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
                  WHERE n.nspname = 'public' AND p.proname = w)) THEN
-    RAISE EXCEPTION '0326: one of % or % is missing', setters, readers;
+    RAISE EXCEPTION '0327: one of % or % is missing', setters, readers;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
                JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
               WHERE n.nspname = 'public' AND p.proname = ANY (setters)
                 AND p.prosrc NOT LIKE '%"public"."mantle_acl_on"()%') THEN
-    RAISE EXCEPTION '0326: a function of % does not sign the flag', setters;
+    RAISE EXCEPTION '0327: a function of % does not sign the flag', setters;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
                JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
               WHERE n.nspname = 'public' AND p.proname = ANY (readers)
                 AND p.prosrc NOT LIKE '%"public"."mantle_acl_signed"()%') THEN
-    RAISE EXCEPTION '0326: a trigger of % does not ask for the signed flag', readers;
+    RAISE EXCEPTION '0327: a trigger of % does not ask for the signed flag', readers;
   END IF;
 END
 $do$;
 --> statement-breakpoint
--- The catalog check of the flag (migrate fails on a row, with 0321's; a
--- key built at run time is 0321's to find).
+-- The catalog check of the flag (migrate fails on a row, with 0322's; a
+-- key built at run time is 0322's to find).
 CREATE OR REPLACE FUNCTION "public"."mantle_acl_flag_leaks"()
   RETURNS TABLE (kind text, object text, detail text)
   LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$

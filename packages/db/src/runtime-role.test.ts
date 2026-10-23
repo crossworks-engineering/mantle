@@ -438,13 +438,13 @@ describe('the narrow system role rights', () => {
       'public.mantle_contact_sharing(uuid,uuid[])',
       'public.mantle_login_areas(uuid)',
       'public.mantle_mail_backfill_accounts(uuid)',
-      // 0326: the hold on a login's grants asks whether an MCP client
+      // 0327: the hold on a login's grants asks whether an MCP client
       // carries a live grant of the owner or an Admin user.
       'public.mantle_narrow_client_held(uuid)',
-      // 0326: the hold on auth.users (a trigger as the narrow role) asks
+      // 0327: the hold on auth.users (a trigger as the narrow role) asks
       // whether a login is the owner or an Admin user, a read definer.
       'public.mantle_narrow_login_held(uuid)',
-      // 0320: the assistant_messages guard's read definer.
+      // 0321: the assistant_messages guard's read definer.
       'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)',
       'public.mantle_pending_card_route(uuid,uuid)',
       'public.mantle_ws_any_shared(uuid[])',
@@ -619,7 +619,7 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 });
 
 /** The narrow role's table counts: `all` only goes down. */
-// member_turn_ledger to read (0325: its definers write it).
+// member_turn_ledger to read (0326: its definers write it).
 const NARROW_COUNTS = { all: 96, read: 37, none: 8 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {

@@ -28,7 +28,7 @@
 --    runs right after the failed enqueue). An older row, or another
 --    login's, is left (false).
 --
--- On the narrow role the identity readers answer no login (0321), so both
+-- On the narrow role the identity readers answer no login (0322), so both
 -- refuse there by construction; the narrow role may not EXECUTE them
 -- either (runtime-role.ts NARROW_DENIED_FUNCTIONS), and holds no right on
 -- the table (access-matrix.ts NARROW_WRITES has no entry). The runtime role
@@ -39,9 +39,9 @@
 -- An image before this one writes the table itself; its own migrate grants
 -- the runtime role the writes again, so rolling back one image needs no
 -- revert (the functions stay, unused). No table or row changes; no LLM
--- work. Re-runnable. The `when` sits above 0324's. Revert:
--- packages/db/rollback/0325_member_turn_ledger_definers.revert.sql (first,
--- before 0324's).
+-- work. Re-runnable. The `when` sits above 0325's. Revert:
+-- packages/db/rollback/0326_member_turn_ledger_definers.revert.sql (first,
+-- before 0325's).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_member_turn_claim"(
@@ -64,7 +64,7 @@ BEGIN
      OR "mantle_member_turn_claim"."daily_tokens" IS NULL THEN
     RAISE EXCEPTION 'mantle_member_turn_claim: a missing argument' USING ERRCODE = '22023';
   END IF;
-  -- The key claimMemberTurn took before 0325, so an image of either side
+  -- The key claimMemberTurn took before 0326, so an image of either side
   -- waits for the other's claim on the same login.
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('member-turn:' || login::text, 0));

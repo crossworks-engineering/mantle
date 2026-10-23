@@ -1122,7 +1122,7 @@ export async function setModerator(
   // and removeUser read it; the definer checks again under its lock.
   const wid = (await seeWorkspace(caller, id)).row.id;
   // The definer needs the acting login, which the identity readers answer
-  // only off the narrow role (0321): the full-route spot acting-login on an
+  // only off the narrow role (0322): the full-route spot acting-login on an
   // Admin area's narrow exit; in a login's scope it runs as it is.
   await atActingLogin(() =>
     db.transaction((tx) =>

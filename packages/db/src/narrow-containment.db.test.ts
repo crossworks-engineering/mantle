@@ -1,6 +1,6 @@
 /**
  * The narrow login's containment (plan v3.2 S7b part b2: the
- * interim audit of 0314 and 0315). On the narrow login the acting login is
+ * interim audit of 0315 and 0316). On the narrow login the acting login is
  * a mistake guard only: a raw narrow session may name any acting login
  * (only the gateway's text check stops it). The database boundaries are
  * the definers' kind, op, place, type and owner checks and the column
@@ -11,8 +11,8 @@
  *    no credential row may be made (access-matrix.ts NARROW_WRITES);
  *    the audit's chain (a member's role raised, bridged into Admin, then a
  *    structure item as that member) is refused at each step, rows unchanged;
- *  - every definer that takes a login with no scope (0314's header, the
- *    0315 and 0316 definers) writes nothing for a login it is given with
+ *  - every definer that takes a login with no scope (0315's header, the
+ *    0316 and 0317 definers) writes nothing for a login it is given with
  *    another acting login named, or is refused;
  *  - the writers' positive runs (a real chat unpaired, a real key revoked,
  *    an assistant's pinned Telegram chat denied);
@@ -212,7 +212,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     expect(await rights()).toBe(before);
   });
 
-  it('0318: a revoke, a disable and a session end only go one way on the narrow login; the system pool is not held', async () => {
+  it('0319: a revoke, a disable and a session end only go one way on the narrow login; the system pool is not held', async () => {
     const peer = randomUUID();
     const invite = randomUUID();
     const device = randomUUID();
@@ -267,8 +267,8 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     ).toBe('ok');
     const [t] = await su<{ n: number }[]>`
       select count(*)::int as n from pg_trigger where tgname = 'mantle_narrow_one_way_trg'`;
-    // 0318's nine, 0320's heartbeats, tool_groups, channels and
-    // telegram_accounts, and 0323's twelve (every table
+    // 0319's nine, 0321's heartbeats, tool_groups, channels and
+    // telegram_accounts, and 0324's twelve (every table
     // with a boolean enabled, is_default or backup_enabled column the narrow
     // role may update and no trigger before; the rest merged into these).
     expect(t!.n).toBe(25);
@@ -307,7 +307,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `delete from agents where id = '${agent}'`,
       // Round 7: a delegate runs with its own tool groups, so delegate_to is
       // a grant: added, replaced, dropped with the key or the column, each
-      // refused (0318 keep:memory_config:delegate_to).
+      // refused (0319 keep:memory_config:delegate_to).
       `update agents set memory_config = memory_config || '{"delegate_to":["pages","toolsmith"]}' where id = '${agent}'`,
       `update agents set memory_config = jsonb_set(memory_config, '{delegate_to}', '["toolsmith"]') where id = '${agent}'`,
       `update agents set memory_config = memory_config - 'delegate_to' where id = '${agent}'`,
@@ -522,7 +522,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await t`insert into access_keys (id, name, login_id, key_prefix, key_hash, access)
               values (${keyId}, 'k', ${admin}, 'abcd1234', ${'a'.repeat(64)}, 'read')`;
     });
-    // On the full route since 0321 (the spot acting-login): a system
+    // On the full route since 0322 (the spot acting-login): a system
     // session with the acting login the gateway sends.
     await su.begin(async (t) => {
       await t.unsafe(acting(admin));
@@ -678,7 +678,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     );
 
   // The structure definer runs at the full-route spot acting-login since
-  // 0321: the session is the system pool's, never the narrow login.
+  // 0322: the session is the system pool's, never the narrow login.
   const FULL_SESSION = expect.not.stringMatching(/^mantle_system_narrow$/);
 
   it("a turn whose actor is no login (actor check off: a Telegram turn) takes the turn's login; on too; no login at all runs at the spot", async () => {
@@ -698,7 +698,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     expect(none.a).toBeNull();
   });
 
-  it('a structure write inside an open system transaction of a narrow exit is refused: the acting-login spot cannot leave an open narrow transaction (0321)', async () => {
+  it('a structure write inside an open system transaction of a narrow exit is refused: the acting-login spot cannot leave an open narrow transaction (0322)', async () => {
     await expect(exit(() => m.withSystemTx(() => sawOf()))).rejects.toThrow(/different actor/);
   });
 

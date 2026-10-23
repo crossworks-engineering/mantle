@@ -36,7 +36,7 @@
 #   - the narrow system role's counts (plan v3.2 S7a, report only): the
 #     distinct check, actor and table rows checked narrow-content-write,
 #     narrow-cascade-delete (migration 0312), narrow-denied and
-#     narrow-would-refuse (migration 0319: what the role would refuse once
+#     narrow-would-refuse (migration 0320: what the role would refuse once
 #     the switch is on), and the tables the last names, since the
 #     release's epoch (the latest narrow-epoch row: migrate writes one per
 #     version; all time on a box with none), and that epoch's version and
@@ -185,10 +185,10 @@ SQL
 # either route; a sign of content going away under narrow work, not a
 # refusal to come: the cascade runs as the table's owner, so the role's
 # rights never stop it. narrow-denied: a right the role does not hold, met
-# on the narrow route. narrow-would-refuse (migration 0319, S7b part b2
+# on the narrow route. narrow-would-refuse (migration 0320, S7b part b2
 # round 9): a write by a narrow reason off the narrow route that the role
 # would refuse once the switch is on (a table or column privilege it does
-# not hold, or 0318's one-way rules), per actor, table and operation; the
+# not hold, or 0319's one-way rules), per actor, table and operation; the
 # second number is the tables they name. Both must read 0 on every box
 # before the default flip (S7b part b3). Numbers only: the table names
 # are read on the box itself (select detail from actor_check_misses where
@@ -234,7 +234,7 @@ SQL
 # Whether the would-refuse count can count at all (b3 needs both): the
 # number of its derived triggers (migrate makes them from the narrow
 # role's grants, runtime-role.ts applyNarrowWouldRefuse; 0 on a box before
-# 0319 or after a failed migrate) and the actor check's mode as the
+# 0320 or after a failed migrate) and the actor check's mode as the
 # database holds it (the counts are written only with it warn or on). A
 # box can read 0 counts with no counter: these two say whether it has one.
 narrow_triggers=$(q <<SQL || true

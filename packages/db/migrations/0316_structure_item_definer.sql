@@ -35,7 +35,7 @@
 -- Any other kind or operation is refused (42501). The caller: no scope
 -- (a scope's own writes go through the write role), a system session
 -- (mantle_system_session: the runtime role, the narrow role, a superuser
--- or the definers' owner, 0314's rule), LOGIN equal to the acting login the gateway sends
+-- or the definers' owner, 0315's rule), LOGIN equal to the acting login the gateway sends
 -- (mantle.acting_login; none, or another, is refused), and that login
 -- holding the kind's area (mantle_area_rule: an Admin workspace member
 -- whose areas do not take it away). OWNER must be this brain. A read-only
@@ -72,9 +72,9 @@
 -- (runtime-role.ts RUNTIME_SYSTEM_FUNCTIONS) and the narrow role
 -- (NARROW_SYSTEM_FUNCTIONS). The write role and the user role hold none.
 -- No table, row or trigger changes; no LLM work. Re-runnable. Revert:
--- packages/db/rollback/0315_structure_item_definer.revert.sql (not needed
+-- packages/db/rollback/0316_structure_item_definer.revert.sql (not needed
 -- for a one-image rollback: the image before this one never calls it). The
--- `when` sits 60000 above 0314's.
+-- `when` sits 60000 above 0315's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_structure_item"(

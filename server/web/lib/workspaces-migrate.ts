@@ -63,7 +63,7 @@ export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
  *  workspaces and its login set: systemPoolTxInScope), where
  *  the definer asks the assistants area of it: the first owner at signup
  *  and onboarding, both inside a request. The definer needs that login,
- *  which the identity readers answer only off the narrow role (0321): on
+ *  which the identity readers answer only off the narrow role (0322): on
  *  an Admin area's narrow exit (onboarding) it runs at the full-route spot
  *  acting-login; anywhere else as it is. */
 export async function attachDefaultAssistants(loginId?: string): Promise<number> {

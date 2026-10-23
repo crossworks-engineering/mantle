@@ -16,9 +16,9 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.agents.avatar':
     'update: the avatar style, seed and parts (a picture), no prompt and no limit key',
   'public.assistant_messages.data':
-    "insert and update: 0322's guard: a pending row is the turn's own until it settles; a settled row gains only the follow-up suggestion (suggestion, suggestedAt), every other key kept",
+    "insert and update: 0323's guard: a pending row is the turn's own until it settles; a settled row gains only the follow-up suggestion (suggestion, suggestedAt), every other key kept",
   'public.assistant_messages.attachments':
-    "insert only: the media of the turn's own new row (0322: its assistant, workspace and login checked); never rewritten once settled",
+    "insert only: the media of the turn's own new row (0323: its assistant, workspace and login checked); never rewritten once settled",
   'public.assistant_messages.external_ref':
     "insert only: the transport's ids of the turn's own new row (reply threading), no prompt",
   'public.app_access_log.detail': 'insert only: an access log line, read by no model',

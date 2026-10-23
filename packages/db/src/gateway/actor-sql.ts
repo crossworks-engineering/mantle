@@ -121,7 +121,7 @@ export function setActorSql(
 /** The actor's settings (setActorSql): its value, write mode, the box's
  *  check mode, 'full' at a declared full-route spot (fullRouteSpotNow) or
  *  'narrow' on a statement the narrow route would take were the switch on
- *  (scopeMarkedParams: the would-refuse count, 0319), and
+ *  (scopeMarkedParams: the would-refuse count, 0320), and
  *  the acting login of the exit it runs in (actingLoginNow, plan v3.2 S7b:
  *  mantle.acting_login, which only the gateway's own SET may name). */
 export type ActorParams = readonly [
@@ -234,7 +234,7 @@ export function actorParams(): ActorParams | null {
   // login it acts for, which a definer acting for a login with no scope
   // will read (the second part's definers), whatever the mode. And work at
   // the acting-login spot (round 13b): its definers refuse a missing acting
-  // login (0321), and a turn's exit is no request exit, so with the check
+  // login (0322), and a turn's exit is no request exit, so with the check
   // off its acting login went nowhere. Only that spot's statements gain
   // the SET in off; every other path sends exactly what it sent.
   if (
@@ -259,7 +259,7 @@ export function actorParams(): ActorParams | null {
  * actorParams for a statement the narrow route would take were the switch
  * on, sent with the switch off (systemDb
  * inside a login's turn or request scope, gateway/handles.ts): the route
- * marked 'narrow', so 0319's would-refuse count (and 0312's content and
+ * marked 'narrow', so 0320's would-refuse count (and 0312's content and
  * cascade counts) sees it whatever the actor. Its actor is the login's,
  * which no narrow reason names, so without the mark the count was blind
  * to it. With the actor check off nothing is sent, as before (A2a: off

@@ -64,7 +64,7 @@ export const SCOPE_SETTING_PINS = {
   },
   'packages/db/src/test-support/identity-sweep.ts': {
     count: 6,
-    why: "test support: the identity gateway's forge (0321) sets every identity setting to the owner and the Admin workspace as the real narrow login (IDENTITY_FORGE_SQL, 3) and clears the scope for the unscoped forge (3), to prove the readers answer none there",
+    why: "test support: the identity gateway's forge (0322) sets every identity setting to the owner and the Admin workspace as the real narrow login (IDENTITY_FORGE_SQL, 3) and clears the scope for the unscoped forge (3), to prove the readers answer none there",
   },
 };
 
@@ -76,7 +76,7 @@ export const SYSTEM_POOL_SCOPE_PINS = {
   },
   'packages/db/src/login-definer.ts': {
     count: 1,
-    why: "loginDefinerCall: one definer call that takes its login from the scope (an Admin act's, 0308 and 0310, in the login's live workspaces; the member turn ledger's, 0325 and 0326, the login only), the request's own login (or a Telegram chat's paired login), on the system pool",
+    why: "loginDefinerCall: one definer call that takes its login from the scope (an Admin act's, 0308 and 0310, in the login's live workspaces; the member turn ledger's, 0326 and 0327, the login only), the request's own login (or a Telegram chat's paired login), on the system pool",
   },
   'packages/db/src/gateway/viewer-scope.ts': {
     count: 1,

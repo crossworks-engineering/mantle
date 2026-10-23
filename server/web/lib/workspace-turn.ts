@@ -107,7 +107,7 @@ export async function queueWorkspaceTurn(o: {
         loginId,
         agentSlug: agent.slug,
         ...(o.streamId ? { streamId: o.streamId } : {}),
-        // The slot this turn claimed: its tokens are stamped there (0326).
+        // The slot this turn claimed: its tokens are stamped there (0327).
         ...(limited ? { ledgerTurnId: turnId } : {}),
       },
     };

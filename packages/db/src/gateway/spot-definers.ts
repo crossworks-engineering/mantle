@@ -2,7 +2,7 @@
  * Two writes of an Admin area's narrow exit that ran at a full-route spot
  * before (viewer.ts FULL_ROUTE_SPOTS
  * promotion-space and agent-conversation), each now one call of its
- * definer (migration 0316) on the narrow route: the narrow role holds no
+ * definer (migration 0317) on the narrow route: the narrow role holds no
  * right on the content tables they write, the definer holds the rule (a
  * system session, the acting login holding the area). Anywhere else (a
  * login's scope, the workspace screen's carried scope, the switch off) the
@@ -52,7 +52,7 @@ export async function deleteAgentOnNarrow(
 ): Promise<AgentDeleteCounts | undefined> {
   if (!narrowRouteNow()) return undefined;
   // The definer needs the acting login, which the identity readers answer
-  // only off the narrow role (0321): the full-route spot acting-login.
+  // only off the narrow role (0322): the full-route spot acting-login.
   return atActingLogin((login) =>
     withSystemTx(async (tx) => {
       const rows = (await tx.execute(

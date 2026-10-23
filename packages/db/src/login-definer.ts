@@ -1,8 +1,8 @@
 /**
  * One call of a definer that takes its login from the scope (the identity
  * gateway's scope login reader), never as an argument: an Admin act's
- * definer (migrations 0308, 0310) and the member turn ledger's (0325,
- * 0326). The one place such a call is made: one transaction on the system
+ * definer (migrations 0308, 0310) and the member turn ledger's (0326,
+ * 0327). The one place such a call is made: one transaction on the system
  * pool in that login's scope (systemPoolTxInScope, which sets the scope by
  * hand), the runtime role's to run (RUNTIME_SYSTEM_FUNCTIONS; the write
  * role and the narrow role hold no EXECUTE on them).

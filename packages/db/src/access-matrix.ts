@@ -313,7 +313,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'auth.users': {
     update: ['disabled_at', 'session_epoch'],
     delete: false,
-    why: "the users area disables a login and ends its sessions (endLoginSessions bumps session_epoch). A new login, a role, a password, a contact link, an enable and a login's delete (DELETE /api/users/:id: its foreign keys cascade, and the brain owner's would cascade the brain) run at the spot login-credential (round 12; 0320 also refuses the narrow role the owner's and an Admin user's row). Round 13b (item F): a rename too (display_name reaches the prompts as the user's name)",
+    why: "the users area disables a login and ends its sessions (endLoginSessions bumps session_epoch). A new login, a role, a password, a contact link, an enable and a login's delete (DELETE /api/users/:id: its foreign keys cascade, and the brain owner's would cascade the brain) run at the spot login-credential (round 12; 0321 also refuses the narrow role the owner's and an Admin user's row). Round 13b (item F): a rename too (display_name reaches the prompts as the user's name)",
   },
   'public.access_keys': {
     update: ['revoked_at', 'revoked_by'],
@@ -343,22 +343,22 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   'public.member_invites': {
     update: ['revoked_at'],
     delete: false,
-    why: 'the users area revokes an invite (revokeMemberInvite; 0318: never cleared). An invite is minted at the full-route spot member-invite: its code redeems into a login',
+    why: 'the users area revokes an invite (revokeMemberInvite; 0319: never cleared). An invite is minted at the full-route spot member-invite: its code redeems into a login',
   },
   'public.mantle_peers': {
     update: ['acts_as_login_id', 'ended_acts_as_login_id', 'last_contacted_at', 'updated_at'],
     delete: false,
-    why: "peer_call (admin-area) stamps a peer contacted; the users area's session end unbinds the peers acting as the login (peer-unbind.ts; 0318: acts_as_login_id only to NULL, ended_acts_as_login_id only from it). A peer's row, inbound token, enable, status, binding, Write switch and risky tools run at the full-route spot peer-access; its delete is the structure definer's cascade",
+    why: "peer_call (admin-area) stamps a peer contacted; the users area's session end unbinds the peers acting as the login (peer-unbind.ts; 0319: acts_as_login_id only to NULL, ended_acts_as_login_id only from it). A peer's row, inbound token, enable, status, binding, Write switch and risky tools run at the full-route spot peer-access; its delete is the structure definer's cascade",
   },
   'public.peer_shares': {
     update: ['revoked_at'],
     delete: false,
-    why: 'the connectors area revokes a share (revokePeerShare; 0318: never cleared). A share is granted at the full-route spot peer-share',
+    why: 'the connectors area revokes a share (revokePeerShare; 0319: never cleared). A share is granted at the full-route spot peer-share',
   },
   'public.peer_share_scopes': {
     update: ['revoked_at'],
     delete: false,
-    why: 'the connectors area revokes a type share (revokePeerTypeShare; 0318: never cleared). A type share is granted at the full-route spot peer-share',
+    why: 'the connectors area revokes a type share (revokePeerTypeShare; 0319: never cleared). A type share is granted at the full-route spot peer-share',
   },
   'public.telegram_chats': {
     update: [],
@@ -382,7 +382,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: false,
-    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0318: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0316). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0320: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open. Item F: its description too (the delegate tool and roster read it to the model), at skill-text. Round 14 (the re-audit's DB LOW-4, the destination and cost class): its provider, model, backup provider and model (which provider and model a turn pays) and thinking effort (a turn's spend) off the list, at model-route",
+    why: "the assistants area edits an assistant (its model, routes, prompt, skills, avatar, enable), the turns stamp its use, update_persona and the reflector its notes, agent_set_thinking_effort its effort, the users area's lockout releases a login's assistant (0319: assigned_user_id only to NULL; memory_config's delegate_to never changes, a delegate runs with its own tool groups). An assistant made, cloned, granted a tool group or a delegate, given a role or a workspace, or assigned to a login runs at the full-route spot assistant-grant; its delete is mantle_agent_delete's (0317). The model routes and keys are outbound configuration, as api_keys' (no login or key gets in). Its vault keys, base URLs and configuring login (where its key goes) run at the full-route spot model-route (round 8). Round 12: its prompt, persona notes and skill list (what it runs) at skill-text, as a skill's instructions; an enable (0321: enabled only off on the narrow role) at assistant-grant. Round 13b (item C): memory_config and params off the list, their edit at skill-text: nearly every key is a limit (the extraction cost cap, iterations, tool calls, the follow-up suggestion's extra call, the context sizes), so a list of kept keys would leave a new key open. Item F: its description too (the delegate tool and roster read it to the model), at skill-text. Round 14 (the re-audit's DB LOW-4, the destination and cost class): its provider, model, backup provider and model (which provider and model a turn pays) and thinking effort (a turn's spend) off the list, at model-route",
   },
   'public.tool_groups': {
     update: ['name', 'enabled', 'updated_at'],
@@ -438,7 +438,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     insert: true,
     update: ['attachments', 'data', 'error', 'model', 'status', 'text'],
     delete: false,
-    why: "measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram. Round 13b (item G): a turn's outcome writes its error and attachments too (conversation.ts updateAssistantMessageOutcome, team-messages.ts updateThreadMessageOutcome); 0322 holds every one of them to a pending row",
+    why: "measured (round 8): INSERT, UPDATE by a login turn, system:login-telegram. Round 13b (item G): a turn's outcome writes its error and attachments too (conversation.ts updateAssistantMessageOutcome, team-messages.ts updateThreadMessageOutcome); 0323 holds every one of them to a pending row",
   },
   'public.team_access_log': {
     insert: true,
@@ -515,7 +515,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'updated_at',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A heartbeat made, or its maker, schedule, assistant or skill changed, runs at the full-route spot heartbeat-maker; next_fire_at, fire_count, last_fired_at and status are the bookkeeping of a fire (its schedule, maker, cooldown and limit never). Round 12: 0320 holds the books one way on the narrow role (fire_count only up, last_fired_at and next_fire_at only forward, next_fire_at never set again from NULL, status never back to active); its state (a prompt input), a resume and a snooze run at heartbeat-maker',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. A heartbeat made, or its maker, schedule, assistant or skill changed, runs at the full-route spot heartbeat-maker; next_fire_at, fire_count, last_fired_at and status are the bookkeeping of a fire (its schedule, maker, cooldown and limit never). Round 12: 0321 holds the books one way on the narrow role (fire_count only up, last_fired_at and next_fire_at only forward, next_fire_at never set again from NULL, status never back to active); its state (a prompt input), a resume and a snooze run at heartbeat-maker',
   },
   'public.microsoft_config': {
     update: ['client_id', 'tenant', 'updated_at'],
@@ -666,7 +666,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'tokens_out',
     ],
     delete: false,
-    why: "measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area. No DELETE: the one delete (integrity landed.ts, a node's traces with the node) runs at the spot integrity-delete. Nothing decides from a trace: the member token budget reads the turn ledger's own tokens (0326), which the narrow role may not write",
+    why: "measured (round 8): INSERT, UPDATE by a login turn, system:admin-area, system:http:admin-area. No DELETE: the one delete (integrity landed.ts, a node's traces with the node) runs at the spot integrity-delete. Nothing decides from a trace: the member token budget reads the turn ledger's own tokens (0327), which the narrow role may not write",
   },
 });
 
@@ -675,7 +675,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
  * round 8): who a row belongs to, acts for or was made by, where it sends a
  * key or a call, what it runs and with what, and what it grants. A write
  * that needs one runs at a full-route spot or a definer with its own check
- * (NARROW_WRITES' header). The exceptions are the one-way columns 0318
+ * (NARROW_WRITES' header). The exceptions are the one-way columns 0319
  * holds on the narrow role (a release only: agents.assigned_user_id and
  * mantle_peers.acts_as_login_id only to NULL), listed in NARROW_ONE_WAY_HELD.
  */
@@ -772,7 +772,7 @@ export const NARROW_NEVER_UPDATE_TABLE: Readonly<Record<string, readonly string[
   },
 );
 
-/** The one-way columns 0318 holds on the narrow role (only a release): the
+/** The one-way columns 0319 holds on the narrow role (only a release): the
  *  only NARROW_NEVER_UPDATE names a narrow UPDATE may list. */
 export const NARROW_ONE_WAY_HELD: readonly string[] = Object.freeze([
   'public.agents.assigned_user_id',
@@ -1186,7 +1186,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   userOnly('public.app_access_log', 'system'),
   none('public.team_access_log', 'system'),
   // The member turn ledger (0182): written only by its two definers
-  // (0325, the request's or chat's own login from the identity gateway),
+  // (0326, the request's or chat's own login from the identity gateway),
   // which the runtime role runs; it reads the table, never writes it.
   { ...none('public.member_turn_ledger', 'system'), runtime: 'read' },
   none('public.embedding_cache', 'system'),

@@ -213,7 +213,7 @@ export async function updateAiWorker(
  *  not found / not owned. */
 export async function setDefaultWorker(ownerId: string, id: string): Promise<AiWorker | null> {
   // The kind's default (which worker answers it) is not the narrow login's
-  // (0323: is_default only off): the full-route spot model-route.
+  // (0324: is_default only off): the full-route spot model-route.
   return await onFullSystemRoute('model-route', () => setDefaultWorkerTx(ownerId, id));
 }
 

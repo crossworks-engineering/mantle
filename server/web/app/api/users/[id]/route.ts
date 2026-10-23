@@ -122,7 +122,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // and takes nothing (W8a).
   // A login's delete cascades its rows (and the brain owner's would
   // cascade the brain): not the narrow login's (access-matrix.ts
-  // NARROW_WRITES, auth.users DELETE; 0320 also refuses it the owner's and
+  // NARROW_WRITES, auth.users DELETE; 0321 also refuses it the owner's and
   // an Admin user's row). The full-route spot login-credential.
   let ended: { pushTokens: string[] };
   try {

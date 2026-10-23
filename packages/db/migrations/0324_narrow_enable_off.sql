@@ -1,7 +1,7 @@
 -- The enable class on the narrow role (the narrow login part b2, round 13b,
 -- item D: the re-audit's DB LOW-3). An enable makes something run: a feed
 -- syncs and its items are ingested (model work), an AI worker or a backup
--- route takes calls, a worker becomes the kind's default. 0320 held
+-- route takes calls, a worker becomes the kind's default. 0321 held
 -- `enabled` only off on four tables; the rest stayed two-way.
 --
 -- Generated from the catalog, not a hand list: every boolean column named
@@ -9,14 +9,14 @@
 -- gets the rule 'off:<col>' in its mantle_narrow_one_way trigger (made, or
 -- its rules merged, keeping the rules and events it had). On the narrow
 -- role a switch goes only from on to off; off the narrow route the same
--- turn-on by a narrow reason is counted (0319's notice) and runs. The
+-- turn-on by a narrow reason is counted (0320's notice) and runs. The
 -- product's turn-ons run at a full-route spot (feed-enable, docs-root,
 -- model-route, mail-account). A column made later is caught by the DB
 -- test (packages/db src/narrow-rules-13b.db.test.ts), which reads the
 -- narrow role's UPDATE rights from the catalog.
 --
 -- Re-runnable. No table or row changes; no LLM work. Revert:
--- packages/db/rollback/0323_narrow_enable_off.revert.sql (before 0322's).
+-- packages/db/rollback/0324_narrow_enable_off.revert.sql (before 0323's).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DO $do$

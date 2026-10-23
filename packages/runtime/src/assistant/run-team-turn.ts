@@ -119,7 +119,7 @@ export type RunTeamTurnOptions = {
   /** The turn's slot in the member turn ledger (its workflow id), when the
    *  enqueue claimed one (a login that is not an Admin user): the turn's
    *  model tokens are stamped on it at the trace's close (settleMemberTurn,
-   *  0326), and the token budget sums them. */
+   *  0327), and the token budget sums them. */
   ledgerTurnId?: string;
 };
 

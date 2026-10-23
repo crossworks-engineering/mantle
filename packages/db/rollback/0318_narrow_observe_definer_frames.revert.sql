@@ -1,15 +1,15 @@
--- Rollback of 0317_narrow_observe_definer_frames: what an operator runs
+-- Rollback of 0318_narrow_observe_definer_frames: what an operator runs
 -- BEFORE pinning an image older than the one that added it, if they want
 -- 0312's counts back. Not a migration: nothing runs it on its own.
 --
--- 0317 replaces the bodies of the two telemetry trigger functions (a
+-- 0318 replaces the bodies of the two telemetry trigger functions (a
 -- definer's work no longer counts). An older image runs with either body:
 -- a rollback of one image needs NOT this file. This file puts 0312's
--- bodies back and takes 0317 off the ledger, so a later roll forward
+-- bodies back and takes 0318 off the ledger, so a later roll forward
 -- applies it again (it is re-runnable).
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0317_narrow_observe_definer_frames.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0318_narrow_observe_definer_frames.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -69,5 +69,5 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_cascade_stmt"() FROM PUBLIC;
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0317 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198340000;
+-- Off the ledger: the next roll forward applies 0318 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199160000;

@@ -7,7 +7,7 @@
 -- (a member made Moderator through a self-set login and workspace; an
 -- assistant deleted through a self-set acting login).
 --
--- 1. mantle_identity_narrow(): the session's own role (0317's test: the
+-- 1. mantle_identity_narrow(): the session's own role (0318's test: the
 --    role it SET, else its login; a definer changes current_user, never
 --    this) is the narrow system role.
 -- 2. The readers. On the narrow role each answers no identity: no login,
@@ -38,7 +38,7 @@
 -- acting login left it in this release and run at the full-route spot
 -- acting-login until S7c's signed acting login.
 --
--- Revert: packages/db/rollback/0321_identity_gateway.revert.sql.
+-- Revert: packages/db/rollback/0322_identity_gateway.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_identity_narrow"()
@@ -142,7 +142,7 @@ BEGIN
                    'coalesce("public"."mantle_identity_actor"(), '''')');
     IF def LIKE '%current_setting(''mantle.acting_login''%'
        OR def LIKE '%current_setting(''mantle.actor''%' THEN
-      RAISE EXCEPTION '0321: % reads the acting login or the actor in a form not rewritten', f.name;
+      RAISE EXCEPTION '0322: % reads the acting login or the actor in a form not rewritten', f.name;
     END IF;
     EXECUTE def;
     got := got || f.name;
@@ -152,14 +152,14 @@ BEGIN
   -- is there, and no function but the readers reads the two in the form
   -- rewritten here (any other form is the catalog check's, below).
   IF EXISTS (SELECT 1 FROM unnest(got) x WHERE x <> ALL (want)) THEN
-    RAISE EXCEPTION '0321: rewrote %, expected only %', got, want;
+    RAISE EXCEPTION '0322: rewrote %, expected only %', got, want;
   END IF;
   IF EXISTS (SELECT 1 FROM unnest(want) w
               WHERE NOT EXISTS (
                 SELECT 1 FROM pg_catalog.pg_proc p
                   JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
                  WHERE n.nspname = 'public' AND p.proname = w)) THEN
-    RAISE EXCEPTION '0321: one of % is missing', want;
+    RAISE EXCEPTION '0322: one of % is missing', want;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
                JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
@@ -167,7 +167,7 @@ BEGIN
                 AND (p.prosrc LIKE '%current_setting(''mantle.acting_login'', true)%'
                      OR p.prosrc LIKE '%current_setting(''mantle.actor'', true)%')
                 AND p.proname NOT LIKE 'mantle\_identity\_%') THEN
-    RAISE EXCEPTION '0321: a function still reads the acting login or the actor directly';
+    RAISE EXCEPTION '0322: a function still reads the acting login or the actor directly';
   END IF;
 END
 $do$;
@@ -217,8 +217,8 @@ DECLARE
     'mantle.write_mode',           -- 'ro' only adds refusals
     'mantle.actor_check',          -- a session mode only raises the box's (mantle_check_mode)
     'mantle.edit_check',           -- the same
-    'mantle.acl_internal',         -- the derivation guards pair it with mantle_owner_role(), no member the narrow role is; the item_grants triggers ask for it signed (0326 mantle_acl_signed); mantle_acl_flag_leaks checks the rest
-    'mantle.acl_sig',              -- the flag's mark, keyed by the heads key and the transaction (0326 mantle_acl_on)
+    'mantle.acl_internal',         -- the derivation guards pair it with mantle_owner_role(), no member the narrow role is; the item_grants triggers ask for it signed (0327 mantle_acl_signed); mantle_acl_flag_leaks checks the rest
+    'mantle.acl_sig',              -- the flag's mark, keyed by the heads key and the transaction (0327 mantle_acl_on)
     'mantle.human',                -- the personal space roles' old policies: no narrow table
     'mantle.heads_bypass',         -- verified against the signed marker (mantle_bypass_verified)
     'mantle.heads_check',          -- a session mode only raises the box's
@@ -238,7 +238,7 @@ DECLARE
   -- operator's): mantle.actor is set nowhere else.
   actor_setters constant text[] := ARRAY[
     'public.mantle_set_actor(text,text,text)', 'public.mantle_operator_actor(text)'];
-  -- The function whose own SET clause blanks its three create keys (0315:
+  -- The function whose own SET clause blanks its three create keys (0316:
   -- a structure item takes no caller's create workspaces), only to ''.
   blankers constant text[] := ARRAY['public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)'];
   f record;
@@ -253,7 +253,7 @@ BEGIN
   -- non-identity keys above (and mantle.check_lowered, the floor's own
   -- record) may be set; the actor only by its two setters; the structure
   -- definer's clause only blanks its create keys. The derivation's flag and
-  -- its mark: mantle_acl_flag_leaks (0326) holds who may set them.
+  -- its mark: mantle_acl_flag_leaks (0327) holds who may set them.
   FOR f IN
     SELECT p.oid::regprocedure::text AS sig, p.proname::text AS name, n.nspname = 'public' AS pub,
            p.prosrc || ' ' || coalesce(pg_get_function_sqlbody(p.oid), '') AS prosrc,

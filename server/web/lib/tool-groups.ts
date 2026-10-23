@@ -143,7 +143,7 @@ export async function updateToolGroup(
   // NARROW_WRITES).
   // Its integration (where its calls and token go) or configuring login:
   // the full-route spot tool-config.
-  // An enable (its tools answer again) is a grant too: 0320 lets the
+  // An enable (its tools answer again) is a grant too: 0321 lets the
   // narrow login only switch it off.
   // An edit of both kinds enters both spots (narrow-spots.ts
   // NARROW_TABLE_SPOTS).

@@ -488,7 +488,7 @@ function noteNarrowWrite(text: string): void {
 
 /** A call the narrow role could not make (a function it may not EXECUTE),
  *  sent off the narrow route (the switch off) by a statement that route
- *  would take: counted as the database counts a refused write (0319), so
+ *  would take: counted as the database counts a refused write (0320), so
  *  the would-refuse count has no blind spot for refused calls. */
 export function noteNarrowWouldRefuse(actor: string, detail: string): void {
   noteNarrowWrite(`narrow-would-refuse ${actor} ${detail}`);

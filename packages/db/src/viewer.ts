@@ -1168,9 +1168,9 @@ function exitLogin(outer: Actor | null, left?: WorkspaceScope): string | undefin
  * definer, and delete its spot; the list only shrinks. The structure items
  * (the Secrets root, a secret, a peer, a sender's contact, a documentation
  * item, a calendar's synced events) moved to one definer
- * (gateway/structure-item.ts, migration 0315); a promotion's personal
+ * (gateway/structure-item.ts, migration 0316); a promotion's personal
  * space and an assistant's delete to theirs (gateway/spot-definers.ts,
- * migration 0316).
+ * migration 0317).
  */
 export const FULL_ROUTE_SPOTS = Object.freeze({
   'profile-row':
@@ -1184,7 +1184,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'pending-call':
     "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
   'login-credential':
-    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0318 refuses the narrow role) and a login's delete (its foreign keys cascade; the owner's would cascade the brain, which 0320 refuses the narrow role whatever its grants): the users area's create, role change, enable, delete and password set, and a login's own password change (login-self), and a rename (round 13b: the display name reaches the prompts as the user's name); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
+    "a login's credential and rights columns (auth.users role and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0319 refuses the narrow role) and a login's delete (its foreign keys cascade; the owner's would cascade the brain, which 0321 refuses the narrow role whatever its grants): the users area's create, role change, enable, delete and password set, and a login's own password change (login-self), and a rename (round 13b: the display name reaches the prompts as the user's name); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
   'structure-no-login':
     "a structure item (gateway/structure-item.ts) written in a narrow exit that acts for no login (a turn that answers none, as a heartbeat's with the actor check off): the definer takes only an acting login, so the app's own statements run here, as before it",
   'pair-code':
@@ -1192,17 +1192,17 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'oauth-code':
     "an MCP client's authorization code minted for a login (oauth_auth_codes INSERT, /api/oauth/authorize, mcp-oauth.ts mintAuthCode): the code exchanges for the login's token, a way in the narrow login may not mint (it may delete one)",
   'member-invite':
-    'a member invite minted (member_invites INSERT, the users area, member-invites.ts createMemberInvite): its code redeems into a new login; the narrow login may only revoke one (revoked_at, never cleared: 0318)',
+    'a member invite minted (member_invites INSERT, the users area, member-invites.ts createMemberInvite): its code redeems into a new login; the narrow login may only revoke one (revoked_at, never cleared: 0319)',
   'peer-access':
-    "a peer brain's way in (mantle_peers: its row, the inbound token's hash, enabled and status, the login it acts as, its Write switch and risky tools; peers/registry.ts create, rotate, outbound completion, enable, access): the narrow login may write only a peer's contact stamps and the unbind of a session end (0318's rules)",
+    "a peer brain's way in (mantle_peers: its row, the inbound token's hash, enabled and status, the login it acts as, its Write switch and risky tools; peers/registry.ts create, rotate, outbound completion, enable, access): the narrow login may write only a peer's contact stamps and the unbind of a session end (0319's rules)",
   'peer-share':
-    'a share granted to a peer (peer_shares and peer_share_scopes INSERT, peers/grants.ts): the peer may then read the item or type; the narrow login may only revoke one (revoked_at, never cleared: 0318)',
+    'a share granted to a peer (peer_shares and peer_share_scopes INSERT, peers/grants.ts): the peer may then read the item or type; the narrow login may only revoke one (revoked_at, never cleared: 0319)',
   'telegram-pair':
     'a Telegram chat paired to a login (telegram_chats allowlist_status and login_id, the login-telegram reason, packages/telegram pairing.ts pairChatWithCode): the chat then talks to the assistant as that login; the narrow login holds no write of either column',
   'run-control':
     "a run made, its items appended, a question answered, its budget decided or the run cancelled (runs INSERT and status, run_items INSERT and state, and the next question parked in the same transaction: run_plan, run_append, the pending approval of ask_human and run_budget, the area's POST /api/runs/:id and run_cancel): a run's rows decide what the runs sweep executes, so the narrow login holds no write of them (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_INSERT and NARROW_NEVER_UPDATE_TABLE; round 9: made, appended and answered too)",
   'model-route':
-    "an assistant's, an AI worker's or the embedding routes' vault key, base URL or configuring login (agents, ai_workers, embedding_config; an AI worker or the embedding row made): where a vault key is sent, so the narrow login holds no write of those columns and no INSERT of either row (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE). Round 13b (0323): and a route switched on, an AI worker enabled, made the kind's default or its backup route enabled, an assistant's backup route enabled (the narrow login may only switch one off). Round 13c: a model pool entry edited (curated_models: its model, routes, price snapshot and place, what the picker offers and a combo applies; PATCH /api/model-pools/:id)",
+    "an assistant's, an AI worker's or the embedding routes' vault key, base URL or configuring login (agents, ai_workers, embedding_config; an AI worker or the embedding row made): where a vault key is sent, so the narrow login holds no write of those columns and no INSERT of either row (S7b part b2 round 8, the measured allowlist: access-matrix.ts NARROW_NEVER_UPDATE). Round 13b (0324): and a route switched on, an AI worker enabled, made the kind's default or its backup route enabled, an assistant's backup route enabled (the narrow login may only switch one off). Round 13c: a model pool entry edited (curated_models: its model, routes, price snapshot and place, what the picker offers and a combo applies; PATCH /api/model-pools/:id)",
   'tool-config':
     "a tool made (its handler: where a call and its vault key go), a tool's external access or confirm flag, a tool group's integration or configuring login, the Microsoft sign-in's redirect URI and its row (the connectors and settings areas, the MCP and OpenAPI syncs, the MCP token refresh): the narrow login holds none of them (S7b part b2 round 8). Round 13b: a group's description too (the model reads it to pick the group's tools)",
   'heartbeat-maker':
@@ -1212,15 +1212,15 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'pending-park':
     "a tool call parked for an Admin's decision (pending_tool_calls INSERT: its tool, arguments, origin and maker; the turn's confirm gate, an agent's queued call, the toolsmith, the API console's queue): the narrow login may decide one (status, result), never make or swap one (S7b part b2 round 8)",
   'docs-root':
-    'a documentation collection made (doc_collections INSERT with its root_path: which files the brain reads), or switched on (its files read and indexed again: 0323, enabled only off on the narrow login, round 13b): the narrow login keeps its switch off and reconcile stamps (S7b part b2 round 8)',
+    'a documentation collection made (doc_collections INSERT with its root_path: which files the brain reads), or switched on (its files read and indexed again: 0324, enabled only off on the narrow login, round 13b): the narrow login keeps its switch off and reconcile stamps (S7b part b2 round 8)',
   'feed-enable':
-    "a content feed switched on (calendar_accounts.enabled: the calendar area's feed; ms_drives.enabled: a Microsoft drive): an enabled feed syncs again and its items are ingested (model work), so the narrow login may only switch one off (0323, generated from the catalog: every enabled, is_default and backup_enabled column is off-only on the narrow role; part b2 round 13b)",
+    "a content feed switched on (calendar_accounts.enabled: the calendar area's feed; ms_drives.enabled: a Microsoft drive): an enabled feed syncs again and its items are ingested (model work), so the narrow login may only switch one off (0324, generated from the catalog: every enabled, is_default and backup_enabled column is off-only on the narrow role; part b2 round 13b)",
   'agent-group-grant':
     'an assistant group made (agent_groups INSERT: who answers together, member_slugs): the narrow login keeps its stamp and delete (S7b part b2 round 8)',
   'telegram-responder':
     "a Telegram chat's assistant chosen (telegram_chats responder_agent_id, the connectors area's PATCH /api/telegram/chats/:id): that assistant's tool groups then answer the chat's login; the narrow login holds no write of telegram_chats (S7b part b2 round 7: found by the area-route sweep reaching the write)",
   'assistant-grant':
-    "an assistant made, cloned or granted (agents INSERT, and its grant columns tool_group_slugs, role, workspace_id, memory_config's delegate_to and a login's assignment: server/web lib/agents.ts create, update and clone, the toolsmith's agent_grant_tool_group, the runs worker's default assistant, the manifest's apply and adopt): an assistant's tool groups are what its turns may call; the narrow login may write only an assistant's other columns and release an assignment (assigned_user_id only to NULL, delegate_to kept: 0318)",
+    "an assistant made, cloned or granted (agents INSERT, and its grant columns tool_group_slugs, role, workspace_id, memory_config's delegate_to and a login's assignment: server/web lib/agents.ts create, update and clone, the toolsmith's agent_grant_tool_group, the runs worker's default assistant, the manifest's apply and adopt): an assistant's tool groups are what its turns may call; the narrow login may write only an assistant's other columns and release an assignment (assigned_user_id only to NULL, delegate_to kept: 0319)",
   'tool-group-grant':
     "a tool group made, removed or its tools changed (tool_groups INSERT and DELETE, its grant columns tool_slugs, slug, admin_only, and an assistant's grant of a removed group: server/web lib/tool-groups.ts, /api/tools, the toolsmith, the MCP and OpenAPI syncs, the sandbox's group): a group's tools are what every assistant granted it may call; the narrow login may write only a group's name, description, integration, enable and configuring login",
   'push-device':
@@ -1230,11 +1230,11 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'sandbox-make':
     "a sandbox made (sandboxes INSERT with its maker, created_by: packages/content sandboxes.ts createSandboxRow): with INSERT and DELETE the narrow login could put a removed sandbox back under another maker; it keeps a sandbox's status, stamp and delete (S7b part b2 round 12)",
   'acting-login':
-    "a definer that needs the exit's acting login (mantle_ws_set_moderator: the workspaces area's Moderator tick; mantle_tg_chat_set: a chat's block or unpair; mantle_structure_item: the keys, connectors and settings areas' structure items; mantle_agent_delete: an assistant's delete; mantle_ws_attach_assistants: onboarding's assistant attach in the login's scope, round 13c): the identity readers answer no login, scope or acting login on the narrow role (0321: a session sets those itself, so the database never trusts them there), so these run on the full route, where the gateway's own SET carries the acting login; S7c's signed acting login lets the readers trust a signed value and removes this spot (S7b part b2 round 13)",
+    "a definer that needs the exit's acting login (mantle_ws_set_moderator: the workspaces area's Moderator tick; mantle_tg_chat_set: a chat's block or unpair; mantle_structure_item: the keys, connectors and settings areas' structure items; mantle_agent_delete: an assistant's delete; mantle_ws_attach_assistants: onboarding's assistant attach in the login's scope, round 13c): the identity readers answer no login, scope or acting login on the narrow role (0322: a session sets those itself, so the database never trusts them there), so these run on the full route, where the gateway's own SET carries the acting login; S7c's signed acting login lets the readers trust a signed value and removes this spot (S7b part b2 round 13)",
   'ms-account':
     "a Microsoft account connected or its tokens rotated (ms_accounts INSERT and its sealed access and refresh tokens, scopes and expiry: the OAuth callback's upsertAccountFromTokens and a token refresh in getValidAccessToken) and its drives found (ms_drives INSERT: discoverDrives): which identity's mail and files the brain reads, and the credential it reads them with; the narrow login keeps an account's sync error and stamp and a drive's switch off and delta (S7b part b2 round 13c, reached by the area sweep with Graph stubbed)",
   'telegram-connect':
-    "a bot bound to an assistant (telegram_accounts INSERT and its bot and branch path, the channel's INSERT or upsert with its sealed token and the assistant it answers as, and their enable: server/web lib/agent-telegram.ts connectAgentTelegram): which assistant a bot's chats reach; the narrow login may only switch a bot or channel off (0320) (S7b part b2 round 12)",
+    "a bot bound to an assistant (telegram_accounts INSERT and its bot and branch path, the channel's INSERT or upsert with its sealed token and the assistant it answers as, and their enable: server/web lib/agent-telegram.ts connectAgentTelegram): which assistant a bot's chats reach; the narrow login may only switch a bot or channel off (0321) (S7b part b2 round 12)",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */
@@ -1290,7 +1290,7 @@ export function systemDbOnSpot(): boolean {
 /** The acting login of work at the acting-login spot (onFullSystemRoute),
  *  or null: the gateway's SET carries it in every check mode there
  *  (gateway/actor-sql.ts actorParams), since its definers refuse a missing
- *  one (0321). A turn's exit is no request exit (requestExitActingLogin), so
+ *  one (0322). A turn's exit is no request exit (requestExitActingLogin), so
  *  with the check off nothing else would send it. */
 export function actingLoginAtSpot(): string | null {
   return fullRouteSpotNow.getStore() === 'acting-login' ? actingLoginNow() : null;

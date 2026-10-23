@@ -1,7 +1,7 @@
 /**
  * The narrow login's rules of the b2 re-audit's fourteenth inputs, as the
  * REAL narrow login (its derived password): the off-only switches on an
- * INSERT too (0324: a calendar feed deleted and inserted again switched
+ * INSERT too (0325: a calendar feed deleted and inserted again switched
  * on), the destination and cost class (an assistant's and a worker's
  * provider, model and effort, the embedder's providers, model, dimensions
  * and knobs, a pool entry added or removed) and a prompt version, each off

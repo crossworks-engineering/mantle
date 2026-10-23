@@ -5,11 +5,11 @@
 -- Each does what the app's own statements did on the system pool, so every
 -- answer is the same (narrow-spots.db.test.ts holds the two equal).
 --
--- The caller of each, as mantle_structure_item's (0315): no scope (a
+-- The caller of each, as mantle_structure_item's (0316): no scope (a
 -- scope's own writes go through the write role), a system session
 -- (mantle_system_session: the runtime role, the narrow role, a superuser
--- or the definers' owner, 0314's rule; on the narrow login the acting
--- login is a mistake guard, 0314's header), LOGIN equal to the acting login the gateway sends
+-- or the definers' owner, 0315's rule; on the narrow login the acting
+-- login is a mistake guard, 0315's header), LOGIN equal to the acting login the gateway sends
 -- (mantle.acting_login; none, or another, is refused), that login holding
 -- the function's area (mantle_area_rule), not read-only (mantle.write_mode
 -- ro). Refused: 42501.
@@ -36,9 +36,9 @@
 -- (runtime-role.ts RUNTIME_SYSTEM_FUNCTIONS) and the narrow role
 -- (NARROW_SYSTEM_FUNCTIONS). The write role and the user role hold none.
 -- No table, row or trigger changes; no LLM work. Re-runnable. Revert:
--- packages/db/rollback/0316_promotion_agent_definers.revert.sql (not needed
+-- packages/db/rollback/0317_promotion_agent_definers.revert.sql (not needed
 -- for a one-image rollback: the image before this one never calls them).
--- The `when` sits 60000 above 0315's.
+-- The `when` sits 60000 above 0316's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_space_settle_promotion"(login uuid, target uuid)

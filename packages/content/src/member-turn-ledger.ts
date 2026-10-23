@@ -17,7 +17,7 @@
  *
  * The token budget reads the ledger's own tokens: a turn's model tokens are
  * stamped on its slot when its trace closes (settleMemberTurn, migration
- * 0326), so the budget can be passed by the turns already queued (at most the
+ * 0327), so the budget can be passed by the turns already queued (at most the
  * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice. It
  * never reads the traces: the narrow login writes those, not the ledger.
  */
@@ -83,7 +83,7 @@ export async function memberTokensSince(
  * fails, `releaseMemberTurn` gives the slot back.
  *
  * The whole claim is one definer call (mantle_member_turn_claim, migration
- * 0325) in `loginId`'s own scope on the system pool (loginDefinerCall): the
+ * 0326) in `loginId`'s own scope on the system pool (loginDefinerCall): the
  * definer takes the login from that scope, never as an argument, under the
  * per-login lock, so two sends at once cannot both take the last slot. The
  * narrow role holds no right on the ledger and may not run the definers.
@@ -119,14 +119,14 @@ export async function claimMemberTurn(args: {
 
 /** Give a claimed slot back: the enqueue it was claimed for failed. Only
  *  `loginId`'s own row, and only one claimed in the last five minutes
- *  (mantle_member_turn_release, 0325). */
+ *  (mantle_member_turn_release, 0326). */
 export async function releaseMemberTurn(loginId: string, turnId: string): Promise<void> {
   await loginDefinerCall(loginId, 'own', sql`select mantle_member_turn_release(${turnId}::text)`);
 }
 
 /** Stamp a member chat turn's model tokens (in + out) on its slot, at the
  *  turn's close: only `loginId`'s own row with that id, only up
- *  (mantle_member_turn_settle, 0326). The token budget sums these. False
+ *  (mantle_member_turn_settle, 0327). The token budget sums these. False
  *  when the login holds no such slot (an Admin user's turn takes none). */
 export async function settleMemberTurn(
   loginId: string,

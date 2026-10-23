@@ -45,7 +45,7 @@ export type ScannedWrite = {
   /** A value rule the literal set or values meet (an off-only switch
    *  turned on, a heartbeat resumed or given a next fire, a new row whose
    *  switch starts on by its column default): the narrow role refuses it
-   *  whatever its column rights (0320, 0323, 0324). Null: none seen (a
+   *  whatever its column rights (0321, 0324, 0325). Null: none seen (a
    *  value held in a variable is not read). */
   valueRule: string | null;
 };
@@ -177,13 +177,13 @@ function valueRuleOf(
     // the reading (the runtime check reads it), never as a turn-on.
     const named = Object.keys(set);
     const dflt = Object.fromEntries(named.map((k) => [k, k in known ? known[k] : false]));
-    return insertTurnsOn(info.table, dflt) ? 'a switch starts on (0324)' : null;
+    return insertTurnsOn(info.table, dflt) ? 'a switch starts on (0325)' : null;
   }
-  if (turnsOn(known)) return 'a switch turned on (0323)';
-  // Literals only: a heartbeat fire's next fire is a variable that 0320
+  if (turnsOn(known)) return 'a switch turned on (0324)';
+  // Literals only: a heartbeat fire's next fire is a variable that 0321
   // holds forward only, which no reading of the source can tell.
   const rule = NARROW_VALUE_SPOTS[info.name];
-  return rule?.(known) ? 'a value rule of its table (0320)' : null;
+  return rule?.(known) ? 'a value rule of its table (0321)' : null;
 }
 
 /** The spans of every `onFullSystemRoute(...)` call's arguments, and the

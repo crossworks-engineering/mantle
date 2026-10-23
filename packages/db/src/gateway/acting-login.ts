@@ -3,7 +3,7 @@
  * the exit's acting login (mantle_structure_item, mantle_agent_delete,
  * mantle_tg_chat_set, mantle_ws_attach_assistants, mantle_ws_set_moderator)
  * refuse it on the narrow role, where the identity readers answer no login
- * (0321): each runs at the full-route spot acting-login, where the
+ * (0322): each runs at the full-route spot acting-login, where the
  * gateway's own SET carries the login. In a login's own scope, or off a
  * narrow exit, `fn` runs as it is (onFullSystemRoute's own rule).
  *

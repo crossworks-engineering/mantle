@@ -37,7 +37,7 @@ function named(spot: FullRouteSpot, props: readonly string[]): SpotRule {
 }
 
 /** memory_config's delegate_to (a delegate runs with its own tool groups:
- *  0318 keeps the key off the narrow login). The caller passes the patch's
+ *  0319 keeps the key off the narrow login). The caller passes the patch's
  *  object, not the SQL merge it writes. */
 function namesDelegate(value: unknown): boolean {
   return value != null && typeof value === 'object' && 'delegate_to' in value;
@@ -53,7 +53,7 @@ export const NARROW_TABLE_SPOTS = Object.freeze({
   'public.agents': {
     spots: ['assistant-grant', 'skill-text', 'model-route'],
     rules: [
-      // A grant: the role, the tool groups, a turn-on (0320: the narrow
+      // A grant: the role, the tool groups, a turn-on (0321: the narrow
       // login only switches it off), a delegate.
       {
         spot: 'assistant-grant',

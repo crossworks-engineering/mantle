@@ -4,7 +4,7 @@
  * read for its mantle_* calls, and each function the narrow role may not
  * EXECUTE (the catalog's answer) is noted as narrow-would-refuse
  * `fn:<name> EXECUTE`, beside the database's own count of refused writes
- * (0319). narrowRouteClient (narrow-route.ts) calls it off the route.
+ * (0320). narrowRouteClient (narrow-route.ts) calls it off the route.
  */
 import type postgres from 'postgres';
 import { TtlCache } from '@mantle/std';
@@ -74,7 +74,7 @@ export function calledMantleFunctions(query: string): ReadonlySet<string> {
  * A statement the narrow route would take, sent off it (the switch off):
  * each mantle_* function it calls by name that the narrow role may not
  * EXECUTE is noted as narrow-would-refuse `fn:<name> EXECUTE`, beside the
- * database's own count of refused writes (0319). Read on the code (the
+ * database's own count of refused writes (0320). Read on the code (the
  * literals blanked), as the switch-on measurement reads it. Never holds
  * the statement back.
  */

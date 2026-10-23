@@ -23,7 +23,7 @@ export const SYSTEM_DB_ALLOWLIST = [
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   // The member chat traces' token sums (audit F09); the ledger itself is
-  // written through its definers (0325, login-definer.ts).
+  // written through its definers (0326, login-definer.ts).
   'packages/content/src/member-turn-ledger.ts',
   'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',

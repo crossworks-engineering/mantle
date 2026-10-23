@@ -133,7 +133,7 @@ function loginFactFailed(err: unknown): false {
 
 /**
  * Whether the narrow login may not change `loginId`'s disabled_at or
- * session_epoch (0326's hold): the owner, an admin by role, or a user of the
+ * session_epoch (0327's hold): the owner, an admin by role, or a user of the
  * Admin workspace, disabled or not (mantle_narrow_login_held, the same
  * definer the hold asks). A disable or a session end of such a login runs
  * at the spot login-credential. Asked on the system pool; on a failure it
@@ -153,7 +153,7 @@ export async function loginHeldFromNarrow(loginId: string): Promise<boolean> {
 
 /**
  * Whether removing the MCP client `clientId` would end a live grant of a
- * login held from the narrow login (0326's hold on grants,
+ * login held from the narrow login (0327's hold on grants,
  * mantle_narrow_client_held: the delete cascades to its tokens and codes).
  * Such a removal runs at the spot login-credential. On a failure it
  * answers yes, so the write takes the spot (never a refusal).

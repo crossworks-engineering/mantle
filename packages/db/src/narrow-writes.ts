@@ -7,7 +7,7 @@
  * drizzle table and, for an UPDATE, the set it sends (its keys are the
  * table's property names; their column names are what Postgres checks).
  *
- * Some rules hold a value, not a column (migration 0320): an
+ * Some rules hold a value, not a column (migration 0321): an
  * enable on the tables whose `enabled` the narrow role may only switch
  * off, and a heartbeat's resume or a next fire set by an edit (the
  * narrow role keeps a fire's books only one way). Such a set needs the
@@ -18,7 +18,7 @@ import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { narrowMayWrite } from './access-matrix';
 
 /** The switches the narrow role may only turn off, on every table that has
- *  one (0323, generated from the catalog by column name: enabled,
+ *  one (0324, generated from the catalog by column name: enabled,
  *  is_default, backup_enabled), as drizzle property names: a set that turns
  *  one on needs the caller's spot. */
 export const NARROW_OFF_ONLY_PROPS: readonly string[] = Object.freeze([
@@ -47,7 +47,7 @@ export function insertTurnsOn(table: PgTable, values: Record<string, unknown>): 
 }
 
 /** Per table, the other sets (property names and values) the narrow role's
- *  row rules refuse whatever its column rights (0320's
+ *  row rules refuse whatever its column rights (0321's
  *  mantle_narrow_one_way); a turn-on is every table's (turnsOn). */
 export const NARROW_VALUE_SPOTS: Readonly<
   Record<string, (set: Record<string, unknown>) => boolean>
@@ -66,7 +66,7 @@ export function narrowNeedsSpot(
   const names = op === 'update' ? Object.keys(set).map((k) => columns[k]?.name ?? k) : [];
   if (op === 'update' && (turnsOn(set) || NARROW_VALUE_SPOTS[name]?.(set))) return true;
   // A new row that starts a switch on, named or by its column default
-  // (0324: the off-only rule meets an INSERT too, so a delete and insert
+  // (0325: the off-only rule meets an INSERT too, so a delete and insert
   // again cannot turn one back on): the caller's spot. `set` is the
   // insert's values here.
   if (op === 'insert' && insertTurnsOn(table, set)) return true;

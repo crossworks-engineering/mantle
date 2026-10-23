@@ -620,7 +620,7 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
         who,
       ).toEqual([]);
       for (const stmt of [
-        // traces: no DELETE since 0326's round (the integrity delete runs
+        // traces: no DELETE since 0327's round (the integrity delete runs
         // at its spot).
         'delete from public.traces where false',
         // A system table's write the allowlist leaves out: audit_log is

@@ -1,21 +1,21 @@
--- Rollback of 0314_acting_login_definers: what an operator runs BEFORE
+-- Rollback of 0315_acting_login_definers: what an operator runs BEFORE
 -- pinning an image older than the narrow pool's. Not a migration: nothing
 -- runs it on its own.
 --
--- 0314 changes two definers' bodies (mantle_tg_chat_set, 0313's;
+-- 0315 changes two definers' bodies (mantle_tg_chat_set, 0313's;
 -- mantle_access_key_revoke, 0293's): with no scope each takes only the
 -- acting login, from a system session. The image one release back (the
 -- narrow pool's, v0.300.130) already sends mantle.acting_login, so a
 -- one-image rollback needs NOT this file. Only an image older than that
--- sends none: with 0314 in place its assistants area's Telegram block and
+-- sends none: with 0315 in place its assistants area's Telegram block and
 -- unpair are refused (42501), so run this before pinning such an image.
--- It puts both bodies back byte for byte and takes 0314 off the ledger, so a later roll forward
+-- It puts both bodies back byte for byte and takes 0315 off the ledger, so a later roll forward
 -- applies it again (it is re-runnable). CREATE OR REPLACE keeps the
 -- grants.
 --
 -- Run it while the newer image is still up (this file is in its image),
 -- as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0314_acting_login_definers.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0315_acting_login_definers.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';
@@ -96,8 +96,8 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_access_key_revoke"(uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
--- The session check 0314 added (0315 and 0316 call it: revert them first).
+-- The session check 0315 added (0316 and 0317 call it: revert them first).
 DROP FUNCTION IF EXISTS "public"."mantle_system_session"();
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0314 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198160000;
+-- Off the ledger: the next roll forward applies 0315 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198980000;

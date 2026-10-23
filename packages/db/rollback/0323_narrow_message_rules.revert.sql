@@ -1,21 +1,21 @@
--- Rollback of 0322_narrow_message_rules: what an operator runs BEFORE
+-- Rollback of 0323_narrow_message_rules: what an operator runs BEFORE
 -- pinning an image older than the one that added it, if they want its
 -- rules gone. Not a migration: nothing runs it on its own.
 --
--- 0322 refuses only the narrow system role (and counts the same break by a
+-- 0323 refuses only the narrow system role (and counts the same break by a
 -- narrow reason off the narrow route), which an older image's product
 -- writes never meet in a refused direction: a rollback of one image needs
--- NOT this file. Order when reverting several: every newer one first (0326
--- down to 0323), then 0322, then 0321, then 0320, then 0319 down to 0314,
--- each in its own transaction, newest first (0320's revert drops the guard
+-- NOT this file. Order when reverting several: every newer one first (0327
+-- down to 0324), then 0323, then 0322, then 0321, then 0320 down to 0315,
+-- each in its own transaction, newest first (0321's revert drops the guard
 -- this file puts back).
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0322_narrow_message_rules.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0323_narrow_message_rules.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
--- 0320's guard: an insert only, its four checks.
+-- 0321's guard: an insert only, its four checks.
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_message_ok"(
   owner uuid, agent uuid, login uuid, ws uuid)
   RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
@@ -76,5 +76,5 @@ DROP TRIGGER IF EXISTS "mantle_narrow_message_guard_trg" ON "public"."assistant_
 CREATE TRIGGER "mantle_narrow_message_guard_trg" BEFORE INSERT ON "public"."assistant_messages"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_message_guard"();
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0322 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198640000;
+-- Off the ledger: the next roll forward applies 0323 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199460000;

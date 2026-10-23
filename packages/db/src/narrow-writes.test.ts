@@ -11,7 +11,7 @@ import {
 import { insertTurnsOn, narrowNeedsSpot } from './narrow-writes';
 
 describe('narrowNeedsSpot', () => {
-  it('an insert that starts a switch on, named or by its default, needs the spot (0324)', () => {
+  it('an insert that starts a switch on, named or by its default, needs the spot (0325)', () => {
     // calendar_accounts.enabled defaults to true; ms_drives.enabled to false.
     expect(insertTurnsOn(calendarAccounts, { enabled: true })).toBe(true);
     expect(insertTurnsOn(calendarAccounts, {})).toBe(true);

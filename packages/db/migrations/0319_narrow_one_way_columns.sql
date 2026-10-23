@@ -23,7 +23,7 @@
 -- releases a login's assistant on the narrow login; an assignment to a
 -- login (the assistant's tool groups then answer that login's turns) runs
 -- at the full-route spot assistant-grant (S7b b2 round 6, folded here: same
--- class, no box has run 0318). memory_config's delegate_to key is held the
+-- class, no box has run 0319). memory_config's delegate_to key is held the
 -- same way (round 7, folded here): a delegate runs with its own tool groups
 -- for the caller (only the caller's level narrows it), so naming one is a
 -- grant; the rest of memory_config (limits, the corpus map) stays the
@@ -38,8 +38,8 @@
 -- trigger, nor set session_replication_role (superuser only).
 --
 -- Re-runnable. No table or row changes; no LLM work. Revert:
--- packages/db/rollback/0318_narrow_one_way_columns.revert.sql. The `when`
--- sits 60000 above 0317's.
+-- packages/db/rollback/0319_narrow_one_way_columns.revert.sql. The `when`
+-- sits 60000 above 0318's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_one_way"()

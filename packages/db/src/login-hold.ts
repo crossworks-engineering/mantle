@@ -1,5 +1,5 @@
 /**
- * A login's disable or session end on a narrow exit (migration 0326): the
+ * A login's disable or session end on a narrow exit (migration 0327): the
  * narrow login may not move the owner's or an Admin user's disabled_at or
  * session_epoch, nor revoke their keys, tokens and devices, nor remove
  * their OAuth codes or an MCP client a live grant of theirs rides on, so
@@ -13,7 +13,7 @@ import { onFullSystemRoute, systemRouteNow } from './viewer';
  * session_epoch; a revoke of its key, token or device; a delete of its
  * OAuth code) at the spot login-credential when the exit's route is the
  * narrow one and the login is held from the narrow login (the owner or an
- * Admin user: 0326's hold, loginHeldFromNarrow), else as it is. Read on the
+ * Admin user: 0327's hold, loginHeldFromNarrow), else as it is. Read on the
  * route the exit picked, not the switch, so with the switch off the same
  * write is at the spot and the would-refuse count does not see it.
  */

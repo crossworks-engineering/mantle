@@ -5,7 +5,7 @@
  * product's own narrow writes on the same rows still run. The same forms
  * are the workstation's forge proof (forge13b.sql).
  *
- *  - B (0322): the message rows. An insert names its assistant, that
+ *  - B (0323): the message rows. An insert names its assistant, that
  *    assistant's workspace and a login that may talk there (the Admin
  *    workspace: the owner or an Admin user only); a settled row is never
  *    rewritten, by UPDATE, ON CONFLICT or MERGE (COPY: the forge proof's
@@ -13,7 +13,7 @@
  *    route the same break by a narrow reason is counted and runs.
  *  - C: the limit and prompt JSON columns (an assistant's memory_config and
  *    params, an AI worker's params) are off the narrow list.
- *  - D (0323): every enabled, is_default and backup_enabled column the
+ *  - D (0324): every enabled, is_default and backup_enabled column the
  *    narrow role may update is off-only, read from the catalog: a new one
  *    fails here.
  *  - F: the prompt-reaching text the narrow login held (a tool group's and
@@ -377,7 +377,7 @@ describe.skipIf(!URL)('round 13b: the narrow login`s rules, items B to E', () =>
     expect(bad).toEqual([]);
   });
 
-  it('B: off the narrow route a narrow reason`s break is counted and runs (0319`s notice)', async () => {
+  it('B: off the narrow route a narrow reason`s break is counted and runs (0320`s notice)', async () => {
     const notices: string[] = [];
     const c = postgres(scratch.url, {
       max: 1,

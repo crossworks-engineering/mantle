@@ -1,5 +1,5 @@
 /**
- * The structure item definer (migration 0315, gateway/structure-item.ts,
+ * The structure item definer (migration 0316, gateway/structure-item.ts,
  * plan v3.2 S7b part b2): on an Admin area's narrow exit the Secrets root,
  * a secret, a peer, a contact, a documentation item and its folders are
  * made, edited and removed by mantle_structure_item, and each answer equals
@@ -16,7 +16,7 @@ import { createMigratedScratchDatabase, ensureAdminUsers, ensureTestAnchor } fro
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('0315: the structure items on the narrow route', () => {
+describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let rr: typeof import('./runtime-role');
   let v: typeof import('./viewer');

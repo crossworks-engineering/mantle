@@ -1,5 +1,5 @@
 /**
- * Migration 0326 and the counter's refused calls, on a real, migrated
+ * Migration 0327 and the counter's refused calls, on a real, migrated
  * Postgres:
  *
  *  - the login hold: the REAL narrow login (session_user
@@ -20,8 +20,8 @@
  *    of an exit routed narrow that calls a function the narrow role may not
  *    run is noted (narrow-would-refuse fn:<name> EXECUTE); one it may run,
  *    or the same call outside the exit, is not;
- *  - every migration of the narrow set (0314 to 0326) runs again over its
- *    own end state and leaves it as it was (0321's end-state check, 0318
+ *  - every migration of the narrow set (0315 to 0327) runs again over its
+ *    own end state and leaves it as it was (0322's end-state check, 0319
  *    with the rules after it).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/narrow-lockout.db.test.ts
@@ -69,7 +69,7 @@ async function run(
   return null;
 }
 
-describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b part b2)', () => {
+describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b part b2)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let su: ReturnType<typeof postgres>;
   let rt: ReturnType<typeof postgres>;

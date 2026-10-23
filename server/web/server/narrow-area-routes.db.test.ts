@@ -211,7 +211,7 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     expect(await x(sql`select 1 from calendar_accounts where id = ${cal!.id}`)).toHaveLength(0);
   });
 
-  it('assistants: DELETE without its conversation (its definer, 0316: the heads were refused before)', async () => {
+  it('assistants: DELETE without its conversation (its definer, 0317: the heads were refused before)', async () => {
     const id = randomUUID();
     const slug = `${tag}-keep`;
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt)
@@ -227,7 +227,7 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     ).toHaveLength(1);
   });
 
-  it('assistants: DELETE with its conversation (its definer, 0316)', async () => {
+  it('assistants: DELETE with its conversation (its definer, 0317)', async () => {
     const id = randomUUID();
     const slug = `${tag}-agent`;
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt)

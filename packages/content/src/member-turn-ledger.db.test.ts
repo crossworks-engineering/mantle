@@ -40,7 +40,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     m = await import('@mantle/db');
     ledger = await import('./member-turn-ledger');
     // The superuser, not the app's pool: on the runtime role (the
-    // runtime-role lane) the pool only reads the ledger since 0325.
+    // runtime-role lane) the pool only reads the ledger since 0326.
     su = superuserClient(URL!, 2);
     admin = su as unknown as typeof admin;
     await admin`insert into auth.users (id, email, password_hash, role) values
@@ -107,7 +107,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     await admin`delete from auth.users where id = ${who}`;
   });
 
-  it('refuses over the token budget from the login’s own slots, never from traces (0326)', async () => {
+  it('refuses over the token budget from the login’s own slots, never from traces (0327)', async () => {
     // Traces count nothing now: a member chat trace of sam's with 1000.
     await admin`insert into traces (owner_id, kind, subject_kind, status, tokens_in, tokens_out, data) values
       (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::text::jsonb)`;

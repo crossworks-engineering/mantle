@@ -1,18 +1,18 @@
--- Rollback of 0319_narrow_would_refuse: what an operator runs BEFORE
+-- Rollback of 0320_narrow_would_refuse: what an operator runs BEFORE
 -- pinning an image older than the one that added it, if they want the
 -- count gone. Not a migration: nothing runs it on its own.
 --
--- 0319 adds a report-only trigger function (its triggers are derived on
--- every migrate by runtime-role.ts applyNarrowWouldRefuse), gives 0318's
--- mantle_narrow_one_way a report branch, and lets 0317's content and
+-- 0320 adds a report-only trigger function (its triggers are derived on
+-- every migrate by runtime-role.ts applyNarrowWouldRefuse), gives 0319's
+-- mantle_narrow_one_way a report branch, and lets 0318's content and
 -- cascade counts take the route mark (mantle_narrow_counted). An older image runs with
 -- both in place (they only raise a NOTICE it prints): a rollback of one
 -- image needs NOT this file. This file drops the derived triggers and the
--- function, puts 0318's and 0317's functions back and takes 0319 off the ledger, so a
+-- function, puts 0319's and 0318's functions back and takes 0320 off the ledger, so a
 -- later roll forward applies it again (it is re-runnable).
 --
 -- Run it as the superuser, in one transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0319_narrow_would_refuse.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0320_narrow_would_refuse.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -83,7 +83,7 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_one_way"() FROM PUBLIC;
 --> statement-breakpoint
--- 0317's content and cascade counts, as 0317 made them (no route mark).
+-- 0318's content and cascade counts, as 0318 made them (no route mark).
 CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
@@ -153,4 +153,4 @@ REVOKE ALL ON FUNCTION "public"."mantle_narrow_cascade_stmt"() FROM PUBLIC;
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_counted"(text);
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790198460000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199280000;

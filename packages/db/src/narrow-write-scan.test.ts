@@ -131,12 +131,12 @@ describe('the static narrow write scan', () => {
     `;
     const w = scanSource('x.ts', src, tables, CALLS);
     expect(w.map((x) => x.valueRule)).toEqual([
-      'a switch turned on (0323)',
+      'a switch turned on (0324)',
       null,
       null,
-      'a switch starts on (0324)',
+      'a switch starts on (0325)',
       null,
-      'a value rule of its table (0320)',
+      'a value rule of its table (0321)',
     ]);
     expect(narrowAllows(w[0]!)).toBe(false);
   });

@@ -309,10 +309,10 @@ describe.skipIf(!URL)('0313: mantle_tg_chat_set, who may and who may not', () =>
     expect(await rowOf(id)).toEqual(untouched(L.member));
   });
 
-  it('on the narrow role the rule refuses even the acting login it is given (0321: the readers answer no identity there)', async () => {
+  it('on the narrow role the rule refuses even the acting login it is given (0322: the readers answer no identity there)', async () => {
     const run = async (login: string, id: string): Promise<number> =>
       su.begin(async (tx) => {
-        // The gateway sends the acting login with the actor (0314): the
+        // The gateway sends the acting login with the actor (0315): the
         // login passed must be it.
         await tx`select set_config('role', 'mantle_system_narrow', true),
                         set_config('mantle.acting_login', ${login}, true)`;

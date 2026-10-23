@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       (claims.ep === undefined || claims.ep === row.sessionEpoch);
     if (row && live) {
       // The owner's or an Admin user's own device on a narrow exit: at the
-      // spot login-credential (0326's hold on grants).
+      // spot login-credential (0327's hold on grants).
       await onLoginHoldSpot(row.userId, () =>
         db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti)),
       );

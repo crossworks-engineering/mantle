@@ -167,7 +167,7 @@ const ALLOWED: readonly [string, string][] = [
   ['ok: trace status', `update traces set status = status where false`],
 ];
 
-describe.skipIf(!URL)('round 12: the narrow login`s row rules (0320) and the moved writes', () => {
+describe.skipIf(!URL)('round 12: the narrow login`s row rules (0321) and the moved writes', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let su: ReturnType<typeof postgres>;
   let nl: ReturnType<typeof postgres>;

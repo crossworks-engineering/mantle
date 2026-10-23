@@ -104,7 +104,7 @@ const S = SAMPLE_ID;
 const KEY_AZURE = '55555555-5555-4555-8555-5555555555a2';
 const AZURE_PROVISION = 'onboarding provision (Azure only)';
 const MOBILE_LOGOUT = 'POST /api/auth/mobile-logout (a device bearer)';
-/** The users area disables an Admin user (0326's hold): the record key. */
+/** The users area disables an Admin user (0327's hold): the record key. */
 const ADMIN_DISABLE = 'PATCH /api/users/:id {disabled} (an Admin user)';
 /** The owner signs out everywhere (its own sessions, keys and grants):
  *  the record key. Last in a pass: it ends the pass's cookie. */
@@ -495,7 +495,7 @@ describe.skipIf(!URL)(
           record(MOBILE_LOGOUT);
         }
         // The users area disables an Admin user (the round 16 re-audit's
-        // L5): 0326's hold, so a narrow exit runs it at the spot
+        // L5): 0327's hold, so a narrow exit runs it at the spot
         // login-credential; the same answer both ways.
         {
           await su`insert into auth.users (id, email, password_hash, role)
@@ -639,7 +639,7 @@ describe.skipIf(!URL)(
           )[0]!.n,
         };
         // The owner signs out everywhere (the round 16 re-audit's L5): its
-        // session epoch, its keys, OAuth grants and devices (0326's hold:
+        // session epoch, its keys, OAuth grants and devices (0327's hold:
         // the owner's own, at the spot login-credential on a narrow exit).
         // Last: the pass's cookie ends with it.
         {
@@ -813,7 +813,7 @@ describe.skipIf(!URL)(
       'POST /api/microsoft/accounts/:id/drives': ['ms-account'],
       'POST /api/model-combos/apply': ['model-route'],
       // The destination and cost class: a pool entry added or
-      // removed, the extraction concurrency; a new feed starts on (0324).
+      // removed, the extraction concurrency; a new feed starts on (0325).
       'POST /api/model-pools': ['model-route'],
       'DELETE /api/model-pools/:id': ['model-route'],
       'PATCH /api/embedding/extraction': ['model-route'],
@@ -851,7 +851,7 @@ describe.skipIf(!URL)(
       'PATCH /api/tools/:id': ['tool-config'],
       'PATCH /api/users/:id': ['login-credential'],
       'PUT /api/users/:id/agent': ['assistant-grant'],
-      // The acting-login spot (0321): the definers that need the exit's
+      // The acting-login spot (0322): the definers that need the exit's
       // acting login (the structure items of the secrets, peers and email
       // contact routes, a Telegram chat's block or unpair, an assistant's
       // delete) run on the full route, where the gateway's SET carries it.
@@ -862,22 +862,22 @@ describe.skipIf(!URL)(
       'DELETE /api/agents/:id': ['acting-login'],
       'DELETE /api/peers/:id': ['acting-login'],
       'DELETE /api/secrets/:id': ['acting-login'],
-      // A switch turned on (0323: enabled, is_default and backup_enabled
+      // A switch turned on (0324: enabled, is_default and backup_enabled
       // only off on the narrow login): its spot.
       'POST /api/ai-workers/:id/default': ['model-route'],
       'PATCH /api/calendar/:id': ['feed-enable'],
       'PATCH /api/docs/collections/:id': ['docs-root'],
       'PATCH /api/microsoft/drives/:id': ['feed-enable'],
       'POST /api/users/:id/password': ['login-credential'],
-      // 0326's hold on grants: a live grant of the owner rides on the client.
+      // 0327's hold on grants: a live grant of the owner rides on the client.
       'DELETE /api/mcp-clients/:id': ['login-credential'],
       'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
       'DELETE /api/tool-groups/:id': ['tool-group-grant'],
       'DELETE /api/users/:id': ['login-credential'],
-      // 0326's hold on grants: the sample login is an Admin user.
+      // 0327's hold on grants: the sample login is an Admin user.
       'DELETE /api/users/:id/devices/:jti': ['login-credential'],
-      // 0326's hold: an Admin user's disable, and the owner's own sign-out
+      // 0327's hold: an Admin user's disable, and the owner's own sign-out
       // everywhere (its epoch, keys, grants and devices).
       [ADMIN_DISABLE]: ['login-credential'],
       [OWNER_LOGOUT_ALL]: ['login-credential'],
@@ -900,10 +900,10 @@ describe.skipIf(!URL)(
         console.log(`narrow sweep: SPOT_ROWS now ${JSON.stringify(on, null, 1)}`);
       }
       expect(on).toEqual(SPOT_ROWS);
-      // The acting-login spot (0321) is where a definer runs. The structure
+      // The acting-login spot (0322) is where a definer runs. The structure
       // items' and the assistant delete's definers run only on the narrow
       // route: with the switch off the app's own statements run, as before
-      // 0321, at no spot. A chat's block or unpair calls its definer on
+      // 0322, at no spot. A chat's block or unpair calls its definer on
       // every route (pairing.ts setChatPairing), so its row keeps the spot;
       // so does onboarding's assistant attach in the login's scope
       // (workspaces-migrate.ts attachDefaultAssistants).

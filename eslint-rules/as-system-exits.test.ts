@@ -442,7 +442,7 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
   it('the repo: every holder listed, every caller allowed', () => {
     // applyManifest takes data only; applyLoginChange's callbacks come from
     // the workspace screen alone; atActingLogin (the acting-login spot,
-    // 0321) from its five callers; onSpot (structure-no-login) from its own
+    // 0322) from its five callers; onSpot (structure-no-login) from its own
     // file alone; the two
     // arrows (asCallActorOrSpot, atCredentialSpot) run their own file's.
     expect(Object.keys(FULL_ROUTE_SPOT_CALLBACKS_REPO).sort()).toEqual([

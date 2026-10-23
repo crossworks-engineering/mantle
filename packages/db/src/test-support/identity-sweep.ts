@@ -1,5 +1,5 @@
 /**
- * The identity gateway's live sweep (migration 0321, plan v3.2 S7b part b2
+ * The identity gateway's live sweep (migration 0322, plan v3.2 S7b part b2
  * round 13): every function the narrow system role may EXECUTE, generated
  * from the catalog (pg_proc and has_function_privilege, never a hand list),
  * called as the REAL narrow login with every identity setting forged to the
@@ -91,7 +91,7 @@ export function fillIdentity(
 }
 
 /** The forged actor: the first workspace system reason (the Moderator
- *  tick's), which mantle_ws_system_work trusted before 0321. Read from the
+ *  tick's), which mantle_ws_system_work trusted before 0322. Read from the
  *  list, not named: the reasons are named only in their pinned systemWork
  *  calls (eslint-rules/arch-lints.test.ts). */
 export const FORGED_ACTOR = `system:${WORKSPACE_SYSTEM_REASONS[0]}`;

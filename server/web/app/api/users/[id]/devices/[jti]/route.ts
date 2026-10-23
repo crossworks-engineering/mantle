@@ -44,7 +44,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   // The owner's or an Admin user's device is revoked at the spot
-  // login-credential on a narrow exit (0326's hold on grants).
+  // login-credential on a narrow exit (0327's hold on grants).
   await onLoginHoldSpot(targetId, () =>
     db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti)),
   );

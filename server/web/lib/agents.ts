@@ -615,7 +615,7 @@ export async function deleteAgent(
 ): Promise<DeleteAgentResult | null> {
   const conversation = opts.conversation ?? 'keep';
   // On the assistants area's narrow exit: the definer, the same statements
-  // (mantle_agent_delete, 0316).
+  // (mantle_agent_delete, 0317).
   const onNarrow = await withDeadlockRetry(() =>
     deleteAgentOnNarrow(userId, id, conversation === 'delete'),
   );

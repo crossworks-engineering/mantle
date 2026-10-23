@@ -194,7 +194,7 @@ export const RUNTIME_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
  */
 export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)':
-    "0320's assistant_messages guard: the trigger, as the narrow role, asks it whether a row it inserts is consistent (a read definer)",
+    "0321's assistant_messages guard: the trigger, as the narrow role, asks it whether a row it inserts is consistent (a read definer)",
   'public.mantle_actor_miss_log(text,text,text,text)':
     'gateway/pools.ts logActorMiss: an actor check miss row, as system(actor-check)',
   'public.mantle_bridge_login(uuid)':
@@ -246,21 +246,21 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_tg_login_moderates(uuid,uuid,uuid)':
     "packages/telegram chat-login.ts loginModeratesBot: a Telegram bot's Moderator rule about a login, a read definer (0313)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
-    'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0315)',
+    'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0316)',
   'public.mantle_space_settle_promotion(uuid,uuid)':
-    "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0316)",
+    "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0317)",
   'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
-    "login-definer.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0325)",
+    "login-definer.ts: a member chat turn's slot of the daily cap and token budget, for the scope's own login only (the system pool in that login's scope); the definer holds the rule (0326)",
   'public.mantle_member_turn_release(text)':
-    "login-definer.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0325)",
+    "login-definer.ts: a slot given back when its turn's enqueue failed, the scope login's own row of the last five minutes only (0326)",
   'public.mantle_member_turn_settle(text,bigint)':
-    "login-definer.ts: a member chat turn's model tokens stamped on its slot at the turn's close, the scope login's own row only, only up; the token budget reads them (0326)",
+    "login-definer.ts: a member chat turn's model tokens stamped on its slot at the turn's close, the scope login's own row only, only up; the token budget reads them (0327)",
   'public.mantle_narrow_login_held(uuid)':
-    "login-update.ts and session.ts: whether a login's disable or session end runs at the spot login-credential (the owner or an Admin user, 0326's hold); also read by that hold's report branch",
+    "login-update.ts and session.ts: whether a login's disable or session end runs at the spot login-credential (the owner or an Admin user, 0327's hold); also read by that hold's report branch",
   'public.mantle_narrow_client_held(uuid)':
-    "mcp-clients.ts disconnectClient: whether an MCP client's removal runs at the spot login-credential (a live grant of the owner or an Admin user on it, 0326's hold); also read by that hold's trigger",
+    "mcp-clients.ts disconnectClient: whether an MCP client's removal runs at the spot login-credential (a live grant of the owner or an Admin user on it, 0327's hold); also read by that hold's trigger",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
-    "agents.ts deleteAgent: an assistant deleted, with or without its conversation, on the assistants area's narrow exit; the definer holds the rule (0316)",
+    "agents.ts deleteAgent: an assistant deleted, with or without its conversation, on the assistants area's narrow exit; the definer holds the rule (0317)",
 };
 
 /**
@@ -282,11 +282,11 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
  */
 export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_narrow_login_held(uuid)':
-    "0326's hold on auth.users (a trigger that runs as the narrow role): a read definer that answers whether a login is the owner or an Admin user; no identity read",
+    "0327's hold on auth.users (a trigger that runs as the narrow role): a read definer that answers whether a login is the owner or an Admin user; no identity read",
   'public.mantle_narrow_client_held(uuid)':
-    "0326's hold on access_keys, oauth_access_tokens, mobile_tokens, oauth_auth_codes and oauth_clients (a trigger that runs as the narrow role): a read definer that answers whether an MCP client carries a live grant of the owner or an Admin user; no identity read",
+    "0327's hold on access_keys, oauth_access_tokens, mobile_tokens, oauth_auth_codes and oauth_clients (a trigger that runs as the narrow role): a read definer that answers whether an MCP client carries a live grant of the owner or an Admin user; no identity read",
   'public.mantle_narrow_message_ok(uuid,uuid,uuid,uuid)':
-    "0320's assistant_messages guard on the narrow role's insert (the turn's message rows): a read definer that answers whether the row is consistent",
+    "0321's assistant_messages guard on the narrow role's insert (the turn's message rows): a read definer that answers whether the row is consistent",
   'public.mantle_brain_id()':
     "the brain's anchor, read by narrow statements (resolve-owner.ts, the tree's kind roots, workspace-ticks.ts)",
   'public.mantle_area_rule(uuid,text)':
@@ -347,29 +347,29 @@ export const NARROW_PUBLIC_DEFINERS: Readonly<Record<string, string>> = {
  * own content write runs at a full-route spot.
  */
 export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
-  // The five definers that need the exit's acting login (0321, and the
+  // The five definers that need the exit's acting login (0322, and the
   // onboarding attach): the
   // identity readers answer none on the narrow role, so each would refuse
   // it; their callers run at the full-route spot acting-login until a
   // signed acting login lets the readers trust a signed value.
   'public.mantle_ws_set_moderator(uuid,uuid,uuid,boolean,text)':
-    "the workspaces area's Moderator tick (workspaces.ts setModerator): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set login and workspace made a member Moderator on the narrow role before",
+    "the workspaces area's Moderator tick (workspaces.ts setModerator): needs the acting login, so it runs at the full-route spot acting-login (0322); a self-set login and workspace made a member Moderator on the narrow role before",
   'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
-    "a chat's block or unpair (telegram pairing.ts setChatPairing): needs the acting login, so it runs at the full-route spot acting-login (0321)",
+    "a chat's block or unpair (telegram pairing.ts setChatPairing): needs the acting login, so it runs at the full-route spot acting-login (0322)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
-    "the keys, connectors and settings areas' structure items (gateway/structure-item.ts): need the acting login, so they run at the full-route spot acting-login (0321)",
+    "the keys, connectors and settings areas' structure items (gateway/structure-item.ts): need the acting login, so they run at the full-route spot acting-login (0322)",
   'public.mantle_agent_delete(uuid,uuid,uuid,boolean)':
-    "an assistant's delete (gateway/spot-definers.ts deleteAgentOnNarrow): needs the acting login, so it runs at the full-route spot acting-login (0321); a self-set acting login deleted an assistant on the narrow role before",
+    "an assistant's delete (gateway/spot-definers.ts deleteAgentOnNarrow): needs the acting login, so it runs at the full-route spot acting-login (0322); a self-set acting login deleted an assistant on the narrow role before",
   'public.mantle_ws_attach_assistants()':
-    "the default assistants attached at onboarding (workspaces-migrate.ts attachDefaultAssistants in the login's scope): needs that login, so it runs at the full-route spot acting-login (round 13c: the fifth such definer, met by the onboarding cells with the switch on; on the narrow role it refused every call after 0321)",
+    "the default assistants attached at onboarding (workspaces-migrate.ts attachDefaultAssistants in the login's scope): needs that login, so it runs at the full-route spot acting-login (round 13c: the fifth such definer, met by the onboarding cells with the switch on; on the narrow role it refused every call after 0322)",
   'public.mantle_space_settle_promotion(uuid,uuid)':
-    "a promoted login's personal space settled (0316): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
+    "a promoted login's personal space settled (0317): the role change runs at the full-route spot login-credential with its settle, so no narrow reason calls it (measured); dropped from the narrow allowlist (the CEO's call)",
   'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':
-    "a member chat turn's slot (0325): runs on the system pool in the login's own scope (login-definer.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
+    "a member chat turn's slot (0326): runs on the system pool in the login's own scope (login-definer.ts), never a narrow statement; on the narrow role the identity readers answer no login, so it would refuse anyway",
   'public.mantle_member_turn_release(text)':
-    "a member chat turn's slot given back (0325): the same rule as the claim; a narrow session may not clear any login's daily cap",
+    "a member chat turn's slot given back (0326): the same rule as the claim; a narrow session may not clear any login's daily cap",
   'public.mantle_member_turn_settle(text,bigint)':
-    "a member chat turn's tokens stamped on its slot (0326): the same rule as the claim; a narrow session may not lower its own count or raise another login's",
+    "a member chat turn's tokens stamped on its slot (0327): the same rule as the claim; a narrow session may not lower its own count or raise another login's",
   'public.mantle_bridge_login(uuid)':
     "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
@@ -400,7 +400,7 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
   // The workspace and share writers: a login's act in its own scope, or
   // system work, never a narrow statement (measured; the one measured,
   // mantle_ws_set_moderator, runs at the full-route spot acting-login since
-  // 0321, listed above).
+  // 0322, listed above).
   'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)': 'workspace_users: never a narrow statement',
   'public.mantle_ws_remove_user(uuid,uuid,uuid)': 'workspace_users: never a narrow statement',
   'public.mantle_ws_create(uuid,uuid,text,text)': 'workspaces: never a narrow statement',
@@ -1573,7 +1573,7 @@ async function applyNarrowGrants(tx: Sql): Promise<void> {
   await tx.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO ${nr}`);
 }
 
-/** The derived triggers of the would-refuse count (migration 0319). */
+/** The derived triggers of the would-refuse count (migration 0320). */
 export const NARROW_WOULD_REFUSE_TRIGGERS = Object.freeze({
   INSERT: 'mantle_narrow_would_refuse_ins',
   DELETE: 'mantle_narrow_would_refuse_del',
@@ -1690,7 +1690,7 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
 }
 
 /**
- * The narrow role's would-refuse count (migration 0319, report only),
+ * The narrow role's would-refuse count (migration 0320, report only),
  * derived from its live grants right after applyNarrowGrants: on every table of the app's schemas that the actor
  * check does not cover (0312 counts the content tables), a statement-level
  * AFTER INSERT where the role holds no INSERT, AFTER DELETE where it holds
@@ -1700,7 +1700,7 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
  * trigger is made, changed or dropped only when it differs from the
  * grants (the next migrate after a grant moves follows it), so a migrate
  * with no grant change takes no table lock. Partitions follow their
- * parent's trigger. Skipped on a schema before 0319.
+ * parent's trigger. Skipped on a schema before 0320.
  *
  * Table by table, each in its own transaction with lock_timeout 3 s and a
  * retry on a lock wait or a deadlock (as syncWriteRoleRules): on a roll
@@ -1733,7 +1733,7 @@ export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
  * migration that drops or retypes one would fail on every migrated box,
  * while a fresh database, CI's, has none yet). Table by table as
  * applyNarrowWouldRefuse; afterMigrations makes them again. Returns how
- * many tables it changed. A database before 0319 has none.
+ * many tables it changed. A database before 0320 has none.
  */
 export async function dropNarrowWouldRefuse(sql: Sql): Promise<number> {
   const names = Object.values(NARROW_WOULD_REFUSE_TRIGGERS);

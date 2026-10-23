@@ -1,5 +1,5 @@
 /**
- * The promotion and assistant delete definers (migration 0316,
+ * The promotion and assistant delete definers (migration 0317,
  * packages/db gateway/spot-definers.ts): on the
  * users and assistants areas' narrow exits the personal space's settle and
  * an assistant's delete are one definer call each, and each answer equals
@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow route', () => {
+describe.skipIf(!URL)('0317: the promotion and assistant delete on the narrow route', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let rr: typeof import('@mantle/db/runtime-role');
@@ -254,7 +254,7 @@ describe.skipIf(!URL)('0316: the promotion and assistant delete on the narrow ro
              has_function_privilege(${v.viewerRoleName('user')}, 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as u,
              has_function_privilege('mantle_system_narrow', 'public.mantle_agent_delete(uuid,uuid,uuid,boolean)', 'EXECUTE') as n`;
     expect(g).toEqual({ w: false, u: false, n: false });
-    // Since 0321 the narrow login runs it for no one, its own acting login
+    // Since 0322 the narrow login runs it for no one, its own acting login
     // too; the assistants area's delete runs it at the spot acting-login.
     expect(await code(call(admin))).toBe('42501');
     expect((await agentState(a)).a).toBe(1);

@@ -4,7 +4,7 @@
 -- the narrow route takes the narrow role per transaction on the system
 -- pool, whose login is the superuser, so inside a superuser-owned definer
 -- current_user is that superuser again and the definer's own content write
--- (mantle_structure_item, the 0316 definers) counted as a
+-- (mantle_structure_item, the 0317 definers) counted as a
 -- narrow-content-write, and a definer's delete of an agent as a
 -- narrow-cascade-delete, though the narrow role wrote nothing.
 --
@@ -21,8 +21,8 @@
 -- statement and table.
 --
 -- Re-runnable. No table or row changes; no LLM work. Revert:
--- packages/db/rollback/0317_narrow_observe_definer_frames.revert.sql (puts
--- 0312's bodies back). The `when` sits 60000 above 0316's.
+-- packages/db/rollback/0318_narrow_observe_definer_frames.revert.sql (puts
+-- 0312's bodies back). The `when` sits 60000 above 0317's.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()

@@ -1,5 +1,5 @@
 /**
- * The identity gateway (migration 0321, plan v3.2 S7b part b2 round 13,
+ * The identity gateway (migration 0322, plan v3.2 S7b part b2 round 13,
  * the CEO's class rule: "a database rule that blocks this for the
  * restricted login everywhere, not one fix per function").
  *
@@ -37,7 +37,7 @@ const ACTING_DEFINERS = [
   'mantle_agent_delete(uuid,uuid,uuid,boolean)',
 ];
 
-describe.skipIf(!URL)('round 13: the identity gateway (0321)', () => {
+describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let su: ReturnType<typeof postgres>;
   let nl: ReturnType<typeof postgres>;

@@ -15,13 +15,13 @@
 --    columns it lacks, so a write the role may make fires nothing and a
 --    hot table's allowed writes pay nothing. Not on the content tables:
 --    0312's narrow-content-write counts those (the actor check's trigger).
---  - narrow-would-refuse, 0318's one-way rules: mantle_narrow_one_way
+--  - narrow-would-refuse, 0319's one-way rules: mantle_narrow_one_way
 --    takes a report branch: the same rule broken by a narrow reason's
 --    actor off the narrow route is counted and the row is written.
 --
 -- Counted when the actor is a narrow reason's (0312's mantle_narrow_actor),
 -- current_user is the session's own role (the role it SET, else its login,
--- as 0317's counts ask: the full route; on the narrow route the role
+-- as 0318's counts ask: the full route; on the narrow route the role
 -- refuses the write itself, counted as narrow-denied; inside a definer or
 -- a foreign key's cascade current_user is the owner, so a definer's own
 -- writes on a superuser's pool are not counted) and
@@ -37,9 +37,9 @@
 -- the switch off (gateway/pools.ts getScopeMarkedDb): the narrow route
 -- takes those with the switch on whatever the actor, and their actor is
 -- the login's, which no narrow reason names. mantle_narrow_counted says
--- both; 0312's content and cascade counts (0317's bodies) take it too.
+-- both; 0312's content and cascade counts (0318's bodies) take it too.
 --
--- Re-runnable. Revert: packages/db/rollback/0319_narrow_would_refuse.revert.sql.
+-- Re-runnable. Revert: packages/db/rollback/0320_narrow_would_refuse.revert.sql.
 
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -57,7 +57,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_would_refuse_stmt"()
 DECLARE
   who text := coalesce(current_setting('mantle.actor', true), '');
   seen_key text := 'mantle.narrow_would_' || TG_TABLE_SCHEMA || '_' || TG_TABLE_NAME;
-  -- The session's own role (0317's): the role it SET, else its login.
+  -- The session's own role (0318's): the role it SET, else its login.
   own_role text := CASE WHEN current_setting('role') = 'none' THEN session_user::text
                         ELSE current_setting('role') END;
 BEGIN
@@ -89,7 +89,7 @@ DECLARE
   i int;
 BEGIN
   IF current_user <> 'mantle_system_narrow' THEN
-    -- Report only (0319): the same row change by a narrow reason's actor
+    -- Report only (0320): the same row change by a narrow reason's actor
     -- (or on a statement marked mantle.route = 'narrow')
     -- off the narrow route (the switch off), not at a spot, is counted as
     -- one the narrow role would refuse, and runs.
@@ -149,8 +149,8 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_narrow_one_way"() FROM PUBLIC;
 --> statement-breakpoint
--- 0317's content and cascade counts, the mark taken too (mantle_narrow_counted);
--- otherwise 0317's bodies.
+-- 0318's content and cascade counts, the mark taken too (mantle_narrow_counted);
+-- otherwise 0318's bodies.
 CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$

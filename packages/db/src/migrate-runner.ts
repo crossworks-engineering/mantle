@@ -93,7 +93,7 @@ async function applyPending(
       for (const stmt of migration.sql) {
         await tx.unsafe(stmt);
       }
-      // The identity gateway's catalog check (0321) before the commit: a
+      // The identity gateway's catalog check (0322) before the commit: a
       // migration that leaves a read of an identity setting outside the
       // readers fails, and its transaction leaves nothing (afterMigrations
       // checks again after the grants, for what no migration made).

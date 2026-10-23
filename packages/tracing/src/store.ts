@@ -62,7 +62,7 @@ export type StartTraceInit = {
   /** Handed the trace's model tokens (in, out) when it closes, success or
    *  failure: what the close writes to the row. For a caller that must
    *  keep the count where the trace row's writers cannot change it (the
-   *  member turn ledger's tokens, migration 0326). Late usage after the
+   *  member turn ledger's tokens, migration 0327). Late usage after the
    *  close is not in it. */
   onClose?: (tokens: { in: number; out: number }) => void;
 };

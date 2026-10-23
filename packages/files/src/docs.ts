@@ -621,7 +621,7 @@ export async function setCollectionEnabled(
       .where(and(eq(docCollections.id, collectionId), eq(docCollections.ownerId, ownerId)))
       .returning();
   // A turn-on (its files are read and indexed again) is the collection's
-  // root decision, not the narrow login's (0323: enabled only off): the
+  // root decision, not the narrow login's (0324: enabled only off): the
   // full-route spot docs-root.
   const [updated] = await onNarrowSpots(docCollections, 'update', set, write);
   if (!updated) return null;

@@ -14,8 +14,8 @@
  *    chat with no login (W7d fix round 1, L4);
  *  - a photo on a second Admin user's chat is saved private to that user:
  *    another Admin user (the anchor) cannot read it (W7d fix round 1, M2);
- *  - a member's turn claims its slot through the ledger definers (0325,
- *    0326) under the turn's own actor, the cap refuses with one plain reply,
+ *  - a member's turn claims its slot through the ledger definers (0326,
+ *    0327) under the turn's own actor, the cap refuses with one plain reply,
  *    and an Admin user's turn takes no slot.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/telegram-w7d.db.test.ts
  */
@@ -272,7 +272,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     expect(await reads(owner)).toEqual([]);
   });
 
-  it('a member turn claims a slot through the ledger definers (0325, 0326); the cap refuses; an Admin user takes none', async () => {
+  it('a member turn claims a slot through the ledger definers (0326, 0327); the cap refuses; an Admin user takes none', async () => {
     // The member's slots and tokens, as the superuser (the app pools hold
     // no right on the ledger: the claim is the definer's).
     const slots = async (login: string) =>
@@ -291,7 +291,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       expect(after).toHaveLength(before + 1);
       // The message's own slot, its turn id the message's. A Telegram turn
       // stamps no tokens on it: its tokens never counted toward the budget
-      // (0325 summed member chat turns' traces only; 0326 keeps that).
+      // (0326 summed member chat turns' traces only; 0327 keeps that).
       expect(after.at(-1)).toEqual({ turn: `tg-${id}`, tokens: '0' });
       // At the cap: one plain reply, no turn, no slot.
       h.sent = [];

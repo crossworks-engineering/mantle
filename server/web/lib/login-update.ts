@@ -219,7 +219,7 @@ export async function applyLoginChange(
   try {
     // A promotion settles the login's personal space (space_items, a content
     // table) in this transaction: on the narrow exit through its definer
-    // (settleSpaceOnPromotion, migration 0316).
+    // (settleSpaceOnPromotion, migration 0317).
     const promotes = change.role === 'admin';
     // A role change or a contact link writes a rights column the narrow
     // login may not (auth.users role and contact_id, and the Admin rows
@@ -227,7 +227,7 @@ export async function applyLoginChange(
     // login linked to it): the whole transaction then runs at the full-route spot
     // login-credential (docs/runtime-role.md); any other change stays on
     // the exit's own route. An enable (disabled_at back to NULL) lets the
-    // login in again: the narrow login may only set disabled_at (0318), so
+    // login in again: the narrow login may only set disabled_at (0319), so
     // an enable runs at the spot too.
     // A rename too (round 13b): the display name reaches the prompts as the
     // user's name, so the narrow login holds no write of it.
@@ -237,7 +237,7 @@ export async function applyLoginChange(
       changes.disabledAt === null ||
       changes.displayName !== undefined;
     // A disable or a session end of the owner or an Admin user runs at the
-    // spot too (0326: the narrow login may not move their disabled_at or
+    // spot too (0327: the narrow login may not move their disabled_at or
     // session epoch); onLoginHoldSpot asks the hold's own definer.
     const holdWrite = changes.disabledAt !== undefined || endSessions;
     const atCredentialSpot = (fn: () => Promise<void>) =>

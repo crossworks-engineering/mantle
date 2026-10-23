@@ -218,7 +218,7 @@ export async function POST(req: Request) {
   const newJti = randomUUID();
   const minted = buildMobileToken(row.userId, newJti, ttlSeconds);
   // The owner's or an Admin user's device rotation on a narrow exit (its
-  // old token revoked): at the spot login-credential (0326's hold on
+  // old token revoked): at the spot login-credential (0327's hold on
   // grants); elsewhere as it is.
   const rotated = await onLoginHoldSpot(row.userId, () =>
     db.transaction(async (tx) => {

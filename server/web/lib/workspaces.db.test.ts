@@ -964,7 +964,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     ).toBe('admin_only');
   });
 
-  it('connector options: MCP and HTTP API connectors alike, by the attach`s gate, held ones flagged (0314)', async () => {
+  it('connector options: MCP and HTTP API connectors alike, by the attach`s gate, held ones flagged (0315)', async () => {
     const API = 'conn-w5a-api';
     const binding = JSON.stringify({
       service: 'example-api',

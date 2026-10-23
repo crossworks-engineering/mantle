@@ -1,5 +1,5 @@
 -- The enable class on INSERT (the narrow login part b2: the
--- re-audit's DB LOW-1). 0323 held every enabled, is_default and
+-- re-audit's DB LOW-1). 0324 held every enabled, is_default and
 -- backup_enabled switch to off-only on UPDATE, but the narrow role that
 -- may DELETE and INSERT such a row (a calendar feed, a Microsoft drive)
 -- could remove it and insert it again switched on: the one-way rule never
@@ -7,12 +7,12 @@
 --
 -- Now the 'off:<col>' rule also meets a new row: on the narrow role an
 -- INSERT may not name the switch on (a row starts off; the product's
--- turn-ons run at a full-route spot, as 0323 says). Only 'off' rules look
+-- turn-ons run at a full-route spot, as 0324 says). Only 'off' rules look
 -- at an INSERT: the others compare a row with its old self, which a new
 -- row has none of. Off the narrow route the same insert by a narrow
--- reason is counted (0319's notice) and runs, as an update is.
+-- reason is counted (0320's notice) and runs, as an update is.
 --
--- 1. mantle_narrow_one_way: its body as 0321 left it, two replaces (the
+-- 1. mantle_narrow_one_way: its body as 0322 left it, two replaces (the
 --    new row read on INSERT too; every rule but 'off' skipped there),
 --    each asserted.
 -- 2. Every mantle_narrow_one_way_trg trigger with an 'off:' rule fires on
@@ -20,7 +20,7 @@
 --    rules and other events.
 --
 -- Re-runnable. No table or row changes; no LLM work. Revert:
--- packages/db/rollback/0324_narrow_off_on_insert.revert.sql (before 0323's).
+-- packages/db/rollback/0325_narrow_off_on_insert.revert.sql (before 0324's).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DO $do$
@@ -37,14 +37,14 @@ BEGIN
     E'  IF TG_OP = ''UPDATE'' THEN\n    n := to_jsonb(NEW);\n  END IF;',
     E'  IF TG_OP IN (''UPDATE'', ''INSERT'') THEN\n    n := to_jsonb(NEW);\n  END IF;');
   IF def = was THEN
-    RAISE EXCEPTION '0324: mantle_narrow_one_way does not read the new row as 0320 wrote it';
+    RAISE EXCEPTION '0325: mantle_narrow_one_way does not read the new row as 0321 wrote it';
   END IF;
   was := def;
   def := replace(def,
     E'      IF kind = ''keepif'' THEN\n        CONTINUE;\n',
     E'      IF TG_OP = ''INSERT'' AND kind <> ''off'' THEN\n        CONTINUE;\n      ELSIF kind = ''keepif'' THEN\n        CONTINUE;\n');
   IF def = was THEN
-    RAISE EXCEPTION '0324: mantle_narrow_one_way does not skip keepif as 0320 wrote it';
+    RAISE EXCEPTION '0325: mantle_narrow_one_way does not skip keepif as 0321 wrote it';
   END IF;
   EXECUTE def;
 END

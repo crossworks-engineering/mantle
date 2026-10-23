@@ -8,7 +8,7 @@
  *
  * On the narrow route (narrowRouteNow: the switch on and the exit's pick)
  * each write is one call of the definer mantle_structure_item (migration
- * 0315), which holds the rule: a listed kind, from a system session, for the
+ * 0316), which holds the rule: a listed kind, from a system session, for the
  * acting login holding the kind's area. The narrow role holds no right on
  * nodes. Anywhere else (a login's scope, a full reason, the switch off) the
  * app's own statements run as they did, so every answer there is unchanged;
@@ -61,7 +61,7 @@ export type StructureInsert = {
  * The narrow route's transaction for a definer call: a system transaction
  * (withSystemTx), a savepoint of the one already open, at the acting-login
  * spot (atActingLogin: the definer needs the acting login, which the
- * identity readers answer only off the narrow role, 0321). The acting login
+ * identity readers answer only off the narrow role, 0322). The acting login
  * is passed to the definer, which also checks it against the setting the
  * gateway sends. Each caller below writes `atActingLogin((login) =>
  * withSystemTx(...))` in place, so what runs at the spot is read there.

@@ -198,11 +198,11 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     ]);
   });
 
-  it('a definer`s writes are never counted on the per-database fallback (0317): the narrow role SET on the superuser`s session', async () => {
+  it('a definer`s writes are never counted on the per-database fallback (0318): the narrow role SET on the superuser`s session', async () => {
     // The per-database narrow route takes the role per transaction on the
     // system pool, whose login is the superuser that owns the definers:
     // inside one, current_user is that superuser again. 0312 counted its
-    // content write and its delete; 0317 asks for the session's own role.
+    // content write and its delete; 0318 asks for the session's own role.
     await su.unsafe(`create or replace function public.narrow_observe_delete(id uuid) returns void
       language sql security definer set search_path = public, pg_temp
       as $$ delete from auth.users where id = $1 $$`);
@@ -243,7 +243,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
       await inTx(su, [actorSql(who), `select public.narrow_observe_delete('${await login()}')`]),
     ).toBeNull();
     // The same named limit: the superuser's definer is its own session's
-    // role, so 0319's would-refuse count (the narrow role holds no delete of
+    // role, so 0320's would-refuse count (the narrow role holds no delete of
     // a login) counts it too.
     expect(counted().sort()).toEqual(
       [
@@ -267,7 +267,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     const who = 'system:http:admin-area';
     // The full route, as the runtime role: the cascade count, and (round
     // the narrow role holds no delete of a login) the would-refuse
-    // count of 0319's derived trigger.
+    // count of 0320's derived trigger.
     expect(await inTx(rt, [actorSql(who), del(await login())])).toBeNull();
     expect(counted().sort()).toEqual(
       [
@@ -288,7 +288,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     expect(await inTx(rt, [actorSql(who, true), del(await login())])).toBeNull();
     expect(await inTx(rt, [actorSql('system:app-data'), del(await login())])).toBeNull();
     // The delete that met no row is still a statement the narrow role would
-    // refuse (0319 counts the statement, not its rows).
+    // refuse (0320 counts the statement, not its rows).
     expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} auth.users DELETE`]);
   });
 
@@ -336,7 +336,7 @@ describe.skipIf(!URL)('the narrow write count (plan v3.2 S7a part a3)', () => {
     await row('narrow-denied', 'system:admin-area', 'permission denied for table nodes');
     // Days old: counted too (the counts are the flip's evidence: all time).
     await row('narrow-content-write', 'system:admin-area', 'facts DELETE', '3 days');
-    // The would-refuse count (0319): its rows, and the tables they name.
+    // The would-refuse count (0320): its rows, and the tables they name.
     await row('narrow-would-refuse', 'system:admin-area', 'public.audit_log DELETE');
     await row('narrow-would-refuse', 'system:http:admin-area', 'public.audit_log DELETE');
     await row('narrow-would-refuse', 'system:admin-area', 'public.agents UPDATE');

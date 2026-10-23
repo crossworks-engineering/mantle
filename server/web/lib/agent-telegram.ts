@@ -174,7 +174,7 @@ export async function connectAgentTelegram(
   const target = byAgent ?? byUsername;
   // The bot bound to the assistant (its account row, its channel with the
   // sealed token and the assistant it answers as, and an enable) is not the
-  // narrow login's (access-matrix.ts NARROW_NEVER_INSERT; 0320: enabled
+  // narrow login's (access-matrix.ts NARROW_NEVER_INSERT; 0321: enabled
   // only off): the full-route spot telegram-connect.
   await onFullSystemRoute('telegram-connect', async () => {
     let accountId: string;

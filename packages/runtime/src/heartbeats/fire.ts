@@ -644,7 +644,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
 
     // The fire's books in SQL (round 13b, the app re-audit's L3): the count
     // goes up from the row's own value and the last fire never moves back,
-    // so two fires racing on one row keep both and never meet 0320's
+    // so two fires racing on one row keep both and never meet 0321's
     // one-way rules (fire_count only up, last_fired_at only forward) with a
     // value read before the other's write.
     // Its status and completion reason in SQL too (the app re-audit's
@@ -718,7 +718,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
 /**
  * A fire's next time, never earlier than the one stored and never set on a
  * row whose next fire is gone (NULL: paused or completed): the narrow login
- * keeps a fire's books only forward (migration 0320; a manual fire runs on
+ * keeps a fire's books only forward (migration 0321; a manual fire runs on
  * an Admin area exit). On a scheduled fire the stored time is due, so the
  * new one is later anyway; a manual fire before it keeps the schedule.
  */

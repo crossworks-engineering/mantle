@@ -1,9 +1,9 @@
 /**
- * The member turn ledger behind its two definers (migration 0325), on a
+ * The member turn ledger behind its two definers (migration 0326), on a
  * migrated scratch database with the narrow switch on:
  *
  *  - a limited member's chat request claims, counts and gives back its own
- *    slot (the cap holds), where the statements before 0325 (systemDb
+ *    slot (the cap holds), where the statements before 0326 (systemDb
  *    inside the login's request scope: the narrow route) are refused;
  *  - a request never claims for another login;
  *  - the release takes back only the scope login's own row of the last five
@@ -14,7 +14,7 @@
  *  - the rights: the runtime role runs the definers and only reads the
  *    table; the narrow role, the write role and the workspace role run
  *    neither and write nothing;
- *  - the revert drops both definers and takes 0325 off the ledger (last:
+ *  - the revert drops both definers and takes 0326 off the ledger (last:
  *    it changes the scratch database).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-turn-ledger-narrow.db.test.ts
@@ -36,7 +36,7 @@ function sqlState(err: unknown): string | undefined {
   return undefined;
 }
 
-describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () => {
+describe.skipIf(!URL)('the member turn ledger on the narrow route (0326)', () => {
   let scratch: Awaited<
     ReturnType<typeof import('@mantle/db/test-support').createMigratedScratchDatabase>
   >;
@@ -112,7 +112,7 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
   it("a limited member's chat request claims, counts and gives back its own slot; the old statements are refused there", async () => {
     const tag = randomUUID().slice(0, 8);
     await inRequest(pat, async () => {
-      // The statements before 0325: systemDb inside the login's request
+      // The statements before 0326: systemDb inside the login's request
       // scope takes the narrow route, which holds no right on the ledger.
       expect(v.currentRequestMode()).not.toBeNull();
       const old = await m.systemDb
@@ -288,9 +288,9 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
     expect(got).toHaveLength(roles.length * fns.length);
   });
 
-  it('the revert drops both definers and takes 0325 off the ledger', async () => {
+  it('the revert drops both definers and takes 0326 off the ledger', async () => {
     const revert = readFileSync(
-      join(__dirname, '..', '..', 'db', 'rollback', '0325_member_turn_ledger_definers.revert.sql'),
+      join(__dirname, '..', '..', 'db', 'rollback', '0326_member_turn_ledger_definers.revert.sql'),
       'utf8',
     );
     const state = async () =>
@@ -299,15 +299,15 @@ describe.skipIf(!URL)('the member turn ledger on the narrow route (0325)', () =>
           select (select count(*)::int from pg_proc
                    where proname in ('mantle_member_turn_claim', 'mantle_member_turn_release')) as fns,
                  (select count(*)::int from drizzle.__drizzle_migrations
-                   where created_at = 1790198860000) as ledger`
+                   where created_at = 1790199640000) as ledger`
       )[0]!;
-    // The scratch database keeps no migration ledger: give it 0325's row,
+    // The scratch database keeps no migration ledger: give it 0326's row,
     // as migrate.ts writes it.
     await su`create schema if not exists "drizzle"`;
     await su`create table if not exists "drizzle"."__drizzle_migrations" (
                id serial primary key, hash text not null, created_at bigint)`;
     await su`insert into "drizzle"."__drizzle_migrations" (hash, created_at)
-             values ('0325', 1790198860000)`;
+             values ('0326', 1790199640000)`;
     expect(await state()).toEqual({ fns: 2, ledger: 1 });
     await su.begin(async (t) => {
       await t.unsafe(revert);

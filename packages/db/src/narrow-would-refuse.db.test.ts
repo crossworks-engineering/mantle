@@ -1,5 +1,5 @@
 /**
- * The would-refuse count (migration 0319),
+ * The would-refuse count (migration 0320),
  * report only, on a real, migrated Postgres: with the switch off a narrow
  * reason's writes run on the full route, and each one the narrow role
  * would refuse once the switch is on is counted (a NOTICE the app's pool
@@ -11,7 +11,7 @@
  *    statement-level triggers migrate derives from its live grants
  *    (runtime-role.ts applyNarrowWouldRefuse): a write it may make fires
  *    nothing, a content table has none (0312 counts those);
- *  - 0318's one-way rules (mantle_narrow_one_way's report branch): the row
+ *  - 0319's one-way rules (mantle_narrow_one_way's report branch): the row
  *    is written, and counted;
  *  - never at a spot, by another actor, or on the narrow role itself
  *    (refused there, as before);
@@ -166,7 +166,7 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
     expect(counted()).toEqual([]);
   });
 
-  it("0318's one-way rules: counted off the narrow route and the row written; refused on the narrow role", async () => {
+  it("0319's one-way rules: counted off the narrow route and the row written; refused on the narrow role", async () => {
     counted();
     const who = 'system:http:admin-area';
     const lower = `update auth.users set session_epoch = session_epoch - 1 where id = '${anchor}'`;
@@ -185,7 +185,7 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
       .catch((e: { moved?: number }) => e.moved);
     expect(moved).toBe(1);
     // Two rules broken, two notes of the one row (the box count reads them
-    // distinct): 0318's up:session_epoch, and 0326's hold (the owner's).
+    // distinct): 0319's up:session_epoch, and 0327's hold (the owner's).
     expect(counted()).toEqual([
       `${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`,
       `${PREFIX}narrow-would-refuse ${who} auth.users UPDATE`,
@@ -193,7 +193,7 @@ describe.skipIf(!URL)('the would-refuse count (plan v3.2 S7b part b2 round 9)', 
     // At a spot: written, not counted.
     expect(await inTx(rt, [actorSql(who, true), lower])).toBeNull();
     expect(counted()).toEqual([]);
-    // On the narrow role: refused, as 0318 had it (no count: the role's own
+    // On the narrow role: refused, as 0319 had it (no count: the role's own
     // refusal is narrow-denied).
     expect(await inTx(su, [actorSql(who), `set local role ${NARROW_ROLE}`, lower])).toBe('42501');
     expect(counted()).toEqual([]);

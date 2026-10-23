@@ -192,7 +192,7 @@ export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // At a full-route spot (onFullSystemRoute) the system pool, as the
     // spot's other statements. With the switch off the same statements run
     // on the system pool with the narrow route marked (getScopeMarkedDb),
-    // so the would-refuse count (0319) counts what the role would refuse.
+    // so the would-refuse count (0320) counts what the role would refuse.
     const narrowed = inScope && !systemDbOnSpot();
     const handle = narrowed
       ? narrowSystemOn()
