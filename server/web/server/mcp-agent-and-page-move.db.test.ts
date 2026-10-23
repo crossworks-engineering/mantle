@@ -253,7 +253,7 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
         confirm: true,
       });
       expect(pm.isError, pm.text).toBe(false);
-      expect(await pathOf(a)).toMatch(new RegExp(`^${into.replace(/\./g, '\\.')}\\.`));
+      expect(await pathOf(a)).toBe(into);
 
       const tm = await mcpCall(login, role, 'tree_item_move', {
         kind: 'pages',
@@ -262,7 +262,7 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
         confirm: true,
       });
       expect(tm.isError, tm.text).toBe(false);
-      expect(await pathOf(b)).toMatch(new RegExp(`^${into.replace(/\./g, '\\.')}\\.`));
+      expect(await pathOf(b)).toBe(into);
 
       // And back out to the top level, each by the other tool.
       const back1 = await mcpCall(login, role, 'page_move', {
@@ -278,7 +278,7 @@ describe.skipIf(!URL)('MCP: asking an agent, and moving a page by both tools', (
         confirm: true,
       });
       expect(back2.isError, back2.text).toBe(false);
-      for (const id of [a, b]) expect(await pathOf(id)).not.toContain(into);
+      for (const id of [a, b]) expect(await pathOf(id)).toBe('pages');
     }
   }, 300_000);
 });
