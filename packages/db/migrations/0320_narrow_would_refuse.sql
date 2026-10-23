@@ -62,12 +62,14 @@ $$;
 -- 'full'). `held` and `id` name a hold to test as well (0327 gives them
 -- their meaning; here a hold is never named). A role that may not run a
 -- function the test reads answers false: the write runs uncounted and is
--- never refused for it (an older image's migrate grants the runtime role
--- its own list, without this release's readers). The first test is
--- mantle_narrow_counted's own and needs nothing, so a write no narrow
--- reason makes pays no subtransaction. Open to every role, as PUBLIC's
--- functions are: it reads the session's own settings and asks readers that
--- check their own EXECUTE.
+-- never refused for it (0327's held readers: an older image's migrate
+-- grants the runtime role its own list, without them). The first test is
+-- the cheap half of mantle_narrow_counted (a system actor or the narrow
+-- mark) and runs before the guard: a login's write with no narrow mark
+-- pays no subtransaction; any system actor's write, a full-route one too,
+-- enters the guard. Open to every role, as PUBLIC's functions are: it
+-- reads the session's own settings and asks readers that check their own
+-- EXECUTE.
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_report"(who text, held text DEFAULT NULL, id uuid DEFAULT NULL)
   RETURNS boolean LANGUAGE plpgsql STABLE
   SET search_path = "public", pg_temp AS $$

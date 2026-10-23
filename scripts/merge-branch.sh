@@ -117,8 +117,9 @@ else
     // gap below its mark.
     // The heads come from the branch reflog and, when that is empty (a
     // fresh clone, an expired reflog), from the copy of the branch on
-    // origin (its reflog, then its history) and the branch commits that
-    // touched the journal. An earlier entry counts by its tag and stamp:
+    // origin (its reflog), and the commits that touched the journal on the
+    // branch and on the origin copy past main (main..<branch>: the history
+    // of main is not the branch). An earlier entry counts by its tag and stamp:
     // the same tag at the same stamp is the same migration.
     const mainWhens = new Set(main.map((e) => Number(e.when) || 0));
     const nowPairs = new Set(mine.map((e) => `${e.tag}@${Number(e.when) || 0}`));
@@ -135,8 +136,8 @@ else
     const heads = [
       ...lines(["log", "-g", "--format=%H", branch]),
       ...lines(["log", "-g", "--format=%H", remote]),
-      ...lines(["log", "--format=%H", branch, "--", journal]),
-      ...lines(["log", "--format=%H", remote, "--", journal]),
+      ...lines(["log", "--format=%H", `main..${branch}`, "--", journal]),
+      ...lines(["log", "--format=%H", `main..${remote}`, "--", journal]),
     ].slice(0, 1200);
     let stale = 0;
     const oldTags = new Map();
