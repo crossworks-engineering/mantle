@@ -115,7 +115,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
 
   it('counts grant drift: derived columns that differ from the grants', async () => {
     const got = await planted(async (tx) => {
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
+      await tx`select mantle_acl_on()`;
       await tx`update nodes set read_ws = '{}' where id = ${ids.page!}`;
     });
     expect(got).toEqual({ ...CLEAN, grantDrift: 1 });
@@ -126,7 +126,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
     // The folder's Team row goes past the propagation: the item keeps a
     // derived row nothing gives.
     const stale = await planted(async (tx) => {
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
+      await tx`select mantle_acl_on()`;
       await tx`delete from item_grants where node_id = ${ids.folder!} and workspace_id = ${team}`;
     });
     expect(stale).toEqual({ ...CLEAN, orphanGrants: 1 });
@@ -137,7 +137,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
         values (${other}, ${owner}, 'branch', 'other', 'pages.other'::ltree)`;
       await tx`insert into item_grants (node_id, workspace_id, write)
         values (${other}, ${team}, false)`;
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
+      await tx`select mantle_acl_on()`;
       await tx`update item_grants set via_folder_id = ${other}
                 where node_id = ${ids.inFolder!} and workspace_id = ${team}`;
     });

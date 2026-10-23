@@ -134,7 +134,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     admin = ws.find((w) => w.key === 'admin')!.id;
     team = ws.find((w) => w.key === 'team')!.id;
     await sql.begin(async (tx) => {
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
+      await tx`select mantle_acl_on()`;
       // A "Removed here" against the folder's share (kept), and a public
       // app's Team row with Write on, as an older bridge left it.
       await tx`update item_grants set excluded = true, write = false
@@ -271,7 +271,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     const refused = async (what: RegExp, fn: (tx: postgres.TransactionSql) => Promise<unknown>) => {
       const err = await sql
         .begin(async (tx) => {
-          await tx`select set_config('mantle.acl_internal', 'on', true)`;
+          await tx`select mantle_acl_on()`;
           await fn(tx);
           await tx`select * from mantle_ws_switch_guard()`;
         })

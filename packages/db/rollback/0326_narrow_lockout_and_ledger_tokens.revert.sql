@@ -2,11 +2,15 @@
 -- BEFORE pinning an image older than the one that added it. Not a
 -- migration: nothing runs it on its own.
 --
--- It drops the settle definer, the login hold and the miss guard (with
--- their triggers), puts back 0325's claim (the token budget from the
--- member chat traces) and drops the ledger's tokens column. An image of
--- 0325 calls the claim with the same arguments; an older image writes the
--- ledger itself and never reads the column. Order when reverting several:
+-- It puts the derivation flag back as it was (the nine functions that set
+-- it and the two item_grants triggers read it bare again; the signing
+-- helpers and their catalog check go), drops the settle definer, the login
+-- hold and the miss guard (with their triggers), puts back 0325's claim
+-- (the token budget from the member chat traces) and drops the ledger's
+-- tokens column. 0321's non-identity key list keeps 'mantle.acl_sig' (a
+-- key nothing sets then). An image of 0325 calls the claim with the same
+-- arguments; an older image writes the ledger itself and never reads the
+-- column. Order when reverting several:
 -- 0326 first, then 0325, 0324, 0323, 0322, 0321, 0320, then 0319 down to
 -- 0314, each in its own transaction, newest first.
 --
@@ -14,6 +18,52 @@
 --   docker exec mantle_web cat /app/packages/db/rollback/0326_narrow_lockout_and_ledger_tokens.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+-- 4 first: the eleven bodies back to the bare flag (as 0241 to 0272 made
+-- them), then the helpers and the check go.
+DROP FUNCTION IF EXISTS "public"."mantle_acl_flag_leaks"();
+--> statement-breakpoint
+DO $do$
+DECLARE
+  f record;
+  def text;
+  n int := 0;
+BEGIN
+  FOR f IN
+    SELECT p.oid, p.proname::text AS name
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND p.proname NOT IN ('mantle_acl_on', 'mantle_acl_saved', 'mantle_acl_restore', 'mantle_acl_signed')
+       AND (p.prosrc LIKE '%"public"."mantle_acl_on"()%' OR p.prosrc LIKE '%"public"."mantle_acl_saved"()%'
+            OR p.prosrc LIKE '%"public"."mantle_acl_restore"(%' OR p.prosrc LIKE '%"public"."mantle_acl_signed"()%')
+  LOOP
+    def := pg_catalog.pg_get_functiondef(f.oid);
+    def := replace(def, '"public"."mantle_acl_saved"()',
+                   'coalesce(current_setting(''mantle.acl_internal'', true), '''')');
+    def := replace(def, '"public"."mantle_acl_on"()', 'set_config(''mantle.acl_internal'', ''on'', true)');
+    def := replace(def, '"public"."mantle_acl_restore"(was)', 'set_config(''mantle.acl_internal'', was, true)');
+    def := replace(def, '"public"."mantle_acl_restore"('''')', 'set_config(''mantle.acl_internal'', '''', true)');
+    def := replace(def, '"public"."mantle_acl_signed"()', '"public"."mantle_acl_internal"()');
+    IF def ~ '"public"\."mantle_acl_(on|saved|restore|signed)"' THEN
+      RAISE EXCEPTION '0326 revert: % calls a flag helper in a form not put back', f.name;
+    END IF;
+    EXECUTE def;
+    n := n + 1;
+  END LOOP;
+  IF n <> 11 THEN
+    RAISE EXCEPTION '0326 revert: put back % bodies, expected 11 (nine setters, two triggers)', n;
+  END IF;
+END
+$do$;
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_acl_signed"();
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_acl_restore"(text);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_acl_saved"();
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_acl_on"();
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "mantle_narrow_miss_guard_trg" ON "public"."actor_check_misses";
 --> statement-breakpoint

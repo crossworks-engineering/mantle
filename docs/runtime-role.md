@@ -715,6 +715,26 @@ a time:
   before its commit (so a migration that leaves one leaves nothing) and
   again after the grants (`afterMigrations`), so a new function is covered
   with no list to keep.
+- The derivation's flag (`mantle.acl_internal`, 0326 part 4). Not an
+  identity, but a session setting a check trusted: the item_grants
+  triggers skipped the heads check and the folder propagation while it
+  was on, so a write role session (or the runtime role) that set it
+  itself could unshare a folder and leave its items readable in that
+  workspace (a pg18 cell proved it). The nine functions that set it now
+  sign it (`mantle_acl_on()`: the flag and `mantle.acl_sig`, a mark keyed
+  by the heads key and the transaction; `mantle_acl_saved()` and
+  `mantle_acl_restore()` keep and put back both, so the mark is valid
+  only inside one of them), and the two triggers ask
+  `mantle_acl_signed()`. A session's own flag, or a mark from another
+  transaction, is the flag off. The bare flag still reads `on` for the
+  derived-column guards, which pair it with `mantle_owner_role()` (the
+  write role is no member; the runtime role is, by design, and may write
+  derived columns anyway). `mantle_acl_flag_leaks()` runs with the
+  identity check: a body that sets the flag or its mark itself, reads
+  them outside the three readers, or decides from `mantle_acl_internal()`
+  outside `mantle_acl_writer()`, and any policy, trigger condition,
+  default, check or view that reads them, fails migrate. Cells:
+  `packages/db/src/acl-flag.db.test.ts` and the forge proof's flag forms.
 - The live cell (`packages/db/src/identity-gateway.db.test.ts`, and the
   workstation's forge proof): as the real narrow login, every identity
   setting forged to the owner and the Admin workspace (scoped, and with no

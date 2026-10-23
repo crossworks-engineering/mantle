@@ -7,6 +7,11 @@
  * view of the app's schemas that reads one anywhere else; migrate fails on
  * any (afterMigrations), so a new function is covered with no list to keep.
  * Its list of non-identity keys, each with why, lives in the function.
+ *
+ * With it, mantle_acl_flag_leaks() (0326): the derivation's flag
+ * (mantle.acl_internal) is signed by the functions that set it, so a body
+ * that sets it or its mark itself, or decides from the bare flag, is a leak
+ * too. A database before 0326 has no such check yet.
  */
 import type { Sql } from 'postgres';
 
@@ -15,7 +20,12 @@ export type IdentityLeak = { kind: string; object: string; detail: string };
 /** The leaks the catalog check finds now: none is the rule. */
 export async function identityLeaks(sql: Sql): Promise<IdentityLeak[]> {
   const rows = await sql<IdentityLeak[]>`select kind, object, detail from mantle_identity_leaks()`;
-  return rows.map((r) => ({ kind: r.kind, object: r.object, detail: r.detail }));
+  const [flag] = await sql<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_acl_flag_leaks()') is not null as ok`;
+  const more = flag?.ok
+    ? await sql<IdentityLeak[]>`select kind, object, detail from mantle_acl_flag_leaks()`
+    : [];
+  return [...rows, ...more].map((r) => ({ kind: r.kind, object: r.object, detail: r.detail }));
 }
 
 /** Whether the catalog check exists: a database migrated only part of the

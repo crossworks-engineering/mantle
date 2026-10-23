@@ -30,12 +30,32 @@
 --    so a forged epoch (or a row dated ahead) hid every count. The narrow
 --    role may now insert neither, directly or through
 --    mantle_actor_miss_log: an epoch row comes from migrate or an operator.
+-- 4. mantle.acl_internal, the derivation's own flag (0241): the item_grants
+--    triggers read it alone (mantle_item_grants_refresh_trg skips the heads
+--    check, mantle_item_grants_propagate_trg skips the folder propagation),
+--    and any session may set it. Proven on pg18: a write role session (an
+--    Admin scope) that set it unshared a folder from a workspace and the
+--    folder's item stayed readable there (its folder row kept, read_ws
+--    unchanged), with no heads check; the same on the runtime role. Now
+--    the derivation's functions (the nine that set the flag, rewritten in
+--    place below) sign it: mantle_acl_on() sets the flag 'on' and
+--    mantle.acl_sig, a mark keyed by the heads key and this transaction
+--    (mantle_heads_mac), and mantle_acl_saved() / mantle_acl_restore() keep
+--    and put back both, so the mark is valid only inside such a function.
+--    The two triggers ask mantle_acl_signed(): a session's own 'on' (or a
+--    mark from another transaction) is the flag off, so the heads check and
+--    the propagation run. mantle.acl_internal itself still reads 'on' (the
+--    guards pair it with mantle_owner_role(); an older image's marker is
+--    the same), so nothing else changes. mantle_acl_flag_leaks() is the
+--    catalog check (migrate's leak check reads it with 0321's): a body
+--    that sets either key itself, or decides from the flag alone, fails it.
 --
 -- When the S8b rebase lands, "Admin user" here keeps the Admin workspace's
 -- users; the role column test is the older name of the same thing.
 --
 -- Re-runnable. One column added (member_turn_ledger.tokens, 0 on every
--- row); no other table or row change; no LLM work. Revert:
+-- row); no other table or row change; eleven function bodies rewritten in
+-- place (4), each otherwise as it was; no LLM work. Revert:
 -- packages/db/rollback/0326_narrow_lockout_and_ledger_tokens.revert.sql
 -- (first, before 0325's). The `when` sits 60000 above 0325's.
 SET LOCAL lock_timeout = '30s';
@@ -216,3 +236,194 @@ DROP TRIGGER IF EXISTS "mantle_narrow_miss_guard_trg" ON "public"."actor_check_m
 --> statement-breakpoint
 CREATE TRIGGER "mantle_narrow_miss_guard_trg" BEFORE INSERT OR UPDATE ON "public"."actor_check_misses"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_miss_guard"();
+--> statement-breakpoint
+-- 4. The derivation's flag, signed.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_on"()
+  RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  mark text := "public"."mantle_heads_mac"('acl_internal');
+BEGIN
+  IF mark IS NULL THEN
+    RAISE EXCEPTION 'mantle_acl_on: no heads key' USING ERRCODE = '55000';
+  END IF;
+  PERFORM set_config('mantle.acl_sig', mark, true);
+  RETURN set_config('mantle.acl_internal', 'on', true);
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_acl_on"() FROM PUBLIC;
+--> statement-breakpoint
+-- Both keys as they are now, to put back with mantle_acl_restore.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_saved"()
+  RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT jsonb_build_array(coalesce(current_setting('mantle.acl_internal', true), ''),
+                           coalesce(current_setting('mantle.acl_sig', true), ''))::text
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_acl_saved"() FROM PUBLIC;
+--> statement-breakpoint
+-- What mantle_acl_saved kept ('' clears both). Never signs: a flag the
+-- session set before stays unsigned when put back.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_restore"(saved text)
+  RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  j jsonb := CASE WHEN coalesce(saved, '') = '' THEN '["", ""]'::jsonb ELSE saved::jsonb END;
+BEGIN
+  PERFORM set_config('mantle.acl_sig', coalesce(j ->> 1, ''), true);
+  RETURN set_config('mantle.acl_internal', coalesce(j ->> 0, ''), true);
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_acl_restore"(text) FROM PUBLIC;
+--> statement-breakpoint
+-- The flag as one of the derivation's functions set it in this transaction.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_signed"()
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT CASE WHEN coalesce(current_setting('mantle.acl_internal', true), '') <> 'on'
+                OR coalesce(current_setting('mantle.acl_sig', true), '') = '' THEN false
+              ELSE coalesce(current_setting('mantle.acl_sig', true)
+                            = "public"."mantle_heads_mac"('acl_internal'), false) END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_acl_signed"() FROM PUBLIC;
+--> statement-breakpoint
+-- The nine functions that set the flag, and the two triggers that read it
+-- alone, rewritten in place: otherwise byte for byte as they were (the
+-- revert puts them back the same way). The end state is asserted, so a
+-- second run (which rewrites none) passes.
+DO $do$
+DECLARE
+  f record;
+  def text;
+  got text[] := '{}';
+  setters constant text[] := ARRAY[
+    'mantle_acl_refresh', 'mantle_bridge_apply', 'mantle_facts_freeze_trg',
+    'mantle_nodes_acl_after_ins_trg', 'mantle_nodes_reown_home_trg', 'mantle_rederive_nodes',
+    'mantle_ws_bridge_off', 'mantle_ws_migrate_bridged', 'mantle_ws_spaces_fold'];
+  readers constant text[] := ARRAY['mantle_item_grants_refresh_trg', 'mantle_item_grants_propagate_trg'];
+BEGIN
+  FOR f IN
+    SELECT p.oid, p.proname::text AS name
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND ((p.prosrc LIKE '%set_config(''mantle.acl_internal''%'
+             AND p.proname NOT IN ('mantle_acl_on', 'mantle_acl_restore'))
+            OR (p.proname = ANY (readers) AND p.prosrc LIKE '%"public"."mantle_acl_internal"()%'))
+  LOOP
+    def := pg_catalog.pg_get_functiondef(f.oid);
+    def := replace(def, 'coalesce(current_setting(''mantle.acl_internal'', true), '''')',
+                   '"public"."mantle_acl_saved"()');
+    def := replace(def, 'set_config(''mantle.acl_internal'', ''on'', true)', '"public"."mantle_acl_on"()');
+    def := replace(def, 'set_config(''mantle.acl_internal'', was, true)', '"public"."mantle_acl_restore"(was)');
+    def := replace(def, 'set_config(''mantle.acl_internal'', '''', true)', '"public"."mantle_acl_restore"('''')');
+    IF f.name = ANY (readers) THEN
+      def := replace(def, '"public"."mantle_acl_internal"()', '"public"."mantle_acl_signed"()');
+    END IF;
+    IF def LIKE '%set_config(''mantle.acl_internal''%' OR def LIKE '%current_setting(''mantle.acl_internal''%'
+       OR def LIKE '%"public"."mantle_acl_internal"()%' THEN
+      RAISE EXCEPTION '0326: % sets or reads the derivation flag in a form not rewritten', f.name;
+    END IF;
+    EXECUTE def;
+    got := got || f.name;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM unnest(got) x WHERE x <> ALL (setters || readers)) THEN
+    RAISE EXCEPTION '0326: rewrote %, expected only % and %', got, setters, readers;
+  END IF;
+  IF EXISTS (SELECT 1 FROM unnest(setters || readers) w
+              WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_proc p
+                  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'public' AND p.proname = w)) THEN
+    RAISE EXCEPTION '0326: one of % or % is missing', setters, readers;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = ANY (setters)
+                AND p.prosrc NOT LIKE '%"public"."mantle_acl_on"()%') THEN
+    RAISE EXCEPTION '0326: a function of % does not sign the flag', setters;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = ANY (readers)
+                AND p.prosrc NOT LIKE '%"public"."mantle_acl_signed"()%') THEN
+    RAISE EXCEPTION '0326: a trigger of % does not ask for the signed flag', readers;
+  END IF;
+END
+$do$;
+--> statement-breakpoint
+-- The catalog check of the flag (migrate fails on a row, with 0321's; a
+-- key built at run time is 0321's to find).
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_flag_leaks"()
+  RETURNS TABLE (kind text, object text, detail text)
+  LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+  -- Set the flag or the mark: these two only.
+  setters constant text[] := ARRAY['public.mantle_acl_on()', 'public.mantle_acl_restore(text)'];
+  -- Read the flag or the mark for its value: the marker itself, the save
+  -- and the signed test.
+  readers constant text[] := ARRAY['public.mantle_acl_internal()', 'public.mantle_acl_saved()',
+                                   'public.mantle_acl_signed()'];
+  -- Name the marker without deciding from it alone: mantle_owner_role()
+  -- (asks for its owner), mantle_acl_writer() (pairs it with
+  -- mantle_owner_role()).
+  pairs constant text[] := ARRAY['public.mantle_owner_role()', 'public.mantle_acl_writer()'];
+  f record;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure::text AS sig,
+           p.prosrc || ' ' || coalesce(pg_get_function_sqlbody(p.oid), '') AS src
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                        WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+       AND NOT (n.nspname = 'public' AND p.proname IN ('mantle_acl_flag_leaks', 'mantle_identity_leaks'))
+  LOOP
+    IF f.src ~* 'set_config"?\s*\(\s*''mantle\.acl_(internal|sig)''' AND NOT (f.sig = ANY (setters)) THEN
+      kind := 'function'; object := f.sig;
+      detail := 'sets the derivation flag itself (mantle_acl_on and mantle_acl_restore only)';
+      RETURN NEXT;
+    END IF;
+    IF f.src ~* 'current_setting"?\s*\(\s*''mantle\.acl_(internal|sig)''' AND NOT (f.sig = ANY (readers)) THEN
+      kind := 'function'; object := f.sig;
+      detail := 'reads the derivation flag itself (ask mantle_acl_signed, or mantle_acl_writer)';
+      RETURN NEXT;
+    END IF;
+    IF f.src ~* 'mantle_acl_internal"?\s*\(' AND NOT (f.sig = ANY (readers || pairs)) THEN
+      kind := 'function'; object := f.sig;
+      detail := 'decides from the derivation flag alone (ask mantle_acl_signed, or mantle_acl_writer)';
+      RETURN NEXT;
+    END IF;
+  END LOOP;
+  FOR f IN
+    SELECT 'policy' AS k, pol.polrelid::regclass::text || ' ' || pol.polname AS obj,
+           coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' '
+             || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '') AS src
+      FROM pg_policy pol
+    UNION ALL
+    SELECT 'trigger', t.tgrelid::regclass::text || ' ' || t.tgname, pg_get_triggerdef(t.oid)
+      FROM pg_trigger t WHERE NOT t.tgisinternal
+    UNION ALL
+    SELECT 'default', a.adrelid::regclass::text, pg_get_expr(a.adbin, a.adrelid) FROM pg_attrdef a
+    UNION ALL
+    SELECT 'check', c.conrelid::regclass::text || ' ' || c.conname, pg_get_constraintdef(c.oid)
+      FROM pg_constraint c WHERE c.contype = 'c'
+    UNION ALL
+    SELECT 'view', r.ev_class::regclass::text, pg_get_ruledef(r.oid)
+      FROM pg_rewrite r JOIN pg_class cl ON cl.oid = r.ev_class
+      JOIN pg_namespace n ON n.oid = cl.relnamespace
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+  LOOP
+    IF f.src ~* 'mantle\.acl_(internal|sig)|mantle_acl_internal"?\s*\(' THEN
+      kind := f.k; object := f.obj; detail := 'reads the derivation flag (only the functions above may)';
+      RETURN NEXT;
+    END IF;
+  END LOOP;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_acl_flag_leaks"() FROM PUBLIC;

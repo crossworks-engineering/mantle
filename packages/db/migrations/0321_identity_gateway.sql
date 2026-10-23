@@ -217,7 +217,8 @@ DECLARE
     'mantle.write_mode',           -- 'ro' only adds refusals
     'mantle.actor_check',          -- a session mode only raises the box's (mantle_check_mode)
     'mantle.edit_check',           -- the same
-    'mantle.acl_internal',         -- the derivation guards pair it with mantle_owner_role(), no member the narrow role is; read alone only by item_grants triggers, a content table the narrow role may not write
+    'mantle.acl_internal',         -- the derivation guards pair it with mantle_owner_role(), no member the narrow role is; the item_grants triggers ask for it signed (0326 mantle_acl_signed); mantle_acl_flag_leaks checks the rest
+    'mantle.acl_sig',              -- the flag's mark, keyed by the heads key and the transaction (0326 mantle_acl_on)
     'mantle.human',                -- the personal space roles' old policies: no narrow table
     'mantle.heads_bypass',         -- verified against the signed marker (mantle_bypass_verified)
     'mantle.heads_check',          -- a session mode only raises the box's
