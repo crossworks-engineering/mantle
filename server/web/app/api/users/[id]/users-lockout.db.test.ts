@@ -529,4 +529,35 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     expect((await PATCH(json('PATCH', { role: 'member' }), ctx(ivy))).status).toBe(200);
     expect(await adminState(ivy)).toEqual({ role: 'member', in_admin: false, events: 1 });
   });
+
+  it('an Admin user who is not the anchor promotes and demotes in its own name (S8b r7 app LOW-5)', async () => {
+    // eve: an Admin user with the users area, not the anchor. The whole
+    // PATCH through the route, its exit's acting login eve: the definer
+    // writes the row with added_by eve and the events with eve as actor.
+    h.caller = as(eve);
+    const PATCH = inExit((await import('./route')).PATCH);
+    const eventActors = async (action: string) =>
+      (
+        await admin<Row[]>`
+          select e.actor_id::text as actor from workspace_events e
+            join workspaces w on w.id = e.workspace_id
+           where w.is_admin and w.archived_at is null and w.owner_id = mantle_brain_id()
+             and e.action = ${action} and e.subject->>'login' = ${gus}
+           order by e.at`
+      ).map((r) => r.actor);
+    expect(await adminState(gus)).toEqual({ role: 'member', in_admin: false, events: 0 });
+    expect((await PATCH(json('PATCH', { role: 'admin' }), ctx(gus))).status).toBe(200);
+    const [row] = await admin<Row[]>`
+      select wu.added_by::text as added_by, wu.moderator from workspace_users wu
+        join workspaces w on w.id = wu.workspace_id
+       where wu.login_id = ${gus} and w.is_admin and w.archived_at is null
+         and w.owner_id = mantle_brain_id()`;
+    expect(row).toEqual({ added_by: eve, moderator: true });
+    expect(await adminState(gus)).toEqual({ role: 'admin', in_admin: true, events: 1 });
+    expect(await eventActors('user.add')).toEqual([eve]);
+    // And back: the removal's event names eve too; the role follows.
+    expect((await PATCH(json('PATCH', { role: 'member' }), ctx(gus))).status).toBe(200);
+    expect(await adminState(gus)).toEqual({ role: 'member', in_admin: false, events: 2 });
+    expect(await eventActors('user.remove')).toEqual([eve]);
+  });
 });
