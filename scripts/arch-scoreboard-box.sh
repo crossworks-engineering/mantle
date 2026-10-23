@@ -13,10 +13,11 @@
 #   - the check settings: mantle.actor_check and mantle.edit_check on the
 #     database (off, warn or on; "not set" until A2a and A3a add them);
 #   - the rights counts (plan v3, rule 10), each a number counted on the
-#     box: role drift (mantle_role_drift(): enabled logins, former clients
-#     left out, whose role disagrees with Admin; n/a on a box that has no
+#     box: role drift (mantle_role_drift(): enabled logins whose role
+#     disagrees with Admin, former clients left out before S8b's 0330 and
+#     counted from it; n/a on a box that has no
 #     such function yet, never a guessed 0), the same over ALL logins
-#     (disabled ones too, former clients left out: a login whose role
+#     (disabled ones and former clients too: a login whose role
 #     says admin without a user row in the live Admin workspace, or the
 #     other way; asked of the tables directly, so a box before S8b's
 #     migration answers it too; n/a where the tables are not there yet),
@@ -141,13 +142,11 @@ if [ "$has" = t ]; then
   drift=$(num "$(echo 'select public.mantle_role_drift()::bigint;' | q || true)")
 fi
 drift_all=n/a
-has=$(echo "select to_regclass('public.archive_client_logins') is not null
-              and to_regclass('public.workspace_users') is not null;" | q || true)
+has=$(echo "select to_regclass('public.workspace_users') is not null;" | q || true)
 if [ "$has" = t ]; then
   drift_all=$(num "$(q <<'SQL' || true
 select count(*) from auth.users l
- where not exists (select 1 from public.archive_client_logins a where a.login_id = l.id)
-   and coalesce(l.role = 'admin', false) <> exists (
+ where coalesce(l.role = 'admin', false) <> exists (
          select 1 from public.workspaces w
            join public.workspace_users u on u.workspace_id = w.id and u.login_id = l.id
            join auth.users o on o.id = w.owner_id and o.is_owner

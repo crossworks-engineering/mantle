@@ -10,11 +10,15 @@
 -- mantle_area_rule (0304's own bodies, the same answers, off the seat), and
 -- drops the role guard (users_role_guard and its function: that image
 -- writes the role from the app's pools) and the four functions 0330 added
--- (that image never calls them). The column is exact when this
--- runs (the definers kept it so), so that image's role reads answer as
--- before. The bridges' triggers are not made again: 0261 had dropped them
--- on every brain that took the workspaces switch, and 0330's precondition
--- is that every brain has (brains without an Admin workspace: 0).
+-- (that image never calls them). It puts back mantle_role_drift (0304's
+-- body, former clients left out) and the three bridge functions 0330
+-- dropped (mantle_bridge_connector, mantle_bridge_connector_trg,
+-- mantle_bridge_login_trg: 0251's bodies, their owner and rights), and the
+-- two bridge triggers only where they stood: a brain that never took the
+-- workspaces switch (0261 dropped them everywhere else). So the catalog is
+-- main's again, byte for byte (the rollback drill diffs a schema dump
+-- against main's). The column is exact when this runs (the definers kept
+-- it so), so that image's role reads answer as before.
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
@@ -364,6 +368,123 @@ DROP FUNCTION IF EXISTS "public"."mantle_scope_admin_facts"(text[]);
 DROP FUNCTION IF EXISTS "public"."mantle_admin_seat"(uuid);
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_ws_exit_login"(text, uuid, uuid);
+--> statement-breakpoint
+-- 0304's drift count, its former-client clause back.
+CREATE OR REPLACE FUNCTION "public"."mantle_role_drift"()
+  RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT count(*)::int
+    FROM "auth"."users" l
+   WHERE l."disabled_at" IS NULL
+     AND NOT EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = l."id")
+     AND coalesce(l."role" = 'admin', false) <> "public"."mantle_login_is_admin"(l."id")
+$$;
+--> statement-breakpoint
+-- The connector and login bridges as main has them (0251's bodies, PUBLIC
+-- revoked, no other grant), owned as the login bridge is (the migrator:
+-- this file runs as the superuser, which would own them otherwise).
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_connector"(p_owner uuid, p_slug text)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  admin_ws uuid;
+  team_ws uuid;
+  g record;
+  member_today boolean;
+BEGIN
+  IF p_owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN RETURN; END IF;
+  SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = p_owner AND w."bridge_key" = 'admin';
+  SELECT w."id" INTO team_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = p_owner AND w."bridge_key" = 'team';
+  IF admin_ws IS NULL THEN RETURN; END IF;
+  SELECT t."integration", t."enabled", t."audience" INTO g
+    FROM "public"."tool_groups" t WHERE t."owner_id" = p_owner AND t."slug" = p_slug;
+  IF NOT FOUND OR g."integration" IS NULL THEN
+    DELETE FROM "public"."workspace_resources" r
+     WHERE r."type" = 'connector' AND r."ref_id" = p_slug
+       AND r."workspace_id" IN (admin_ws, coalesce(team_ws, admin_ws));
+    RETURN;
+  END IF;
+  INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+  SELECT admin_ws, 'connector', p_slug, true
+   WHERE NOT EXISTS (SELECT 1 FROM "public"."workspace_resources" r
+                      WHERE r."workspace_id" = admin_ws AND r."type" = 'connector' AND r."ref_id" = p_slug);
+  IF team_ws IS NULL THEN RETURN; END IF;
+  member_today := g."integration" ? 'mcp' AND g."enabled"
+                  AND g."audience" IN ('team', 'client', 'public');
+  IF member_today THEN
+    INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+    SELECT team_ws, 'connector', p_slug, true
+     WHERE NOT EXISTS (SELECT 1 FROM "public"."workspace_resources" r
+                        WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug);
+    UPDATE "public"."workspace_resources" r SET "write" = true
+     WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug AND NOT r."write";
+  ELSE
+    DELETE FROM "public"."workspace_resources" r
+     WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_connector"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_connector_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    PERFORM "public"."mantle_bridge_connector"(OLD."owner_id", OLD."slug");
+  END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    PERFORM "public"."mantle_bridge_connector"(NEW."owner_id", NEW."slug");
+  END IF;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_connector_trg"() FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_login_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_bridge_login"(NEW."id");
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_login_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DO $$
+DECLARE
+  who name := (SELECT pg_catalog.pg_get_userbyid(p."proowner") FROM pg_catalog.pg_proc p
+                WHERE p."oid" = '"public"."mantle_bridge_login"(uuid)'::regprocedure);
+BEGIN
+  EXECUTE format('ALTER FUNCTION "public"."mantle_bridge_connector"(uuid, text) OWNER TO %I', who);
+  EXECUTE format('ALTER FUNCTION "public"."mantle_bridge_connector_trg"() OWNER TO %I', who);
+  EXECUTE format('ALTER FUNCTION "public"."mantle_bridge_login_trg"() OWNER TO %I', who);
+END
+$$;
+--> statement-breakpoint
+-- The two triggers 0330 dropped stood only on a brain that never took the
+-- workspaces switch (mantle_ws_switch_off drops them and makes
+-- nodes_levels_frozen in one step, 0261/0263), so they come back exactly
+-- there: where nodes_levels_frozen is not.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t
+              WHERE t."tgrelid" = '"public"."nodes"'::regclass AND t."tgname" = 'nodes_levels_frozen') THEN
+    RETURN;
+  END IF;
+  EXECUTE 'CREATE TRIGGER "tool_groups_zz_bridge"
+  AFTER INSERT OR DELETE OR UPDATE OF "audience", "enabled", "integration", "slug", "owner_id"
+  ON "public"."tool_groups"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_connector_trg"()';
+  EXECUTE 'CREATE TRIGGER "users_zz_bridge" AFTER INSERT OR UPDATE OF "role" ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_login_trg"()';
+END
+$$;
 --> statement-breakpoint
 -- Off the ledger: the next roll forward applies 0330 again (re-runnable).
 DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199880000;
