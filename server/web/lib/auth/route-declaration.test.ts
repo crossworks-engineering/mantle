@@ -56,6 +56,14 @@ export const typed = [
     POST: { class: 'content', effect: { write: 'x' }, item: none },
   }),
   routePolicy({
+    // @ts-expect-error a read exception on a method other than POST (round 4, LOW-B)
+    PATCH: { class: 'content', effect: { read: 'x' } },
+  }),
+  routePolicy({
+    // @ts-expect-error a DELETE always writes
+    DELETE: { class: 'content', effect: { read: 'x' } },
+  }),
+  routePolicy({
     // @ts-expect-error an excess key in an item
     POST: { class: 'content', item: { none: 'x', param: 'id' } },
   }),
@@ -144,6 +152,8 @@ describe('validateMethodPolicy: the one validator', () => {
       false,
       false,
       false,
+      false,
+      false,
       true,
       false,
       false,
@@ -165,6 +175,23 @@ describe('validateMethodPolicy: the one validator', () => {
         'DELETE',
       ),
     ).not.toThrow();
+  });
+
+  it('an effect exception: read only on a POST, write only on a GET or HEAD (round 4, LOW-B)', () => {
+    const read = { class: 'content', effect: { read: 'computes only' } };
+    expect(() => validateMethodPolicy(read, '/api/x', 'POST')).not.toThrow();
+    for (const m of ['PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+      expect(() => validateMethodPolicy(read, '/api/x', m), m).toThrow(
+        /only a POST states it reads/,
+      );
+    }
+    const write = { class: 'content', effect: { write: 'stores' }, item: { none: 'x' } };
+    for (const m of ['GET', 'HEAD']) {
+      expect(() => validateMethodPolicy(write, '/api/x', m), m).not.toThrow();
+    }
+    for (const m of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+      expect(() => validateMethodPolicy(write, '/api/x', m), m).toThrow(/state only an exception/);
+    }
   });
 
   it('knows every key the type has (the type pins the same, at compile time)', () => {

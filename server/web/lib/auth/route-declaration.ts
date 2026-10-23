@@ -54,6 +54,13 @@ export const READ_METHODS = ['GET', 'HEAD'] as const;
 type ReadMethod = (typeof READ_METHODS)[number];
 type WriteMethod = Exclude<DeclaredMethod, ReadMethod>;
 
+/** The one method that may state it reads (an effect exception `read`):
+ *  a POST that only computes, as a GET with a body would (the formula
+ *  calculator). A PUT, PATCH, DELETE or OPTIONS always writes (round 4,
+ *  LOW-B); a GET or HEAD may state it writes (`write`), no other. */
+export const READS_BY_EXCEPTION = 'POST';
+type OtherWriteMethod = Exclude<WriteMethod, typeof READS_BY_EXCEPTION>;
+
 /** The effect of `method` when its declaration states no exception. */
 export function methodEffect(method: string): 'read' | 'write' {
   return (READ_METHODS as readonly string[]).includes(method.toUpperCase()) ? 'read' : 'write';
@@ -194,22 +201,27 @@ type ReadEffect =
   | Readonly<{ effect?: never; item?: never }>
   | Readonly<{ effect: Readonly<{ write: string }>; item: DeclaredItem }>;
 
-/** Any other method writes and says its item, unless it states the read
- *  it is and why. */
-type WriteEffect =
-  | Readonly<{ effect?: never; item: DeclaredItem }>
-  | Readonly<{ effect: Readonly<{ read: string }>; item?: never }>;
+/** A PUT, PATCH, DELETE or OPTIONS writes and says its item. */
+type WriteEffect = Readonly<{ effect?: never; item: DeclaredItem }>;
+
+/** A POST writes and says its item, unless it states the read it is and
+ *  why. */
+type PostEffect = WriteEffect | Readonly<{ effect: Readonly<{ read: string }>; item?: never }>;
 
 /** The policy of a GET or a HEAD. */
 export type ReadMethodPolicy = Common & ClassPart & ReadEffect;
-/** The policy of any other method. */
+/** The policy of a POST. */
+export type PostMethodPolicy = Common & ClassPart & PostEffect;
+/** The policy of a PUT, PATCH, DELETE or OPTIONS. */
 export type WriteMethodPolicy = Common & ClassPart & WriteEffect;
 /** One method's policy. */
-export type MethodPolicy = ReadMethodPolicy | WriteMethodPolicy;
+export type MethodPolicy = ReadMethodPolicy | PostMethodPolicy | WriteMethodPolicy;
 
 /** A route file's declaration: each method it exports to its policy. */
 export type RoutePolicyDeclaration = Readonly<
-  { [M in ReadMethod]?: ReadMethodPolicy } & { [M in WriteMethod]?: WriteMethodPolicy }
+  { [M in ReadMethod]?: ReadMethodPolicy } & {
+    [M in typeof READS_BY_EXCEPTION]?: PostMethodPolicy;
+  } & { [M in OtherWriteMethod]?: WriteMethodPolicy }
 >;
 
 // The keys the type allows are DECLARED_KEYS, no more and no fewer.
@@ -325,6 +337,11 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
     const why = (d.effect as Record<string, unknown>)[k!];
     if (typeof why !== 'string' || !why.trim()) bad(`the effect ${k} with no reason`);
     if (k === effect) bad(`the effect ${k}, which a ${method} is: state only an exception`);
+    // A read only on a POST; a write only on a GET or HEAD (whose effect
+    // is the read the check above refuses to restate).
+    if (k === 'read' && method !== READS_BY_EXCEPTION) {
+      bad(`the effect read on a ${method}: only a POST states it reads`);
+    }
     effect = k!;
   }
   const writes = effect === 'write';
