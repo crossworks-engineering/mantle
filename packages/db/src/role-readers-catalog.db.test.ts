@@ -93,9 +93,20 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
       expect(counts.readsLoginRole(f!.body), g).toBe(false);
       expect(code(f!.body), g).toMatch(/NEW\."role" IS DISTINCT FROM OLD\."role"/);
     }
-    expect(both.filter((n) => !WRITERS.includes(n) && !GUARDS.includes(n))).toEqual(
-      names(live, (f) => counts.readsLoginRole(f.body)),
-    );
+    // The exit login (0330, S8b round 7) names auth.users for the acting
+    // login's enabled flag and `role` only as the session's own role
+    // setting (current_setting('role'), mantle_ws_system_work's test): no
+    // login's role column.
+    const SESSION_ROLE = ['mantle_ws_exit_login'];
+    for (const g of SESSION_ROLE) {
+      const f = live.find((x) => x.name === g);
+      expect(f, g).toBeDefined();
+      expect(counts.readsLoginRole(f!.body), g).toBe(false);
+      expect(code(f!.body), g).toMatch(/current_setting\('role'\)/);
+    }
+    expect(
+      both.filter((n) => !WRITERS.includes(n) && !GUARDS.includes(n) && !SESSION_ROLE.includes(n)),
+    ).toEqual(names(live, (f) => counts.readsLoginRole(f.body)));
   });
 
   it('each reader is migration-only or reads the column the membership definers keep exact', async () => {

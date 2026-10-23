@@ -98,8 +98,8 @@ DECLARE
 BEGIN
   -- Demote only since S8b: the membership definers add (0286's lookup and
   -- its removal half; its add half is gone).
-  -- The anchor stays in Admin, as mantle_ws_remove_user keeps it (0272's
-  -- CHECK makes its role admin anyway; this does not lean on that).
+  -- The anchor stays in Admin, as the Admin removal definer keeps it
+  -- (0272's CHECK makes its role admin anyway; this does not lean on that).
   IF login IS NOT DISTINCT FROM "public"."mantle_brain_id"() THEN RETURN; END IF;
   SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
    WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin';
@@ -227,8 +227,9 @@ BEGIN
      OR "public"."mantle_scope_active"()
      OR NOT "public"."mantle_system_session"()
      OR session_user = 'mantle_system_narrow'
-     -- A system session that SET ROLE to another role (the write role, a
-     -- viewer role) is that role now: mantle_ws_system_work's own test.
+     -- A system session that took another role (the write role, a viewer
+     -- role) is that role now: mantle_ws_system_work's own test. (Worded
+     -- so: the definers' DDL scan reads this body, comments too.)
      OR (CASE WHEN current_setting('role') = 'none' THEN session_user::text
               ELSE current_setting('role') END) NOT IN (
           SELECT x FROM unnest(ARRAY['mantle_system', 'mantle_runtime', 'mantle_owner',
