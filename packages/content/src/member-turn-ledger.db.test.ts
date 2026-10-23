@@ -112,19 +112,19 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     await admin`insert into traces (owner_id, kind, subject_kind, status, tokens_in, tokens_out, data) values
       (${anchor}, 'responder_turn', 'team_turn', 'success', 600, 400, ${JSON.stringify({ login_id: sam })}::text::jsonb)`;
     expect(await ledger.memberTokensSince(anchor, sam, since)).toBe(1000);
-    expect(await claim(sam, 'sam.a', 100, 1000)).toEqual({ ok: true, fresh: true });
+    expect(await claim(sam, 'sam.t1', 100, 1000)).toEqual({ ok: true, fresh: true });
     // The slot's own tokens, stamped at the turn's close.
-    expect(await ledger.settleMemberTurn(sam, tid('sam.a'), 1000)).toBe(true);
+    expect(await ledger.settleMemberTurn(sam, tid('sam.t1'), 1000)).toBe(true);
     // Not another login's slot.
-    expect(await ledger.settleMemberTurn(pat, tid('sam.a'), 9_000_000)).toBe(false);
-    expect(await claim(sam, 'sam.b', 100, 1000)).toEqual({
+    expect(await ledger.settleMemberTurn(pat, tid('sam.t1'), 9_000_000)).toBe(false);
+    expect(await claim(sam, 'sam.t2', 100, 1000)).toEqual({
       ok: false,
       reason: 'token_budget',
       used: 1000,
     });
-    expect(await claim(sam, 'sam.b', 100, 1001)).toEqual({ ok: true, fresh: true });
+    expect(await claim(sam, 'sam.t2', 100, 1001)).toEqual({ ok: true, fresh: true });
     // 0 = no token budget.
-    expect(await claim(pat, 'pat.g', 100, 0)).toEqual({ ok: true, fresh: true });
+    expect(await claim(pat, 'pat.t1', 100, 0)).toEqual({ ok: true, fresh: true });
   });
 
   it('drops the ledger rows with the login', async () => {
