@@ -659,6 +659,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_attach_assistants:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
+  mantle_ws_connector_options:
+    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_ws_create:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_item_counts:
@@ -817,6 +819,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/workspaces.ts mantle_ws_add_user': 1,
   'server/web/lib/workspaces.ts mantle_ws_admin_id': 1,
   'server/web/lib/workspaces.ts mantle_ws_archive': 1,
+  'server/web/lib/workspaces.ts mantle_ws_connector_options': 1,
   'server/web/lib/workspaces.ts mantle_ws_create': 1,
   'server/web/lib/workspaces.ts mantle_ws_item_counts': 1,
   'server/web/lib/workspaces.ts mantle_ws_login_search': 1,
