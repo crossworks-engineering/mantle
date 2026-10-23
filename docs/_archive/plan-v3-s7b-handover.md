@@ -5432,3 +5432,198 @@ release on the box:
   on the busiest box (a 0 count with no traffic proves nothing);
 - `narrow_switch` unset or on after the roll (off only where a box chose
   the kill switch).
+
+### Item 1: the holds for held logins (migration 0328)
+
+0328 (`0328_narrow_hold_wider`, journal `when` 1790199760000, above 0327's 1790199700000) replaces 0327's `mantle_narrow_token_hold` body and adds it
+on three more tables:
+
+| table                | trigger                             | the held login                                 |
+| -------------------- | ----------------------------------- | ---------------------------------------------- |
+| `pairing_codes`      | BEFORE DELETE                       | `user_id`                                      |
+| `push_subscriptions` | BEFORE DELETE                       | `login_id`, or `owner_id` when it has no login |
+| `mantle_peers`       | BEFORE UPDATE OF `acts_as_login_id` | the old `acts_as_login_id` (a release)         |
+
+On the narrow login each refuses 42501 for a held login (the owner, an
+admin by role, a user of the Admin workspace: `mantle_narrow_login_held`);
+off the narrow route the same write by a narrow reason is counted (0320's
+one report predicate, which answers false where the runtime role may not
+run the reader). A member's code, device and peer the narrow login still
+removes (the users area's own lockout writes).
+
+The product sites: the lockout and session end already ran under
+`onLoginHoldSpot` (login-update.ts, endLoginSessions), so their pairing
+code, device and peer writes were at the spot for a held login. New: every
+push device delete outside a caller's transaction goes through
+`devicesDelete` (server/web `lib/push/store.ts`): on the narrow route only,
+it reads the rows' logins (`coalesce(login_id, owner_id)`) and runs the
+delete at `login-credential` when one is held. That covers an Admin's
+device removal (`/api/push/subscriptions/:id`), the push reset, a login's
+own unpair (login-routes), a device token's sign-out (mobile-logout, the
+users area's devices route) and the worker's cleanup (not narrow: no
+lookup). `deleteLoginSubscriptions` and `deleteLegacySubscriptions` alone
+ask `onLoginHoldSpot(loginId)`; inside a caller's transaction the caller
+picked the route. `onLoginHoldSpot` takes a login, a list, a lazy lookup
+(`{ logins }`) or a client; eslint-rules/as-system-routes.mjs lists
+store.ts as its caller.
+
+Revert: `packages/db/rollback/0328_narrow_hold_wider.revert.sql` (the
+three triggers and the missing-triggers function dropped, 0327's hold
+body back, the ledger row by 1790199760000). Order: 0328 first, then 0327
+down to 0315 (runtime-role.md and update-prod.md list it).
+
+Cells: `narrow-lockout.db.test.ts` (the real narrow login: eight refusals,
+rows unchanged; a member's three allowed; off the route counted per table,
+at a spot not; the re-run cell now includes 0328),
+`narrow-containment.db.test.ts` (0319's release cell: the release of the
+peer acting as an Admin user is now refused; the allowed release uses a
+peer acting as a member). Forge: 10 new refused forms and 3 allowed.
+
+### Item 2: text-check refusals counted in report mode
+
+With the switch off, on a route that would be narrow, every statement now
+also runs the text check (`noteWouldRefuseStatement` in
+`gateway/narrow-would-refuse.ts`, called from `narrowRouteClient` and the
+would-narrow transaction client `wouldRefuseTx`, which now also reads
+tagged templates); a refusal is noted as `narrow-would-refuse <actor>
+text:<what> TEXT` (one word, e.g. `text:a-do-block`). Never holds the
+statement back. Cells (`narrow-would-refuse-unread.test.ts`): five
+refused texts each counted once with its reason, a read and a row write
+not; a tagged template in a would-narrow transaction read for its text
+and its calls. Cost: the same lexing the switch-on route already does
+per statement.
+
+### Item 3: the box script
+
+`scripts/arch-scoreboard-box.sh` prints `narrow_switch` (on, off, unset,
+`?`, from the app container's environment), the traffic since the epoch
+(`narrow_traffic_since_epoch:member-turns` from member_turn_ledger,
+`:admin-area-writes` from audit_log, `:active-logins` distinct logins
+with an inbound chat message or an audited action), and its header says
+so. The missing-triggers query is now one database function,
+`mantle_narrow_counter_missing()` (0328, superuser only), which the script
+reads when it is there (its inline copy stays for a box before 0328) and
+which `narrow-lockout.db.test.ts` asserts: 0, then 1 with one UPDATE OF
+trigger dropped, then 1 with one column grant changed. The forge proof
+reads it too (0, then 1 with agents' UPDATE OF trigger dropped).
+
+### Item 4: INFO
+
+- The tagged-template branch of the narrow transaction client: a text
+  refusal there now goes through `onError` (noted, and the transaction's
+  first error), as the `unsafe` branch.
+- The held check folded into `onFullSystemRoute`: a third argument
+  (`when`), asked only on the narrow route; `onLoginHoldSpot` is that call.
+  One rule for every hold.
+- One cause walker: `causeChain` (packages/std) in narrow-route.ts (the
+  four loops) and pg-error.ts (`isBusy`, `isPoolBusy`).
+- One call pattern: `CALLED_FN` (a lookbehind: no name after a word
+  character, a dot, `$` or a quote) is read by the would-refuse count, the
+  switch-on measurement and the static scan (case-sensitive there: a
+  file's template text also holds env names like `MANTLE_MASTER_KEY (`).
+- runtime-role.md says only `public.mantle_*` calls are read.
+- The drill's N-1 rows gain a member chat turn (the ledger claim, settle
+  and release in the member's own scope, as mantle_runtime) and the three
+  0328 writes by the narrow reasons the b2 image sends (each writes,
+  counted).
+
+### Item 5: the default flip (the last code commit)
+
+The template commit 69cef8e89, re-applied: `narrowSystemOn()` reads
+`feature('narrowSystem')`, default true everywhere; `0`, `off`, `false`
+turn it off (read once per process, logged at boot); .env.example,
+docker-compose.yml, docs/configuration.md, docs/runtime-role.md ("The kill
+switch", and what a fresh install, per-database mode, an existing box and
+a box pinned back to b2 do) and docs/update-prod.md (the kill switch
+section and the rollback floor). Pins: asSystemFull 34 (its measured end,
+one over the plan's 33, for S7c), systemWholeOnFull 0,
+requestSystemExits_narrow 3, fullRouteSpots 31 and fullRouteSpotCalls 122
+unchanged (b3 added no spot and no call: store.ts passes its writes to
+`onLoginHoldSpot`, whose one call is counted).
+
+What the default does per shape: a fresh install is on (migrate gives the
+role its login from MANTLE_MASTER_KEY; MANTLE_DB_RUNTIME_ROLE may be off,
+the rroff suite runs that shape); per-database mode is on, on the S7a route
+(the role per transaction, no login); an existing box is on at the roll; a
+box pinned back to the b2 image reads unset as off in production.
+
+The kill switch is tested by: `runtime-role.test.ts` (unset on in every
+environment; 0, off, false off in production too; read once),
+`narrow-route.db.test.ts` "off: every reason runs as the pool login", the
+full DB suite with `MANTLE_NARROW_SYSTEM=0`, and the drill's rows (migrate
+with the switch unset gives the role its login; with 0 or off takes it).
+
+### Pins and migrations
+
+One migration, 0328 (above). No arch-scoreboard count moved; the flip
+re-words asSystemFull (34), systemWholeOnFull (0) and
+requestSystemExits_narrow (3) for b3. FULL_ROUTE_SPOT_CALLBACKS lists
+server/web `lib/push/store.ts` as an `onLoginHoldSpot` caller. The static
+call scan's per-call pins did not move.
+
+### Gates on feed7f7c2 (the flip, the code head; fsync off on the test clusters)
+
+Mac on feed7f7c2: typecheck 0, lint 0, format 0, docs 0, arch 0, boot
+smoke 0, web build 0, unit 0 (884 files, 11385 tests, the
+migrations-journal and rollback-when cells included; DATABASE_URL unset).
+
+Workstation (`TAG=f ~/s7b-b3/kit/run.sh <sha> <names>`, units
+`s7b-b3-f<name>`, results `~/s7b-b3/x-f<name>.exit` and `.log`; the
+alone reruns `~/s7b-b3/kit/alone.sh`, unit `s7b-b3-galone`, one after
+another; every `.log.setup` names feed7f7c2):
+
+| gate                                    | result                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shard 1/2                               | 592 of 594: s6-c2-admin-acts and mcp-revived-credentials timed out at 15 s under load 30; alone 0 (gfiles)                                                                                                                                                                                                                                                                                                                         |
+| shard 2/2                               | 592 of 593: gate-caller (a 15 s timeout and the bearer touch 1 vs 2) under load; alone 0 (gfiles)                                                                                                                                                                                                                                                                                                                                  |
+| actor-off                               | 163 of 165 under load (a6b-exit-sweep, member-sweep: 15 s timeouts); the whole suite alone 0 (165, gaoff)                                                                                                                                                                                                                                                                                                                          |
+| actor-on                                | 33 of 34 under load (a6b narrow-reads, 15 s); alone 0 (34, gaon)                                                                                                                                                                                                                                                                                                                                                                   |
+| edit-on                                 | 44 of 46 under load (edit-check's file scan, a6b rule-in-query, 15 s); alone 0 (46, geon)                                                                                                                                                                                                                                                                                                                                          |
+| runtime-role                            | 0                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| serial                                  | 0                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| switch off (`MANTLE_NARROW_SYSTEM=0`)   | 0 (1187 files)                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| runtime role off, full                  | 1185 of 1187: a6b rule-in-query and gate-caller under load; alone 0 (grroff, the runtime role off)                                                                                                                                                                                                                                                                                                                                 |
+| matrix                                  | 0                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| round 8 proof                           | 0 (16 refused 42501, 2 written)                                                                                                                                                                                                                                                                                                                                                                                                    |
+| forge proof (`kit/proof.sh`)            | 0: 138 refused of 138 (126 42501, 12 40001; 128 + 10 new b3 hold forms), 30 written of 30 (27 + 3), 12 flag forms propagated of 12; identity sweep 270 no change, 17 refused; leaks 0 and 0; SET forms 6 of 6, allowed key 0; narrow defaults stored 2, leaks 0, migrate 0, after 0; held readers yes, then no; missing triggers 0, then 1; public rights 0                                                                        |
+| drill (`kit/drill.sh`, N-1 = 444d91373) | 0: init on main (327 rows), branch (328), main again (N-1 boot, 328 kept); the twelve N-1 runtime rows 0 with one row each (the nine of round 17, a member chat turn: claim true/true, settle true, and the three 0328 writes, each counted); switch unset: the role gets its login; 0 and off: it loses it; per-database: no login; reverts 0328 to 0315 each 0, to 314 rows; main after 0; roll forward 328, 27 one-way triggers |
+
+The targeted run before the flip (15394f895, TAG a): the touched DB files
+(narrow-lockout, narrow-containment, narrow-allowlist, narrow-route,
+mobile-roles-push-migration, logins-carry-nothing-0272, users-lockout,
+device-tokens, the push suites, narrow-spots, runtime-role.db) 0 (24
+files), the forge proof 0 and the drill 0.
+
+The drill's "N-1 narrow login, a member disabled" row now writes (empty
+row, no error): the N-1 image is b2, whose narrow role holds the held
+readers, so a member's disable is allowed, as on the branch. In b2's drill
+(N-1 = b1) it was 42501, fail closed.
+
+### Left
+
+1. The CEO's full re-audit, both sides, on feed7f7c2.
+2. The fleet flip: per box, the counts in the list at the top of this
+   section, under the owner's rule (one working day on the busiest box).
+3. Not done (from the b2 app re-audit's b3 additions): a numbers-only
+   pre-roll count of stray role or database defaults that the 0322 leak
+   check would make fatal at migrate. The query, superuser, per box:
+   `select count(*) from pg_db_role_setting s, unnest(s.setconfig) c where c like 'mantle.%' or c like 'role=%' or c like 'session_authorization=%';`
+   (0 expected; a per-database viewer login's own `role` default is the
+   one the leak check allows).
+4. Backlog as before: Telegram member tokens toward the budget; a run-wide
+   migrate advisory lock.
+
+### Doubts
+
+- The flip release carries code that ran on no box before it (0328's
+  wider hold, the text count, the box script's lines). The owner's rule
+  soaks b2 (v0.300.134); b3's own new holds rest on the suites, the forge
+  and the drill. The per-box fallback is the switch.
+- The text count lexes every statement of a would-narrow route with the
+  switch off: the same work the switch-on route does, not measured on a
+  busy turn here.
+- `devicesDelete` reads the rows' logins before the delete on the narrow
+  route: a row whose login changes between the read and the delete (a
+  re-enrol at the push-device spot) meets the hold's 42501, fail closed.
+- Load-only timeouts as in every round (load 20 to 32 with 13 lanes); each
+  passed alone.
