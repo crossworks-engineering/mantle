@@ -1,34 +1,41 @@
-# Proposal: `.canvas` files (agent-drawn HTML) and a Presenter agent
+# Proposal: the Present workspace (agent-drawn HTML canvases) and a Presenter agent
 
-Status: proposal only, 2026-10-23. Nothing here is built. Slides work stays
-parked on its branches; this doc only says how a canvas would plug in later.
+Status: proposal only, 2026-10-23. Nothing here is built. The Slides work
+stays parked on its branches. This doc started as "`.canvas` files in
+/files"; after review with Jason it became a workspace of its own, Present,
+which also takes the place of the planned Slides workspace (section 9).
 
 ## 1. Recommendation (read this first)
 
-1. **A canvas is ONE text file, `<name>.canvas`, holding one self-contained
-   HTML document** (inline CSS and JS). Not a folder bundle in v1. It lives
-   in the Files workspace as an ordinary `file` node, so folders, moves,
-   copies, workspaces, shares, backup and search all work with no new node
-   type. A multi-file bundle stays a later option (section 4.3).
-2. **Render it the way mini apps already render**: a `sandbox="allow-scripts"`
-   iframe with an opaque origin, served by a ticketed frame route with a
-   header CSP of `default-src 'none'` and `connect-src 'none'`. No host
-   bridge at all: no `host.db`, no `host.tools`. A canvas is presentation
-   only.
-3. **Libraries come from a vendored, pinned, offline set the brain serves**
-   (`/canvas-runtime/`, beside the existing `/app-runtime/` and
-   `/excalidraw-assets/`), wired in with an import map. No CDNs. An agent
-   may still inline its own small code. The same set should serve mini
-   apps too, and canvases get the theme tokens, Tailwind classes, a shadcn
-   look and every Appearance font (sections 6.1 to 6.3).
-4. **A new `presenter` specialist** authors canvases with a new `canvas`
-   tool group (create, patch, read, render to PNG). Draftsman keeps charts
-   and diagrams inside pages. The `specialist_routing` skill gets one plain
-   line that sends every "draw / show / animate / schematic / slide" ask
-   that is not a page chart to Presenter.
-5. **Render to PNG through the browser sidecar that already exists**
-   (browserless Chromium, driven by `puppeteer-core`), with the console
-   errors handed back to the agent. This is the feedback loop mini apps lack.
+1. **Present is a workspace kind, like Pages, Tables, Draw and Apps.** Each
+   item is a **canvas**: one self-contained HTML document (inline CSS and
+   JS) that can draw, animate, run a chart, a 3D scene, or a slide deck.
+   A deck is just a canvas with slides. One item type, one viewer, one
+   agent. Draw is the template to copy (sidecar table, picture snapshot,
+   render route, share route, page embed).
+2. **A canvas runs live in two places only:** its own Present view
+   (`/present/<id>`, with Maximise, Full screen, Replay, Source, Share) and a
+   share link (`/s/<token>`, full screen). Everywhere else (pages, chat,
+   Telegram, PDF, DOCX) it appears as a **PNG poster**, and clicking the
+   poster opens the real canvas. No live embeds.
+3. **The live view is a sandbox**, the way mini apps already run: an
+   `allow-scripts`-only iframe with an opaque origin, served by a ticketed
+   frame route with a header CSP of `default-src 'none'` and
+   `connect-src 'none'`. No host bridge: no database, no tools, no network.
+   A canvas is presentation only.
+4. **Latest is latest.** No draft and commit. A save is live at once,
+   including on share links, like a shared file (Jason, 2026-10-23).
+5. **Libraries come from a vendored, pinned, offline set the brain serves**,
+   wired in with an import map; the agent just writes `import`. Canvases
+   also get the theme tokens, Tailwind classes, a shadcn look and every
+   Appearance font (section 6). Mini apps should read the same set.
+6. **A new `presenter` specialist** owns the workspace, with a `present`
+   tool group (create, update, read, render to PNG). Draftsman keeps
+   charts and diagrams inside pages. One routing line sends every other
+   "draw / show / animate / schematic / slides" ask to Presenter.
+7. **The browser sidecar that already exists** (browserless Chromium,
+   driven by `puppeteer-core`) renders the poster after each save and hands
+   the agent a PNG plus console errors, so it sees and fixes its own work.
 
 ## 2. Jason's question: what do we already ship?
 
@@ -37,16 +44,16 @@ several graphics libraries, but they are bundled into the owner UI as React
 components, or run server side. The mini-app sandbox allows only React,
 react-dom, lucide-react and our small UI kit.
 
-| Library                                                                                               | Where                                                       | What it does today                                                                                                                                   | Agent-usable in a no-network iframe?                                                                             |
-| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `@excalidraw/excalidraw` 0.18.1                                                                       | `server/web/package.json`, client `client/web/package.json` | The `draw` node editor (`client/web/components/draw/excalidraw-canvas.tsx`); server re-render via the sidecar ([docs/draw.md](../draw.md) section 4) | No. A full editor app, not a drawing API. Agents only read drawings (`draw-read` group: `draw_list`, `draw_get`) |
-| `katex` 0.19 / 0.18                                                                                   | `server/web`, `packages/share-ui`, client `client/web`      | Page math, formulas                                                                                                                                  | CSS only: app frames load `/share-runtime/katex/katex.min.css`, but the KaTeX JS is not importable               |
-| `recharts` 3.x                                                                                        | client `client/web`, `packages/web-ui` (`src/ui/chart.tsx`) | Dashboard charts                                                                                                                                     | No. Bundled into the owner UI only                                                                               |
-| `@xyflow/react` 12 + `dagre`                                                                          | client `client/web`                                         | Studio graph, recall graph, trace view                                                                                                               | No. Owner UI only                                                                                                |
-| `thinking-orbs`, `@firecms/neat` (WebGL), hand-written WebGL in `packages/web-ui/src/drift/engine.ts` | client, share-ui                                            | Loader orb, backdrops                                                                                                                                | No. Decorative UI                                                                                                |
-| `@resvg/resvg-wasm` 2.6.2                                                                             | `packages/content` (`draw-png-render.ts`)                   | Server SVG to PNG                                                                                                                                    | Server side only                                                                                                 |
-| `puppeteer-core` + `ghcr.io/browserless/chromium:v2.57.0`                                             | `server/web`, `docker-compose.yml` service `browser`        | PDF export, draw re-render, draw PNG (`server/web/lib/render-pdf.ts`, `render-draw-png.ts`, `render-sandbox.ts`)                                     | Server side; the base for `canvas_render`                                                                        |
-| `esbuild`                                                                                             | `server/web`, `packages/app-build`                          | Bundles mini apps                                                                                                                                    | Build tool                                                                                                       |
+| Library                                                                                               | Where                                                       | What it does today                                                                                                                              | Agent-usable in a no-network iframe?                                                     |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `@excalidraw/excalidraw` 0.18.1                                                                       | `server/web/package.json`, client `client/web/package.json` | The `draw` editor (`client/web/components/draw/excalidraw-canvas.tsx`); server re-render via the sidecar ([docs/draw.md](../draw.md) section 4) | No. A full editor app. Agents only read drawings (`draw-read`: `draw_list`, `draw_get`)  |
+| `katex` 0.19 / 0.18                                                                                   | `server/web`, `packages/share-ui`, client `client/web`      | Page maths, formulas                                                                                                                            | CSS only: app frames load `/share-runtime/katex/katex.min.css`; the JS is not importable |
+| `recharts` 3.x                                                                                        | client `client/web`, `packages/web-ui` (`src/ui/chart.tsx`) | Dashboard charts                                                                                                                                | No. Owner UI only                                                                        |
+| `@xyflow/react` 12 + `dagre`                                                                          | client `client/web`                                         | Studio graph, recall graph, trace view                                                                                                          | No. Owner UI only                                                                        |
+| `thinking-orbs`, `@firecms/neat` (WebGL), hand-written WebGL in `packages/web-ui/src/drift/engine.ts` | client, share-ui                                            | Loader orb, backdrops                                                                                                                           | No. Decorative UI                                                                        |
+| `@resvg/resvg-wasm` 2.6.2                                                                             | `packages/content` (`draw-png-render.ts`)                   | Server SVG to PNG                                                                                                                               | Server side only                                                                         |
+| `puppeteer-core` + `ghcr.io/browserless/chromium:v2.57.0`                                             | `server/web`, `docker-compose.yml` service `browser`        | PDF export, draw re-render, draw PNG (`server/web/lib/render-pdf.ts`, `render-draw-png.ts`, `render-sandbox.ts`)                                | Server side; the base for `present_render`                                               |
+| `esbuild`                                                                                             | `server/web`, `packages/app-build`                          | Bundles mini apps                                                                                                                               | Build tool                                                                               |
 
 **Not shipped anywhere** (checked every `package.json` in both repos):
 d3, three, gsap, motion / framer-motion, anime, lottie, konva, pixi, fabric,
@@ -61,127 +68,131 @@ use (`stubs/mermaid-to-excalidraw`).
   around line 1514): hand-written static SVG, uploaded with `file_create`,
   shown through `<img>`. The `diagram_design` skill
   (`server/web/lib/system-manifest/prompts.ts` line 891) forbids scripts and
-  animation, and covers 27 fixed types. A P&ID or process schematic is not
+  animation and covers 27 fixed types. A P&ID or process schematic is not
   one of them. Its routing line says "every diagram or chart destined for a
-  page", so a chat ask for a picture has no clear owner. That is the gap
-  the owner assistant fell into when asked for a P&ID-style drawing.
+  page", so a chat ask for a picture has no clear owner. That is the gap the
+  owner assistant fell into when asked for a P&ID-style drawing.
 - **Mini apps** (Appsmith): real React, but the bundler allowlist is
   `react`, `react-dom`, `lucide-react` plus the kit
   (`packages/app-build/src/index.ts` line 66 and line 155). No chart or
-  animation library. An app also carries a database and a tool bridge, which
-  is more machinery than a drawing needs.
+  animation library. An app also carries a database and a tool bridge, more
+  machinery than a drawing needs.
 - **`generate_image`**: raster from an image model. Not editable, not exact.
 
-## 3. Why a canvas, and what it deliberately is NOT
+## 3. What a canvas is, and what it deliberately is NOT
 
-A canvas is "a page of the web the agent fully controls, with nothing to
-reach". Compared with what exists:
-
-|                      | Draftsman SVG                  | `draw` (Excalidraw) | Mini app                                | **Canvas**                               |
-| -------------------- | ------------------------------ | ------------------- | --------------------------------------- | ---------------------------------------- |
-| Author               | agent                          | human               | agent (Appsmith)                        | agent (Presenter), human can edit source |
-| Format               | static SVG file                | JSON scene          | TSX tree in `apps.source`, built bundle | one HTML text file                       |
-| Scripts / animation  | no                             | no                  | yes                                     | **yes**                                  |
-| Libraries            | none                           | n/a                 | React + kit only                        | vendored set (section 6)                 |
-| Database             | no                             | no                  | per-app SQLite                          | **no**                                   |
-| Tool calls / network | no                             | no                  | declared tools via bridge               | **no**                                   |
-| Build step           | no                             | no                  | esbuild                                 | **no**                                   |
-| Lives in             | Files (+ spec block in a page) | its own workspace   | its own workspace                       | **Files**                                |
+|                      | Draftsman SVG   | Draw (Excalidraw) | Mini app                  | **Present canvas**                              |
+| -------------------- | --------------- | ----------------- | ------------------------- | ----------------------------------------------- |
+| Author               | agent           | human             | agent (Appsmith)          | agent (Presenter); a human edits text or source |
+| Format               | static SVG file | JSON scene        | TSX tree, built bundle    | one HTML document                               |
+| Scripts / animation  | no              | no                | yes                       | **yes**                                         |
+| Libraries            | none            | n/a               | React + kit only          | vendored set (section 6)                        |
+| Database             | no              | no                | per-app SQLite            | **no**                                          |
+| Tool calls / network | no              | no                | declared tools via bridge | **no**                                          |
+| Build step           | no              | no                | esbuild                   | **none the agent sees**                         |
+| Draft / commit       | via its page    | yes               | draft, build, publish     | **no: latest is live**                          |
+| Lives in             | Files + a page  | Draw workspace    | Apps workspace            | **Present workspace**                           |
 
 A canvas never gets a database, a tool bridge, secrets, network, or a build
-step. If it needs live data, it is a mini app, and Presenter should say so.
-Data a canvas shows is baked in when the agent writes it (read from the
-brain with the agent's normal read tools first).
+step of its own. If it needs live data or saved input, it is a mini app,
+and Presenter says so. Data a canvas shows is baked in when the agent
+writes it (read first with the agent's normal read tools).
 
-## 4. Fit with the files model
+## 4. The Present workspace
 
-### 4.1 What exists (evidence)
+### 4.1 Model: copy Draw
 
-- A file is a `nodes` row, `type='file'`, under the `files.*` ltree; bytes on
-  disk under `MANTLE_FILES_ROOT`, mirroring the folder tree
-  ([docs/files.md](../files.md)). Folders are `branch` rows, max 3 levels
-  (migration `packages/db/migrations/0201_item_tree.sql`).
-- Writes go through `upsertFile` (`packages/files/src/ops/files.ts` line 139).
-  The filename is sanitised to `[a-z0-9_-]` plus one extension, so
-  `pid-unit-3.canvas` is a legal name. `overwrite=true` replaces the bytes
-  and **keeps the node id**, which is why Draftsman embeds never break.
-- MIME comes from the extension (`mimeForExt`,
-  `packages/files/src/slug.ts` line 282).
-- Small text files are also cached in `nodes.data.content` (up to 1 MB) when
-  the extension is in `TEXT_EXTS` (`slug.ts` line 95).
-- **No versioning.** Edits overwrite ([docs/files.md](../files.md) section 11).
-- **No folder-as-one-file concept exists.** The nearest thing is the
-  `.mantleapp` export, a zip of a manifest plus a SQLite file
-  ([docs/app-authoring-guide.md](../app-authoring-guide.md)).
-- Mini-app source is NOT in Files: it is a virtual tree in Postgres
-  (`apps.source` / `apps.draft_*`, `packages/content/src/apps.ts`), max 50
-  files of 256 KB.
+Draw is a `nodes` row of `type='draw'` with a 1:1 `draws` sidecar
+(`packages/db/src/schema/draws.ts`; [docs/draw.md](../draw.md) section 2):
+the scene, derived text for search, an SVG snapshot that is a cache, an
+etag. Present mirrors it:
 
-### 4.2 Option A (recommended): one self-contained HTML file
+```
+nodes.type = 'present'            (name to confirm, open question 6)
+presents
+  node_id      uuid PK, FK nodes ON DELETE CASCADE
+  source       text   the HTML document (source of truth), max 1 MB
+  source_text  text   derived: title, description, visible text (search, extract)
+  meta         jsonb  { size: '1600x900' | 'fill', theme, libs: [...], slides: n }
+  css          text   Tailwind compiled from the source on save (section 6.3)
+  poster_png   bytea or a file ref: the snapshot (a CACHE, never the source)
+  poster_rev   int    the rev the poster was made from (staleness marker)
+  rev          int    optimistic-concurrency etag (as draws.draft_rev)
+```
 
-- Extension `canvas`, MIME `text/vnd.mantle.canvas+html` (our own label, so
-  no code path treats it as plain `text/html`). Add `canvas` to `TEXT_EXTS`,
-  so the source is cached and readable by `file_read`.
-- Cap at 1 MB (the text-cache limit). Big images go in as separate image
-  files the canvas cannot fetch, so in v1 an image must be inlined as a
-  `data:` URL or drawn in SVG. (A later option: let the frame route inline
-  referenced brain images by id at serve time.)
-- A tiny required head, so tools and the UI can read it without running it:
+- **Folders:** the shared row-only kind folders (`tree_folders`,
+  `tree_folder_create`, `tree_item_move`, as Draw and Apps use).
+- **Workspaces, grants, delete and cleanup, backup:** as for `draw` rows.
+- **No draft, no commit.** `rev` guards against two writers at once; it is
+  not a review step.
+- **Revisions:** keep the last 10 `source` versions in a small side table,
+  so a bad agent rewrite can be undone (open question 4). Shares still
+  always show the latest.
 
-  ```html
-  <!doctype html>
-  <html>
-    <head>
-      <title>Unit 3 feed section, P&amp;ID</title>
-      <meta
-        name="description"
-        content="Process flow for the unit 3 feed section, pumps P-301A/B to exchanger E-302."
-      />
-      <meta name="canvas:size" content="1600x900" />
-      <!-- design size, or "fill" for a responsive layout (section 8.1) -->
-    </head>
-    <body>
-      ...
-      <script type="module">
-        import * as d3 from 'd3'; // a bare name from the vendored set (section 6.4)
-        // ...
-      </script>
-    </body>
-  </html>
-  ```
+### 4.2 The canvas document
 
-- Indexing: `.html` already goes through Tika today (`slug.ts` lines 118 to
-  125). For a canvas, a small in-process extractor is better: title,
-  description, and the visible text with `<script>` and `<style>` removed.
-  Then the normal chunk and embed path. Search finds a canvas by its words.
-- Why one file wins: every existing file feature works unchanged; an agent
-  edits it with one tool; a human can open the source in the existing text
-  view; diffing and backup are trivial; no new storage rules.
+A tiny required head, so tools and the UI can read it without running it:
 
-### 4.3 Option B: a real bundle (`name.canvas/` with `index.html`, `style.css`, `app.js`, assets)
+```html
+<!doctype html>
+<html>
+  <head>
+    <title>Unit 3 feed section, P&amp;ID</title>
+    <meta
+      name="description"
+      content="Process flow for the unit 3 feed section, pumps P-301A/B to exchanger E-302."
+    />
+    <meta name="canvas:size" content="1600x900" />
+    <!-- design size, or "fill" for a responsive layout (section 7.1) -->
+  </head>
+  <body>
+    ...
+    <script type="module">
+      import * as d3 from 'd3'; // a bare name from the vendored set (section 6.2)
+      // ...
+    </script>
+  </body>
+</html>
+```
 
-- Needs a new idea in the files model: a folder that lists, copies, moves,
-  shares, deletes, exports and indexes as one item. Every one of those paths
-  (folder tree, ltree, share served-list, backup, the watcher that syncs
-  disk to DB) would need a "do not descend" rule. That is weeks of edge
-  cases for little gain while canvases are agent-written.
-- If multi-file is needed later, copy the **mini-app pattern** instead of a
-  disk folder: a `canvas` node (or a sidecar table) holding a virtual tree
-  `{ entry, files }` in Postgres, like `apps.source`. Still shows in Files as
-  one item.
+Optional heads: `canvas:theme="fixed"` (ignore the owner's theme),
+`canvas:poster-at="2.5s"` (when to take the poster of an animation).
+Images go in as `data:` URLs or SVG in v1, because the frame cannot fetch.
+(Later: the frame route may inline brain images by id at serve time.)
 
-### 4.4 Option C: a zip with a manifest (like `.mantleapp`)
+### 4.3 Indexing, without runaway cost
 
-- One file on disk, many files inside. But agents cannot patch a zip with
-  text tools; every edit rewrites the whole archive. Good as an **export**
-  format later (`canvas_export`), not as the working format.
+`source_text` is our own pure walker (title, description, visible text,
+`<script>` and `<style>` removed), like Draw's `scene-to-text`. Search and
+the extractor read it.
 
-### 4.5 Versioning
+Careful: with no commit step, an agent may save ten times in a minute.
+Draw fires one `node_ingested` per commit; Present must not fire one per
+save, or one canvas causes ten LLM passes (the cost-safety rule: no trigger
+that can cause runaway LLM runs). So: fire `node_ingested` only when
+`source_text` actually changed, and at most once per item per quiet period
+(for example after 5 minutes without a save). A colour change then costs
+nothing.
 
-Files overwrite with no history. A canvas is mostly agent-written, so an
-agent rewrite can wipe a human's hand edit. Proposal: keep the last 10
-revisions in a small sidecar table (or `data.revisions`), with
-`canvas_revisions` / `canvas_restore` tools. Open question 4.
+### 4.4 The `.canvas` file format: export and import only
+
+`.canvas` stays the portable form: the same HTML in one text file.
+
+- **Export:** "Download" on a Present item writes `<name>.canvas`.
+- **Import:** uploading a `.canvas` in /files offers "Open in Present",
+  which makes a Present item from it.
+- A `.canvas` sitting in /files does **not** run there; it shows as source
+  text. One live surface, not two.
+- The raw file route keeps treating it as a download
+  (`safeDownloadHeaders` forces HTML to `attachment`, section 5.1).
+
+Why not a folder bundle: the files model has no folder-as-one-file idea
+(nearest is the `.mantleapp` zip export), and adding one touches the tree,
+shares, backup and the disk watcher. If multi-file is ever needed, store a
+virtual tree `{ entry, files }` in the sidecar, as mini apps do in
+`apps.source` (`packages/content/src/apps.ts`). A zip is fine as an export
+format, not as the working format: agents cannot patch a zip with text
+tools.
 
 ## 5. Security
 
@@ -190,430 +201,374 @@ revisions in a small sidecar table (or `data.revisions`), with
 - **Raw file bytes:** `safeDownloadHeaders`
   (`packages/client-types/src/lib/safe-download.ts`) always sends `nosniff`,
   serves only an allowlist inline, and forces `text/html` to
-  `application/octet-stream` + `attachment`. SVG is inline but with
-  `sandbox; default-src 'none'`. **Uploaded HTML is never rendered today.**
-  Keep that: the raw download route must keep treating a `.canvas` as a
-  download.
+  `application/octet-stream` + `attachment`. **Uploaded HTML is never
+  rendered today.**
 - **Mini apps:** iframe `sandbox="allow-scripts"`, no `allow-same-origin`
   (share-ui `app-sandbox.tsx` line 496), `src` to a ticketed
-  `/api/apps/<id>/frame` route on the brain origin, header CSP built by
+  `/api/apps/<id>/frame` route on the brain origin, header CSP from
   `buildAppFrameCsp` (share-ui `app-frame-html.ts`):
   `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' <origin>/app-runtime/ <origin>/share-runtime/; ... connect-src 'none'; base-uri 'none'; form-action 'none'`.
   The only channel out is the postMessage bridge.
 - **Email HTML:** sanitised on the brain (`packages/email`, `sanitize-html`),
-  shown in a `srcDoc` iframe with `sandbox="allow-popups ..."` and no
-  scripts (client `client/web/components/reading-pane.tsx`).
+  shown in a `srcDoc` iframe with no scripts (client
+  `client/web/components/reading-pane.tsx`).
 - **The sidecar:** loads only our own render routes, with a render cookie,
   and aborts every other request (`server/web/lib/render-sandbox.ts`;
   [docs/security.md](../security.md) section 2).
 
-### 5.2 How to render a canvas safely
+### 5.2 How to run a canvas safely
 
 Reuse the app frame plumbing, minus the bridge:
 
 - iframe `sandbox="allow-scripts"` only. Never `allow-same-origin`,
   `allow-forms`, `allow-popups`, `allow-top-navigation`, `allow-modals`.
-- `src` to a ticketed frame route, e.g. `/api/files/<id>/canvas-frame?t=...`
-  and `/s/<token>/canvas-frame?t=...` for shares. Never `srcdoc` from the
-  parent (keeps the owner UI's own CSP out of it and gives one place to set
-  headers).
+- `src` to a ticketed frame route: `/api/presents/<id>/frame?t=...`, and
+  `/s/<token>/frame?t=...` for shares. Never `srcdoc` from the parent.
 - Header CSP:
   `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' <origin>/canvas-runtime/; style-src 'unsafe-inline' <origin>/canvas-runtime/ <origin>/share-runtime/; img-src data: blob:; font-src data: <origin>/canvas-runtime/ <origin>/share-runtime/ <origin>/fonts/ <origin>/Inter/; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors <owner UI origins>`.
   Unlike apps, `img-src` does **not** include the brain origin, so a canvas
-  cannot even fire GETs at our own API.
-- The parent listens to the iframe for two messages only (`ready`, `error`,
-  with `e.source` checked like apps do), and sends one (`theme`, with the
-  CSS colour tokens). No other API.
-- Pause offscreen canvases (`IntersectionObserver` unmounts or freezes the
-  frame), and cap visible live canvases per page. A runaway loop then costs
-  one frame, not the whole UI.
+  cannot even fire GETs at our own API. `'unsafe-eval'` is for Alpine.js
+  (section 6.1).
+- Messages: the parent accepts `ready` and `error` from its own iframe
+  (`e.source` checked, as apps do) and sends `theme`. The text-edit mode
+  (section 9.3) adds one message, owner view only. Nothing else.
+- Posters everywhere else mean no live frames in pages or chat, so a busy
+  page never runs ten canvases at once.
 
 ### 5.3 Risks that remain
 
-- **CPU and memory abuse.** A hostile or buggy canvas can spin a core. The
-  sandbox does not stop that. Mitigation: offscreen pause, "click to play"
-  on shares, and a render timeout in the sidecar.
+- **CPU and memory abuse.** A buggy or hostile canvas can spin a core. The
+  sandbox does not stop that. Only the item view and a share run it, one at
+  a time; the sidecar render has a timeout.
 - **Fake UI / phishing inside the frame.** A canvas can draw a fake login
   box. It cannot send what is typed anywhere (`connect-src`, `form-action`,
-  no popups, no top navigation), but a person could still be tricked into
-  reading something false. Mitigation: a thin host frame label ("Canvas,
-  made by Presenter") on shares.
+  no popups, no top navigation). On shares, a host pill labels the page as
+  a shared canvas.
 - **Prompt injection into the author.** A document the agent read can steer
-  what it writes into the canvas. The sandbox makes the result inert (no
-  network, no bridge, no cookies). The worst case is misleading content,
-  same as a page today.
+  what it writes. The sandbox keeps the result inert (no network, no bridge,
+  no cookies). The worst case is misleading content, as on a page today.
 - **Private data baked in.** A canvas carries whatever data the agent put in
-  it. Sharing it is the same explicit act as sharing a file; workspace rules
-  for members apply as for any file.
-- **Public shares (decided 2026-10-23: public links show the live canvas,
-  full screen).** This puts agent-written script in front of anonymous
-  visitors on the brain's domain, so the share path must hold these rules:
-  - The same frame CSP and `sandbox` as everywhere else; the frame is
-    served from `/s/<token>/canvas-frame` with a short-lived ticket, exactly
-    like a shared app frame.
-  - No server work from a public view: the public path never starts a
-    Chromium render (the draw rule in [docs/draw.md](../draw.md) section
-    4); the poster used for link previews is filled by owner paths only.
-  - A rate limit on the frame route (`RATE_LIMITS` + `ROUTE_GATES`).
-  - A small host pill on the page (as shared apps have) that says it is a
-    shared canvas, so a fake form inside cannot pass as the brain's own UI.
-  - Closing the link, or deleting the file, stops it at once.
+  it. Sharing is the same explicit act as for any item; workspace rules
+  apply.
+- **Public shares (decided 2026-10-23: the live canvas, full screen, always
+  the latest save).** Agent-written script runs for anonymous visitors on
+  the brain's domain, so the share path holds these rules:
+  - the same frame CSP and `sandbox`, with a short-lived ticket, exactly
+    like a shared app frame;
+  - no server work from a public view: the public path never starts a
+    Chromium render (the Draw rule, [docs/draw.md](../draw.md) section 4);
+    link previews use the poster cache only;
+  - a rate limit on the frame route (`RATE_LIMITS` + `ROUTE_GATES`);
+  - the host pill;
+  - closing the link, or deleting the item, stops it at once.
 
-  A shared canvas always shows the LATEST save, so an agent edit goes live
-  to every link at once (decided 2026-10-23: it is a file, and a shared file
-  behaves this way; no pinned versions).
-
-## 6. Libraries policy
-
-|                               | Free choice from CDNs                                                | **Vendored set served by the brain**      |
-| ----------------------------- | -------------------------------------------------------------------- | ----------------------------------------- |
-| Works on egress-blocked boxes | No. Some client boxes block egress                                   | Yes                                       |
-| CSP                           | must allow third-party script hosts: supply-chain risk on every view | own origin only                           |
-| Viewer privacy                | every view pings a third party                                       | none                                      |
-| Reproducible                  | versions drift, URLs die                                             | pinned, renders the same in a year        |
-| Agent quality                 | agents guess URLs and versions                                       | the skill lists exact names and APIs      |
-| Cost                          | none                                                                 | we own the updates; a few MB in the image |
-
-**Recommend the vendored set.** Serve pinned ESM builds from
-`/canvas-runtime/<lib>@<version>/`, add an import map to the frame, and let a
-canvas `import { gsap } from 'gsap'` by bare name. Same approach as the app
-import map (`packages/app-build/src/build-runtime.ts`) and the self-hosted
-Excalidraw fonts.
+## 6. Libraries, CSS and fonts
 
 ### 6.1 The set: one library per job (revised 2026-10-23 with Jason)
 
-Sizes are rough, minified. A library loads only when a canvas imports it,
-so a big one costs nothing until it is used.
+Vendored, pinned, offline, served by the brain from `/canvas-runtime/`.
+No CDNs: some boxes block egress, a CDN would widen the CSP to third-party
+script hosts, every view would ping a third party, and versions would
+drift. Sizes are rough, minified; a library loads only when a canvas
+imports it.
 
-| Category                      | Library        | What it is for                                                                                                                                                | Size       | Licence                                                    |
-| ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------- |
-| Charts and dashboards         | Apache ECharts | Large chart catalogue, interactive, gauges, Sankey, heatmaps; Canvas or SVG output                                                                            | ~1 MB      | Apache-2.0                                                 |
-| Engineering and science plots | Plotly.js      | Contour, heatmap, 3D surface, statistical plots, WebGL scatter for very large data                                                                            | ~3 to 4 MB | MIT                                                        |
-| Custom drawing, schematics    | D3             | Scales, layouts, force graphs, maps, full control of the SVG. For visuals the agent must invent                                                               | ~280 KB    | ISC                                                        |
-| Interactive 2D                | Konva          | Shapes people can drag, click and connect: interactive diagrams, simple editors                                                                               | ~150 KB    | MIT                                                        |
-| 3D                            | Three.js       | WebGL 3D scenes: plant layouts, equipment models                                                                                                              | ~650 KB    | MIT                                                        |
-| Animation                     | Motion         | Transitions and movement; has a React API too, so the same library serves mini apps                                                                           | ~40 KB     | MIT                                                        |
-| Slides                        | reveal.js      | HTML slides in one file; the parked Slides plan already picked Reveal.js 6 as its player                                                                      | ~150 KB    | MIT                                                        |
-| Maths                         | KaTeX          | Formulas (already shipped in `share-ui`)                                                                                                                      | ~280 KB    | MIT                                                        |
-| Custom vector drawing         | plain SVG + JS | No library at all. The default choice; D3 adds data binding when needed                                                                                       | 0          | n/a                                                        |
-| Interactive state             | Alpine.js      | Tabs, toggles, sliders, step-through explainers, chart filters, written as HTML attributes (`x-data`, `x-on`, `x-show`). Optional; plain JS stays the default | ~45 KB     | MIT                                                        |
-| Timeline animation (maybe)    | GSAP           | The strongest timeline tool. Add only if its licence fits                                                                                                     | ~70 KB     | Free "no charge" licence, NOT OSI open source: check first |
+| Category                      | Library        | What it is for                                                                               | Size       | Licence                                                    |
+| ----------------------------- | -------------- | -------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------- |
+| Charts and dashboards         | Apache ECharts | Large chart catalogue, interactive, gauges, Sankey, heatmaps; Canvas or SVG output           | ~1 MB      | Apache-2.0                                                 |
+| Engineering and science plots | Plotly.js      | Contour, heatmap, 3D surface, statistics, WebGL scatter for very large data                  | ~3 to 4 MB | MIT                                                        |
+| Custom drawing, schematics    | D3             | Scales, layouts, force graphs, maps, full control of the SVG                                 | ~280 KB    | ISC                                                        |
+| Interactive 2D                | Konva          | Shapes people can drag, click and connect                                                    | ~150 KB    | MIT                                                        |
+| 3D                            | Three.js       | WebGL scenes: plant layouts, equipment models                                                | ~650 KB    | MIT                                                        |
+| Animation                     | Motion         | Transitions and movement; has a React API too, for mini apps                                 | ~40 KB     | MIT                                                        |
+| Slides                        | reveal.js      | Decks: one `<section>` per slide, keyboard and touch navigation, print layout                | ~150 KB    | MIT                                                        |
+| Maths                         | KaTeX          | Formulas (already shipped in `share-ui`)                                                     | ~280 KB    | MIT                                                        |
+| Interactive state             | Alpine.js      | Tabs, toggles, sliders, step-through explainers, chart filters, as HTML attributes. Optional | ~45 KB     | MIT                                                        |
+| Custom vector drawing         | plain SVG + JS | No library. The default choice                                                               | 0          | n/a                                                        |
+| Timeline animation (maybe)    | GSAP           | The strongest timeline tool. Add only if its licence fits                                    | ~70 KB     | Free "no charge" licence, NOT OSI open source: check first |
 
-Alpine's normal build evaluates its attribute expressions with
-`new Function`, so the canvas CSP adds `'unsafe-eval'` to `script-src`. In
-this frame that adds almost no risk: the frame already runs agent-written
-inline script, and the boundary that matters (no network, no bridge, opaque
-origin) is unchanged. The stricter `@alpinejs/csp` build avoids eval but
-supports fewer expressions; use it if the audit prefers no `'unsafe-eval'`.
+Alpine's normal build evaluates attribute expressions with `new Function`,
+so the CSP carries `'unsafe-eval'`. In this frame that adds almost nothing:
+the frame already runs agent-written script, and the boundary that matters
+(no network, no bridge, opaque origin) is unchanged. The stricter
+`@alpinejs/csp` build avoids eval but supports fewer expressions; use it if
+the audit prefers.
 
 Considered and left out:
 
-| Library             | Why not                                                                                                                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chart.js            | ECharts covers it                                                                                                                                                                        |
-| anime.js            | Motion covers it                                                                                                                                                                         |
-| lottie-web          | Plays designer-made After Effects files; agents cannot author them well                                                                                                                  |
-| PixiJS              | Games and particles; Konva and Three cover our needs                                                                                                                                     |
-| Mermaid             | Removed on purpose in 2026-08 for weak output ([docs/diagrams.md](../diagrams.md)); bringing it back competes with Draftsman                                                             |
-| Slidev              | Needs a Node/Vite build; a canvas has no build step                                                                                                                                      |
-| Leaflet (for later) | Map tiles come from the internet and the sandbox blocks that. Without a tile source the brain serves, it draws GeoJSON shapes with no base map. Revisit with a tile proxy if maps matter |
+| Library         | Why not                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Chart.js        | ECharts covers it                                                                                                                        |
+| anime.js        | Motion covers it                                                                                                                         |
+| lottie-web      | Plays designer-made After Effects files; agents cannot author them well                                                                  |
+| PixiJS          | Games and particles; Konva and Three cover our needs                                                                                     |
+| Mermaid         | Removed on purpose in 2026-08 for weak output ([docs/diagrams.md](../diagrams.md)); competes with Draftsman                              |
+| Slidev          | Needs a Node/Vite build                                                                                                                  |
+| Leaflet (later) | Map tiles come from the internet, which the sandbox blocks. Without a tile source the brain serves, only GeoJSON shapes with no base map |
 
-Rules: inline code is always allowed; nothing outside the set loads (the CSP
-enforces it); adding a library is a normal release change with a pinned
-version and a line in `THIRD-PARTY-NOTICES.md`.
+Adding a library is a normal release change: pinned version, a line in
+`THIRD-PARTY-NOTICES.md`.
 
-**Mini apps have the same gap.** The app bundler allows only `react`,
-`react-dom` and `lucide-react` (`packages/app-build/src/index.ts` line 66).
-Build ONE vendored runtime and one import map that both canvases and mini
-apps read, so a library is added once and both get it. That is a separate
-change with its own branch; it should land before or with canvas P1.
+**Mini apps have the same gap** (allowlist `react`, `react-dom`,
+`lucide-react`, `packages/app-build/src/index.ts` line 66). Build ONE
+vendored runtime and one import map that canvases and mini apps both read.
+That is a separate change on its own branch, best landed before or with
+Present P1.
 
-### 6.4 How loading works: the agent configures nothing
+### 6.2 How loading works: the agent configures nothing
 
-- **Every canvas frame carries the same import map** listing the whole set
-  (`"d3": "/canvas-runtime/d3@7.x.y/d3.min.js"`, and so on). An import map
-  is only an address book: the browser fetches a library **only when the
-  canvas imports it**. A canvas that uses D3 downloads D3 and nothing else.
-  After the first view the file sits in the browser cache.
-- **The agent just writes the import** (`import * as echarts from
-'echarts'`, `import Alpine from 'alpinejs'`). No list in the head, no
-  config, no version numbers. Libraries that ship only a classic browser
-  build (Plotly, for one) load with
-  `<script src="/canvas-runtime/plotly/plotly.min.js">`, and the skill gives
-  that exact line.
-- **The save tool checks it, like `app_build` does.** `canvas_create` and
-  `canvas_update` scan the source for imports and runtime script tags. An
-  unknown name or a CDN URL fails the call with the allowed list, so the
-  agent fixes it at once instead of shipping a blank canvas. The names found
-  are stored with the file (shown in the UI, used for preload hints and for
-  the render).
-- **Always present, because they are small or lazy:** the theme stylesheet,
-  the compiled Tailwind for that canvas, the kit CSS, and the `@font-face`
-  rules (a font file still loads only when text uses it).
-- **Versions are the brain's, not the canvas's.** The import map points at
-  the one pinned version a release ships. Upgrading a library is a release
-  change; the release notes say which canvases import it, so a breaking
-  upgrade can be checked with `canvas_render` before it ships.
+- **Every canvas frame carries the same import map** listing the whole set.
+  It is only an address book: the browser fetches a library **only when the
+  canvas imports it**, then caches it.
+- **The agent just writes the import** (`import * as echarts from 'echarts'`,
+  `import Alpine from 'alpinejs'`). No list, no config, no versions.
+  Libraries with only a classic browser build (Plotly) load with
+  `<script src="/canvas-runtime/plotly/plotly.min.js">`; the skill gives
+  the exact line.
+- **The save tool checks it, like `app_build` does.** An unknown name or a
+  CDN URL fails the call with the allowed list, so the agent fixes it before
+  anyone sees a blank canvas. The names found go into `meta.libs`.
+- **Always present, because small or lazy:** the theme stylesheet, the
+  compiled Tailwind, the kit CSS, and the `@font-face` rules.
+- **Versions are the brain's.** The import map points at the version a
+  release ships; release notes list which canvases import an upgraded
+  library, so `present_render` can check them first.
 
-### 6.2 CSS and the shadcn look
+### 6.3 CSS and the shadcn look
 
-What mini apps get today, which a canvas can reuse:
+What mini apps get today, reused:
 
-- `/share-runtime/styles.css`: base styles and the colour tokens for every
+- `/share-runtime/styles.css`: base styles and the colour tokens of every
   theme, generated from `packages/share-ui/styles/themes.css`
-  (`pnpm themes:build`). The host sends the active theme into the frame
-  by `postMessage`, so the tokens follow the owner's theme.
-- A per-app Tailwind compile on the server (`packages/app-build/src/css.ts`,
-  the `tailwindcss` `compile` API). It scans the app's own source and emits
-  only the utilities it uses, mapped onto the shadcn tokens
-  (`bg-card`, `text-muted-foreground`, `border-border`, `chart-1..5`).
-- Six shadcn components as React code (`packages/app-build/src/kit.ts`:
-  button, card, input, label, badge, separator).
+  (`pnpm themes:build`). The host posts the active theme into the frame.
+- A server-side Tailwind compile (`packages/app-build/src/css.ts`, the
+  `tailwindcss` `compile` API) that emits only the utilities used, mapped
+  onto the shadcn tokens (`bg-card`, `text-muted-foreground`,
+  `border-border`, `chart-1..5`).
+- Six shadcn components as React (`packages/app-build/src/kit.ts`).
 
-For a canvas (plain HTML, no React, no build step for the agent):
+For a canvas (plain HTML, no React):
 
-1. **Tokens:** the frame links `/share-runtime/styles.css` and receives the
-   theme message, exactly like an app. `var(--primary)`, `var(--card)` and
-   the rest work in hand-written CSS.
-2. **Tailwind classes, compiled on save:** `canvas_create` and
-   `canvas_update` run the same `css.ts` compile over the canvas HTML and
-   store the result next to it. The agent just writes
-   `class="rounded-lg bg-card p-6 text-foreground"`. No CDN, and no
-   in-browser Tailwind. This is a build step the agent never sees.
-3. **shadcn components without React:** emit a small `mantle-kit.css` with
-   plain classes (`.btn`, `.btn-outline`, `.card`, `.badge`, `.input`) whose
-   rules come from the SAME class strings in `kit.ts`, so the look cannot
-   drift from the apps. (Basecoat, an MIT library that does shadcn styling
-   for plain HTML, is the alternative to check; our own file is smaller and
-   tied to our tokens.)
-4. **Theme on or off:** by default a canvas follows the theme.
-   `<meta name="canvas:theme" content="fixed">` pins it to the light palette
-   for posters and print, the way Draftsman diagrams are fixed today.
+1. **Tokens:** the frame links `/share-runtime/styles.css` and takes the
+   theme message. `var(--primary)`, `var(--card)` and the rest just work.
+2. **Tailwind, compiled on save:** the save tool runs the same `css.ts`
+   compile over the source and stores it in `presents.css`. The agent writes
+   `class="rounded-lg bg-card p-6 text-foreground"`. No CDN, no in-browser
+   Tailwind.
+3. **shadcn look without React:** a small `mantle-kit.css` with plain
+   classes (`.btn`, `.btn-outline`, `.card`, `.badge`, `.input`), generated
+   from the SAME class strings in `kit.ts`, so it cannot drift from the
+   apps. (Basecoat, MIT, does this for plain HTML; our own file is smaller
+   and tied to our tokens.)
+4. **Theme on or off:** a canvas follows the theme by default;
+   `canvas:theme="fixed"` pins the light palette.
 
-Mini apps already have points 1 and 2. They would gain from more shadcn
-components in the kit (tabs, table, select, dialog, tooltip); that belongs
-in the mini-app change above.
+Mini apps already have 1 and 2, and would gain more kit components (tabs,
+table, select, dialog, tooltip) in the mini-app change.
 
-### 6.3 Fonts: every Appearance font is available
-
-The facts:
+### 6.4 Fonts: every Appearance font
 
 - One registry, `packages/client-types/src/display-fonts.ts`, drives
-  Settings → Appearance: 16 faces (Inter plus 15 library faces across
-  sans, serif, mono and display shelves), all variable fonts.
-- The files ship on the brain too: `server/web/public/fonts/library/`
-  (22 woff2 files plus `licenses/`) and `server/web/public/Inter/`, served
-  by the static layer (`server/web/server/static.ts` line 52, `/fonts/*` and
-  `/Inter/*`).
-- `displayFontFaceCss()` in the same file builds the `@font-face` block the
-  share and print shells already inject.
-- The app frame CSP already allows `<origin>/fonts/` for fonts.
+  Settings → Appearance: 16 faces (Inter plus 15 library faces across sans,
+  serif, mono and display), all variable fonts.
+- The files are on the brain: `server/web/public/fonts/library/` (22 woff2
+  plus `licenses/`) and `server/web/public/Inter/`, served at `/fonts/*` and
+  `/Inter/*` (`server/web/server/static.ts` line 52).
+- `displayFontFaceCss()` builds the `@font-face` block the share and print
+  shells already inject.
 
-So the frame route injects `displayFontFaceCss()` plus Inter's face, and
-sets `--font-sans`, `--font-serif`, `--font-mono` and the prose font to the
-owner's current choices. A canvas can then use `var(--font-sans)` (follows
-the owner) or name any face, such as `"Fraunces"` or `"Big Shoulders"`.
-Files load lazily, only when text paints in that face. The
-`canvas_authoring` skill lists the 16 names, generated from the registry,
-not typed by hand. The PNG render uses the same fonts, because the sidecar
-loads the brain's own origin. That is better than Draftsman SVG today,
-which shows through `<img>` and can only use system fonts.
+The frame route injects that block plus Inter, and sets `--font-sans`,
+`--font-serif`, `--font-mono` and the prose font to the owner's choices. A
+canvas uses `var(--font-sans)` or names any face (`"Fraunces"`). Files load
+only when text uses them. The `canvas_authoring` skill lists the 16 names,
+generated from the registry. Posters use the same fonts, because the
+sidecar loads the brain's own origin (Draftsman SVG cannot: it shows
+through `<img>`, system fonts only).
 
-Add `<origin>/fonts/ <origin>/Inter/ <origin>/share-runtime/` to the
-canvas CSP `font-src` and `<origin>/share-runtime/` to `style-src`
-(section 5.2).
+## 7. Where a canvas shows
 
-## 7. The Presenter agent
+### 7.1 The Present view (live)
 
-### 7.1 Where it lives
+`/present` lists items with their posters. `/present/<id>` runs the canvas
+live, scripts and animation going. Header actions on the standard item
+header (`client/web/components/layout/item-header.tsx`):
+
+- **Maximise**: the existing `FocusToggle`
+  (`client/web/components/layout/focus-toggle.tsx`), same slot and icon as
+  every kind; hides the shell and folders, Esc leaves.
+- **Full screen**: the browser Fullscreen API on the frame only, for
+  presenting. Esc leaves. For a deck, arrow keys and swipes move slides.
+- **Replay**: reloads the frame, so an animation starts again.
+- **Edit text**: section 9.3.
+- **Source**: the HTML in a text view (edit for those who may edit).
+- **Share**, **Download `.canvas`**, **Assist** (Presenter, as Appsmith backs
+  the Apps Assist panel).
+
+Fit: `canvas:size="1600x900"` scales the design to the space with
+letterboxing, so it looks the same at every size; `canvas:size="fill"`
+gives the canvas the whole viewport, as a mini app gets. The phone app uses
+the same frame route.
+
+### 7.2 Share links (live, full screen)
+
+Copy the shared-app layout that exists: `/s/<token>` skips the share shell
+and renders the frame at `h-dvh` with a small floating pill
+(`server/web/server/pages/share.tsx`, the `app` case, around lines 219 and
+269). The pill carries the full-screen button and the "shared canvas"
+label. Public, contact and login shares use the same view. Rules: section
+5.3.
+
+### 7.3 Everywhere else: the poster, which opens the real thing
+
+No live embeds (Jason, 2026-10-23). The poster PNG stands in, and a click
+opens `/present/<id>` (or, on a shared page, the canvas's own share if it
+has one).
+
+- **Pages:** `![title](present:<id>)`, mirroring `draw:<id>` (client
+  `page-editor/image.ts`): an `<img>` of the poster, wrapped in a link to
+  the item. Human-writable markdown, per the Pages dialect principle.
+  Editing the canvas updates the poster, so every page shows the latest.
+  A deck may embed one slide: `![title](present:<id>#3)` (later).
+- **Chat:** `show_present` returns `{ kind: 'present', id }`;
+  `ArtifactView` (client `assistant/assistant-turn-parts.tsx` line 82) shows
+  the poster card with an Open button. Telegram and the phone get the PNG
+  and a link; voice says the title.
+- **PDF, DOCX, email, page shares:** the poster, as drawings use their
+  snapshot. A shared page serves only the posters its doc places, like
+  `referencedDrawIds`.
+
+### 7.4 The poster
+
+- Made by the sidecar after a save (debounced), at the design size, at
+  `canvas:poster-at` for animations (default: after 2 s), slide 1 for
+  decks. Stored in `presents.poster_png` with `poster_rev`.
+- A cache, never the source. Rules copied from Draw: only owner paths fill
+  it; filling never fires `node_ingested`; 2 concurrent renders; timeout and
+  cooldown on failure; public routes are cache-only.
+- No sidecar on the box (it is profile-gated in `docker-compose.core.yml`):
+  pages and chat show a title card with Open instead of a picture, and the
+  agent works blind. Open question 7.
+
+## 8. The Presenter agent
+
+### 8.1 Where it lives
 
 All in the system manifest (`server/web/lib/system-manifest/`), so new and
-existing brains get it through the normal reconcile (a new specialist is
-auto-provisioned and delegation is wired):
+existing brains get it through the normal reconcile:
 
-- `MANIFEST_AGENTS`: slug `presenter`, display name Jason's call, `role:
-'custom'`, `isDelegate: true`, `envModelVar: 'PRESENTER_MODEL'`,
-  `toolGroupSlugs: ['canvas', 'files', 'memory-core']`,
+- `MANIFEST_AGENTS`: slug `presenter`, `role: 'custom'`, `isDelegate: true`,
+  `envModelVar: 'PRESENTER_MODEL'`,
+  `toolGroupSlugs: ['present', 'files', 'memory-core']`,
   `skillSlugs: ['canvas_authoring', 'writing_style']`,
   `params: { temperature: 0.3, max_tokens: 32000 }` (like Draftsman),
   `memoryConfig: { max_iterations: 25 }`.
-- `MANIFEST_SKILLS` + `SKILL_INSTRUCTIONS['canvas_authoring']`: the canvas
-  contract (required head, size, theme tokens, reduced motion, the library
-  list with one example each, no network, how to look at the render and
-  fix it).
-- `MANIFEST_TOOL_GROUPS`: a new `canvas` group, and a `canvas-read` group
-  (list, get, show) for the persona.
+- `MANIFEST_SKILLS` + `SKILL_INSTRUCTIONS['canvas_authoring']`: the head
+  contract, size and fit, theme tokens and kit classes, the 16 fonts,
+  reduced motion, the library list with one example each, no network, the
+  deck template (section 9.2), and how to look at the render and fix it.
+- `MANIFEST_TOOL_GROUPS`: `present` (authoring), `present-read` (list, get,
+  show) for the persona, and deletes in a `present-admin` group, as other
+  kinds keep deletes deliberate.
 - `AGENT_PROMPTS['presenter']`.
 
-### 7.2 Tools
+### 8.2 Tools
 
-| Tool                             | What it does                                                                                                                                                                                                                        |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canvas_create`                  | Write a new `.canvas` into a folder (default `files/canvases`), validate the head, return id and a view URL                                                                                                                         |
-| `canvas_update`                  | Replace the whole source, or apply exact find-and-replace edits so the agent does not resend 50 KB for a colour change. Same id                                                                                                     |
-| `canvas_get`                     | Source plus head metadata                                                                                                                                                                                                           |
-| `canvas_render`                  | Render in the sidecar at the design size (or a given size and time offset for animations), return a PNG the model can see, plus captured console errors and uncaught exceptions. Optional `store: true` saves the PNG as the poster |
-| `show_canvas` (in `canvas-read`) | Put a canvas in the chat as a live card (section 8)                                                                                                                                                                                 |
+| Tool                                    | What it does                                                                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `present_create`                        | Make an item in a folder, validate the head and imports, compile CSS, queue the poster; return id and view URL                    |
+| `present_update`                        | Replace the source, or apply exact find-and-replace edits so the agent does not resend 50 KB for a colour change. Takes `if_rev`  |
+| `present_get` / `present_list`          | Source plus meta / the items                                                                                                      |
+| `present_render`                        | Render in the sidecar at a size and time (or a slide); return a PNG the model can see plus console errors and uncaught exceptions |
+| `show_present`                          | The poster card in chat (section 7.3)                                                                                             |
+| `present_import` / `present_export`     | `.canvas` file to item, item to `.canvas` file                                                                                    |
+| `present_revisions` / `present_restore` | The last 10 versions (if approved)                                                                                                |
 
-`canvas_render` reuses the draw rules from [docs/draw.md](../draw.md)
-section 4: owner-authed only, the 2-session semaphore, timeout, cooldown on
-failure, never fires `node_ingested`. Note the `browser` service is
-profile-gated in `docker-compose.core.yml`; without it `canvas_render`
-answers "not available" and the agent ships unseen, like mini apps today.
+### 8.3 Routing, so the owner assistant stops struggling
 
-### 7.3 Routing, so the owner assistant stops struggling
-
-Edit the `specialist_routing` skill (prompts.ts line 406) with one rule:
+Edit `specialist_routing` (prompts.ts line 406):
 
 - **Draftsman**: a chart or diagram that lives in a page, with a spec block.
-- **Presenter**: any other picture the user wants to see: process and P&ID
-  style schematics, animated or interactive explainers, a one-off slide or
-  poster, "draw me", "show me how X works". Result appears in chat and in
-  Files.
-- **Appsmith**: only when it needs live data, input that is saved, or tools.
+- **Presenter**: every other picture to look at: process and P&ID style
+  schematics, animated or interactive explainers, slide decks, posters,
+  "draw me", "show me how X works". The result lands in Present and comes
+  back to chat as a poster that opens it.
+- **Appsmith**: only when it needs live data, saved input, or tools.
 
-Also add Presenter to `visual_answers`, and add two eval prompts
-(a P&ID ask, an animation ask) to `eval:route` so the routing is measured,
-not hoped for. Open question 2 asks whether to merge Draftsman into
-Presenter later, which would leave one visual specialist.
+Also add Presenter to `visual_answers`, and two cases (a P&ID ask, a deck
+ask) to `eval:route`, so the routing is measured. Open question 2 asks
+whether Draftsman later folds into Presenter.
 
-## 8. Embedding
+## 9. Slides: Present takes its place
 
-### 8.1 Files workspace: open it live (Jason, 2026-10-23)
+### 9.1 What the parked plan was
 
-Clicking a `.canvas` in `/files` opens the **full live canvas**, scripts
-and animation running, in the item's content area. Not a thumbnail, not
-the source.
+The Slides plan (branches only, never merged) is a PowerPoint-style editor:
+a structured JSON deck on a 1920x1080 stage, named regions on a 12x6 grid,
+our own drag, resize, rotate and snap layer, smallest text 24 units,
+Reveal.js 6 as the player, and a `slide_render` PNG through the sidecar.
+Most of its cost and risk is the hands-on editing layer.
 
-- **Where:** a `.canvas` branch in `FilePreviewBody` (client
-  `client/web/app/(app)/files/file-editor.tsx` lines 385 to 444), placed
-  BEFORE the `isText` text view, so the text editor no longer wins. Label in
-  `packages/web-ui/src/lib/mime-label.ts`. There is no viewer registry
-  today, so this is a branch, not a plug-in.
-- **Header actions,** on the standard item header
-  (`client/web/components/layout/item-header.tsx`):
-  - **Maximise** with the existing `FocusToggle`
-    (`client/web/components/layout/focus-toggle.tsx`): hides the shell and
-    the folders exactly as Pages and the other kinds do, Esc leaves. Same
-    slot, same icon.
-  - **Full screen**: the browser Fullscreen API on the canvas frame only,
-    for presenting. Esc leaves. The parent calls it, so the frame needs no
-    extra permission.
-  - **Replay**: reloads the frame, so an animation starts again.
-  - **Source**: switches to the existing text view of the HTML (read for
-    everyone, edit for those who may edit the file).
-  - **Share**: the existing share action.
-- **Fit:** `canvas:size="1600x900"` scales the design to fit the space with
-  letterboxing, so a diagram or slide looks the same at every size.
-  `canvas:size="fill"` gives the canvas the whole viewport and lets it lay
-  itself out, as a mini app does.
-- **Mobile:** the same live frame (the client and the phone app use the
-  same frame route).
+### 9.2 Decks in Present
 
-### 8.2 Public share: full screen
+A deck is a canvas that uses reveal.js, one `<section>` per slide. From the
+Slides plan, keep what is cheap and proven as a deck template in the
+`canvas_authoring` skill: the 1920x1080 stage, the 12x6 grid as CSS
+classes, the 24-unit smallest text, reveal.js as the player, and the agent
+checking its own render slide by slide. Slides get animation, charts and 3D
+everywhere, which the JSON model only had inside embedded elements.
 
-A shared canvas copies the shared-app layout that exists today: `/s/<token>`
-skips the share shell and renders the frame at `h-dvh` with a small
-floating pill (`server/web/server/pages/share.tsx`, the `app` case, around
-lines 219 and 269). So a public link opens straight into the canvas, full
-window, scripts running. The pill carries a full-screen button and the
-"shared canvas" label. The file share presenter
-(`packages/share-ui/src/file-presenter.tsx`) gets a `canvas` branch, since
-today any non-media file there shows as a download. Contact shares use the
-same view. Safety rules: section 5.3.
+### 9.3 Hands-on editing, small first
 
-### 8.3 Other places
+Most hand edits are a typo, a number or a title. A canvas marks editable
+text with `data-edit="<id>"`. In **Edit text** mode the host tells the frame
+to make those elements editable; on save the frame posts the new text, and
+the server patches only those elements in `source`. Text only, owner view
+only, never on a share.
 
-- **Pages:** markdown `![title](canvas:<file-id>)`, mirroring the existing
-  `draw:<id>` image embed (client `page-editor/image.ts`). Human-writable,
-  per the Pages dialect principle. In the editor it is a sandboxed iframe
-  at the canvas aspect ratio. Print/PDF, DOCX, email and `/s` page shares
-  use the stored PNG poster, like drawings use their snapshot.
-- **Chat:** `show_canvas` returns an artifact `{ kind: 'canvas', fileId }`;
-  `ArtifactView` (client `assistant/assistant-turn-parts.tsx` line 82)
-  renders the live frame with an "Open" button. Telegram, the phone and
-  voice get the poster PNG.
-- **Slides:** see section 8.4.
+Drag-and-drop layout editing stays out until real use shows people need
+it. If it comes, it is a mode inside Present, not a second workspace, and
+the parked Slides branches are the place to take it from.
 
-### 8.4 Overlap with the parked Slides workspace
+### 9.4 Export
 
-The parked Slides plan (branches only, never merged) is a free-canvas,
-PowerPoint-style editor: a structured JSON deck on a 1920x1080 stage,
-named regions on a 12x6 grid, our own drag, resize, rotate and snap layer,
-a smallest text size of 24 units, Reveal.js 6 as the player, and a
-`slide_render` PNG through the browser sidecar so agents can see their
-slides. Most of its cost and risk sits in the human editing layer.
+PDF through the sidecar (reveal.js has a print layout, like `/print/pages`
+today). PPTX from HTML is poor in every tool; if PPTX is a must, that is the
+one strong reason to bring back the structured deck model (open question
+8).
 
-A canvas already covers most of what a deck needs: a deck is one `.canvas`
-that uses reveal.js, one `<section>` per slide on the 1920x1080 stage.
-What it does NOT give is hands-on editing: people change a canvas by asking
-Presenter, or by editing the HTML source.
+## 10. Open questions for Jason
 
-|                                  | A. Keep both                                                 | B. Canvas replaces Slides                                     | **C. Canvas first, Slides later only if needed**      |
-| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------- |
-| What ships                       | Slides editor plus canvases; a deck can hold canvas elements | Decks are reveal.js canvases; the Slides branches are retired | Decks are reveal.js canvases now; Slides stays parked |
-| Human editing                    | Full drag-and-drop                                           | Ask the agent, or edit source                                 | Ask the agent, plus a light text edit (below)         |
-| Build cost                       | Highest: two features, one complex editor                    | Lowest                                                        | Low now, decide later with real use                   |
-| Animation, charts, 3D in slides  | Only inside canvas elements                                  | Everywhere                                                    | Everywhere                                            |
-| Consistency (fonts, sizes, grid) | Enforced by the JSON model                                   | Taught by the skill, checked by the render                    | Taught by the skill, checked by the render            |
-
-**Recommend C.** Keep from the Slides plan what is cheap and proven: the
-1920x1080 stage, the 12x6 grid as CSS classes, the 24-unit smallest text,
-Reveal.js as the player, and the agent looking at its own render. These
-become a deck template and rules in the `canvas_authoring` skill. Let real
-use show whether people need drag-and-drop before the editor is built.
-
-**Light text edit (a later phase, small).** Most hand edits to a deck are
-a typo, a number or a title. A canvas can mark text it allows to be edited
-with `data-edit="<id>"`. In an "Edit text" mode the host tells the frame to
-make those elements editable; on save the frame posts the new text back,
-and the server patches only those elements in the source. The bridge
-carries text only, from the owner's own view, never on a share. That gives
-most of the hands-on value without a layout editor.
-
-**Export.** PDF works through the sidecar (reveal.js has a print layout,
-like `/print/pages` today). PPTX from HTML is poor in every tool; if PPTX
-matters, that is the strongest reason to resume the structured Slides
-model.
-
-If Slides resumes later, a canvas is still one element type there,
-`{ type: 'canvas', fileId, region }`, rendered by the same frame. Nothing
-in this proposal needs a change on the Slides branches.
-
-## 9. Open questions for Jason
-
-1. **One file or a bundle?** I recommend one self-contained HTML file in v1
-   (section 4.2), with the app-style virtual tree as the upgrade path. Is a
-   real folder bundle a must for you, and why (assets, size, human editing)?
-2. **A new Presenter, or give Draftsman the canvas tools?** Two visual
-   specialists can recreate the routing confusion. My pick: new Presenter
-   now, with the one-line routing rule, and decide on a merge after the
+1. ~~One file or a bundle?~~ Settled by the workspace: one HTML document per
+   item in the sidecar; `.canvas` is the export and import file.
+2. **Presenter beside Draftsman, or one visual specialist?** My pick:
+   Presenter now, the one-line routing rule, decide on a merge after the
    eval numbers.
-3. ~~Public shares of canvases in v1?~~ **Decided 2026-10-23: yes, the live
-   canvas, full screen** (sections 5.3 and 8.2), always the latest save,
-   like any shared file.
-4. **History:** keep the last 10 revisions, or plain overwrite like files?
-5. **Library set:** approve the set in section 6.1, now with Alpine.js. Is GSAP's licence
-   fine for a public, commercially licensed repo, or is Motion enough?
-6. **Display name** for the agent (Presenter is a placeholder).
+3. ~~Public shares?~~ **Decided 2026-10-23:** live, full screen, always the
+   latest save.
+4. **Revisions:** keep the last 10 versions for undo, or none?
+5. **Library set:** approve section 6.1. Is GSAP's licence fine for a
+   public, commercially licensed repo, or is Motion enough?
+6. **Names:** the workspace "Present", the agent "Presenter", the node type
+   `present`, the item a "canvas"? All placeholders.
 7. **The sidecar:** it is optional in `docker-compose.core.yml`. Make it
-   required wherever Presenter is enabled, or accept "no render" on such
-   boxes?
-8. **Slides:** canvas first and Slides stays parked (option C, section
-   8.4), or retire the Slides branches now (option B)? Is PPTX export a
-   must? That is the one need that favours the structured Slides model.
+   required when Present is on, or accept title cards and blind authoring?
+8. **Slides branches:** retire them now (Present replaces them), or keep
+   them parked as the source for a later layout editor? Is PPTX export a
+   must?
 
-## 10. Phased plan (rough sizes, one developer)
+## 11. Phased plan (rough sizes, one developer)
 
-| Phase                | Scope                                                                                                                                                                                                                                                                            | Repo  | Size        |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------- |
-| P0 Spike             | A hand-written `.canvas` in Files; frame route with the CSP; open it in the client. Prove the sandbox, theme message, import map                                                                                                                                                 | both  | 1 to 2 days |
-| P1 Format and viewer | `canvas` ext, MIME, `TEXT_EXTS`; frame routes (owner + share) and ticket; `/canvas-runtime/` with the vendored set and import map; extractor for indexing; Files live viewer with Maximise, Full screen, Replay and Source; contract bump (share-ui frame builder, client-types) | both  | 4 to 6 days |
-| P2 Agent             | `canvas` and `canvas-read` groups and tools; `/render/canvas/:id` + `canvas_render` with console capture; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                         | brain | 4 to 5 days |
-| P3 Embeds            | `canvas:` page embed + poster fallback for print, DOCX, email and `/s`; `show_canvas` chat card; public, contact and login shares as a full-screen `/s` view with the pill, rate limit and owner-only poster fill                                                                | both  | 3 to 4 days |
-| P3b Decks            | Deck template and rules in `canvas_authoring` (stage, grid, text size, reveal.js); PDF export of a deck via the sidecar; "Edit text" mode with `data-edit`                                                                                                                       | both  | 3 to 5 days |
-| P4 Later             | Revisions; Slides element (when Slides resumes); optional bundle tree; `canvas_export` zip                                                                                                                                                                                       | both  | per item    |
+| Phase               | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Repo  | Size         |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------ |
+| P0 Spike            | A hand-written canvas in a throwaway table; frame route with the CSP; open it in the client. Prove sandbox, theme message, import map, fonts                                                                                                                                                                                                                                                                                                                                                                                                       | both  | 2 days       |
+| P1 Workspace        | `present` node type + `presents` sidecar (migration); routes (list, get, create, update, delete, frame); folders, workspace grants, delete and cleanup, backup, search kind; `/canvas-runtime/` with the set and import map; CSS compile on save; extractor with the quiet-period ingest; client: nav entry, `/present` list, `/present/<id>` live view with Maximise, Full screen, Replay, Source; contract bump. New node type: the client-types publish and the client pin bump land in the same release, or the client's node-type icons break | both  | 8 to 10 days |
+| P2 Agent and poster | Sidecar render route, `present_render` with console capture, the poster cache; `present`, `present-read`, `present-admin` groups and tools; `presenter` agent, `canvas_authoring` skill, routing edits; `eval:route` cases                                                                                                                                                                                                                                                                                                                         | brain | 5 to 6 days  |
+| P3 Reach            | Poster embeds: `present:` in pages, `show_present` in chat, PDF, DOCX, email, page shares; share links full screen with pill and rate limit; `.canvas` export and import                                                                                                                                                                                                                                                                                                                                                                           | both  | 4 to 5 days  |
+| P4 Decks            | Deck template in the skill; PDF export of a deck; Edit text mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | both  | 3 to 5 days  |
+| Later               | Revisions UI; slide-level embeds; drag-and-drop layout mode if needed; brain images inside canvases                                                                                                                                                                                                                                                                                                                                                                                                                                                | both  | per item     |
+
+The vendored library runtime shared with mini apps is its own change and
+should land before or with P1.
 
 Each phase lands with an independent read-only security audit on a fixed
-commit, as for other security-sensitive work, since this is the first
-feature that runs agent-written script in front of people.
+commit, since this is the first feature that runs agent-written script in
+front of people.
