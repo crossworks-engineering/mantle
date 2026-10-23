@@ -181,6 +181,126 @@ describe.skipIf(!URL)('0326: the login hold, the ledger tokens, the epoch (S7b p
     expect(counted()).toEqual([]);
   });
 
+  it('the real narrow login may not revoke or remove a held login`s grants; a member`s it may; a revoked key`s revoked_by is never rewritten', async () => {
+    const c1 = randomUUID();
+    const c2 = randomUUID();
+    const ids = {
+      tOwner: randomUUID(),
+      tAdmin: randomUUID(),
+      tMember: randomUUID(),
+      aOwner: randomUUID(),
+      aAdmin: randomUUID(),
+      aMember: randomUUID(),
+      aRevoked: randomUUID(),
+      mOwner: randomUUID(),
+      mMember: randomUUID(),
+    };
+    const tag = randomUUID().slice(0, 8);
+    await su`insert into oauth_clients (id, redirect_uris) values
+      (${c1}, ${['https://c1.example.test/cb']}), (${c2}, ${['https://c2.example.test/cb']})`;
+    const tok = (id: string, client: string, actor: string) =>
+      su`insert into oauth_access_tokens (id, token_hash, owner_id, actor_id, client_id, expires_at)
+         values (${id}, ${`${tag}-${id}`}, ${anchor}, ${actor}, ${client}, now() + interval '1 day')`;
+    await tok(ids.tOwner, c1, anchor);
+    await tok(ids.tAdmin, c2, adminByWs);
+    await tok(ids.tMember, c2, member);
+    const code = (client: string, actor: string, n: string) =>
+      su`insert into oauth_auth_codes (code_hash, client_id, owner_id, actor_id, code_challenge, redirect_uri, expires_at)
+         values (${`${tag}-code-${n}`}, ${client}, ${anchor}, ${actor}, 'x', 'https://c.example.test/cb', now() + interval '5 minutes')`;
+    await code(c2, adminByRole, 'admin');
+    await code(c2, member, 'member');
+    const key = (id: string, login: string, revoked = false) =>
+      su`insert into access_keys (id, name, login_id, key_prefix, key_hash, access, revoked_at, revoked_by)
+         values (${id}, 'k', ${login}, ${`p${id.slice(0, 6)}`}, ${`${tag}-${id}`}, 'read',
+                 ${revoked ? new Date() : null}, ${revoked ? login : null})`;
+    await key(ids.aOwner, anchor);
+    await key(ids.aAdmin, adminByRole);
+    await key(ids.aMember, member);
+    await key(ids.aRevoked, member, true);
+    const dev = (id: string, login: string) =>
+      su`insert into mobile_tokens (id, user_id, label, expires_at)
+         values (${id}, ${login}, 'phone', now() + interval '1 day')`;
+    await dev(ids.mOwner, anchor);
+    await dev(ids.mMember, member);
+    const grants = async () =>
+      (
+        await su<{ h: string }[]>`
+          select md5(
+            (select coalesce(string_agg(id::text || coalesce(revoked_at::text, '-'), '|' order by id), '')
+               from oauth_access_tokens where client_id in (${c1}, ${c2})) || '#' ||
+            (select coalesce(string_agg(code_hash, '|' order by code_hash), '')
+               from oauth_auth_codes where client_id in (${c1}, ${c2})) || '#' ||
+            (select coalesce(string_agg(id::text || coalesce(revoked_at::text, '-') || coalesce(revoked_by::text, '-'), '|' order by id), '')
+               from access_keys where key_hash like ${`${tag}-%`}) || '#' ||
+            (select coalesce(string_agg(id::text || coalesce(revoked_at::text, '-'), '|' order by id), '')
+               from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})) || '#' ||
+            (select count(*)::text from oauth_clients where id in (${c1}, ${c2}))) as h`
+      )[0]!.h;
+    const before = await grants();
+    const refused: Array<[string, string]> = [
+      [
+        'owner token',
+        `update oauth_access_tokens set revoked_at = now() where id = '${ids.tOwner}'`,
+      ],
+      [
+        'Admin token',
+        `update oauth_access_tokens set revoked_at = now() where id = '${ids.tAdmin}'`,
+      ],
+      [
+        'owner key',
+        `update access_keys set revoked_at = now(), revoked_by = '${member}' where id = '${ids.aOwner}'`,
+      ],
+      ['Admin key', `update access_keys set revoked_at = now() where id = '${ids.aAdmin}'`],
+      ['owner device', `update mobile_tokens set revoked_at = now() where id = '${ids.mOwner}'`],
+      [
+        'Admin code',
+        `delete from oauth_auth_codes where client_id = '${c2}' and actor_id = '${adminByRole}'`,
+      ],
+      ['client of the owner', `delete from oauth_clients where id = '${c1}'`],
+      ['client of an Admin user', `delete from oauth_clients where id = '${c2}'`],
+      [
+        'every live grant at once',
+        `update oauth_access_tokens set revoked_at = now() where revoked_at is null`,
+      ],
+      [
+        "a revoked key's revoker",
+        `update access_keys set revoked_by = '${anchor}' where id = '${ids.aRevoked}'`,
+      ],
+    ];
+    for (const [what, stmt] of refused) {
+      expect(await run(nl, [stmt], true), what).toBe('42501');
+    }
+    expect(await grants()).toBe(before);
+    // A member's grants: the users area's own revokes on the narrow login.
+    for (const stmt of [
+      `update oauth_access_tokens set revoked_at = now() where id = '${ids.tMember}'`,
+      `update access_keys set revoked_at = now(), revoked_by = '${anchor}' where id = '${ids.aMember}'`,
+      `update mobile_tokens set revoked_at = now() where id = '${ids.mMember}'`,
+      `delete from oauth_auth_codes where client_id = '${c2}' and actor_id = '${member}'`,
+    ]) {
+      expect(await run(nl, [stmt]), stmt).toBeNull();
+    }
+    // Off the narrow route a narrow reason's revoke of a held grant is
+    // counted, the row written; at a spot not.
+    counted();
+    const who = 'system:http:admin-area';
+    const set = (spot = false) =>
+      `select set_config('mantle.actor', '${who}', true), set_config('mantle.write_mode', 'rw', true)` +
+      (spot ? `, set_config('mantle.route', 'full', true)` : '');
+    expect(
+      await run(rt, [
+        set(),
+        `update mobile_tokens set revoked_at = now() where id = '${ids.mOwner}'`,
+      ]),
+    ).toBeNull();
+    expect(counted()).toEqual([`${PREFIX}narrow-would-refuse ${who} public.mobile_tokens UPDATE`]);
+    expect(await run(rt, [set(true), `delete from oauth_clients where id = '${c1}'`])).toBeNull();
+    expect(counted()).toEqual([]);
+    await su`delete from oauth_clients where id in (${c1}, ${c2})`;
+    await su`delete from access_keys where key_hash like ${`${tag}-%`}`;
+    await su`delete from mobile_tokens where id in (${ids.mOwner}, ${ids.mMember})`;
+  });
+
   const scopeOf = (login: string) => `select set_config('mantle.scope_login', '${login}', true)`;
   const ledgerRows = async () =>
     (
