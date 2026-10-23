@@ -128,7 +128,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     rc = await import('../../server/request-context');
     await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync('first password 1', 4);
-    // As the superuser: the role guard (0399) refuses the app pools an admin login.
+    // As the superuser: the role guard (0330) refuses the app pools an admin login.
     await asSu(
       (su) => su`insert into auth.users (id, email, password_hash, role) values
         (${adm}, ${emailOf(adm)}, ${hash}, 'admin'), (${lim}, ${emailOf(lim)}, ${hash}, 'admin'),

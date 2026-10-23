@@ -2,7 +2,7 @@
  * The Admin seat, asked one way (plan v3.2 S8b, the gateway lens): who is
  * an Admin user, and which workspace is the brain's live Admin one.
  *
- * In SQL the one base read is mantle_admin_seat(login) (0399), which
+ * In SQL the one base read is mantle_admin_seat(login) (0330), which
  * mantle_login_is_admin, mantle_area_rule, mantle_login_role and
  * mantle_scope_admin_facts wrap. In TypeScript every caller asks through
  * these two:

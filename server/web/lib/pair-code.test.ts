@@ -247,7 +247,7 @@ describe('claimPairCode', () => {
   });
 
   // S8b: membership decides, the column is not asked. A row still marked
-  // client (none since 0272; the migrate report of 0399 counts any left) is
+  // client (none since 0272; the migrate report of 0330 counts any left) is
   // a login outside Admin, so a member: the role it carries changes nothing.
   it('a login outside Admin is a member whatever its column says (S8b)', async () => {
     dbState.selectResults = [[{ inAdmin: false }]];

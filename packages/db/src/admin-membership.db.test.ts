@@ -8,7 +8,7 @@
  *    narrowing cell: a role=admin login outside Admin is no Admin user any
  *    more (true to false); a role=member login inside Admin stays no Admin
  *    user (false, as on main); never false to true anywhere;
- *  - since 0399 (S8b) it is membership only: a role=member login inside
+ *  - since 0330 (S8b) it is membership only: a role=member login inside
  *    Admin (drift, which the membership definers never leave) is an Admin
  *    user; the grid's other cells answer as under 0306;
  *  - mantle_access_key_revoke (a reader): a role=admin login outside Admin
@@ -64,7 +64,7 @@ describe('0306 is stamped above every `when` before it (renumber proof)', () => 
 });
 
 describe.skipIf(!URL)(
-  'mantle_login_is_admin_user: role AND membership (S8a), membership only (S8b, 0399)',
+  'mantle_login_is_admin_user: role AND membership (S8a), membership only (S8b, 0330)',
   () => {
     let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
     let sql: ReturnType<typeof postgres>;
@@ -133,12 +133,12 @@ describe.skipIf(!URL)(
         const main = await one(MAIN_IS_ADMIN_USER, [id]);
         const member = await one('select mantle_login_is_admin($1::uuid) as a', [id]);
         const now = await one('select mantle_login_is_admin_user($1::uuid) as a', [id]);
-        // Since 0399 (S8b) membership alone: mantle_login_is_admin.
+        // Since 0330 (S8b) membership alone: mantle_login_is_admin.
         expect(now, k).toBe(member === true);
         if (now !== main) changed.push(`${k}: ${String(main)} -> ${String(now)}`);
       }
       // Against 0293's text, only the two drift cells move: 0306 narrowed
-      // `out`; 0399 widens `memIn`, a drifted login the membership definers
+      // `out`; 0330 widens `memIn`, a drifted login the membership definers
       // never leave (they write the role with the row; the precondition is
       // mantle_role_drift 0 on every box).
       expect(changed).toEqual(['out: true -> false', 'memIn: false -> true']);
@@ -162,7 +162,7 @@ describe.skipIf(!URL)(
         });
       expect(await revokeBy(L.adm)).toBe(1); // an Admin user: any key, as on main
       expect(await revokeBy(L.out)).toBe(0); // the named narrowing (main: 1)
-      expect(await revokeBy(L.memIn)).toBe(1); // in Admin: membership decides (0399; drift only)
+      expect(await revokeBy(L.memIn)).toBe(1); // in Admin: membership decides (0330; drift only)
       expect(await revokeBy(L.none)).toBe(0); // no login, as on main
       expect(await revokeBy(L.mem)).toBe(1); // its own key, as on main
     });

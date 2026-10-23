@@ -37,7 +37,7 @@
 --    Moderator, and a 'bridge.login' event per admin login) are written by
 --    the switch itself. Before the switch the role is the only record of
 --    who is an admin, so the switch reads it once; a brain switched after
---    0399 ends as one switched before.
+--    0330 ends as one switched before.
 -- 4. The login and connector bridges' triggers go where a brain still has
 --    them (only one that never took the workspaces switch; 0261 dropped
 --    them everywhere else): users_zz_bridge, tool_groups_zz_bridge, their
@@ -78,10 +78,10 @@
 -- Identity is read only through the readers (mantle_scope_login_id,
 -- mantle_scope_ws), never current_setting directly.
 --
--- Placeholder number 0399: the CEO claims the number at the merge (plan
--- v3.2 rule 3) and renumbers the file, its journal entry and its `when`.
+-- Numbered 0330 on the rebase onto main v0.300.137 (b2 and b3 took 0315 to
+-- 0329); its journal `when` sits above 0329's.
 --
--- Revert: packages/db/rollback/0399_s8b_role_follows_membership.revert.sql.
+-- Revert: packages/db/rollback/0330_s8b_role_follows_membership.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_bridge_login"(login uuid)

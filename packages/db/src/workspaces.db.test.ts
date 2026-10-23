@@ -823,7 +823,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       const text = readFileSync(join(__dirname, '..', 'migrations', f), 'utf8');
       const ours = files.includes(f);
       // In file order: a later statement may drop one (0273, W8c), in any
-      // migration (0399, S8b, drops the bridges' functions).
+      // migration (0330, S8b, drops the bridges' functions).
       for (const mm of text.matchAll(
         /CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$|DROP FUNCTION IF EXISTS "public"\."(\w+)"/g,
       )) {

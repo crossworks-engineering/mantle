@@ -407,7 +407,7 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect(await where()).toEqual([]);
     await sql`update auth.users set role = 'admin' where id = ${z}`;
     expect(await where()).toEqual([]);
-    // S8b (0399): the bridge is a no-op; an admin joins Admin only through
+    // S8b (0330): the bridge is a no-op; an admin joins Admin only through
     // the membership definers (mantle_ws_add_user, which writes the role).
     await sql`select mantle_bridge_login(${z})`;
     expect(await where()).toEqual([]);

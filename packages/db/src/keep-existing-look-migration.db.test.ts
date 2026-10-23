@@ -53,7 +53,7 @@ describe.skipIf(!URL)('migration keep_existing_look', () => {
   let admin: Sql;
 
   // A migration runs as the migrator: on a superuser client of its own, so
-  // its admin login fixtures pass the role guard (0399) under the runtime
+  // its admin login fixtures pass the role guard (0330) under the runtime
   // role too.
   beforeAll(() => {
     const su = superuserClient(URL!);

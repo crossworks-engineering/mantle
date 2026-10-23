@@ -104,10 +104,10 @@ const BOOT = 'system:boot:migrate-workspaces';
 const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_create: 'rule: the acting login, no system work (0307)',
   mantle_ws_add_user:
-    'rule: the acting login, no system work (0307); on Admin it writes the role (0399)',
+    'rule: the acting login, no system work (0307); on Admin it writes the role (0330)',
   mantle_ws_set_moderator: 'rule: the acting login, or system:ws-clear-ticks (0307)',
   mantle_ws_remove_user:
-    'rule: the acting login, no system work (0307); on Admin it writes the role (0399)',
+    'rule: the acting login, no system work (0307); on Admin it writes the role (0330)',
   mantle_ws_private_workspace: 'rule: the acting login’s own, no system work (0307)',
   mantle_workspace_event: 'rule: refused with no acting login (0307)',
   mantle_ws_put_assistant:
@@ -120,7 +120,7 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_set_landing: 'rule: the acting login, no system work (0309, S2b)',
   mantle_ws_archive: 'rule: the acting login, no system work (0309, S2b)',
   mantle_bridge_login:
-    'exemption: demote only since 0399 (an older image writes role member, then calls it; it never adds), the runtime and narrow roles only',
+    'exemption: demote only since 0330 (an older image writes role member, then calls it; it never adds), the runtime and narrow roles only',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
   mantle_ws_review_off: 'exemption: migrator only (the switch)',
   mantle_ws_spaces_fold: 'exemption: migrator only (the switch)',
@@ -1100,7 +1100,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     const hasRuntime = (
       await sql<{ on: boolean }[]>`select to_regrole(${RUNTIME_ROLE}) is not null as on`
     )[0]!.on;
-    // The runtime role only (demote only since 0399, kept for an image one
+    // The runtime role only (demote only since 0330, kept for an image one
     // release back): the users area's new login and role change run the
     // membership definers at the full-route spot login-credential.
     expect(await mayRun('public.mantle_bridge_login(uuid)')).toEqual(
@@ -1114,7 +1114,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     ]) {
       expect(await mayRun(fn), fn).toEqual([]);
     }
-    // The bridges are gone (0399): their triggers and the connector bridge;
+    // The bridges are gone (0330): their triggers and the connector bridge;
     // the login bridge only demotes.
     const [t] = await sql<{ n: number }[]>`
       select count(*)::int as n from pg_trigger

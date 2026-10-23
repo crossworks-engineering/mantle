@@ -141,7 +141,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     riq = await import('./rule-in-query');
     await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync('first password 1', 4);
-    // As the superuser: the role guard (0399) refuses the app pools an admin login.
+    // As the superuser: the role guard (0330) refuses the app pools an admin login.
     const su0 = superuserClient(scratch.url);
     try {
       await su0`insert into auth.users (id, email, password_hash, role) values

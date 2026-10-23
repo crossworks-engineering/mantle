@@ -103,7 +103,7 @@ describe.skipIf(!URL)('S8a: an Admin login is role AND membership', () => {
     ws = await import('../workspaces');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
-    // As the superuser: the role guard (0399) refuses an admin insert from
+    // As the superuser: the role guard (0330) refuses an admin insert from
     // the app pools (the runtime role's lane).
     const su0 = superuserClient(scratch.url);
     try {

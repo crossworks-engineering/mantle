@@ -97,7 +97,7 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_brain_id()': "the workspace role's policy helper: the brain's own id",
   'mantle_brain_team_ws()': "the workspace role's policy helper: the Team workspace id",
   'mantle_scope_admin_facts(text[])':
-    "adminFacts' one call in the login's own scope (0399, S8b): reads the scope and Admin membership, writes nothing",
+    "adminFacts' one call in the login's own scope (0330, S8b): reads the scope and Admin membership, writes nothing",
   'mantle_scope_has_area(text)': "the workspace role's policy helper: reads the scope",
   'mantle_scope_has_connector(uuid,text)': "the workspace role's policy helper: reads the scope",
   'mantle_scope_is_admin()': "the workspace role's policy helper: reads the scope",

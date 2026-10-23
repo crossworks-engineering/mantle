@@ -144,7 +144,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     // users of the brain's live Admin workspace, as a box with no role drift
     // has them; the role change adds to it and removes from it.
     // On a superuser client of its own: under the runtime role the app pool
-    // only reads the workspace tables, and the role guard (0399) refuses it
+    // only reads the workspace tables, and the role guard (0330) refuses it
     // an admin login.
     const { ensureAdminUsers, superuserClient } = await import('@mantle/db/test-support');
     const su = superuserClient(URL!);
@@ -373,7 +373,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   // W8a fix round 1 (L6): a former client login stays disabled.
   it('refuses to enable a former client login; an ordinary disabled login enables', async () => {
-    // A member since setup (the role guard, 0399, refuses the app pool a role write).
+    // A member since setup (the role guard, 0330, refuses the app pool a role write).
     await admin`update auth.users set disabled_at = now() where id = ${former}`;
     await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
       select id, email, created_at, session_epoch from auth.users where id = ${former}`;
@@ -424,7 +424,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   // W8a: there is no client login. The role check admits admin and member
   // only, so no route here meets a third role. As the superuser: the role
-  // guard (0399, a BEFORE trigger) refuses an app pool first.
+  // guard (0330, a BEFORE trigger) refuses an app pool first.
   it('a login row cannot be made with the client role (0272)', async () => {
     const { superuserClient } = await import('@mantle/db/test-support');
     const su = superuserClient(URL!);

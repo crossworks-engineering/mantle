@@ -84,7 +84,7 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
       expect(counts.readsLoginRole(f!.body), w).toBe(false);
       expect(code(f!.body), w).toMatch(/UPDATE "auth"\."users" SET "role" = '(?:admin|member)'/);
     }
-    // The role guard (0399) names both to check the row being written
+    // The role guard (0330) names both to check the row being written
     // (NEW and OLD), never a stored login's role: it decides who may write.
     const GUARDS = ['mantle_login_role_guard'];
     for (const g of GUARDS) {
@@ -99,7 +99,7 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
   });
 
   it('each reader is migration-only or reads the column the membership definers keep exact', async () => {
-    // Since 0399 the role column is written only by mantle_ws_add_user and
+    // Since 0330 the role column is written only by mantle_ws_add_user and
     // mantle_ws_remove_user on the Admin workspace, in the transaction of
     // the membership row, so it equals Admin membership. A reader an app
     // role may EXECUTE is named here with what it reads the column for; a
@@ -109,7 +109,7 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
       mantle_access_keys_seen: "shows each key's login role (display): the exact column",
       mantle_client_space_usage: 'counts by role: the exact column',
       mantle_bridge_login:
-        "demote only (0399): an older image's demotion writes role member and calls it; the login leaves Admin, never joins it",
+        "demote only (0330): an older image's demotion writes role member and calls it; the login leaves Admin, never joins it",
       mantle_member_space: "a member's personal space by role: the exact column",
       mantle_role_drift:
         'compares the column with Admin membership, numbers only: the pre-merge and box check that the two agree',

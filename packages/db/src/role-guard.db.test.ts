@@ -1,5 +1,5 @@
 /**
- * The role follows Admin membership (plan v3.2 S8b, migration 0399), round
+ * The role follows Admin membership (plan v3.2 S8b, migration 0330), round
  * 4's cells, each on a database of its own (so mantle_brain_id() is this
  * file's anchor):
  *
@@ -66,7 +66,7 @@ async function run(
 const roleExists = async (sql: postgres.Sql, role: string) =>
   (await sql<{ on: boolean }[]>`select to_regrole(${role}) is not null as on`)[0]!.on;
 
-describe.skipIf(!URL)('the role guard: only the membership definers write the role (0399)', () => {
+describe.skipIf(!URL)('the role guard: only the membership definers write the role (0330)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let brain = '';
@@ -203,7 +203,7 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
   });
 });
 
-describe.skipIf(!URL)('mantle_bridge_login demotes only (0399)', () => {
+describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let adminWs = '';
@@ -265,7 +265,7 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0399)', () => {
   });
 });
 
-describe.skipIf(!URL)('the Admin seat answers as 0304`s bodies (0399 gateway)', () => {
+describe.skipIf(!URL)('the Admin seat answers as 0304`s bodies (0330 gateway)', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const tag = `rs${randomUUID().slice(0, 8)}`;

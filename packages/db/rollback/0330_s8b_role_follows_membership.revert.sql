@@ -1,28 +1,28 @@
--- Rollback of 0399_s8b_role_follows_membership: what an operator runs
+-- Rollback of 0330_s8b_role_follows_membership: what an operator runs
 -- BEFORE pinning the image one release back (plan v3.2 rule 2, a one-image
 -- rollback). Not a migration: nothing runs it on its own.
 --
--- It puts back the bodies the image before 0399 shipped: mantle_bridge_login
+-- It puts back the bodies the image before 0330 shipped: mantle_bridge_login
 -- (0286, the Admin row in step with the role), mantle_login_is_admin_user
 -- (0306, role admin AND membership), mantle_ws_add_user and
 -- mantle_ws_remove_user (0307, no role write), mantle_ws_migrate_bridged
 -- (0286, its users step through the bridge), mantle_login_is_admin and
 -- mantle_area_rule (0304's own bodies, the same answers, off the seat), and
 -- drops the role guard (users_role_guard and its function: that image
--- writes the role from the app's pools) and the four functions 0399 added
+-- writes the role from the app's pools) and the four functions 0330 added
 -- (that image never calls them). The column is exact when this
 -- runs (the definers kept it so), so that image's role reads answer as
 -- before. The bridges' triggers are not made again: 0261 had dropped them
--- on every brain that took the workspaces switch, and 0399's precondition
+-- on every brain that took the workspaces switch, and 0330's precondition
 -- is that every brain has (brains without an Admin workspace: 0).
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0399_s8b_role_follows_membership.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0330_s8b_role_follows_membership.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
--- The `when` below is the placeholder's; the CEO's renumber at the merge
--- changes it with the journal entry.
+-- Going below b2 or b3 as well: this revert first, then theirs
+-- (docs/update-prod.md).
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "users_role_guard" ON "auth"."users";
@@ -364,5 +364,5 @@ DROP FUNCTION IF EXISTS "public"."mantle_admin_seat"(uuid);
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_ws_exit_login"(text, uuid, uuid);
 --> statement-breakpoint
--- Off the ledger: the next roll forward applies 0399 again (re-runnable).
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199900000;
+-- Off the ledger: the next roll forward applies 0330 again (re-runnable).
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1790199880000;
