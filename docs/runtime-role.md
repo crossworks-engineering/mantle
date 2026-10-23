@@ -1090,7 +1090,10 @@ nothing pending touches none of them. The drop runs inside the same guard
 as the migrations: one that stops part way makes them again too. Each
 table's triggers change in a transaction of their own, `lock_timeout` 3 s,
 retried on a lock wait or a deadlock (the old app is still serving during
-a roll). The
+a roll). A trigger present by its name that counts nothing (disabled,
+replica only, or calling another function) is dropped and made again by
+the same step, so the next migrate puts back what a hand change took
+out of the count. The
 rule for migration authors: nothing to do; a hand-run revert that drops or
 retypes a column on a table outside the actor check runs
 `select tgname, tgrelid::regclass from pg_trigger where tgname like 'mantle\_narrow\_would\_refuse\_%'`
@@ -1114,15 +1117,18 @@ hold stands in its way (it refuses the push device deletes b2 sends
 outside the spot). So with the switch on, pinning b2 takes one of
 two forms: set `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as
 `MANTLE_IMAGE_TAG` and one `docker compose up -d` for both (no container
-of the older image ever runs with the switch on), or revert 0328 alone
-first (below), then pin; an image older than b2 takes the same switch
-edit, or the reverts of 0328 down to 0315. The switch alone, with
+of the older image ever runs with the switch on), or revert 0329 and
+then 0328 first (below; 0329 only changes the counter's function, which
+no image calls, but its ledger row must go before 0328's), then pin; an
+image older than b2 takes the same switch edit, or the reverts of 0329
+down to 0315. The switch alone, with
 no pin, is the fallback for a narrow refusal on this release
 (update-prod.md's rollback floors say the same).
 
 Reverting the narrow migrations by hand (before pinning an image older
 than one back, or to keep the switch on one back): newest first, each file in its own
-transaction, `0328_narrow_hold_wider` (the grant hold's three new
+transaction, `0329_narrow_counter_enabled` (0328's counter function
+back: a trigger counts when not disabled), `0328_narrow_hold_wider` (the grant hold's three new
 triggers and the counter's missing-triggers function; 0327's hold body
 back), `0327_narrow_lockout_and_ledger_tokens`,
 `0326_member_turn_ledger_definers`,
@@ -1157,7 +1163,8 @@ exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
 makes; 0 on a box before 0320 or after a failed migrate) and
 `narrow_counter_actor_check` warn or on, and
 `narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
-call for, less the ones there, enabled and calling the count's function:
+call for, less the ones there, enabled (origin or always: 0329; one set
+to fire in replica mode only never fires on a box) and calling the count's function:
 a migrate stopped part way can leave the total above 0 with one table
 blind; from 0328 the database's own `mantle_narrow_counter_missing()`
 answers, over `mantle_narrow_would_refuse_expected()`, the one derivation

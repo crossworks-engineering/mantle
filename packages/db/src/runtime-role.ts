@@ -1611,6 +1611,9 @@ type WouldRefuseRow = {
   del: boolean;
   cols: string[];
   have: string[];
+  /** Those of `have` that count: enabled (origin or always) and calling
+   *  the count's function. One by the name but not these is made again. */
+  ok: string[];
   haveCols: string[];
 };
 
@@ -1619,7 +1622,7 @@ type WouldRefuseRow = {
  * triggers the narrow role's grants call for, read from the database's one
  * derivation (mantle_narrow_would_refuse_expected, 0328: also read by
  * mantle_narrow_counter_missing and the box script), and the derived
- * triggers each has. The tables: those the derivation names, and those
+ * triggers each has (and which of them count). The tables: those the derivation names, and those
  * holding a derived trigger it no longer calls for (dropped).
  */
 async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuseRow[]> {
@@ -1640,6 +1643,11 @@ async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuse
            array(select g.tgname::text from pg_trigger g
                   where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
                   order by 1) as have,
+           array(select g.tgname::text from pg_trigger g
+                  where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
+                    and g.tgenabled in ('O', 'A')
+                    and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
+                  order by 1) as ok,
            coalesce((select array(select a.attname::text from unnest(g.tgattr::int2[]) k(n)
                                    join pg_attribute a on a.attrelid = c.oid and a.attnum = k.n
                                   order by a.attnum)
@@ -1676,8 +1684,12 @@ function wouldRefuseChanges(r: WouldRefuseRow): TriggerChange[] {
   for (const name of Object.values(NARROW_WOULD_REFUSE_TRIGGERS)) {
     const has = r.have.includes(name);
     const on = want.get(name);
+    // One by the name that is disabled, fires in replica mode only or
+    // calls another function counts nothing: dropped and made again, as
+    // mantle_narrow_counter_missing counts it missing.
     const same =
       has &&
+      r.ok.includes(name) &&
       on !== undefined &&
       (name !== NARROW_WOULD_REFUSE_TRIGGERS.UPDATE || r.haveCols.join() === r.cols.join());
     if (same) continue;
@@ -1723,7 +1735,9 @@ export class NarrowWouldRefuseBeforeError extends Error {
  * the role may make fires nothing; mantle_narrow_would_refuse_stmt counts
  * the rest when a narrow reason makes them off the narrow route. A
  * trigger is made, changed or dropped only when it differs from the
- * grants (the next migrate after a grant moves follows it), so a migrate
+ * grants (the next migrate after a grant moves follows it) or does not
+ * count (disabled, replica only, or calling another function: dropped
+ * and made again, as mantle_narrow_counter_missing counts it), so a migrate
  * with nothing pending and no grant change takes no table lock; one with
  * a migration pending drops and makes again each UPDATE OF trigger (a
  * short lock per such table, twice). Partitions follow their

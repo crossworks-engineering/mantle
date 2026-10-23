@@ -5,8 +5,9 @@
 -- It drops the grant hold's three new triggers (pairing_codes,
 -- push_subscriptions, mantle_peers), puts 0327's hold body back and drops
 -- mantle_narrow_counter_missing() and mantle_narrow_would_refuse_expected()
--- (the box script then reads its own copy of the query). Order when reverting several: 0328 first, then 0327 down
--- to 0315 (0327's revert file), each in its own transaction, newest first.
+-- (the box script then reads its own copy of the query). Order when reverting several: 0329 first (its
+-- revert file), then 0328, then 0327 down to 0315 (0327's revert file), each
+-- in its own transaction, newest first.
 --
 -- Run it as the superuser, in one transaction:
 --   docker exec mantle_web cat /app/packages/db/rollback/0328_narrow_hold_wider.revert.sql \

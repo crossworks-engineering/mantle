@@ -1356,11 +1356,13 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   takes 0311 off the ledger (the S13 handover in docs/_archive/).
 
 - **Below the narrow system role's containment (plan v3.2 S7b parts b2
-  and b3, migrations 0315 to 0328):** with `MANTLE_NARROW_SYSTEM` off (`0`;
+  and b3, migrations 0315 to 0329):** with `MANTLE_NARROW_SYSTEM` off (`0`;
   unset reads on from b3, off on the b2 image in production)
   the image one back works with them in place: no revert (an image older
   than one back needs the reverts below whatever the switch). With it on,
-  pinning the b2 image (one back) needs only 0328's revert: b2's own
+  pinning the b2 image (one back) needs only 0329's and 0328's reverts
+  (0329 first: it only changes the counter's function, but its ledger row
+  goes before 0328's): b2's own
   migrations (0315 to 0327) give the narrow role its held readers, and
   0328's wider hold would refuse the push device deletes b2
   sends outside the spot (fail closed). An image older than b2 lacks the
@@ -1368,11 +1370,11 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   they guard. Then pin in one of two ways. Either set
   `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as `MANTLE_IMAGE_TAG` and
   run one `docker compose up -d` for both, so no container of the older
-  image runs with the switch on; or revert first (0328 alone for b2; 0328
+  image runs with the switch on; or revert first (0329 then 0328 for b2; 0329
   down to 0315 for an image older than b2), newest first, each file in its
   own transaction, while the newer image is still up, as the superuser
   (the loop below is the full list; stop after 0328 for b2):
-  `for f in 0328_narrow_hold_wider 0327_narrow_lockout_and_ledger_tokens 0326_member_turn_ledger_definers 0325_narrow_off_on_insert 0324_narrow_enable_off 0323_narrow_message_rules 0322_identity_gateway 0321_narrow_row_rules 0320_narrow_would_refuse 0319_narrow_one_way_columns 0318_narrow_observe_definer_frames 0317_promotion_agent_definers 0316_structure_item_definer 0315_acting_login_definers; do docker exec mantle_web cat /app/packages/db/rollback/$f.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 || break; done`,
+  `for f in 0329_narrow_counter_enabled 0328_narrow_hold_wider 0327_narrow_lockout_and_ledger_tokens 0326_member_turn_ledger_definers 0325_narrow_off_on_insert 0324_narrow_enable_off 0323_narrow_message_rules 0322_identity_gateway 0321_narrow_row_rules 0320_narrow_would_refuse 0319_narrow_one_way_columns 0318_narrow_observe_definer_frames 0317_promotion_agent_definers 0316_structure_item_definer 0315_acting_login_definers; do docker exec mantle_web cat /app/packages/db/rollback/$f.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 || break; done`,
   then pin the older tag straight away (or stop mantle_web first): a
   restart in between applies them again. Each revert takes its migration
   off the ledger. Why and the order: docs/runtime-role.md (reverting the

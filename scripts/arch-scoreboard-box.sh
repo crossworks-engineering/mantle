@@ -252,7 +252,8 @@ select count(*) from pg_trigger
 SQL
 )
 # The derived triggers the narrow role's grants call for less the ones
-# there (enabled, calling the count's function): 0 when the counter is
+# there (enabled, origin or always, never replica only, and calling the
+# count's function): 0 when the counter is
 # whole. A trigger dropped and never made again (a migrate stopped part
 # way) or disabled shows here, though the total above stays above 0. "?"
 # before 0320. From 0328 the database's own mantle_narrow_counter_missing()
@@ -283,13 +284,13 @@ with t as (
 select case when to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is null then null else
   (select count(*) from t where ins and not exists (
      select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_ins'
-        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
+        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
   + (select count(*) from t where del and not exists (
      select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_del'
-        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
+        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
   + (select count(*) from t where cardinality(t.cols) > 0 and not exists (
      select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_upd'
-        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
+        and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
         and (select array_agg(x order by x) from unnest(g.tgattr::int2[]) x) = t.cols))
 end;
 SQL
@@ -310,13 +311,14 @@ select case
 SQL
 )
 case "$narrow_held" in yes | no | n/a) ;; *) narrow_held='?' ;; esac
-# The grant hold's triggers (mantle_narrow_token_hold_trg, enabled): 5
+# The grant hold's triggers (mantle_narrow_token_hold_trg, enabled: origin
+# or always, a replica only one never fires on a box): 5
 # from 0327 (access_keys, oauth_access_tokens, mobile_tokens,
 # oauth_auth_codes, oauth_clients) and 3 from 0328 (pairing_codes,
 # push_subscriptions, mantle_peers). b3 needs 8.
 narrow_holds=$(q <<'SQL' || true
 select count(*) from pg_trigger
- where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled <> 'D';
+ where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled in ('O', 'A');
 SQL
 )
 narrow_mode=$(q <<SQL || true

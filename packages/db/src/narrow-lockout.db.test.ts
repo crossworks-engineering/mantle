@@ -25,9 +25,13 @@
  *    peers acting as it (released only at the spot); a member's the narrow
  *    login still removes; off the narrow route counted;
  *  - mantle_narrow_counter_missing() (the box script's and this cell's one
- *    query): 0, then 1 with one UPDATE OF trigger dropped, then 1 with one
- *    column grant changed;
- *  - every migration of the narrow set (0315 to 0328) runs again over its
+ *    query): 0, then 1 with one UPDATE OF trigger dropped, disabled, fired
+ *    in replica mode only (0329) or calling another function, then 1 with
+ *    one column grant changed;
+ *  - migrate's trigger step (applyNarrowWouldRefuse) makes again a
+ *    trigger present by its name that does not count (disabled, replica
+ *    only, another function): the counter back at 0;
+ *  - every migration of the narrow set (0315 to 0329) runs again over its
  *    own end state and leaves it as it was (0322's end-state check, 0319
  *    with the rules after it).
  *
@@ -410,7 +414,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     await su`delete from mantle_peers where id in (${peer.owner}, ${peer.admin}, ${peer.member})`;
   });
 
-  it('the counter`s missing triggers (one function over the one derivation, the box script`s): 0, 1 with an UPDATE OF trigger dropped, disabled or calling another function, 1 with a column grant changed', async () => {
+  it('the counter`s missing triggers (one function over the one derivation, the box script`s): 0, 1 with an UPDATE OF trigger dropped, disabled, replica only or calling another function, 1 with a column grant changed', async () => {
     const missing = async (tx: ReturnType<typeof postgres> | postgres.TransactionSql) =>
       Number((await tx.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
     expect(await missing(su)).toBe(0);
@@ -428,7 +432,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     // script's narrow_hold_triggers).
     const [holds] = await su<{ n: number }[]>`
       select count(*)::int as n from pg_trigger
-       where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled <> 'D'`;
+       where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled in ('O', 'A')`;
     expect(holds!.n).toBe(8);
     // A table with an UPDATE OF trigger (columns the narrow role may not
     // update) and one column the narrow role may update.
@@ -442,6 +446,8 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     for (const change of [
       `drop trigger mantle_narrow_would_refuse_upd on ${t!.t}`,
       `alter table ${t!.t} disable trigger mantle_narrow_would_refuse_upd`,
+      // Fires only with session_replication_role replica: never on a box.
+      `alter table ${t!.t} enable replica trigger mantle_narrow_would_refuse_upd`,
       // The same name and columns, another function: not the count's.
       `create function public.zz_not_the_count() returns trigger language plpgsql as $$ begin return null; end $$;
        drop trigger mantle_narrow_would_refuse_upd on ${t!.t};
@@ -477,6 +483,68 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       .catch((e: { err?: unknown }) => e.err);
     expect(before).toBeInstanceOf(NarrowWouldRefuseBeforeError);
     expect(await missing(su)).toBe(0);
+  });
+
+  it('migrate makes again a would-refuse trigger present by its name that counts nothing (disabled, replica only, another function): the counter back at 0', async () => {
+    const missing = async () =>
+      Number((await su.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
+    expect(await missing()).toBe(0);
+    // One derived trigger of each kind, with its definition calling
+    // another function (the same name, table and event).
+    const picks = await su<{ t: string; name: string; other: string }[]>`
+      select distinct on (g.tgname) g.tgrelid::regclass::text as t, g.tgname::text as name,
+             regexp_replace(pg_get_triggerdef(g.oid), 'EXECUTE FUNCTION .*$',
+                            'EXECUTE FUNCTION public.zz_counts_nothing()') as other
+        from pg_trigger g
+       where not g.tgisinternal
+         and g.tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
+                          'mantle_narrow_would_refuse_upd')
+       order by g.tgname, 1`;
+    const pick = (name: string) => picks.find((p) => p.name === name)!;
+    const del = pick('mantle_narrow_would_refuse_del');
+    const ins = pick('mantle_narrow_would_refuse_ins');
+    const upd = pick('mantle_narrow_would_refuse_upd');
+    expect([del, ins, upd].every(Boolean)).toBe(true);
+    const state = async () =>
+      su<{ t: string; name: string; enabled: string; counts: boolean }[]>`
+        select g.tgrelid::regclass::text as t, g.tgname::text as name, g.tgenabled::text as enabled,
+               g.tgfoid = 'public.mantle_narrow_would_refuse_stmt()'::regprocedure as counts
+          from pg_trigger g
+         where not g.tgisinternal
+           and (g.tgrelid, g.tgname::text) in ((to_regclass(${del.t}), ${del.name}),
+                                         (to_regclass(${ins.t}), ${ins.name}),
+                                         (to_regclass(${upd.t}), ${upd.name}))
+         order by 2`;
+    await su.unsafe(
+      `create function public.zz_counts_nothing() returns trigger language plpgsql as $$ begin return null; end $$`,
+    );
+    try {
+      await su.unsafe(`alter table ${del.t} disable trigger ${del.name}`);
+      await su.unsafe(`alter table ${ins.t} enable replica trigger ${ins.name}`);
+      await su.unsafe(`drop trigger ${upd.name} on ${upd.t}`);
+      await su.unsafe(upd.other);
+      expect((await state()).map((r) => [r.name, r.enabled, r.counts])).toEqual([
+        [del.name, 'D', true],
+        [ins.name, 'R', true],
+        [upd.name, 'O', false],
+      ]);
+      expect(await missing()).toBe(3);
+      await applyNarrowWouldRefuse(su);
+      expect(await missing()).toBe(0);
+      expect((await state()).map((r) => [r.name, r.enabled, r.counts])).toEqual([
+        [del.name, 'O', true],
+        [ins.name, 'O', true],
+        [upd.name, 'O', true],
+      ]);
+      // And a run with nothing to change changes nothing.
+      const before = await state();
+      await applyNarrowWouldRefuse(su);
+      expect(await state()).toEqual(before);
+    } finally {
+      await applyNarrowWouldRefuse(su);
+      await su.unsafe('drop function if exists public.zz_counts_nothing()');
+    }
+    expect(await missing()).toBe(0);
   });
 
   it('with the held readers taken from the runtime role (an older image`s grants) every sign-in and sign-out write writes, uncounted; the narrow login`s holds refuse', async () => {
@@ -746,6 +814,7 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       'member_turn_ledger_definers',
       'narrow_lockout_and_ledger_tokens',
       'narrow_hold_wider',
+      'narrow_counter_enabled',
     ];
     const journal = (
       JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {
