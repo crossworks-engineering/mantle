@@ -4252,3 +4252,141 @@ all 42501; 21 product writes wrote). Red:
    gate 0 on one head.
 2. The member turn ledger decision (spot or definer) and its cell.
 3. The full re-audit, both sides, once every gate is 0 on one head.
+
+## Part b2, round 14e: the member turn ledger behind two definers, round 14d's list (handed over)
+
+Same branch. Inputs: the brief's "b2 round 14d inputs" and "b2 round 14e".
+Round 14d stalled with its work staged; the CEO committed it as 1c9b9fd1d
+(not gated). This round reviewed it, fixed what its cells showed and ran
+the gate set. Commits 51fb586a7, 7a7f0d732, c9fecd251, bdf64f52a.
+
+### The member turn ledger (the CEO's decision: definers, never the list)
+
+Migration `0325_member_turn_ledger_definers` (the `when` 1790198860000,
+above 0324's; revert in packages/db/rollback, which drops both functions
+and takes its own ledger row out):
+
+- `mantle_member_turn_claim(turn, owner, since, daily_turns,
+daily_tokens)`: the whole claim in one call, under the per-login lock
+  claimMemberTurn took before (the same key, so an image of either side
+  waits for the other: advisory-lock-keys.test.ts reads the key out of the
+  SQL). A retried turn id is admitted and not counted again; a turn id
+  another login holds is refused (42501); the day's rows against the cap;
+  the login's member chat tokens against the budget; the row; the login's
+  own rows older than a week pruned.
+- `mantle_member_turn_release(turn)`: gives back only the scope login's
+  own row with that id, and only one made in the last five minutes.
+- Neither takes a login: each reads the scope's own login through the
+  identity gateway (the scope login reader), which answers no login on the
+  narrow role, so both refuse there by construction. The narrow role may
+  not EXECUTE them either (NARROW_DENIED_FUNCTIONS); the runtime role runs
+  them (RUNTIME_SYSTEM_FUNCTIONS) and now only reads the table
+  (access-matrix.ts runtime 'read'; migrate takes its INSERT, UPDATE and
+  DELETE). No viewer role and not the write role runs them or writes the
+  table.
+- The app calls them through `memberTurnTx` (packages/db
+  member-turn-tx.ts): one system-pool transaction in that login's own
+  scope (the pinned scope helper; a new pin in scope-settings.mjs). In a
+  request or turn whose bound actor is a login, the login must be that
+  one. The callers: the workspace turn and its release on a failed
+  enqueue, the summary and transcription claim, the Telegram turn (its
+  chat's paired login, checked before the claim).
+- An older image writes the table itself; its own migrate grants the
+  runtime role the writes back (the drill shows it: runtime ledger insert
+  true after main's migrate, false after the branch's).
+
+Fixed in the WIP's cells: the narrow cell took no account of the one
+narrow refusal it means to show (the old insert in a member's request
+scope, 42501), so the run's after-each check failed it; it now takes that
+one refusal and checks it is the ledger's. The token-budget cell bound the
+traces' JSON through the superuser client, which prepares, so the data was
+stored as a JSON string; it binds text and casts in SQL now. ws-runtime-read
+pinned the runtime role's read-only tables to the four workspace tables;
+the ledger is the fifth.
+
+Cells (member-turn-ledger-narrow.db.test.ts, switch on): a limited
+member's request claims, counts, hits the cap and gives back its own slot,
+where the old statements are refused; a request never claims for another
+login (thrown before the database) and a turn id another login holds is
+refused; the release takes back only the scope login's own row of the
+last five minutes; on the REAL narrow login with every identity setting
+set to the member, both definers and every direct write (delete own, delete
+another's, age rows, insert, truncate) are 42501, rows unchanged; the
+rights per role; the revert. member-turn-ledger.db.test.ts keeps the cap,
+the window, the lock wait, the token budget and the cascade.
+
+### Round 14d's list
+
+1. The sweep's SPOT_ROWS for the rows that enter two spots: in the WIP
+   (PATCH /api/agents/:id: assistant-grant and skill-text; PATCH
+   /api/ai-workers/:id: model-route and skill-text). The sweep alone on
+   1c9b9fd1d: 0.
+2. Reruns alone on 1c9b9fd1d: gate-caller 0 (the touch count was load),
+   a6b under actor-off 0 (client-sourced 4.1 s alone, over 15 s with six
+   lanes busy), a2a-round-trips with the runtime role off 0,
+   execute-item 0 (on 51fb586a7, with the ledger cells). The r14ci matrix
+   failed its time budget only (every listed cell fail a known one).
+3. Both mirrors fetched before every launch (the mirrors have no fetch
+   refspec: `git fetch origin +refs/heads/feat/s7b-b2:refs/heads/feat/s7b-b2`
+   in ~/s7b-b1/mirror.git, then ~/s7b-b2/mirror.git; ~/s7b-b2/r14e-run.sh
+   does it).
+4. The gate set below.
+
+### The forge proof (the real narrow login)
+
+~/s7b-b2/r14e/proof14e.sh (round 14's kit plus ten ledger forms,
+~/s7b-b2/r14e/add14e.sql; setup rows: the member's slot now, three hours
+old and eight days old, and an Admin user's slot): 94 forges refused, all
+42501 (84 before, plus the ten ledger forms: both definers with the
+identity self-set, the member's own rows deleted, another login's deleted,
+the old week prune, rows aged past the day, a slot moved to another login,
+an insert, a truncate); 21 product writes wrote. The ledger as the
+superuser before and after the forges is the same four rows. Identity
+sweep: 267 no change, 17 refused; the catalog check 0; public rights 0.
+
+### Pins
+
+NARROW_COUNTS all 97 to 96, read 36 to 37 (the ledger to read);
+NARROW_SCAN_OPEN loses the ledger's two entries; NARROW_SCAN_FN_DECIDED
+and NARROW_SCAN_FN_OPEN gain the two definers; systemDbUses 70 to 68,
+systemDbUses_narrow 66 to 64; a scope-settings pin for member-turn-tx.ts.
+Migration 0325 only.
+
+### Gates, all on bdf64f52a
+
+Mac: typecheck 0, lint 0 (the one old warning), format 0, docs 0, arch 0,
+web build 0, unit 0 (879 files, 11357 tests).
+
+Workstation (r14e*, ~/s7b-b2/r14e-run.sh <sha> <names>; the full set is
+~/s7b-b2/r14e-launch.sh):
+
+| gate                              | exit | note                                                                                                       |
+| --------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------- |
+| DB shard 1/2                      | 0    |                                                                                                            |
+| DB shard 2/2                      | 0    |                                                                                                            |
+| test:actor-off                    | 1    | a6b client-sourced 15 s timeout only; alone (r14ea6boff) 0, 5.1 s                                          |
+| test:actor-on                     | 1    | the same; alone (r14ea6bon) 0, 2.8 s                                                                       |
+| test:edit-on                      | 0    |                                                                                                            |
+| test:runtime-role                 | 0    |                                                                                                            |
+| test:serial                       | 0    |                                                                                                            |
+| switch off, full                  | 1    | narrow-login's migrate cell met a statement timeout, w7-int-fix A1 a 15 s timeout; both alone (r14eoff2) 0 |
+| runtime role off, switch on, full | 0    |                                                                                                            |
+| test:matrix                       | 0    | tool cells on 83 s, warn 109 s (every fail a known one)                                                    |
+| round 8's proof                   | 0    |                                                                                                            |
+| the forge proof                   | 0    | 94 refused (all 42501), 21 product writes wrote, ledger unchanged                                          |
+| the drill (0325's revert first)   | 0    | every step 0; runtime ledger insert true under main, false under the branch                                |
+
+Each load-only red was rerun alone and passed, as above; on 7a7f0d732 and
+c9fecd251 (superseded) the same shapes, plus ws-runtime-read (real, fixed
+in bdf64f52a) and the matrix budget (load: 380 s with twelve suites up, 83
+s here).
+
+### Left
+
+1. The full re-audit, both sides, on bdf64f52a (the CEO launches it).
+2. Doubt: a6b's client-sourced cell and gate-caller's touch count keep
+   timing out under six busy lanes (4 s alone). A longer bound on those
+   two would stop the noise; left as is, as the rule asks for a rerun
+   alone.
+3. The narrow role still reads the ledger (content and system reads stay
+   until S7c revokes reads).
