@@ -57,16 +57,18 @@ const EFFECT_REASONS: Readonly<Record<string, string>> = {
 
 /** The login's own things a 'self' write with a path param names: the
  *  param is the id of one of them, and its handler finds it by the login
- *  (or the owner), so no item of another party is in the path. A 'self'
- *  write with any other param takes ITEM_NONE_PLACEHOLDER: its path may
- *  name another party's item (a grant, a workspace's member, a thread),
- *  to be decided. */
+ *  and by nothing else, so no item of another party is in the path. A
+ *  'self' write with any other param takes ITEM_NONE_PLACEHOLDER: its
+ *  path may name another party's thing (a grant, a workspace's member, a
+ *  thread), to be decided. Not here (round 4, MED-1): an access key (an
+ *  Admin user revokes any login's key), a Telegram chat of /my-chats (a
+ *  Moderator or a users-area Admin acts on another login's chat) and the
+ *  owner's push device route (an Admin user deletes a member's device by
+ *  its owner id): each handler reaches past the login, so each is the
+ *  placeholder until a check or a reason decides it. */
 export const OWN_THINGS: Readonly<Record<string, string>> = {
-  '/api/access-keys/:id': "one of the login's own access keys, found by the login",
-  '/api/push/subscriptions/:id': "one of the owner's own push devices, found by the owner",
   '/api/member/push/subscriptions/:id': "one of the login's own push devices, found by the login",
   '/api/member/mcp/clients/:id': "one of the login's own MCP clients, found by the login",
-  '/api/telegram/my-chats/:id': "one of the login's own Telegram chats, found by the login",
 };
 
 /** The 'self' routes under these prefixes name items in their body (a

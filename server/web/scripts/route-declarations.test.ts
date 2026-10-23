@@ -229,13 +229,26 @@ describe('rowDeclaration', () => {
     // No path param, and no item in the body: the login's own things.
     expect(reason('PUT', '/api/profile', 'owner')).toBe(SELF);
     expect(reason('POST', '/api/auth/logout', 'publicLogin')).toBe(SELF);
-    // A param that is one of its own things: named for what it is.
-    expect(reason('DELETE', '/api/access-keys/:id', 'login')).toBe(
-      OWN_THINGS['/api/access-keys/:id'],
+    // A param that is one of its own things, found by the login and by
+    // nothing else: named for what it is.
+    expect(reason('DELETE', '/api/member/push/subscriptions/:id', 'member')).toBe(
+      OWN_THINGS['/api/member/push/subscriptions/:id'],
     );
-    expect(reason('DELETE', '/api/telegram/my-chats/:id', 'chat')).toMatch(/own Telegram chats/);
+    expect(reason('DELETE', '/api/member/mcp/clients/:id', 'member')).toMatch(/own MCP clients/);
+    // Round 4 (MED-1 residual): a handler that reaches past the login is
+    // not the login's own thing, whatever the path says. An Admin user
+    // revokes any login's key; a Moderator or a users-area Admin acts on
+    // another login's Telegram chat; an Admin user deletes a member's
+    // device by its owner id.
+    expect(Object.keys(OWN_THINGS).sort()).toEqual([
+      '/api/member/mcp/clients/:id',
+      '/api/member/push/subscriptions/:id',
+    ]);
     // Another party's item in the path, or in the body: not decided yet.
     for (const [m, p, reads] of [
+      ['DELETE', '/api/access-keys/:id', 'login'],
+      ['DELETE', '/api/telegram/my-chats/:id', 'chat'],
+      ['DELETE', '/api/push/subscriptions/:id', 'owner'],
       ['POST', '/api/grants/:nodeId', 'login'],
       ['PATCH', '/api/workspaces/:id/users/:loginId', 'login'],
       ['POST', '/api/assistant/threads/:id/continue', 'chat'],
