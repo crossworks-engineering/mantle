@@ -4520,18 +4520,24 @@ in the order); 0321 edited in place (its DO block); 0318 unchanged.
 
 ### Gates
 
-Launched on 829514ead (workstation units s7b-b2r15-r15<name>, results in
-~/s7b-b2/x-r15<name>.exit and .log; ~/s7b-b2/r15-run.sh <sha> <names>, plus
-`t=<files>` / `toff=<files>` for single files): s1 s2 aoff aon eon rrole
+Mac, all on 8a0df9238: typecheck 0, lint 0, format 0, docs 0, arch 0
+(pins raised with reasons: auth.users.role readers 15 to 16 for
+mantle_narrow_login_held, fullRouteSpotCalls 121 to 122 for onLoginHoldSpot,
+rawSqlNonLiteral 65 to 66 for wouldRefuseTx; history comments 2348 to
+2347), web build 0, unit 0.
+
+Workstation: launched on 8a0df9238 (units s7b-b2r15-r15<name>, results in
+~/s7b-b2/x-r15<name>.exit and .log; check each .log.setup names
+8a0df9238: a run on 829514ead was stopped as superseded and its
+containers removed by name). ~/s7b-b2/r15-run.sh <sha> <names>, plus
+`t=<files>` / `toff=<files>` for single files: s1 s2 aoff aon eon rrole
 serial off rroff matrix proof pf drill. The forge kit: ~/s7b-b2/r15/
 (mk15.sh, add15.sql: 12 new refused forms and 2 allowed; 106 refused and
-23 allowed in all). The drill reverts 0326 first. Mac gates: the scratchpad
-runner on the same head. Results: see the round 16 inputs (not read at
-hand-over).
+23 allowed in all). The drill reverts 0326 first. Not read at hand-over.
 
 ### Left
 
-1. Read the r15* results on 829514ead; rerun a load-only timeout alone.
+1. Read the r15* results on 8a0df9238; rerun a load-only timeout alone.
    Expect the forge proof at 106 refused / 23 allowed.
 2. The not-done INFO items above, and the Telegram claim cell.
 3. The renumber at the rebase (MED-4/DB MED-3 data part).
