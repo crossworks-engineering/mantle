@@ -4987,3 +4987,123 @@ verify) 0 on 464d556a7. Workstation (`~/s7b-b2/r16-run.sh`, units
    after reverting by the old files.
 6. (c) the full gate set on the rebased head, forge proof (new forms) and
    the drill.
+
+## Part b2, round 16b: the rebase, the renumber, the full gates
+
+Same branch, rebased onto main v0.300.132 (fe06d3037). Inputs: the
+brief's "b2 round 16b inputs", items 1 to 6, and the round 16 part A
+REBASE note.
+
+### Item 1: the runtime-role run and the users-lockout disable cell
+
+r16rrole (the runtime-role suite on 464d556a7) ended 1 on one cell only:
+the sweep's SPOT_ROWS (two keys), pinned since in eece67987 (round 16a's
+own note). Nothing else red (310 of 311 files).
+
+The disable cell's time is the route's first import, not the disable.
+Measured on the workstation, the cell alone three times each, the import
+and the PATCH timed apart:
+
+| head                      | import of the route (ms) | PATCH (ms) |
+| ------------------------- | ------------------------ | ---------- |
+| branch, switch on         | 6264, 5103, 4288         | 30, 26, 24 |
+| branch, switch off        | 6144, 5271, 4837         | 25, 26, 24 |
+| main fe06d3037, switch on | 5889, 11725, 8013        | 22, 29, 22 |
+
+So main has the same cost, and the handler takes about 25 ms on every
+route. Fix (test only, no timeout raised): the file's setup hook imports
+the route under its own 60 s budget, so each cell times its handler.
+
+### Item 2: the forge kit
+
+`~/s7b-b2/r16b/` (built by `mk16.sh` from round 15c's kit): `setup16.sql`
+adds grant fixtures (MCP clients, tokens, codes, keys, devices of the
+owner, an Admin user by role and a member); `forge16.sql` adds the
+grant-hold forms as the real narrow login (ten refused: the owner's and
+an Admin user's MCP token, key, device, OAuth code, MCP client, every
+live token at once, a revoked key's revoker; four allowed: a member's
+token, key, device and code); `leaks16.sql` plants the six SET forms
+(set_config and SET LOCAL of an identity key, a key built at run time, a
+function SET clause naming one, a blanked create key outside the
+structure definer, the actor set outside its setters) and an allowed key,
+as the superuser in a rolled-back transaction, and counts what
+`mantle_identity_leaks()` finds. Copies of the renumbered 0322 and 0327
+(and 0327's revert) are in the kit for reference; the proof applies the
+clone's own migrations. On the pre-rebase head (91b33b07d): 128 refused
+(106 + 10 + 12 flag forms), 27 written, 12 propagated, SET forms 6 of 6
+found and the allowed key not.
+
+### Item 3: INFO
+
+- The would-refuse call reading: a catalog load that fails no longer
+  reads as nothing refused. Every call the statement makes is noted
+  `fn:<name> UNREAD`, and the failure is not kept (the next statement
+  loads again). A missing narrow role still reads as an empty answer (the
+  query joins pg_roles, so it does not fail). Unit cell
+  `narrow-would-refuse-unread.test.ts`.
+- narrowBegin's outer catch notes only what the narrow connection raised:
+  an error the work itself threw (another pool's 42501, its own error) is
+  not noted; BEGIN, the hold check and COMMIT still are. Cell in
+  `narrow-route.db.test.ts` (a 42501 thrown by the work: 0 noted; a narrow
+  statement's own refusal thrown out: 1).
+
+### Item 4: the rebase and the renumber
+
+The 174 branch commits replayed onto fe06d3037 with authorship kept
+(jason@schoeman.me). Only the journal conflicted (the first migration
+commit; each resolved as the branch's entries with main's 0314 kept after
+0313); viewer.ts, viewer-scope.ts, index.ts, external-access.ts and
+workspaces.ts merged without a conflict (main's app-run writes in
+runInViewerScope and the connector-options reader sit beside the
+branch's narrow route; typecheck and every gate below read them
+together). Then one renumber commit:
+
+| before                                | after                                 | `when`        |
+| ------------------------------------- | ------------------------------------- | ------------- |
+| 0314_acting_login_definers            | 0315_acting_login_definers            | 1790198980000 |
+| 0315_structure_item_definer           | 0316_structure_item_definer           | 1790199040000 |
+| 0316_promotion_agent_definers         | 0317_promotion_agent_definers         | 1790199100000 |
+| 0317_narrow_observe_definer_frames    | 0318_narrow_observe_definer_frames    | 1790199160000 |
+| 0318_narrow_one_way_columns           | 0319_narrow_one_way_columns           | 1790199220000 |
+| 0319_narrow_would_refuse              | 0320_narrow_would_refuse              | 1790199280000 |
+| 0320_narrow_row_rules                 | 0321_narrow_row_rules                 | 1790199340000 |
+| 0321_identity_gateway                 | 0322_identity_gateway                 | 1790199400000 |
+| 0322_narrow_message_rules             | 0323_narrow_message_rules             | 1790199460000 |
+| 0323_narrow_enable_off                | 0324_narrow_enable_off                | 1790199520000 |
+| 0324_narrow_off_on_insert             | 0325_narrow_off_on_insert             | 1790199580000 |
+| 0325_member_turn_ledger_definers      | 0326_member_turn_ledger_definers      | 1790199640000 |
+| 0326_narrow_lockout_and_ledger_tokens | 0327_narrow_lockout_and_ledger_tokens | 1790199700000 |
+
+Every new stamp sits above the branch's old high mark (0326 at 1790198920000) and above main's 0314 (1790198160000), which b2's old 0314
+shared. Each revert's ledger delete names its new stamp; main's 0314
+revert is untouched. 564 numeric references in 111 files moved by one
+(code comments, docs, pins, cells, the migrations' own cross-references);
+left as they were on purpose: main's 0314 (its migration, revert, cell,
+the "add connector" line in write-role.db.test.ts, the connector
+reader's comment), the planner's `HASH_REFUSED_FROM = 314` and its cell
+(it now covers main's 0314 too, which only makes it stricter), this
+file's earlier sections (history: they name the numbers of their day;
+read them through the table above), CHANGELOG.md and two unrelated
+numbers (an icon path, a formula comment). merge-branch.sh's own stamp
+check, run read-only against origin/main and the branch reflog (187
+heads, the pre-rebase ones included): no clash, next free number 0315.
+
+Call-scan decision for main's `mantle_ws_connector_options`: a viewer
+read in the login's request scope (GET
+/api/workspaces/:id/connector-options, the request handle after
+seeWorkspace, as mantle_ws_seen); the narrow role may not run it (it is
+granted to mantle_view_user only, and reads identity only through the
+gateway readers, so on the narrow role it answers nothing). Pinned with
+its one call.
+
+### Item 5: databases that ran a b2 build
+
+None is left. Every workstation run removes its own container by exact
+name when it ends (suite, proof, drill); a listing at the start of this
+round showed no s7b-b2 container besides the run then starting, and dev
+and every fleet box never ran a b2 migration. For a database kept by hand
+that ran a pre-rebase b2 build: revert it with the pre-rebase revert
+files (the branch at 5638de89d, newest first), then delete its ledger
+rows at 1790198220000 through 1790198920000 by hand, and b2's old 0314
+row at 1790198160000 only if main's 0314 is not applied there (the two
+share that stamp; main's 0314 is applied on any box at v0.300.132).
