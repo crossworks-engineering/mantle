@@ -1,0 +1,27 @@
+{
+  "file": "samples/pid-column-site-profile.json",
+  "template": "pid",
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    "layout: no free stretch on line '2\"-ST-2011-C3A' for its line number; it is drawn on the first run.",
+    "layout: label of 'line 2\"-ST-2011-C3A' sits on 'V-202'.",
+    "layout: label of 'line 2\"-ST-2011-C3A' sits on 'STM'.",
+    "layout: label of 'LV-202 note' sits on 'COND'."
+  ],
+  "consoleErrors": [],
+  "network": [],
+  "staticProblems": [],
+  "stats": {
+    "equipment": 6,
+    "lines": 12,
+    "instruments": 7,
+    "signals": 6,
+    "valves": 6,
+    "crossings": 27
+  },
+  "size": {
+    "width": 1496,
+    "height": 652
+  }
+}

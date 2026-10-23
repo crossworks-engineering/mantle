@@ -1,0 +1,19 @@
+{
+  "file": "samples/flow-ingest.json",
+  "template": "flow",
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "consoleErrors": [],
+  "network": [],
+  "staticProblems": [],
+  "stats": {
+    "nodes": 7,
+    "edges": 8,
+    "crossings": 0
+  },
+  "size": {
+    "width": 1356,
+    "height": 492
+  }
+}
