@@ -139,13 +139,13 @@ brain with the agent's normal read tools first).
       />
       <meta name="canvas:size" content="1600x900" />
       <!-- design size; the host scales to fit -->
-      <script type="importmap-libs">
-        ["d3", "gsap"]
-      </script>
-      <!-- optional: vendored libs it wants -->
     </head>
     <body>
       ...
+      <script type="module">
+        import * as d3 from 'd3'; // a bare name from the vendored set (section 6.4)
+        // ...
+      </script>
     </body>
   </html>
   ```
@@ -218,7 +218,7 @@ Reuse the app frame plumbing, minus the bridge:
   parent (keeps the owner UI's own CSP out of it and gives one place to set
   headers).
 - Header CSP:
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' <origin>/canvas-runtime/; style-src 'unsafe-inline' <origin>/canvas-runtime/ <origin>/share-runtime/; img-src data: blob:; font-src data: <origin>/canvas-runtime/ <origin>/share-runtime/ <origin>/fonts/ <origin>/Inter/; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors <owner UI origins>`.
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' <origin>/canvas-runtime/; style-src 'unsafe-inline' <origin>/canvas-runtime/ <origin>/share-runtime/; img-src data: blob:; font-src data: <origin>/canvas-runtime/ <origin>/share-runtime/ <origin>/fonts/ <origin>/Inter/; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors <owner UI origins>`.
   Unlike apps, `img-src` does **not** include the brain origin, so a canvas
   cannot even fire GETs at our own API.
 - The parent listens to the iframe for two messages only (`ready`, `error`,
@@ -272,18 +272,26 @@ Excalidraw fonts.
 Sizes are rough, minified. A library loads only when a canvas imports it,
 so a big one costs nothing until it is used.
 
-| Category                      | Library        | What it is for                                                                                  | Size       | Licence                                                    |
-| ----------------------------- | -------------- | ----------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------- |
-| Charts and dashboards         | Apache ECharts | Large chart catalogue, interactive, gauges, Sankey, heatmaps; Canvas or SVG output              | ~1 MB      | Apache-2.0                                                 |
-| Engineering and science plots | Plotly.js      | Contour, heatmap, 3D surface, statistical plots, WebGL scatter for very large data              | ~3 to 4 MB | MIT                                                        |
-| Custom drawing, schematics    | D3             | Scales, layouts, force graphs, maps, full control of the SVG. For visuals the agent must invent | ~280 KB    | ISC                                                        |
-| Interactive 2D                | Konva          | Shapes people can drag, click and connect: interactive diagrams, simple editors                 | ~150 KB    | MIT                                                        |
-| 3D                            | Three.js       | WebGL 3D scenes: plant layouts, equipment models                                                | ~650 KB    | MIT                                                        |
-| Animation                     | Motion         | Transitions and movement; has a React API too, so the same library serves mini apps             | ~40 KB     | MIT                                                        |
-| Slides                        | reveal.js      | HTML slides in one file; the parked Slides plan already picked Reveal.js 6 as its player        | ~150 KB    | MIT                                                        |
-| Maths                         | KaTeX          | Formulas (already shipped in `share-ui`)                                                        | ~280 KB    | MIT                                                        |
-| Custom vector drawing         | plain SVG + JS | No library at all. The default choice; D3 adds data binding when needed                         | 0          | n/a                                                        |
-| Timeline animation (maybe)    | GSAP           | The strongest timeline tool. Add only if its licence fits                                       | ~70 KB     | Free "no charge" licence, NOT OSI open source: check first |
+| Category                      | Library        | What it is for                                                                                                                                                | Size       | Licence                                                    |
+| ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------- |
+| Charts and dashboards         | Apache ECharts | Large chart catalogue, interactive, gauges, Sankey, heatmaps; Canvas or SVG output                                                                            | ~1 MB      | Apache-2.0                                                 |
+| Engineering and science plots | Plotly.js      | Contour, heatmap, 3D surface, statistical plots, WebGL scatter for very large data                                                                            | ~3 to 4 MB | MIT                                                        |
+| Custom drawing, schematics    | D3             | Scales, layouts, force graphs, maps, full control of the SVG. For visuals the agent must invent                                                               | ~280 KB    | ISC                                                        |
+| Interactive 2D                | Konva          | Shapes people can drag, click and connect: interactive diagrams, simple editors                                                                               | ~150 KB    | MIT                                                        |
+| 3D                            | Three.js       | WebGL 3D scenes: plant layouts, equipment models                                                                                                              | ~650 KB    | MIT                                                        |
+| Animation                     | Motion         | Transitions and movement; has a React API too, so the same library serves mini apps                                                                           | ~40 KB     | MIT                                                        |
+| Slides                        | reveal.js      | HTML slides in one file; the parked Slides plan already picked Reveal.js 6 as its player                                                                      | ~150 KB    | MIT                                                        |
+| Maths                         | KaTeX          | Formulas (already shipped in `share-ui`)                                                                                                                      | ~280 KB    | MIT                                                        |
+| Custom vector drawing         | plain SVG + JS | No library at all. The default choice; D3 adds data binding when needed                                                                                       | 0          | n/a                                                        |
+| Interactive state             | Alpine.js      | Tabs, toggles, sliders, step-through explainers, chart filters, written as HTML attributes (`x-data`, `x-on`, `x-show`). Optional; plain JS stays the default | ~45 KB     | MIT                                                        |
+| Timeline animation (maybe)    | GSAP           | The strongest timeline tool. Add only if its licence fits                                                                                                     | ~70 KB     | Free "no charge" licence, NOT OSI open source: check first |
+
+Alpine's normal build evaluates its attribute expressions with
+`new Function`, so the canvas CSP adds `'unsafe-eval'` to `script-src`. In
+this frame that adds almost no risk: the frame already runs agent-written
+inline script, and the boundary that matters (no network, no bridge, opaque
+origin) is unchanged. The stricter `@alpinejs/csp` build avoids eval but
+supports fewer expressions; use it if the audit prefers no `'unsafe-eval'`.
 
 Considered and left out:
 
@@ -306,6 +314,33 @@ version and a line in `THIRD-PARTY-NOTICES.md`.
 Build ONE vendored runtime and one import map that both canvases and mini
 apps read, so a library is added once and both get it. That is a separate
 change with its own branch; it should land before or with canvas P1.
+
+### 6.4 How loading works: the agent configures nothing
+
+- **Every canvas frame carries the same import map** listing the whole set
+  (`"d3": "/canvas-runtime/d3@7.x.y/d3.min.js"`, and so on). An import map
+  is only an address book: the browser fetches a library **only when the
+  canvas imports it**. A canvas that uses D3 downloads D3 and nothing else.
+  After the first view the file sits in the browser cache.
+- **The agent just writes the import** (`import * as echarts from
+'echarts'`, `import Alpine from 'alpinejs'`). No list in the head, no
+  config, no version numbers. Libraries that ship only a classic browser
+  build (Plotly, for one) load with
+  `<script src="/canvas-runtime/plotly/plotly.min.js">`, and the skill gives
+  that exact line.
+- **The save tool checks it, like `app_build` does.** `canvas_create` and
+  `canvas_update` scan the source for imports and runtime script tags. An
+  unknown name or a CDN URL fails the call with the allowed list, so the
+  agent fixes it at once instead of shipping a blank canvas. The names found
+  are stored with the file (shown in the UI, used for preload hints and for
+  the render).
+- **Always present, because they are small or lazy:** the theme stylesheet,
+  the compiled Tailwind for that canvas, the kit CSS, and the `@font-face`
+  rules (a font file still loads only when text uses it).
+- **Versions are the brain's, not the canvas's.** The import map points at
+  the one pinned version a release ships. Upgrading a library is a release
+  change; the release notes say which canvases import it, so a breaking
+  upgrade can be checked with `canvas_render` before it ships.
 
 ### 6.2 CSS and the shadcn look
 
@@ -465,7 +500,7 @@ Presenter later, which would leave one visual specialist.
 3. **Public shares of canvases in v1?** My pick: no, poster PNG on public
    links; live canvases for logins and contacts.
 4. **History:** keep the last 10 revisions, or plain overwrite like files?
-5. **Library set:** approve the set in section 6.1. Is GSAP's licence
+5. **Library set:** approve the set in section 6.1, now with Alpine.js. Is GSAP's licence
    fine for a public, commercially licensed repo, or is Motion enough?
 6. **Display name** for the agent (Presenter is a placeholder).
 7. **The sidecar:** it is optional in `docker-compose.core.yml`. Make it
