@@ -47,6 +47,8 @@ import {
 } from './test-support';
 import {
   NARROW_ROLE,
+  NarrowWouldRefuseBeforeError,
+  applyNarrowWouldRefuse,
   ensureRuntimeRoles,
   narrowRolePassword,
   runtimeDatabaseUrl,
@@ -408,10 +410,26 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     await su`delete from mantle_peers where id in (${peer.owner}, ${peer.admin}, ${peer.member})`;
   });
 
-  it('the counter`s missing triggers (one function, the box script`s): 0, 1 with an UPDATE OF trigger dropped, 1 with a column grant changed', async () => {
+  it('the counter`s missing triggers (one function over the one derivation, the box script`s): 0, 1 with an UPDATE OF trigger dropped, disabled or calling another function, 1 with a column grant changed', async () => {
     const missing = async (tx: ReturnType<typeof postgres> | postgres.TransactionSql) =>
       Number((await tx.unsafe(`select public.mantle_narrow_counter_missing()::int as n`))[0]!.n);
     expect(await missing(su)).toBe(0);
+    // The derivation migrate made the triggers from is the one the counter
+    // reads: one derived trigger per row, no more.
+    const [made] = await su<{ want: number; have: number }[]>`
+      select (select count(*)::int from public.mantle_narrow_would_refuse_expected()) as want,
+             (select count(*)::int from pg_trigger
+               where not tgisinternal
+                 and tgname in ('mantle_narrow_would_refuse_ins', 'mantle_narrow_would_refuse_del',
+                                'mantle_narrow_would_refuse_upd')) as have`;
+    expect(made!.want).toBeGreaterThan(0);
+    expect(made!.have).toBe(made!.want);
+    // The grant hold's triggers: five from 0327, three from 0328 (the box
+    // script's narrow_hold_triggers).
+    const [holds] = await su<{ n: number }[]>`
+      select count(*)::int as n from pg_trigger
+       where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled <> 'D'`;
+    expect(holds!.n).toBe(8);
     // A table with an UPDATE OF trigger (columns the narrow role may not
     // update) and one column the narrow role may update.
     const [t] = await su<{ t: string; col: string }[]>`
@@ -423,6 +441,19 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
     expect(t?.t).toBeTruthy();
     for (const change of [
       `drop trigger mantle_narrow_would_refuse_upd on ${t!.t}`,
+      `alter table ${t!.t} disable trigger mantle_narrow_would_refuse_upd`,
+      // The same name and columns, another function: not the count's.
+      `create function public.zz_not_the_count() returns trigger language plpgsql as $$ begin return null; end $$;
+       drop trigger mantle_narrow_would_refuse_upd on ${t!.t};
+       create trigger mantle_narrow_would_refuse_upd after update of ${
+         (
+           await su<{ c: string }[]>`
+           select string_agg(quote_ident(a.attname), ', ' order by a.attnum) as c
+             from pg_trigger g join pg_attribute a
+               on a.attrelid = g.tgrelid and a.attnum = any (g.tgattr::int2[])
+            where g.tgrelid = to_regclass(${t!.t}) and g.tgname = 'mantle_narrow_would_refuse_upd'`
+         )[0]!.c
+       } on ${t!.t} for each statement execute function public.zz_not_the_count()`,
       `grant update ("${t!.col}") on ${t!.t} to ${NARROW_ROLE}`,
     ]) {
       const n = await su
@@ -433,6 +464,18 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
         .catch((err: { n?: number }) => err.n);
       expect(n, change).toBe(1);
     }
+    expect(await missing(su)).toBe(0);
+    // Before 0328 (a migrate that failed short of it) there is no
+    // derivation to read: the triggers' step says so, never a guess.
+    const before = await su
+      .begin(async (tx) => {
+        await tx.unsafe('drop function public.mantle_narrow_counter_missing()');
+        await tx.unsafe('drop function public.mantle_narrow_would_refuse_expected()');
+        const err = await applyNarrowWouldRefuse(tx as never).catch((e: unknown) => e);
+        throw Object.assign(new Error('rollback'), { err });
+      })
+      .catch((e: { err?: unknown }) => e.err);
+    expect(before).toBeInstanceOf(NarrowWouldRefuseBeforeError);
     expect(await missing(su)).toBe(0);
   });
 

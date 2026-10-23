@@ -13,10 +13,14 @@
 --      the login (0319 already holds it one way, to NULL only).
 --    The product sites run at the full-route spot login-credential for a
 --    held login (onLoginHoldSpot), as 0327's.
--- 2. mantle_narrow_counter_missing(): the derived would-refuse triggers the
---    narrow role's grants call for less the ones there (0 when the count
---    is whole). The box script (scripts/arch-scoreboard-box.sh) and the
---    would-refuse cell read this one function. Superuser only.
+-- 2. mantle_narrow_would_refuse_expected(): the derived would-refuse
+--    triggers the narrow role's grants call for, one row each, the one
+--    derivation (migrate makes the triggers from it, runtime-role.ts
+--    applyNarrowWouldRefuse); and mantle_narrow_counter_missing(): those
+--    less the ones there, enabled and calling the count's function (0 when
+--    the count is whole). The box script (scripts/arch-scoreboard-box.sh)
+--    and the would-refuse cell read it. No EXECUTE for PUBLIC: the owner
+--    role (the login migrate runs as) and a superuser run them.
 --
 -- Revert: packages/db/rollback/0328_narrow_hold_wider.revert.sql (0328
 -- first, before 0327).
@@ -104,15 +108,16 @@ DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."mantle_peers"
 CREATE TRIGGER "mantle_narrow_token_hold_trg" BEFORE UPDATE OF "acts_as_login_id" ON "public"."mantle_peers"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_token_hold"();
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "public"."mantle_narrow_counter_missing"()
-  RETURNS bigint LANGUAGE sql STABLE
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_would_refuse_expected"()
+  RETURNS TABLE ("rel" oid, "trigger_name" text, "cols" int2[]) LANGUAGE sql STABLE
   SET search_path = "pg_catalog", pg_temp AS $$
-  -- The derived would-refuse triggers the narrow role's grants call for
-  -- (runtime-role.ts wouldRefuseRows: an INSERT trigger where the role may
-  -- not insert, a DELETE one where it may not delete, an UPDATE OF one
-  -- naming exactly the columns it may not update) less the ones there: 0
-  -- when the counter is whole. A table with the actor check trigger is
-  -- one the derivation skips. NULL with no narrow role or before 0320.
+  -- The would-refuse count's derived triggers the narrow role's grants call
+  -- for, one row each: on every table of the app's schemas the actor check
+  -- does not cover (0312 counts the content tables), an INSERT trigger
+  -- where the role may not insert, a DELETE one where it may not delete,
+  -- an UPDATE OF one naming exactly the columns it may not update (`cols`,
+  -- their numbers in order; empty for the other two). No rows with no
+  -- narrow role.
   WITH t AS (
     SELECT c.oid,
            has_table_privilege(to_regrole('mantle_system_narrow'), c.oid, 'INSERT') IS FALSE AS ins,
@@ -127,15 +132,33 @@ CREATE OR REPLACE FUNCTION "public"."mantle_narrow_counter_missing"()
        AND NOT EXISTS (SELECT 1 FROM pg_trigger g
                         WHERE g.tgrelid = c.oid AND g.tgname = 'mantle_actor_check' AND NOT g.tgisinternal)
   )
+  SELECT t.oid, 'mantle_narrow_would_refuse_ins', '{}'::int2[] FROM t WHERE t.ins
+  UNION ALL
+  SELECT t.oid, 'mantle_narrow_would_refuse_del', '{}'::int2[] FROM t WHERE t.del
+  UNION ALL
+  SELECT t.oid, 'mantle_narrow_would_refuse_upd', t.cols FROM t WHERE cardinality(t.cols) > 0
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_narrow_would_refuse_expected"() FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_narrow_counter_missing"()
+  RETURNS bigint LANGUAGE sql STABLE
+  SET search_path = "pg_catalog", pg_temp AS $$
+  -- The derived triggers the grants call for
+  -- (mantle_narrow_would_refuse_expected) less the ones there: a trigger
+  -- of that name, not disabled, calling the count's function and, for the
+  -- UPDATE OF one, naming exactly its columns. 0 when the counter is
+  -- whole. NULL with no narrow role or before 0320.
   SELECT CASE WHEN to_regprocedure('public.mantle_narrow_would_refuse_stmt()') IS NULL
                 OR to_regrole('mantle_system_narrow') IS NULL THEN NULL ELSE
-    (SELECT count(*) FROM t WHERE ins AND NOT EXISTS (
-       SELECT 1 FROM pg_trigger g WHERE g.tgrelid = t.oid AND g.tgname = 'mantle_narrow_would_refuse_ins'))
-    + (SELECT count(*) FROM t WHERE del AND NOT EXISTS (
-       SELECT 1 FROM pg_trigger g WHERE g.tgrelid = t.oid AND g.tgname = 'mantle_narrow_would_refuse_del'))
-    + (SELECT count(*) FROM t WHERE cardinality(t.cols) > 0 AND NOT EXISTS (
-       SELECT 1 FROM pg_trigger g WHERE g.tgrelid = t.oid AND g.tgname = 'mantle_narrow_would_refuse_upd'
-          AND (SELECT array_agg(x ORDER BY x) FROM unnest(g.tgattr::int2[]) x) = t.cols))
+    (SELECT count(*) FROM "public"."mantle_narrow_would_refuse_expected"() e
+      WHERE NOT EXISTS (
+        SELECT 1 FROM pg_trigger g
+         WHERE g.tgrelid = e.rel AND g.tgname = e.trigger_name AND NOT g.tgisinternal
+           AND g.tgenabled <> 'D'
+           AND g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
+           AND (e.trigger_name <> 'mantle_narrow_would_refuse_upd'
+                OR (SELECT array_agg(x ORDER BY x) FROM unnest(g.tgattr::int2[]) x) = e.cols)))
   END
 $$;
 --> statement-breakpoint

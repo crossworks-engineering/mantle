@@ -4,8 +4,8 @@
 --
 -- It drops the grant hold's three new triggers (pairing_codes,
 -- push_subscriptions, mantle_peers), puts 0327's hold body back and drops
--- mantle_narrow_counter_missing() (the box script then reads its own copy
--- of the query). Order when reverting several: 0328 first, then 0327 down
+-- mantle_narrow_counter_missing() and mantle_narrow_would_refuse_expected()
+-- (the box script then reads its own copy of the query). Order when reverting several: 0328 first, then 0327 down
 -- to 0315 (0327's revert file), each in its own transaction, newest first.
 --
 -- Run it as the superuser, in one transaction:
@@ -15,6 +15,7 @@ DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."pairing_codes
 DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."push_subscriptions";
 DROP TRIGGER IF EXISTS "mantle_narrow_token_hold_trg" ON "public"."mantle_peers";
 DROP FUNCTION IF EXISTS "public"."mantle_narrow_counter_missing"();
+DROP FUNCTION IF EXISTS "public"."mantle_narrow_would_refuse_expected"();
 CREATE OR REPLACE FUNCTION "public"."mantle_narrow_token_hold"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$

@@ -1613,18 +1613,29 @@ type WouldRefuseRow = {
   haveCols: string[];
 };
 
-/** The would-refuse state of the app's tables (or of one): what the
- *  narrow role may not do there, and the derived triggers it has. */
+/**
+ * The would-refuse state of the app's tables (or of one): the derived
+ * triggers the narrow role's grants call for, read from the database's one
+ * derivation (mantle_narrow_would_refuse_expected, 0328: also read by
+ * mantle_narrow_counter_missing and the box script), and the derived
+ * triggers each has. The tables: those the derivation names, and those
+ * holding a derived trigger it no longer calls for (dropped).
+ */
 async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuseRow[]> {
   const names = Object.values(NARROW_WOULD_REFUSE_TRIGGERS);
   return q<WouldRefuseRow[]>`
+    with e as (select * from public.mantle_narrow_would_refuse_expected())
     select c.oid::regclass::text as t,
-           not has_table_privilege(${NARROW_ROLE}, c.oid, 'INSERT') as ins,
-           not has_table_privilege(${NARROW_ROLE}, c.oid, 'DELETE') as del,
-           array(select a.attname::text from pg_attribute a
-                  where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-                    and not has_column_privilege(${NARROW_ROLE}, c.oid, a.attnum, 'UPDATE')
-                  order by a.attnum) as cols,
+           exists(select 1 from e where e.rel = c.oid
+                     and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.INSERT}) as ins,
+           exists(select 1 from e where e.rel = c.oid
+                     and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.DELETE}) as del,
+           coalesce((select array(select a.attname::text from unnest(e.cols) k(n)
+                                   join pg_attribute a on a.attrelid = c.oid and a.attnum = k.n
+                                  order by a.attnum)
+                       from e where e.rel = c.oid
+                        and e.trigger_name = ${NARROW_WOULD_REFUSE_TRIGGERS.UPDATE}),
+                    '{}') as cols,
            array(select g.tgname::text from pg_trigger g
                   where g.tgrelid = c.oid and not g.tgisinternal and g.tgname = any(${names}::text[])
                   order by 1) as have,
@@ -1638,9 +1649,10 @@ async function wouldRefuseRows(q: Sql, only: string | null): Promise<WouldRefuse
      where n.nspname = any(${[...APP_SCHEMAS]}::text[]) and c.relkind in ('r', 'p')
        and not c.relispartition
        and (${only}::text is null or c.oid = to_regclass(${only}::text))
-       and not exists (select 1 from pg_trigger g
-                        where g.tgrelid = c.oid and g.tgname = 'mantle_actor_check'
-                          and not g.tgisinternal)
+       and (c.oid in (select e.rel from e)
+            or exists (select 1 from pg_trigger g
+                        where g.tgrelid = c.oid and not g.tgisinternal
+                          and g.tgname = any(${names}::text[])))
      order by 1`;
 }
 
@@ -1689,6 +1701,18 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
   }
 }
 
+/** The would-refuse triggers met a schema between 0320 and 0328: the
+ *  derivation they are made from (mantle_narrow_would_refuse_expected) is
+ *  0328's. Only a migrate that failed before 0328 meets it. */
+export class NarrowWouldRefuseBeforeError extends Error {
+  constructor() {
+    super(
+      'the narrow would-refuse triggers are made from migration 0328 (mantle_narrow_would_refuse_expected); the next migrate makes them',
+    );
+    this.name = 'NarrowWouldRefuseBeforeError';
+  }
+}
+
 /**
  * The narrow role's would-refuse count (migration 0320, report only),
  * derived from its live grants right after applyNarrowGrants: on every table of the app's schemas that the actor
@@ -1702,7 +1726,9 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
  * with nothing pending and no grant change takes no table lock; one with
  * a migration pending drops and makes again each UPDATE OF trigger (a
  * short lock per such table, twice). Partitions follow their
- * parent's trigger. Skipped on a schema before 0320.
+ * parent's trigger. Skipped on a schema before 0320; refused on one
+ * before 0328 (NarrowWouldRefuseBeforeError: the derivation is 0328's
+ * mantle_narrow_would_refuse_expected).
  *
  * Table by table, each in its own transaction with lock_timeout 3 s and a
  * retry on a lock wait or a deadlock (as syncWriteRoleRules): on a roll
@@ -1714,9 +1740,14 @@ async function applyTriggerChanges(tx: Sql, t: string, changes: TriggerChange[])
  * from applyJournal) and this step makes them again after the last.
  */
 export async function applyNarrowWouldRefuse(sql: Sql): Promise<void> {
-  const [fn] = await sql<{ ok: boolean }[]>`
-    select to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is not null as ok`;
+  const [fn] = await sql<{ ok: boolean; expected: boolean }[]>`
+    select to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is not null as ok,
+           to_regprocedure('public.mantle_narrow_would_refuse_expected()') is not null as expected`;
   if (!fn?.ok) return;
+  // Between 0320 and 0328 (a migrate that failed before 0328): no
+  // derivation to read. Thrown, so the runner's warning names it; the next
+  // migrate makes them.
+  if (!fn.expected) throw new NarrowWouldRefuseBeforeError();
   for (const r of await wouldRefuseRows(sql, null)) {
     if (wouldRefuseChanges(r).length === 0) continue;
     await perTableStep(sql, async (tx) => {

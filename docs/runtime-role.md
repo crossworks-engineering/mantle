@@ -1092,13 +1092,16 @@ exists: `narrow_counter_triggers` above 0 (the derived triggers migrate
 makes; 0 on a box before 0320 or after a failed migrate) and
 `narrow_counter_actor_check` warn or on, and
 `narrow_counter_missing_triggers` 0 (the triggers the narrow role's grants
-call for, less the ones there: a migrate stopped part way can leave the
-total above 0 with one table blind; from 0328 the database's own
-`mantle_narrow_counter_missing()` answers, the one query the script and
-the cell in `narrow-lockout.db.test.ts` read), and `narrow_counter_held_readers` yes
+call for, less the ones there, enabled and calling the count's function:
+a migrate stopped part way can leave the total above 0 with one table
+blind; from 0328 the database's own `mantle_narrow_counter_missing()`
+answers, over `mantle_narrow_would_refuse_expected()`, the one derivation
+migrate makes the triggers from and the script and the cell in
+`narrow-lockout.db.test.ts` read), and `narrow_counter_held_readers` yes
 (the runtime role may run the two held readers the login and grant holds
 ask; without them those writes run uncounted). b3 needs all four on every
-box. The epoch must also have seen real work: the rule (the owner's,
+box, and `narrow_hold_triggers` 8 (the grant hold's triggers: five from
+0327, three from 0328). The epoch must also have seen real work: the rule (the owner's,
 2026-10-23) is one working day of real use since the epoch on the box with
 the most daily member traffic (member and Admin turns, the users, keys and
 settings areas, workers), each count 0 at its end, and each count 0 on

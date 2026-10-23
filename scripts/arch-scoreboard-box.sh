@@ -44,7 +44,8 @@
 #     number, the ones missing, the actor check's mode and whether the
 #     runtime role may run the two held readers (b3 needs triggers above
 #     0, none missing, the mode warn or on and the readers yes: a box can
-#     read 0 counts with no counter); the same counts over the epoch
+#     read 0 counts with no counter); the grant hold's trigger count (b3
+#     needs 8); the same counts over the epoch
 #     before; the narrow switch as the app container has it (on, off,
 #     unset: the image's default, or "?"); and real use since the epoch,
 #     counts only (member chat turns, Admin-area audited actions, active
@@ -250,13 +251,15 @@ select count(*) from pg_trigger
                   'mantle_narrow_would_refuse_upd');
 SQL
 )
-# The derived triggers the narrow role's grants call for (runtime-role.ts
-# wouldRefuseRows) less the ones there: 0 when the counter is whole. A
-# trigger dropped and never made again (a migrate stopped part way) shows
-# here, though the total above stays above 0. "?" before 0320. From 0328
-# the database's own mantle_narrow_counter_missing() answers (the query
-# below is its copy, for a box before 0328; the would-refuse cell reads the
-# function: narrow-lockout.db.test.ts).
+# The derived triggers the narrow role's grants call for less the ones
+# there (enabled, calling the count's function): 0 when the counter is
+# whole. A trigger dropped and never made again (a migrate stopped part
+# way) or disabled shows here, though the total above stays above 0. "?"
+# before 0320. From 0328 the database's own mantle_narrow_counter_missing()
+# answers, over the one derivation migrate makes the triggers from
+# (mantle_narrow_would_refuse_expected); the query below is its copy, for
+# a box before 0328 (the would-refuse cell reads the function:
+# narrow-lockout.db.test.ts).
 narrow_missing=$(q <<'SQL' || true
 select case when to_regprocedure('public.mantle_narrow_counter_missing()') is not null
             then public.mantle_narrow_counter_missing() end;
@@ -279,11 +282,14 @@ with t as (
 )
 select case when to_regprocedure('public.mantle_narrow_would_refuse_stmt()') is null then null else
   (select count(*) from t where ins and not exists (
-     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_ins'))
+     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_ins'
+        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
   + (select count(*) from t where del and not exists (
-     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_del'))
+     select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_del'
+        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')))
   + (select count(*) from t where cardinality(t.cols) > 0 and not exists (
      select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'mantle_narrow_would_refuse_upd'
+        and g.tgenabled <> 'D' and g.tgfoid = to_regprocedure('public.mantle_narrow_would_refuse_stmt()')
         and (select array_agg(x order by x) from unnest(g.tgattr::int2[]) x) = t.cols))
 end;
 SQL
@@ -304,6 +310,15 @@ select case
 SQL
 )
 case "$narrow_held" in yes | no | n/a) ;; *) narrow_held='?' ;; esac
+# The grant hold's triggers (mantle_narrow_token_hold_trg, enabled): 5
+# from 0327 (access_keys, oauth_access_tokens, mobile_tokens,
+# oauth_auth_codes, oauth_clients) and 3 from 0328 (pairing_codes,
+# push_subscriptions, mantle_peers). b3 needs 8.
+narrow_holds=$(q <<'SQL' || true
+select count(*) from pg_trigger
+ where not tgisinternal and tgname = 'mantle_narrow_token_hold_trg' and tgenabled <> 'D';
+SQL
+)
 narrow_mode=$(q <<SQL || true
 select coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
 SQL
@@ -430,6 +445,7 @@ printf '  %-34s %s\n' narrow_counter_triggers "$(num "$narrow_triggers")"
 printf '  %-34s %s\n' narrow_counter_missing_triggers "$(num "$narrow_missing")"
 printf '  %-34s %s\n' narrow_counter_actor_check "$narrow_mode"
 printf '  %-34s %s\n' narrow_counter_held_readers "$narrow_held"
+printf '  %-34s %s\n' narrow_hold_triggers "$(num "$narrow_holds")"
 set -- $narrow
 for check in content-write cascade-delete denied would-refuse would-refuse-tables; do
   printf '  %-34s %s\n' "narrow_misses:$check" "$(num "${1:-}")"
