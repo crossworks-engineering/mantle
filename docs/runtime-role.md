@@ -909,6 +909,13 @@ exit its statements and savepoints are read too. Not read: a call made by
 a trigger or a definer (the role needs no EXECUTE there) and a name built
 at run time (dynamic SQL); the switch-on suites cover those.
 
+Its cost is the reading alone: a statement with no `mantle_` in it is not
+lexed. Measured on the workstation (`a2a-round-trips.db.test.ts`, the scan
+cost cell, every statement of a path read, an upper bound): a chat turn's
+start sends 125 statements, 8 of them lexed, 87 microseconds a turn; no
+other path above 0.2 ms. No cache per statement text: it would cost more
+to keep than it saves.
+
 With the switch on, every 42501 a narrow statement meets is noted as
 `narrow-denied`: a privilege gap, and a refusal a row rule, a guard or a
 definer raises with that code. Such an error is marked where it is met, so
