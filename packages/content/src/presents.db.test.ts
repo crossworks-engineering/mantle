@@ -9,6 +9,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -33,13 +34,12 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
   const owner = randomUUID();
   const tag = owner.slice(0, 8);
 
-  /** A raw write of the test's own, named as an operator's: another file
-   *  may have raised the box's actor check while this one runs. */
-  const asOperator = (fn: (tx: typeof admin) => Promise<unknown>) =>
-    admin.begin(async (tx) => {
-      await tx`select mantle_operator_actor('test-presents')`;
-      await fn(tx as unknown as typeof admin);
-    });
+  /** A raw fixture write of the test's own, as the superuser and
+   *  system(test), never through the app's pool: on the runtime role (arch
+   *  A9, `pnpm test:runtime-role`, what a fresh box runs) that pool may not
+   *  run the operator's setter (mantle_operator_actor) nor write a login's
+   *  role, and another file may have raised the box's actor check. */
+  const su = asSuperuser(URL);
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -47,20 +47,16 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     presents = await import('./presents');
-    await asOperator(async (tx) => {
-      await tx`insert into auth.users (id, email, password_hash, role) values
-        (${owner}, ${`pr-${tag}@example.invalid`}, 'x', 'admin')`;
-      await tx`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
-    });
+    await su`insert into auth.users (id, email, password_hash, role) values
+      (${owner}, ${`pr-${tag}@example.invalid`}, 'x', 'admin')`;
+    await su`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
-    await asOperator(async (tx) => {
-      await tx`delete from nodes where owner_id = ${owner}`;
-      await tx`delete from spaces where login_id = ${owner}`;
-      await tx`delete from auth.users where id = ${owner}`;
-    });
+    await su`delete from nodes where owner_id = ${owner}`;
+    await su`delete from spaces where login_id = ${owner}`;
+    await su`delete from auth.users where id = ${owner}`;
     await m.closeDb();
   });
 
@@ -158,10 +154,7 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
 
     // Once past due, one flush announces it and clears the mark; a second
     // flush finds nothing.
-    await asOperator(
-      (tx) =>
-        tx`update presents set index_due_at = now() - interval '1 second' where node_id = ${p.id}`,
-    );
+    await su`update presents set index_due_at = now() - interval '1 second' where node_id = ${p.id}`;
     const announced = await presents.flushDuePresentIndex();
     expect(announced).toBeGreaterThanOrEqual(1);
     expect(await due()).toBeNull();
@@ -173,12 +166,10 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
   it('a canvas whose flush fails goes to the back; the next one is announced (the re-audit N4)', async () => {
     const stuck = await presents.createPresent(owner, { source: canvas(`${tag} Stuck`, 'a') });
     const next = await presents.createPresent(owner, { source: canvas(`${tag} Next`, 'b') });
-    await asOperator(
-      (tx) => tx`update presents set index_due_at = case node_id
-        when ${stuck.id}::uuid then now() - interval '2 minutes'
-        else now() - interval '1 minute' end
-        where node_id in (${stuck.id}, ${next.id})`,
-    );
+    await su`update presents set index_due_at = case node_id
+      when ${stuck.id}::uuid then now() - interval '2 minutes'
+      else now() - interval '1 minute' end
+      where node_id in (${stuck.id}, ${next.id})`;
     const dueOf = async (id: string) =>
       (
         await admin<{ due: Date | string | null }[]>`
@@ -291,5 +282,34 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
            + (select count(*) from present_revisions where node_id = ${p.id}) as n`;
     expect(Number(left!.n)).toBe(0);
     expect(await presents.getPresent(owner, p.id)).toBeNull();
+  });
+
+  it('on the runtime role (what a fresh box runs): creates, edits and deletes a canvas through the app pool', async () => {
+    // The app's own pool, the one every write below goes through: under
+    // `pnpm test:runtime-role` it logs in as mantle_runtime (arch A9),
+    // which owns nothing and runs only its allowlist of functions.
+    const [who] = await admin<{ user: string; su: boolean }[]>`
+      select current_user::text as user, (select rolsuper from pg_roles where rolname = current_user) as su`;
+    if (m.runtimeRoleOn()) expect(who).toEqual({ user: m.RUNTIME_ROLE, su: false });
+
+    const p = await presents.createPresent(owner, { source: canvas(`${tag} Runtime`, 'one') });
+    const saved = await presents.savePresentSource(owner, p.id, {
+      source: canvas(`${tag} Runtime`, 'two'),
+      css: '.p-6{padding:1.5rem}',
+      ifRev: 1,
+    });
+    expect(saved.ok && saved.present.rev).toBe(2);
+    await presents.updatePresent(owner, p.id, { title: `${tag} Runtime renamed` });
+    const got = await presents.getPresent(owner, p.id);
+    expect(got?.title).toBe(`${tag} Runtime renamed`);
+    expect(got?.source).toContain('two');
+    expect((await presents.listPresentRevisions(owner, p.id))?.map((r) => r.rev)).toEqual([2, 1]);
+
+    expect(await presents.deletePresent(owner, p.id)).toBe(true);
+    const [left] = await admin<{ n: number }[]>`
+      select (select count(*) from nodes where id = ${p.id})
+           + (select count(*) from presents where node_id = ${p.id})
+           + (select count(*) from present_revisions where node_id = ${p.id}) as n`;
+    expect(Number(left!.n)).toBe(0);
   });
 });
