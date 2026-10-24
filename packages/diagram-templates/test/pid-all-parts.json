@@ -1,0 +1,137 @@
+{
+  "template": "pid",
+  "title": "Every part of the P&ID template",
+  "description": "A test drawing, not a plant: every equipment type, valve type, valve state, actuator, fail mode, signal type, instrument location and display, off-page connector, service colour and a circuit, so a theme can be checked part by part.",
+  "sheet": { "number": "TEST-0001", "revision": "A" },
+  "profile": { "colourByService": true },
+  "equipment": [
+    { "id": "V-1", "type": "vertical-vessel", "service": "FEED DRUM", "focal": true },
+    { "id": "D-2", "type": "horizontal-drum", "service": "REFLUX DRUM" },
+    { "id": "C-3", "type": "column", "service": "SPLITTER" },
+    { "id": "TK-4", "type": "tank", "service": "PRODUCT TANK" },
+    { "id": "P-5", "type": "centrifugal-pump", "service": "FEED PUMP" },
+    { "id": "P-6", "type": "pd-pump", "service": "DOSING PUMP" },
+    { "id": "K-7", "type": "compressor", "service": "GAS COMPRESSOR" },
+    { "id": "E-8", "type": "shell-tube-exchanger", "service": "CONDENSER" },
+    { "id": "E-9", "type": "exchanger", "service": "REBOILER" },
+    { "id": "A-10", "type": "air-cooler", "service": "TRIM COOLER" },
+    { "id": "F-11", "type": "filter", "service": "STRAINER" }
+  ],
+  "offpage": [
+    { "id": "FEED", "direction": "in", "sheet": "1", "text": "FROM UNIT 1" },
+    { "id": "OUT", "direction": "out", "sheet": "3", "text": "TO STORAGE" },
+    { "id": "STM", "direction": "in", "sheet": "7", "text": "LP STEAM" },
+    { "id": "CWS", "direction": "in", "sheet": "6", "text": "CW SUPPLY" },
+    { "id": "FLR", "direction": "out", "sheet": "9", "text": "TO FLARE" },
+    { "id": "IA", "direction": "in", "sheet": "8", "text": "INSTRUMENT AIR" },
+    { "id": "N2", "direction": "in", "sheet": "8", "text": "NITROGEN" },
+    { "id": "FG", "direction": "out", "sheet": "9", "text": "FUEL GAS" }
+  ],
+  "lines": [
+    {
+      "number": "6\"-P-1001-CS150",
+      "from": "FEED",
+      "to": "F-11",
+      "inline": [{ "type": "gate" }, { "type": "ball", "closed": true }]
+    },
+    { "number": "6\"-P-1002-CS150", "from": "F-11", "to": "V-1", "inline": [{ "type": "check" }] },
+    {
+      "number": "4\"-P-1003-CS150",
+      "from": "V-1",
+      "to": "P-5",
+      "inline": [{ "type": "butterfly" }, { "type": "reducer" }]
+    },
+    {
+      "number": "4\"-P-1004-CS150",
+      "from": "P-5",
+      "to": "C-3",
+      "focal": true,
+      "inline": [
+        { "type": "control", "tag": "FV-1", "actuator": "diaphragm", "fail": "FC" },
+        { "type": "orifice", "tag": "FE-1" }
+      ]
+    },
+    {
+      "number": "6\"-P-1005-CS150",
+      "from": "C-3",
+      "fromPort": "top",
+      "to": "E-8",
+      "inline": [{ "type": "globe", "closed": true }]
+    },
+    {
+      "number": "4\"-P-1006-CS150",
+      "from": "E-8",
+      "to": "D-2",
+      "inline": [{ "type": "control", "tag": "TV-2", "actuator": "piston", "fail": "FO" }]
+    },
+    {
+      "number": "3\"-P-1007-CS150",
+      "from": "D-2",
+      "to": "P-6",
+      "inline": [{ "type": "three-way" }]
+    },
+    {
+      "number": "3\"-P-1008-CS150",
+      "from": "C-3",
+      "fromPort": "bottom",
+      "to": "TK-4",
+      "inline": [{ "type": "control", "tag": "LV-3", "actuator": "motor", "fail": "FL" }]
+    },
+    {
+      "number": "3\"-P-1009-CS150",
+      "from": "TK-4",
+      "to": "OUT",
+      "inline": [{ "type": "blind", "closed": true }]
+    },
+    {
+      "number": "2\"-P-1010-CS150",
+      "from": "D-2",
+      "to": "FLR",
+      "inline": [{ "type": "relief", "tag": "PSV-4" }]
+    },
+    { "number": "4\"-ST-2001-CS300", "from": "STM", "to": "E-9" },
+    { "number": "6\"-CW-3001-CS150", "from": "CWS", "to": "E-8" },
+    { "number": "2\"-P-1011-CS150", "from": "E-9", "to": "C-3" },
+    { "number": "4\"-FG-4001-CS150", "from": "K-7", "to": "FG" },
+    { "number": "3\"-P-1012-CS150", "from": "D-2", "to": "K-7" },
+    { "number": "3\"-P-1013-CS150", "from": "P-6", "to": "A-10" },
+    { "number": "3\"-P-1014-CS150", "from": "A-10", "to": "TK-4" },
+    { "number": "1\"-IA-5001-CS150", "from": "IA", "to": "V-1", "weight": "secondary" },
+    { "number": "1\"-N-6001-CS150", "from": "N2", "to": "TK-4", "weight": "secondary" }
+  ],
+  "instruments": [
+    { "tag": "LT-1", "on": "V-1" },
+    {
+      "tag": "LIC-1",
+      "location": "control-room",
+      "display": "shared",
+      "setpoint": "SP 50 %",
+      "focal": true
+    },
+    { "tag": "PI-2", "location": "local-panel", "display": "discrete" },
+    { "tag": "FY-3", "location": "behind-panel", "display": "computer" },
+    { "tag": "HS-4", "location": "control-room", "display": "plc" },
+    { "tag": "US-5", "location": "control-room", "display": "interlock" },
+    { "tag": "TI-6", "on": "4\"-P-1006-CS150" },
+    { "tag": "FT-7", "on": "4\"-P-1004-CS150" },
+    { "tag": "PT-8", "on": "D-2" },
+    { "tag": "TT-9", "on": "E-9" }
+  ],
+  "signals": [
+    { "from": "LT-1", "to": "LIC-1", "type": "electric" },
+    { "from": "LIC-1", "to": "LV-3", "type": "pneumatic" },
+    { "from": "FT-7", "to": "FY-3", "type": "data" },
+    { "from": "TT-9", "to": "PI-2", "type": "capillary" },
+    { "from": "PT-8", "to": "HS-4", "type": "hydraulic" },
+    { "from": "HS-4", "to": "US-5", "type": "connection" }
+  ],
+  "circuits": [
+    {
+      "id": "CIRC-1",
+      "label": "Overhead circuit",
+      "lines": ["6\"-P-1005-CS150", "4\"-P-1006-CS150"],
+      "equipment": ["E-8", "D-2"],
+      "colour": "series-5"
+    }
+  ]
+}

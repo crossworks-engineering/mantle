@@ -105,8 +105,9 @@ plain `motion` (use `motion/react`). The frame has no `unsafe-eval`, so
 `d3.csvParseRows` or rows from `host.db`. No library can reach the network:
 data comes from `host.db` or a declared tool.
 
-A diagram template (`flow`, `pid`) takes data and returns a static SVG
-string; its data contract is `diagram_guide` with `type` `flow` or `pid`, and
+A diagram template (`flow`, `pid`) takes data and returns an SVG string;
+with `{ theme: 'tokens' }` it draws in the app's theme, light and dark, and
+follows a live switch; its data contract is `diagram_guide` with `type` `flow` or `pid`, and
 `diagram_render` draws data to look at it. Showing a saved Present canvas
 inside an app is not supported (the app frame allows no nested frame).
 

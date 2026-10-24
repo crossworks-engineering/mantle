@@ -23,8 +23,9 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Browser, HTTPRequest } from 'puppeteer-core';
+import type { Browser, Frame, HTTPRequest } from 'puppeteer-core';
 import { buildApp, type AppSource } from '@mantle/app-build';
+import { THEME_ATTR, THEME_COLOURS, THEME_TEXT_COLOURS } from '@mantle/diagram-templates';
 import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
 import { APP_GUIDE_LIBRARIES, appSpecifiers, guideFile } from '../builtins-canvas-library';
 import { RENDER_LAUNCH_ARGS } from './sidecar';
@@ -69,9 +70,9 @@ function appExampleOf(md: string): string {
 
 /** The parent: one sandboxed iframe on the frame document, and every
  *  message the frame posts kept for the test. */
-const PARENT = `<!doctype html><html><head><meta charset="utf-8"></head>
+const parent = (w = 960, h = 640) => `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0">
-<iframe id="app" sandbox="allow-scripts" src="/frame" style="border:0;width:960px;height:640px"></iframe>
+<iframe id="app" sandbox="allow-scripts" src="/frame" style="border:0;width:${w}px;height:${h}px"></iframe>
 <script>
 window.__msgs = [];
 window.addEventListener('message', function (e) {
@@ -125,6 +126,9 @@ type Run = {
   png: Buffer;
   /** The picture after a live theme switch (opts.switchTo). */
   pngAfter?: Buffer;
+  /** opts.inspect's answer in the frame, and again after the switch. */
+  inspected?: unknown;
+  inspectedAfter?: unknown;
 };
 
 type RunOpts = {
@@ -135,6 +139,10 @@ type RunOpts = {
   /** Post a live theme change (the host's theme message) and picture again. */
   switchTo?: string;
   settleMs?: number;
+  /** The iframe's size (the default is a laptop pane). */
+  frame?: { w: number; h: number };
+  /** Run in the frame once settled (and again after a switch). */
+  inspect?: (frame: Frame) => Promise<unknown>;
 };
 
 describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real browser', () => {
@@ -174,7 +182,7 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
   });
 
   /** Answer the made-up origin from public/, refuse and record the rest. */
-  function serve(frameHtml: string, refused: string[], served: string[]) {
+  function serve(frameHtml: string, refused: string[], served: string[], parentHtml: string) {
     return async (req: HTTPRequest) => {
       const url = new URL(req.url());
       if (url.origin !== ORIGIN) {
@@ -184,7 +192,7 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       // The browser's own icon request, not the app's.
       if (url.pathname === '/favicon.ico') return req.respond({ status: 204, body: '' });
       if (url.pathname === '/parent') {
-        return req.respond({ status: 200, contentType: 'text/html', body: PARENT });
+        return req.respond({ status: 200, contentType: 'text/html', body: parentHtml });
       }
       if (url.pathname === '/frame') {
         return req.respond({
@@ -229,7 +237,8 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
     const refused: string[] = [];
     const served: string[] = [];
     try {
-      await page.setViewport({ width: 980, height: 660 });
+      const size = opts.frame ?? { w: 960, h: 640 };
+      await page.setViewport({ width: size.w + 20, height: size.h + 20 });
       if (opts.reduce) {
         await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
       }
@@ -239,7 +248,7 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       });
       page.on('pageerror', (e) => consoleErrors.push(String(e)));
       await page.setRequestInterception(true);
-      page.on('request', serve(frameHtml, refused, served));
+      page.on('request', serve(frameHtml, refused, served, parent(size.w, size.h)));
       await page.goto(`${ORIGIN}/parent`, { waitUntil: 'load', timeout: 20_000 });
       await page.waitForFunction(
         () =>
@@ -258,9 +267,11 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
             () => (window as unknown as { __watch?: string[] }).__watch ?? null,
           )) as string[] | null)
         : null;
+      const inspected = frame && opts.inspect ? await opts.inspect(frame) : undefined;
       const el = await page.$('#app');
       const png = Buffer.from(await el!.screenshot({ type: 'png' }));
       let pngAfter: Buffer | undefined;
+      let inspectedAfter: unknown;
       if (opts.switchTo !== undefined) {
         await page.evaluate((cls: string) => {
           const f = document.getElementById('app') as HTMLIFrameElement;
@@ -268,8 +279,19 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
         }, opts.switchTo);
         await new Promise((r) => setTimeout(r, 800));
         pngAfter = Buffer.from(await el!.screenshot({ type: 'png' }));
+        if (frame && opts.inspect) inspectedAfter = await opts.inspect(frame);
       }
-      return { msgs, consoleErrors, refused, served, watch, png, pngAfter };
+      return {
+        msgs,
+        consoleErrors,
+        refused,
+        served,
+        watch,
+        png,
+        pngAfter,
+        inspected,
+        inspectedAfter,
+      };
     } finally {
       await page.close();
     }
@@ -377,6 +399,168 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       expect(lightVsDark, `${lib.name}: dark differs from light`).toBeGreaterThan(0.3);
       expect(liveVsDark, `${lib.name}: a live switch matches a dark load`).toBeLessThan(0.02);
     }, 90_000);
+  }
+
+  /**
+   * In the frame: every element of the themed drawing that carries a house
+   * colour is painted the colour of its token (the token resolved on a probe
+   * in the same drawing), no painted colour is a house colour (checked in
+   * dark), and every mark (text, line, symbol) clears its contrast on the
+   * card: 4.5 for text, 3 for a line or a symbol.
+   */
+  const inspectDrawing = (frame: Frame) =>
+    frame.evaluate(
+      (map: Record<string, string>, textMap: Record<string, string>, attr: string) => {
+        const svg = document.querySelector(`svg[${attr}]`);
+        if (!svg) return null;
+        const probe = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        svg.appendChild(probe);
+        const resolve = (prop: 'fill' | 'stroke', css: string) => {
+          probe.setAttribute('style', `${prop}:${css}`);
+          return getComputedStyle(probe)[prop];
+        };
+        const g = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+        const rgba = (c: string) => {
+          g.clearRect(0, 0, 1, 1);
+          g.fillStyle = '#000';
+          g.fillStyle = c;
+          g.fillRect(0, 0, 1, 1);
+          const d = g.getImageData(0, 0, 1, 1).data;
+          return [d[0]!, d[1]!, d[2]!, d[3]! / 255];
+        };
+        const card = rgba(resolve('fill', 'var(--card)'));
+        const lum = (c: number[]) => {
+          const ch = c.slice(0, 3).map((v, i) => {
+            const mixed = (v * c[3]! + card[i]! * (1 - c[3]!)) / 255;
+            return mixed <= 0.03928 ? mixed / 12.92 : ((mixed + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
+        };
+        const ratio = (c: number[]) => {
+          const a = lum(c);
+          const b = lum([...card.slice(0, 3), 1]);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        };
+        const house = Object.keys(map).map((h) => [h, rgba(h)] as const);
+        const marks = new Set(
+          Object.entries(map)
+            .filter(([, t]) => /^var\(--(foreground|muted-foreground|primary|chart-\d)\)$/.test(t))
+            .map(([h]) => h),
+        );
+        const mismatched: string[] = [];
+        const houseLeft: string[] = [];
+        const lowContrast: string[] = [];
+        let checked = 0;
+        for (const el of svg.querySelectorAll('[fill],[stroke]')) {
+          if (el === probe) continue;
+          for (const prop of ['fill', 'stroke'] as const) {
+            const value = el.getAttribute(prop);
+            if (!value || !(value in map)) continue;
+            checked++;
+            const got = getComputedStyle(el)[prop];
+            const css =
+              el.tagName === 'text' && prop === 'fill' && value in textMap
+                ? textMap[value]!
+                : map[value]!;
+            const want = resolve(prop, css);
+            const what = `<${el.tagName}> ${prop} ${value}`;
+            if (got !== want) mismatched.push(`${what}: ${got}, not ${want}`);
+            const c = rgba(got);
+            for (const [h, hc] of house) {
+              if (c.every((v, i) => Math.abs(v - hc[i]!) <= (i === 3 ? 0.02 : 2))) {
+                houseLeft.push(`${what} paints the house ${h}`);
+              }
+            }
+            if (marks.has(value) && el.tagName !== 'svg') {
+              const r = ratio(c);
+              const need = el.tagName === 'text' ? 4.5 : 3;
+              if (r < need) lowContrast.push(`${what}: ${r.toFixed(2)} < ${need}`);
+            }
+          }
+        }
+        probe.remove();
+        return {
+          checked,
+          mismatched: [...new Set(mismatched)],
+          houseLeft: [...new Set(houseLeft)],
+          lowContrast: [...new Set(lowContrast)],
+        };
+      },
+      THEME_COLOURS as Record<string, string>,
+      THEME_TEXT_COLOURS as Record<string, string>,
+      THEME_ATTR,
+    ) as Promise<{
+      checked: number;
+      mismatched: string[];
+      houseLeft: string[];
+      lowContrast: string[];
+    } | null>;
+
+  for (const [name, file, frame] of [
+    ['flow', 'packages/diagram-templates/samples/flow-architecture.json', { w: 1700, h: 560 }],
+    ['pid', 'packages/diagram-templates/test/pid-all-parts.json', { w: 3500, h: 1500 }],
+  ] as const) {
+    it(`the ${name} template follows the app theme: light, dark, and a live switch`, async () => {
+      const data = readFileSync(path.join(ROOT, file), 'utf8');
+      const files = {
+        'App.tsx': [
+          "import { useMemo } from 'react';",
+          "import { render, domMeasurer } from '@mantle/diagram-templates/browser';",
+          `const DATA = ${data};`,
+          'export default function App() {',
+          "  const out = useMemo(() => render(DATA.template, DATA, domMeasurer(document), { theme: 'tokens' }), []);",
+          "  if (!out.ok) return <pre>{out.errors.join('\\n')}</pre>;",
+          '  return <div dangerouslySetInnerHTML={{ __html: out.svg }} />;',
+          '}',
+        ].join('\n'),
+      };
+      const opts = { reduce: true, frame, inspect: inspectDrawing } as const;
+      const light = await run({ entry: 'App.tsx', files }, opts);
+      const dark = await run({ entry: 'App.tsx', files }, { ...opts, cls: 'dark' });
+      const live = await run({ entry: 'App.tsx', files }, { ...opts, switchTo: 'dark' });
+      if (shots) {
+        writeFileSync(path.join(shots, `template-${name}.light.png`), light.png);
+        writeFileSync(path.join(shots, `template-${name}.dark.png`), dark.png);
+        writeFileSync(path.join(shots, `template-${name}.live-dark.png`), live.pngAfter!);
+      }
+      type Seen = {
+        checked: number;
+        mismatched: string[];
+        houseLeft: string[];
+        lowContrast: string[];
+      };
+      const seen = {
+        light: light.inspected as Seen,
+        dark: dark.inspected as Seen,
+        live: live.inspectedAfter as Seen,
+      };
+      report[`template-${name}`] = {
+        checked: seen.dark.checked,
+        lowContrastDark: seen.dark.lowContrast,
+        lowContrastLight: seen.light.lowContrast,
+      };
+      for (const r of [light, dark, live]) {
+        expect(r.consoleErrors, `${name} console`).toEqual([]);
+        expect(r.watch, `${name} watch`).toEqual([]);
+      }
+      for (const [when, v] of Object.entries(seen)) {
+        expect(v, `${name} ${when}: the themed drawing is in the frame`).not.toBeNull();
+        expect(v.checked, `${name} ${when}: elements checked`).toBeGreaterThan(50);
+        // Painted in the token of its role, in light, dark and after a switch.
+        expect(v.mismatched, `${name} ${when}`).toEqual([]);
+      }
+      // Every mark readable on the card, light and dark; and in dark
+      // nothing is left from the light house style.
+      for (const when of ['light', 'dark', 'live'] as const) {
+        expect(seen[when].lowContrast, `${name} ${when}: contrast`).toEqual([]);
+      }
+      for (const when of ['dark', 'live'] as const) {
+        expect(seen[when].houseLeft, `${name} ${when}: house colours`).toEqual([]);
+      }
+      // A live switch ends where a dark load starts.
+      expect((await sample(live.pngAfter!, dark.png)).differ).toBeLessThan(0.02);
+      expect((await sample(light.png, dark.png)).differ).toBeGreaterThan(0.3);
+    }, 120_000);
   }
 
   it('only d3 and echarts carry an eval path, and each is named', () => {

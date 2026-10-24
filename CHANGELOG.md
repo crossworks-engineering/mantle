@@ -26,6 +26,13 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `script-src` and nothing else: no new origin, no `unsafe-eval`,
   `connect-src` stays `'none'`. A browser test pins that an app with a
   library loaded still cannot fetch, eval or load from another origin.
+- **Feature:** the diagram templates draw in a mini app's theme:
+  `render(template, data, measurer, { theme: 'tokens' })` adds one scoped
+  stylesheet that maps every house colour to the app's tokens (card,
+  foreground, muted foreground, primary, the chart ramp), so a flow or a
+  P&ID follows light, dark and a live switch. Without the option the output
+  is byte for byte what it was, so Present canvases, `diagram_render` and
+  `present_export` look as before.
 - **Build:** server/web `generate` builds the canvas runtime before the app
   runtime, which reads its manifest.
 

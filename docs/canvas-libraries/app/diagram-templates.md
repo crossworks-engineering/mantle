@@ -16,7 +16,8 @@ an app uses `render`.
 
 ## In a React component
 
-- `render(template, data, measurer)` lays the data out and returns
+- `render(template, data, measurer, { theme: 'tokens' })` lays the data out
+  and returns
   `{ ok: true, svg, warnings, stats }` or `{ ok: false, errors, warnings }`.
   It never throws on bad data: every problem comes back in `errors`, each
   naming the fix. Show them; do not draw a half diagram.
@@ -30,8 +31,15 @@ an app uses `render`.
 - Compute the SVG in `useMemo` keyed on the data, and insert it with
   `dangerouslySetInnerHTML`. The template escapes every label, so data from
   `host.db` or a user cannot add markup.
-- The SVG is the house style on its own light ground, sized in pixels with a
-  `viewBox`: scale it with `[&>svg]:h-auto [&>svg]:max-w-full` on the parent.
+- `theme: 'tokens'` draws it in the app's theme: the card, lines, text and
+  symbols take `--card`, `--foreground`, `--muted-foreground`, `--primary`
+  and the chart ramp, in light and dark, and a live theme switch restyles it
+  with no redraw (one scoped stylesheet in the SVG). Line types keep their
+  dashes and marks. Leave it out and you get the fixed house style, the
+  look of a Present canvas and its export. A colour the data names itself
+  (`#rrggbb` on a circuit) stays as written.
+- The SVG is sized in pixels with a `viewBox`: scale it with
+  `[&>svg]:h-auto [&>svg]:max-w-full` on the parent.
 - Data from rows: build `nodes` and `edges` from `host.db` results, with
   stable `id`s (an edge names its ends by id).
 
@@ -66,7 +74,7 @@ const FLOW = {
 };
 
 export default function App() {
-  const out = useMemo(() => render('flow', FLOW, measure()), []);
+  const out = useMemo(() => render('flow', FLOW, measure(), { theme: 'tokens' }), []);
   if (!out.ok) {
     return (
       <pre className="whitespace-pre-wrap p-4 text-sm text-destructive">

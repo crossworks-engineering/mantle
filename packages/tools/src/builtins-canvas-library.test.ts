@@ -176,6 +176,11 @@ describe('canvas_library for a mini app', () => {
     for (const spec of APP_LIBRARY_SPECIFIERS) expect(section, spec).toContain(`\`${spec}\``);
   });
 
+  it('the diagram templates app example draws in the app theme', () => {
+    const md = readFileSync(path.join(GUIDES, 'app', 'diagram-templates.md'), 'utf8');
+    expect(appExampleOf(md)).toContain("{ theme: 'tokens' }");
+  });
+
   it('motion in an app is motion/react', async () => {
     const res = await tool.handler({ name: 'framer-motion', for: 'app' }, ctx);
     expect((res as { output: { import: string[] } }).output.import).toEqual(['motion/react']);

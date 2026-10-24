@@ -15,6 +15,7 @@ import { validatePid, renderPid, PID_VERSION } from './templates/pid/index.ts';
 import { messageOf, type Checked } from './runtime/validate.ts';
 import type { Measurer } from './runtime/text.ts';
 import type { RenderResult } from './types.ts';
+import { themeSvg } from './runtime/theme.ts';
 
 export type TemplateName = 'flow' | 'pid';
 
@@ -53,9 +54,20 @@ export type RenderOutcome =
   | ({ ok: true; template: TemplateName; version: number } & RenderResult)
   | { ok: false; template: string; errors: string[]; warnings: string[] };
 
+export type RenderOptions = {
+  /** 'tokens': draw in the page's theme tokens (a mini app; runtime/theme.ts).
+   *  Absent: the house style, as a canvas and an export draw. */
+  theme?: 'tokens';
+};
+
 /** Validate, then render. Never throws on bad data: errors come back as a
  *  list. A crash inside a template comes back as one error too. */
-export function render(template: string, data: unknown, m: Measurer): RenderOutcome {
+export function render(
+  template: string,
+  data: unknown,
+  m: Measurer,
+  opts: RenderOptions = {},
+): RenderOutcome {
   if (!isTemplateName(template)) {
     return {
       ok: false,
@@ -73,6 +85,7 @@ export function render(template: string, data: unknown, m: Measurer): RenderOutc
   try {
     // The registry pairs each validate with its own render.
     const out = (t.render as (d: unknown, m: Measurer) => RenderResult)(checked.data, m);
+    if (opts.theme === 'tokens') out.svg = themeSvg(out.svg);
     return {
       ok: true,
       template,
@@ -100,6 +113,7 @@ export function validate(template: string, data: unknown): Checked<unknown> {
 }
 
 export { checkStaticSvg, svgDocument, slugify } from './runtime/export.ts';
+export { THEME_COLOURS, THEME_TEXT_COLOURS, THEME_ATTR } from './runtime/theme.ts';
 export { estimateMeasurer, domMeasurer, type Measurer } from './runtime/text.ts';
 export { buildCanvas, readCanvasData, replaceCanvasData, type CanvasMode } from './canvas.ts';
 export type { RenderResult } from './types.ts';
