@@ -75,7 +75,7 @@ const EGRESS_PROXY_HOST = process.env.SANDBOX_EGRESS_PROXY_HOST || 'mantle_sandb
 /** Batteries-included default (python3+libs, node22+pnpm, git, docker CLI,
  *  claude code — see infra/sandbox-image/Dockerfile). Pinned tag: updating
  *  the image is an explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
-const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v2';
+const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v3';
 const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 3);
 const MEM_BYTES = Number(process.env.SANDBOX_MEM_BYTES || 1024 * 1024 * 1024);
 const NANO_CPUS = Number(process.env.SANDBOX_NANO_CPUS || 1e9); // 1 CPU

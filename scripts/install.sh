@@ -1229,7 +1229,7 @@ fi
 # multi-hundred-MB download.
 if getval COMPOSE_PROFILES | tr ',' '\n' | grep -qx 'sandboxes'; then
   SBX_IMAGE="$(getval SANDBOX_DEFAULT_IMAGE)"
-  SBX_IMAGE="${SBX_IMAGE:-titanwest/mantle-sandbox:24.04-v2}"
+  SBX_IMAGE="${SBX_IMAGE:-titanwest/mantle-sandbox:24.04-v3}"
   inf "Pre-pulling the sandbox base image (${B}$SBX_IMAGE${RS})…"
   docker pull -q "$SBX_IMAGE" 2>&1 | sed 's/^/    /' \
     || warn "Sandbox base image pull failed — the first sandbox_create will pull it instead."

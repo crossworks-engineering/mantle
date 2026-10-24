@@ -11,7 +11,9 @@
 #     on PATH carrying the common libs (requests, httpx, flask, fastapi,
 #     uvicorn, pandas, numpy) — PEP 668 makes bare pip installs error on
 #     24.04, the venv sidesteps that and `pip install` inside it Just Works.
-#   - Node 22 LTS (NodeSource) + npm, with corepack-managed pnpm activated.
+#   - Node 26, the stack's own line, copied from the official node:<ver>-slim
+#     image (no curl | bash installer), + npm and pnpm (Node 26 no longer
+#     bundles corepack, so pnpm comes from npm).
 #   - @anthropic-ai/claude-code preinstalled — `claude mcp serve` needs no API
 #     key (the LLM sits client-side), so the agent-in-the-box MCP bridge can
 #     start instantly. Refreshed on every image rebuild.
@@ -28,11 +30,15 @@
 #     stop/rm), which otherwise trips git's dubious-ownership refusal.
 #
 # Build + push (workstation; titanwest push is pre-authorized):
-#   docker build -t titanwest/mantle-sandbox:24.04-v2 -t titanwest/mantle-sandbox:latest infra/sandbox-image
-#   docker push titanwest/mantle-sandbox:24.04-v2 && docker push titanwest/mantle-sandbox:latest
+#   docker build --pull -t titanwest/mantle-sandbox:24.04-v3 -t titanwest/mantle-sandbox:latest infra/sandbox-image
+#   docker push titanwest/mantle-sandbox:24.04-v3 && docker push titanwest/mantle-sandbox:latest
 # Bump the -vN tag on every content change; boxes pull by the pinned tag
 # (SANDBOX_DEFAULT_IMAGE), so an image update is an explicit env change,
 # never a silent drift.
+
+# Node comes from the official image, pinned to a patched release: bump it
+# with every Node security release (v3: 26.12.1, the October 2026 fixes).
+FROM node:26.12.1-slim AS node
 
 FROM ubuntu:24.04
 
@@ -46,9 +52,6 @@ RUN apt-get update \
     ca-certificates curl wget gnupg git jq ripgrep unzip zip vim nano tmux less \
     build-essential pkg-config sqlite3 openssh-client \
     python3 python3-pip python3-venv \
-    # Node 22 LTS via NodeSource
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     # docker CLI only (no daemon) via Docker's apt repo
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
@@ -63,12 +66,20 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir \
     requests httpx flask fastapi "uvicorn[standard]" pandas numpy
 
-# pnpm via corepack; Claude Code for the keyless MCP toolbelt; common node
-# libs installed globally and made require-able everywhere via NODE_PATH.
-RUN corepack enable && corepack prepare pnpm@latest --activate \
-    && npm install -g @anthropic-ai/claude-code jsonwebtoken \
+# Node + npm from the official image (its binaries need only glibc, which
+# Ubuntu 24.04 has).
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node -v && npm -v
+
+# pnpm from npm (Node 26 no longer bundles corepack); Claude Code for the
+# keyless MCP toolbelt; common node libs installed globally and made
+# require-able everywhere via NODE_PATH.
+RUN npm install -g pnpm @anthropic-ai/claude-code jsonwebtoken \
     && npm cache clean --force
-ENV NODE_PATH=/usr/lib/node_modules
+ENV NODE_PATH=/usr/local/lib/node_modules
 
 # /files is a bind mount whose ownership sandboxd rewrites on stop/rm.
 RUN git config --system safe.directory '*'

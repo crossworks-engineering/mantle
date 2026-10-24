@@ -193,7 +193,7 @@ richer ergonomics than raw exec for file work, same blast radius.
 
 `titanwest/mantle-sandbox` (built from `infra/sandbox-image/Dockerfile`,
 Ubuntu 24.04 LTS): python 3.12 with a global venv carrying
-requests/httpx/flask/fastapi/uvicorn/pandas/numpy, node 22 + corepack pnpm,
+requests/httpx/flask/fastapi/uvicorn/pandas/numpy, node 26 + pnpm (from npm),
 git, ripgrep, build-essential, vim/tmux, docker **CLI only** (no daemon,
 nested docker is a separate decision), Claude Code, and jsonwebtoken on
 `NODE_PATH`. Create-to-working-toolchain is ~5 seconds. Defaults pin the

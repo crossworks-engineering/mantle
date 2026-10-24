@@ -135,7 +135,7 @@ const publish = tool('sandbox_publish');
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const ROW = { id: 'sb1', name: 'scratch', status: 'stopped' };
-const DEFAULT_IMAGE = 'titanwest/mantle-sandbox:24.04-v2';
+const DEFAULT_IMAGE = 'titanwest/mantle-sandbox:24.04-v3';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 

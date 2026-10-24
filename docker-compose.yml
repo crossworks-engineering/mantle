@@ -967,7 +967,7 @@ services:
       SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
       SANDBOXES_DIR: ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
       SANDBOX_NETWORK: mantle_sandbox
-      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v2}
+      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v3}
       SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
       SANDBOX_EGRESS_ALLOW: ${SANDBOX_EGRESS_ALLOW:-}
       # Read-only inbox mounts (docs/sandboxes.md). HOST-absolute, for the same
