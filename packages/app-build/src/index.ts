@@ -60,10 +60,43 @@ export type BuildResult = {
 export const ESBUILD_VERSION = esbuild.version;
 
 const APP_NS = 'app';
+/** Marks the bundler's own nested resolve, so the gate does not re-enter. */
+const RESOLVING = Symbol('app-build-resolving');
 const STDIN = '<stdin>';
 
 /** Bare npm packages a mini app may import. Everything else is rejected. */
 const BARE_ALLOW = /^(react($|\/)|react-dom($|\/)|lucide-react($|\/))/;
+
+/** The installed directories of the allowed packages: whatever an allowed
+ *  bare import resolves to must lie inside one of them. */
+const BUNDLED_PACKAGES = ['react', 'react-dom', 'lucide-react'];
+
+/** A specifier that steps out of its package (`lucide-react/../x`, a `.`
+ *  segment, an empty segment, a backslash) or carries a query or hash. The
+ *  prefix match above passed `lucide-react/../../package.json` to node
+ *  resolution, which read a file of the server's disk into the app bundle
+ *  (security audit 2026-10-24). */
+function escapesPackage(spec: string): boolean {
+  if (/[\\?#]/.test(spec)) return true;
+  return spec.split('/').some((seg) => seg === '.' || seg === '..' || seg === '');
+}
+
+/** An import attribute other than JSON (`with { type: 'text' }` and the
+ *  like) makes esbuild read any file as text or bytes: user code may not
+ *  ask for one. */
+function refusedAttributes(attrs: Record<string, string> | undefined): string | null {
+  if (!attrs) return null;
+  for (const [k, v] of Object.entries(attrs)) {
+    if (!(k === 'type' && v === 'json')) return `${k}: '${v}'`;
+  }
+  return null;
+}
+
+function fromUserSource(args: { namespace: string; importer: string }): boolean {
+  return (
+    args.namespace === APP_NS || args.importer === STDIN || args.importer.endsWith(`/${STDIN}`)
+  );
+}
 
 function loaderFor(p: string): 'tsx' | 'ts' | 'js' | 'jsx' | 'json' | 'css' {
   if (p.endsWith('.ts')) return 'ts';
@@ -121,6 +154,25 @@ function virtualPlugin(source: AppSource): Plugin {
         };
       });
 
+      // Every import written in user or kit source: no import attribute but
+      // JSON, and never the bare `.` or `..` (they resolve against this
+      // package's own directory on disk).
+      build.onResolve({ filter: /.*/ }, (args) => {
+        if (args.pluginData === RESOLVING || !fromUserSource(args)) return undefined;
+        const attr = refusedAttributes(args.with);
+        if (attr) {
+          return {
+            errors: [
+              { text: `Import '${args.path}' with { ${attr} } is not allowed in a mini app.` },
+            ],
+          };
+        }
+        if (/^\.\.?([?#]|$)/.test(args.path)) {
+          return { errors: [{ text: `Import '${args.path}' is not allowed in a mini app.` }] };
+        }
+        return undefined;
+      });
+
       // Relative imports — resolve against the virtual source tree. The stdin
       // entry's `import App from './<entry>'` also lands here (its importer is
       // the resolved stdin path, e.g. '/.../app-build/src/<stdin>').
@@ -140,22 +192,36 @@ function virtualPlugin(source: AppSource): Plugin {
       // is rejected with a clear message so Appsmith self-corrects. The iframe
       // sandbox + CSP is the real boundary, but failing the build is cleaner
       // feedback than a silently dead import.
-      build.onResolve({ filter: /^[^.@]/ }, (args) => {
+      build.onResolve({ filter: /^[^.@]/ }, async (args) => {
+        // The backstop's own resolve call below comes back through here.
+        if (args.pluginData === RESOLVING) return null;
         // Only gate imports written in USER/KIT source — let transitive
         // node_modules imports (react-dom → scheduler, etc.) resolve freely.
-        const fromUserCode =
-          args.namespace === APP_NS ||
-          args.importer === STDIN ||
-          args.importer.endsWith(`/${STDIN}`);
-        if (!fromUserCode) return null;
-        if (BARE_ALLOW.test(args.path)) return null; // fall through to node_modules
-        return {
+        if (!fromUserSource(args)) return null;
+        const refused = {
           errors: [
             {
               text: `Import '${args.path}' is not allowed in a mini app. Allowed packages: react, react-dom, lucide-react. Use @/components/ui/*, @host, or relative files for everything else.`,
             },
           ],
         };
+        if (!BARE_ALLOW.test(args.path) || escapesPackage(args.path)) return refused;
+        // Backstop: resolve it here, and keep it only when it lands inside
+        // the package it names (a symlink or an odd `exports` map aside).
+        const pkg = BUNDLED_PACKAGES.find((p) => args.path === p || args.path.startsWith(`${p}/`))!;
+        const resolved = await build.resolve(args.path, {
+          kind: args.kind,
+          resolveDir: args.resolveDir,
+          pluginData: RESOLVING,
+        });
+        if (resolved.errors.length) return { errors: resolved.errors };
+        if (
+          !resolved.external &&
+          !resolved.path.includes(`${path.sep}node_modules${path.sep}${pkg}${path.sep}`)
+        ) {
+          return refused;
+        }
+        return resolved;
       });
 
       build.onLoad({ filter: /.*/, namespace: APP_NS }, (args) => {

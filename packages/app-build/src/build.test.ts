@@ -180,3 +180,56 @@ describe('lintToolRefs — undeclared host.tools.call', () => {
     expect(res.warnings.length).toBe(0);
   });
 });
+
+describe('buildApp: no read of the server disk through an import', () => {
+  // Security audit 2026-10-24: the bare allowlist was a prefix match, so
+  // `lucide-react/../../package.json` resolved to a file outside the package,
+  // and `with { type: 'text' }` made esbuild read any file as text.
+  const MARKER = '"private"';
+  const tries: Array<[string, string]> = [
+    ['parent segments', "import p from 'lucide-react/../../package.json';"],
+    ['deep parent segments', "import p from 'react/../../../../package.json';"],
+    ['a dot segment', "import p from 'lucide-react/./../../package.json';"],
+    ['an empty segment', "import p from 'lucide-react//../../package.json';"],
+    ['a backslash', "import p from 'lucide-react\\\\..\\\\..\\\\package.json';"],
+    ['a query', "import p from 'lucide-react?raw';"],
+    ['a hash', "import p from 'lucide-react#x';"],
+    ['text attribute', "import p from 'lucide-react/../../package.json' with { type: 'text' };"],
+    ['text attribute on a relative file', "import p from './App.tsx' with { type: 'text' };"],
+    ['bytes attribute', "import p from 'lucide-react' with { type: 'bytes' };"],
+    ['the bare dot', "import p from '.' with { type: 'json' };"],
+    ['the bare double dot', "import p from '..';"],
+    ['an absolute path', "import p from '/etc/hosts';"],
+  ];
+  for (const [name, line] of tries) {
+    it(`refuses ${name}`, async () => {
+      const src = app({
+        'App.tsx': `${line}\nexport default function App() {\n  return <div>{String(p)}</div>;\n}\n`,
+      });
+      const res = await buildApp(src, { runtimeExports: RT });
+      expect(res.ok).toBe(false);
+      expect(res.code ?? '').not.toContain(MARKER);
+    });
+  }
+
+  it('still builds a package file inside an allowed package', async () => {
+    const src = app({
+      'App.tsx':
+        "import pkg from 'lucide-react/package.json';\nexport default function App() {\n  return <div>{pkg.name}</div>;\n}\n",
+    });
+    const res = await buildApp(src, { runtimeExports: RT });
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it('still allows a JSON attribute on a relative JSON file', async () => {
+    const src = app({
+      'App.tsx':
+        "import d from './data.json' with { type: 'json' };\nexport default function App() {\n  return <div>{d.n}</div>;\n}\n",
+      'data.json': '{"n": 1}',
+    });
+    const res = await buildApp(src, { runtimeExports: RT });
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+});
