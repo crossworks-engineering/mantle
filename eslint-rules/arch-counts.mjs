@@ -406,9 +406,22 @@ export function itemNonePlaceholderCount(code) {
   return code.split(ITEM_NONE_PLACEHOLDER).length - 1;
 }
 
-/** The route policy lists of `text`: lists holding 3 or more routes. */
-export function routePolicyLists(text) {
-  return listLiterals(stripComments(text))
+/** The route policy lists of `text`: lists holding 3 or more routes, but
+ *  the lists assigned to a constant of `notPolicy` (by its name; each must
+ *  be declared in `text` with a list, or this throws, so a renamed or moved
+ *  constant cannot leave its name here while its list is counted again or
+ *  another list takes its place). */
+export function routePolicyLists(text, notPolicy = []) {
+  let code = stripComments(text);
+  for (const name of notPolicy) {
+    const m = new RegExp(`\\b(?:const|let|var)\\s+${name}\\b[^=;]*=\\s*\\[`).exec(code);
+    if (!m) throw new Error(`routePolicyLists: no list ${name} is declared in the file`);
+    const open = m.index + m[0].length - 1;
+    const list = balanced(code, open);
+    // Blank the list out (its length kept), so the walk below never sees it.
+    code = code.slice(0, open) + ' '.repeat(list.length) + code.slice(open + list.length);
+  }
+  return listLiterals(code)
     .map((l) => stringsIn(l).filter((s) => ROUTE_ENTRY.test(s)).length)
     .filter((n) => n >= 3);
 }
@@ -420,15 +433,29 @@ const ROUTE_LISTS_NOT_POLICY = Object.freeze({
   // data under server/, read by the sweeps only (the route declarations,
   // plan v3.2: the owner's decision of 2026-10-22).
   'server/web/server/public-session-routes.ts': 'test data',
-  // The request body's ceiling by the decoded path (OWNER_DOCUMENT_PREFIXES
-  // and its siblings): how many bytes a request may send, read by the gate
-  // before a row is found and by the loader, never who may call (plan v3.2
-  // S9 part 3: the owner's decision of part 0 round 2 kept the ceilings a
-  // list, and they name no caller, open, item or area). Out of the policy
-  // count: accepted at part 3's review, since they limit sizes, not who
-  // may call.
-  'server/web/lib/body-limit.ts': 'size ceilings',
 });
+
+/** The lists of a swept file that are no policy, by the constant each is
+ *  assigned to, each file with why. The rest of the file is counted. */
+const ROUTE_LIST_NAMES_NOT_POLICY = Object.freeze({
+  // The request body's ceiling by the decoded path: how many bytes a
+  // request may send, read by the gate before a row is found and by the
+  // loader, never who may call (plan v3.2 S9 part 3: the owner's decision
+  // of part 0 round 2 kept the ceilings a list, and they name no caller,
+  // open, item or area). Out of the policy count: accepted at part 3's
+  // review, since they limit sizes, not who may call. Only these three
+  // constants: a route list added to the file beside them is counted.
+  'server/web/lib/body-limit.ts': Object.freeze([
+    'UPLOAD_PATHS',
+    'MULTIPART_CEILINGS',
+    'OWNER_DOCUMENT_PREFIXES',
+  ]),
+});
+
+/** The constants of `path` whose lists routePolicyLists leaves out. */
+export function routeListNamesNotPolicy(path) {
+  return Object.hasOwn(ROUTE_LIST_NAMES_NOT_POLICY, path) ? ROUTE_LIST_NAMES_NOT_POLICY[path] : [];
+}
 
 /** Whether route policy lists are looked for in `path`: the HTTP tier's
  *  own code, not its route handlers, nor a file of
@@ -1121,7 +1148,7 @@ export function measure(root) {
     const tl = toolPolicySwept(f) ? toolPolicyLists(text, slugs) : [];
     if (tl.length) toolLists[f] = { lists: tl.length, entries: tl.reduce((a, b) => a + b, 0) };
     if (routePolicySwept(f)) {
-      const rl = routePolicyLists(text);
+      const rl = routePolicyLists(text, routeListNamesNotPolicy(f));
       if (rl.length) routeLists[f] = rl.length;
     }
     // One walk of the syntax tree for both name list counts, and none for a

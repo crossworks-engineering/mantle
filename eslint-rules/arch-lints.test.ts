@@ -29,6 +29,8 @@ import {
   rawAclLines,
   readRepoFile,
   routePolicyLists,
+  routeListNamesNotPolicy,
+  routePolicySwept,
   itemNonePlaceholderCount,
   stripComments,
   toolPolicyLists,
@@ -631,6 +633,30 @@ describe('the counters', () => {
     expect(isDefinitionList("['note_create', { slug: 'x' }]")).toBe(false);
     expect(routePolicyLists("const R = ['GET /api/a', 'POST /api/b', '/api/c'];")).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'x'];")).toEqual([]);
+  });
+
+  it('leave out the body ceilings by their constants only, never the rest of body-limit.ts (S9 part 3 round 3)', () => {
+    const file = 'server/web/lib/body-limit.ts';
+    // The file is swept; its three ceiling constants are left out by name.
+    expect(routePolicySwept(file)).toBe(true);
+    const names = routeListNamesNotPolicy(file);
+    expect([...names].sort()).toEqual([
+      'MULTIPART_CEILINGS',
+      'OWNER_DOCUMENT_PREFIXES',
+      'UPLOAD_PATHS',
+    ]);
+    expect(routePolicyLists(readRepoFile(ROOT, file) ?? '', names)).toEqual([]);
+    // Without the names its prefix list is counted, and a route list put
+    // beside the named ones is counted too.
+    expect(routePolicyLists(readRepoFile(ROOT, file) ?? '')).not.toEqual([]);
+    const beside =
+      "const OWNER_DOCUMENT_PREFIXES: readonly string[] = ['/api/a', '/api/b', '/api/c'];\n" +
+      "const MORE = ['/api/d', '/api/e', '/api/f'];";
+    expect(routePolicyLists(beside, ['OWNER_DOCUMENT_PREFIXES'])).toEqual([3]);
+    // A name the file does not declare is refused: a rename cannot leave a
+    // stale name here.
+    expect(() => routePolicyLists(beside, ['GONE'])).toThrow(/no list GONE/);
+    expect(routeListNamesNotPolicy('server/web/lib/auth-constants.ts')).toEqual([]);
   });
 
   it('leave out only the deferred core list, never the rest of the selection (fix round 1, LOW-9)', () => {
