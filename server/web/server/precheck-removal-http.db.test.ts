@@ -57,7 +57,6 @@ import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { READ_ONLY_COPY_MESSAGE } from '@mantle/std';
-import { routeItemTarget } from '../lib/auth/route-policy';
 import { rowAnswers } from './test-support';
 import { asSuperuser } from '@mantle/db/test-support';
 
@@ -1507,9 +1506,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 expect(was.changed).toBe(false);
               }
               const pattern = route.name.split(' ')[1]!;
-              // The item its row names (S9 part 3: off the row, the list gone).
-              const row = rowAnswers().rowOf(route.method, pattern);
-              const target = row ? routeItemTarget(row, route.path(none)) : null;
+              // The item its row names (S9 part 3: off the row, the list
+              // gone): the row's own `item`, not routeItemTarget, which this
+              // file mocks to feed the old targets (main's itemWriteTarget
+              // was the real one, null for every route).
+              const target = rowAnswers().rowOf(route.method, pattern)?.item ?? null;
               if (family.removed) expect(target, route.name).toBeNull();
               else expect(target, route.name).not.toBeNull();
             }, 300_000);
