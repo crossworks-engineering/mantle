@@ -255,6 +255,15 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     guarded.use('*', gate());
     registerRoutes(guarded, entries(guards, false), { standIn: true });
     guarded.onError(onError);
+    // One area read here, alone, before any test: the gate's area read
+    // imports the mocked area module on its first use (session.ts
+    // loginHoldsArea), and two first imports in flight at once (a test
+    // that timed out under load still sending requests beside the next)
+    // were handed the real module, whose requireArea reads the stubbed
+    // database and answers no (S9 part 2 round 2: the device token cell's
+    // 403 on the workstation; main the same when its tests time out).
+    const warm = await pipeline.request('/api/users', { headers: creds[1]!.headers() });
+    expect(warm.status).toBe(200);
   });
 
   afterAll(() => {
