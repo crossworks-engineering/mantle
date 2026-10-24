@@ -381,9 +381,9 @@ export { ROUTE_POLICY_EXPORT };
  * policy beside its handlers, `export const policy = routePolicy({ ... })`
  * (server/web/lib/auth/route-declaration.ts), naming each method it exports
  * and no other (a HEAD the GET handler answers takes its GET's). The boot
- * refuses the same (route-policy.ts buildRoutePolicy) once the rows are
- * read from the declarations; this says it at the line. Off until part
- * 1's codemod has written every declaration (eslint.config.mjs).
+ * refuses the same (route-policy.ts requireRouteDeclarations, at
+ * createApp); this says it at the line. 'error' since part 1's codemod
+ * wrote every declaration (eslint.config.mjs).
  */
 export const routePolicyDeclared = {
   meta: {
