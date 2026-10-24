@@ -15,9 +15,9 @@
  *    still open; a scope that holds another brain's Admin workspace, which
  *    no box has: one brain per database);
  *  - loginHoldsAdmin and loginHasArea (now thin calls) against main's text;
- *  - mantle_role_drift: a disabled Admin user and a former client are left
- *    out (0), a role=admin login outside Admin counts (1), a member inside
- *    Admin counts;
+ *  - mantle_role_drift: a disabled Admin user is left out (0), a
+ *    role=admin login outside Admin counts (1), a former client too since
+ *    0330, a member inside Admin counts;
  *  - the catalog: no PUBLIC and no role but a superuser, mantle_runtime and
  *    mantle_owner (so no viewer role, write role, gap writer or
  *    mantle_system) may EXECUTE a login fact, mantle_login_area too; the
@@ -406,21 +406,23 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
     expect(await has(user(L.otherUser, [ws.otherAdmin]), 'settings')).toBe(false);
   });
 
-  it('mantle_role_drift: enabled logins only, former clients left out', async () => {
+  it('mantle_role_drift: enabled logins only, former clients counted (0330)', async () => {
     const drift = async (tx: postgres.TransactionSql) =>
       (await tx<{ n: number }[]>`select mantle_role_drift() as n`)[0]!.n;
-    // As seeded, a role=admin login outside Admin (L.out): 1. The disabled
-    // Admin user (role admin, Admin needs an enabled login) and the former
-    // client (role admin, outside Admin) are left out.
-    expect(await rolledBack(drift)).toBe(1);
-    // L.out disabled: a box whose only odd login is a disabled Admin user: 0.
+    // As seeded: a role=admin login outside Admin (L.out) and the former
+    // client (role admin, outside Admin): 2. 0304 left former clients out
+    // (0286's bridge read them as no role); since 0330 a former client is
+    // a login like any other (S8b round 8, r7 DB LOW-A). The disabled
+    // Admin user (role admin, Admin needs an enabled login) is left out.
+    expect(await rolledBack(drift)).toBe(2);
+    // L.out disabled: the former client alone.
     expect(
       await rolledBack(async (tx) => {
         await tx`update auth.users set disabled_at = now() where id = ${L.out}`;
         return drift(tx);
       }),
-    ).toBe(0);
-    // The former client, were it not left out, would count.
+    ).toBe(1);
+    // The former-client row makes no difference now.
     expect(
       await rolledBack(async (tx) => {
         await tx`update auth.users set disabled_at = now() where id = ${L.out}`;
@@ -437,7 +439,7 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
                  values (${adminWs}, ${L.mem}, true)`;
         return drift(tx);
       }),
-    ).toBe(1);
+    ).toBe(2);
   });
 
   it('catalog: no role but a superuser, the runtime roles and the owner role may EXECUTE a login fact; the runtime role runs the four it calls, the narrow role the three narrow work calls', async () => {
