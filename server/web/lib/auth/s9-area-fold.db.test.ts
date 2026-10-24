@@ -291,10 +291,12 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
   }, 300_000);
 
   /**
-   * The answers the fold changes, each named (S9 part 2): an area read
-   * that fails once. Main asked the area again in the guard and could
-   * pass; the gate answers the failure, the opaque 500, in the handler's
-   * place: stricter, never a pass. Every other cell is main's, byte for
+   * The answers the fold changes (S9 part 2), a class, not these cells
+   * alone: on ANY area row (an owner or an asset caller's), an area read
+   * that fails once and then answers. Main asked the area again in the
+   * guard and could pass; the gate answers the failure, the opaque 500, in
+   * the handler's place: stricter, never a pass. These cells are the sample
+   * of that class the record holds; every other cell is main's, byte for
    * byte.
    */
   const CHANGED: Readonly<Record<string, string>> = {

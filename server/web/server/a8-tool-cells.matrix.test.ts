@@ -62,9 +62,12 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
   },
 }));
 
-/** The time the tool cells may take, both modes (the budget cell): about
- *  three times the 70 s they take on the workstation. */
-const A8_TOOL_TIME_CEILING_MS = 210_000;
+/** The time the tool cells may take, both modes (the budget cell). Was
+ *  210 s, about three times the 70 s they took on the workstation alone;
+ *  a loaded box's run used about 199 s of it (2026-10-24), so it is 360 s
+ *  now (plan v3.2 S9 part 3): room for the tools that land and a loaded
+ *  box, still well under the test's own hour, so a slow cell still shows. */
+const A8_TOOL_TIME_CEILING_MS = 360_000;
 
 type Reply = { isError?: boolean; content?: { text?: string }[] };
 const text = (r: unknown) =>

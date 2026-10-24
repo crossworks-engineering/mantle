@@ -237,7 +237,11 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
 async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> {
   const user = await getSessionUser();
   if (user) return user;
-  const at = new URL(req.url).searchParams.get('at');
+  // An `?at=` asset token opens a GET only (byte serving; the gate admits it
+  // on a GET alone): a HEAD's token is not read (S9 part 3, the area fold
+  // audit's L4; HEAD with a token answered 401 at the gate before, so only
+  // a direct call of this function sees the stricter answer).
+  const at = req.method === 'GET' ? new URL(req.url).searchParams.get('at') : null;
   if (at) {
     const asset = await requestLogins().ownerAsset(req.url);
     if (asset === 'refused') return accessRefusal(new AccessError('unauthorized'));
@@ -1035,7 +1039,8 @@ async function assetViewLogin(
   const req = assetRequest(row);
   const url = new URL(req.url);
   try {
-    if (url.searchParams.get('at')) {
+    // A GET only, as ownerForAsset reads the token (L4).
+    if (req.method === 'GET' && url.searchParams.get('at')) {
       const asset = await logins.ownerAsset(req.url);
       if (asset === 'refused') return null;
       if (asset) return asset.actor.id;

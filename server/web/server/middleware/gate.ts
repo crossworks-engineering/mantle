@@ -160,11 +160,15 @@ function bearerToken(req: Request): string | null {
  * On a row whose handler reads the caller the pipeline answers (row.caller,
  * A4 step 3b) the gate runs the answer of the guard of the row's caller
  * kind itself, before the handler (answerRouteCaller), with what it does on
- * the side; and on such an owner row that manages an Admin area (no other
- * kind's row names one) the gate's step 5 is the area check (A4
- * step 3b part 4): the caller carries the Admin view the login lookup
- * resolved, and the login's effects are applied in the request slot first
- * (enterRouteLogin), as the guard applied them before its check.
+ * the side; and on every area row whose caller is the owner guard or its
+ * asset form (route-policy.ts ADMIN_STEP_CALLERS: 'owner', 'ownerAsset';
+ * the boot refuses an area row that reads another kind and is not public)
+ * the gate's step 5 is the area check (A4 step 3b part 4, S9 part 2): the
+ * caller carries the Admin view the login lookup resolved, of the login the
+ * row's guard answers as (on an asset row, the login a GET's `?at=` token
+ * or the render cookie names), and the login's effects are applied in the
+ * request slot first (enterRouteLogin), as the guard applied them before
+ * its check.
  */
 function httpCaller(
   row: RouteRow,
