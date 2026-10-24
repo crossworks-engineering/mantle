@@ -868,3 +868,62 @@ generated one is not.
 - routePolicyLists stays 14 (part 3 deletes the lists).
 - docs/actors.md stays at 344 lines (section 10's row bullet says the
   declaration in the same four lines).
+
+### Gates
+
+All on 17e3ffcab (the commit after it adds only this section and the
+next).
+
+On the Mac, DATABASE_URL unset:
+
+| gate | exit |
+|---|---|
+| `pnpm -r typecheck` | 0 |
+| `pnpm lint` | 0 (the one warning, the unused eslint-disable in contact-sharing-routes.db.test.ts, as on main) |
+| `pnpm format:check` | 0 |
+| `pnpm docs:check` | 0 |
+| `pnpm arch:check` | 0 (itemNonePlaceholders 105, routePolicyLists 14) |
+| `pnpm boot:smoke` | 0 (14 services link; the web entry loads all 418 route modules and holds each one's policy to its manifest entry) |
+| `pnpm -C server/web build` | 0 |
+| `vitest run server packages eslint-rules` | 0 (891 files passed, 305 skipped: the database files) |
+
+On the workstation, a fresh clone of the pushed commit per suite, each on
+its own throwaway pgvector pg18 container (a free port checked, fsync
+off, removed by its exact name after), MANTLE_NARROW_SYSTEM=1,
+--maxWorkers=3:
+
+| suite | exit | files |
+|---|---|---|
+| vitest shard 1/2 | 0 | 598 passed |
+| vitest shard 2/2 | 1, then 0 | the first run: a6b-exit-sweep.db.test.ts, 2 tests (see below); the rerun of the whole shard alone: 598 passed |
+| test:actor-off | 0 | 169 |
+| test:actor-on | 0 | 34 |
+| test:edit-on | 0 | 46 |
+| test:runtime-role | 0 | 317 |
+| test:matrix | 0 | 4 |
+| test:serial | 0 | 1 |
+
+The shard 2 failure was not a timeout: the A6b exit sweep's narrow-reads
+and rule-in-query sections found one extra miss row on an owner turn's
+keyword query (an INSERT on nodes, "no Moderator of the home") while all
+eight suites ran at once (load average 13 to 17). Rerun alone the file
+passed (8 of 8), and the whole shard, rerun alone, passed (8017 of 8017).
+Nothing in this branch reaches that path (route files gain an export the
+lists mode does not read; the boot check runs at createApp), so it reads
+as an ordering flake of that sweep under load, named here for the audit.
+
+### Left (parts 2 and 3)
+
+1. Part 2: the hand-built test manifests' declarations (gate.test.ts,
+   route-policy.test.ts's gate describe, gate-caller, gate-login,
+   gate-login-update, gate-route, item-write-encoded),
+   `standInModules` in served-route.test.ts, the flip of
+   ROUTE_POLICY_SOURCE, session.ts auditMutation reading `row.audit`, the
+   area check fold (part 0's planned diff), and the round 4 audit's notes
+   (one effect helper in route-policy.ts, v1Base on v1Route's GET-for-HEAD
+   lookup, one reader of a route file's exported methods).
+2. Part 3: delete the lists and `listedFacts`, as round 3 says; the rows
+   held to route-policy.rows.json.
+3. S11b: each of the 105 placeholders becomes an item check or a reason
+   (`itemNonePlaceholders` goes down with each), then the lint forbids the
+   string.
