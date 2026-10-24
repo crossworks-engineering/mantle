@@ -763,6 +763,8 @@ const present_restore: BuiltinToolDef = {
         error: `canvas ${id} keeps no version ${String(input.rev)}. List the kept ones with present_revisions.`,
       };
     }
+    const refused = loadRefusal(source);
+    if (refused) return refused;
     try {
       const css = await cssOf(source);
       const res = await savePresentSource(ctx.ownerId, id, { source, css });

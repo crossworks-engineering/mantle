@@ -30,6 +30,8 @@ const h = vi.hoisted(() => ({
   consoleLines: 0,
   /** Hold every goto until released (to fill the queue). */
   hold: null as Promise<void> | null,
+  /** What `window.diagram` hands back (the page's evaluate). */
+  report: null as unknown,
 }));
 
 function fire(handlers: Array<(r: Req) => void>, url: string): Promise<void> {
@@ -86,7 +88,7 @@ vi.mock('puppeteer-core', () => ({
             },
             focus: async () => {},
             keyboard: { press: async () => {} },
-            evaluate: async () => null,
+            evaluate: async () => h.report,
             screenshot: async () => new Uint8Array([137, 80, 78, 71]),
             createCDPSession: async () => ({ send: async () => ({}) }),
             close: async () => {
@@ -122,6 +124,7 @@ beforeEach(() => {
   h.closed = 0;
   h.consoleLines = 0;
   h.hold = null;
+  h.report = null;
 });
 
 const REQ = {
@@ -197,6 +200,53 @@ describe('renderCanvas', () => {
     if (!out.ok) return;
     expect(out.consoleErrors.length).toBeLessThanOrEqual(20);
     expect(out.consoleErrors.every((l) => l.length <= 300)).toBe(true);
+  });
+
+  it('caps what the canvas says about itself on this side, whatever its page did', async () => {
+    const { renderCanvas } = await import('./render-canvas');
+    const stats: Record<string, unknown> = { ok: 1, bad: 'x' };
+    for (let i = 0; i < 500; i++) stats[`k${i}${'y'.repeat(100)}`] = i;
+    h.report = {
+      ok: true,
+      errors: Array.from({ length: 10_000 }, () => 'e'.repeat(5000)),
+      warnings: [{ toString: () => 'w' }, 'fine'],
+      stats,
+      svg: 'x'.repeat(4_000_000),
+    };
+    const out = await renderCanvas(REQ);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const d = out.diagram!;
+    expect(d.errors).toHaveLength(50);
+    expect(d.errors.every((e) => e.length <= 300)).toBe(true);
+    expect(d.warnings).toEqual(['', 'fine']);
+    expect(Object.keys(d.stats).length).toBeLessThanOrEqual(50);
+    expect(Object.keys(d.stats).every((k) => k.length <= 40)).toBe(true);
+    expect(d.stats.bad).toBeUndefined();
+    expect(d.svg).toBeUndefined();
+  });
+
+  it('the diagram probe is plain JavaScript a page runs as it is', async () => {
+    const { runInNewContext } = await import('node:vm');
+    const { diagramProbe } = await import('./render-canvas');
+    const src = diagramProbe(true, 2, 5, 100);
+    // No TypeScript helper a runner might add (the page has none).
+    expect(src).not.toContain('__name');
+    const window = {
+      diagram: {
+        ready: Promise.resolve({ ok: true, warnings: ['abcdefgh', 'b', 'c'], stats: { n: 3 } }),
+        exportSvg: () => '<svg/>',
+      },
+    };
+    const out = await runInNewContext(src, { window });
+    expect(JSON.parse(JSON.stringify(out))).toEqual({
+      ok: true,
+      errors: [],
+      warnings: ['abcde', 'b'],
+      stats: { n: 3 },
+      svg: '<svg/>',
+    });
+    expect(await runInNewContext(src, { window: {} })).toBeNull();
   });
 
   it('refuses at once when the queue is full, and the slots come back', async () => {
