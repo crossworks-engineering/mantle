@@ -89,7 +89,12 @@ export const RENDER_LAUNCH_ARGS: readonly string[] = [
 /** The sidecar URL with the launch flags; a bare DevTools endpoint (a local
  *  Chrome) is left as it is: that browser was started by whoever runs it. */
 export function lockedEndpoint(endpoint: string): string {
-  if (endpoint.includes('/devtools/browser/')) return endpoint;
+  if (endpoint.includes('/devtools/browser/')) {
+    log('render-canvas').warn(
+      'BROWSER_WS_ENDPOINT is a bare DevTools endpoint: canvas renders run without the network lock (development only)',
+    );
+    return endpoint;
+  }
   const url = new URL(endpoint);
   url.searchParams.set('launch', JSON.stringify({ args: RENDER_LAUNCH_ARGS }));
   return url.toString();
@@ -154,6 +159,72 @@ function viewportFor(req: CanvasRenderRequest): { width: number; height: number 
   return {
     width: Math.max(100, Math.round(base.w * k)),
     height: Math.max(100, Math.round(base.h * k)),
+  };
+}
+
+/**
+ * Asks a template canvas (`window.diagram`) for its outcome and, for an
+ * export, its SVG, as JavaScript source. A string, not a function: the
+ * TypeScript runner rewrites a named function (`__name(...)`), and that
+ * helper does not exist in the page. The canvas's own words are capped
+ * here before they cross, and again on this side (cappedReport).
+ */
+export function diagramProbe(
+  wantSvg: boolean,
+  maxLines: number,
+  maxChars: number,
+  maxSvg: number,
+): string {
+  const args = JSON.stringify([wantSvg, maxLines, maxChars, maxSvg]);
+  return `(async ([wantSvg, maxLines, maxChars, maxSvg]) => {
+  const d = window.diagram;
+  if (!d) return null;
+  const o = await d.ready;
+  const lines = (v) => (Array.isArray(v) ? v.slice(0, maxLines).map((x) => String(x).slice(0, maxChars)) : []);
+  const stats = {};
+  if (o && o.ok && o.stats && typeof o.stats === 'object') {
+    for (const [k, v] of Object.entries(o.stats).slice(0, maxLines)) {
+      if (typeof v === 'number') stats[k.slice(0, 40)] = v;
+    }
+  }
+  if (!o || !o.ok) return { ok: false, errors: lines(o && o.errors), warnings: lines(o && o.warnings), stats };
+  let svg;
+  if (wantSvg) {
+    const out = d.exportSvg();
+    svg = typeof out === 'string' && out.length <= maxSvg ? out : undefined;
+  }
+  return {
+    ok: true,
+    errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [],
+    warnings: lines(o.warnings),
+    stats,
+    ...(svg !== undefined ? { svg } : {}),
+  };
+})(${args})`;
+}
+
+/** What a canvas said about itself, bounded on this side: arrays of short
+ *  strings, number-only stats with short keys, the SVG a capped string. */
+function cappedReport(raw: unknown): CanvasDiagramReport | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const lines = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v.slice(0, MAX_LINES).map((x) => (typeof x === 'string' ? x : '').slice(0, MAX_LINE_CHARS))
+      : [];
+  const stats: Record<string, number> = {};
+  if (r.stats && typeof r.stats === 'object') {
+    for (const [k, v] of Object.entries(r.stats as Record<string, unknown>).slice(0, MAX_LINES)) {
+      if (typeof v === 'number' && Number.isFinite(v)) stats[k.slice(0, 40)] = v;
+    }
+  }
+  const svg = typeof r.svg === 'string' && r.svg.length <= MAX_SVG_CHARS ? r.svg : undefined;
+  return {
+    ok: r.ok === true,
+    errors: lines(r.errors),
+    warnings: lines(r.warnings),
+    stats,
+    ...(svg !== undefined ? { svg } : {}),
   };
 }
 
@@ -231,6 +302,11 @@ async function renderInSlot(
       throw new Error('the render ran out of time before the browser answered');
     }
     page = await browser.newPage();
+    if (over) {
+      // The cleanup ran while the page opened: it is ours to close.
+      await page.close().catch(() => {});
+      throw new Error('the render ran out of time before the page opened');
+    }
     await page.evaluateOnNewDocument(NO_WEBRTC);
     const view = viewportFor(req);
     await page.setViewport({ ...view, deviceScaleFactor: req.scale === 2 ? 2 : 1 });
@@ -298,51 +374,13 @@ async function renderInSlot(
     }
     await new Promise((r) => setTimeout(r, settle * 1000));
 
-    const diagram: CanvasDiagramReport | null = await Promise.race([
-      page.evaluate(
-        async (wantSvg: boolean, maxLines: number, maxChars: number, maxSvg: number) => {
-          type Outcome =
-            | { ok: true; warnings: string[]; stats: Record<string, number> }
-            | { ok: false; errors: string[]; warnings: string[] };
-          const d = (
-            window as unknown as {
-              diagram?: { ready: Promise<Outcome>; exportSvg: () => string };
-            }
-          ).diagram;
-          if (!d) return null;
-          const o = await d.ready;
-          // The canvas's own words: capped here, before they cross.
-          const lines = (v: unknown): string[] =>
-            Array.isArray(v) ? v.slice(0, maxLines).map((x) => String(x).slice(0, maxChars)) : [];
-          const stats: Record<string, number> = {};
-          if (o.ok && o.stats && typeof o.stats === 'object') {
-            for (const [k, v] of Object.entries(o.stats).slice(0, maxLines)) {
-              if (typeof v === 'number') stats[k.slice(0, 40)] = v;
-            }
-          }
-          if (!o.ok) {
-            return { ok: false, errors: lines(o.errors), warnings: lines(o.warnings), stats };
-          }
-          let svg: string | undefined;
-          if (wantSvg) {
-            const out: unknown = d.exportSvg();
-            svg = typeof out === 'string' && out.length <= maxSvg ? out : undefined;
-          }
-          return {
-            ok: true,
-            errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [],
-            warnings: lines(o.warnings),
-            stats,
-            ...(svg !== undefined ? { svg } : {}),
-          };
-        },
-        req.exportSvg === true,
-        MAX_LINES,
-        MAX_LINE_CHARS,
-        MAX_SVG_CHARS,
-      ),
+    const reported: unknown = await Promise.race([
+      page.evaluate(diagramProbe(req.exportSvg === true, MAX_LINES, MAX_LINE_CHARS, MAX_SVG_CHARS)),
       new Promise<null>((r) => setTimeout(() => r(null), DIAGRAM_TIMEOUT_MS)),
     ]);
+    // Capped again here: the caps inside the page run in the canvas's own
+    // world, whose Array and String it may have replaced.
+    const diagram = cappedReport(reported);
 
     const png = Buffer.from(await page.screenshot({ type: 'png' }));
     return {

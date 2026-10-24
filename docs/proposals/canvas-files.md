@@ -759,6 +759,16 @@ static SVG out).
   budget. The model gets fixed error text; the detail goes to the log.
 - A template title with `$&` or `$'` is now kept as text.
 
-Open for later: one login can still take both slots for a render's length
-(no per-login fairness); `present_restore` brings back an old version
-without the save-time load check.
+The re-audit of the fixes (commit eff649771): ready for review. Fixed
+after it: the caps on what a canvas says about itself run again on the
+server side (the ones inside the page run in the canvas's own world, which
+can replace Array and String); a page that opens after the budget ran out
+is closed; a bare DevTools endpoint (development only) logs that renders
+run without the network lock; `present_restore` runs the save-time load
+check. The probe the page runs is now plain JavaScript source: the
+TypeScript runner's `__name` helper had broken template renders in a real
+browser, which the stand-in browser of the unit test could not show.
+
+Open for later: one login can still take both slots and the queue for a
+render's length (no per-login fairness); the canvas's text reaches the
+model with a note, not under the `untrusted` fence, which dispatch sets.
