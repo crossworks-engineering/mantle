@@ -8,6 +8,7 @@
  *   [Folder index](folder:<id>)  a live list of a folder's pages (`folder:here`
  *                                for the page's own folder)
  *   ![alt](draw:<draw-id>)       an embedded drawing
+ *   ![Title](present:<id>)       an embedded Present canvas, as its snapshot
  *   [Label](mention:<ref>:<id>)  a mention chip
  *
  * Kept here, alone, with **no dependencies**, because two converters read these
@@ -42,6 +43,23 @@ export const FOLDER_HERE = 'here';
  *  reference, not a copy: the page renders the drawing's current committed
  *  snapshot, so editing the drawing updates every page that embeds it. */
 export const DRAW_HREF = /^draw:([^\s]+)$/;
+
+/** `present:<present-id>`, a Present canvas embedded as its snapshot (the
+ *  poster its latest look drew). A LIVE reference like `draw:`: the page
+ *  shows the canvas's current poster, and a reader who may read the canvas
+ *  opens the canvas itself from it. */
+export const PRESENT_HREF = /^present:([^\s]+)$/;
+
+/** The canvas id behind a `present:` href, or null for any other href. */
+export function presentNodeId(href: string | undefined | null): string | null {
+  return PRESENT_HREF.exec(href ?? '')?.[1] ?? null;
+}
+
+/** The scope-gated serve path for a canvas's snapshot, the one place it is
+ *  spelled out for markdown conversion (encoded, as drawRawSrc). */
+export function presentPosterSrc(nodeId: string): string {
+  return `/api/presents/${encodeURIComponent(nodeId)}/poster`;
+}
 
 /** The draw node id behind a `draw:` href, or null for any other href. */
 export function drawNodeId(href: string | undefined | null): string | null {
@@ -97,6 +115,7 @@ const SCHEME_NODE_TYPE = {
   media: 'file',
   page: 'page',
   draw: 'draw',
+  present: 'present',
   folder: 'branch',
 } as const;
 
@@ -104,7 +123,7 @@ const SCHEME_NODE_TYPE = {
  *  the id it points at, and the node type that scheme requires (unset ⇒ any
  *  node). `nodeType` is what makes a wrong-type reference reportable. */
 export type MarkdownRef = {
-  scheme: 'media' | 'page' | 'mention' | 'draw' | 'folder';
+  scheme: 'media' | 'page' | 'mention' | 'draw' | 'present' | 'folder';
   id: string;
   nodeType?: (typeof SCHEME_NODE_TYPE)[keyof typeof SCHEME_NODE_TYPE];
 };
@@ -136,6 +155,10 @@ export function markdownRefs(source: string | undefined | null): MarkdownRef[] {
     if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: SCHEME_NODE_TYPE.page };
     const draw = DRAW_HREF.exec(href);
     if (draw?.[1]) ref = { scheme: 'draw', id: draw[1], nodeType: SCHEME_NODE_TYPE.draw };
+    const present = PRESENT_HREF.exec(href);
+    if (present?.[1]) {
+      ref = { scheme: 'present', id: present[1], nodeType: SCHEME_NODE_TYPE.present };
+    }
     // A Folder index names a folder row; `folder:here` names none.
     const folder = FOLDER_HREF.exec(href);
     if (folder?.[1] && folder[1] !== FOLDER_HERE) {

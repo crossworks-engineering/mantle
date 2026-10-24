@@ -12,6 +12,8 @@ import {
   mediaFileId,
   stripInlineMediaImages,
   drawNodeId,
+  presentNodeId,
+  presentPosterSrc,
 } from './markdown-refs';
 
 describe('mediaFileId', () => {
@@ -116,6 +118,19 @@ describe('markdownRefs', () => {
   it('is safe on empty input', () => {
     expect(markdownRefs('')).toEqual([]);
     expect(markdownRefs(null)).toEqual([]);
+  });
+});
+
+describe('present: references', () => {
+  it('extracts an embedded canvas as a present-typed ref, and builds its snapshot path', () => {
+    const refs = markdownRefs('![Deck](present:c-1) ![b](draw:d1)');
+    expect(refs).toEqual([
+      { scheme: 'present', id: 'c-1', nodeType: 'present' },
+      { scheme: 'draw', id: 'd1', nodeType: 'draw' },
+    ]);
+    expect(presentNodeId('present:c-1')).toBe('c-1');
+    expect(presentNodeId('draw:c-1')).toBeNull();
+    expect(presentPosterSrc('a/../b?x')).toBe('/api/presents/a%2F..%2Fb%3Fx/poster');
   });
 });
 

@@ -92,6 +92,7 @@ export { chunkDocText, type DocChunk } from './chunk';
 export { chunkSpreadsheetProfile, hasSheetMarkers, isSpreadsheetTitle } from './chunk-spreadsheet';
 export { clampPieces } from './chunk-clamp';
 export {
+  EMBED_MARKER_CANVAS,
   EMBED_MARKER_DRAWING,
   EMBED_MARKER_FILE,
   EMBED_MARKER_PAGE,

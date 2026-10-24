@@ -105,7 +105,12 @@ export {
 
 export { diffBlocks, type BlockDiff, type BlockChange } from '@mantle/content-core/block-diff';
 
-export { referencedFileIds, referencedDrawIds, referencedEmbedIds } from './doc-assets';
+export {
+  referencedFileIds,
+  referencedDrawIds,
+  referencedEmbedIds,
+  referencedPresentIds,
+} from './doc-assets';
 
 export {
   assertMaySupersede,

@@ -6,7 +6,12 @@
  * editor's schema will grow over time.
  */
 
-import { EMBED_MARKER_DRAWING, EMBED_MARKER_FILE, EMBED_MARKER_PAGE } from './embed-fold';
+import {
+  EMBED_MARKER_CANVAS,
+  EMBED_MARKER_DRAWING,
+  EMBED_MARKER_FILE,
+  EMBED_MARKER_PAGE,
+} from './embed-fold';
 
 type PMNode = {
   type?: string;
@@ -78,6 +83,7 @@ function embedMarker(node: PMNode): string | null {
   const set = (k: string) => typeof a[k] === 'string' && (a[k] as string).length > 0;
   if (node.type === 'image' || node.type === 'pageImage') {
     if (set('drawId')) return EMBED_MARKER_DRAWING;
+    if (set('presentId')) return EMBED_MARKER_CANVAS;
     if (set('nodeId')) return EMBED_MARKER_FILE;
     return null;
   }

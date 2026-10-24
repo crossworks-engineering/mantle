@@ -8,18 +8,20 @@
  *
  * Pure, no database.
  */
-import { DRAW_HREF, MEDIA_HREF } from '@mantle/content-core/markdown-refs';
+import { DRAW_HREF, MEDIA_HREF, PRESENT_HREF } from '@mantle/content-core/markdown-refs';
 
 export const EMBED_MARKER_FILE = '[embedded file]';
 export const EMBED_MARKER_DRAWING = '[embedded drawing]';
 export const EMBED_MARKER_PAGE = '[embedded page]';
+export const EMBED_MARKER_CANVAS = '[embedded canvas]';
 
 /** A markdown image or link (`![alt](href)`, `[label](href)`). */
 const MD_REF = /(!?)\[(?:[^\]\\]|\\.)*\]\(([^)\s]+)\)/g;
 
 /**
  * A note's markdown as it is indexed: an embedded file or drawing
- * (`![alt](media:<id>)`, `[label](media:<id>)`, `![alt](draw:<id>)`) becomes
+ * (`![alt](media:<id>)`, `[label](media:<id>)`, `![alt](draw:<id>)`) or canvas
+ * (`![Title](present:<id>)`) becomes
  * its marker, so neither its caption nor its name lands in the note's chunks.
  * Every other link, and the note's own text, is unchanged.
  */
@@ -28,6 +30,7 @@ export function foldNoteEmbeds(markdown: string): string {
   return markdown.replace(MD_REF, (whole, _bang: string, href: string) => {
     if (MEDIA_HREF.test(href)) return EMBED_MARKER_FILE;
     if (DRAW_HREF.test(href)) return EMBED_MARKER_DRAWING;
+    if (PRESENT_HREF.test(href)) return EMBED_MARKER_CANVAS;
     return whole;
   });
 }

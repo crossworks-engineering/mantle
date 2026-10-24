@@ -5,7 +5,8 @@
  * and the level text (pages/level-text.ts) still read it.
  *
  * What counts as a reference:
- *  - page documents: the id attributes (`nodeId`, `drawId`, `pageId`) on any
+ *  - page documents: the id attributes (`nodeId`, `drawId`, `presentId`,
+ *    `pageId`) on any
  *    node (image, pageImage, fileEmbed, childPage, …), mention chips, and
  *    every `src` / `href` on a node or a mark (link marks included);
  *  - notes: the same, after their markdown is parsed into a document;
@@ -13,7 +14,7 @@
  *  - tables: every text cell that is a path or a scheme.
  *
  * An href or src resolves like this: the app's own schemes (`page:`,
- * `media:`, `draw:`, `mention:node:`) name one id; a relative path names
+ * `media:`, `draw:`, `present:`, `mention:node:`) name one id; a relative path names
  * every uuid in it (`/n/<id>`, `/api/member/space/<id>/bytes`); an external
  * link (`https:`, `mailto:`) is fine; an external IMAGE (or an embedded
  * frame) is refused, as it would be a tracking pixel on every teammate and
@@ -26,7 +27,13 @@
  * `javascript:` here too (final audit F31).
  */
 import { markdownToDoc } from '@mantle/content-core/markdown';
-import { DRAW_HREF, MEDIA_HREF, MENTION_HREF, PAGE_HREF } from '@mantle/content-core/markdown-refs';
+import {
+  DRAW_HREF,
+  MEDIA_HREF,
+  MENTION_HREF,
+  PAGE_HREF,
+  PRESENT_HREF,
+} from '@mantle/content-core/markdown-refs';
 import { UUID_RE } from '@mantle/std';
 
 /** `ids`: uuids to check against the space and the Library. `refused`: what
@@ -51,7 +58,7 @@ const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g
 // eslint-disable-next-line no-control-regex -- matching controls is the point
 const URL_NOISE = /[\u0000-\u0020\u007f-\u009f\s]/g;
 /** Attributes that hold a node id, on any node type. */
-const ID_ATTRS = ['nodeId', 'drawId', 'pageId'] as const;
+const ID_ATTRS = ['nodeId', 'drawId', 'presentId', 'pageId'] as const;
 
 type PMNode = {
   type?: string;
@@ -90,7 +97,7 @@ class Collector {
     // An absolute URL into this brain is the path it stands for (OwnUrl).
     const own = this.ownUrl?.(t.replace(URL_NOISE, ''));
     if (own != null) t = own;
-    if (text && !t.startsWith('/') && !/^(mention|media|page|draw):/i.test(t)) return;
+    if (text && !t.startsWith('/') && !/^(mention|media|page|draw|present):/i.test(t)) return;
     // Classified as the browser will read it (see URL_NOISE); `t` is kept for
     // the refusal message. The scheme is case-insensitive, as a browser reads
     // it: `PAGE:<id>` names the same item as `page:<id>`.
@@ -103,7 +110,8 @@ class Collector {
       else this.refused.add(t);
       return;
     }
-    const scheme = MEDIA_HREF.exec(u) ?? PAGE_HREF.exec(u) ?? DRAW_HREF.exec(u);
+    const scheme =
+      MEDIA_HREF.exec(u) ?? PAGE_HREF.exec(u) ?? DRAW_HREF.exec(u) ?? PRESENT_HREF.exec(u);
     if (scheme) {
       this.id(scheme[1], embed);
       return;

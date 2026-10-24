@@ -106,6 +106,8 @@ function imageToMd(node: PMNode): string {
   const nodeId = s(node.attrs?.nodeId);
   const drawId = s(node.attrs?.drawId);
   if (drawId) return `![${alt}](draw:${drawId})`;
+  const presentId = s(node.attrs?.presentId);
+  if (presentId) return `![${alt}](present:${presentId})`;
   return `![${alt}](${nodeId ? `media:${nodeId}` : s(node.attrs?.src)})`;
 }
 

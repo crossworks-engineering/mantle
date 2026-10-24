@@ -116,6 +116,17 @@ describe('docToMarkdown — round-trip stability', () => {
     );
   });
 
+  it('an embedded Present canvas: an image node with presentId, back to present:', () => {
+    const md = 'Before\n\n![Pump curve](present:3f1c2b4a-0000-4000-8000-000000000001)\n\nAfter';
+    roundTrips(md);
+    const img = (markdownToDoc(md) as N).content!.find((n) => n.type === 'image')!;
+    expect(img.attrs).toMatchObject({
+      src: null,
+      alt: 'Pump curve',
+      presentId: '3f1c2b4a-0000-4000-8000-000000000001',
+    });
+  });
+
   it('an inline media:/page: link inside prose stays a plain link (block forms are standalone lines)', () => {
     roundTrips('see [spec.pdf](media:f-2) inline here');
     const doc = markdownToDoc('see [spec.pdf](media:f-2) inline here') as N;
