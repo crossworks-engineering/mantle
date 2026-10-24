@@ -50,7 +50,6 @@ import {
   memberOpenWrite,
   registerRouteSource,
   requestKeyRoute,
-  routeItemTarget,
   routeGatePolicy,
   routeRef,
   routeSwitchedOff,

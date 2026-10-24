@@ -6,8 +6,6 @@
  * lists went with the lists, S9 part 3; these cells were its test's.)
  */
 import { describe, expect, it } from 'vitest';
-import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
-import { buildRouteRow, type RouteCaller } from '../lib/auth/route-policy';
 import {
   aliasMismatches,
   handlerPolicy,
@@ -17,16 +15,6 @@ import {
   specRouteFile,
 } from './route-callers';
 
-const DECL: RoutePolicyDeclaration = {
-  GET: { class: 'content', open: 'owner' },
-  POST: {
-    class: 'content',
-    open: 'owner',
-    creates: true,
-    item: { none: 'creates an item: ?ws= names where it lands' },
-    limits: { crossSite: 'json', rateLimit: ['authLogin'] },
-  },
-};
 /** The route of `file`, as the manifest entry says it. */
 const ROUTE = { pattern: '/api/notes', methods: ['GET', 'POST'] };
 const IMPORT = "import { routePolicy } from '@/lib/auth/route-declaration';";
