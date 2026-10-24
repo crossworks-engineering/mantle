@@ -270,6 +270,19 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
       });
     }
     expect(table.get('PATCH /api/telegram/chats/:id')!.area).toBe('connectors');
+    // The class is read off the prefix's plain rows, not written in
+    // (S9 part 3 round 2): another area there moves it.
+    type Declared = Readonly<{ policy?: Readonly<Record<string, object>> }>;
+    const moved = manifest.map((e) => {
+      const policy = (e as Declared).policy;
+      return e.pattern === '/api/telegram/chats/:id' && policy
+        ? { ...e, policy: { ...policy, PATCH: { ...policy.PATCH, area: 'settings' } } }
+        : e;
+    }) as typeof manifest;
+    expect(rowAnswers(moved).prefixClass('/api/telegram/pair')).toEqual({
+      kind: 'area',
+      area: 'settings',
+    });
   });
 
   it('A4 step 3b: the owner decision of 2026-10-14 on the update routes', () => {

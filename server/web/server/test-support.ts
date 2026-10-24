@@ -175,6 +175,8 @@ export function rowAnswers(manifest: readonly RouteManifestEntry[] = routeManife
   }
   const rowOf = (method: string, pattern: string) =>
     rows.get(`${method.toUpperCase()} ${pattern}`) ?? null;
+  // The named carve-outs a prefix's class does not read: the login's own.
+  const carved = (r: RouteRow) => r.logins === 'telegram' || r.caller === 'session';
   // A login list named GET, never HEAD; the open reads read HEAD as GET.
   const listed = (method: string, pattern: string) =>
     method.toUpperCase() === 'HEAD' ? null : rowOf(method, pattern);
@@ -204,14 +206,21 @@ export function rowAnswers(manifest: readonly RouteManifestEntry[] = routeManife
     },
     prefixClass: (pattern) => {
       const of = byPattern.get(pattern) ?? [];
-      const carved = (r: RouteRow) => r.logins === 'telegram' || r.caller === 'session';
       const plain = of.find((r) => !carved(r));
       if (plain) return plain.scope;
-      // Every row of the pattern is a carve-out: the prefix named an area
-      // (the Telegram routes: connectors).
-      return of.length > 0 && of.every((r) => r.logins === 'telegram')
-        ? { kind: 'area', area: 'connectors' }
-        : null;
+      // Every row of the pattern is a Telegram carve-out: the class its
+      // prefix gave, read off the plain rows under the same prefix (for
+      // /api/telegram, PATCH /api/telegram/chats/:id: connectors), so it
+      // follows their declarations (S9 part 3 round 2; it was written in
+      // here). Null where those rows do not agree on one.
+      if (of.length === 0 || !of.every((r) => r.logins === 'telegram')) return null;
+      const prefix = pattern.split('/').slice(0, 3).join('/') + '/';
+      const scopes = new Set(
+        [...rows.values()]
+          .filter((r) => r.pattern.startsWith(prefix) && !carved(r))
+          .map((r) => JSON.stringify(r.scope)),
+      );
+      return scopes.size === 1 ? (JSON.parse([...scopes][0]!) as RouteClass) : null;
     },
   };
 }
