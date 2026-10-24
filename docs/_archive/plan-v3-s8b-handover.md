@@ -1204,3 +1204,12 @@ enabled state as before).
   triggers back; none is known.
 - `mantle_ws_exit_login` still trusts `mantle.acting_login` from any
   system session that has not switched roles (round 6's doubt stands).
+
+## Merge restamp (CEO)
+
+At the merge, scripts/merge-branch.sh refused 0330's `when` 1790199880000:
+it was at or below the branch's own earlier stamp 1790199900000 (the 0399
+placeholder of round 1). Restamped 0330 to `when` 1790199960000 in the
+journal and in the revert's ledger delete. The SQL is unchanged, so its
+hash is unchanged. Rebased onto main v0.300.138 first (DWG fixes only, no
+migration); Mac verify 0 and web build 0 on the rebased head.
