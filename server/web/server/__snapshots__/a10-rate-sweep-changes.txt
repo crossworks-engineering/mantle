@@ -1,7 +1,7 @@
 # A10 #8: the probes that answer otherwise than on main, each with its named
 # kind (changeKind, a10-rate-sweep.test.ts), its answer on main and now. Every
 # other probe of a10-rate-sweep.txt answers byte for byte as recorded.
-# one-429: 82 probes
+# one-429: 86 probes
 # machine-429: 8 probes
 # machine-429 (Retry-After added): 4 probes
 # one-429 (explained): 6 probes
@@ -378,6 +378,18 @@ HEAD /s/:token/draw/:drawId none share-draw-embed count (ip 240/60s) [one-429]
   main first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
   now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store 
 HEAD /s/:token/draw/:drawId none share-draw-embed window [one-429]
+  main 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
+  now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+GET /s/:token/present/:presentId none share-present-embed count (ip 240/60s) [one-429]
+  main first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store Too many requests
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /s/:token/present/:presentId none share-present-embed window [one-429]
+  main 59s: 429 text/plain retry-after=1 cache-control=no-store Too many requests; 60s: 404
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+HEAD /s/:token/present/:presentId none share-present-embed count (ip 240/60s) [one-429]
+  main first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
+  now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /s/:token/present/:presentId none share-present-embed window [one-429]
   main 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
   now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
 POST /s/:token/evaluate none share-evaluate count (ip 60/60s) [one-429]

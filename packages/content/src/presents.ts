@@ -625,6 +625,38 @@ export async function setPresentPoster(
   return written.length > 0;
 }
 
+/** The cached poster and whether it shows the latest save, or null. */
+export async function getPresentPoster(
+  ownerId: string,
+  id: string,
+): Promise<{ png: Buffer; current: boolean; posterRev: number } | null> {
+  const [row] = await db
+    .select({ png: presents.posterPng, posterRev: presents.posterRev, rev: presents.rev })
+    .from(presents)
+    .innerJoin(nodes, eq(nodes.id, presents.nodeId))
+    .where(and(eq(presents.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'present')))
+    .limit(1);
+  if (!row?.png) return null;
+  return { png: row.png, current: row.posterRev === row.rev, posterRev: row.posterRev ?? 0 };
+}
+
+/** What a page's canvas embed shows about the canvas, without its bytes:
+ *  its title, its rev, and the rev its poster shows (null: none yet). Null
+ *  when the canvas is not there for the caller (its scope reads no row). */
+export async function getPresentEmbedFacts(
+  ownerId: string,
+  id: string,
+): Promise<{ title: string; rev: number; posterRev: number | null } | null> {
+  const [row] = await db
+    .select({ title: nodes.title, rev: presents.rev, posterRev: presents.posterRev })
+    .from(presents)
+    .innerJoin(nodes, eq(nodes.id, presents.nodeId))
+    .where(and(eq(presents.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'present')))
+    .limit(1);
+  if (!row) return null;
+  return { title: row.title ?? '', rev: row.rev, posterRev: row.posterRev ?? null };
+}
+
 /** One kept version's source, or null (no such canvas or version). */
 export async function getPresentRevisionSource(
   ownerId: string,

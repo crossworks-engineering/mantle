@@ -131,6 +131,25 @@ describe('renderPageDoc', () => {
     expect(html).toContain('data-checked="true"');
   });
 
+  it('renders an embedded canvas as its snapshot where the surface shows it, else a placeholder', () => {
+    const html = renderPageDoc(
+      doc([
+        { type: 'image', attrs: { presentId: 'c1', alt: 'Pump "deck"' } },
+        { type: 'image', attrs: { presentId: 'c2', alt: 'Hidden <deck>' } },
+      ]),
+      { ...opts, presentUrl: (id: string) => (id === 'c1' ? `/s/T/present/${id}` : null) },
+    );
+    expect(html).toContain(
+      '<img class="canvas-embed" src="/s/T/present/c1" alt="Pump &quot;deck&quot;"',
+    );
+    expect(html).toContain('[canvas: Hidden &lt;deck&gt;]');
+    expect(html).not.toContain('c2');
+    // No callback: every canvas is its placeholder.
+    expect(renderPageDoc(doc([{ type: 'image', attrs: { presentId: 'c1' } }]), opts)).toContain(
+      '[canvas: untitled]',
+    );
+  });
+
   it('renders an aside with an inline themed gradient', () => {
     const html = renderPageDoc(
       doc([

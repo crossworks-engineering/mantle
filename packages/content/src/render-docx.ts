@@ -67,6 +67,10 @@ export type RenderDocxOptions = {
    *  real browser, which this package must not depend on. Absent, or null for
    *  a drawing with nothing committed, degrades to a labelled placeholder. */
   loadDraw?: (drawId: string) => Promise<LoadedImage | null>;
+  /** Resolve an embedded Present canvas to its snapshot (a stored PNG).
+   *  Absent, or null for a canvas with no snapshot, degrades to a labelled
+   *  placeholder. */
+  loadPresent?: (presentId: string) => Promise<LoadedImage | null>;
 };
 
 function str(v: unknown): string {
@@ -163,10 +167,16 @@ class DocxCtx {
   olConfigs: NumberingConfigItem[] = [];
   readonly images: Map<string, LoadedImage | null>;
   readonly draws: Map<string, LoadedImage | null>;
+  readonly presents: Map<string, LoadedImage | null>;
   private olSeq = 0;
-  constructor(images: Map<string, LoadedImage | null>, draws: Map<string, LoadedImage | null>) {
+  constructor(
+    images: Map<string, LoadedImage | null>,
+    draws: Map<string, LoadedImage | null>,
+    presents: Map<string, LoadedImage | null> = new Map(),
+  ) {
     this.images = images;
     this.draws = draws;
+    this.presents = presents;
   }
   /** Register a fresh ordered-list numbering instance and return its reference. */
   newOrderedRef(): string {
@@ -402,6 +412,14 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
           imageParagraph(ctx.draws.get(drawId)) ?? placeholder(`drawing: ${alt || 'untitled'}`),
         ];
       }
+      // An embedded canvas goes in as its snapshot, a PNG Word takes as is.
+      const presentId = str(node.attrs?.presentId);
+      if (presentId) {
+        return [
+          imageParagraph(ctx.presents.get(presentId)) ??
+            placeholder(`canvas: ${alt || 'untitled'}`),
+        ];
+      }
       const fileId = str(node.attrs?.nodeId);
       const embedded = fileId ? imageParagraph(ctx.images.get(fileId)) : null;
       if (embedded) return [embedded];
@@ -513,15 +531,22 @@ function imageInfo(buf: Buffer): { width: number; height: number; type: DocxImag
  *  scoped to inline `image` nodes (the only ones docx embeds). The two kinds
  *  stay in separate buckets: an uploaded file and an embedded drawing are
  *  resolved by different callbacks against different stores. */
-function collectImageIds(node: PMNode | undefined, files: string[], draws: string[]): void {
+function collectImageIds(
+  node: PMNode | undefined,
+  files: string[],
+  draws: string[],
+  presents: string[] = [],
+): void {
   if (!node) return;
   if (node.type === 'image') {
     const drawId = str(node.attrs?.drawId);
+    const presentId = str(node.attrs?.presentId);
     const fileId = str(node.attrs?.nodeId);
     if (drawId) draws.push(drawId);
+    else if (presentId) presents.push(presentId);
     else if (fileId) files.push(fileId);
   }
-  for (const c of node.content ?? []) collectImageIds(c, files, draws);
+  for (const c of node.content ?? []) collectImageIds(c, files, draws, presents);
 }
 
 /** Resolve each id once, in order, tolerating a loader that throws. Sequential
@@ -554,11 +579,13 @@ export async function renderDocx(doc: unknown, opts: RenderDocxOptions = {}): Pr
   // Pre-load picture bytes (the walk is synchronous; the fetches are async).
   const fileIds: string[] = [];
   const drawIds: string[] = [];
-  collectImageIds(root, fileIds, drawIds);
+  const presentIds: string[] = [];
+  collectImageIds(root, fileIds, drawIds, presentIds);
   const images = await preload(fileIds, opts.loadImage);
   const draws = await preload(drawIds, opts.loadDraw);
+  const presents = await preload(presentIds, opts.loadPresent);
 
-  const ctx = new DocxCtx(images, draws);
+  const ctx = new DocxCtx(images, draws, presents);
   const body: DocxBlock[] = [];
   if (opts.title) {
     body.push(

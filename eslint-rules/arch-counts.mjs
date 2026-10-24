@@ -505,6 +505,8 @@ export const KIND_LIST_ALLOW = Object.freeze({
     'CREATE_NOUN is keyed by the noun of a `<thing>_create` tool slug (folder_create is no kind), not by kind',
   'server/web/components/share/contact-shares-menu.tsx':
     'KIND_ICON: an icon component per kind (lucide-react), which the zero-dependency registry cannot hold',
+  'packages/tools/src/preconditions.ts':
+    "REF_LOOKUP: the lookup tool for each of the page dialect's reference schemes (markdown-refs.ts MarkdownRef), keyed by scheme, not by kind",
   'packages/content-core/src/markdown-refs.ts':
     "the page dialect's reference schemes (media:, page:, draw:, present:, folder:): words of the markdown the two converters share, kept in a leaf with no dependencies, the registry included",
 });

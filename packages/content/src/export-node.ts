@@ -62,6 +62,9 @@ export type ResolveExportOptions = {
    *  like `loadImage` rather than imported; a caller without one gets the
    *  `[drawing: …]` placeholder. Only the docx path consults it. */
   loadDraw?: (drawId: string) => Promise<LoadedImage | null>;
+  /** An embedded Present canvas's snapshot (a PNG); a caller without one
+   *  gets the `[canvas: …]` placeholder. Only the docx path consults it. */
+  loadPresent?: (presentId: string) => Promise<LoadedImage | null>;
   /** Requested download format for a page/note. Ignored for tables (always
    *  xlsx). Defaults to `docx` when omitted (preserves the original behavior). */
   format?: DocExportFormat;
@@ -119,6 +122,7 @@ export async function resolveExport(
       title: page.title,
       loadImage: opts.loadImage,
       loadDraw: opts.loadDraw,
+      loadPresent: opts.loadPresent,
     });
     return result(bytes, 'docx', 'page', page.title);
   }
@@ -138,6 +142,7 @@ export async function resolveExport(
       title: note.title,
       loadImage: opts.loadImage,
       loadDraw: opts.loadDraw,
+      loadPresent: opts.loadPresent,
     });
     return result(bytes, 'docx', 'note', note.title);
   }

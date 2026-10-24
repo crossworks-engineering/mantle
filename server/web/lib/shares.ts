@@ -14,6 +14,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, draws, nodes, tables, type Share } from '@mantle/db';
+import { getPresentEmbedFacts } from '@mantle/content/presents';
 import {
   drawPlacedFileIds,
   getPage,
@@ -21,6 +22,7 @@ import {
   getDrawSvg,
   referencedDrawIds,
   referencedFileIds,
+  referencedPresentIds,
   shareServedIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -511,18 +513,54 @@ async function loadSharedNote(share: Share): Promise<string | null> {
   return typeof d.content === 'string' ? d.content : '';
 }
 
-/** The ids a note's markdown EMBEDS as `kind` (files: its pictures and
- *  file embeds; draws: its drawings), lower-cased. Parsed into a document
+/** The ids a note's markdown EMBEDS, as `walk` reads a page doc (files:
+ *  its pictures and file embeds; drawings; canvases), lower-cased. Parsed into a document
  *  first, as the embed closure does (noteEmbedIds) and as a page's doc is
  *  read: only a rendered picture or embed counts, so an id quoted in a code
  *  block or inline code is not one, and a titled `media:` link is. A link
  *  inside a sentence is a link, not an embed, as on a page. */
-function noteEmbeds(content: string, kind: 'file' | 'draw'): string[] {
+function noteEmbeds(content: string, walk: (doc: unknown) => string[]): string[] {
   if (!content) return [];
-  const doc = markdownToDoc(content);
-  return (kind === 'file' ? referencedFileIds(doc) : referencedDrawIds(doc)).map((id) =>
-    id.toLowerCase(),
-  );
+  return walk(markdownToDoc(content)).map((id) => id.toLowerCase());
+}
+
+/** May this share show the snapshot of the canvas `presentId`? Only a page
+ *  or a note share, only a canvas its own content embeds
+ *  (`![Title](present:<id>)`), only one the link serves (isServed: the
+ *  owner put it on the served list, or a contact share names it), and only
+ *  when the canvas has a snapshot. Never the canvas itself: a link shows
+ *  the picture, no frame and no source. The /s/:token/present/:presentId
+ *  route's authorization, and what the share page asks before it places
+ *  the picture. */
+export async function isEmbeddedPresentAllowed(share: Share, presentId: string): Promise<boolean> {
+  if (!isUuid(presentId)) return false;
+  const id = presentId.toLowerCase();
+  if (share.nodeType === 'page') {
+    const page = await getPage(share.ownerId, share.nodeId);
+    if (!page || !referencedPresentIds(page.doc).some((d) => d.toLowerCase() === id)) return false;
+  } else if (share.nodeType === 'note') {
+    const content = await loadSharedNote(share);
+    if (content === null || !noteEmbeds(content, referencedPresentIds).includes(id)) return false;
+  } else {
+    return false;
+  }
+  if (!(await isServed(share, id))) return false;
+  const facts = await getPresentEmbedFacts(share.ownerId, id);
+  return facts?.posterRev != null;
+}
+
+/** The canvases among `ids` this share shows (isEmbeddedPresentAllowed),
+ *  lower-case: the share page places only their pictures, the rest as a
+ *  labelled placeholder. */
+export async function sharePresentsShown(
+  share: Share,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const id of new Set(ids.map((i) => i.toLowerCase()))) {
+    if (await isEmbeddedPresentAllowed(share, id)) out.add(id);
+  }
+  return out;
 }
 
 /** May this share serve the drawing `drawId` as an embed? Only a page or a
@@ -542,7 +580,7 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
   }
   if (share.nodeType === 'note') {
     const content = await loadSharedNote(share);
-    if (content === null || !noteEmbeds(content, 'draw').includes(id)) return false;
+    if (content === null || !noteEmbeds(content, referencedDrawIds).includes(id)) return false;
     return isDrawServable(share, id, { self: true });
   }
   return false;
@@ -569,7 +607,7 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
   }
   if (share.nodeType === 'note') {
     const content = await loadSharedNote(share);
-    if (content === null || !noteEmbeds(content, 'file').includes(id)) return false;
+    if (content === null || !noteEmbeds(content, referencedFileIds).includes(id)) return false;
     if (!(await isFile(share.ownerId, id))) return false;
     return isServed(share, id);
   }

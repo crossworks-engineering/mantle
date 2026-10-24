@@ -16,11 +16,13 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
 export const RENDER_COOKIE_NAME = 'mantle_render';
 
 /** The byte routes a render surface loads: page images and scene images
- *  (/api/files/files/:id) and embedded drawings (/api/draws/:id/svg). Nothing
+ *  (/api/files/files/:id), embedded drawings (/api/draws/:id/svg) and the
+ *  snapshots of embedded canvases (/api/presents/:id/poster). Nothing
  *  else: not the admin private-space bytes, not any JSON API. The render
  *  pages themselves are ROUTE_POLICY rows of class 'render'
  *  (lib/auth/route-policy.ts); a row's `renderCookie` is what the gate reads. */
-const RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
+const RENDER_ASSET_RE =
+  /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg|presents\/[^/]+\/poster)$/;
 
 export function isRenderAssetPath(path: string): boolean {
   return RENDER_ASSET_RE.test(path);
@@ -48,6 +50,9 @@ export function isAssetPath(path: string): boolean {
     // (worked same-origin via cookie, broken only detached). Registering an
     // asset route means BOTH ends: getOwnerForAsset in the route AND here.
     /^\/api\/draws\/[^/]+\/svg$/.test(path) ||
+    // A Present canvas's snapshot, the picture a page embeds (the route
+    // reads readerAssetCaller, as the drawing's SVG).
+    /^\/api\/presents\/[^/]+\/poster$/.test(path) ||
     // Member Library bytes (member logins): file bytes and drawing SVGs a
     // member could read. No route serves these paths any more.
     path.startsWith('/api/member/files/') ||

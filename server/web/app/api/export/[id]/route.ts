@@ -1,3 +1,4 @@
+import { getPresentPoster } from '@/lib/presents';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { buildRenderToken, ownerAssetCaller } from '@/lib/auth';
@@ -125,6 +126,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // committed snapshot (browser sidecar). Only the docx path asks for this,
     // and only for the drawings a document actually embeds.
     loadDraw: async (drawId) => await getDrawPngOrRender(user.id, drawId, user.actor.id),
+    // An embedded canvas goes in as its stored snapshot, read in the
+    // caller's scope (none where the caller cannot read the canvas).
+    loadPresent: async (presentId) => {
+      const poster = await getPresentPoster(user.id, presentId);
+      return poster ? { bytes: poster.png } : null;
+    },
   });
   if (!result) {
     return NextResponse.json({ error: 'not found or not exportable' }, { status: 404 });

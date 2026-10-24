@@ -1,13 +1,13 @@
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { drawNodeId, mediaFileId } from '@mantle/content-core/markdown-refs';
+import { drawNodeId, mediaFileId, presentNodeId } from '@mantle/content-core/markdown-refs';
 import { isEmbedded, type PresenterChrome } from './lib/presenter-chrome';
 
 /** Is `href` one of the app's reference schemes a note resolves itself
- *  (`media:` a file, `draw:` a drawing)? */
+ *  (`media:` a file, `draw:` a drawing, `present:` a canvas's snapshot)? */
 function isNoteRef(href: string): boolean {
   const s = href.trim();
-  return mediaFileId(s) !== null || drawNodeId(s) !== null;
+  return mediaFileId(s) !== null || drawNodeId(s) !== null || presentNodeId(s) !== null;
 }
 
 /**
@@ -19,7 +19,8 @@ function isNoteRef(href: string): boolean {
  *
  * A note's own pictures and file links are written in the app's reference
  * schemes: `![alt](media:<file-id>)`, `[spec.pdf](media:<file-id>)`,
- * `![alt](draw:<draw-id>)`. `assetUrl` / `drawUrl` name the surface's byte
+ * `![alt](draw:<draw-id>)`, `![Title](present:<id>)`. `assetUrl` / `drawUrl` /
+ * `presentUrl` name the surface's byte
  * route for each (the public share passes its token routes, as it does for
  * the page presenter); the route decides what it serves. Without one, a
  * picture draws its alt text and a link its text, so nothing is asked for.
@@ -30,6 +31,7 @@ export function NotePresenter({
   chrome,
   assetUrl,
   drawUrl,
+  presentUrl,
 }: {
   view: { title: string; content: string };
   chrome?: PresenterChrome;
@@ -37,6 +39,9 @@ export function NotePresenter({
   assetUrl?: (fileId: string) => string;
   /** A `draw:` drawing's snapshot on this surface. */
   drawUrl?: (drawId: string) => string;
+  /** A `present:` canvas's snapshot on this surface, or null for one it
+   *  does not show. */
+  presentUrl?: (presentId: string) => string | null;
 }) {
   const embedded = isEmbedded(chrome);
   /** The URL a reference resolves to, or null when this surface has no
@@ -47,6 +52,8 @@ export function NotePresenter({
     if (file) return assetUrl ? assetUrl(file) : null;
     const draw = drawNodeId(s);
     if (draw) return drawUrl ? drawUrl(draw) : null;
+    const canvas = presentNodeId(s);
+    if (canvas) return presentUrl ? presentUrl(canvas) : null;
     return null;
   };
   const components: Components = {

@@ -202,9 +202,12 @@ function concretePath(pattern: string): string {
 }
 
 /** A cell outside /api added after the record, with the answer it was
- *  reviewed to give (`METHOD pattern cred` to `status type cache-control=`).
- *  None yet. */
-const OUTSIDE_API_SINCE: Record<string, string> = {};
+ *  reviewed to give (`METHOD pattern cred` to `status type cache-control=`). */
+const OUTSIDE_API_SINCE: Record<string, string> = {
+  // Present in Pages: a shared page's canvas snapshot, the same answer as
+  // its drawing sibling (/s/:token/draw/:drawId) for a token no link has.
+  'GET /s/:token/present/:presentId none': '404 text/plain cache-control=no-store',
+};
 
 /** Whether a cell (`METHOD pattern cred`) is an /api one. */
 function isApiCell(cell: string): boolean {

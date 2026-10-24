@@ -1,3 +1,4 @@
+import { presentPosterSrc } from '@mantle/content-core/markdown-refs';
 import type { Context } from 'hono';
 import { getPage, getDraw, getDrawSvg } from '@mantle/content';
 import { requireOwnerForRender } from '@/lib/auth';
@@ -129,6 +130,9 @@ async function printPage(c: Context): Promise<Response> {
     // The export route warms the cache before printing; an unrendered
     // drawing degrades to its placeholder rather than deadlocking.
     drawUrl: (drawId: string) => `/api/draws/${encodeURIComponent(drawId)}/svg?raw=1&nofill=1`,
+    // A canvas's snapshot is a stored picture, never rendered on read, so
+    // it needs no nofill: the poster route spends no sidecar time.
+    presentUrl: (presentId: string) => presentPosterSrc(presentId),
   });
   const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 

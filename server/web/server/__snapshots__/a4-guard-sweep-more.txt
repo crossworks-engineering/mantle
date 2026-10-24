@@ -563,6 +563,8 @@ HEAD /api/presents/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotat
 GET /api/presents/:id/frame: disabled-cookie=a11 bumped-cookie=a11 gone-cookie=a11 rotated-bearer=a11 expired-bearer=a11 key-unknown=a3 key-revoked=a3
 HEAD /api/presents/:id/frame: disabled-cookie=a11 bumped-cookie=a11 gone-cookie=a11 rotated-bearer=a11 expired-bearer=a11 key-unknown=a5 key-revoked=a5
 POST /api/presents/:id/frame-ticket: disabled-cookie=a10 bumped-cookie=a10 gone-cookie=a10 rotated-bearer=a10 expired-bearer=a10 key-unknown=a3 key-revoked=a3
+GET /api/presents/:id/poster: disabled-cookie=a27 bumped-cookie=a27 gone-cookie=a27 rotated-bearer=a27 expired-bearer=a27 key-unknown=a3 key-revoked=a3
+HEAD /api/presents/:id/poster: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a5 key-revoked=a5
 GET /api/presents/:id/revisions: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/presents/:id/revisions: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/profile: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
@@ -880,6 +882,8 @@ POST /s/:token/evaluate: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 r
 GET /s/:token/frame: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
 HEAD /s/:token/frame: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
 POST /s/:token/frame-ticket: disabled-cookie=a41 bumped-cookie=a41 gone-cookie=a41 rotated-bearer=a41 expired-bearer=a41 key-unknown=a41 key-revoked=a41
+GET /s/:token/present/:presentId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
+HEAD /s/:token/present/:presentId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 GET /s/:token/rows: disabled-cookie=a40 bumped-cookie=a40 gone-cookie=a40 rotated-bearer=a40 expired-bearer=a40 key-unknown=a40 key-revoked=a40
 HEAD /s/:token/rows: disabled-cookie=a21 bumped-cookie=a21 gone-cookie=a21 rotated-bearer=a21 expired-bearer=a21 key-unknown=a21 key-revoked=a21
 POST /s/:token/tool-broker: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43

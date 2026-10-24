@@ -2,7 +2,8 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { buildPageToc } from '@mantle/content-core/page-toc';
 import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
-import { loadShareView, recordShareView } from '@/lib/shares';
+import { loadShareView, recordShareView, sharePresentsShown } from '@/lib/shares';
+import { referencedPresentIds } from '@mantle/content';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
@@ -61,6 +62,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
+  // Only the canvases this link serves show their snapshot (share.tsx).
+  const shownCanvases =
+    view.kind === 'page'
+      ? await sharePresentsShown(share, referencedPresentIds(view.doc))
+      : new Set<string>();
+  const presentUrl = (presentId: string) =>
+    shownCanvases.has(presentId.toLowerCase())
+      ? `/s/${token}/present/${encodeURIComponent(presentId)}`
+      : null;
 
   let payload: ShareViewPayload;
   switch (view.kind) {
@@ -70,7 +80,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         title: view.title,
         icon: view.icon,
         width: view.width,
-        html: renderPageDoc(view.doc, { assetUrl, drawUrl }),
+        html: renderPageDoc(view.doc, {
+          assetUrl,
+          drawUrl,
+          presentUrl,
+        }),
         toc: buildPageToc(view.doc),
       };
       break;

@@ -818,7 +818,9 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
 const OLD_SHARE_BROKER_RE =
   /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
 const OLD_RENDER_PAGE_RE = /^\/(?:print\/pages|print\/draws|render\/draws)\/[^/]+$/;
-const OLD_RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
+// Present in Pages added the canvas snapshot a printed page loads.
+const OLD_RENDER_ASSET_RE =
+  /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg|presents\/[^/]+\/poster)$/;
 
 /** A path that spells the pattern's first static segment with an escape
  *  (`/s/x` as `/%73/x`), and one with an escape in each later one. */

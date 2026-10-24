@@ -9,7 +9,9 @@ import {
   recordShareAccess,
 } from '@mantle/content';
 import { loadShareAppearance } from './appearance';
-import { recordShareView, loadShareView } from '@/lib/shares';
+import { recordShareView, loadShareView, sharePresentsShown } from '@/lib/shares';
+import { referencedPresentIds } from '@mantle/content';
+import { markdownToDoc } from '@mantle/content-core/markdown';
 import { gateShareCookie } from '@/lib/contact-share-gate';
 import { ContactSharesMenu } from '@/components/share/contact-shares-menu';
 import { PagePresenter } from '@/components/share/page-presenter';
@@ -190,13 +192,29 @@ async function renderShare(c: Context): Promise<Response> {
   // markdown, and a `/` or `?` in it must not reshape the path.
   const assetUrl = (fileId: string) => `/s/${token}/a/${encodeURIComponent(fileId)}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
+  // An embedded canvas shows as its snapshot only where this link serves
+  // it (isEmbeddedPresentAllowed); any other is a labelled placeholder, so
+  // the page never asks for a picture the route would refuse.
+  const embeddedCanvases =
+    view.kind === 'page'
+      ? referencedPresentIds(view.doc)
+      : view.kind === 'note'
+        ? referencedPresentIds(markdownToDoc(view.content))
+        : [];
+  const shownCanvases = embeddedCanvases.length
+    ? await sharePresentsShown(share, embeddedCanvases)
+    : new Set<string>();
+  const presentUrl = (presentId: string) =>
+    shownCanvases.has(presentId.toLowerCase())
+      ? `/s/${token}/present/${encodeURIComponent(presentId)}`
+      : null;
 
   let body: string | null;
   let islands = false;
   switch (view.kind) {
     case 'page':
       body = renderToStaticMarkup(
-        <PagePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} />,
+        <PagePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} presentUrl={presentUrl} />,
       );
       break;
     case 'note':
@@ -204,7 +222,7 @@ async function renderShare(c: Context): Promise<Response> {
       // the share's own routes; isAssetAllowed / isEmbeddedDrawAllowed serve
       // only what the note's markdown embeds.
       body = renderToStaticMarkup(
-        <NotePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} />,
+        <NotePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} presentUrl={presentUrl} />,
       );
       break;
     case 'file':
