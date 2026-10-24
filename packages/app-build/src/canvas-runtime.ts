@@ -13,11 +13,12 @@
  * canvas loads it with a `<script src>`. reveal.js brings its stylesheet and
  * themes. KaTeX's stylesheet and fonts already ride `/share-runtime/katex/`.
  *
- * Output: the files plus `manifest.json` ({ imports, libs, assets }). The
- * canvas frame route reads `imports` for its import map; `libs` names each
+ * Output: the files plus `manifest.json` ({ imports, exports, libs, assets }).
+ * The canvas frame route reads `imports` for its import map; `libs` names each
  * library's pinned version (release notes, the save check of a later phase).
- * Built for canvases first and shaped so mini apps can read the same set
- * later; the mini-app bundler's allowlist (index.ts) is not touched here.
+ * Mini apps read a subset of the same files (app-libraries.ts): the app
+ * runtime build copies those `imports` into the app import map and their
+ * `exports` into the app import check, so there is one vendored copy.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -109,6 +110,10 @@ const STYLE_ASSETS: readonly { pkg: string; from: string; to: string }[] = [
 export type CanvasRuntimeManifest = {
   /** Bare specifier → hashed URL under the prefix (the import map). */
   imports: Record<string, string>;
+  /** Bare specifier → the names its module exports ('default' included when
+   *  it has one), from esbuild's metafile. The mini-app import check reads
+   *  it (a wrong name fails the app at link time, past any error boundary). */
+  exports: Record<string, string[]>;
   /** npm package → the version this runtime pins. */
   libs: Record<string, string>;
   /** The stable non-module paths (classic scripts, stylesheets). */
@@ -187,6 +192,7 @@ export async function buildCanvasRuntime(
   fs.mkdirSync(outDir, { recursive: true });
 
   const imports: Record<string, string> = {};
+  const exports: Record<string, string[]> = {};
   // One build per module: each is self-contained, except the externals it
   // names, which the import map resolves at run time.
   for (const m of CANVAS_MODULES) {
@@ -209,6 +215,7 @@ export async function buildCanvasRuntime(
     const out = Object.keys(result.metafile.outputs).find((p) => p.endsWith('.js'));
     if (!out) throw new Error(`canvas runtime: no output for '${m.specifier}'`);
     imports[m.specifier] = urlPrefix + path.basename(out);
+    exports[m.specifier] = result.metafile.outputs[out]!.exports ?? [];
   }
 
   const assets: string[] = [];
@@ -228,6 +235,7 @@ export async function buildCanvasRuntime(
 
   const manifest: CanvasRuntimeManifest = {
     imports,
+    exports,
     libs,
     assets,
     builtAt: new Date().toISOString(),

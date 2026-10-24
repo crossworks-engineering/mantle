@@ -16,6 +16,11 @@
  * Output: `<outDir>/<name>-<hash>.js` files + `manifest.json`, a map from the
  * specifier as written in app source (`react`, `@/components/ui/button`, `@host`,
  * …) to its hashed URL. The sandbox reads the manifest to build the import map.
+ *
+ * The canvas libraries an app may import (app-libraries.ts) join the same
+ * manifest: their URLs point at the canvas runtime's files (`/canvas-runtime/`),
+ * so the app import map and the app import check carry them with no second
+ * copy and no change to the frame route or the export loader.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -23,6 +28,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
 import { KIT } from './kit.ts';
+import { appCanvasLibraries } from './app-libraries.ts';
 
 const REAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY_NS = 'rt-entry';
@@ -61,6 +67,10 @@ const ENTRY_SRC: Record<string, string> = {
   badge: KIT['@/components/ui/badge']!,
   separator: KIT['@/components/ui/separator']!,
   host: KIT['@host']!,
+  // Motion's React API (app-libraries.ts): it imports React, so it is built
+  // here, where splitting gives it the one shared React, not in the canvas
+  // runtime. ESM, so `export *` carries its names across the boundary.
+  'motion-react': "export * from 'motion/react';",
 };
 
 /** Specifier as written in app source → entry name. This is the contract the
@@ -78,6 +88,7 @@ export const RUNTIME_SPECIFIERS: Record<string, string> = {
   '@/components/ui/badge': 'badge',
   '@/components/ui/separator': 'separator',
   '@host': 'host',
+  'motion/react': 'motion-react',
 };
 
 /** esbuild plugin: serve the virtual entry sources + bind the kit's own
@@ -132,7 +143,13 @@ export type RuntimeManifest = {
 export async function buildRuntime(
   outDir: string,
   urlPrefix = '/app-runtime/',
+  /** The canvas runtime's manifest, whose app-library subset joins this
+   *  one. The build script always passes it; a test may leave it out. */
+  canvas?: { imports: Record<string, string>; exports?: Record<string, string[]> },
 ): Promise<RuntimeManifest> {
+  // Before anything is written: a canvas manifest that lacks a library fails
+  // here, not after the runtime directory was emptied.
+  const libraries = canvas ? appCanvasLibraries(canvas) : null;
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -187,6 +204,11 @@ export async function buildRuntime(
     // deploy time rather than a guard that quietly stopped guarding.
     if (!names) throw new Error(`runtime build produced no metafile entry for '${file}'`);
     exports[specifier] = names;
+  }
+
+  if (libraries) {
+    Object.assign(imports, libraries.imports);
+    Object.assign(exports, libraries.exports);
   }
 
   const manifest: RuntimeManifest = {

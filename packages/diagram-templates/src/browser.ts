@@ -13,6 +13,11 @@
  */
 import { render, type RenderOutcome } from './index.ts';
 import { domMeasurer } from './runtime/text.ts';
+// A mini app draws a template inside its own React tree instead of mounting
+// a page: `render(template, data, domMeasurer(document))` returns the same
+// escaped, static SVG string `mount` inserts (app-libraries.ts, app-build).
+export { render, domMeasurer };
+export type { RenderOutcome };
 import { DATA_ID } from './canvas.ts';
 import { messageOf } from './runtime/validate.ts';
 

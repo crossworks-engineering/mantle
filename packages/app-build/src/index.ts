@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { buildAppCss } from './css';
 import { KIT } from './kit';
+import { APP_LIBRARIES_LEFT_OUT, APP_LIBRARY_SPECIFIERS } from './app-libraries';
 // Local copy of @mantle/std's errorMessage. This package is published as a
 // contract package; it must not depend on private workspace packages, which
 // do not exist on npm (the v0.232.122-153 tarballs shipped an unresolvable
@@ -66,8 +67,26 @@ const APP_NS = 'app';
 const RESOLVING = Symbol('app-build-resolving');
 const STDIN = '<stdin>';
 
-/** Bare npm packages a mini app may import. Everything else is rejected. */
+/** Bare npm packages a mini app may import and bundle. Everything else is
+ *  rejected, except the exact library specifiers below. */
 const BARE_ALLOW = /^(react($|\/)|react-dom($|\/)|lucide-react($|\/))/;
+
+/** The vendored libraries (app-libraries.ts): EXACT specifiers, left bare for
+ *  the frame's import map, never bundled, so the build never reads them.
+ *  `echarts/core` is not `echarts`. */
+const LIBRARY_EXTERNALS = new Set(APP_LIBRARY_SPECIFIERS);
+
+const ALLOWED_TEXT =
+  `react, react-dom, lucide-react, and the libraries ${APP_LIBRARY_SPECIFIERS.join(', ')} ` +
+  `(call canvas_library first)`;
+
+/** The refusal for a bare import, naming the fix when it is a known one. */
+function refusal(spec: string): string {
+  const why = APP_LIBRARIES_LEFT_OUT[spec];
+  if (why)
+    return `Import '${spec}' is not available in a mini app: ${why}. Allowed: ${ALLOWED_TEXT}.`;
+  return `Import '${spec}' is not allowed in a mini app. Allowed packages: ${ALLOWED_TEXT}. Use @/components/ui/*, @host, or relative files for everything else.`;
+}
 
 /** The installed directories of the allowed packages: whatever an allowed
  *  bare import resolves to must lie inside one of them. */
@@ -233,10 +252,11 @@ function virtualPlugin(source: AppSource): Plugin {
       // map at load time instead of being bundled into every app.
       build.onResolve({ filter: /^@/ }, (args) => {
         if (args.path in KIT) return { path: args.path, external: true };
+        if (LIBRARY_EXTERNALS.has(args.path)) return { path: args.path, external: true };
         return {
           errors: [
             {
-              text: `Unknown import '${args.path}'. Allowed: react, ${Object.keys(KIT).join(', ')}, lucide-react, and relative files.`,
+              text: `Unknown import '${args.path}'. Allowed: ${Object.keys(KIT).join(', ')}, ${ALLOWED_TEXT}, and relative files.`,
             },
           ],
         };
@@ -286,13 +306,9 @@ function virtualPlugin(source: AppSource): Plugin {
         // Only gate imports written in USER/KIT source — let transitive
         // node_modules imports (react-dom → scheduler, etc.) resolve freely.
         if (!fromUserSource(args)) return null;
-        const refused = {
-          errors: [
-            {
-              text: `Import '${args.path}' is not allowed in a mini app. Allowed packages: react, react-dom, lucide-react. Use @/components/ui/*, @host, or relative files for everything else.`,
-            },
-          ],
-        };
+        const refused = { errors: [{ text: refusal(args.path) }] };
+        // A vendored library: bare in the output, the import map serves it.
+        if (LIBRARY_EXTERNALS.has(args.path)) return { path: args.path, external: true };
         if (!BARE_ALLOW.test(args.path) || escapesPackage(args.path)) return refused;
         // Backstop: resolve it here, and keep it only when it lands inside
         // the package it names (a symlink or an odd `exports` map aside).
@@ -475,6 +491,12 @@ export function lintRuntimeImports(
 export { loadRuntimeExports } from './runtime-exports';
 export { buildCanvasCss } from './css';
 export { CANVAS_MODULE_SPECIFIERS } from './canvas-runtime';
+export {
+  APP_CANVAS_LIBRARIES,
+  APP_LIBRARIES_LEFT_OUT,
+  APP_LIBRARY_SPECIFIERS,
+  APP_RUNTIME_LIBRARIES,
+} from './app-libraries';
 
 export async function buildApp(
   source: AppSource,

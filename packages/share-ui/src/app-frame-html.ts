@@ -27,7 +27,8 @@ import type { AppViewer } from '@mantle/client-types/app-viewer';
  *  attachments. The document's origin is OPAQUE (sandboxed), so CSP `'self'`
  *  is unreliable here — every source names the host origin explicitly:
  *  scripts only from `/app-runtime/` (the shared React/kit/host runtime the
- *  import map points at), styles/fonts only from `/share-runtime/` (the
+ *  import map points at) and `/canvas-runtime/` (the vendored libraries the
+ *  same map names), styles/fonts only from `/share-runtime/` (the
  *  self-contained stylesheet the frame links) and `/fonts/` (owner font
  *  library). */
 export function buildAppFrameCsp(origin: string): string {
@@ -42,8 +43,13 @@ export function buildAppFrameCsp(origin: string): string {
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/share-runtime/; ` +
     // share-runtime scripts joined app-runtime for the Neat backdrop
     // (share-page.js + its lazy WebGL chunk) — same-origin built assets,
-    // no new capability.
-    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/; ` +
+    // no new capability. canvas-runtime joined for the vendored libraries an
+    // app may import (echarts, d3, three, konva, katex, the diagram
+    // templates; app-build app-libraries.ts): the same content-hashed files
+    // a Present canvas loads, on the brain origin. No 'unsafe-eval' (the one
+    // library that needs it, Alpine.js, is left out of apps), and
+    // connect-src stays 'none', so a library adds no way out.
+    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/ ${origin}/canvas-runtime/; ` +
     `img-src data: blob: ${origin}; ` +
     `font-src data: ${origin}/share-runtime/ ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'"

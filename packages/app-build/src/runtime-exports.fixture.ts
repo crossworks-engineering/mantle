@@ -28,4 +28,5 @@ export const RUNTIME_EXPORTS_FIXTURE: Record<string, string[]> = {
   '@/components/ui/badge': ['Badge'],
   '@/components/ui/separator': ['Separator'],
   '@host': ['__mount', 'host'],
+  'motion/react': ['motion', 'AnimatePresence', 'animate', 'useAnimate', 'useReducedMotion'],
 };

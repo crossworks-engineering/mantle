@@ -10,7 +10,7 @@
  * sandbox frames a brain-rendered document whose import map and CSP point at
  * the brain's `/app-runtime/` (jackdaw dropped the step after v0.6.131).
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { buildRuntime } from '../src/build-runtime.ts';
 
@@ -54,7 +54,24 @@ if (!process.env.APP_RUNTIME_OUT && !existsSync(path.join(appDir, 'public'))) {
   process.exit(1);
 }
 
-const manifest = await buildRuntime(outDir);
+// The canvas libraries an app may import join the app import map
+// (app-libraries.ts), so the canvas runtime is built first (server/web
+// `generate`). Missing means the order broke: fail rather than ship an app
+// runtime whose apps cannot load their libraries.
+const canvasManifest = path.join(appDir, 'public/canvas-runtime/manifest.json');
+if (!existsSync(canvasManifest)) {
+  console.error(
+    `app-runtime: ${canvasManifest} is missing. Build the canvas runtime first ` +
+      `(node packages/app-build/scripts/build-canvas-runtime.ts).`,
+  );
+  process.exit(1);
+}
+const canvas = JSON.parse(readFileSync(canvasManifest, 'utf8')) as {
+  imports: Record<string, string>;
+  exports?: Record<string, string[]>;
+};
+
+const manifest = await buildRuntime(outDir, '/app-runtime/', canvas);
 const n = Object.keys(manifest.imports).length;
 console.log(`app-runtime: ${n} modules → ${outDir}`);
 for (const [spec, url] of Object.entries(manifest.imports)) console.log(`  ${spec}  →  ${url}`);
