@@ -1371,3 +1371,157 @@ slow run met, not an answer. Not proven.
 - Part 3 as written in part 2's "Left".
 - The local pre-squash branch s9-p2-presquash-local holds the old records
   with the machine names: never pushed; delete it after the merge.
+
+## S9 part 3: the lists deleted, the declarations the one source
+
+Branch feat/s9-p3, from origin/main d3b6e9281 (v0.300.145, part 2
+merged). Wave 5 freeze. No migration, no SQL. The Present branch (the
+M4's) is not on main, so no rebase; the dev-brain task the brief named
+(cfa8b8fa) is the client's Peers screen merge, not Present. Handed over at
+about 120 tool calls, before the workstation lanes (see "Left").
+
+| commit    | change                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| 60e0d0541 | the sweeps choose their routes off the rows (test-support.ts rowAnswers) |
+| c7ff2820b | the lists, listedFacts, the source switch and the codemod deleted        |
+| 351f9f4ef | the p2 audit's area LOWs (L1, L2, L4) and the A8 tool-cell time ceiling  |
+
+### 1. The lists deleted
+
+| list                                                                                                                 | where                   | now                                                                 |
+| -------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| ROUTE_PREFIXES, routeClass                                                                                           | route-scope.ts          | a declaration's `class` and `area`                                  |
+| MEMBER_OPEN_READS, MEMBER_OPEN_WRITES, memberMayRead, memberMayWrite, WORKSPACE_ITEM_PREFIXES                        | route-scope.ts          | `open: 'owner'`; a test holds the kind registry's item routes to it |
+| CREATE_ROUTES                                                                                                        | route-scope.ts          | `creates`                                                           |
+| READ_POSTS, WRITE_GETS, isReadRequest                                                                                | route-scope.ts          | the effect exception (`effect: { read }`, `{ write }`)              |
+| NO_ITEM_WRITES, itemWriteTarget                                                                                      | route-scope.ts          | `makesItems: false`, `item`                                         |
+| ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES, isAnyLoginRoute, isChatLoginRoute (the file)             | any-login-routes.ts     | `open: 'any'`, `'chat'`, `'telegram'`                               |
+| MEMBER_ROUTES, isMemberRoute (the file)                                                                              | member-routes.ts        | `open: 'member'`                                                    |
+| ROUTE_GATES                                                                                                          | route-limits.ts         | `limits` (the RouteGates type stays)                                |
+| API_V1_ROUTES, apiV1RouteOf, matchApiV1Route, ApiV1Route                                                             | api-v1.ts               | `keyArea`, `base`, `aliasOf` (KeyRoute is its own type now)         |
+| AUDIT_SELF_LOGGED_PATHS, isAuditSelfLogged                                                                           | auth-constants.ts       | `audit: 'own'`                                                      |
+| PUBLIC_LOGIN_ROWS, OWNER_AT_READ_ROWS, ADMIN_OPEN_ROWS, FRAME_ROWS, loginsOf, aliasOf, v1BaseOf, rowScope, listNamed | route-policy.ts         | `caller` (the named kinds), `aliasOf`, `base`                       |
+| listedFacts, RoutePolicySource, ROUTE_POLICY_SOURCE, checkLoadedPolicy's and buildRoutePolicy's `source`             | route-policy.ts, loader | declaredFacts only; a page's row is pageFacts'                      |
+| route-policy-codemod.ts, route-declarations.ts and its test                                                          | server/web/scripts      | gone (no second source left); its generator cells kept (below)      |
+
+The boot's holds of a declared `base` and `keyArea` to the key table went
+with the table: the declaration is the one source of both (the validator
+still holds `keyArea` and `base` to /api/v1, and an alias's base to the
+route its file re-exports). A v1 row that declares no key area is not in
+the API (keyOnRow: not-in-api), as a v1 path the table did not list was.
+
+A page of server/pages has no route file and so no declaration:
+buildRouteRow gives its row `pageFacts` (no scope, a link row under /s, its
+`public` from PUBLIC_PATHS, the method's effect, no list, item, key, limit
+or audit), the values listedFacts gave it. A render page under /s or /api
+is refused (it would shadow a declared route). buildRouteRow with neither
+a page nor a declaration throws ("declares no policy").
+
+The generator's cells of the codemod's test (handlerPolicy, the alias
+resolution) are server/web/scripts/route-callers-policy.test.ts now.
+
+### 2. The lists kept, and why
+
+| list                                                                          | where                              | why                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PUBLIC_PATHS, isPublicPath                                                    | auth-constants.ts                  | the gate's answer for a request no row answers, or a path that does not spell its row's pattern (gate.ts gateRouteView). Kept whole, not shrunk: a shrink would turn an unrouted /api/auth/... or an escaped /s spelling from 404 into 401 (an answer change). The one counted list. |
+| isAssetPath, isRenderAssetPath, ASSET_V1_PATTERNS, ASSET_QUERY_AS_HANDED      | auth-constants.ts, route-policy.ts | the gate reads them on the raw path (an `?at=` token's admission, the render cookie) as well as the rows; assetRow reads them                                                                                                                                                        |
+| LINK_CORS_PATTERNS, linkCors                                                  | route-policy.ts                    | a preflight (OPTIONS) and the 405 answer of an /s route have no row                                                                                                                                                                                                                  |
+| SHARE_PAGES, PRINT_PAGES                                                      | server/pages                       | no route file: the page list is the page's class                                                                                                                                                                                                                                     |
+| the body ceilings (UPLOAD_PATHS, MULTIPART_CEILINGS, OWNER_DOCUMENT_PREFIXES) | body-limit.ts                      | the size a request may send, read by the gate before a row is found and by the loader; they name no caller, open, item or area. Kept a list by the owner's decision of part 0 round 2, and out of the policy count now (arch-counts.mjs ROUTE_LISTS_NOT_POLICY, with why)            |
+
+### 3. Nothing reads a deleted list
+
+- tsc over server/web (the app, the scripts and every test): 0, with the
+  files deleted, so no import of a deleted name is left anywhere.
+- `git grep -w` of every deleted name over the repo (docs/\_archive out):
+  the hits are comments that say "was X" or describe the history, and the
+  test-local functions of the same name that read the rows (w6a-route-sweep,
+  a4-guard-sweep, member-sweep, create-home-parity: each defined over
+  test-support.ts rowAnswers). No code reads a list.
+- The sweeps chose their routes from the lists; they choose them off the
+  rows now. Before the lists went, each list question (a read, a member
+  row, an any-login row, a member's open read and write, the prefix's
+  class, the creates, the item a write names) was compared with its
+  rows answer over every pattern of the manifest and seven methods (418
+  patterns, 2926 cases): 0 differ.
+
+### 4. The rows, byte-equal
+
+- Every row of the manifest and the pages (827: 819 manifest rows, the /s
+  page GET and HEAD, the three render pages GET and HEAD), every field,
+  dumped as JSON on main d3b6e9281 and on the branch at c7ff2820b: byte for
+  byte equal (sha1 773f094d99dd1334b8bd0193342302ee2428a019 both).
+- route-policy.rows.json and every file under server/web/server/**snapshots**
+  unchanged (git diff against origin/main empty), and the non-DB guard
+  sweeps pass on them: a4-guard-sweep (all files), member-sweep,
+  auth-sweep, role-sweep, link-render-sweep.
+
+### 5. Pins
+
+- routePolicyLists 14 to 1: the deleted lists (12) and body-limit.ts out
+  of the count (1); PUBLIC_PATHS is the one left. ROUTE_LIST_PINS holds
+  auth-constants.ts 1 only.
+- historyCodeComments 2342 to 2325: seventeen comment lines that named a
+  step code went with the lists and the codemod.
+- actorsStepRefs 13 to 12: the ADMIN_OPEN_ROWS comment's pointer at the
+  spec went with the list.
+- itemNonePlaceholders stays 111. (`node scripts/arch-scoreboard.ts --pin`
+  was tried and rewrote other pins, some up; it was undone and the three
+  pins set by hand.)
+
+### 6. The p2 audits' LOWs
+
+- AREA L1: the changed answer is a class: any area row (an owner or an
+  asset caller's) whose area read fails once answers the 500; the cells
+  (s9-area-fold.db.test.ts CHANGED) say so. Done.
+- AREA L2: httpCaller's JSDoc names ADMIN_STEP_CALLERS (owner, ownerAsset)
+  and the asset login. Done.
+- AREA L3 (the vitest mock warm-up as a shared helper): not done (left).
+- AREA L4: an `?at=` asset token is read on a GET only, in ownerForAsset
+  and in the gate's asset view (assetViewLogin). The changed answer: a
+  HEAD with `?at=` ignores the token (stricter); through the app the gate
+  answered such a HEAD 401 before (the asset cells' HEAD line), so only a
+  direct call of the function sees it. Its own cell: not written (left);
+  the area cells' HEAD lines cover the app's answer on the workstation.
+- FLIP L1, L2 (the lint's callee, top-level spread and `as`/`satisfies`;
+  handlerPolicy refusing a missing method): not done (left).
+- FLIP L3, for S11b: the creates that name an existing folder in the body
+  (POST /api/pages folderId and parentId, POST /api/files/folders parent,
+  POST /api/files/files parent) and PUT /api/app-nav/pins (app ids in the
+  body). No pin change.
+- FLIP L4: kept as named in section 2.
+- A8 (the M4's note): the tool-cell time ceiling 210 s to 360 s, with its
+  note (a loaded box used about 199 s).
+
+### 7. Changed answers
+
+One, stricter: a HEAD with an `?at=` asset token no longer reads the token
+in ownerForAsset and the gate's asset view (L4). Through the app the gate
+refused such a HEAD before the view, so no recorded cell moves; the
+workstation area cells must confirm it (left). Every row is main's.
+
+### 8. Gates
+
+Mac, DATABASE_URL unset, on 351f9f4ef: see the table the final reply of
+this round gives (filled in below when the run ends).
+
+Workstation: not run this round (handed over at the tool-call budget).
+
+### Left
+
+1. Workstation, on a fresh clone of the pushed head (~/s9p3, copied from
+   ~/s9p2): shard 1, shard 2, actor-off, actor-on, edit-on, runtime-role,
+   matrix, serial, switch-off full, runtime-role-off full, the area cells
+   against the committed records (warn and on). Load-only timeouts rerun
+   alone. The DB sweeps that changed (w6a-route-sweep, w6a-fix-sweep,
+   precheck-removal-http, a4-head-logins) must pass on their records.
+2. AREA L3: the warm-up of a mocked lib/workspaces as a shared test helper
+   for every file that mocks it with an async factory.
+3. AREA L4's own cell (a direct ownerForAsset call with HEAD and `?at=`).
+4. FLIP L1 (route-plumbing.mjs: the callee must be routePolicy, report a
+   top-level spread, unwrap `as` and `satisfies`) and FLIP L2
+   (route-callers.ts handlerPolicy refuses a policy missing an exported
+   method at generate time).
+5. S11b: the 111 placeholders, the body-folder creates and the pins list
+   (section 6).
