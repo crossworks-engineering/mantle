@@ -8,7 +8,7 @@ The Mantle product incorporates the third-party open-source software listed belo
 
 ## Summary
 
-A total of **653** production packages across **23** license types.
+A total of **652** production packages across **22** license types.
 
 | License | Packages |
 | --- | ---: |
@@ -32,7 +32,6 @@ A total of **653** production packages across **23** license types.
 | MIT/X11 | 2 |
 | MPL-2.0 | 2 |
 | Python-2.0 | 1 |
-| SEE LICENSE IN LICENSE | 1 |
 | Unknown | 2 |
 | Unlicense | 3 |
 
@@ -31898,14 +31897,6 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### SEE LICENSE IN LICENSE
-
-#### @firecms/neat (1.1.0)
-
-**Author:** Francesco Gatti · **License:** SEE LICENSE IN LICENSE · **Homepage:** https://github.com/FireCMSco/neat#readme
-
-_No bundled license file found in the package; refer to the `SEE LICENSE IN LICENSE` standard license text and the project homepage._ — <https://github.com/FireCMSco/neat#readme>
-
 ### Unknown
 
 #### buffers (0.1.1)
@@ -32173,4 +32164,4 @@ SOFTWARE.
 
 ---
 
-_653 components attributed; license text embedded for 649 (each package's own file where present, otherwise the standard SPDX text). For 4 component(s) no license file was bundled and no canonical text is on file; the SPDX identifier shown above governs._
+_652 components attributed; license text embedded for 649 (each package's own file where present, otherwise the standard SPDX text). For 3 component(s) no license file was bundled and no canonical text is on file; the SPDX identifier shown above governs._
