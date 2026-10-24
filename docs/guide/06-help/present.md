@@ -22,7 +22,9 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 
 - Presenter looks at every canvas it saves, in a real browser, and fixes what it sees before it reports.
 - A P&ID or a process flow is drawn from data by a layout template, so the result is neat and the same every time. Draftsman uses the same path for the diagrams it puts in pages.
-- To put a canvas in a page, ask for it. The assistant exports a static copy into Files (`files/diagrams`) and embeds it. Print, PDF, Word, email and shares show that copy. The canvas stays the one you change; after a change, ask for the page copy to be updated.
+- To put a canvas in a page, ask for it, or type `/canvas` in the page and pick one. The page shows the canvas's latest picture. Click it to open the live canvas over the page; **Back to page** or Esc returns. A deck keeps its arrow keys and **Full screen**.
+- The picture is the one Presenter took at its last save. If the canvas changed since, the page says that a newer version exists; open it to see.
+- For outside Mantle (an email, a file to send), ask for a copy. The assistant exports a static copy into Files (`files/diagrams`). That copy does not follow later changes.
 - Deleting a canvas is a deliberate step: the assistant asks first.
 
 ## Technical
@@ -32,4 +34,6 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 - Libraries come from the brain, never from the internet: ECharts, Plotly, D3, Konva, Three.js, Motion, reveal.js, KaTeX and Alpine.js. Presenter reads a short guide for each (`canvas_library`), written for the exact version the brain serves.
 - Search reads the canvas title, description and visible text. A canvas is indexed again only after five minutes without a text change, so many quick saves cost one pass.
 - The last ten versions of each canvas are kept. Presenter can bring one back.
+- In a page a canvas is `![Title](present:<id>)`. Who may open it is the canvas's own access, never the page's: a reader of the page who may not read the canvas sees a placeholder, with no picture and nothing of the canvas.
+- On a share link (`/s/...`), and in the mobile apps, a page shows the picture only, never the live canvas. A link shows a canvas's picture only when you add the canvas to the link's served items in Access; otherwise it shows a placeholder. PDF and Word exports of the page carry the picture.
 - The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.

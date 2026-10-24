@@ -7,7 +7,9 @@ toolGroups: [pages-draft, pages, page-share]
 
 Pages are rich documents for writing you would hand to someone: a proposal, a
 runbook, meeting notes, a spec. They hold headings, tables, columns, to-do
-lists, callouts and diagrams.
+lists, callouts and diagrams. Type `/canvas` to embed a Present canvas: the
+page shows its picture, and a click opens the live canvas over the page (see
+Present).
 
 - **New page** creates one, in a folder or at the top level.
 - Edits are saved as a **draft**. Readers keep seeing the last committed
