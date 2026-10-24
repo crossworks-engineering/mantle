@@ -1,6 +1,6 @@
 /**
  * Every test file that mocks lib/workspaces with an async factory warms
- * the mock (S9 part 3 round 2, the area fold audit's L3): the shared
+ * the mock (S9 part 3 round 2, the area fold audit): the shared
  * helper, workspaces-mock.ts, says why.
  */
 import { readdirSync, readFileSync } from 'node:fs';

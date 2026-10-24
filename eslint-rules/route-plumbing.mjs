@@ -439,8 +439,7 @@ export const routePolicyDeclared = {
             declaredNode = v;
             // As the generator reads it (route-callers.ts handlerPolicy):
             // `as`, `satisfies` and `!` unwrapped, a call of routePolicy
-            // by its own name, one object literal (S9 part 3 round 2, the
-            // flip audit's L1).
+            // by its own name, one object literal.
             const init = bare(v.init);
             const arg =
               init?.type === 'CallExpression' &&

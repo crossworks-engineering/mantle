@@ -1,6 +1,6 @@
 /**
  * The warm-up of a test file's mock of lib/workspaces (S9 part 3 round 2,
- * the area fold audit's L3). Test support: nothing in the app imports it.
+ * the area fold audit). Test support: nothing in the app imports it.
  *
  * The gate's area read imports lib/workspaces on its first use
  * (session.ts loginHoldsArea). A test file that mocks that module with an

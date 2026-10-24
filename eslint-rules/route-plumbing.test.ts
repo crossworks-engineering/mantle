@@ -202,7 +202,7 @@ describe('route-policy-declared', () => {
           filename: route,
         },
         // `as`, `satisfies` and `!` unwrapped, as the generator reads them
-        // (S9 part 3 round 2, the flip audit's L1).
+        // (S9 part 3 round 2, the flip audit).
         {
           code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } }) as const;`,
           filename: route,
@@ -259,7 +259,7 @@ describe('route-policy-declared', () => {
           errors: [{ messageId: 'notLiteral' }],
         },
         // The callee is routePolicy by its own name; a spread or a
-        // computed key at the top is reported (the flip audit's L1).
+        // computed key at the top is reported (the flip audit).
         {
           code: `export async function GET() {}\nexport const policy = declare({ GET: { class: 'content' } });`,
           filename: route,

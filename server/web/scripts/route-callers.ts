@@ -1080,8 +1080,8 @@ export function handlerPolicy(
   } catch (e) {
     return fail(call, errorMessage(e));
   }
-  // Each method the file exports is declared (S9 part 3 round 2, the flip
-  // audit's L2): the boot (requireRouteDeclarations), the lint and the
+  // Each method the file exports is declared: the boot
+  // (requireRouteDeclarations), the lint and the
   // tests refuse a missing one; the generator says it first, at the line.
   const missing = route.methods.filter((m) => !Object.hasOwn(policy, m));
   if (missing.length > 0) {
