@@ -716,9 +716,11 @@ const NARROWED: Readonly<Record<string, number>> = {
 /** The allowed tool cells not run, by what they need: the content an item
  *  holds is seeded (a8-tool-content.ts), so what is left is outside the box:
  *  a model, the web or a mail server (cost safety stubs them), a sandbox
- *  (sandboxd) and a federated peer brain. */
+ *  (sandboxd), a federated peer brain and the browser sidecar that draws a
+ *  canvas (present_export). */
 const NOT_RUN: Readonly<Record<string, number>> = {
   'an allowed call needs a model or the outside (stubbed)': 68,
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
   'an allowed call needs a federated peer brain (outside the box)': 8,
+  'an allowed call needs the browser sidecar that draws the canvas (outside the box)': 16,
 };
