@@ -1009,3 +1009,198 @@ role switch (written).
   skips there, and it ran there.
 - `mantle_ws_exit_login` still trusts `mantle.acting_login` from any
   system session that has not switched roles (round 6's doubt stands).
+
+## Round 8 (builder, 2026-10-24)
+
+Work list: the r7 re-audits' LOWs (DB LOW-A to LOW-D, app LOW-1 to LOW-5)
+before the merge, because 0330's SQL must be final before it runs on dev
+(the migrate planner refuses a changed migration hash later). 0330's SQL
+is final as of this round.
+
+### What changed, per item
+
+- **A (LOW-A).** The raise's count, the NOTICE's all-logins count and
+  `scripts/arch-scoreboard-box.sh`'s `role_drift_all_logins` lose the
+  former-client clause. `mantle_role_drift()` decided: it counts former
+  clients too (0330 redefines it: 0304 left them out because 0286's
+  bridge read a former client as no role; since 0272 a former client is a
+  member like any other login, and the bridge reads the login's own role),
+  still the enabled logins only (the all-logins count covers the disabled
+  ones). The revert puts 0304's body back. Cell (`role-guard.db.test.ts`):
+  a re-enabled former client (an `archive_client_logins` row, enabled
+  login) with a seat and role member: the migrate refuses (42501, 0330
+  rolled back whole); the seat taken away, it migrates.
+- **B (LOW-B).** The raise's count has no enabled filter: a seat without
+  role admin refuses whether the login is enabled or not (a disabled one
+  would be an Admin user on its re-enable, which writes no role). The seat
+  is read with `mantle_login_role` (a seat, enabled or not). Cell: a
+  disabled member with a seat refuses; the seat taken away, it migrates.
+  The message is now "N login(s) hold an Admin seat without role admin
+  (disabled ones and former clients counted)".
+- **C (LOW-C).** The revert recreates `mantle_bridge_connector`,
+  `mantle_bridge_connector_trg` and `mantle_bridge_login_trg` with 0251's
+  bodies, PUBLIC revoked, owned as `mantle_bridge_login` is (the revert
+  runs as the superuser), and the two bridge triggers only where
+  `nodes_levels_frozen` is not (a brain that never took the switch:
+  `mantle_ws_switch_off` drops them and makes that trigger in one step).
+  The drill's schema dump after the revert is main's byte for byte (0
+  diff lines, below). Cell: on a switched and on an unswitched database,
+  the three functions (body md5, owner, ACL, definer) and the two
+  triggers (definition, enabled) equal main's after 0330 and the revert.
+- **D (LOW-D).** One plain SQL (`S8B_SEAT_SQL`, the same text in
+  `scripts/roll.sh` step 2e and the updater's `s8b_seat_refusal`) counts
+  the logins with an Admin seat and no role admin on the box's current
+  schema, disabled ones and former clients too, numbers only; 0 once 0330
+  is in (its guard function there) or before the workspace tables. Above 0
+  and a target that ships 0330 (roll.sh: the tag's tree; the updater: the
+  image, read only when the count is above 0; unknown counts as shipping
+  it) refuses the roll before any change, with the count and the repair.
+  The hint (both scripts and 0330's HINT) leads with taking the seat away
+  (the Admin workspace's users, or `mantle_ws_remove_user`); role admin is
+  second and named as making an Admin user. Releases older than v0.300.138
+  are not asked. roll.sh prints the masked tail of the `mantle_migrate`
+  log when a roll is not ok (the masking block moved above step 5, one
+  `show_log_tail` for both logs). `docs/update-prod.md`: "Going up to
+  0330" (a refused migrate leaves the site down until the older tag is
+  pinned back; the repair in order). Cells: the deploy harness, 23 new
+  checks (updater: 0 never reads the image, refused with count and repair,
+  no 0330 goes ahead, unreadable image or count fails closed, older
+  release not asked, same SQL, the migration's name, the whole roll loop
+  refused with nothing changed; roll.sh: refused before the backup,
+  unknown tag refused, 0 goes ahead, older release not asked, garbage
+  stops, the migrate log tail masked on ok:false);
+  `s8b-seat-preflight.db.test.ts`: the SQL equal in both files, and on a
+  database before 0330 it answers 3 for a seated enabled member, a seated
+  disabled member and a seated former client (not for a seated admin nor
+  an unseated admin), the migrate refuses with "3 login(s)", the seats
+  taken away it answers 0 and migrates, and after 0330 a seat planted by
+  hand answers 0.
+- **E (app LOW-1).** `adminMembershipRefusal` logs
+  `[users] admin membership refused mantle_ws:<code>` through
+  `log('users').warn` (not console: the console-calls pin) when
+  `no_acting_login` or `not_found` maps to 403. Cell: both log once with
+  their code; read_only, forbidden, last_moderator do not.
+- **F (app LOW-2).** The personal assistant's admin test
+  (`users/[id]/agent/route.ts`) and the token refresh's answered role
+  (`auth/token/refresh/route.ts`, all four answers) read `loginRole`; the
+  Users delete (`users/[id]/route.ts`) selects no role (it used none).
+  `loginRoleDecisionReads` stays 16 (the agent route's comparison still
+  counts; its source is the display role now): the pin's note says so.
+- **G (app LOW-3).** The stale comments: `login-notices.ts` (the column
+  follows membership), `login-surface.ts` (the peer's role is its login's
+  membership), `session.ts` (resolvedFor asks membership; the two member
+  checks read the column's member), `workspaces.ts` (the header and
+  `adminRoleChange`: the definer writes row and role, no bridge),
+  `login-create.db.test.ts` (the bridge only demotes).
+- **H (app LOW-4).** The eslint fence: a `regex` pattern
+  `(^|/)test-support(/|$)` (any depth, any file in a test-support folder)
+  and `^@mantle/db/matrix/a8-(grid|tool-cells|tool-content)$`, in the
+  packages and server blocks; the dynamic-import selectors likewise.
+  Probed with two throwaway files (removed by name): 10 forms, 10 refused.
+  `server/web/server/a8-tools.list.ts` (test support, imported by the A8
+  tests only) is let name the A8 fixtures' types by a block of its own.
+- **I (app LOW-5).** `users-lockout.db.test.ts`: an Admin user who is not
+  the anchor (users area on) promotes a member and demotes it again
+  through the whole PATCH: the Admin row's `added_by` and both events'
+  actor are that caller.
+
+### Changed answers (round 8, against round 7)
+
+| what                                                                | round 7                                                 | now                                       | kind                                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
+| 0330's migrate, a disabled login with a seat and no role admin      | migrates                                                | refuses                                   | STRICTER                                                       |
+| 0330's migrate, a former client with a seat and no role admin       | migrates                                                | refuses                                   | STRICTER                                                       |
+| `mantle_role_drift()` after 0330                                    | former clients left out                                 | counted                                   | a number                                                       |
+| `role_drift_all_logins` (scoreboard), the NOTICE's all-logins count | former clients left out                                 | counted                                   | a number                                                       |
+| a roll to a release with 0330 while such a seat exists              | the migrate refuses, the site down                      | refused before any change                 | STRICTER, earlier                                              |
+| the 0330 revert                                                     | the three bridge functions and two triggers stayed gone | back as main has them                     | equal to main                                                  |
+| the personal assistant's admin test                                 | the role column                                         | the display role (a seat, enabled or not) | equal at drift 0; role admin without a seat refused (narrower) |
+| the token refresh's answered role                                   | the role column                                         | the display role                          | equal at drift 0                                               |
+
+No answer is looser.
+
+### Gates (round 8)
+
+Code head **8b2f084c4** (the handover commit after it is docs only). Two
+earlier heads ran the set too: c70169d8b (all lanes) showed one real
+failure, `login-facts.db.test.ts` "mantle_role_drift: enabled logins only,
+former clients left out" (2, not 1: item A's change, the cell encoded
+0304's clause), fixed in 8b2f084c4 (the cell now says former clients count
+since 0330); every other failure there was load (gate-caller, the a4 sweep's
+Retry-After 59, login-definer and edit-check scans past 15 s; each 0 alone
+on 8b2f084c4: `x-r8gt*`, `x-r8itaoff*`).
+
+Mac on 8b2f084c4: `pnpm verify` 0 (typecheck, lint, format, docs, arch,
+boot smoke, unit 891 files 11444 tests, the deploy harness 541 checks, the
+DB lanes skipping) and `pnpm -C server/web build` 0.
+
+Workstation on 8b2f084c4 (`~/s8b/r6-run.sh` with TAG r8h, fsync off on the
+throwaway clusters, MANTLE_CHECK_FLOOR=keep; files `~/s8b/x-r8h*`; the box
+shared, load 7 to 29):
+
+| lane                         | exit | note                                                                                                                                                                                                                                                     |
+| ---------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shard 1/2                    | 0    | 598 files, 6566 tests                                                                                                                                                                                                                                    |
+| shard 2/2                    | 0    | 598 files, 8016 tests                                                                                                                                                                                                                                    |
+| actor-off                    | 1    | a4-guard-sweep only: the token route's 429 said Retry-After 59, not 60 (a second into the window under load; round 6's same flake); alone 0 (`x-r8itaoffdc86c6`)                                                                                         |
+| actor-on                     | 0    | 34 files, 413 tests                                                                                                                                                                                                                                      |
+| edit-on                      | 0    | 46 files, 583 tests                                                                                                                                                                                                                                      |
+| runtime-role                 | 0    | 317 files, 3128 tests                                                                                                                                                                                                                                    |
+| serial                       | 0    |                                                                                                                                                                                                                                                          |
+| matrix                       | 0    | 4 files, 8 tests (a first launch died on a host port race, exit 93, no tests run, and was relaunched)                                                                                                                                                    |
+| switch-off full              | 0    | 1196 files, 14582 tests                                                                                                                                                                                                                                  |
+| runtime-role-off full        | 0    | 1196 files, 14582 tests (relaunched after the same port race)                                                                                                                                                                                            |
+| forge proof                  | 0    | 155 refused of 155 (142 42501, 12 40001, 1 25P02), 33 written of 33, 24 flag forms of 24 (12 refused, 12 propagated); identity sweep 272 no change, 17 refused; leaks 0 and 0. The same numbers as round 7: 0330's new SQL adds no function and no grant |
+| rollback drill + MED-1 drill | 0    | `~/s8b/drill8.sh` (drill7 plus the schema dump and the new MED-1 cases; log `drill-r8h.log`), below                                                                                                                                                      |
+
+The drill (`drill8.sh`, N-1 = main v0.300.137): main's migrate, the
+Admin world, then 0330 (the guard refuses the runtime role's role write and
+admin insert; the Users screen's add at the spot writes; a member as acting
+login refused; the seat preflight 0 once 0330 is in); N-1's boot on 0330
+without the revert: its role write refused (the revert stays mandatory);
+**the revert: the schema dump (`pg_dump -s`, its `\restrict` lines left
+out) is main's with 0 diff lines (34093 lines dumped), and again 0 after
+N-1's migrate on the reverted schema**; N-1 writes (role write plus bridge,
+admin insert). MED-1 on the reverted schema, each kind alone: an enabled
+member, a disabled member, a re-enabled former client, each with a seat
+and role member: the roll's preflight SQL answers 1, the roll forward
+through the real migrate.ts exits 1 with "mantle S8b: 1 login(s) hold an
+Admin seat without role admin (disabled ones and former clients counted)",
+the ledger stays 329, no guard; the seats taken away, the preflight
+answers 0 and the roll forward is 0, ledger 330, guard back.
+
+The drill on a fresh cluster never takes the unswitched path of the
+revert's trigger step (main's migrate there leaves no bridge trigger:
+`nodes_levels_frozen` stands); `role-guard.db.test.ts` takes it on a
+database made unswitched by hand (the two triggers back, definitions and
+enabled state as before).
+
+### Left
+
+- Nothing of round 8's list. The CEO's focused delta audit (LOW-only
+  round).
+- 0330's SQL is final; from here a change to it is a new migration.
+- Before the merge on every box: `scripts/arch-scoreboard-box.sh` shows
+  `s8b_precondition_met yes` (its all-logins count now includes former
+  clients, so it reads the whole refusal set). The first roll of each box
+  to this release: with `scripts/roll.sh` (step 2e), since a box's running
+  updater predates `s8b_seat_refusal`.
+- Delete the local branch `s8b-r5-backup` after the merge.
+
+### Doubts
+
+- `mantle_role_drift()` now counts former clients (decided in, not left
+  out). On a box that kept a former client with role admin outside Admin,
+  the number after 0330 is one higher than before for the same rows; the
+  precondition script read the all-logins count over the tables already.
+- The seat preflight answers 0 once the guard function exists, so a seat
+  planted by hand after 0330 is no roll's business (that migrate never
+  runs again); the scoreboard's all-logins count still shows it.
+- The updater's check runs only in an updater that has it: the first roll
+  of a box to this release goes through roll.sh (said in update-prod.md).
+- The revert's trigger step keys on `nodes_levels_frozen` as the mark of
+  a switched brain (0261/0263 make it in the same step that drops the
+  bridge triggers). A brain that had it dropped by hand would not get the
+  triggers back; none is known.
+- `mantle_ws_exit_login` still trusts `mantle.acting_login` from any
+  system session that has not switched roles (round 6's doubt stands).
