@@ -3,7 +3,9 @@
   "template": "flow",
   "ok": true,
   "errors": [],
-  "warnings": [],
+  "warnings": [
+    "size: the drawing is 1644 px wide, past the doc-wide 1280: split it, or move parts with column and row hints."
+  ],
   "consoleErrors": [],
   "network": [],
   "staticProblems": [],

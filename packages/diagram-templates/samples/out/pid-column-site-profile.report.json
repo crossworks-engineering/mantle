@@ -7,7 +7,14 @@
     "layout: no free stretch on line '2\"-ST-2011-C3A' for its line number; it is drawn on the first run.",
     "layout: label of 'line 2\"-ST-2011-C3A' sits on 'V-202'.",
     "layout: label of 'line 2\"-ST-2011-C3A' sits on 'STM'.",
-    "layout: label of 'LV-202 note' sits on 'COND'."
+    "layout: label of 'LV-202 note' sits on 'COND'.",
+    "layout: label of 'circuit C-08' sits on 'C-201'.",
+    "layout: line '3\"-P-2005-A1A' runs through the label of 'TV-203 note'.",
+    "layout: line '3\"-P-2005-A1A' runs through the label of 'circuit C-08'.",
+    "layout: circuit 'C-08' box takes in C-201, CW-S, LIC-202, not in it: move them with column and row hints, or split the circuit.",
+    "budget: 5 kinds of line (the guide keeps a sheet to 4): split the sheet, or show fewer services or signal types.",
+    "size: the drawing is 1496 px wide, past the doc-wide 1280: split it, or move parts with column and row hints.",
+    "budget: 27 line crossings (aim for 8 or fewer): reorder with column and row hints, set fromPort and toPort, or split the sheet."
   ],
   "consoleErrors": [],
   "network": [],
@@ -22,6 +29,6 @@
   },
   "size": {
     "width": 1496,
-    "height": 652
+    "height": 632
   }
 }

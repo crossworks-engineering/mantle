@@ -41,7 +41,7 @@ export function svgDocument(d: SvgDocInput): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${num(d.width)} ${num(d.height)}" ` +
     `width="${num(d.width)}" height="${num(d.height)}" role="img" ` +
-    `aria-labelledby="${esc(titleId)} ${esc(descId)}" data-generator="${esc(d.generator)}">` +
+    `aria-labelledby="${esc(titleId)}" aria-describedby="${esc(descId)}" data-generator="${esc(d.generator)}">` +
     el('title', { id: titleId }, esc(d.title)) +
     el('desc', { id: descId }, esc(d.desc)) +
     el('rect', {

@@ -32,7 +32,15 @@ import {
   type EdgeTone,
   type NodeKind,
 } from '../runtime/style.ts';
-import { hopsFor, overlaps, qa, union, type Box, type QaItem } from '../runtime/geom.ts';
+import {
+  budgetWarnings,
+  hopsFor,
+  overlaps,
+  qa,
+  union,
+  type Box,
+  type QaItem,
+} from '../runtime/geom.ts';
 import { legendStrip, boxSwatch, lineSwatch, type LegendEntry } from '../runtime/legend.ts';
 import { slugify, svgDocument } from '../runtime/export.ts';
 import type { RenderResult } from '../types.ts';
@@ -693,6 +701,7 @@ export function renderFlow(data: FlowData, m: Measurer): RenderResult {
     body,
   });
   const crossings = hops.reduce((s, h) => s + h.length, 0);
+  warnings.push(...budgetWarnings(width, crossings, 4));
   return {
     svg,
     width,

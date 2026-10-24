@@ -44,29 +44,29 @@ no server and no network.
 
 ## Package layout
 
-| Path | What it is |
-| --- | --- |
-| `src/index.ts` | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg` |
-| `src/browser.ts` | `mount()`: reads the data block, renders, exposes `window.diagram` |
-| `src/canvas.ts` | the canvas file: build, read and replace the data block |
-| `src/runtime/style.ts` | the house style as code: palette, node kinds, font roles, grid |
-| `src/runtime/text.ts` | text measurement (real in the browser, an estimate in Node) and wrap |
-| `src/runtime/layered.ts` | dagre layout plus the channel and track router for `flow` |
-| `src/runtime/grid-router.ts` | A* orthogonal router on an 8px grid for `pid` pipes and signals |
-| `src/runtime/geom.ts` | boxes, segments, hops and the layout self-check |
-| `src/runtime/svg.ts`, `export.ts` | string SVG builder (no scripts possible) and the static check |
-| `src/runtime/validate.ts` | checks with exact paths and "did you mean" |
-| `src/templates/flow.ts` | the `flow` template |
-| `src/templates/pid/` | the `pid` template: schema, site profile, symbols, render |
-| `scripts/build.ts`, `scripts/render.ts` | the bundle build and the Chromium harness |
-| `samples/` | sample data, an example site profile, and the rendered results |
+| Path                                    | What it is                                                           |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `src/index.ts`                          | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg`   |
+| `src/browser.ts`                        | `mount()`: reads the data block, renders, exposes `window.diagram`   |
+| `src/canvas.ts`                         | the canvas file: build, read and replace the data block              |
+| `src/runtime/style.ts`                  | the house style as code: palette, node kinds, font roles, grid       |
+| `src/runtime/text.ts`                   | text measurement (real in the browser, an estimate in Node) and wrap |
+| `src/runtime/layered.ts`                | dagre layout plus the channel and track router for `flow`            |
+| `src/runtime/grid-router.ts`            | A* orthogonal router on an 8px grid for `pid` pipes and signals      |
+| `src/runtime/geom.ts`                   | boxes, segments, hops and the layout self-check                      |
+| `src/runtime/svg.ts`, `export.ts`       | string SVG builder (no scripts possible) and the static check        |
+| `src/runtime/validate.ts`               | checks with exact paths and "did you mean"                           |
+| `src/templates/flow.ts`                 | the `flow` template                                                  |
+| `src/templates/pid/`                    | the `pid` template: schema, site profile, symbols, render            |
+| `scripts/build.ts`, `scripts/render.ts` | the bundle build and the Chromium harness                            |
+| `samples/`                              | sample data, an example site profile, and the rendered results       |
 
 ## Libraries and sizes
 
-| Library | Version | Licence | Use | Size in the bundle |
-| --- | --- | --- | --- | --- |
-| `@dagrejs/dagre` (with `@dagrejs/graphlib`) | 3.1.1 (pinned) | MIT | ranks, ordering and coordinates (layered layout, compound groups) | about 48 KB minified |
-| our code | | repo licence | style, routing, templates, export, checks | about 80 KB minified |
+| Library                                     | Version        | Licence      | Use                                                               | Size in the bundle   |
+| ------------------------------------------- | -------------- | ------------ | ----------------------------------------------------------------- | -------------------- |
+| `@dagrejs/dagre` (with `@dagrejs/graphlib`) | 3.1.1 (pinned) | MIT          | ranks, ordering and coordinates (layered layout, compound groups) | about 48 KB minified |
+| our code                                    |                | repo licence | style, routing, templates, export, checks                         | about 80 KB minified |
 
 The whole runtime is one 129 KB script (`dist/diagram-runtime.js`), so a
 template canvas with its data is about 135 KB, well under the 1 MB canvas
@@ -86,20 +86,29 @@ section 4.2):
 ```html
 <!doctype html>
 <html lang="en">
-<head>
-  <title>Feed surge drum level control</title>
-  <meta name="description" content="One sentence on what it shows.">
-  <meta name="canvas:size" content="fill">
-  <meta name="canvas:theme" content="fixed">          <!-- diagrams use the light skin only -->
-  <meta name="diagram:template" content="pid@1">
-  <style>...</style>
-</head>
-<body>
-  <main id="diagram"></main>                           <!-- the live drawing -->
-  <div id="diagram-errors" role="alert"></div>         <!-- data errors, shown in the page -->
-  <script type="application/json" id="diagram-data">{ ...THE DATA... }</script>
-  <script>/* the runtime, inline */</script>
-</body>
+  <head>
+    <title>Feed surge drum level control</title>
+    <meta name="description" content="One sentence on what it shows." />
+    <meta name="canvas:size" content="fill" />
+    <meta name="canvas:theme" content="fixed" />
+    <!-- diagrams use the light skin only -->
+    <meta name="diagram:template" content="pid@1" />
+    <style>
+      ...
+    </style>
+  </head>
+  <body>
+    <main id="diagram"></main>
+    <!-- the live drawing -->
+    <div id="diagram-errors" role="alert"></div>
+    <!-- data errors, shown in the page -->
+    <script type="application/json" id="diagram-data">
+      { ...THE DATA... }
+    </script>
+    <script>
+      /* the runtime, inline */
+    </script>
+  </body>
 </html>
 ```
 
@@ -127,7 +136,7 @@ run it on every result:
 - no `script`, `foreignObject`, `image`, `use`, `a`, `style`, animation or
   event handler; no `href` or `url()` other than `#id`; no `@import`;
 - root `<svg>` with `xmlns`, `viewBox`, matching `width` and `height`,
-  `role="img"` and `aria-labelledby`, then `<title>` and `<desc>` first;
+  `role="img"`, `aria-labelledby` (the title) and `aria-describedby` (the desc), then `<title>` and `<desc>` first;
 - system font stacks only (each `font-family` ends in a generic family);
 - arrowheads, hops and signal marks are plain paths, not markers or patterns.
 
@@ -135,18 +144,18 @@ run it on every result:
 
 Boxes and arrows: process flows, flowcharts, architecture, data flow.
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `template` | `"flow"` | optional echo |
-| `title` | string, up to 80 | required; the `<title>`, and drawn at the top unless `showTitle: false` |
-| `description` | string, up to 300 | one sentence on what it shows (the `<desc>`); a warning when missing |
-| `direction` | `right` (default) or `down` | rank direction |
-| `nodes[]` | 1 to 40 | `id`, `label` (wraps to 3 lines), `sublabel`, `tag` (a small caps line), `kind`, `shape`, `group` |
-| `nodes[].kind` | `backend` (default), `focal`, `store`, `external`, `input`, `optional`, `security` | the style guide's node treatments |
-| `nodes[].shape` | `box` (default), `pill`, `diamond`, `cylinder` | |
-| `edges[]` | up to 80 | `from`, `to`, `label` (14 characters read best), `style` (`solid`, `dashed`), `tone` (`muted`, `accent`, `link`), optional `id` |
-| `groups[]` | up to 12 | `id`, `label`, `parent` (nesting), `kind` (`boundary`, `security`) |
-| `legend` | `true` (default), `false`, or names | names override labels: `{ "dashed": "Back to the data", "focal": "Main store" }` |
+| Field           | Type                                                                               | Notes                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `template`      | `"flow"`                                                                           | optional echo                                                                                                                   |
+| `title`         | string, up to 80                                                                   | required; the `<title>`, and drawn at the top unless `showTitle: false`                                                         |
+| `description`   | string, up to 300                                                                  | one sentence on what it shows (the `<desc>`); a warning when missing                                                            |
+| `direction`     | `right` (default) or `down`                                                        | rank direction                                                                                                                  |
+| `nodes[]`       | 1 to 40                                                                            | `id`, `label` (wraps to 3 lines), `sublabel`, `tag` (a small caps line), `kind`, `shape`, `group`                               |
+| `nodes[].kind`  | `backend` (default), `focal`, `store`, `external`, `input`, `optional`, `security` | the style guide's node treatments                                                                                               |
+| `nodes[].shape` | `box` (default), `pill`, `diamond`, `cylinder`                                     |                                                                                                                                 |
+| `edges[]`       | up to 80                                                                           | `from`, `to`, `label` (14 characters read best), `style` (`solid`, `dashed`), `tone` (`muted`, `accent`, `link`), optional `id` |
+| `groups[]`      | up to 12                                                                           | `id`, `label`, `parent` (nesting), `kind` (`boundary`, `security`)                                                              |
+| `legend`        | `true` (default), `false`, or names                                                | names override labels: `{ "dashed": "Back to the data", "focal": "Main store" }`                                                |
 
 Budget (warnings): 9 nodes, 12 edges, 2 accent elements (focal nodes plus
 accent edges). Errors: unknown fields, dangling ids, self loops, duplicate
@@ -156,19 +165,19 @@ ids, group loops.
 
 A P&ID first draft, following `docs/diagram-guides/mantle/type-pid.md`.
 
-| Field | Notes |
-| --- | --- |
-| `title`, `description`, `showTitle`, `legend` | as for `flow` |
-| `sheet` | `{ number, revision }`: top right, and in the `<desc>` |
-| `profile` | the site profile (below), passed in as data |
-| `equipment[]` | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`) |
-| `equipment[].type` | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter` |
-| `offpage[]` | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`). A connector whose pipes are all utility lines sits beside its equipment; others sit on the sheet edge. A second pipe to the same connector joins the first with a tee and a join dot |
-| `lines[]` | `number` (the user's line number, exactly), `from`, `to` (equipment or connector), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`, optional `id` (defaults to the number) |
-| `lines[].inline[]` | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed` (normally closed), `focal` |
-| `instruments[]` | `tag` (ISA-5.1 letters then loop number, `LIC-101`), `on` (an equipment id, or a line id or number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
-| `signals[]` | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`) |
-| `circuits[]` | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit |
+| Field                                         | Notes                                                                                                                                                                                                                                                           |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`, `description`, `showTitle`, `legend` | as for `flow`                                                                                                                                                                                                                                                   |
+| `sheet`                                       | `{ number, revision }`: top right, and in the `<desc>`                                                                                                                                                                                                          |
+| `profile`                                     | the site profile (below), passed in as data                                                                                                                                                                                                                     |
+| `equipment[]`                                 | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                      |
+| `equipment[].type`                            | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                                |
+| `offpage[]`                                   | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`). A connector whose pipes are all utility lines sits beside its equipment; others sit on the sheet edge. A second pipe to the same connector joins the first with a tee and a join dot             |
+| `lines[]`                                     | `number` (the user's line number, exactly), `from`, `to` (equipment or connector), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`, optional `id` (defaults to the number)              |
+| `lines[].inline[]`                            | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed` (normally closed), `focal`          |
+| `instruments[]`                               | `tag` (ISA-5.1 letters then loop number, `LIC-101`), `on` (an equipment id, or a line id or number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
+| `signals[]`                                   | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                         |
+| `circuits[]`                                  | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                        |
 
 What the template does with it:
 
@@ -192,73 +201,49 @@ Client conventions are client data: a profile lives in each brain and is
 passed in `profile`. It never goes in this repo. `samples/profiles/example-site.json`
 is a made-up example.
 
-| Field | Effect |
-| --- | --- |
-| `name` | shown nowhere yet; for the author |
-| `lineNumber` | `{ pattern, example, enforce }`: a regular expression with named groups (`size`, `service`, `seq`, `class`); `service` sets the line's service; `enforce: "error"` refuses a number outside the format |
-| `colourByService` | colour lines by service (monochrome otherwise) |
-| `serviceColours` | service code to colour (`ST: "series-4"`) |
-| `instrumentFirstLetters` | extra first letters the site uses (`X`) |
-| `symbols` | `normallyClosed` (`text`, `filled`), `checkValve` (`filled`, `arrow`), `corners` (`square`, `round`), `crossing` (`hop`, `gap`) |
-| `customSymbols` | replace a built-in equipment or valve drawing: `{ w, h, paths: [{ d, fill }] }`; path data only, checked |
+| Field                    | Effect                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                   | shown nowhere yet; for the author                                                                                                                                                                      |
+| `lineNumber`             | `{ pattern, example, enforce }`: a regular expression with named groups (`size`, `service`, `seq`, `class`); `service` sets the line's service; `enforce: "error"` refuses a number outside the format |
+| `colourByService`        | colour lines by service (monochrome otherwise)                                                                                                                                                         |
+| `serviceColours`         | service code to colour (`ST: "series-4"`)                                                                                                                                                              |
+| `instrumentFirstLetters` | extra first letters the site uses (`X`)                                                                                                                                                                |
+| `symbols`                | `normallyClosed` (`text`, `filled`), `checkValve` (`filled`, `arrow`), `corners` (`square`, `round`), `crossing` (`hop`, `gap`)                                                                        |
+| `customSymbols`          | replace a built-in equipment or valve drawing: `{ w, h, paths: [{ d, fill }] }`; path data only, checked                                                                                               |
 
-## How an agent uses it (the future short skill)
+## How an agent uses it
+
+The Draftsman and the Presenter (`server/web/lib/system-manifest`, skills
+`diagram_design` and `canvas_authoring`) use the brain's tools
+(`packages/tools/src/builtins-presents.ts`):
 
 1. **Pick** the template: `flow` for boxes and arrows, `pid` for a P&ID.
    Would a table say it better? Then do not draw.
-2. **Fill** the data from what the user gave. Never invent a tag, a line
-   number or a set point. For `pid`, read the site profile from the brain and
-   pass it as `profile`.
-3. **Render** (the future `diagram_render` tool: harness logic on the
-   brain's `mantle_browser`). It returns errors, or the SVG, a PNG, the
-   warnings and the stats.
-4. **Inspect** the PNG and the warnings. Each warning names the thing to fix:
-   `label of X sits on Y`, `line L runs behind B`, `no free stretch for the
-   line number`, `budget: 11 nodes`.
-5. **Fix the data**, not the picture: shorten a label, merge two nodes, split
-   the sheet, set a `fromPort`/`toPort`, move equipment with `column` or
-   `row`, change `direction`. Render again. Stop when the warnings are empty
-   or only ones you accept.
-6. **Save**: the canvas file (the source) and the SVG plus PNG for the page.
-
-## How it plugs in
-
-**Present** (branch `claude/present-workspace-6f9157`):
-
-- A template is a canvas as it stands (inline mode). To serve the runtime
-  once instead of in every file: add an entry to `CANVAS_MODULES` in
-  `packages/app-build/src/canvas-runtime.ts`, specifier
-  `@mantle/diagram-templates/browser`, source
-  `export * from '@mantle/diagram-templates/browser';`, and build canvases
-  with `mode: 'import'`.
-- The frame's `ready` and `error` messages already cover it; no new message.
-- The poster render can call `window.diagram.exportSvg()` and store the SVG
-  next to the PNG poster.
-
-**Draftsman** (`diagrammer`, skill `diagram_design`):
-
-- New tools: `diagram_render({ template, data })` (validate, render in the
-  sidecar, return SVG, PNG and warnings) and `diagram_save` (store the canvas
-  and the SVG in `files/diagrams`, embed the SVG in the page). The page's
-  `diagram` spec block becomes the JSON data.
-- The skill shrinks to the loop above plus the two data contracts; the house
-  style rules now live in `src/runtime/style.ts` and are enforced by code.
-- The guide tools from branch `claude/adoring-tu-03d012`
-  (`diagram_types`, `diagram_guide`) stay for content advice; the P&ID base
-  guide is what the `pid` template implements.
+2. **Read the contract**: `diagram_guide` with the type returns the
+   template's data contract and a complete example
+   (`docs/diagram-guides/mantle/type-flow.md`, `type-pid.md`), and the
+   brain's site profile, whose `json profile` block is filled in as the
+   data's `profile`.
+3. **Render**: `diagram_render({ template, data })` validates (every problem
+   at once, as the tool's error), draws the data in the brain's browser
+   sidecar and returns the picture, the warnings and the stats.
+4. **Fix the data**, not the picture: shorten a label, merge two nodes,
+   split the sheet, set a `fromPort`/`toPort`, move equipment with `column`
+   or `row`, change `direction`. Render again. Stop when the warnings are
+   empty or only ones you accept.
+5. **Save**: `present_create({ template, data })` stores the canvas (the
+   editable source; `import` mode, the runtime comes from the canvas library
+   set); `present_export` writes the static SVG into `files/diagrams` for the
+   page, built fresh from the stored data.
 
 ## What is left
 
-- Draftsman tools (`diagram_render`, `diagram_save`) and the shorter skill.
-- Export through `mantle_browser` on the brain: the harness logic as a
-  server module next to `server/web/lib/render-*.ts`, with the canvas loaded
-  by `setContent` and every request refused, as `scripts/render.ts` does.
-- Site profiles: where a brain keeps its profile (a Recall map or a table),
-  and a tool to read it.
-- `pnpm licenses:notices` once dagre lands on main (the notices file is
-  generated for the whole repo, so it is not regenerated on this branch).
+- Circuits drawn as a hull around their items instead of a box: the
+  self-check now warns when a circuit's box takes in other items.
 - Layout quality on dense sheets: `samples/pid-column-site-profile.json`
-  renders with 4 warnings and a busy middle. Next steps: signal routing that
-  prefers the side of the loop, circuits drawn as a hull instead of a box,
-  and a second layout pass that moves a controller when its signals cross.
+  renders with its warnings (a busy middle, 27 crossings). Next steps: signal
+  routing that prefers the side of the loop, and a second layout pass that
+  moves a controller when its signals cross.
+- The pid data model: tees and branches, bypasses, nozzle ids and
+  elevations, instrument loops across sheets, more equipment types.
 - More templates on the same runtime: sequence, swimlane, state, tree.

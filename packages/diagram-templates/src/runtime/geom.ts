@@ -118,7 +118,7 @@ export type QaItem =
 export type QaLine = { id: string; points: Pt[]; ends: string[] };
 
 /** The layout self-check: overlaps, labels on boxes, lines behind boxes,
- *  lines on top of lines. Returns readable warnings. */
+ *  lines through labels, lines on top of lines. Returns readable warnings. */
 export function qa(items: QaItem[], lines: QaLine[]): string[] {
   const out: string[] = [];
   const boxes = items.filter((i) => i.kind === 'box');
@@ -153,6 +153,17 @@ export function qa(items: QaItem[], lines: QaLine[]): string[] {
       }
     }
   }
+  // A line through a label that is not its own: the label is unreadable
+  // where the line crosses it (a reflux line through a valve's tag, an
+  // arrowhead on a circuit's name).
+  for (const line of lines) {
+    for (const l of labels) {
+      if (l.id === line.id || l.id === `line ${line.id}` || line.ends.includes(l.id)) continue;
+      if (segments(line.points).some(([a, b]) => segmentHitsBox(a, b, l.box))) {
+        out.push(`layout: line '${line.id}' runs through the label of '${l.id}'.`);
+      }
+    }
+  }
   for (let i = 0; i < lines.length; i++) {
     for (let j = i + 1; j < lines.length; j++) {
       const sa = segments(lines[i]!.points);
@@ -163,4 +174,23 @@ export function qa(items: QaItem[], lines: QaLine[]): string[] {
     }
   }
   return [...new Set(out)];
+}
+
+/** The doc-wide size preset's width (docs/diagram-guides: output sizes). */
+export const DOC_WIDE_W = 1280;
+
+/** Warnings for a sheet past the size and crossing budgets. */
+export function budgetWarnings(width: number, crossings: number, maxCrossings: number): string[] {
+  const out: string[] = [];
+  if (width > DOC_WIDE_W) {
+    out.push(
+      `size: the drawing is ${Math.round(width)} px wide, past the doc-wide ${DOC_WIDE_W}: split it, or move parts with column and row hints.`,
+    );
+  }
+  if (crossings > maxCrossings) {
+    out.push(
+      `budget: ${crossings} line crossings (aim for ${maxCrossings} or fewer): reorder with column and row hints, set fromPort and toPort, or split the sheet.`,
+    );
+  }
+  return out;
 }

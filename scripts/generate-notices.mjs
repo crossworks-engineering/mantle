@@ -47,6 +47,12 @@ const BUNDLED_ASSETS = [
     path: 'packages/content/assets/fonts/nunito-sans.woff2',
     licenseFile: 'packages/content/assets/fonts/nunito-sans-LICENSE.txt',
   },
+  {
+    name: 'diagram-design guides (cathrynlavery/diagram-design)',
+    license: 'MIT',
+    path: 'docs/diagram-guides/ (vendored, see its README)',
+    licenseFile: 'docs/diagram-guides/LICENSE',
+  },
 ];
 
 const LICENSE_FILE_RE = /^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE)(\..*)?$/i;
