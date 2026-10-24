@@ -15,6 +15,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/mcp-core": "workspace:*",
+    "@mantle/tools": "workspace:*",
     "@modelcontextprotocol/server": "^2.3.1",
     "drizzle-orm": "^0.45.3"
   },

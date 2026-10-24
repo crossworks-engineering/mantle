@@ -68,4 +68,4 @@ export function getCanvasRenderer(): CanvasRenderer | null {
 
 /** The refusal a process without the sidecar gives. */
 export const CANVAS_RENDER_UNAVAILABLE =
-  'The canvas renderer is not available in this process (it runs in the web server with the browser sidecar). Save the canvas and ask the owner to look at it in Present.';
+  'No picture: canvases are not drawn in this process (a background worker). The canvas itself is saved and runs in Present; open it there to see it.';

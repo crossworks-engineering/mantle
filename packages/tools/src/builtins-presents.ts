@@ -34,7 +34,9 @@ import {
 } from '@mantle/content/presents';
 import { nodeUrl } from '@mantle/content';
 import { guardNewFileIn } from '@mantle/content/tree';
-import { ensureFolderPath, upsertFile } from '@mantle/files';
+import { ensureFolderPath, listFiles, sanitizeFilename, upsertFile } from '@mantle/files';
+import { db, nodes } from '@mantle/db';
+import { eq } from 'drizzle-orm';
 import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
 import { canvasLoadProblems } from '@mantle/content-core/canvas';
 import {
@@ -511,7 +513,7 @@ const present_render: BuiltinToolDef = {
       slide: {
         type: 'integer',
         minimum: 1,
-        maximum: 200,
+        maximum: 60,
         description: 'A deck: the slide to show, e.g. 3.',
       },
       theme: {
@@ -816,13 +818,19 @@ const present_update: BuiltinToolDef = {
         const res = await savePresentSource(ctx.ownerId, id, {
           source: next,
           css,
-          ...(typeof input.if_rev === 'number' ? { ifRev: input.if_rev } : {}),
+          // An edit or new data was made on the source just read: it is a
+          // change of THAT rev, never written over a save that came since.
+          ...(typeof input.if_rev === 'number'
+            ? { ifRev: input.if_rev }
+            : input.source === undefined
+              ? { ifRev: cur.rev }
+              : {}),
         });
         if (!res.ok) {
           if ('missing' in res) return notFound('canvas', id, LOOKUP);
           return {
             ok: false,
-            error: `Someone saved this canvas since rev ${String(input.if_rev)}; it is at rev ${res.rev} now. Read it again with present_get, redo your change on that, and save with if_rev ${res.rev}.`,
+            error: `Someone saved this canvas since rev ${typeof input.if_rev === 'number' ? input.if_rev : cur.rev}; it is at rev ${res.rev} now. Read it again with present_get, redo your change on that, and save with if_rev ${res.rev}.`,
           };
         }
         detail = res.present;
@@ -1002,11 +1010,18 @@ const present_export: BuiltinToolDef = {
         path: strOptTrim(input.parent_path) ?? EXPORT_FOLDER_PATH,
       });
       await guardNewFileIn(ctx.ownerId, folderPath, filename, { confirm: input.confirm === true });
+      // An overwrite replaces only an earlier export of THIS canvas (its
+      // file carries `exportOf`), never another file that has the name.
+      if (input.overwrite === true) {
+        const clash = await exportClash(ctx.ownerId, folderPath, filename, p.id);
+        if (clash) return { ok: false, error: clash };
+      }
       const row = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath: folderPath,
         filename,
         bytes,
+        data: { exportOf: p.id },
         overwrite: input.overwrite === true,
       });
       ctx.step?.setOutput({ fileId: row.id });
@@ -1022,7 +1037,8 @@ const present_export: BuiltinToolDef = {
           embed: `![${p.title.replace(/[[\]]/g, '')}](media:${row.id})`,
           next: 'Put `embed` in the page where the picture belongs. After a later present_update, export again with the same filename and overwrite: true.',
         },
-        ...(seen.modelImages ? { modelImages: seen.modelImages } : {}),
+        // No picture: the export is the canvas you already looked at, and a
+        // picture would spend one of the turn's image slots for nothing.
       };
     } catch (err) {
       if (err instanceof ConflictError) {
@@ -1035,6 +1051,31 @@ const present_export: BuiltinToolDef = {
     }
   },
 };
+
+/** Why an overwrite of `filename` in `folderPath` is refused: the file
+ *  there is not an earlier export of canvas `canvasId`. Null when there is
+ *  no such file (the write makes it) or it is that canvas's export. */
+async function exportClash(
+  ownerId: string,
+  folderPath: string,
+  filename: string,
+  canvasId: string,
+): Promise<string | null> {
+  const name = sanitizeFilename(filename);
+  const hit = (await listFiles({ ownerId, parentPath: folderPath })).find(
+    (f) => f.filename === name,
+  );
+  if (!hit) return null;
+  const [n] = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(eq(nodes.id, hit.id))
+    .limit(1);
+  const of = (n?.data as Record<string, unknown> | null)?.exportOf;
+  return of === canvasId
+    ? null
+    : `${name} in that folder is not an export of this canvas, so it was not replaced. Pick another filename (or leave filename out).`;
+}
 
 const present_delete: BuiltinToolDef = {
   slug: 'present_delete',

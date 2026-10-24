@@ -389,6 +389,10 @@ export async function savePresentSource(
   await assertItemRight(id, 'edit');
 
   return db.transaction(async (tx) => {
+    // The node as it is now, locked: a rename or a tag change since the read
+    // above is kept, not written back over.
+    const [fresh] = await tx.select().from(nodes).where(eq(nodes.id, id)).for('update').limit(1);
+    if (!fresh) return { ok: false as const, missing: true as const };
     const locked = await tx
       .select({ rev: presents.rev, sourceText: presents.sourceText, source: presents.source })
       .from(presents)
@@ -403,8 +407,12 @@ export async function savePresentSource(
     const sourceChanged = cur.source !== input.source;
     const rev = sourceChanged ? cur.rev + 1 : cur.rev;
     const textChanged = cur.sourceText !== read.text;
-    const title = read.title || node.title;
-    const data: Record<string, unknown> = { ...((node.data ?? {}) as Record<string, unknown>) };
+    // The title follows the canvas <title> only when the <title> changed: a
+    // name given by hand (updatePresent) is kept through saves that leave
+    // the head's title as it was.
+    const headTitleChanged = read.title !== readCanvas(cur.source).title;
+    const title = headTitleChanged && read.title ? read.title : fresh.title;
+    const data: Record<string, unknown> = { ...((fresh.data ?? {}) as Record<string, unknown>) };
     if (read.description) data.description = read.description;
     else delete data.description;
 
@@ -420,7 +428,7 @@ export async function savePresentSource(
       (await markContentChanged(
         tx,
         { id, type: 'present' },
-        changedFields({ title: [node.title, title] }),
+        changedFields({ title: [fresh.title, title] }),
       )) ?? updated;
     await tx
       .update(presents)
@@ -548,18 +556,22 @@ export async function flushDuePresentIndex(limit = 25): Promise<number> {
     .limit(limit);
   let announced = 0;
   for (const d of due) {
-    const done = await db.transaction(async (tx) => {
-      // Still due now: a save since the read pushed the mark on (compared
-      // in the database, which keeps microseconds a JS Date drops).
-      const cleared = await tx
-        .update(presents)
-        .set({ indexDueAt: null })
-        .where(and(eq(presents.nodeId, d.id), lte(presents.indexDueAt, sql`now()`)))
-        .returning({ id: presents.nodeId });
-      if (cleared.length === 0) return false;
-      await markContentChanged(tx, { id: d.id, type: 'present' }, ['source']);
-      return true;
-    });
+    // One canvas's failure (a lock, a row gone meanwhile) is that canvas's:
+    // its mark stays for a later tick, and the others are announced now.
+    const done = await db
+      .transaction(async (tx) => {
+        // Still due now: a save since the read pushed the mark on (compared
+        // in the database, which keeps microseconds a JS Date drops).
+        const cleared = await tx
+          .update(presents)
+          .set({ indexDueAt: null })
+          .where(and(eq(presents.nodeId, d.id), lte(presents.indexDueAt, sql`now()`)))
+          .returning({ id: presents.nodeId });
+        if (cleared.length === 0) return false;
+        await markContentChanged(tx, { id: d.id, type: 'present' }, ['source']);
+        return true;
+      })
+      .catch(() => false);
     if (done) announced++;
   }
   return announced;

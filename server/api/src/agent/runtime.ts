@@ -988,6 +988,8 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   startTicker({
     name: 'present index flush',
     everyMs: 60_000,
+    // A database that keeps failing is asked less often, up to every 30 min.
+    backoffCapMs: 30 * 60_000,
     run: () => flushDuePresentIndex(),
     onSuccess: (n) => {
       if (n > 0) logger.info(`present index flush: ${n} canvas(es) re-indexed after quiet period`);
