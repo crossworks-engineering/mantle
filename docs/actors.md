@@ -256,16 +256,10 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   (`server/web/lib/auth/route-policy.ts`, `buildRouteRow`): class, scope,
   area, effect, open, logins, creates, item, key area, limits. A route
   with no row is refused.
-- Every route file declares the policy of each method it exports, beside
-  its handlers (`export const policy = routePolicy({ ... })`,
-  `server/web/lib/auth/route-declaration.ts`). The rows are still built
-  from the route lists (`ROUTE_POLICY_SOURCE` 'lists'); the declarations
-  build the same rows, field for field (`route-policy.test.ts`, the rows
-  snapshot `lib/auth/__snapshots__/route-policy.rows.json`). A route file
-  without one fails lint (`route-policy-declared`) and the boot
-  (`requireRouteDeclarations`). A write that names an item no check reads
-  says `item: { none: ITEM_NONE_PLACEHOLDER }` (`itemNonePlaceholders`, a
-  pin that only goes down).
+- Each route file declares its methods' policy, `routePolicy({ ... })`
+  (`lib/auth/route-declaration.ts`); it builds the lists' rows field for
+  field (`route-policy.test.ts`, the rows snapshot) while
+  `ROUTE_POLICY_SOURCE` is 'lists'. A file without one fails lint and boot.
 - The gate (`packages/db/src/gate.ts`, `enterCall`) runs eight steps for
   every way in: resolve, bind the caller, look up the policy and bind the
   actor and scope, narrow by surface, the Admin step, the create home,
@@ -294,8 +288,7 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 - **A kind**: add it to `ITEM_KINDS`; the route lists, the access matrix
   and the A8 grid read the registry. `handKindLists` fails a hand list.
 - **A route**: a policy row; `route-scope.test.ts` fails an unclassified
-  route, the gate refuses one with no row. Its route file declares the
-  policy (section 10), which must build the row the lists give it.
+  route, the gate refuses one with no row; its route file declares it.
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
   declares its `clientSourced` rule (unset, a client-sourced call waits),
   `itemArgs` and A8 `matrix` (action and argument, or `none` and why; an
