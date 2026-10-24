@@ -317,6 +317,13 @@ function lookWanted(input: Record<string, unknown>): boolean {
   return input.look !== false;
 }
 
+/** The page line that shows a canvas in a page (`![Title](present:<id>)`,
+ *  content-core markdown-refs PRESENT_HREF): its live snapshot, opening the
+ *  canvas for a reader who may read it. */
+function pageEmbed(p: { id: string; title: string }): string {
+  return `![${p.title.replace(/[[\]]/g, '')}](present:${p.id})`;
+}
+
 function saved(
   p: PresentDetail,
   seen: Look | null,
@@ -327,6 +334,7 @@ function saved(
     ok: true,
     output: {
       ...compact(p),
+      page_embed: pageEmbed(p),
       ...(tpl ? { template: tpl.template } : {}),
       ...extra,
       render: seen ? seen.report : { rendered: false, note: 'look: false, so nothing was drawn.' },
@@ -475,6 +483,7 @@ const present_get: BuiltinToolDef = {
       ok: true,
       output: {
         ...compact(p),
+        page_embed: pageEmbed(p),
         summary: p.summary,
         libs: p.meta.libs,
         ...(tpl ? { template: tpl.template, data: tpl.data } : {}),
@@ -923,7 +932,7 @@ const present_export: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Export a canvas for a page',
   description:
-    'Write a static copy of a canvas into Files for pages, print, PDF, Word, email and shares: a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown to put in a page. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
+    'Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1038,7 +1047,7 @@ const present_export: BuiltinToolDef = {
           parent_path: folderPath,
           format: ext,
           embed: `![${p.title.replace(/[[\]]/g, '')}](media:${row.id})`,
-          next: 'Put `embed` in the page where the picture belongs. After a later present_update, export again with the same filename and overwrite: true.',
+          next: "Use `embed` where the copy goes. After a later present_update, export again with the same filename and overwrite: true. For a page in this brain, the canvas's page_embed follows it instead.",
         },
         // No picture: the export is the canvas you already looked at, and a
         // picture would spend one of the turn's image slots for nothing.
