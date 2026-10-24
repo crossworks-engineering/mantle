@@ -30,7 +30,7 @@ type Post = (req: Request) => Promise<Response>;
 
 /**
  * The route as the app serves it: the gate refuses a cross-site post from
- * the row (lib/route-limits.ts ROUTE_GATES `crossSite`, A10 #8), before the
+ * the row (the route file's `limits.crossSite`, A10 #8), before the
  * row's limits and the handler, so the route is driven through the gate and
  * the loader with its real row, not by calling its handler.
  */
@@ -115,7 +115,7 @@ describe('JSON auth POSTs refuse a cross-site form (audit B15)', () => {
 });
 
 describe('sign-out refuses a cross-site browser request by its row (A10 #8 L5)', () => {
-  // The logout row's crossSite is 'origin' (lib/route-limits.ts ROUTE_GATES):
+  // The logout row's crossSite is 'origin' (its route file's limits.crossSite):
   // the gate refuses a cross-site browser post, whatever its body, and takes
   // any body from the brain's own origin or a client that sends no Origin.
   it('logout: 403 cross-site for any body, no cookie; its own callers pass', async () => {

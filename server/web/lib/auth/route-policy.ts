@@ -640,6 +640,11 @@ function declaredFacts(
       ? 'owner'
       : null
     : (d.open ?? null);
+  // A row a member opens is a content row, whichever way it got the opening:
+  // its own `open` (the validator refuses that) or a v1 base's (here).
+  if (logins === 'owner' && d.class !== 'content') {
+    bad(`open to members through its base, on a ${d.class} row`);
+  }
   // A 'self' row no owner guard serves is a row of a login list.
   if (d.class === 'self' && scope === null && !logins) bad('scope null on a row no list opens');
   const ownMethod = m === answeredAs;

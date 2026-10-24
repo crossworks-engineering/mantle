@@ -417,6 +417,15 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(
       v1({ class: 'content', item: none, base: 'POST /api/notes' }).get('POST /api/v1/notes'),
     ).toMatchObject({ logins: 'owner', creates: true, aliasOf: null });
+    // A base that opens to members opens a content row only: a self, area or
+    // public v1 row that takes `open: 'owner'` from its base is refused.
+    for (const d of [
+      { class: 'self', item: none, base: 'POST /api/notes' },
+      { class: 'area', area: 'settings', item: none, base: 'POST /api/notes' },
+      { class: 'public', item: none, base: 'POST /api/notes' },
+    ]) {
+      expect(() => v1(d)).toThrow(/open to members through its base/);
+    }
   });
 
   it("an alias is its base's row in class, area, effect and item", () => {

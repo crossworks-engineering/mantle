@@ -1270,7 +1270,7 @@ function frameTicketOf(req: Request): AppFrameTicket | null {
     : verifyAppFrameTicket(t);
 }
 
-/** The Present canvas frame document (route-policy.ts FRAME_ROWS). */
+/** The Present canvas frame document (its route declares `caller: 'frame'`). */
 const CANVAS_FRAME_PATH = /^\/api\/presents\/[^/]+\/frame$/;
 
 /** The answer of the guard of the row's caller kind (the guard itself, run
