@@ -1416,11 +1416,12 @@ const NARROWED: Readonly<Record<string, number>> = {
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   'a snapshot copy carries no link or share': 15,
   'a snapshot copy holds no grant but its home': 60,
-  'an Admin-homed item holds no grant but its home': 132,
+  'an Admin-homed item holds no grant but its home': 144,
   "no snapshot copy of a app is made (only an accepted item's kinds)": 148,
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
   "no snapshot copy of a formula is made (only an accepted item's kinds)": 204,
+  "no snapshot copy of a present is made (only an accepted item's kinds)": 91,
   "no snapshot copy of a recall is made (only an accepted item's kinds)": 91,
   "no snapshot copy of a task is made (only an accepted item's kinds)": 208,
   'no tool row: note_delete is MCP only': 144,
