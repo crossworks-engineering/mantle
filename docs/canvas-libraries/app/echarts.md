@@ -26,7 +26,9 @@ the app.
 - Cleanup: the effect returns `() => { observer.disconnect(); chart.dispose(); }`.
 - Theme: the tokens (`--chart-1` to `--chart-5`, `--foreground`,
   `--muted-foreground`, `--border`) are `oklch()`, which ECharts cannot
-  parse. Convert them with `token()` from the example, and repaint when the
+  parse. Convert them with `token()` from the example and set every colour
+  ECharts would otherwise default (series `color`, text, axis labels, axis
+  lines, split lines, tooltip), and repaint when the
   host switches theme (a `MutationObserver` on the `<html>` class).
 - Data comes from `host.db` or a declared tool, never a URL: the frame has
   no network.
@@ -60,6 +62,13 @@ function onThemeChange(fn: () => void): () => void {
   return () => mo.disconnect();
 }
 
+/** ECharts draws axes in its own fixed greys: set them from the tokens. */
+const axis = () => ({
+  axisLabel: { color: token('--muted-foreground') },
+  axisLine: { lineStyle: { color: token('--border') } },
+  axisTick: { lineStyle: { color: token('--border') } },
+});
+
 const UNITS = ['Unit 1', 'Unit 2', 'Unit 3'];
 const THROUGHPUT = [420, 515, 380];
 
@@ -79,8 +88,8 @@ export default function App() {
         },
         legend: { top: 0, textStyle: { color: token('--foreground') } },
         grid: { left: 48, right: 16, top: 40, bottom: 32 },
-        xAxis: { type: 'category', data: UNITS },
-        yAxis: { type: 'value', splitLine: { lineStyle: { color: token('--border') } } },
+        xAxis: { type: 'category', data: UNITS, ...axis() },
+        yAxis: { type: 'value', ...axis(), splitLine: { lineStyle: { color: token('--border') } } },
         series: [
           { name: 'Throughput', type: 'bar', data: THROUGHPUT, barWidth: '40%' },
           { name: 'Target', type: 'line', data: [450, 450, 450], symbol: 'none' },

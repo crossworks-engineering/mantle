@@ -61,7 +61,10 @@ Only these resolve, esbuild **rejects any other bare import**:
 - `lucide-react` icons
 - `host` from `@host` (the runtime bridge, below)
 - relative files within the app (`./lib/fmt`, etc.)
-- the vendored libraries, by exact name (next section)
+- the vendored libraries, by these exact names (see Libraries below; call
+  `canvas_library(name, for: 'app')` first): `echarts`, `d3`, `three`,
+  `three/addons/controls/OrbitControls.js`, `konva`, `katex`, `motion/react`,
+  `@mantle/diagram-templates/browser`
 
 No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
 Type-only imports (`import type { ReactNode } from 'react'`, `import { type X }`,

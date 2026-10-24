@@ -169,6 +169,13 @@ describe('canvas_library for a mini app', () => {
     }
   });
 
+  it("the app guide's Allowed imports section lists every library", () => {
+    const doc = readFileSync(path.join(ROOT, 'docs/app-authoring-guide.md'), 'utf8');
+    const start = doc.indexOf('## Allowed imports');
+    const section = doc.slice(start, doc.indexOf('\n## ', start + 3));
+    for (const spec of APP_LIBRARY_SPECIFIERS) expect(section, spec).toContain(`\`${spec}\``);
+  });
+
   it('motion in an app is motion/react', async () => {
     const res = await tool.handler({ name: 'framer-motion', for: 'app' }, ctx);
     expect((res as { output: { import: string[] } }).output.import).toEqual(['motion/react']);

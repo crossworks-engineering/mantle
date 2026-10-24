@@ -25,7 +25,9 @@ import map serves the library; it is not bundled into the app.
   read `node.x()` and `node.y()` and write them to state or `host.db` once
   (not on every `dragmove`: the call budget).
 - Resize: a `ResizeObserver` calls `stage.width(w)` and `stage.height(h)`.
-- Colours: Konva paints a canvas, so CSS variables do not reach it. Convert
+- Colours: Konva paints a canvas, so CSS variables do not reach it, and its
+  defaults ignore the theme (text is black, which vanishes on a dark theme).
+  Set `fill` and `stroke` on every shape and text. Convert
   tokens with `token()` (oklch as rgb), set them again when the host
   switches theme, then `layer.batchDraw()`.
 - Keep the stage out of React's render: never put shapes in JSX inside the
