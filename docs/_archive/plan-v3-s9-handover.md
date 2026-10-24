@@ -1537,3 +1537,168 @@ Workstation: not run this round (handed over at the tool-call budget).
    method at generate time).
 5. S11b: the 111 placeholders, the body-folder creates and the pins list
    (section 6).
+
+## S9 part 3 round 2: the open LOWs, the prefix class off the rows, the gates on one head
+
+Branch feat/s9-p3, on round 1 (1285c8337), not rebased: main moved to
+v0.300.146 (0191067ab, the sandbox image) during the round, which touches
+no route file, list or sweep. Wave 5 freeze. No migration, no SQL. The
+gates ran on 3abdb1cf1; the commit after it is this section.
+
+| commit    | change                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------- |
+| d073ceeb4 | the mocked area module's warm-up as a shared helper, in every file that mocks it (area L3)   |
+| 27a70d4a1 | a direct cell for the asset token on a HEAD (area L4)                                        |
+| 8d7914ce3 | the generator refuses a declaration missing an exported method (flip L2)                     |
+| dac5e9f86 | the lint reads the declaration as the generator does (flip L1)                               |
+| a2a989d73 | a Telegram-only pattern's prefix class read off the rows (item 2)                            |
+| c13d9c035 | no audit codes in the new comments of counted files (the history pin holds at 2325)          |
+| 3580957cc | the body ceilings' pin note says taking them out of the policy count was accepted            |
+| 3abdb1cf1 | the pre-check removal cells read the row's item, not the mocked target (a round 1 test slip) |
+
+### 1. The open LOWs
+
+- AREA L3. server/web/lib/test-support/workspaces-mock.ts
+  `warmWorkspacesMock()` imports session.ts, then lib/workspaces, alone.
+  Every test file that mocks lib/workspaces with an async factory calls it
+  in a beforeAll before any request (16 files: a top-level beforeAll, or
+  in s9-area-fold.db.test.ts after its database environment is set;
+  gate-caller.test.ts keeps its one area read through the pipeline after
+  it, for the cold imports). workspaces-mock.test.ts fails on any such
+  file that does not call it (checked by taking the call out of
+  role-sweep.test.ts).
+  Why session.ts first, found on the way: vitest hands a module's dynamic
+  imports the import chain the module was evaluated in, and a chain that
+  holds the factory in flight is answered the real module (that is how the
+  factory's own importOriginal works). A warm-up that imports the area
+  module first runs the factory with nothing loaded, so session.ts is
+  evaluated inside it, and every later area read got the real requireArea
+  (15 files failed that way: round 2 of part 2 met the same when it tried a
+  direct import). Importing session.ts first evaluates it outside the
+  factory; then the area module resolves alone and is cached. Proof on the
+  Mac: gate-caller.test.ts with no warm-up at `--testTimeout=700` fails 4
+  (the 403 on the device token cell); with the helper alone it passes at
+  700 and 500.
+- AREA L4. gate-caller.test.ts, "an `?at=` asset token is read on a GET
+  only": getOwnerForAsset called in a request slot, no gate in front. GET
+  with an Admin user's token answers that user; HEAD with the same token
+  answers 401. With ownerForAsset's GET check taken out the HEAD line
+  fails.
+- FLIP L1. route-plumbing.mjs route-policy-declared: the callee must be
+  `routePolicy` by its own name (`declare({...})` and `lib.routePolicy({...})`
+  are notLiteral); `as`, `satisfies` and `!` are unwrapped around the call
+  and its argument (no false report on `routePolicy({...}) as const`, which
+  the generator reads); a spread or a computed key at the top of the object
+  is reported (`notWrittenOut`) instead of passed over. Cells for each.
+  Lint over server/web/app/api: no new report.
+- FLIP L2. route-callers.ts handlerPolicy: after the validator, each method
+  the route file exports must be named in the declaration, or the generator
+  fails at the line ("names no POST, which the file exports"). Two cells.
+  The generator over the real tree (vitest's global setup) passes.
+
+### 2. The prefix class of a Telegram-only pattern
+
+test-support.ts rowAnswers `prefixClass` wrote `connectors` in for a
+pattern whose rows are all Telegram carve-outs. It reads the class off the
+plain rows under the same first two segments now (for /api/telegram: PATCH
+/api/telegram/chats/:id, connectors), null where they do not agree on one.
+route-policy.test.ts moves that row's area to settings in a copy of the
+manifest and sees /api/telegram/pair's class follow. The answers the
+sweeps read are unchanged (the same test holds every Telegram row's class
+to connectors on the real manifest; w6a-route-sweep and w6a-fix-sweep pass
+on their records).
+
+### 3. A round 1 slip, fixed: the pre-check removal cells
+
+precheck-removal-http.db.test.ts failed 304 cells in shard 2 on 3580957cc.
+Round 1 replaced main's `itemWriteTarget(method, pattern, path)` (route-scope,
+null for every route since the pre-check removal) with
+`routeItemTarget(row, path)`, but this file mocks routeItemTarget to feed
+the old node targets, so the removed families' check ("the row names no
+item") read the mock. It reads the row's `item` now (null for every row,
+as main's function answered). A test fix only: no answer moved. The whole
+set was rerun on the fixed head.
+
+### 4. The area cells, main against the branch
+
+S9_AREA_RECORD=1 on the workstation, a fresh clone and cluster each: main
+d3b6e9281 with the branch's test file, actor-on config and the warm-up
+helper laid over, and the branch at 3abdb1cf1, in five lanes.
+
+| lane                                        | main exit | branch exit | lines | branch against main |
+| ------------------------------------------- | --------- | ----------- | ----- | ------------------- |
+| full run file, warn, switch on              | 0         | 0           | 83    | 83 equal            |
+| test:actor-on, on                           | 0         | 0           | 83    | 83 equal            |
+| switch off (MANTLE_NARROW_SYSTEM=0), warn   | 0         | 0           | 83    | 83 equal            |
+| runtime role off (MANTLE_DB_RUNTIME_ROLE=0) | 0         | 0           | 83    | 83 equal            |
+| test:runtime-role, warn                     | 0         | 0           | 83    | 83 equal            |
+
+All ten records are byte for byte one another (md5 494be895...). Against
+the committed record each differs by the same 4 lines, main's as well as
+the branch's: the `fail:once` lines (part 2's changed answer, 500 where
+the committed record has the pre-fold answer); main has part 2, so those
+lines are main's now. The HEAD lines with an `?at=` token (`HEAD
+attachment at:adm = 401` and its siblings) are equal on main and the
+branch: through the app the gate refused such a HEAD before, so L4 moves
+no recorded answer. The records hold no machine name (`<env>`, `<email>`).
+
+### 5. Changed answers
+
+None new this round. Round 1's one stands: a HEAD with an `?at=` asset
+token no longer reads the token in ownerForAsset and the gate's asset view
+(stricter; only a direct call sees it, the cell of section 1). Rows: every
+row is main's (round 1's 827 rows, no declaration changed this round;
+route-policy.rows.json and the snapshots unchanged against origin/main).
+
+### 6. Gates, on 3abdb1cf1
+
+Mac, DATABASE_URL unset:
+
+| gate                                      | exit                                                                                                                                   |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm -r typecheck`                       | 0                                                                                                                                      |
+| `pnpm lint`                               | 0 (the one warning as on main)                                                                                                         |
+| `pnpm format:check`                       | 0                                                                                                                                      |
+| `pnpm docs:check`                         | 0                                                                                                                                      |
+| `pnpm arch:check`                         | 0                                                                                                                                      |
+| `pnpm boot:smoke`                         | 0                                                                                                                                      |
+| `pnpm -C server/web build`                | 0                                                                                                                                      |
+| `vitest run server packages eslint-rules` | 1: 891 of 892 files; deploy-scripts.test.ts, `spawnSync /bin/bash ETIMEDOUT` (its bash harness under load, as round 1); rerun alone: 0 |
+
+Workstation, a fresh clone of the pushed 3abdb1cf1 per suite, own pgvector
+pg18 container on a checked free port (removed by exact name), fsync off,
+MANTLE_NARROW_SYSTEM=1 unless named, --maxWorkers=3; ~/s9p3 (`TAG=p3
+run.sh`, rec-main.sh, rec-branch.sh). Load average up to about 30.
+
+| suite                                     | exit     | files      | what failed                                                                                                           |
+| ----------------------------------------- | -------- | ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| vitest shard 1/2                          | 0        | 599        |                                                                                                                       |
+| vitest shard 2/2                          | 1        | 598 of 599 | a2a-round-trips.db.test.ts, "page save: off is not stable: expected 17 to be 18" (a round trip count, load); alone: 0 |
+| test:actor-off                            | 0        | 169        |                                                                                                                       |
+| test:actor-on                             | 0        | 35         |                                                                                                                       |
+| test:edit-on                              | 0        | 47         |                                                                                                                       |
+| test:runtime-role                         | 0        | 318        |                                                                                                                       |
+| test:serial                               | 0        | 1          |                                                                                                                       |
+| test:matrix                               | 0        | 4          |                                                                                                                       |
+| switch off (MANTLE_NARROW_SYSTEM=0), full | 0        | 1198       |                                                                                                                       |
+| runtime role off, full                    | 0        | 1198       |                                                                                                                       |
+| the area records, main and branch         | 0 (each) | 1 (each)   | section 4: 83 of 83 equal                                                                                             |
+
+The four DB sweeps round 1 changed passed in every run they are in:
+w6a-route-sweep (shard 2, switch off, runtime role off), w6a-fix-sweep
+(shard 1, switch off, runtime role off), precheck-removal-http (308 tests:
+shard 2, switch off, runtime role off), a4-head-logins (shard 1).
+
+On the superseded head 3580957cc (stopped for the fix of section 3):
+test:actor-off met the guard sweep's real-clock window once (a 429
+`rate_limited` row in its first pass, the shape part 2 round 2 named); on
+3abdb1cf1 test:actor-off passed.
+
+### Left
+
+- CEO audit of part 3 (deletion of a source: nothing reads the deleted
+  lists), on this head.
+- Rebase onto main v0.300.146 before the merge (no conflict expected: the
+  sandbox image touches no file of this branch).
+- S11b: the 111 placeholders, the body-folder creates and PUT
+  /api/app-nav/pins (part 3, section 6).
