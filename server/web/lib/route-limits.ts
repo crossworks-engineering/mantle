@@ -136,10 +136,11 @@ export const RATE_LIMITS = {
   /** Connect and enrol are once-per-install steps: one bucket for both,
    *  the admin and the member routes alike. */
   pushEnrol: perLogin('push-enrol', 10),
-  // A member's run of an app (an Admin user's is not limited).
-  memberFrameTicket: perMember('member-frame-ticket', 30),
-  memberDbBroker: perMember('member-db-broker', 1200),
-  memberToolBroker: perMember('member-tool-broker', 300),
+  // A run of an app, per login: an Admin user's counts too (owner decision
+  // 2026-10-24), so a wasteful app shows up when an Admin tests it.
+  memberFrameTicket: perLogin('member-frame-ticket', 30),
+  memberDbBroker: perLogin('member-db-broker', 600),
+  memberToolBroker: perLogin('member-tool-broker', 120),
   // A member's bytes of a file: a thumbnail may decode an image.
   memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
   memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },

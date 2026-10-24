@@ -74,6 +74,17 @@ describe('takeRouteLimits', () => {
     expect(takeRouteLimits(['chatTranscribe'], { ...o, login: member })?.status).toBe(429);
   });
 
+  it('counts an Admin user on the app limits too', () => {
+    const admin = { loginId: 'admin-apps', member: false };
+    const o = { req: req('192.0.2.4'), scopes: ALL, login: admin };
+    for (let i = 0; i < 30; i++) expect(takeRouteLimits(['memberFrameTicket'], o)).toBeNull();
+    expect(takeRouteLimits(['memberFrameTicket'], o)?.status).toBe(429);
+    for (let i = 0; i < 120; i++) expect(takeRouteLimits(['memberToolBroker'], o)).toBeNull();
+    expect(takeRouteLimits(['memberToolBroker'], o)?.status).toBe(429);
+    for (let i = 0; i < 600; i++) expect(takeRouteLimits(['memberDbBroker'], o)).toBeNull();
+    expect(takeRouteLimits(['memberDbBroker'], o)?.status).toBe(429);
+  });
+
   it('takes the bytes or the thumbnail budget by the query, and none for the metadata', () => {
     const member = { loginId: 'member-2', member: true };
     const at = (q: string) => ({ req: req('192.0.2.2', `/f${q}`), login: member, scopes: ALL });

@@ -163,21 +163,21 @@ POST /api/member/push/subscriptions member push-enrol count (login 10/60s) [one-
 POST /api/member/push/subscriptions member push-enrol window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
   now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
-POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s members) [one-429]
+POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s) [one-429]
   main first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
   now  first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/apps/:id/frame-ticket member member-frame-ticket window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
   now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
-POST /api/apps/:id/db-broker member member-db-broker count (login 1200/60s members) [one-429]
-  main first 429 at 1201; #1200 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
-  now  first 429 at 1201; #1200 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/apps/:id/db-broker member member-db-broker count (login 600/60s) [one-429]
+  main first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+  now  first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/apps/:id/db-broker member member-db-broker window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
   now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
-POST /api/apps/:id/tool-broker member member-tool-broker count (login 300/60s members) [one-429]
-  main first 429 at 301; #300 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
-  now  first 429 at 301; #300 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/apps/:id/tool-broker member member-tool-broker count (login 120/60s) [one-429]
+  main first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+  now  first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/apps/:id/tool-broker member member-tool-broker window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
   now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400

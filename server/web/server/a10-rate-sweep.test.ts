@@ -376,19 +376,19 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   {
     row: 'POST /api/apps/:id/frame-ticket',
     cred: 'member',
-    limits: [members('member-frame-ticket', 30)],
+    limits: [login('member-frame-ticket', 30)],
   },
   {
     row: 'POST /api/apps/:id/db-broker',
     cred: 'member',
     body: JSON_BODY,
-    limits: [members('member-db-broker', 1200)],
+    limits: [login('member-db-broker', 600)],
   },
   {
     row: 'POST /api/apps/:id/tool-broker',
     cred: 'member',
     body: JSON_BODY,
-    limits: [members('member-tool-broker', 300)],
+    limits: [login('member-tool-broker', 120)],
   },
   // A member's bytes: the file, or its thumbnail (a budget of its own).
   ...['/api/files/files/:id', '/api/v1/files/:id'].flatMap((p) => [
