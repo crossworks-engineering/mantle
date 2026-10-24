@@ -17,7 +17,7 @@ export const policy = routePolicy({
  * Workspaces (plan page 4887b8e7, W5a; lib/workspaces.ts holds the rules).
  * GET: an Admin user gets every workspace, any other login the live ones it
  * is a user of. POST: any login makes one and is its only user, a Moderator.
- * Any login reaches these (lib/auth/any-login-routes.ts); each rule is in
+ * Any login reaches these (the policy above: open: 'any'); each rule is in
  * the query.
  */
 export async function GET() {

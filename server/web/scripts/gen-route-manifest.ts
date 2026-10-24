@@ -218,7 +218,7 @@ import type { RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 
 export type ManifestEntry = {
   pattern: string;
-  /** The route file, from server/web (the route policy codemod writes it). */
+  /** The route file, from server/web (its policy is the entry's). */
   file: string;
   methods: string[];
   catchAll: string | null;

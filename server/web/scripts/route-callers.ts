@@ -1225,7 +1225,7 @@ export function routeFilePattern(file: string): string | null {
  * it throws: the generator follows a route file's
  * handlers and reads, and checks an alias, only through a relative one,
  * so another spelling would read as no route file. One resolver for the
- * generator, the codemod and route-policy.test.ts.
+ * generator and its cells (route-callers-policy.test.ts).
  */
 export function specRouteFile(
   file: string,

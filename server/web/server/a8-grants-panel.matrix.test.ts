@@ -16,8 +16,8 @@
  * seats: TypeScript refuses, the database is not reached):
  *  - route: as the product runs it, POST /api/grants/:id and
  *    /api/grants/move through createApp. The grants routes are any-login
- *    rows (lib/auth/any-login-routes.ts): the gate enters the member's
- *    scope, and the panel's writes run in it (A6: before A6 grantsRoute
+ *    rows (open: 'any' in their route files' policy): the gate enters the
+ *    member's scope, and the panel's writes run in it (A6: before A6 grantsRoute
  *    left it by name, so the definers saw no scope to hold the change to);
  *  - scope: the same panel call in the member's own mutating request scope
  *    (the gate's enterLoginScope for a member's write: its seats, writes

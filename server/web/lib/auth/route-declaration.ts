@@ -93,9 +93,9 @@ export const ITEM_NEEDS = ['read', 'edit', 'manage'] as const;
 export const ITEM_KEYS = ['param', 'need'] as const;
 export const ITEM_NONE_KEYS = ['none'] as const;
 
-/** The reason the codemod writes where the facts give none: a write whose
- *  path names an item no check reads yet. The lint can forbid it once
- *  each is decided. */
+/** The reason a write says where the facts gave none (part 1 wrote it in
+ *  each such route file): a write whose path names an item no check reads
+ *  yet. The lint can forbid it once each is decided. */
 export const ITEM_NONE_PLACEHOLDER = 'not decided yet: the write names an item no check reads';
 
 /** The item a write names (RouteRow `item`): the path param that holds
