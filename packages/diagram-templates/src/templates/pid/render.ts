@@ -22,6 +22,7 @@ import * as dagre from '@dagrejs/dagre';
 import { GridRouter, NORMAL, STEP, type Side } from '../../runtime/grid-router.ts';
 import {
   hopsFor,
+  budgetWarnings,
   inflate,
   overlaps,
   polylineBox,
@@ -1093,6 +1094,9 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
         textEl('eyebrow', b.x + 10, b.y + 14, c.label, { fill: stroke }),
       ]),
     );
+    if (measure(m, c.label, 'eyebrow') + 20 > b.w) {
+      warnings.push(`layout: circuit '${c.id}' label is wider than its box: shorten the label.`);
+    }
   }
   for (let i = 0; i < circuitBoxes.length; i++) {
     for (let j = i + 1; j < circuitBoxes.length; j++) {
@@ -1247,6 +1251,20 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     ...tagLabels.map((t) => ({ kind: 'label' as const, id: t.id, box: t.box })),
     ...lineLabels.map((t) => ({ kind: 'label' as const, id: `line ${t.id}`, box: t.box })),
     ...notes.map((t) => ({ kind: 'label' as const, id: t.id, box: t.box })),
+    // A circuit's name, where its box draws it: a line or an arrowhead on it
+    // makes it unreadable.
+    ...data.circuits.flatMap((c) => {
+      const cb = circuitBoxes.find((x) => x.id === c.id);
+      return cb
+        ? [
+            {
+              kind: 'label' as const,
+              id: `circuit ${c.id}`,
+              box: { x: cb.box.x + 10, y: cb.box.y + 4, w: measure(m, c.label, 'eyebrow'), h: 12 },
+            },
+          ]
+        : [];
+    }),
   ];
   const inlineIds = (lineId: string) =>
     placed.filter((p) => p.line === lineId).map((p) => p.item.tag ?? `${p.line} ${p.item.type}`);
@@ -1262,13 +1280,44 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     ]),
   );
 
+  // A circuit's box must hold its own items only: one that takes in other
+  // equipment or bubbles says they belong to it.
+  for (const c of data.circuits) {
+    const cb = circuitBoxes.find((x) => x.id === c.id);
+    if (!cb) continue;
+    const own = new Set([...c.equipment, ...c.lines]);
+    const strangers = [
+      ...[...nodes.values()]
+        .filter((n) => !own.has(n.id) && overlaps(cb.box, n.box, 1))
+        .map((n) => n.id),
+      ...[...bubbles]
+        .filter(
+          ([tag, p]) =>
+            !own.has(tag) &&
+            overlaps(
+              cb.box,
+              { x: p.x - BUBBLE_R, y: p.y - BUBBLE_R, w: 2 * BUBBLE_R, h: 2 * BUBBLE_R },
+              1,
+            ),
+        )
+        .map(([tag]) => tag),
+    ];
+    if (strangers.length) {
+      warnings.push(
+        `layout: circuit '${c.id}' box takes in ${strangers.slice(0, 4).join(', ')}${strangers.length > 4 ? ' and more' : ''}, not in it: move them with column and row hints, or split the circuit.`,
+      );
+    }
+  }
+
   // ---------------------------------------------------------- 12. legend, frame
   const entries: LegendEntry[] = [];
   if (data.legend) {
     const weights = new Set(data.lines.map((l) => l.weight));
-    if (weights.has('main'))
+    // Colour by service names the lines by service instead: a weight entry
+    // beside them said "Process" twice.
+    if (weights.has('main') && !P.colourByService)
       entries.push({ label: 'Process line', swatch: lineSwatch(PALETTE.ink, 2) });
-    if (weights.has('secondary'))
+    if (weights.has('secondary') && !P.colourByService)
       entries.push({ label: 'Utility line', swatch: lineSwatch(PALETTE.ink, 1.2) });
     if (connections.length)
       entries.push({ label: 'Instrument connection', swatch: lineSwatch(PALETTE.muted, 1) });
@@ -1332,6 +1381,18 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     }
     if (data.circuits.length)
       entries.push({ label: 'Circuit', swatch: boxSwatch('none', PALETTE.soft, '4,4') });
+  }
+  // The guide's legend budget: four kinds of line at most (pipes and
+  // signals; a bubble's short connection stub is not counted).
+  const lineTypes =
+    (P.colourByService
+      ? new Set(data.lines.map((l) => l.service ?? 'P')).size
+      : new Set(data.lines.map((l) => l.weight)).size) +
+    new Set(data.signals.map((s) => s.type).filter((t) => t !== 'connection')).size;
+  if (lineTypes > 4) {
+    warnings.push(
+      `budget: ${lineTypes} kinds of line (the guide keeps a sheet to 4): split the sheet, or show fewer services or signal types.`,
+    );
   }
 
   const content = union([
@@ -1406,6 +1467,8 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     generator: `mantle-diagram pid@${PID_VERSION}`,
     body,
   });
+  const crossings = hops.reduce((s, h) => s + h.length, 0);
+  warnings.push(...budgetWarnings(width, crossings, 8));
   return {
     svg,
     width,
@@ -1417,7 +1480,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
       instruments: data.instruments.length,
       signals: data.signals.length,
       valves: placed.length,
-      crossings: hops.reduce((s, h) => s + h.length, 0),
+      crossings,
     },
   };
 }

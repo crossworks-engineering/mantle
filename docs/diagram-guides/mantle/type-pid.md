@@ -230,7 +230,9 @@ Circuits must not overlap; a line belongs to one circuit.
 
 A line that continues on another sheet ends in an off-page connector: a
 pentagon arrow, 56 wide and 24 high, pointing in the flow direction, on the
-left or right edge of the canvas. Inside it, the other sheet's number
+left or right edge of the canvas (the `pid` template puts a connector whose
+pipes are all utility lines beside its equipment instead, and every other
+one on the edge). Inside it, the other sheet's number
 (`{eyebrow}` role); beside it, where the line goes or comes from
 (`TO V-201` or `FROM E-305`) and the line number. A signal that continues
 uses the same connector, drawn in `{muted}`. Number continuation pairs so a
@@ -260,6 +262,11 @@ limit of the shared rules for this type only.
 | Max line types in the legend | 4                                                                         |
 | Max accent elements          | 2                                                                         |
 | Size preset                  | `doc-wide` (1280 x 720) by default; `print-a3-landscape` for a full sheet |
+| Line crossings               | 8 (the template warns past it)                                            |
+
+The `pid` template sizes the sheet to what it holds and warns past 1280 wide,
+past 4 kinds of line (pipes and signals; a bubble's connection stub is not
+counted) and past 8 crossings: each warning names the fix.
 
 Over budget: split by system or by sheet and join the parts with
 continuation connectors. A simplified process schematic (equipment and main
@@ -286,21 +293,21 @@ what to fix; `present_create` saves it as a canvas; `present_export` writes
 the SVG for a page. The template does the layout this guide describes
 (baseline, routing, hops, valve and label placement, ISA letters).
 
-| Field | What it is |
-| --- | --- |
-| `title` | required, up to 80 characters |
-| `description` | one sentence on what the sheet shows (a warning when missing) |
-| `sheet` | `{ "number": "PID-0001", "revision": "A" }`, top right |
-| `equipment[]` | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`) |
-| `equipment[].type` | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter` |
-| `offpage[]` | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`) |
-| `lines[]` | `number` (the user's line number, exactly), `from`, `to` (an equipment or off-page id), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal` |
-| `lines[].inline[]` | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed`, `focal` |
-| `instruments[]` | `tag` (ISA-5.1 letters then the loop number, `LIC-101`), `on` (an equipment id or a line number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
-| `signals[]` | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`) |
-| `circuits[]` | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit |
-| `legend`, `showTitle` | `false` to leave the legend strip or the title out |
-| `profile` | the site profile; filled in for you from this brain's profile (below) when you leave it out |
+| Field                 | What it is                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `title`               | required, up to 80 characters                                                                                                                                                                                                                                |
+| `description`         | one sentence on what the sheet shows (a warning when missing)                                                                                                                                                                                                |
+| `sheet`               | `{ "number": "PID-0001", "revision": "A" }`, top right                                                                                                                                                                                                       |
+| `equipment[]`         | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                   |
+| `equipment[].type`    | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                             |
+| `offpage[]`           | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`)                                                                                                                                                                                                |
+| `lines[]`             | `number` (the user's line number, exactly), `from`, `to` (an equipment or off-page id), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`                                              |
+| `lines[].inline[]`    | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed`, `focal`                         |
+| `instruments[]`       | `tag` (ISA-5.1 letters then the loop number, `LIC-101`), `on` (an equipment id or a line number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
+| `signals[]`           | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                      |
+| `circuits[]`          | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                     |
+| `legend`, `showTitle` | `false` to leave the legend strip or the title out                                                                                                                                                                                                           |
+| `profile`             | the site profile; filled in for you from this brain's profile (below) when you leave it out                                                                                                                                                                  |
 
 Unknown fields are errors, and so are dangling ids, a tag whose letters are
 not ISA-5.1, and a line number outside the profile's format when the profile

@@ -211,6 +211,23 @@ describe('rendering and the static export', () => {
     expect(noNs(r.svg)).not.toMatch(/<script|<foreignObject|\son[a-z]+=|https?:\/\//i);
   });
 
+  it('the self-check names what a busy sheet gets wrong (the final audit, D6)', () => {
+    const r = render('pid', sample('pid-column-site-profile.json'), estimateMeasurer);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const w = r.warnings.join('\n');
+    expect(w).toMatch(/circuit 'C-08' box takes in/);
+    expect(w).toMatch(/runs through the label of/);
+    expect(w).toMatch(/budget: \d+ line crossings/);
+    expect(w).toMatch(/budget: \d+ kinds of line/);
+    expect(w).toMatch(/size: the drawing is \d+ px wide/);
+    // The clean sample stays clean of these.
+    const clean = render('pid', sample('pid-feed-drum.json'), estimateMeasurer);
+    expect(clean.ok && clean.warnings.filter((x) => /budget|size|runs through/.test(x))).toEqual(
+      [],
+    );
+  });
+
   it('escapes hostile text from the data', () => {
     const d = minimalFlow();
     d.nodes[0]!.label = '<script>alert(1)</script>';

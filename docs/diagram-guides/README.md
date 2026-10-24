@@ -20,7 +20,9 @@ indexes them; nothing has to be enabled.
 - `mantle/`: Mantle's own files, never overwritten by a refresh.
   `medium.md` holds the medium rules every `diagram_guide` reply starts with
   (static SVG, system font stacks, no tooling); `type-pid.md` is the P&ID and
-  process-schematic type (first draft).
+  process-schematic type (first draft); `type-flow.md` the process flow. Both
+  have a layout template (`packages/diagram-templates`): their guide's
+  default is the template's data contract.
 
 Site conventions do NOT belong here: each brain keeps its own in
 `files/diagrams/profiles/<type>.md`, which `diagram_guide` appends after the
@@ -37,6 +39,10 @@ static-SVG medium, stays out:
   `style-guide.md`, and a profile library in the home directory. Mantle carries
   its own branding.
 - `doctor.md`: diagnostics for the local python install and scripts.
+- Five logos of `primitive-icons.md` (`hop`, `pentaho`, `dagster`, `sas`,
+  `stata`): upstream fetched them from vendor sites and marks each "verify
+  license before use". This repo is public, so they are left out until a
+  licence is known. Every other icon names its MIT or CC0 source.
 
 ## Upstream aspects Mantle overrides
 
