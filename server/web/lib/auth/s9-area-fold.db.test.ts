@@ -16,10 +16,20 @@
  *  - member and no-area Admin negative cells on a sample of area rows, one
  *    or more of each area, reads and writes.
  *
- * The third case of the fold (a guard read after the request changed a
- * login, `logins.changed`) has no route that reaches it: a handler reads
- * the answer the gate kept and calls no guard. Its cell is the stand-in
- * test (gate-login.test.ts, "an area taken away in the request").
+ *  - an Admin user's device token (a mobile bearer) on area rows (S9 part
+ *    2 round 2): the Admin user with the area answers 200 on GET
+ *    /api/users, the one without it and a member are refused.
+ *
+ * The third case (a guard read after the request changed a login,
+ * `logins.changed`) has no route that reaches it: a handler reads the
+ * answer the gate kept and calls no guard. Its cell is the stand-in test
+ * (gate-login.test.ts, "an Admin login whose area is taken away"), where
+ * the guard asks the area again, as on main (round 2, the CEO ruling).
+ *
+ * The device token cells run in every lane the file runs in: the full DB
+ * run with the switch on (both shards) and off (MANTLE_NARROW_SYSTEM=0),
+ * test:runtime-role and the full run with the runtime role off
+ * (MANTLE_DB_RUNTIME_ROLE=0), each against the one record.
  *
  * Run in the full DB run (the actor check warn) and test:actor-on (on).
  *
@@ -99,6 +109,8 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
   const renderAt = (id: string) =>
     `mantle_render=${tokens.buildRenderToken({ ownerId: anchor, actorId: id, nodeId: randomUUID() })}`;
   const atOf = (id: string) => tokens.buildAssetToken(anchor, id, 0);
+  /** Each login's device token (a row in mobile_tokens), by login id. */
+  const bearers = new Map<string, string>();
 
   const call = async (
     method: string,
@@ -111,7 +123,8 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
       'x-forwarded-for': `198.51.100.${ip % 250}`,
       'content-type': 'application/json',
     };
-    if (cookie) headers.cookie = cookie;
+    if (cookie?.startsWith('Bearer ')) headers.authorization = cookie;
+    else if (cookie) headers.cookie = cookie;
     const res = await app.request(path, {
       method,
       headers,
@@ -165,6 +178,14 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
       expect(lim?.users).toBe('false');
       await su2`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${a!.id as string}, ${adm}, false) on conflict do nothing`;
+      // A device token of each login, live for the run.
+      for (const id of [adm, noArea, mem]) {
+        const jti = randomUUID();
+        const t = tokens.buildMobileToken(id, jti, 3600, 0);
+        await su2`insert into mobile_tokens (id, user_id, label, expires_at)
+                  values (${jti}, ${id}, ${tag}, ${t.expiresAt})`;
+        bearers.set(id, `Bearer ${t.value}`);
+      }
     } finally {
       await su2.end();
     }
@@ -247,6 +268,25 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
     // Never a pass where every ask fails.
     for (const line of cells.filter((l) => l.includes(' fail:always '))) {
       expect(line, line).not.toMatch(/ = 2\d\d /);
+    }
+  }, 300_000);
+
+  it('a device token on area rows: the Admin user with the area passes (round 2)', async () => {
+    const rows: ReadonlyArray<readonly [string, string]> = [
+      ['GET', '/api/users'],
+      ['GET', '/api/keys'],
+      ['GET', '/api/agents'],
+    ];
+    for (const [method, path] of rows) {
+      for (const [name, id] of Object.entries({ adm, noArea, mem })) {
+        await cell(`${method} ${path} bearer:${name}`, call(method, path, bearers.get(id)!));
+      }
+    }
+    // The cell the round 2 inputs name: an Admin user's device token on
+    // GET /api/users answers 200; without the area, or a member, refused.
+    expect(cells.find((l) => l.startsWith('GET /api/users bearer:adm = '))).toMatch(/ = 200 /);
+    for (const line of cells.filter((l) => / bearer:(noArea|mem) = /.test(l))) {
+      expect(line, line).toMatch(/ = (401|403) /);
     }
   }, 300_000);
 
