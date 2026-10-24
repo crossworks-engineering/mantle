@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "67eee484bc1bd03988e43f70750acdd6ecc157af843b43708deafad24b30b380",
+  "sha256": "1a3e0b3e5c75038c461c348866af9e412c81fa5768d579a339171e14a212d39c",
   "names": [
    "tree_list",
    "search",
@@ -186,6 +186,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -199,7 +200,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "007386d4849fa81009f325002e4ea8696c390e7df36eeb95ec233a9f9e5b8f23",
+  "sha256": "585ed6e8e9eba1787ea81859b9fcb38de35e11fe14f78052dc3feb9d5fa64fe8",
   "names": [
    "tree_list",
    "search",
@@ -442,6 +443,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -500,7 +502,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "bca13ddf7d848b3fe581dcf6346797ed6e34036fabe75515bd26ec1d909940fa",
+  "sha256": "6d5466517a2f246278a97b1be8ba1a9388b3c7c26a2ec60568fde05484270be2",
   "names": [
    "tree_list",
    "search",
@@ -725,6 +727,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -764,7 +767,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "2b71e8256c4b578e7021879cfe955c8416249b0602a4ad1b92ccef9ac470b128",
+  "sha256": "083d8524dc8d24430c56866b4bba06700979b033a331e668fc947c0852fc0429",
   "names": [
    "tree_list",
    "search",
@@ -976,6 +979,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1011,7 +1015,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -1166,6 +1170,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -1177,7 +1182,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "e06b8f140734145c515d7c7a44cbd34df18f9069c1563b8ea9e00e82a0363871",
+  "sha256": "6807c11bbaed55ce503af6904587a70c774a922ee1bbdbe4250aed510820ca67",
   "names": [
    "tree_list",
    "search",
@@ -1352,6 +1357,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1384,7 +1390,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "4ede269a54c47c26786bcc7f24b7a41665d14084c4420a1fd78660c72ba1da6c",
+  "sha256": "c95b25c7cae0235df8ec8cfe8415f66b4230a08dcc03bdb70425c96ef7173d6e",
   "names": [
    "tree_list",
    "search",
@@ -1555,6 +1561,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1581,7 +1588,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "fbadc21ddc80a2bbbd1003f70c227b0ca2383c060ac8ef607228773f24803bb7",
+  "sha256": "a25159fc193a3febf5852842d367aaf0300bcfa1ccab0814f198912cefa3dcaa",
   "names": [
    "tree_list",
    "search",
@@ -1751,6 +1758,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1951,7 +1959,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -2106,6 +2114,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2117,7 +2126,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "e06b8f140734145c515d7c7a44cbd34df18f9069c1563b8ea9e00e82a0363871",
+  "sha256": "6807c11bbaed55ce503af6904587a70c774a922ee1bbdbe4250aed510820ca67",
   "names": [
    "tree_list",
    "search",
@@ -2292,6 +2301,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2324,7 +2334,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "4ede269a54c47c26786bcc7f24b7a41665d14084c4420a1fd78660c72ba1da6c",
+  "sha256": "c95b25c7cae0235df8ec8cfe8415f66b4230a08dcc03bdb70425c96ef7173d6e",
   "names": [
    "tree_list",
    "search",
@@ -2495,6 +2505,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2521,7 +2532,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "fbadc21ddc80a2bbbd1003f70c227b0ca2383c060ac8ef607228773f24803bb7",
+  "sha256": "a25159fc193a3febf5852842d367aaf0300bcfa1ccab0814f198912cefa3dcaa",
   "names": [
    "tree_list",
    "search",
@@ -2691,6 +2702,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2715,7 +2727,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -2870,6 +2882,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2881,7 +2894,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "33144eaf6dbbc9c02b765761e01b2f81a071ee3d4b6576c2554d309ae2e4d492",
+  "sha256": "3a28a8e66b51a5c99b92e845b846fd8f584272f76709de2cd682f6baf95d06ee",
   "names": [
    "tree_list",
    "search",
@@ -3058,6 +3071,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3091,7 +3105,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "8f760a3887c48411a7e2f2970b3cb278383a66846f8b4ae385ffe587d7be4c48",
+  "sha256": "a2278eb7512d4dcff5f413e1916ae2df85fd15a2a6ef36e93ac5d0fdeaecd0bd",
   "names": [
    "tree_list",
    "search",
@@ -3262,6 +3276,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3289,7 +3304,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "4e96de5e2d7dfc4889e8d44662a6858b80a8bee52527586d684e2824058476ca",
+  "sha256": "a6a16823d79a82a6fdce72957eb472baeb58375e6ac71d4f4fd55a65a9cc96c2",
   "names": [
    "tree_list",
    "search",
@@ -3459,6 +3474,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3484,7 +3500,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "ecfcb52d3b7eb5b38486a6c5ccfe37e291be24552fe51347609cfe30bee27997",
+  "sha256": "4757f9af9e3140eaad0e8bb4ff21fd54937a434cebcf194f258080b94efffd43",
   "names": [
    "tree_list",
    "search",
@@ -3555,6 +3571,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -3563,7 +3580,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "0537076b332cd869ba9d767f8b9bd52543b33ca991a088e57d63a201bce2c039",
+  "sha256": "2473a8a21ccd23c9a2574727d5b9294ebf76f786179210a8ba3cee315d7035b3",
   "names": [
    "tree_list",
    "search",
@@ -3655,6 +3672,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3672,7 +3690,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "9d08fed25cb393921f28a7637226f605285e5ccc9883e8e05bf7aa752517908e",
+  "sha256": "d1e9106f856b3279e5ce44338d6133d3d5e2d489c2836e89f7a01d9410ee01f9",
   "names": [
    "tree_list",
    "search",
@@ -3755,6 +3773,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3766,7 +3785,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "b199872c7910bdb23f882ae1503289a22ba741fa9d180796ecba53d318733889",
+  "sha256": "adab41269f474096af1922c3ec1736d0661e38f526d367872e0f80142dde903a",
   "names": [
    "tree_list",
    "search",
@@ -3845,6 +3864,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -3856,7 +3876,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -3926,6 +3946,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -3934,7 +3955,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -4014,6 +4035,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4031,7 +4053,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -4108,6 +4130,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4119,7 +4142,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -4195,6 +4218,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4314,7 +4338,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -4384,6 +4408,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -4392,7 +4417,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -4472,6 +4497,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4489,7 +4515,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -4566,6 +4592,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4577,7 +4604,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -4653,6 +4680,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4664,7 +4692,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -4734,6 +4762,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -4742,7 +4771,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -4822,6 +4851,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4839,7 +4869,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -4916,6 +4946,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -4927,7 +4958,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -5003,6 +5034,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -5014,7 +5046,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "67eee484bc1bd03988e43f70750acdd6ecc157af843b43708deafad24b30b380",
+  "sha256": "1a3e0b3e5c75038c461c348866af9e412c81fa5768d579a339171e14a212d39c",
   "names": [
    "tree_list",
    "search",
@@ -5200,6 +5232,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -5213,7 +5246,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "007386d4849fa81009f325002e4ea8696c390e7df36eeb95ec233a9f9e5b8f23",
+  "sha256": "585ed6e8e9eba1787ea81859b9fcb38de35e11fe14f78052dc3feb9d5fa64fe8",
   "names": [
    "tree_list",
    "search",
@@ -5456,6 +5489,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -5514,7 +5548,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "bca13ddf7d848b3fe581dcf6346797ed6e34036fabe75515bd26ec1d909940fa",
+  "sha256": "6d5466517a2f246278a97b1be8ba1a9388b3c7c26a2ec60568fde05484270be2",
   "names": [
    "tree_list",
    "search",
@@ -5739,6 +5773,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -5778,7 +5813,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "2b71e8256c4b578e7021879cfe955c8416249b0602a4ad1b92ccef9ac470b128",
+  "sha256": "083d8524dc8d24430c56866b4bba06700979b033a331e668fc947c0852fc0429",
   "names": [
    "tree_list",
    "search",
@@ -5990,6 +6025,7 @@
    "present_restore",
    "present_export",
    "present_delete",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6025,7 +6061,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -6180,6 +6216,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -6191,7 +6228,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "e06b8f140734145c515d7c7a44cbd34df18f9069c1563b8ea9e00e82a0363871",
+  "sha256": "6807c11bbaed55ce503af6904587a70c774a922ee1bbdbe4250aed510820ca67",
   "names": [
    "tree_list",
    "search",
@@ -6366,6 +6403,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6398,7 +6436,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "4ede269a54c47c26786bcc7f24b7a41665d14084c4420a1fd78660c72ba1da6c",
+  "sha256": "c95b25c7cae0235df8ec8cfe8415f66b4230a08dcc03bdb70425c96ef7173d6e",
   "names": [
    "tree_list",
    "search",
@@ -6569,6 +6607,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6595,7 +6634,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "fbadc21ddc80a2bbbd1003f70c227b0ca2383c060ac8ef607228773f24803bb7",
+  "sha256": "a25159fc193a3febf5852842d367aaf0300bcfa1ccab0814f198912cefa3dcaa",
   "names": [
    "tree_list",
    "search",
@@ -6765,6 +6804,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6965,7 +7005,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -7120,6 +7160,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -7131,7 +7172,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "e06b8f140734145c515d7c7a44cbd34df18f9069c1563b8ea9e00e82a0363871",
+  "sha256": "6807c11bbaed55ce503af6904587a70c774a922ee1bbdbe4250aed510820ca67",
   "names": [
    "tree_list",
    "search",
@@ -7306,6 +7347,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7338,7 +7380,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "4ede269a54c47c26786bcc7f24b7a41665d14084c4420a1fd78660c72ba1da6c",
+  "sha256": "c95b25c7cae0235df8ec8cfe8415f66b4230a08dcc03bdb70425c96ef7173d6e",
   "names": [
    "tree_list",
    "search",
@@ -7509,6 +7551,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7535,7 +7578,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "fbadc21ddc80a2bbbd1003f70c227b0ca2383c060ac8ef607228773f24803bb7",
+  "sha256": "a25159fc193a3febf5852842d367aaf0300bcfa1ccab0814f198912cefa3dcaa",
   "names": [
    "tree_list",
    "search",
@@ -7705,6 +7748,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7729,7 +7773,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "c1adc66161f8b618c0e69ddd12fe9fe34f00dab199b2baee9c1aad49ac03acf7",
+  "sha256": "6a525f6a8db3f71fe4a2ab7ae903d4cd161b4c58f871d54541787ff947a350e4",
   "names": [
    "tree_list",
    "search",
@@ -7884,6 +7928,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -7895,7 +7940,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "33144eaf6dbbc9c02b765761e01b2f81a071ee3d4b6576c2554d309ae2e4d492",
+  "sha256": "3a28a8e66b51a5c99b92e845b846fd8f584272f76709de2cd682f6baf95d06ee",
   "names": [
    "tree_list",
    "search",
@@ -8072,6 +8117,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8105,7 +8151,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "8f760a3887c48411a7e2f2970b3cb278383a66846f8b4ae385ffe587d7be4c48",
+  "sha256": "a2278eb7512d4dcff5f413e1916ae2df85fd15a2a6ef36e93ac5d0fdeaecd0bd",
   "names": [
    "tree_list",
    "search",
@@ -8276,6 +8322,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8303,7 +8350,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "4e96de5e2d7dfc4889e8d44662a6858b80a8bee52527586d684e2824058476ca",
+  "sha256": "a6a16823d79a82a6fdce72957eb472baeb58375e6ac71d4f4fd55a65a9cc96c2",
   "names": [
    "tree_list",
    "search",
@@ -8473,6 +8520,7 @@
    "present_update",
    "present_restore",
    "present_export",
+   "canvas_library",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8498,7 +8546,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "ecfcb52d3b7eb5b38486a6c5ccfe37e291be24552fe51347609cfe30bee27997",
+  "sha256": "4757f9af9e3140eaad0e8bb4ff21fd54937a434cebcf194f258080b94efffd43",
   "names": [
    "tree_list",
    "search",
@@ -8569,6 +8617,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -8577,7 +8626,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "0537076b332cd869ba9d767f8b9bd52543b33ca991a088e57d63a201bce2c039",
+  "sha256": "2473a8a21ccd23c9a2574727d5b9294ebf76f786179210a8ba3cee315d7035b3",
   "names": [
    "tree_list",
    "search",
@@ -8669,6 +8718,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -8686,7 +8736,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "9d08fed25cb393921f28a7637226f605285e5ccc9883e8e05bf7aa752517908e",
+  "sha256": "d1e9106f856b3279e5ce44338d6133d3d5e2d489c2836e89f7a01d9410ee01f9",
   "names": [
    "tree_list",
    "search",
@@ -8769,6 +8819,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -8780,7 +8831,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "b199872c7910bdb23f882ae1503289a22ba741fa9d180796ecba53d318733889",
+  "sha256": "adab41269f474096af1922c3ec1736d0661e38f526d367872e0f80142dde903a",
   "names": [
    "tree_list",
    "search",
@@ -8859,6 +8910,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -8870,7 +8922,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -8940,6 +8992,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -8948,7 +9001,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -9028,6 +9081,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9045,7 +9099,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -9122,6 +9176,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9133,7 +9188,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -9209,6 +9264,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9328,7 +9384,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -9398,6 +9454,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -9406,7 +9463,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -9486,6 +9543,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9503,7 +9561,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -9580,6 +9638,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9591,7 +9650,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -9667,6 +9726,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9678,7 +9738,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "650b7f9ca62d3332761f33bdc2b9160cc8fd9afb0a6218e094cf9c6c614ccb86",
+  "sha256": "de003917129a148267c43ea68ea375590f5bfee279f6580c06fc817b74e49b79",
   "names": [
    "tree_list",
    "search",
@@ -9748,6 +9808,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "location_nearby",
    "location_distance",
@@ -9756,7 +9817,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "bf276141e5b691e14b889d47f1a862855986b6c41e4d9b8a58568f2eedbfd329",
+  "sha256": "21ec5643806a86ee076c3afc1d5dc0d979e45c93300432ade2e928edbd140c20",
   "names": [
    "tree_list",
    "search",
@@ -9836,6 +9897,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9853,7 +9915,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "3d26214ce26d5af89a980d60a2584001731325bfa47e8934cefd36bdf7e671c6",
+  "sha256": "f15e2f06ea133074aa5caed4d994b558938958a4ba5cf2c3ca721d099c9dd837",
   "names": [
    "tree_list",
    "search",
@@ -9930,6 +9992,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",
@@ -9941,7 +10004,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "f28e47f4bf4dad046c159d467a552da08730babda16b63e6b79ce60f72a699ba",
+  "sha256": "e046f1ff368b36c1e995dee6d734efa6fbb01d1bda4aa2f1115dae766fe6392d",
   "names": [
    "tree_list",
    "search",
@@ -10017,6 +10080,7 @@
    "present_get",
    "present_render",
    "present_revisions",
+   "canvas_library",
    "folder_get_by_path",
    "find_window",
    "replay_window",

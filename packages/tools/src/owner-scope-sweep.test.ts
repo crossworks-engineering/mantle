@@ -39,6 +39,7 @@ const OWNER_FREE: Record<string, string> = {
   web_fetch: 'fetches a public URL through the SSRF guard; no owner state',
   app_authoring_guide: 'reads one docs file baked into the image, the same for every owner',
   diagram_types: 'a static list of diagram types, the same for every owner',
+  canvas_library: 'a static library guide from the image, the same for every owner',
   model_catalog:
     'the provider model catalog, identical for everyone on the box; the team-surface refusal is the only ctx it reads',
   run_terminal:

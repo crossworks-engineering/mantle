@@ -1032,24 +1032,24 @@ The frame has NO network: no fetch, no CDN, no outside images, fonts or styleshe
 
 ## Libraries: write the import, nothing else
 
-Bare names, in a \`<script type="module">\`. The brain serves them; there is nothing to configure.
+Bare names, in a \`<script type="module">\`. The brain serves them; there is nothing to configure. **Call \`canvas_library\` with the name before you use any library other than plain SVG**: it gives the API of the exact version served, what changed from versions you may know, and a working example.
 
 - Plain SVG + JS: the default. No library for boxes, lines and labels you place yourself.
-- \`import * as echarts from 'echarts'\`: charts and dashboards (gauges, sankey, heatmaps). \`echarts.init(el).setOption({...})\`.
-- Plotly (classic script only): \`<script src="/canvas-runtime/plotly/plotly.min.js"></script>\`, then \`Plotly.newPlot(el, data, layout)\`. Contours, 3D surfaces, statistics, very large scatter.
-- \`import * as d3 from 'd3'\`: scales, layouts, force graphs, full control of the SVG.
-- \`import Konva from 'konva'\`: 2D shapes people drag and click.
-- \`import * as THREE from 'three'\` and \`import { OrbitControls } from 'three/addons/controls/OrbitControls.js'\`: 3D scenes.
-- \`import { animate, stagger } from 'motion'\`: animation. The only animation library; never GSAP.
-- \`import Reveal from 'reveal.js'\`: decks (below).
-- \`import katex from 'katex'\`: formulas; \`katex.render(tex, el)\`. Its stylesheet is already loaded.
-- \`import Alpine from 'alpinejs'\`: tabs, toggles, sliders, step-through explainers as HTML attributes; call \`Alpine.start()\`.
-- \`import { mount } from '@mantle/diagram-templates/browser'\`: only inside a template canvas, which the tools write for you (below).
+- \`echarts\`: business charts and dashboards.
+- \`d3\`: custom charts, schematics, force graphs, scales and axes.
+- \`three\` (and \`three/addons/controls/OrbitControls.js\`): 3D scenes.
+- \`motion\`: animation. The only animation library; never GSAP.
+- \`reveal.js\`: decks (below).
+- \`konva\`: 2D shapes people drag and click.
+- \`katex\`: formulas.
+- \`alpinejs\`: tabs, toggles, step-throughs.
+- Plotly (a classic script, no guide): \`<script src="/canvas-runtime/plotly/plotly.min.js"></script>\`, then \`Plotly.newPlot(el, data, layout)\`.
+- \`@mantle/diagram-templates/browser\`: only inside a template canvas, which the tools write for you (below).
 
 ## Look and feel
 
 - Tailwind classes work and are compiled on save: \`class="rounded-lg border border-border bg-card p-6 text-card-foreground"\`.
-- Theme tokens as CSS variables follow the owner's theme: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--primary)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--chart-1)\` to \`var(--chart-5)\`. Use them for chart colours too (read them with \`getComputedStyle(document.documentElement).getPropertyValue('--chart-1')\`), so a dark theme stays readable.
+- Theme tokens as CSS variables follow the owner's theme: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--primary)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--chart-1)\` to \`var(--chart-5)\`. For a chart library, convert them to rgb first (they are \`oklch()\`, which ECharts, Konva and three.js cannot read): the library guides carry the small \`token()\` helper. So a dark theme stays readable.
 - Fonts: \`var(--font-sans)\`, \`var(--font-serif)\`, \`var(--font-mono)\` are the owner's choices. You may also name a face: ${CANVAS_FONT_FAMILIES}.
 - Text size: at a 1600x900 design size, body text 20px or more, labels 14px or more. Small text in a scaled-down frame is unreadable.
 - Motion: honour reduced motion. Wrap animation in \`if (!matchMedia('(prefers-reduced-motion: reduce)').matches)\` and show the final state otherwise.

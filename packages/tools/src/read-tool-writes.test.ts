@@ -159,6 +159,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'app_snapshot_list',
   'brain_capacity',
   'calculate',
+  'canvas_library',
   'contact_find',
   'contact_get',
   'contact_list',

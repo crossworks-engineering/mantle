@@ -1,7 +1,7 @@
 {
   "name": "@mantle/share-ui",
   "version": "0.0.1",
-  "description": "The server-rendered share surface — the /s/<token> presenters, view-payload contract, mini-app sandbox, and the few primitives they need. Lives in MANTLE (the server renders these), published for jackdaw to consume; may depend only on @mantle/{client-types,content-core} (the jackdaw-repo-split boundary).",
+  "description": "The server-rendered share surface \u2014 the /s/<token> presenters, view-payload contract, mini-app sandbox, and the few primitives they need. Lives in MANTLE (the server renders these), published for jackdaw to consume; may depend only on @mantle/{client-types,content-core} (the jackdaw-repo-split boundary).",
   "private": true,
   "type": "module",
   "scripts": {
@@ -55,7 +55,7 @@
     "@radix-ui/react-slot": "^1.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "katex": "^0.19.0",
+    "katex": "0.19.1",
     "lucide-react": "^1.52.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

@@ -1005,6 +1005,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'present_update',
       'present_restore',
       'present_export',
+      // The library guides, for the exact versions the runtime serves.
+      'canvas_library',
     ],
   },
   {

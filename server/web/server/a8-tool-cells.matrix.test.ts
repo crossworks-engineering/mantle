@@ -93,6 +93,7 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   task_update: (c) => ({ title: `${c.tag} edited` }),
   note_update: (c) => ({ title: `${c.tag} edited` }),
   formula_update: (c) => ({ title: `${c.tag} edited` }),
+  present_update: (c) => ({ title: `${c.tag} edited` }),
   page_update: (c) => ({ title: `${c.tag} edited` }),
   table_update: (c) => ({ title: `${c.tag} edited` }),
   app_update: (c) => ({ name: `${c.tag} edited` }),
@@ -141,6 +142,7 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   peer_file_copy: 'a federated peer brain (outside the box)',
   sandbox_import: 'a sandbox (sandboxd, outside the box)',
   sandbox_create: 'a sandbox (sandboxd, outside the box)',
+  present_export: 'the browser sidecar that draws the canvas (outside the box)',
 };
 
 /** The app data tools act for a login's own MCP connection only (tools

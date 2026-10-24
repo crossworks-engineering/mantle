@@ -42,6 +42,7 @@ import {
   DIAGRAM_TOOLS,
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
+  CANVAS_LIBRARY_TOOLS,
   WORKSPACE_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
@@ -368,6 +369,7 @@ export function registerMantleTools(
   // save still lands and says it was not drawn.
   registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
   registerBuiltinTools(PRESENT_TOOLS);
+  registerBuiltinTools(CANVAS_LIBRARY_TOOLS);
 
   // Files: create-from-text and resolve-a-folder-by-path, the two the
   // hand-written file surface never had.

@@ -666,6 +666,23 @@ export const A8_TOOL_CONTENT: Readonly<
     needs: 'the app’s own database with the a8 table',
     seed: async (s) => (await seedAppWithDb(s), { table: 'a8' }),
   },
+  // A canvas with a kept version to bring back (content presents.ts
+  // getPresentRevisionSource reads present_revisions).
+  present_restore: {
+    needs: 'a canvas with a kept version',
+    seed: async (s) => {
+      const src = '<!doctype html><html><head><title>A8</title></head><body>a8</body></html>';
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`insert into presents (node_id, source, source_text, meta, rev)
+                 values (${s.item.id}, ${src}, 'a8',
+                         ${tx.json({ size: 'fill', theme: 'follow', libs: [], scripts: [], posterAt: null })}, 2)
+                 on conflict (node_id) do nothing`;
+        await tx`insert into present_revisions (node_id, rev, source)
+                 values (${s.item.id}, 1, ${src.replace('a8</body>', 'a8 v1</body>')})`;
+      });
+      return { rev: 1 };
+    },
+  },
   // Its export is a file named after the item: a fresh item each cell, so
   // no export finds the one before it.
   export_node: { needs: 'an item no export was made of', seed: async () => ({}) },
@@ -756,7 +773,8 @@ export async function a8ContentProbe(sql: Sql, id: string, deps: A8ContentDeps):
         where e.app_node_id = ${id}),
       (select string_agg((to_jsonb(c) - 'updated_at')::text, ',' order by c.slug)
          from recall_nodes c where c.map_id = ${id}),
-      (select (to_jsonb(r) - 'updated_at')::text from recall_maps r where r.id = ${id})) as p`;
+      (select (to_jsonb(r) - 'updated_at')::text from recall_maps r where r.id = ${id}),
+      (select (to_jsonb(p) - 'updated_at')::text from presents p where p.node_id = ${id})) as p`;
   return r?.p ?? '';
 }
 

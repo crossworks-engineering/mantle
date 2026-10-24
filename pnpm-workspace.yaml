@@ -15,6 +15,9 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 
+minimumReleaseAgeExclude:
+  - katex@0.19.1
+
 # Single pdfjs-dist across the tree. pdfjs compares API and Worker version
 # strings EXACTLY and fails the load on any mismatch, and its worker config is
 # process-global — so two copies in one process break whichever loads second.
@@ -62,5 +65,5 @@ overrides:
   'qs@>=6.11.1 <6.15.2': '^6.15.2'
 
 patchedDependencies:
-  katex@0.19.0: patches/katex@0.19.0.patch
+  katex@0.19.1: patches/katex@0.19.1.patch
   postgres@3.4.9: patches/postgres@3.4.9.patch
