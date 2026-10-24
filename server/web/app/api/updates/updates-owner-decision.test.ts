@@ -9,6 +9,7 @@
  * handler's 401.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../../../lib/test-support/workspaces-mock';
 import { runRoute } from '@/server/run-route';
 import { standInLogin } from '@/server/run-route-stand-ins';
 
@@ -25,6 +26,9 @@ vi.mock('@/lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/workspaces')>()),
   requireArea: async (caller: { loginId: string }) => caller.loginId !== LIMITED,
 }));
+// The mocked area module resolved alone, before any request (S9 part 3
+// round 2: two first imports in flight at once can get the real module).
+beforeAll(warmWorkspacesMock);
 // The release check and the updater sidecar, stood in: no network, no disk.
 vi.mock('@/lib/updates', () => ({
   checkForUpdate: vi.fn(async (force: boolean) => ({ available: false, forced: force })),

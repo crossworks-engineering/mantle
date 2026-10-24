@@ -33,6 +33,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../lib/test-support/workspaces-mock';
 
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const ADMIN2_ID = '44444444-4444-4444-8444-444444444444';
@@ -174,6 +175,9 @@ vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),
   requireArea: async () => true,
 }));
+// The mocked area module resolved alone, before any request (S9 part 3
+// round 2: two first imports in flight at once can get the real module).
+beforeAll(warmWorkspacesMock);
 
 import { SESSION_COOKIE_NAME } from '../lib/auth-constants';
 

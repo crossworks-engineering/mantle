@@ -34,6 +34,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../../lib/test-support/workspaces-mock';
 import { actorSetting, currentActor, currentCaller, enterCall, systemActor } from '@mantle/db';
 import type { RouteEntry } from '../route-loader';
 
@@ -144,6 +145,9 @@ vi.mock('../../lib/workspaces', async (importOriginal) => ({
     return caller.loginId !== LIMITED && !counts.arealess.has(caller.loginId);
   },
 }));
+// The mocked area module resolved alone, before any request (S9 part 3
+// round 2: two first imports in flight at once can get the real module).
+beforeAll(warmWorkspacesMock);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, '../route-manifest.gen.ts'));

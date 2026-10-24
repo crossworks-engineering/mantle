@@ -41,6 +41,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../test-support/workspaces-mock';
 import {
   createMigratedScratchDatabase,
   ensureTestAnchor,
@@ -147,6 +148,9 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 's9-area-fold-db-test-secret-at-least-32-chars';
     delete process.env.MANTLE_DETACHED_DEV;
+    // The mocked area module resolved alone, before any request (S9 part 3
+    // round 2), here: after the database's environment is set.
+    await warmWorkspacesMock();
     m = await import('@mantle/db');
     const sql = (m.systemDb as unknown as { $client: ReturnType<typeof superuserClient> }).$client;
     tokens = await import('./tokens');

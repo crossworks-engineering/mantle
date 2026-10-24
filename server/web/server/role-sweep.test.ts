@@ -27,6 +27,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../lib/test-support/workspaces-mock';
 
 const CLIENT_ID = '12121212-1212-4212-8212-121212121212';
 const UNKNOWN_ID = '13131313-1313-4313-8313-131313131313';
@@ -132,6 +133,9 @@ vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),
   requireArea: async () => true,
 }));
+// The mocked area module resolved alone, before any request (S9 part 3
+// round 2: two first imports in flight at once can get the real module).
+beforeAll(warmWorkspacesMock);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));

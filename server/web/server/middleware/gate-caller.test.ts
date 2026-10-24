@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { warmWorkspacesMock } from '../../lib/test-support/workspaces-mock';
 import { actorSetting, currentActor, currentCreateHome, currentRequestOutcome } from '@mantle/db';
 import { NextResponse } from '../http-compat';
 import type { RouteEntry } from '../route-loader';
@@ -255,13 +256,11 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     guarded.use('*', gate());
     registerRoutes(guarded, entries(guards, false), { standIn: true });
     guarded.onError(onError);
-    // One area read here, alone, before any test: the gate's area read
-    // imports the mocked area module on its first use (session.ts
-    // loginHoldsArea), and two first imports in flight at once (a test
-    // that timed out under load still sending requests beside the next)
-    // were handed the real module, whose requireArea reads the stubbed
-    // database and answers no (S9 part 2 round 2: the device token cell's
-    // 403 on the workstation; main the same when its tests time out).
+    // The mocked area module resolved alone, before any test (the shared
+    // warm-up, lib/test-support/workspaces-mock.ts: S9 part 2 round 2's
+    // device token cell), and one area read through the pipeline, so the
+    // cold imports are paid in this hook's 60 s, not in a test's 15 s.
+    await warmWorkspacesMock();
     const warm = await pipeline.request('/api/users', { headers: creds[1]!.headers() });
     expect(warm.status).toBe(200);
   });
