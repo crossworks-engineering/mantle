@@ -4,44 +4,14 @@
  * this way; docs/proposals/canvas-files.md section 5.2). Auth is the route's
  * (a canvas frame ticket); this module only renders.
  */
-import { readFile } from 'node:fs/promises';
 import { NextResponse } from '@/server/http-compat';
-import { buildCanvasFrameCsp, buildCanvasFrameHtml } from '@mantle/share-ui/canvas-frame-html';
-import { appearanceFontVars } from '@mantle/share-ui/appearance';
-import { INTER_FONT_FACE_CSS, displayFontFaceCss } from '@mantle/client-types/display-fonts';
+import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
 import type { PresentMeta } from '@mantle/db';
 import { env } from '@mantle/config';
 import { requestOrigin } from '@/lib/auth-constants';
-import { loadAppearanceAttrs } from '@/server/pages/appearance';
+import { canvasFrameDocument, loadCanvasImportMap } from '@mantle/tools/canvas-frame-document';
 
-/** The canvas runtime import map, read once from the generated public/
- *  asset (packages/app-build canvas-runtime.ts; cwd is server/web, as for
- *  the app runtime). The file changes only on deploy. */
-let importMapPromise: Promise<string> | null = null;
-function loadCanvasImportMap(): Promise<string> {
-  if (!importMapPromise) {
-    importMapPromise = readFile('public/canvas-runtime/manifest.json', 'utf8')
-      .then((raw) => {
-        const m = JSON.parse(raw) as { imports: Record<string, string> };
-        return JSON.stringify({ imports: m.imports });
-      })
-      .catch((e: unknown) => {
-        importMapPromise = null; // let the next request retry
-        throw e;
-      });
-  }
-  return importMapPromise;
-}
-
-/** Inter, the Appearance library faces, and the owner's chosen interface
- *  and prose fonts as the root vars a canvas reads (`var(--font-sans)`).
- *  Fail-soft: unreadable prefs keep the defaults. */
-async function canvasFontCss(ownerId: string): Promise<string> {
-  const attrs = await loadAppearanceAttrs(ownerId);
-  const vars = attrs ? Object.entries(appearanceFontVars(attrs)) : [];
-  const root = vars.length ? `:root{${vars.map(([k, v]) => `${k}:${v}`).join(';')}}` : '';
-  return [INTER_FONT_FACE_CSS, displayFontFaceCss(), root].filter(Boolean).join('\n');
-}
+export { canvasFrameDocument };
 
 /** The local owner UIs: the desktop app serves its renderer from
  *  http://127.0.0.1 on a port it picks at launch, and the detached dev
@@ -68,31 +38,6 @@ function frameAncestors(): string[] {
  *  name), for the save check (content-core canvasLoadProblems). */
 export async function canvasModuleNames(): Promise<string[]> {
   return Object.keys((JSON.parse(await loadCanvasImportMap()) as { imports: object }).imports);
-}
-
-/** The frame document of a canvas, for the frame route and the sidecar
- *  render alike: one builder, so a poster shows what the frame runs. */
-export async function canvasFrameDocument(
-  ownerId: string,
-  canvas: { source: string; css: string; meta: PresentMeta },
-  theme: { cls: string; colorTheme: string | null },
-  nonce?: string,
-): Promise<string> {
-  const [importMapJson, fontCss] = await Promise.all([
-    loadCanvasImportMap(),
-    canvasFontCss(ownerId),
-  ]);
-  return buildCanvasFrameHtml({
-    source: canvas.source,
-    css: canvas.css,
-    importMapJson,
-    cls: theme.cls.slice(0, 200),
-    colorTheme: theme.colorTheme?.slice(0, 60) || null,
-    size: canvas.meta.size,
-    theme: canvas.meta.theme,
-    fontCss,
-    ...(nonce ? { nonce } : {}),
-  });
 }
 
 /**

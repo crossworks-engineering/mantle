@@ -11,7 +11,9 @@
     "./client-sourced-rules": "./src/client-sourced-rules.ts",
     "./surface": "./src/surface.ts",
     "./third-party": "./src/third-party.ts",
-    "./gate-narrowers": "./src/gate-narrowers.ts"
+    "./gate-narrowers": "./src/gate-narrowers.ts",
+    "./canvas-render": "./src/canvas-render/sidecar.ts",
+    "./canvas-frame-document": "./src/canvas-render/frame-document.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -33,6 +35,7 @@
     "@mantle/microsoft": "workspace:*",
     "@mantle/runs": "workspace:*",
     "@mantle/search": "workspace:*",
+    "@mantle/share-ui": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tabledb": "workspace:*",
@@ -44,6 +47,7 @@
     "@openrouter/sdk": "^1.4.25",
     "drizzle-orm": "^0.45.3",
     "firecrawl": "^4.44.0",
+    "puppeteer-core": "^25.12.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

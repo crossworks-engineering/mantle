@@ -203,6 +203,22 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(await presents.setPresentPoster(randomUUID(), p.id, png, 2)).toBe(false);
   });
 
+  it('a name given by hand stays through saves that keep the head title', async () => {
+    const p = await presents.createPresent(owner, { source: canvas(`${tag} Head`, 'one') });
+    await presents.updatePresent(owner, p.id, { title: `${tag} By hand` });
+    const kept = await presents.savePresentSource(owner, p.id, {
+      source: canvas(`${tag} Head`, 'two'),
+      css: '',
+    });
+    expect(kept.ok && kept.present.title).toBe(`${tag} By hand`);
+    // A new <title> is a rename the canvas asks for.
+    const renamed = await presents.savePresentSource(owner, p.id, {
+      source: canvas(`${tag} New head`, 'two'),
+      css: '',
+    });
+    expect(renamed.ok && renamed.present.title).toBe(`${tag} New head`);
+  });
+
   it('reads back a kept version by rev', async () => {
     const p = await presents.createPresent(owner, { source: canvas(`${tag} Back`, 'first') });
     await presents.savePresentSource(owner, p.id, {

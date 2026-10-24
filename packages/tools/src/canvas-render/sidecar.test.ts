@@ -102,8 +102,9 @@ vi.mock('puppeteer-core', () => ({
   },
 }));
 
-vi.mock('./canvas-frame', () => ({
+vi.mock('./frame-document', () => ({
   canvasFrameDocument: async () => '<!doctype html><title>x</title>',
+  publicDir: () => `${process.cwd()}/server/web/public`,
 }));
 
 const saved = process.env.BROWSER_WS_ENDPOINT;
@@ -145,7 +146,7 @@ const REQ = {
 
 describe('renderCanvas', () => {
   it('starts the sidecar browser locked: no DNS, a dead proxy, no direct WebRTC UDP', async () => {
-    const { renderCanvas, RENDER_LAUNCH_ARGS } = await import('./render-canvas');
+    const { renderCanvas, RENDER_LAUNCH_ARGS } = await import('./sidecar');
     const out = await renderCanvas(REQ);
     expect(out.ok).toBe(true);
     const url = new URL(h.endpoints[0]!);
@@ -158,13 +159,13 @@ describe('renderCanvas', () => {
   });
 
   it('leaves a bare DevTools endpoint as it is', async () => {
-    const { lockedEndpoint } = await import('./render-canvas');
+    const { lockedEndpoint } = await import('./sidecar');
     const raw = 'ws://127.0.0.1:9222/devtools/browser/abc';
     expect(lockedEndpoint(raw)).toBe(raw);
   });
 
   it('removes WebRTC in every frame before any canvas script', async () => {
-    const { renderCanvas } = await import('./render-canvas');
+    const { renderCanvas } = await import('./sidecar');
     await renderCanvas(REQ);
     expect(h.initScripts).toHaveLength(1);
     expect(h.initScripts[0]).toContain('RTCPeerConnection');
@@ -172,7 +173,7 @@ describe('renderCanvas', () => {
   });
 
   it('answers the frame with the CSP and DNS prefetch off; serves public files only', async () => {
-    const { renderCanvas, RENDER_ORIGIN } = await import('./render-canvas');
+    const { renderCanvas, RENDER_ORIGIN } = await import('./sidecar');
     h.subresources.push(
       `${RENDER_ORIGIN}/canvas-runtime/manifest.json`,
       `${RENDER_ORIGIN}/canvas-runtime/%2e%2e/%2e%2e/package.json`,
@@ -194,7 +195,7 @@ describe('renderCanvas', () => {
   });
 
   it('caps what the canvas prints while it is gathered', async () => {
-    const { renderCanvas } = await import('./render-canvas');
+    const { renderCanvas } = await import('./sidecar');
     h.consoleLines = 5000;
     const out = await renderCanvas(REQ);
     expect(out.ok).toBe(true);
@@ -204,7 +205,7 @@ describe('renderCanvas', () => {
   });
 
   it('caps what the canvas says about itself on this side, whatever its page did', async () => {
-    const { renderCanvas } = await import('./render-canvas');
+    const { renderCanvas } = await import('./sidecar');
     const stats: Record<string, unknown> = { ok: 1, bad: 'x' };
     for (let i = 0; i < 500; i++) stats[`k${i}${'y'.repeat(100)}`] = i;
     h.report = {
@@ -229,7 +230,7 @@ describe('renderCanvas', () => {
 
   it('the diagram probe is plain JavaScript a page runs as it is, on the kept built-ins', async () => {
     const { runInNewContext, createContext } = await import('node:vm');
-    const { diagramProbe, RENDER_INIT } = await import('./render-canvas');
+    const { diagramProbe, RENDER_INIT } = await import('./sidecar');
     const src = diagramProbe(true, 2, 5, 100);
     // No TypeScript helper a runner might add (the page has none).
     expect(src).not.toContain('__name');
@@ -263,7 +264,7 @@ describe('renderCanvas', () => {
   });
 
   it('refuses at once when the queue is full, and the slots come back', async () => {
-    const { renderCanvas } = await import('./render-canvas');
+    const { renderCanvas } = await import('./sidecar');
     let release!: () => void;
     h.hold = new Promise<void>((r) => (release = r));
     const running = Array.from({ length: 8 }, () => renderCanvas(REQ));

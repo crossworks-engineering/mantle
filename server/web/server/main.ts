@@ -54,10 +54,10 @@ const { embedBatch } = await import('@mantle/embeddings');
 registerRecallEmbedder(embedBatch);
 
 // The canvas renderer (Present): the tools that draw a canvas reach the
-// browser sidecar through it (packages/tools canvas-render-bridge.ts). Only
-// this process registers one; a worker's draw call gets a clear refusal.
+// browser sidecar through it (packages/tools canvas-render-bridge.ts).
+// server/api (the agent turns) and server/mcp register the same one.
 const { registerCanvasRenderer } = await import('@mantle/tools');
-const { renderCanvas } = await import('../lib/render-canvas');
+const { renderCanvas } = await import('@mantle/tools/canvas-render');
 registerCanvasRenderer(renderCanvas);
 
 // The one gate (arch A3c fix round 2, M-A): every narrower registered, or

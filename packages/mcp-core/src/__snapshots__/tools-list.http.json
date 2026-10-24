@@ -7351,7 +7351,7 @@
  },
  {
   "name": "diagram_guide",
-  "description": "Return the drawing instructions for one diagram type: the Mantle medium rules (static SVG, system fonts), the shared style guide, layout budget, core SVG primitives and output sizes, then the type's own guide, then this brain's site profile for the type when it keeps one (`files/diagrams/profiles/<type>.md`, which wins over the base guide). Call it after `diagram_types` and before drawing. Draw several types in one task? Pass `shared: false` after the first call to skip the shared rules you already hold. Reads only; changes nothing.",
+  "description": "Return the instructions for one diagram type. A type with a layout template (`flow`, `pid`) gets the template's data contract with a complete example: write data and draw it with `diagram_render`. Any other type gets the hand-drawing rules (Mantle medium rules, style guide, layout budget, SVG primitives, output sizes) and its own guide; `variant` picks one chart variant. Then this brain's site profile for the type when it keeps one (`files/diagrams/profiles/<type>.md`): its conventions win over the base guide. A long guide comes in parts: read `part` 2 and on when the reply says it continues. Several types in one task? `shared: false` skips the shared rules you already hold. Reads only.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7371,6 +7371,24 @@
       "excalidraw"
      ],
      "description": "Redrawing a diagram from another notation: adds its import guide and the fidelity ledger."
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "template",
+      "draw"
+     ],
+     "description": "A type with a layout template (flow, pid): 'template' (the default) gives its data contract; 'draw' the hand-drawing rules."
+    },
+    "variant": {
+     "type": "string",
+     "description": "One variant of a chart type, e.g. 'slopegraph' for line, 'dumbbell' for bar."
+    },
+    "part": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "The part to read when a reply says the guide continues, e.g. 2."
     },
     "shared": {
      "type": "boolean",
@@ -7449,7 +7467,7 @@
     },
     "source": {
      "type": "boolean",
-     "description": "Include the HTML source. False for the facts only."
+     "description": "Include the HTML source: by default yes, except for a template canvas (its data is what you edit)."
     }
    },
    "required": [
@@ -7477,7 +7495,7 @@
     "slide": {
      "type": "integer",
      "minimum": 1,
-     "maximum": 200,
+     "maximum": 60,
      "description": "A deck: the slide to show, e.g. 3."
     },
     "theme": {

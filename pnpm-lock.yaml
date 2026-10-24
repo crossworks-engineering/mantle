@@ -121,7 +121,7 @@ importers:
         specifier: ^0.28.2
         version: 0.28.2
       katex:
-        specifier: ^0.19.0
+        specifier: 0.19.0
         version: 0.19.0(patch_hash=c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a)
       konva:
         specifier: 10.7.1
@@ -952,6 +952,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/share-ui':
+        specifier: workspace:*
+        version: link:../share-ui
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
@@ -985,6 +988,9 @@ importers:
       firecrawl:
         specifier: ^4.44.0
         version: 4.44.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      puppeteer-core:
+        specifier: ^25.12.0
+        version: 25.12.0
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -1182,6 +1188,9 @@ importers:
       '@mantle/mcp-core':
         specifier: workspace:*
         version: link:../../packages/mcp-core
+      '@mantle/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@modelcontextprotocol/server':
         specifier: ^2.3.1
         version: 2.3.1
