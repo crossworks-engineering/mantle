@@ -391,7 +391,8 @@ async function renderInSlot(
           await r.respond({
             status: 200,
             headers: {
-              'content-security-policy': buildCanvasFrameCsp(RENDER_ORIGIN, []),
+              // No workers: a worker's console is outside the page's caps.
+              'content-security-policy': buildCanvasFrameCsp(RENDER_ORIGIN, [], { workers: false }),
               'x-dns-prefetch-control': 'off',
             },
             contentType: 'text/html; charset=utf-8',

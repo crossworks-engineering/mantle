@@ -36,8 +36,16 @@ import type { CanvasSize } from '@mantle/content-core/canvas';
  *    `base-uri 'none'`: no fetch, XHR, WebSocket, beacon, nested frame or
  *    post.
  *  - `frame-ancestors`: only the brain and the owner UI origins may frame it.
+ *  - Workers: blob workers in a live frame; none in a render (`workers:
+ *    false`), where a worker's console would reach the renderer past the
+ *    page's caps. No library of the runtime needs one (Plotly only for its
+ *    map tiles, which need the network).
  */
-export function buildCanvasFrameCsp(origin: string, frameAncestors: readonly string[]): string {
+export function buildCanvasFrameCsp(
+  origin: string,
+  frameAncestors: readonly string[],
+  opts: { workers?: boolean } = {},
+): string {
   const ancestors = [...new Set([origin, ...frameAncestors])].join(' ');
   return (
     'sandbox allow-scripts; ' +
@@ -49,7 +57,7 @@ export function buildCanvasFrameCsp(origin: string, frameAncestors: readonly str
     'media-src data: blob:; ' +
     "connect-src 'none'; " +
     "frame-src 'none'; " +
-    'worker-src blob:; ' +
+    (opts.workers === false ? "worker-src 'none'; " : 'worker-src blob:; ') +
     "base-uri 'none'; " +
     "form-action 'none'; " +
     `frame-ancestors ${ancestors}`
