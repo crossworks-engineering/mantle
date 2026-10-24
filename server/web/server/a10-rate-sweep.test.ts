@@ -381,7 +381,7 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   {
     row: 'POST /api/presents/:id/frame-ticket',
     cred: 'member',
-    limits: [members('member-canvas-frame-ticket', 30)],
+    limits: [login('member-canvas-frame-ticket', 30)],
   },
   {
     row: 'POST /api/apps/:id/db-broker',

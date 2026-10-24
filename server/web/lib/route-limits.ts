@@ -154,13 +154,10 @@ export const RATE_LIMITS = {
     'starts (frame tickets)',
     'Keep the app open instead of reloading it.',
   ),
-  // A view of a Present canvas, one ticket per frame load: the app rule.
-  memberCanvasFrameTicket: appLimit(
-    'member-canvas-frame-ticket',
-    30,
-    'canvas loads (frame tickets)',
-    'Keep the canvas open instead of reloading it.',
-  ),
+  // A view of a Present canvas, one ticket per frame load, per login: an
+  // Admin user's counts too, as an app's run (the app limits' rule). No
+  // app text: a canvas is not an app.
+  memberCanvasFrameTicket: perLogin('member-canvas-frame-ticket', 30),
   /** A canvas frame document, per address: its ticket is in its URL and the
    *  canvas can read it, so a replay within the ticket's life is bounded. */
   canvasFrame: perIp('canvas-frame', 120),
