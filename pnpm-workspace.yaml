@@ -16,6 +16,8 @@ allowBuilds:
   unrs-resolver: true
 
 minimumReleaseAgeExclude:
+  # The canvas runtime's KaTeX, pinned days after its release by Jason's
+  # decision of 2026-10-24 (docs/proposals/canvas-files.md section 13).
   - katex@0.19.1
 
 # Single pdfjs-dist across the tree. pdfjs compares API and Worker version
