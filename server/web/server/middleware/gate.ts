@@ -11,6 +11,7 @@ import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import { API_CACHE_DEFAULT, CACHE_CONTROL } from '../../lib/cache-control';
 import {
+  ADMIN_STEP_CALLERS,
   ANSWERED_AT_READ,
   assetQueryAsHanded,
   registerRouteSource,
@@ -170,13 +171,14 @@ function httpCaller(
   accessKey?: AccessKeyGrant,
 ): GateCaller {
   const startsAs = systemActor(row.actor ?? row.startsAs);
-  // The Admin step the gate enforces: an Admin login's view of the row's
-  // area (resolveHttpLogin), on a row whose handler reads the pipeline's
-  // caller. Anywhere else unscoped (null): the guard decides (adminRouteGate,
-  // reading the same view), as before; and so for a member, a credential
-  // with no login, or a lookup that failed, whose answer is the pipeline's
-  // (403 member-login, the 401, the failure thrown in the handler's place).
-  const admin = row.caller === 'owner' ? login.admin : null;
+  // The Admin step the gate enforces: the view of the row's area of the
+  // login the row's guard answers as (resolveHttpLogin), on every area row
+  // (S9 part 2: its caller is one of ADMIN_STEP_CALLERS, the boot refuses
+  // another). Unscoped (null) only where no view is read: a member, a
+  // credential with no login, a row with no area, whose answer is the
+  // pipeline's (403 member-login, the 401); a failed area read never gets
+  // here (the gate answers it in the handler's place).
+  const admin = row.area && row.caller && ADMIN_STEP_CALLERS.has(row.caller) ? login.admin : null;
   const slot = <T>(fn: () => Promise<T>) =>
     runInRequestSlot(admin ? () => enterRouteLogin(fn) : fn, { memo, startsAs });
   return {
@@ -390,7 +392,20 @@ function gateHandler(): MiddlewareHandler {
         // Step 1: the login, found once for the request (A4 step 3a),
         // its read seeding the memo the request slot is opened with.
         const memo = new Map<string, Promise<WorkspaceScope>>();
-        const login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
+        let login: Awaited<ReturnType<typeof resolveHttpLogin>>;
+        try {
+          login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
+        } catch (error) {
+          if (!(error instanceof RouteLoginError)) throw error;
+          // The Admin view of the row's area could not be read (S9 part 2):
+          // thrown in the handler's place, where the guard's own area read
+          // threw it before, so onError answers it with the CORS headers.
+          // Fail closed: no handler runs, nothing asks the area again.
+          ctx.callerError = { error: error.error };
+          await next();
+          if (ctx.callerError) throw ctx.callerError.error;
+          return null;
+        }
         const call = enterCall(
           httpCaller(row, via, login, memo, accessKey),
           routeRef(row),

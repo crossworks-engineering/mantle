@@ -33,7 +33,10 @@ export const policy = routePolicy({
     creates: true,
     item: { none: 'creates an item: ?ws= names where it lands' },
   },
-  DELETE: { class: 'content', item: { none: 'names no item in its path' } },
+  DELETE: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
 });
 
 const ListQuery = z.union([

@@ -44,7 +44,10 @@ import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  POST: { class: 'content', item: { none: 'names no item in its path' } },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
 });
 
 const Body = AppMetaFields.partial({ name: true }).extend({

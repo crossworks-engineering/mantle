@@ -19,7 +19,7 @@ import {
   type RoutePolicyDeclaration,
 } from '../lib/auth/route-declaration';
 import { READ_POSTS, WRITE_GETS } from '../lib/auth/route-scope';
-import { API_V1_ROUTES } from '../lib/api-v1';
+import { apiV1RouteOf } from '../lib/api-v1';
 import { servedMethods, type RouteManifestEntry, type RouteRow } from '../lib/auth/route-policy';
 
 /** The module a route file imports routePolicy from (its own name). */
@@ -77,6 +77,23 @@ export const OWN_THINGS: Readonly<Record<string, string>> = {
 export const BODY_NAMES_ITEMS = ['/api/grants/'] as const;
 
 /**
+ * The content writes with no path param that name an existing item in
+ * their body (the S9 part 1 audit, L2): a file delete by its ids, a share
+ * link and the contact shares of a node, an entity merge and dismiss, an
+ * app import over an existing app. "Names no item in its path" is true of
+ * them and says nothing: each takes ITEM_NONE_PLACEHOLDER, so the counter
+ * (itemNonePlaceholders) tracks them for S11b, which gives each its check.
+ */
+export const BODY_ITEM_WRITES: ReadonlySet<string> = new Set([
+  'DELETE /api/files/files',
+  'POST /api/shares',
+  'POST /api/shares/contacts',
+  'POST /api/entities/merge',
+  'POST /api/entities/dismiss',
+  'POST /api/apps/import',
+]);
+
+/**
  * Why a write names no item (`item: { none }`), from the row's facts where
  * they say it; else ITEM_NONE_PLACEHOLDER, which the lint can forbid once
  * each is decided. No row of the lists has an item check today
@@ -104,7 +121,7 @@ export function itemNoneReason(row: RouteRow): string {
     }
     return ITEM_NONE_PLACEHOLDER;
   }
-  if (params.length === 0) {
+  if (params.length === 0 && !BODY_ITEM_WRITES.has(`${row.method} ${row.pattern}`)) {
     return row.creates ? 'creates an item: ?ws= names where it lands' : 'names no item in its path';
   }
   return ITEM_NONE_PLACEHOLDER;
@@ -114,8 +131,7 @@ export function itemNoneReason(row: RouteRow): string {
  *  (api-v1.ts API_V1_ROUTES `base`), where it is no alias. */
 function v1Base(row: RouteRow): string | null {
   if (!row.pattern.startsWith('/api/v1/') || row.aliasOf) return null;
-  const m = row.method === 'HEAD' ? 'GET' : row.method;
-  return API_V1_ROUTES.find((r) => r.method === m && r.pattern === row.pattern)?.base ?? null;
+  return apiV1RouteOf(row.method, row.pattern)?.base ?? null;
 }
 
 /**

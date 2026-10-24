@@ -148,7 +148,10 @@ describe.skipIf(!hasManifest)('a guard read inside a login change (A4 step 3a, L
     const { SESSION_COOKIE_NAME } = await import('../../lib/auth-constants');
     cookieFor = (id) => `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(id).value}`;
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const { applyLoginChange } = await import('../../lib/login-update');
     const guard = async () => {

@@ -111,7 +111,10 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
     const { buildSessionCookie } = await import('../../lib/auth/tokens');
     adminCookie = `mantle_session=${buildSessionCookie(ADMIN_ID).value}`;
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     // What getOwnerOr401 answered before it went (A4 exit): the owner
     // guard's user.
     const { getOwnerOr401WithLogin } = await import('../../lib/auth/session');

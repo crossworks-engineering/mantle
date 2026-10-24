@@ -8,7 +8,10 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   GET: { class: 'content' },
-  POST: { class: 'content', item: { none: 'names no item in its path' } },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
 });
 
 /** GET /api/shares?nodeId=… → the node's active link (or null), with its

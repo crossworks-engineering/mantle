@@ -11,8 +11,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import { registerRoutes, type RouteEntry } from '../server/route-loader';
+import { registerRoutes as registerRoutesOf, type RouteEntry } from '../server/route-loader';
+import { standInDeclared } from '../server/test-support';
 import { routeParamsRefusal } from './route-params';
+
+/** Every route declares its policy (registerRoutes asks, S9 part 2). */
+const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+  registerRoutesOf(app, standInDeclared(m), rest[0], { standInModules: true, ...rest[1] });
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 

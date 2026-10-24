@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import {
   aliasMismatches,
   analyzeRouteFile,
+  exportedMethods,
   handlerPolicy,
   handlerSwitches,
   routeDirSegments,
@@ -29,7 +30,7 @@ import {
   type RouteFileReads,
 } from './route-callers';
 import { ROUTE_SWITCH_NAMES } from '../lib/auth/route-switches';
-import { DECLARED_METHODS, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
+import type { RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { READER_ANSWERS } from '../../../eslint-rules/session-guards.mjs';
 
 /** Every caller kind a reader reads (the one list, session-guards.mjs), in
@@ -38,9 +39,6 @@ const CALLER_KINDS = [...new Set(Object.values(READER_ANSWERS).map((r) => r.call
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
-
-/** The HTTP methods a route file exports (the declaration's own list). */
-const HTTP_METHODS = DECLARED_METHODS;
 
 type Entry = {
   /** Path relative to server/web (posix), e.g. app/api/health/route.ts */
@@ -75,25 +73,6 @@ function findRouteFiles(dir: string): string[] {
     else if (e.name === 'route.ts' || e.name === 'route.tsx') out.push(p);
   }
   return out;
-}
-
-function exportedMethods(src: string): string[] {
-  const found = new Set<string>();
-  for (const m of HTTP_METHODS) {
-    // export async function GET( / export function GET( / export const GET =
-    if (new RegExp(`export\\s+(async\\s+)?function\\s+${m}\\b`).test(src)) found.add(m);
-    if (new RegExp(`export\\s+const\\s+${m}\\s*=`).test(src)) found.add(m);
-    // export { handler as GET, handler as POST }
-    const braced = src.matchAll(/export\s*\{([^}]+)\}/g);
-    for (const b of braced) {
-      for (const piece of b[1]!.split(',')) {
-        const as = piece.match(/\bas\s+(\w+)\s*$/);
-        const name = (as ? as[1] : piece.trim())?.trim();
-        if (name === m) found.add(m);
-      }
-    }
-  }
-  return [...found];
 }
 
 /** What the generator reads of each route file (route-callers.ts
@@ -163,7 +142,7 @@ function toEntry(absFile: string): Entry {
   const src = readFileSync(absFile, 'utf8');
   const file = relative(webRoot, absFile).split('\\').join('/');
   const pattern = '/' + segments.join('/');
-  const methods = exportedMethods(src);
+  const methods = exportedMethods(src, file);
   const policy = handlerPolicy(src, file, { pattern, methods });
   // A declared alias is the route file the handler comes from (round 3
   // LOW-1): the boot checks the base is served and declared, this that it

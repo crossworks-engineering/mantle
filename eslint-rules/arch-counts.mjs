@@ -395,7 +395,6 @@ export function toolPolicySwept(path) {
 
 const ROUTE_ENTRY = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD) \/|\/api(?:\/|$))/;
 
-/** The route policy lists of `text`: lists holding 3 or more routes. */
 /**
  * The route declarations' undecided writes (plan v3.2 S9 part 1): each
  * `item: { none: ITEM_NONE_PLACEHOLDER }` the codemod wrote where a write
@@ -407,6 +406,7 @@ export function itemNonePlaceholderCount(code) {
   return code.split(ITEM_NONE_PLACEHOLDER).length - 1;
 }
 
+/** The route policy lists of `text`: lists holding 3 or more routes. */
 export function routePolicyLists(text) {
   return listLiterals(stripComments(text))
     .map((l) => stringsIn(l).filter((s) => ROUTE_ENTRY.test(s)).length)

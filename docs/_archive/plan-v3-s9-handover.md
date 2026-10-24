@@ -38,6 +38,7 @@ and the codemod writes all 418, so it runs after b2 merges. No migration.
   any-login routes outside every owner prefix) and `makesItems: false`
   (NO_ITEM_WRITES). `routePolicy` is the identity; only names and types,
   so the generator reads the module without loading the app.
+
 - server/web/scripts/route-callers.ts `handlerPolicy`: the generator reads
   the declaration from the code as data (literals only; a name, a call, a
   spread, a computed key, `let`, a re-export, an aliased import or a
@@ -93,13 +94,13 @@ and the codemod writes all 418, so it runs after b2 merges. No migration.
 
 `pnpm -C server/web exec tsx scripts/route-policy-codemod.ts --check`:
 
-| | |
-|---|---|
-| route files | 418 |
-| rows (methods served, HEAD included) | 819 |
-| declarations the codemod writes (methods declared; a HEAD the GET handler answers takes its GET's) | 572 |
-| rows equal to the lists' (field for field) | 819 of 819 |
-| rows it cannot say | 0 |
+|                                                                                                    |            |
+| -------------------------------------------------------------------------------------------------- | ---------- |
+| route files                                                                                        | 418        |
+| rows (methods served, HEAD included)                                                               | 819        |
+| declarations the codemod writes (methods declared; a HEAD the GET handler answers takes its GET's) | 572        |
+| rows equal to the lists' (field for field)                                                         | 819 of 819 |
+| rows it cannot say                                                                                 | 0          |
 
 The dry-run tree (a throwaway detached worktree of this branch, removed
 after): `--write` wrote 418 files (+2450 lines), a second `--check` wrote
@@ -247,7 +248,7 @@ commit, per the standing rule.
 
 1. Part 1, once feat/s7b-b2 has merged and route files are frozen for the
    wave: the codemod's `--check` (`pnpm -C server/web exec tsx
-   scripts/route-policy-codemod.ts`; expect 819 of 819 equal, a moved
+scripts/route-policy-codemod.ts`; expect 819 of 819 equal, a moved
    count names the merged routes), then `--write`,
    `route-policy-declared` to 'warn'. Decide the
    five lists of the section above (audit, body ceilings, the caller
@@ -355,13 +356,13 @@ contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
 
 ### Measured (the branch, main v0.300.132 under it)
 
-| | |
-|---|---|
-| route files | 418 |
-| rows | 819 |
-| declarations (methods declared) | 572 |
-| writes with `item: { none }` | 326 |
-| of them, the placeholder reason | 81 |
+|                                                              |            |
+| ------------------------------------------------------------ | ---------- |
+| route files                                                  | 418        |
+| rows                                                         | 819        |
+| declarations (methods declared)                              | 572        |
+| writes with `item: { none }`                                 | 326        |
+| of them, the placeholder reason                              | 81         |
 | rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
 
 The rows snapshot (route-policy.rows.json) changes by the `audit` field
@@ -477,16 +478,16 @@ from`, an imported handler exported by name; a wrapper is not one), and
 
 ### Measured (the branch at the round 3 fix, main v0.300.132 under it)
 
-| | |
-|---|---|
-| route files | 418 |
-| rows | 819 |
-| declarations (methods declared) | 572 |
-| aliases (`aliasOf`) / v1 rows with a `base` | 25 / 2 |
-| writes with `item: { none }` | 326 |
-| of them, the placeholder reason | 102 (was 81) |
-| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
-| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+|                                                              |                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| route files                                                  | 418                                                                        |
+| rows                                                         | 819                                                                        |
+| declarations (methods declared)                              | 572                                                                        |
+| aliases (`aliasOf`) / v1 rows with a `base`                  | 25 / 2                                                                     |
+| writes with `item: { none }`                                 | 326                                                                        |
+| of them, the placeholder reason                              | 102 (was 81)                                                               |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819                                                                 |
+| main's rows against the branch's, 'lists' mode               | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
 
 ### The dry run and the flip (a throwaway detached worktree)
 
@@ -586,15 +587,15 @@ file and no list's contents edited, ROUTE_POLICY_SOURCE stays 'lists'.
 
 ### Measured (the branch at the round 4 fix, main v0.300.132 under it)
 
-| | |
-|---|---|
-| route files | 418 |
-| rows | 819 |
-| declarations (methods declared) | 572 |
-| writes with `item: { none }` | 326 |
-| of them, the placeholder reason | 105 (was 102) |
-| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
-| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+|                                                              |                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| route files                                                  | 418                                                                        |
+| rows                                                         | 819                                                                        |
+| declarations (methods declared)                              | 572                                                                        |
+| writes with `item: { none }`                                 | 326                                                                        |
+| of them, the placeholder reason                              | 105 (was 102)                                                              |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819                                                                 |
+| main's rows against the branch's, 'lists' mode               | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
 
 ### The dry run (a throwaway detached worktree)
 
@@ -710,16 +711,16 @@ branch).
 
 ### Measured (the branch on main v0.300.135)
 
-| | |
-|---|---|
-| route files | 418 |
-| rows | 819 |
-| declarations (methods declared) | 572 |
-| writes with `item: { none }` | 326 |
-| of them, the placeholder reason | 105 |
-| aliases written | 25 files |
-| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
-| main's rows against the branch's, 'lists' mode | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
+|                                                              |                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| route files                                                  | 418                                                                        |
+| rows                                                         | 819                                                                        |
+| declarations (methods declared)                              | 572                                                                        |
+| writes with `item: { none }`                                 | 326                                                                        |
+| of them, the placeholder reason                              | 105                                                                        |
+| aliases written                                              | 25 files                                                                   |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819                                                                 |
+| main's rows against the branch's, 'lists' mode               | 819 of 819, every field of main's equal; the branch adds `audit` (11 rows) |
 
 ### The dry run (a throwaway detached worktree)
 
@@ -842,18 +843,18 @@ removed by its exact path.
 
 ### Measured (the branch on main v0.300.139)
 
-| | |
-|---|---|
-| route files written | 418 |
-| rows (methods served, HEAD included) | 819 |
-| declarations (methods declared) | 572 |
-| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
-| writes with `item: { none }` | 326 |
-| of them, the placeholder reason | 105, in 82 route files (pinned, `itemNonePlaceholders` 105) |
-| aliases (`aliasOf`) | 25, in 18 files |
-| `audit: 'own'` | 11 |
-| effect exceptions | 3 (one read on a POST, two writes on GETs) |
-| route files with no declaration | 0 |
+|                                                              |                                                             |
+| ------------------------------------------------------------ | ----------------------------------------------------------- |
+| route files written                                          | 418                                                         |
+| rows (methods served, HEAD included)                         | 819                                                         |
+| declarations (methods declared)                              | 572                                                         |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819                                                  |
+| writes with `item: { none }`                                 | 326                                                         |
+| of them, the placeholder reason                              | 105, in 82 route files (pinned, `itemNonePlaceholders` 105) |
+| aliases (`aliasOf`)                                          | 25, in 18 files                                             |
+| `audit: 'own'`                                               | 11                                                          |
+| effect exceptions                                            | 3 (one read on a POST, two writes on GETs)                  |
+| route files with no declaration                              | 0                                                           |
 
 ### Changed answers
 
@@ -876,41 +877,42 @@ next).
 
 On the Mac, DATABASE_URL unset:
 
-| gate | exit |
-|---|---|
-| `pnpm -r typecheck` | 0 |
-| `pnpm lint` | 0 (the one warning, the unused eslint-disable in contact-sharing-routes.db.test.ts, as on main) |
-| `pnpm format:check` | 0 |
-| `pnpm docs:check` | 0 |
-| `pnpm arch:check` | 0 (itemNonePlaceholders 105, routePolicyLists 14) |
-| `pnpm boot:smoke` | 0 (14 services link; the web entry loads all 418 route modules and holds each one's policy to its manifest entry) |
-| `pnpm -C server/web build` | 0 |
-| `vitest run server packages eslint-rules` | 0 (891 files passed, 305 skipped: the database files) |
+| gate                                      | exit                                                                                                              |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `pnpm -r typecheck`                       | 0                                                                                                                 |
+| `pnpm lint`                               | 0 (the one warning, the unused eslint-disable in contact-sharing-routes.db.test.ts, as on main)                   |
+| `pnpm format:check`                       | 0                                                                                                                 |
+| `pnpm docs:check`                         | 0                                                                                                                 |
+| `pnpm arch:check`                         | 0 (itemNonePlaceholders 105, routePolicyLists 14)                                                                 |
+| `pnpm boot:smoke`                         | 0 (14 services link; the web entry loads all 418 route modules and holds each one's policy to its manifest entry) |
+| `pnpm -C server/web build`                | 0                                                                                                                 |
+| `vitest run server packages eslint-rules` | 0 (891 files passed, 305 skipped: the database files)                                                             |
 
 On the workstation, a fresh clone of the pushed commit per suite, each on
 its own throwaway pgvector pg18 container (a free port checked, fsync
 off, removed by its exact name after), MANTLE_NARROW_SYSTEM=1,
 --maxWorkers=3:
 
-| suite | exit | files |
-|---|---|---|
-| vitest shard 1/2 | 0 | 598 passed |
-| vitest shard 2/2 | 1, then 0 | the first run: a6b-exit-sweep.db.test.ts, 2 tests (see below); the rerun of the whole shard alone: 598 passed |
-| test:actor-off | 0 | 169 |
-| test:actor-on | 0 | 34 |
-| test:edit-on | 0 | 46 |
-| test:runtime-role | 0 | 317 |
-| test:matrix | 0 | 4 |
-| test:serial | 0 | 1 |
+| suite             | exit      | files                                                                                                         |
+| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| vitest shard 1/2  | 0         | 598 passed                                                                                                    |
+| vitest shard 2/2  | 1, then 0 | the first run: a6b-exit-sweep.db.test.ts, 2 tests (see below); the rerun of the whole shard alone: 598 passed |
+| test:actor-off    | 0         | 169                                                                                                           |
+| test:actor-on     | 0         | 34                                                                                                            |
+| test:edit-on      | 0         | 46                                                                                                            |
+| test:runtime-role | 0         | 317                                                                                                           |
+| test:matrix       | 0         | 4                                                                                                             |
+| test:serial       | 0         | 1                                                                                                             |
 
-The shard 2 failure was not a timeout: the A6b exit sweep's narrow-reads
-and rule-in-query sections found one extra miss row on an owner turn's
-keyword query (an INSERT on nodes, "no Moderator of the home") while all
-eight suites ran at once (load average 13 to 17). Rerun alone the file
-passed (8 of 8), and the whole shard, rerun alone, passed (8017 of 8017).
-Nothing in this branch reaches that path (route files gain an export the
-lists mode does not read; the boot check runs at createApp), so it reads
-as an ordering flake of that sweep under load, named here for the audit.
+The shard 2 failure was a timeout, and what it left behind (corrected in
+part 2, the audit's L5): the A6b exit sweep's rule-in-query section timed
+out under the default test budget while all eight suites ran at once (load
+average 13 to 17), its body kept running, and one of its owner turns'
+statements (an INSERT on nodes, "no Moderator of the home") landed as a
+miss row in the next section, narrow-reads. Rerun alone the file passed (8
+of 8), and the whole shard, rerun alone, passed (8017 of 8017). Part 2
+gives rule-in-query 60s and makes a section that starts while another is
+still running fail with that name (see "S9 part 2", L6).
 
 ### Left (parts 2 and 3)
 
@@ -927,3 +929,234 @@ as an ordering flake of that sweep under load, named here for the audit.
 3. S11b: each of the 105 placeholders becomes an item check or a reason
    (`itemNonePlaceholders` goes down with each), then the lint forbids the
    string.
+
+## S9 part 2: the rows read from the declarations, the area check in the gate
+
+Branch feat/s9-p2, from origin/main at 84bc6026c (v0.300.140, part 1
+merged). Wave 5 freeze: no other lane edits route files or the lists. No
+migration, no SQL. The lists stay in place (part 3 deletes them), and a
+test still holds every declaration to what the lists say.
+
+### What changed, per input
+
+1. The hand-built test manifests declare. server/web/server/test-support.ts
+   `withRealPolicies` gives a test's entry on a pattern the app serves the
+   app's own declaration for the methods it serves (a named caller the
+   stand-in does not read is left out, so its row is the one the lists
+   built for it); `withRealBases` adds the served base of a v1 row for a
+   test of the rows alone; `standInPolicy` and `standInDeclared` declare the
+   loader's own routes (public, a write naming no item). gate.test.ts,
+   gate-caller, gate-login, gate-login-update, gate-route,
+   item-write-encoded, route-policy.test.ts (its gate describe and its
+   direct buildRoutePolicy calls), route-loader.test.ts,
+   route-params.test.ts and serve-listener.test.ts use them;
+   served-route.test.ts passes `standInModules`. requireRouteDeclarations
+   moved into registerRoutes: every caller's manifest is asked (the app's
+   boot and every test), fail closed; createApp's own call went.
+2. The flip: ROUTE_POLICY_SOURCE = 'declarations'. The lists stay; the
+   S9 part 1 tests still hold each declaration to the lists' answer and
+   every row to route-policy.rows.json (unchanged).
+3. session.ts auditMutation reads the row's `audit` ('own' skips the
+   generic api.write row), not AUDIT_SELF_LOGGED_PATHS by the path.
+4. The area check fold, part 0's planned diff with one addition:
+   - gate.ts httpCaller: `admin` is the login's view on every area row
+     whose caller is one of route-policy.ts ADMIN_STEP_CALLERS (owner,
+     ownerAsset); buildRouteRow refuses at boot an area row that is not
+     public and reads another kind (a cell in route-policy.test.ts; the
+     app's area rows are 354 owner, 2 ownerAsset, 8 public).
+   - session.ts resolveHttpLogin: the view is read for the login the
+     row's guard answers as: the request's Admin login, or on the asset
+     rows the login getOwnerForAsset answers as, in its order (the
+     session, an `?at=` token, the render cookie; assetViewLogin, the same
+     kept finds, no effect). A read that fails throws RouteLoginError;
+     the gate middleware answers it in the handler's place (onError, the
+     CORS headers kept), so no handler runs and nothing asks the area
+     again.
+   - session.ts adminRouteGate: the guard's own `holdsArea` (a second
+     requireArea) is gone. The addition: the guard reads the gate's view
+     (gateHeldArea) and refuses fail closed where the view does not answer
+     (another login than the view's, a login the request changed since,
+     no view). In the app the guard runs only as the gate's answer, before
+     any handler, so this never refuses there; it keeps the stand-in
+     test's answer for a guard read after the request changed a login.
+5. Round 4 audit notes: one effect helper (route-policy.ts declaredEffect,
+   a row's and an alias base's); one v1 lookup (api-v1.ts apiV1RouteOf,
+   HEAD as GET, read by route-policy.ts and the codemod's v1Base); one
+   reader of a route file's methods (route-callers.ts exportedMethods, TS
+   syntax, used by gen-route-manifest.ts in place of its regex; the
+   generated manifest is byte for byte main's). route-plumbing.test.ts
+   holds the lint's reading of each export form to it, which found one
+   drift: the lint counted `export type { PUT }` as a method; it no longer
+   does.
+6. The part 1 audit's LOWs:
+   - L1, for S11b: the placeholder's text is false for many of the 111;
+     most become `{ param: 'id', need }` matching the check their handler
+     already makes (the pages draft's assertItemRight, for one).
+   - L2: the six content writes that name an existing item in their body
+     take the placeholder (scripts/route-declarations.ts
+     BODY_ITEM_WRITES: DELETE /api/files/files, POST /api/shares, POST
+     /api/shares/contacts, POST /api/entities/merge, POST
+     /api/entities/dismiss, POST /api/apps/import). The codemod wrote the
+     six files (+24, -6). Left as "names no item in its path", read and
+     judged not body-item writes: POST /api/journal, /api/v1/journal,
+     /api/contacts, /api/apps/import-package, /api/formulas/seed (each
+     makes a new item) and PUT /api/app-nav/pins (the login's own pin
+     list).
+   - L3: route-policy-declared reports a policy not written out where it
+     is exported (a name, another call's argument, an export clause, a
+     re-export: `notLiteral`).
+   - L4: arch-counts.mjs's orphaned JSDoc is back on routePolicyLists.
+   - L5: part 1's flake text above, corrected.
+   - L6: a6b-exit-sweep: rule-in-query has 60s, and a section that starts
+     while another section's body still runs (its test timed out) fails
+     naming it and the misses it left.
+
+### Measured (the branch on main v0.300.140)
+
+|                                                                  |                                                |
+| ---------------------------------------------------------------- | ---------------------------------------------- |
+| route files                                                      | 418                                            |
+| rows                                                             | 819                                            |
+| rows from the declarations equal to the lists' (field for field) | 819 of 819                                     |
+| rows equal to route-policy.rows.json                             | 819 of 819 (the file unchanged)                |
+| declarations (methods declared)                                  | 572                                            |
+| `item: { none }` placeholders                                    | 111 in 88 files (was 105 in 82; the six of L2) |
+| codemod `--check` after the L2 write                             | 819 of 819, 111 placeholders, 0 files to write |
+
+### The answers, recorded on main first
+
+- The guard sweeps (non-DB, committed snapshots): a4-guard-sweep (all
+  eight files), role, auth, member, link-render, the A10 sweeps: pass on
+  the branch with every file under server/web/server/**snapshots** and
+  route-policy.rows.json byte for byte main's (git diff empty).
+- The area cells (new, server/web/lib/auth/s9-area-fold.db.test.ts): 74
+  cells, recorded on main's code (84bc6026c with only the test file and
+  the actor-on config laid over, the workstation) in warn and on; the two
+  records are equal. A sample of area rows (one or more of each area,
+  reads and writes) for an Admin user with the area, one without any, a
+  member and no credential; the asset row (GET and HEAD
+  /api/attachments/:id) for the session, an `?at=` token and the render
+  cookie of each; a failed area read, every ask and only the first.
+- The A6b exit sweep, the w6a route sweep, a4-head-logins,
+  admin-membership and the matrix ran on main (exit 0 each) and run on
+  the branch against the same committed records.
+- The narrow area sweep's report (MANTLE_SWEEP_REPORT) on main and on the
+  branch: 292 rows, every status and body equal (ids and stamps out).
+
+### Changed answers
+
+Every one stricter, none looser:
+
+1. A failed area read on an area row (requireArea throws once, then
+   answers): main asked again in the guard and answered the row (200 on
+   GET /api/keys and GET /api/users for the Admin user, the handler's 404
+   on the attachment, 403 'area' on GET /api/keys for the no-area Admin);
+   the branch answers the opaque 500 in the handler's place, the CORS
+   headers kept, no handler run. Cells: `GET /api/keys fail:once cookie`
+   (two cells of that name: the Admin user and the no-area Admin), `GET
+/api/users fail:once cookie`, `GET attachment fail:once cookie`
+   (CHANGED in the test, each named). An area read that fails every time:
+   500 on main and on the branch.
+2. A guard read after the request changed a login, on an area row: main
+   asked requireArea again; the branch refuses from the gate's view. The
+   answer of the one cell (gate-login.test.ts, "an Admin login whose area
+   is taken away") is the same 403 'area'; the area is asked once, not
+   twice. No route reaches this in the app.
+
+Unchanged by the fold: the asset rows. Main's guard asked the area of the
+`?at=` token's login (GET 403 'area' for the no-area Admin, 404 past the
+gate for the Admin user, HEAD 401 for any token); the gate's step 5 now
+holds the same login's view, and every asset cell is main's.
+
+### Pins
+
+- `itemNonePlaceholders` 105 to 111: the six body-item writes (L2),
+  with the note in scripts/arch-scoreboard.pins.json. Only down from here.
+- `historyCodeComments` 2345 to 2342: three comment lines that named a
+  step code went with the code they described.
+- routePolicyLists stays 14 (part 3).
+
+### Gates
+
+Mac, DATABASE_URL unset, on 8e7f2619f (the commits after it change only
+the area cells' normaliser and this file):
+
+| gate                                      | exit                                                                                     |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `pnpm -r typecheck`                       | 0                                                                                        |
+| `pnpm lint`                               | 0 (the one warning, the unused disable in contact-sharing-routes.db.test.ts, as on main) |
+| `pnpm format:check`                       | 0                                                                                        |
+| `pnpm docs:check`                         | 0                                                                                        |
+| `pnpm arch:check`                         | 0                                                                                        |
+| `pnpm boot:smoke`                         | 0 (14 services link)                                                                     |
+| `pnpm -C server/web build`                | 0                                                                                        |
+| `vitest run server packages eslint-rules` | 0 (891 files passed, 306 skipped)                                                        |
+
+Workstation, a fresh clone of the pushed commit per suite, own pgvector
+pg18 container on a checked free port, fsync off, MANTLE_NARROW_SYSTEM=1
+(off: 0), --maxWorkers=3; ~/s9p2:
+
+Suites on 8e7f2619f (the full set) and f21054a9b (reruns):
+
+| suite                                     | exit      | files                 | what failed                                                                                     |
+| ----------------------------------------- | --------- | --------------------- | ----------------------------------------------------------------------------------------------- |
+| vitest shard 1/2                          | 1         | 598 of 599            | the area cells' record (the tailnet peers, below)                                               |
+| vitest shard 2/2                          | 1         | 597 of 598            | gate-caller.test.ts, "a device token is stamped once" (below)                                   |
+| test:actor-off                            | 0         | 169                   |                                                                                                 |
+| test:actor-on                             | 1, then 0 | 35 of 35 on f21054a9b | the area cells' normaliser (fixed in f21054a9b)                                                 |
+| test:edit-on                              | 1, then 0 | 47 of 47 on f21054a9b | the cells' normaliser; edit-check.test.ts timed out once (load average 20), passed on the rerun |
+| test:runtime-role                         | 1         | 317 of 318            | the area cells' record (the tailnet peers)                                                      |
+| test:serial                               | 0         | 1                     |                                                                                                 |
+| test:matrix                               | 0         | 4                     |                                                                                                 |
+| switch off (MANTLE_NARROW_SYSTEM=0), full | 1         | 1195 of 1197          | the area cells' record; gate-caller.test.ts (the device token cell, and one timeout under load) |
+| narrow area sweep, report                 | 0         | 1                     | (twice: the report compared above)                                                              |
+
+The area cells' record failed only on `GET /api/ai-workers/config`: its
+body lists the box's tailnet peers, which the workstation answered with
+nine names on the main run and none on the branch run (the environment,
+not an answer). The cells now read that field as `<env>` and the two
+records were rewritten the same way (no machine name on the record); not
+rerun after that change.
+
+The narrow sweep's report: on the branch, two runs, every status and body
+of the 292 rows main's; only `wrote` moved, on a different row each run
+(PUT /api/profile/reminder-channel on the first; POST /api/skills, PUT
+/api/tools/:id/external-access, POST /api/updates/check on the second):
+the generic audit row is written fire and forget, and lands in the next
+row's capture under load. Read as noise of the capture, not an answer.
+
+### Open (read before merge)
+
+1. gate-caller.test.ts, "a device token is stamped once, by the
+   pipeline": an Admin user's device token on GET /api/users got 403
+   where 200 is expected, in shard 2 and in the switch-off run on the
+   workstation; it passes on the Mac every time (the file alone with the
+   switch on and off, and the full vitest run). Not seen on main. The
+   suspect is the fold's fail-closed read (session.ts gateHeldArea): if
+   anything in the device token's answer marks the request's logins
+   changed (a token rotation under the box's timing), the guard now
+   refuses from the view where main asked requireArea again and passed.
+   That would be a stricter answer that is wrong (a false 403), so it
+   blocks the merge until it is understood. Two ways out: find what
+   forgets the logins on that path, or let gateHeldArea ask the area
+   again where the logins changed (main's answer, the planned diff's
+   "drop the second ask" kept for every other read). Rerun the file alone
+   on the workstation first (`~/s9p2/run.sh <sha>
+t=server/web/server/middleware/gate-caller.test.ts`; the rerun
+   launched for this did not start).
+2. The cells' record of 650dda29c to f21054a9b (pushed) carries the
+   workstation's tailnet machine names in
+   server/web/lib/auth/**snapshots**/s9-area-fold.{warn,on}.txt; the head
+   removes them, the history does not. Squash those commits, or rewrite
+   the branch before the merge, so main never holds them.
+3. Rerun on the head: shard 1, runtime-role, switch off (the area cells
+   with `<env>`), and the area cells alone in warn and on.
+
+### Left (part 3)
+
+Delete the lists (route-scope.ts sets, any-login-routes.ts,
+member-routes.ts, ROUTE_GATES, AUDIT_SELF_LOGGED_PATHS, PUBLIC_LOGIN_ROWS,
+OWNER_AT_READ_ROWS, FRAME_ROWS, ADMIN_OPEN_ROWS, the key table's policy
+half), `listedFacts`, `source` and the test helpers' list paths
+(route-policy.test.ts's lists comparisons); rows held to
+route-policy.rows.json. S11b: the 111 placeholders (L1 above).

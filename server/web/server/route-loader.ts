@@ -3,6 +3,7 @@ import { matchedRoutes } from 'hono/route';
 import {
   ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
+  requireRouteDeclarations,
   compileSpelling,
   linkCors,
   servedMethods,
@@ -202,9 +203,17 @@ export function servedRoute(c: Context): ServedRoute | null {
 export function registerRoutes(
   app: Hono,
   manifest: RouteEntry[],
-  rows: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }> = buildRoutePolicy(manifest),
+  given?: ReadonlyMap<string, RouteRow> | Readonly<{ standIn: boolean }>,
   opts: Readonly<{ standInModules?: boolean }> = {},
 ): void {
+  // Every route declares its policy, one for each method it exports (S9
+  // part 2: here, so it holds for every caller, the app's boot and a
+  // test's hand-built manifest alike; fail closed). A test's routes on
+  // patterns the app serves take the real declarations
+  // (server/test-support.ts withRealPolicies), the loader's own a stand-in
+  // one (standInPolicy).
+  requireRouteDeclarations(manifest);
+  const rows = given ?? buildRoutePolicy(manifest);
   const policy = 'standIn' in rows ? buildRoutePolicy(manifest, rows) : rows;
   // A test's stand-in modules (`load: async () => ({ GET })`, no file)
   // export no policy, whatever the manifest's entry carries: named by the

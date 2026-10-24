@@ -1080,6 +1080,41 @@ export function handlerPolicy(
   }
 }
 
+/**
+ * The HTTP methods a route file exports (DECLARED_METHODS), read from its
+ * syntax: `export async function GET`, `export const GET =`, and an export
+ * clause, re-exported or not (`export { handler as GET }`, `export { GET }
+ * from '../notes/route'`); a type-only export is none. The one reader of
+ * them for the generator (gen-route-manifest.ts: the manifest's `methods`,
+ * which handlerPolicy and the rows read); the lint
+ * (route-plumbing.mjs route-policy-declared) reads the same forms in
+ * ESLint's tree, and route-plumbing.test.ts holds the two to each form.
+ */
+export function exportedMethods(src: string, file: string): string[] {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
+  const methods = DECLARED_METHODS as readonly string[];
+  const found = new Set<string>();
+  const exported = (n: ts.Node) =>
+    ts.canHaveModifiers(n) &&
+    (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name && exported(st)) {
+      if (methods.includes(st.name.text)) found.add(st.name.text);
+    } else if (ts.isVariableStatement(st) && exported(st)) {
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && methods.includes(d.name.text)) found.add(d.name.text);
+      }
+    } else if (ts.isExportDeclaration(st) && !st.isTypeOnly && st.exportClause) {
+      if (!ts.isNamedExports(st.exportClause)) continue;
+      for (const el of st.exportClause.elements) {
+        if (!el.isTypeOnly && methods.includes(el.name.text)) found.add(el.name.text);
+      }
+    }
+  }
+  return methods.filter((m) => found.has(m));
+}
+
 /** A handler a route file takes from another module, unchanged: the
  *  method it is exported as, to the module (`spec`) and the name it has
  *  there. */

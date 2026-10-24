@@ -222,7 +222,57 @@ describe('route-policy-declared', () => {
           filename: route,
           errors: [{ messageId: 'stray' }],
         },
+        // Not written out where it is exported (the S9 part 1 audit, L3):
+        // a name, another call's argument, an export clause, a re-export.
+        {
+          code: 'export async function GET() {}\nexport const policy = shared;',
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
+        {
+          code: 'export async function GET() {}\nexport const policy = routePolicy(base);',
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
+        {
+          code: `export async function GET() {}\nconst p = routePolicy({ GET: { class: 'content' } });\nexport { p as policy };`,
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
+        {
+          code: "export async function GET() {}\nexport { policy } from '../../notes/route';",
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
       ],
+    });
+  });
+
+  it("reads the methods the generator's one reader reads (scripts/route-callers.ts exportedMethods)", async () => {
+    const { exportedMethods } = await import('../server/web/scripts/route-callers');
+    const forms = [
+      'export async function POST() {}',
+      'export const PATCH = async () => null;',
+      'const handler = async () => null;\nexport { handler as DELETE };',
+      "export { GET } from '../../notes/route';",
+      "import { GET as base } from '../../notes/route';\nexport { base as HEAD };",
+      "export type { PUT } from './types';",
+      'function OPTIONS() {}',
+    ];
+    const all = [...forms, forms.join('\n')];
+    const read = (code: string) => exportedMethods(code, 'app/api/notes/route.ts');
+    expect(read(all.at(-1)!)).toEqual(['GET', 'POST', 'PATCH', 'DELETE', 'HEAD']);
+    // The lint's 'missing' names the methods it read: each form's must be
+    // the generator's, and a form that exports none is not asked.
+    tester.run('route-policy-declared', routePolicyDeclared, {
+      valid: all.filter((c) => read(c).length === 0).map((code) => ({ code, filename: route })),
+      invalid: all
+        .filter((c) => read(c).length > 0)
+        .map((code) => ({
+          code,
+          filename: route,
+          errors: [{ messageId: 'missing', data: { methods: [...read(code)].sort().join(', ') } }],
+        })),
     });
   });
 });

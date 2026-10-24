@@ -2,7 +2,16 @@ import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { gate } from './gate';
-import { registerPages, registerRoutes, type RouteModule } from '../route-loader';
+import {
+  registerPages,
+  registerRoutes as registerRoutesOf,
+  type RouteModule,
+} from '../route-loader';
+import { withRealPolicies } from '../test-support';
+
+/** Every route declares its policy (registerRoutes asks, S9 part 2). */
+const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+  registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
 
 const SECRET = 's'.repeat(48);
 

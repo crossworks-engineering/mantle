@@ -193,7 +193,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       { name: 'limited-bearer', headers: bearer(LIMITED) },
     ];
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const reads = async () => {
       counts.handled += 1;
@@ -567,7 +570,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // exports no PUT. No handler runs, so no guard ran before either: the
     // loader's 405 stands, with its CORS headers, though the answer threw.
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const apps = [true, false].map((read) => {
       const app = new Hono();
@@ -619,8 +625,13 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // runs, so no guard ran before either. The loader's 404 stands, with
     // the gate's CORS headers, the same as with the guard.
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
-    const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies, withRealBases } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
+    const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
+    const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
+      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
     const session = await import('../../lib/auth/session');
     const pattern = '/api/profile/*';
     const base = buildRoutePolicy([
@@ -645,6 +656,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
             methods: ['PUT'],
             catchAll: 'rest',
             catchAllOptional: false,
+            // No route file serves it: /api/profile's own declaration.
+            policy: withRealPolicies([{ pattern: '/api/profile', methods: ['PUT'] }])[0]!.policy,
             ...(read ? { reads: ownerReads(['PUT']) } : {}),
             load: async () => ({
               PUT: async () => {
@@ -704,7 +717,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('ownerCallerWithSource and ownerCallerWithLogin read what their guards answer', async () => {
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const onError = () => Response.json({ error: 'internal error' }, { status: 500 });
     const pairs: Array<[name: string, read: () => unknown, guard: () => Promise<unknown>]> = [
@@ -769,7 +785,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('the member, any-login and chat rows answer every credential as their guards do (part 5)', async () => {
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     // Each kind: its reader, and the guard it replaced.
@@ -925,7 +944,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // now, and these cells hold it to the one row. workspaceCaller() is the
     // projection both paths answer with.
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const { workspaceCaller } = await import('../../lib/workspaces');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
@@ -1012,7 +1034,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // that reads nothing) gets the handler's off answer, and the others the
     // gate's refusal, as before.
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     const { routeManifest } = await import('../route-manifest.gen');
@@ -1133,7 +1158,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('an area row: the gate carries the Admin view, step 5 refuses without the area (part 4)', async () => {
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const { currentCaller } = await import('@mantle/db');
     const app = new Hono();
@@ -1262,7 +1290,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('the byte routes and the frame documents answer every credential as their guards did (hand batch B)', async () => {
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const tokens = await import('../../lib/auth/tokens');
     const { RENDER_COOKIE_NAME } = await import('../../lib/auth-constants');
@@ -1442,7 +1473,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('the answers taken at the read: what the handler does first stays first (hand batch B)', async () => {
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const { answerAppError } = await import('../app-error');
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
@@ -1601,7 +1635,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   });
 
   it('a public row reads only a public kind, and a public kind only a public row (hand batch B)', async () => {
-    const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
+    const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
+    const { withRealBases } = await import('../test-support');
+    const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
+      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
     const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
       buildRoutePolicy([
         {
@@ -1641,8 +1678,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   });
 
   it('the kinds of hand batch B are read only on the rows named for them (fix round 1, M2)', async () => {
-    const { buildRoutePolicy, OWNER_AT_READ_ROWS, PUBLIC_LOGIN_ROWS } =
-      await import('../../lib/auth/route-policy');
+    const {
+      buildRoutePolicy: buildRoutePolicyOf,
+      OWNER_AT_READ_ROWS,
+      PUBLIC_LOGIN_ROWS,
+    } = await import('../../lib/auth/route-policy');
+    const { withRealBases } = await import('../test-support');
+    const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
+      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
     const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
       buildRoutePolicy([
         {
@@ -1652,15 +1695,21 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           ...(gone ? { gone: [method] } : {}),
         },
       ]);
-    // Served: each named row, its HEAD with its GET, the v1 asset rows.
+    // Served: each named row, its HEAD with its GET, the v1 asset rows
+    // (each built with its served base: v1Rows counts the v1 rows alone).
+    const v1Rows = (rows: ReadonlyMap<string, unknown>) =>
+      [...rows.keys()].filter((k) => k.includes(' /api/v1/')).length;
     expect(
       reads('/api/auth/whoami', 'GET', 'publicLogin').get('HEAD /api/auth/whoami')?.caller,
     ).toBe('publicLogin');
     expect(reads('/api/oauth/authorize', 'POST', 'publicLogin').size).toBe(1);
     expect(reads('/api/pages/:id', 'PATCH', 'ownerAtRead').size).toBe(1);
-    expect(reads('/api/v1/pages/:id', 'PATCH', 'ownerAtRead').size).toBe(1);
-    expect(reads('/api/v1/files/:id', 'GET', 'readerAsset').size).toBe(2);
-    expect(reads('/api/v1/files/:id/download', 'GET', 'readerAsset').size).toBe(2);
+    // (Its served base, /api/pages/:id, is built with it: withRealBases.)
+    expect(
+      reads('/api/v1/pages/:id', 'PATCH', 'ownerAtRead').get('PATCH /api/v1/pages/:id')?.caller,
+    ).toBe('ownerAtRead');
+    expect(v1Rows(reads('/api/v1/files/:id', 'GET', 'readerAsset'))).toBe(2);
+    expect(v1Rows(reads('/api/v1/files/:id/download', 'GET', 'readerAsset'))).toBe(2);
     expect(reads('/api/export/:id', 'GET', 'ownerAsset').get('HEAD /api/export/:id')?.caller).toBe(
       'ownerAsset',
     );
@@ -1701,7 +1750,11 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       expect(
         () => reads(pattern, method, caller, gone === true),
         `${method} ${pattern} ${caller}`,
-      ).toThrow(new RegExp(`the ${caller} guard does not serve its row`));
+        // A method its route file does not serve declares no policy: the
+        // boot refuses it before it asks the guard (S9 part 2).
+      ).toThrow(
+        new RegExp(`the ${caller} guard does not serve its row|declares no policy for ${method}`),
+      );
     }
     // The app's rows of each kind are its named rows.
     const { routeManifest } = await import('../route-manifest.gen');
@@ -1729,7 +1782,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // (The app's rows refuse that at boot, buildRouteRow M1; a stand-in
     // row is let through to pin the read's own refusal.)
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const app = new Hono();
     app.use('*', gate());
     registerRoutes(
@@ -1751,7 +1807,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   });
 
   it("a row a kind's guard does not serve cannot read that kind's caller", async () => {
-    const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
+    const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
+    const { withRealBases } = await import('../test-support');
+    const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
+      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
     // An any-login route (its own guard), a member route, a public route.
     for (const pattern of ['/api/shell', '/api/member/mcp', '/api/auth/whoami']) {
       expect(() =>
@@ -1761,7 +1820,13 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // A catch-all route keeps its guard.
     expect(() =>
       buildRoutePolicy([
-        { pattern: '/api/docs/:collection/*', methods: ['GET'], reads: ownerReads(['GET']) },
+        {
+          pattern: '/api/docs/:collection/*',
+          methods: ['GET'],
+          reads: ownerReads(['GET']),
+          // No route file serves it: declared here, a content read.
+          policy: { GET: { class: 'content' } },
+        },
       ]),
     ).toThrow(/is a catch-all/);
     // Each other kind only on the rows of its own list (A4 step 3b part 5):

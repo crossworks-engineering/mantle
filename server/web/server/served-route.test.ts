@@ -62,7 +62,8 @@ describe.skipIf(!hasManifest)('servedRoute finds the row of the handler Hono run
       c.res.headers.set('x-found', row ? row.key : 'none');
     });
     // The real rows: registerRoutes builds ROUTE_POLICY from the manifest.
-    registerRoutes(app, manifest);
+    // Stand-in modules (no `policy` export) over the real rows.
+    registerRoutes(app, manifest, undefined, { standInModules: true });
   });
 
   it('for every route, method and tricky param value', async () => {

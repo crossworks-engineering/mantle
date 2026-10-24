@@ -107,7 +107,10 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     process.env.MANTLE_DETACHED_DEV = '1';
     process.env.MANTLE_API_TOKEN = `${b64url(Buffer.from(JSON.stringify({ uid: OWNER })))}.x`;
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const getOwnerOr401 = ownerGuard;
     const report = async () => Response.json(seen());
     // A call nested inside the request with a caller of its own, then the
@@ -136,6 +139,14 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
       { pattern: '/api/v1/search', methods: ['GET'], load: async () => ({ GET: report }) },
       {
         pattern: '/api/v1/pages/:id',
+        methods: ['GET', 'PATCH'],
+        load: async () => ({ GET: report, PATCH: report }),
+      },
+      // The bases the v1 rows declare (served, as in the app's manifest).
+      { pattern: '/api/pages', methods: ['GET'], load: async () => ({ GET: report }) },
+      { pattern: '/api/search', methods: ['GET'], load: async () => ({ GET: report }) },
+      {
+        pattern: '/api/pages/:id',
         methods: ['GET', 'PATCH'],
         load: async () => ({ GET: report, PATCH: report }),
       },

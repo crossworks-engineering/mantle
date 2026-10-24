@@ -752,3 +752,28 @@ describe('the switches a route file declares (A4 hand batch A fix round 1)', () 
     expect(sw(`export { GET } from '../dev/route';`, follow)).toEqual({});
   });
 });
+
+describe('exportedMethods: the one reader of the methods a route file exports', () => {
+  it('reads functions, consts and export clauses, re-exported or not; never a type', async () => {
+    const { exportedMethods } = await import('./route-callers');
+    const src = [
+      "import { GET as base } from '../notes/route';",
+      'export async function POST() {}',
+      'export const PATCH = async () => null;',
+      'const handler = async () => null;',
+      'export { handler as DELETE };',
+      "export { GET } from '../notes/route';",
+      "export type { PUT } from './types';",
+      'export const policy = {};',
+      'function OPTIONS() {}',
+      'export { base as HEAD };',
+    ].join('\n');
+    expect(exportedMethods(src, 'app/api/x/route.ts')).toEqual([
+      'GET',
+      'POST',
+      'PATCH',
+      'DELETE',
+      'HEAD',
+    ]);
+  });
+});

@@ -183,7 +183,10 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
       return `Bearer ${t.value}`;
     };
     const { gate } = await import('./gate');
-    const { registerRoutes } = await import('../route-loader');
+    const { registerRoutes: registerRoutesOf } = await import('../route-loader');
+    const { withRealPolicies } = await import('../test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const session = await import('../../lib/auth/session');
     const unread = async () => Response.json(seen());
     const twice = async () => {
@@ -287,7 +290,14 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
       { pattern: '/api/auth/logout', methods: ['POST'], load: async () => ({ POST: disables }) },
       { pattern: '/api/users/:id', methods: ['PATCH'], load: async () => ({ PATCH: demotes }) },
       // A frame document: its handler reads no guard (L4).
-      { pattern: '/api/apps/:id/frame', methods: ['GET'], load: async () => ({ GET: unread }) },
+      {
+        pattern: '/api/apps/:id/frame',
+        methods: ['GET'],
+        // Its caller is the frame ticket (the row's declaration names it):
+        // the gate finds no login for it (findsNoLogin).
+        reads: { GET: 'frame' as const },
+        load: async () => ({ GET: unread }),
+      },
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
@@ -430,7 +440,7 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'member-login' });
   });
 
-  it('an Admin login whose area is taken away, its role kept: the guard asks again (L-a)', async () => {
+  it('an Admin login whose area is taken away, its role kept: the guard refuses it (L-a)', async () => {
     const res = await app.request('/api/users', {
       method: 'POST',
       headers: { cookie: cookieFor(ADMIN) },
@@ -438,8 +448,10 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     // The role is still admin, so only the area answers: from the gate's
     // view the second read would let the login in.
     expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'area' });
-    // The gate's question, and the second read's own.
-    expect(counts.areas).toBe(2);
+    // The gate's question only (S9 part 2): the second read, after the
+    // request changed a login, is refused from the gate's view, fail
+    // closed, with the answer the area asked again gave (was 2 asks).
+    expect(counts.areas).toBe(1);
   });
 
   it('a forgotten find that fails after a fresh one was kept leaves the fresh one (L-c)', async () => {

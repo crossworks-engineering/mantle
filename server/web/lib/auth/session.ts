@@ -54,7 +54,6 @@ import {
 } from './login-row';
 import {
   isDetachedDev,
-  isAuditSelfLogged,
   isRenderAssetPath,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
@@ -887,6 +886,9 @@ const HTTP_LOGINS = 'httpLogins';
 /** The key of the Admin view of the row's area the gate resolved for the
  *  login (resolveHttpLogin), in the caller's facts. */
 const HTTP_ADMIN = 'httpAdmin';
+/** The key of the login that view is of (the guard's login: the request's
+ *  own, or on an asset row the one its asset guard answers as). */
+const HTTP_ADMIN_FOR = 'httpAdminFor';
 
 /** The request's logins, as the gate bound them on the caller; a fresh set
  *  outside a routed request (and inside a call nested in one with a caller
@@ -928,10 +930,10 @@ export type HttpLogin = Readonly<{
   role: LoginRole | null;
   /** The mode its actor is named in (a read key: ro). */
   mode: 'rw' | 'ro' | null;
-  /** What the login holds of the row's Admin area (the Admin step's
-   *  answer: the gate's step 5 on a row whose handler reads the pipeline's
-   *  caller, else read by adminRouteGate), for an Admin login on a row
-   *  that manages an area; else null (the guard asks requireArea itself). */
+  /** What the login the row's guard answers as holds of the row's Admin
+   *  area (the Admin step's answer: the gate's step 5 holds every area row
+   *  to it, S9 part 2), for an Admin login on a row that manages an area;
+   *  else null (a member, no login, a row with no area). */
   admin: AdminView | null;
   /** The facts the caller carries: the logins and the Admin view, under
    *  their keys. */
@@ -973,31 +975,78 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
     return none;
   }
   const res = found.resolved;
-  if (!res) return none;
-  const loginId = res.loginId;
+  // The Admin step's answer on a row that manages an area (S9 part 2: the
+  // guard's own area check folded into the gate's step 5): requireArea's,
+  // for the login the row's guard answers as: the request's Admin login,
+  // or on an asset row the one its asset guard answers as (assetViewLogin).
+  // The view holds the row's area or nothing; a login without it is
+  // refused ('area', whether or not it is in the Admin workspace: the
+  // guard's rule) by step 5 (httpCaller, every area row's caller). A read
+  // that fails is the request's failure, answered in the handler's place
+  // (RouteLoginError): never a pass, never asked again by the guard.
+  // (A row whose caller the gate does not answer, caller null, is a test's
+  // stand-in route only, the boot refuses one in the app: its view is read
+  // as the asset guard would, which is the session's Admin login first.)
+  const adminId = res?.kind === 'admin' ? res.user.actor.id : null;
+  const viewFor = row.area
+    ? row.caller === 'ownerAsset' || row.caller === null
+      ? await assetViewLogin(row, logins, adminId)
+      : adminId
+    : null;
   let admin: AdminView | null = null;
-  // The Admin step's answer for an Admin login on a row that manages an
-  // area: requireArea's, as adminRouteGate asked it. The view holds the
-  // row's area or nothing; a login without it is refused ('area', whether
-  // or not it is in the Admin workspace: the guard's rule): by the gate's
-  // step 5 on a row whose handler reads the pipeline's caller (A4 step 3b
-  // part 4, httpCaller), by adminRouteGate on the others.
-  if (row.area && res.kind === 'admin') {
+  if (row.area && viewFor) {
+    let holds: boolean;
     try {
-      const holds = await loginHoldsArea(loginId, row.area);
-      admin = { holdsAdmin: true, areas: new Set(holds ? [row.area] : []) };
-    } catch {
-      admin = null;
+      holds = await loginHoldsArea(viewFor, row.area);
+    } catch (error) {
+      throw new RouteLoginError(error);
     }
+    admin = { holdsAdmin: true, areas: new Set(holds ? [row.area] : []) };
+  }
+  const view = admin ? { [HTTP_ADMIN]: admin, [HTTP_ADMIN_FOR]: viewFor } : {};
+  if (!res) {
+    return admin ? { ...none, admin, facts: Object.freeze({ ...none.facts, ...view }) } : none;
   }
   return {
     logins,
-    loginId,
+    loginId: res.loginId,
     role: res.kind,
     mode: found.mode,
     admin,
-    facts: Object.freeze({ [HTTP_LOGINS]: logins, ...(admin ? { [HTTP_ADMIN]: admin } : {}) }),
+    facts: Object.freeze({ [HTTP_LOGINS]: logins, ...view }),
   };
+}
+
+/**
+ * The login an asset row's guard answers as (getOwnerForAsset, in its
+ * order: the session's Admin login, `adminId`, a valid `?at=` asset token's, the render
+ * cookie's on a byte route a render page loads), found with no effect, as
+ * the guard finds it (the same kept finds: RequestLogins); null where the
+ * guard refuses (no credential it takes, a token it refuses). The gate's
+ * Admin step holds the row's area for this login (S9 part 2).
+ */
+async function assetViewLogin(
+  row: RouteRow,
+  logins: RequestLogins,
+  adminId: string | null,
+): Promise<string | null> {
+  if (adminId) return adminId;
+  const req = assetRequest(row);
+  const url = new URL(req.url);
+  try {
+    if (url.searchParams.get('at')) {
+      const asset = await logins.ownerAsset(req.url);
+      if (asset === 'refused') return null;
+      if (asset) return asset.actor.id;
+    }
+    if (req.method === 'GET' && isRenderAssetPath(url.pathname)) {
+      const render = await logins.render();
+      if (render) return render.user.actor.id;
+    }
+  } catch (error) {
+    throw new RouteLoginError(error);
+  }
+  return null;
 }
 
 // ── The caller the pipeline answers (arch A4 step 3b) ───────────────────────
@@ -1593,19 +1642,20 @@ function pipelineAnswer<K extends RouteCaller>(
   return answer as Extract<PipelineAnswer, { caller: K }>;
 }
 
-/** Whether `loginId` holds `area`: the Admin view the gate resolved for
- *  this login on this row, else requireArea's answer (loginHoldsArea). */
-async function holdsArea(
-  loginId: string,
-  area: import('@mantle/client-types').WorkspaceArea,
-): Promise<boolean> {
+/**
+ * Whether the gate's Admin view of the row's area answers `loginId` holding
+ * `area` (S9 part 2): the view resolveHttpLogin read for this login, which
+ * the gate's step 5 held the row to. Never asked again: a guard read the
+ * view does not answer (another login than the view's, a login the request
+ * changed since, forgetRequestLogins; no view, a test's stand-in route) is
+ * no, fail closed.
+ */
+function gateHeldArea(loginId: string, area: import('@mantle/client-types').WorkspaceArea) {
   const caller = currentCaller();
   const logins = boundLogins(caller);
-  // The gate's view, unless the request has changed a login since (forget).
-  const view =
-    logins && !logins.changed ? (caller?.facts?.[HTTP_ADMIN] as AdminView | undefined) : null;
-  if (view && caller?.loginId === loginId) return view.areas.has(area);
-  return loginHoldsArea(loginId, area);
+  if (!logins || logins.changed) return false;
+  const view = caller?.facts?.[HTTP_ADMIN] as AdminView | undefined;
+  return !!view && caller?.facts?.[HTTP_ADMIN_FOR] === loginId && view.areas.has(area);
 }
 
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
@@ -1656,15 +1706,18 @@ export async function requireOwnerForRender(nodeId: string): Promise<SessionUser
  * x-mantle-method/-path headers, which clients can't spoof, and the routed
  * request's row: auditsAsWrite) it fire-and-forgets a generic `api.write`
  * row recording who did what — unless the route logs its own richer event
- * (`AUDIT_SELF_LOGGED_PATHS`). Reads aren't logged; a GET whose row is a
+ * (its row's `audit: 'own'`, the route file's declaration). Reads aren't logged; a GET whose row is a
  * write (a connector's OAuth callback, WRITE_GETS) is.
  */
 async function auditMutation(user: SessionUser, skip?: (path: string) => boolean): Promise<void> {
   const h = await headers();
   const method = (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase();
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
-  const mutating = auditsAsWrite(method, currentRoute()?.effect ?? null);
-  if (!mutating || isAuditSelfLogged(path) || skip?.(path)) return;
+  const route = currentRoute();
+  const mutating = auditsAsWrite(method, route?.effect ?? null);
+  // A route that logs its own richer event: its row says so (`audit: 'own'`,
+  // its declaration; S9 part 2, was AUDIT_SELF_LOGGED_PATHS by the path).
+  if (!mutating || route?.audit === 'own' || skip?.(path)) return;
   // A write made with an API key names the key (never its secret).
   const key = getRequestContext()?.accessKey;
   auditFireAndForget({
@@ -1824,11 +1877,11 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   // class is step 3 (no policy), an area the login lacks step 5.
   if (!cls) return accessRefusal(new AccessError('unclassified'));
   if (cls.kind === 'area') {
-    // On a row whose handler reads the pipeline's caller the gate's step 5
-    // refused a login without the area already (A4 step 3b part 4); this
-    // is the guard's own check, for the rows that still call it.
-    // TODO(A4 exit): folds into the gate's step 5 when the last guard goes.
-    if (!(await holdsArea(loginId, cls.area))) {
+    // The gate's step 5 refused a login without the row's area (S9 part 2:
+    // every area row's caller, route-policy.ts ADMIN_STEP_CALLERS). The
+    // guard reads the view the gate held it to and asks no area again; a
+    // read that view does not answer is refused (gateHeldArea).
+    if (!gateHeldArea(loginId, cls.area)) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }
     noteRequestSystem('area');

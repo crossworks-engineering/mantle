@@ -111,9 +111,10 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
   });
 
   it("the manifest's declarations: one for every route file, each the lists' own", () => {
-    // Part 1: every route file declares; the lists stay the rows' source
-    // until part 2's flip.
-    expect(ROUTE_POLICY_SOURCE).toBe('lists');
+    // Every route file declares, and since part 2's flip the declarations
+    // are the rows' source; until part 3 deletes the lists each one is
+    // still held to what the lists say.
+    expect(ROUTE_POLICY_SOURCE).toBe('declarations');
     expect(manifest.filter((e) => e.policy === undefined).map((e) => e.pattern)).toEqual([]);
     for (const e of manifest) {
       expect(e.policy, e.pattern).toEqual(entryDeclaration(lists, e));

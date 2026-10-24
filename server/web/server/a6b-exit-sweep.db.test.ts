@@ -108,6 +108,8 @@ const PEND_ASKER: Record<string, string | null> = {
 /** Main's recorded lines of the section being compared, by cell (the F4
  *  changes compare a write context's answer with main's read one). */
 let RECORDED = new Map<string, string>();
+/** The section whose body is running (null between sections). */
+let RUNNING: string | null = null;
 
 /** The Admin logins whose write requests F4 moved into their scope. */
 const F4_ADMIN_WRITE = /(?:^| )write:(owner|adminAll|adminNoUsers)$/;
@@ -755,16 +757,36 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     body: (cell: (k: string, v: unknown) => void) => Promise<void>,
   ) => {
     const cells: string[] = [];
+    // A section whose test timed out may still be running its body: its
+    // statements would land their misses in this section's cells (the S9
+    // part 1 audit, L6). Said here, at the start, with what it left, never
+    // read as this section's answers.
+    if (RUNNING !== null) {
+      const left = [...new Set(m.takeActorMisses().map((x) => `${x.source} ${x.check}`))];
+      throw new Error(
+        `a6b sweep: section ${RUNNING} is still running (its test timed out?); ${name} would read its misses (${left.length}: ${left.join('; ') || 'none yet'})`,
+      );
+    }
+    RUNNING = name;
     // A cell carries the check misses (warn: what on refuses) and the
     // write role's gaps its own statements met, taken after each cell.
     m.takeActorMisses();
     m.takeWriteRoleGaps();
-    await body((k, v) => {
-      const misses = [...new Set(m.takeActorMisses().map((x) => `${x.source} ${x.check}`))].sort();
-      const gaps = [...new Set(m.takeWriteRoleGaps())].sort();
-      const out = misses.length || gaps.length ? { v, misses, gaps } : v;
-      cells.push(`${k} => ${JSON.stringify(norm(out))}`);
-    });
+    try {
+      await runBody();
+    } finally {
+      RUNNING = null;
+    }
+    async function runBody() {
+      await body((k, v) => {
+        const misses = [
+          ...new Set(m.takeActorMisses().map((x) => `${x.source} ${x.check}`)),
+        ].sort();
+        const gaps = [...new Set(m.takeWriteRoleGaps())].sort();
+        const out = misses.length || gaps.length ? { v, misses, gaps } : v;
+        cells.push(`${k} => ${JSON.stringify(norm(out))}`);
+      });
+    }
     const path = snapOf(name);
     if (RECORD.has(name) || RECORD.has('all')) {
       writeFileSync(path, `${cells.join('\n')}\n`);
@@ -1264,7 +1286,9 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         }
       }
     });
-  });
+    // Its own budget (the S9 part 1 audit, L6): the full-role app routes
+    // take longer than the default under a loaded box.
+  }, 60_000);
   // ── narrow reads: connectors, contact sharing, file names, export links,
   //    access log names, runs, keyword statistics, the app trash ─────────
   it('narrow-reads', async () => {

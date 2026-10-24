@@ -36,6 +36,7 @@ import {
 } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { reExportedHandlers, specPattern } from '../../scripts/route-callers';
+import { withRealBases } from '../../server/test-support';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
 import { isPublicPath } from '../auth-constants';
@@ -52,7 +53,8 @@ import {
 } from './route-scope';
 import {
   anyLoginRow,
-  buildRoutePolicy,
+  ADMIN_STEP_CALLERS,
+  buildRoutePolicy as buildRoutePolicyOf,
   buildRouteRow,
   currentRoute,
   memberOpenRead,
@@ -70,6 +72,12 @@ import {
   spellsPattern,
   type RouteRow,
 } from './route-policy';
+
+/** The hand-built manifests of these tests carry the real declarations of
+ *  the patterns the app serves (S9 part 2: the rows' source); a pattern it
+ *  does not serve stays undeclared, as a test of the boot's refusal. */
+const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
+  buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '../..');
@@ -121,9 +129,9 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
 
   it("S9 part 1: every route file declares, and its declarations build the lists' rows", () => {
     // Field for field, every row (route-policy-declarations.test.ts holds
-    // the same rows to __snapshots__/route-policy.rows.json). The lists
-    // stay the source until part 2's flip.
-    expect(ROUTE_POLICY_SOURCE).toBe('lists');
+    // the same rows to __snapshots__/route-policy.rows.json). The rows'
+    // source since part 2's flip; the lists stay, held to it, until part 3.
+    expect(ROUTE_POLICY_SOURCE).toBe('declarations');
     const undeclared = (manifest as Array<{ pattern: string; policy?: unknown }>)
       .filter((e) => e.policy === undefined)
       .map((e) => e.pattern);
@@ -654,10 +662,30 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     // A route that exports its own HEAD: the HEAD row is that handler's,
     // as the lists name it (none name a HEAD), with no switch, no read and
     // no logins of its GET's.
+    // Its HEAD declares its own policy (the app has none: no route file
+    // exports a HEAD): its GET's class, open to no login list.
+    const getOf = (pattern: string) =>
+      (manifest as Array<{ pattern: string; policy?: Record<string, unknown> }>).find(
+        (e) => e.pattern === pattern,
+      )!.policy!.GET as Record<string, unknown>;
+    const ownHead = (pattern: string) => {
+      const { open: _open, caller: _caller, ...head } = getOf(pattern);
+      return { GET: getOf(pattern), HEAD: head } as never;
+    };
     const own = buildRoutePolicy(
       [
-        { pattern: threads, methods: ['GET', 'HEAD'], reads: { GET: 'chat' } },
-        { pattern: stream, methods: ['GET', 'HEAD'], switches: { GET: 'turn-streaming' } },
+        {
+          pattern: threads,
+          methods: ['GET', 'HEAD'],
+          reads: { GET: 'chat' },
+          policy: ownHead(threads),
+        },
+        {
+          pattern: stream,
+          methods: ['GET', 'HEAD'],
+          switches: { GET: 'turn-streaming' },
+          policy: ownHead(stream),
+        },
       ],
       { standIn: true },
     );
@@ -676,18 +704,26 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
           pattern: stream,
           methods: ['GET', 'HEAD'],
           switches: { GET: 'turn-streaming', HEAD: 'turn-streaming' },
+          policy: ownHead(stream),
         },
       ],
       { standIn: true },
     );
     expect(switched.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
-    // An own HEAD on a row only a login list classes has no class of its
-    // own: refused at boot, until a list names it.
+    // An own HEAD the route file declares no policy for: refused at boot
+    // (was, from the lists, 'has no class' until a list named it).
     expect(() =>
-      buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET', 'HEAD'] }], {
-        standIn: true,
-      }),
-    ).toThrow(/HEAD \/api\/access-keys has no class/);
+      buildRoutePolicy(
+        [
+          {
+            pattern: '/api/access-keys',
+            methods: ['GET', 'HEAD'],
+            policy: { GET: getOf('/api/access-keys') } as never,
+          },
+        ],
+        { standIn: true },
+      ),
+    ).toThrow(/HEAD \/api\/access-keys declares no policy for HEAD/);
     expect(
       buildRoutePolicy([{ pattern: '/api/access-keys', methods: ['GET'] }], { standIn: true }).get(
         'HEAD /api/access-keys',
@@ -703,7 +739,11 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'route-policy-test-secret-that-is-at-least-32-chars';
     const { gate } = await import('../../server/middleware/gate');
-    const { registerPages, registerRoutes } = await import('../../server/route-loader');
+    const { registerPages, registerRoutes: registerRoutesOf } =
+      await import('../../server/route-loader');
+    const { withRealPolicies } = await import('../../server/test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const seen = async () =>
       Response.json({
         route: currentRoute()?.key ?? null,
@@ -829,8 +869,14 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
       ...buildRoutePolicy(PRINT_PAGES, { page: 'render' }),
     ]);
     const { gateRouteView, requestRow } = await import('../../server/middleware/gate');
-    const { registerPages, registerRoutes, servedRoute } =
-      await import('../../server/route-loader');
+    const {
+      registerPages,
+      registerRoutes: registerRoutesOf,
+      servedRoute,
+    } = await import('../../server/route-loader');
+    const { withRealPolicies } = await import('../../server/test-support');
+    const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+      registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     // The app's own routes and pages; the first handler answers what the
     // gate would read, so no route ever runs.
     app = new Hono();
@@ -934,9 +980,10 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     expect(() =>
       buildRoutePolicy([{ pattern: '/s/:token', methods: ['GET'] }], { page: 'render' }),
     ).toThrow(/page of class render; the lists class it link/);
-    // Off a page list, a pattern no list classes has no class at all.
+    // Off a page list, a pattern no route file declares is refused (was,
+    // from the lists: no class at all).
     expect(() => buildRoutePolicy([{ pattern: '/print/pages/:id', methods: ['GET'] }])).toThrow(
-      /has no class/,
+      /GET \/print\/pages\/:id declares no policy/,
     );
   });
 
@@ -1081,3 +1128,29 @@ const V1_CREATES: readonly string[] = [
   'POST /api/v1/files',
   'POST /api/v1/events',
 ];
+
+describe.skipIf(!hasManifest)('S9 part 2: every area row is answered by the Admin step', () => {
+  it('an area row whose caller the Admin step does not answer is refused at boot', async () => {
+    const manifest = (await import('../../server/route-manifest.gen')).routeManifest;
+    // The asset reader on the attachment bytes (the connectors area): its
+    // guard is served there, but the gate's step 5 holds no view for it.
+    expect(() =>
+      buildRoutePolicy([
+        { pattern: '/api/attachments/:id', methods: ['GET'], reads: { GET: 'readerAsset' } },
+      ]),
+    ).toThrow(/manages the connectors area but reads the readerAsset caller/);
+    // The app's own: the owner guard and its asset form.
+    expect(
+      buildRoutePolicy([
+        { pattern: '/api/attachments/:id', methods: ['GET'], reads: { GET: 'ownerAsset' } },
+      ]).get('GET /api/attachments/:id')?.area,
+    ).toBe('connectors');
+    expect(ADMIN_STEP_CALLERS).toEqual(new Set(['owner', 'ownerAsset']));
+    const callers = new Set(
+      [...buildRoutePolicyOf(manifest).values()]
+        .filter((r) => r.area && !r.public)
+        .map((r) => r.caller),
+    );
+    expect(callers).toEqual(new Set(['owner', 'ownerAsset']));
+  });
+});

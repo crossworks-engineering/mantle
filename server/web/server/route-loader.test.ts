@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 import { buildRouteRow } from '../lib/auth/route-policy';
-import { registerPages, registerRoutes, type RouteEntry } from './route-loader';
+import { registerPages, registerRoutes as registerRoutesOf, type RouteEntry } from './route-loader';
+import { standInDeclared } from './test-support';
+
+/** Every route declares its policy (registerRoutes asks, S9 part 2). */
+const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+  registerRoutesOf(app, standInDeclared(m), rest[0], { standInModules: true, ...rest[1] });
 
 type Params = Record<string, string | string[]>;
 

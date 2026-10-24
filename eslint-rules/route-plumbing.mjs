@@ -381,8 +381,8 @@ export { ROUTE_POLICY_EXPORT };
  * policy beside its handlers, `export const policy = routePolicy({ ... })`
  * (server/web/lib/auth/route-declaration.ts), naming each method it exports
  * and no other (a HEAD the GET handler answers takes its GET's). The boot
- * refuses the same (route-policy.ts requireRouteDeclarations, at
- * createApp); this says it at the line. 'error' since part 1's codemod
+ * refuses the same (route-policy.ts requireRouteDeclarations, in
+ * registerRoutes); this says it at the line. 'error' since part 1's codemod
  * wrote every declaration (eslint.config.mjs).
  */
 export const routePolicyDeclared = {
@@ -398,6 +398,8 @@ export const routePolicyDeclared = {
       undeclared:
         "The policy names no {{method}}, which this file exports: declare each method's policy.",
       stray: 'The policy names {{method}}, which this file does not export.',
+      notLiteral:
+        'Write the policy out where it is exported: export const policy = routePolicy({ ... }) with the object literal (the generator reads it as data and refuses a name, a call, a spread or a re-export).',
     },
     schema: [],
   },
@@ -427,7 +429,11 @@ export const routePolicyDeclared = {
             declared = arg?.type === 'ObjectExpression' ? arg : null;
           }
         }
+        // A type-only export is no handler (scripts/route-callers.ts
+        // exportedMethods, the generator's reader, skips it too).
+        if (node.exportKind === 'type') return;
         for (const sp of node.specifiers ?? []) {
+          if (sp.exportKind === 'type') continue;
           const name = sp.exported.type === 'Identifier' ? sp.exported.name : sp.exported.value;
           if (HTTP_METHODS.has(name)) exported.add(name);
           if (name === ROUTE_POLICY_EXPORT) declaredNode = sp;
@@ -443,8 +449,12 @@ export const routePolicyDeclared = {
           });
           return;
         }
-        // A declaration not written out is the generator's to refuse.
-        if (!declared) return;
+        // A declaration not written out (an export clause, a name, another
+        // call): the generator refuses it at build; said here at the line.
+        if (!declared) {
+          context.report({ node: declaredNode, messageId: 'notLiteral' });
+          return;
+        }
         const named = new Set();
         for (const p of declared.properties) {
           if (p.type !== 'Property' || p.computed) continue;

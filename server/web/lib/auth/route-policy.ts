@@ -40,7 +40,7 @@ import type { WorkspaceArea } from '@mantle/client-types';
 import { env, feature } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
-import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
+import { apiV1RouteOf, keyMayCall, type KeyRoute } from '../api-v1';
 import {
   RATE_LIMITS,
   ROUTE_GATES,
@@ -172,6 +172,17 @@ export const ANSWERED_AT_READ: ReadonlySet<RouteCaller> = new Set([
   'cookieUpgrade',
   'ownerAtRead',
 ]);
+
+/**
+ * The caller kinds the gate's step 5 (the Admin step) answers an area row
+ * for (S9 part 2, the guard's area check folded into the gate): the owner
+ * guard and its asset form, each with the Admin view of the row's area of
+ * the login it answers as (session.ts resolveHttpLogin; on an asset row
+ * the login an `?at=` token or the render cookie names). An area row that
+ * is not public reads one of them, or the boot refuses it (buildRouteRow):
+ * no area row is left to a guard's own check.
+ */
+export const ADMIN_STEP_CALLERS: ReadonlySet<RouteCaller> = new Set(['owner', 'ownerAsset']);
 
 /** The kinds a public row may read (and no other row): the login a public
  *  row reads judging its own credential, never refused at the gate. */
@@ -428,11 +439,8 @@ function loginsOf(method: string, pattern: string): RouteLogins | null {
   return found[0] ?? null;
 }
 
-/** The v1 route a pattern and method name (HEAD as GET). */
-function v1Route(method: string, pattern: string) {
-  const m = method === 'HEAD' ? 'GET' : method;
-  return API_V1_ROUTES.find((r) => r.method === m && r.pattern === pattern) ?? null;
-}
+/** The v1 route a pattern and method name (HEAD as GET: apiV1RouteOf). */
+const v1Route = apiV1RouteOf;
 
 /** A v1 row's base route (D3): the same method on the pattern without
  *  /v1 (files: /api/files/files), when the manifest serves it there and
@@ -658,7 +666,7 @@ function listNamed(kind: NamedCaller, key: string, pattern: string): boolean {
  * lists' in either source.
  */
 export type RoutePolicySource = 'lists' | 'declarations';
-export const ROUTE_POLICY_SOURCE: RoutePolicySource = 'lists';
+export const ROUTE_POLICY_SOURCE: RoutePolicySource = 'declarations';
 
 /**
  * Whether the gate finds no login for `row` (session.ts resolveHttpLogin):
@@ -768,6 +776,15 @@ function listedFacts(
   };
 }
 
+/** The effect a declaration gives `method`: the method's own
+ *  (methodEffect), or the exception it states (`effect: { read }` on a
+ *  POST, `{ write }` on a GET or HEAD). The one reading of it: a row's and
+ *  an alias's base's alike. */
+function declaredEffect(p: MethodPolicy, method: string): 'read' | 'write' {
+  if (!p.effect) return methodEffect(method);
+  return Object.hasOwn(p.effect, 'read') ? 'read' : 'write';
+}
+
 /**
  * The facts of a row from its route file's declaration (part 2), the
  * declaration of the method whose handler answers (`answeredAs`: a HEAD the
@@ -800,7 +817,7 @@ function declaredFacts(
           ? SELF_SCOPE
           : null;
   // The effect is the method's, or the exception the declaration states.
-  const effect = d.effect ? (Object.hasOwn(d.effect, 'read') ? 'read' : 'write') : methodEffect(m);
+  const effect = declaredEffect(d, m);
   // An alias (its base's handler) or a v1 row with a base: open, creates
   // and, for an alias, limits are the base's declaration's, one source.
   const baseKey = d.aliasOf ?? d.base;
@@ -829,11 +846,7 @@ function declaredFacts(
     // compared as the row's (the method's, or the stated exception), the
     // item as its param and need or its `none` reason.
     if (d.aliasOf !== undefined) {
-      const baseEffect = base.effect
-        ? Object.hasOwn(base.effect, 'read')
-          ? 'read'
-          : 'write'
-        : methodEffect(b.method);
+      const baseEffect = declaredEffect(base, b.method);
       const shown = (v: unknown): string =>
         v === undefined ? 'none declared' : typeof v === 'string' ? v : JSON.stringify(v);
       const itemOf = (p: MethodPolicy) =>
@@ -1050,6 +1063,20 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} reads no caller: a row that is not public reads the caller the gate answers (A4 exit)`,
     );
   }
+  // Every area row's caller is answered by the gate's Admin step (S9 part
+  // 2): its kind is one step 5 holds the area for (ADMIN_STEP_CALLERS). A
+  // public row asks no area; a test's stand-in rows call the guards
+  // themselves.
+  if (
+    scope?.kind === 'area' &&
+    !isPublic &&
+    opts.standIn !== true &&
+    !(caller && ADMIN_STEP_CALLERS.has(caller))
+  ) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} manages the ${scope.area} area but reads the ${caller ?? 'no'} caller: the gate's Admin step answers only ${[...ADMIN_STEP_CALLERS].join(', ')}`,
+    );
+  }
   // A catch-all route also matches its bare prefix, where the loader may
   // answer 404 before the handler (route-loader.ts): the gate's answer
   // would come first there. Such a route keeps its guard (the hand batch).
@@ -1131,10 +1158,10 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
 /** Every route file of the app's manifest declares its policy, one for
  *  each method it exports, and each holds (validateRoutePolicy), whichever
  *  source the rows are read from (S9 part 1: the codemod wrote them; lint
- *  holds a new file to it, route-plumbing.mjs route-policy-declared). The
- *  app's boot asks it of the generated manifest (createApp); a test's
- *  hand-built manifest is not asked. Throws naming each route that does
- *  not. */
+ *  holds a new file to it, route-plumbing.mjs route-policy-declared).
+ *  registerRoutes asks it of every manifest it registers (S9 part 2): the
+ *  app's at boot, a test's hand-built one too (server/test-support.ts).
+ *  Throws naming each route that does not. */
 export function requireRouteDeclarations(manifest: readonly RouteManifestEntry[]): void {
   const missing: string[] = [];
   for (const entry of manifest) {

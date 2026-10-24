@@ -160,6 +160,15 @@ const compiled = API_V1_ROUTES.map((route) => ({
   re: new RegExp(`^${route.pattern.replace(/:[A-Za-z]+/g, '[^/]+')}/?$`),
 }));
 
+/** The key table's route of a manifest pattern and method, or null: HEAD
+ *  is looked up as GET (the GET handler answers it). The one lookup of a
+ *  pattern's row in the table: the route rows (route-policy.ts) and the
+ *  declarations the codemod writes (scripts/route-declarations.ts) read it. */
+export function apiV1RouteOf(method: string, pattern: string): ApiV1Route | null {
+  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
+  return API_V1_ROUTES.find((r) => r.method === m && r.pattern === pattern) ?? null;
+}
+
 /** The v1 route a RAW (undecoded) request path names, or null. HEAD is
  *  looked up as GET. The table's own answer for a path: the gate and the
  *  guard judge a key on the request's ROUTE_POLICY row, where the raw path

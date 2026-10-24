@@ -33,7 +33,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { answerAppError } from './app-error';
-import { registerRoutes, type RouteEntry } from './route-loader';
+import { registerRoutes as registerRoutesOf, type RouteEntry } from './route-loader';
+import { standInDeclared } from './test-support';
 import {
   AUTH_BODY_CEILING_BYTES,
   JSON_BODY_CEILING_BYTES,
@@ -41,6 +42,10 @@ import {
   VOICE_CLIP_BYTES,
 } from '../lib/body-limit';
 import { readBody, readJson } from '../lib/read-body';
+
+/** Every route declares its policy (registerRoutes asks, S9 part 2). */
+const registerRoutes: typeof registerRoutesOf = (app, m, ...rest) =>
+  registerRoutesOf(app, standInDeclared(m), rest[0], { standInModules: true, ...rest[1] });
 
 // The whole-app half runs without a database: the login rows and the scope
 // are stood in (as body-ceiling.test.ts does).
