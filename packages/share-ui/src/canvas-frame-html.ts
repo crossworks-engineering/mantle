@@ -133,8 +133,13 @@ function preludeScript(opts: {
   });
   // The script takes itself out of the document as it runs: the nonce lives
   // on only in this closure, out of the canvas's reach (it runs later, in the
-  // same document, and could otherwise read the script's text).
+  // same document, and could otherwise read the script's text). The parent
+  // is read once, first: `window.parent` is replaceable, and a canvas that
+  // set it to an object of its own would be handed the nonce at load. The
+  // real parent is another origin's window, whose postMessage a canvas
+  // cannot change.
   return `(function(){
+  var P=window.parent;
   var me=document.currentScript;if(me&&me.parentNode){me.parentNode.removeChild(me);}
   var cfg=${cfg};var h=document.documentElement;var nonce=cfg.n;cfg.n='';
   ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription'].forEach(function(n){
@@ -142,7 +147,7 @@ function preludeScript(opts: {
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
   theme(cfg.cls,cfg.ct);
   window.addEventListener('message',function(e){
-    if(e.source!==window.parent)return;var m=e.data;if(!m||m.v!==1)return;
+    if(e.source!==P)return;var m=e.data;if(!m||m.v!==1)return;
     if(m.kind==='theme'&&cfg.follow){theme(m.cls,m.colorTheme);}
   });
   if(cfg.size){
@@ -155,14 +160,14 @@ function preludeScript(opts: {
   }
   var last='';
   function report(msg){var t=String(msg||'the canvas failed');if(t===last)return;last=t;
-    try{window.parent.postMessage({v:1,kind:'error',message:t.slice(0,500)},'*');}catch(_){}}
+    try{P.postMessage({v:1,kind:'error',message:t.slice(0,500)},'*');}catch(_){}}
   window.addEventListener('error',function(e){
     if(e&&e.target&&e.target!==window&&e.target.tagName)return;
     report((e&&(e.message||(e.error&&e.error.message)))||'the canvas failed');},true);
   window.addEventListener('unhandledrejection',function(e){
     report((e&&e.reason&&(e.reason.message||e.reason))||'the canvas failed');});
   window.addEventListener('load',function(){
-    try{window.parent.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}});
+    try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}});
 })();`;
 }
 
