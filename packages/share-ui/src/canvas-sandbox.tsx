@@ -55,7 +55,7 @@ export function CanvasSandbox({
   /** Fetch for the frame-ticket call: the split client attaches its bearer. */
   fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Bump to reload the canvas from its start (Replay, or a new save). */
-  reloadKey?: number;
+  reloadKey?: number | string;
   /** The iframe's accessible name. */
   title: string;
   /** The iframe element, for the host's Full screen. */

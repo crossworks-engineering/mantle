@@ -1,0 +1,184 @@
+/**
+ * The Present routes through the full pipeline (runRoute), the real route
+ * files and the real frame renderer, as the final audit asked:
+ *
+ *  - POST /api/presents/:id/frame-ticket mints a canvas ticket and the nonce
+ *    that proves the frame (canvas-sandbox.tsx), for an owner login; a
+ *    canvas that is not there is a 404; no login is the gate's 401.
+ *  - GET /api/presents/:id/frame answers with the frame CSP as a header (the
+ *    sandbox, no network), Allow-CSP-From, nosniff, DNS prefetch off, and the
+ *    ticket's nonce inside the prelude, never in the canvas's own text.
+ *  - A share's ticket or a client login's ticket for a canvas is refused.
+ *  - The DELETE handler deletes, and answers 404 for none.
+ *
+ * The content layer is stood in; the frame document is built by the real
+ * share-ui builder over a stand-in import map and fonts.
+ */
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runRoute } from '@/server/run-route';
+import { standInLogin } from '@/server/run-route-stand-ins';
+
+const ANCHOR = '33333333-3333-4333-8333-333333333333';
+const CANVAS = '11111111-1111-4111-8111-111111111111';
+const MISSING = '44444444-4444-4444-8444-444444444444';
+
+const h = vi.hoisted(() => ({ deleted: [] as string[] }));
+
+vi.mock(
+  '@/lib/auth/login-row',
+  async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
+);
+vi.mock('@/lib/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth')>()),
+  adminLoginActive: vi.fn(async () => true),
+  memberLoginActive: vi.fn(async () => true),
+  // The DELETE handler is called directly below: the owner the gate would
+  // have answered for its row.
+  ownerCaller: vi.fn(() => ({ id: ANCHOR })),
+}));
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  withViewer: vi.fn(async (_who: unknown, fn: () => Promise<unknown>) => fn()),
+}));
+vi.mock('@/lib/presents', () => ({
+  getPresent: vi.fn(async (_owner: string, id: string) =>
+    id === CANVAS ? { id: CANVAS, rev: 3 } : null,
+  ),
+  getPresentFrame: vi.fn(async (_owner: string, id: string) =>
+    id === CANVAS
+      ? {
+          source: '<html><head><title>T</title></head><body>THE CANVAS</body></html>',
+          css: '',
+          meta: { size: 'fill', theme: 'follow' },
+          rev: 3,
+        }
+      : null,
+  ),
+  deletePresent: vi.fn(async (_owner: string, id: string) => {
+    if (id !== CANVAS) return false;
+    h.deleted.push(id);
+    return true;
+  }),
+  compileCanvasCss: vi.fn(async () => ''),
+  savePresentSource: vi.fn(),
+  updatePresent: vi.fn(),
+}));
+vi.mock('@mantle/tools/canvas-frame-document', async () => {
+  const { buildCanvasFrameHtml } = await import('@mantle/share-ui/canvas-frame-html');
+  return {
+    loadCanvasImportMap: vi.fn(async () => '{"imports":{}}'),
+    canvasFrameDocument: vi.fn(
+      async (
+        _owner: string,
+        canvas: { source: string; css: string; meta: { size: 'fill'; theme: 'follow' } },
+        theme: { cls: string; colorTheme: string | null },
+        nonce?: string,
+      ) =>
+        buildCanvasFrameHtml({
+          source: canvas.source,
+          css: canvas.css,
+          importMapJson: '{"imports":{}}',
+          cls: theme.cls,
+          colorTheme: theme.colorTheme,
+          size: canvas.meta.size,
+          theme: canvas.meta.theme,
+          fontCss: '',
+          ...(nonce ? { nonce } : {}),
+        }),
+    ),
+  };
+});
+
+let tokens: typeof import('@/lib/auth/tokens');
+
+beforeAll(async () => {
+  process.env.SESSION_SECRET = 'present-routes-pipeline-secret-at-least-32-chars';
+  standInLogin({ id: ANCHOR, role: 'admin', adminMember: true, isOwner: true });
+  tokens = await import('@/lib/auth/tokens');
+});
+
+beforeEach(() => {
+  h.deleted.length = 0;
+});
+
+describe('POST /api/presents/:id/frame-ticket', () => {
+  it("mints a canvas ticket and the frame's nonce for the owner", async () => {
+    const res = await runRoute(ANCHOR, 'POST', `/api/presents/${CANVAS}/frame-ticket`, {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ticket: string; nonce: string; rev: number };
+    expect(body.rev).toBe(3);
+    expect(tokens.verifyCanvasFrameTicket(body.ticket)?.appId).toBe(CANVAS);
+    expect(body.nonce).toBe(tokens.canvasFrameNonce(body.ticket));
+    expect(body.nonce).not.toContain(body.ticket.slice(0, 10));
+  });
+
+  it('answers 404 for a canvas that is not there, and 401 with no login', async () => {
+    expect(
+      (await runRoute(ANCHOR, 'POST', `/api/presents/${MISSING}/frame-ticket`, {})).status,
+    ).toBe(404);
+    expect((await runRoute(null, 'POST', `/api/presents/${CANVAS}/frame-ticket`, {})).status).toBe(
+      401,
+    );
+  });
+});
+
+describe('GET /api/presents/:id/frame, the real frame document', () => {
+  it('sends the sandbox CSP as a header, allows the embedder CSP, and carries the nonce in the prelude only', async () => {
+    const ticket = tokens.buildCanvasFrameTicket({
+      ownerId: ANCHOR,
+      presentId: CANVAS,
+      actorId: ANCHOR,
+    });
+    const res = await runRoute(
+      null,
+      'GET',
+      `/api/presents/${CANVAS}/frame?t=${encodeURIComponent(ticket)}`,
+    );
+    expect(res.status).toBe(200);
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain('sandbox allow-scripts');
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain('frame-ancestors');
+    expect(res.headers.get('allow-csp-from')).toBe('*');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-dns-prefetch-control')).toBe('off');
+    const html = await res.text();
+    const nonce = tokens.canvasFrameNonce(ticket);
+    const at = html.indexOf('<html>');
+    expect(html.slice(0, at)).toContain(`"n":"${nonce}"`);
+    expect(html.slice(at)).toContain('THE CANVAS');
+    expect(html.slice(at)).not.toContain(nonce);
+  });
+
+  it("refuses a share's ticket and a client login's ticket for a canvas", async () => {
+    for (const extra of [{ shareId: 'share-1' }, { loginId: ANCHOR, clientEpoch: 1 }]) {
+      const ticket = tokens.buildAppFrameTicket({
+        ownerId: ANCHOR,
+        appId: CANVAS,
+        canvas: true,
+        ...extra,
+      });
+      const res = await runRoute(
+        null,
+        'GET',
+        `/api/presents/${CANVAS}/frame?t=${encodeURIComponent(ticket)}`,
+      );
+      expect(res.status, JSON.stringify(extra)).toBe(401);
+    }
+  });
+});
+
+describe('DELETE /api/presents/:id (the handler; a write through the pipeline needs a database)', () => {
+  it('deletes a canvas, and answers 404 for none', async () => {
+    const { DELETE } = await import('./[id]/route');
+    const call = (id: string) =>
+      DELETE(new Request(`http://brain.test/api/presents/${id}`, { method: 'DELETE' }), {
+        params: Promise.resolve({ id }),
+      });
+    const ok = await call(CANVAS);
+    expect(ok.status).toBe(200);
+    expect(h.deleted).toEqual([CANVAS]);
+    expect((await call(MISSING)).status).toBe(404);
+  });
+});
