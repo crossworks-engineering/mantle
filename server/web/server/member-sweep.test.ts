@@ -1,8 +1,9 @@
 /**
  * Member sweep (member logins, Phase 1; plan section 3, deny by default).
  * Drives EVERY manifest route, every method, with a signed session cookie for
- * a MEMBER login, through the real app, and proves each route not listed in
- * MEMBER_ROUTES refuses it: 403 from the admin gates (reason member-login),
+ * a MEMBER login, through the real app, and proves each route whose row
+ * opens it to no member (its route file's declaration, `open: 'member'`)
+ * refuses it: 403 from the admin gates (reason member-login),
  * 401 from the admin-only session reads, or the /login redirect for pages.
  *
  * The sweep runs twice: with the session cookie, and with a member's device
@@ -143,8 +144,7 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 });
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
-import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
-import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
+import type { RowAnswers } from './test-support';
 import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
@@ -195,6 +195,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
   let policy: ReturnType<typeof buildRoutePolicy>;
+  let answers: RowAnswers | null = null;
+  let MEMBER_ROUTES: string[] = [];
   /** A row open to a login outside Admin (the owner lists, and a v1 row
    *  whose base route is one: D3). */
   const memberOpen = (method: string, pattern: string) => {
@@ -225,6 +227,12 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
     policy = buildRoutePolicy((await import('./route-manifest.gen')).routeManifest);
+    // The member rows and the any-login rows, off the rows (S9 part 3: the
+    // lists they were read from are gone).
+    answers = (await import('./test-support')).rowAnswers(manifest);
+    MEMBER_ROUTES = manifest.flatMap((e) =>
+      e.methods.filter((m) => answers!.isMemberRoute(m, e.pattern)).map((m) => `${m} ${e.pattern}`),
+    );
   }, 60_000);
 
   afterAll(() => {
@@ -254,7 +262,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   });
 
   it.each(['cookie', 'bearer'] as const)(
-    'refuses a member (%s) on every route not in MEMBER_ROUTES',
+    'refuses a member (%s) on every route whose row is not a member row',
     async (how) => {
       const auth: Record<string, string> = how === 'cookie' ? { cookie } : bearerFor(MEMBER_ID);
       const failures: string[] = [];
@@ -267,8 +275,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         for (const method of entry.methods) {
           if (
             method === 'OPTIONS' ||
-            isMemberRoute(method, entry.pattern) ||
-            isAnyLoginRoute(method, entry.pattern) ||
+            answers!.isMemberRoute(method, entry.pattern) ||
+            answers!.isAnyLoginRoute(method, entry.pattern) ||
             // Open to every login in its scope since W6a (reads) and W6b
             // (writes): proved against a database in w6a-route-sweep.db.test.ts
             // and w6b-member-writes.db.test.ts. A v1 row is open where its
@@ -378,9 +386,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     }
   });
 
-  it('lists only routes that exist', () => {
-    const known = new Set(manifest.flatMap((e) => e.methods.map((mt) => `${mt} ${e.pattern}`)));
-    expect(MEMBER_ROUTES.filter((r) => !known.has(r))).toEqual([]);
+  it('has member rows to drive', () => {
+    expect(MEMBER_ROUTES.length).toBeGreaterThan(0);
   });
 
   it('refuses an ADMIN on every member route (they are member-specific)', async () => {

@@ -121,10 +121,13 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     });
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
-    const lists = await import('../lib/auth/any-login-routes');
-    rows = [...lists.ANY_LOGIN_ROUTES, ...lists.CHAT_LOGIN_ROUTES, ...lists.TELEGRAM_LOGIN_ROUTES]
-      .filter((k) => k.startsWith('GET '))
-      .map((k) => k.slice('GET '.length));
+    // The any-login, chat and Telegram rows' GETs, read off the rows (S9
+    // part 3: the lists are gone).
+    const { routeManifest } = await import('./route-manifest.gen');
+    const answers = (await import('./test-support')).rowAnswers(routeManifest);
+    rows = routeManifest
+      .filter((e) => e.methods.includes('GET') && answers.isAnyLoginRoute('GET', e.pattern))
+      .map((e) => e.pattern);
     const { createApp } = await import('./app');
     app = await createApp();
   }, 240_000);

@@ -463,12 +463,8 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
 import { SESSION_COOKIE_NAME, RENDER_COOKIE_NAME } from '../lib/auth-constants';
 import { KEY_TOKENS } from './a4-guard-sweep.keys';
 import { READER_ANSWERS, SESSION_GUARDS } from '../../../eslint-rules/session-guards.mjs';
-import { auditsAsWrite, isReadRequest } from '../lib/auth/route-scope';
-import {
-  ANY_LOGIN_ROUTES,
-  CHAT_LOGIN_ROUTES,
-  TELEGRAM_LOGIN_ROUTES,
-} from '../lib/auth/any-login-routes';
+import { auditsAsWrite } from '../lib/auth/route-scope';
+import type { RowAnswers } from './test-support';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -565,11 +561,12 @@ const ruleInQueryCells = new Map<string, string>();
  * have its logins too, but the member guard reads the row's scope, not its
  * logins: no cell of theirs changed.
  */
-const HEAD_LOGIN_ROWS: ReadonlySet<string> = new Set(
-  [...ANY_LOGIN_ROUTES, ...CHAT_LOGIN_ROUTES, ...TELEGRAM_LOGIN_ROUTES]
-    .filter((k) => k.startsWith('GET '))
-    .map((k) => k.replace(/^GET /, 'HEAD ')),
-);
+let HEAD_LOGIN_ROWS: ReadonlySet<string> = new Set();
+/** The rows' answers (test-support.ts rowAnswers), set before the sweeps:
+ *  a read is its row's effect, the any-login rows are the rows' (S9 part
+ *  3: the lists they were read from are gone). */
+let answers: RowAnswers | null = null;
+const isReadRequest = (method: string, pattern: string) => answers!.isReadRequest(method, pattern);
 const headLoginCells = new Map<string, string>();
 /**
  * The guard writes (A4 step 3b part 5 fix round 1): every cell of a write
@@ -827,6 +824,13 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     const { createApp } = await import('./app');
     app = await createApp();
     const { routeManifest } = await import('./route-manifest.gen');
+    answers = (await import('./test-support')).rowAnswers(routeManifest);
+    // The any-login, chat and Telegram rows' HEADs (their GETs' rows).
+    HEAD_LOGIN_ROWS = new Set(
+      routeManifest
+        .filter((e) => e.methods.includes('GET') && answers!.isAnyLoginRoute('GET', e.pattern))
+        .map((e) => `HEAD ${e.pattern}`),
+    );
     const [{ SHARE_PAGES }, { PRINT_PAGES }] = await Promise.all([
       import('./pages/share'),
       import('./pages/print'),

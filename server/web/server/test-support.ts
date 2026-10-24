@@ -5,7 +5,18 @@
  * calls a handler directly.
  */
 import type { Context } from 'hono';
-import { routePolicy, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
+import {
+  methodEffect,
+  routePolicy,
+  type RoutePolicyDeclaration,
+} from '../lib/auth/route-declaration';
+import {
+  anyLoginRow,
+  buildRoutePolicy,
+  type RouteManifestEntry,
+  type RouteRow,
+} from '../lib/auth/route-policy';
+import type { RouteClass } from '../lib/auth/route-scope';
 import { answerAppError } from './app-error';
 import { routeManifest } from './route-manifest.gen';
 
@@ -130,4 +141,76 @@ export function withRealBases<
     }
   }
   return [...out, ...more];
+}
+
+/**
+ * What the deleted route lists answered, read off the rows the route files'
+ * declarations build (S9 part 3): the sweeps choose their routes with these,
+ * so each chooses the routes it chose from the lists. A HEAD is in no login
+ * list (they named GET only) and a read is its row's effect, as before.
+ * `prefixClass` is the class a pattern's prefix gave (route-scope.ts
+ * ROUTE_PREFIXES): its rows' scope, but the rows a named carve-out made the
+ * login's own (the Telegram chats, the update banner), which keep the
+ * prefix's area; scripts proved each answer equal to the lists' over every
+ * route and method of the manifest before the lists went.
+ */
+export type RowAnswers = Readonly<{
+  rowOf: (method: string, pattern: string) => RouteRow | null;
+  isReadRequest: (method: string, pattern: string) => boolean;
+  isMemberRoute: (method: string, pattern: string) => boolean;
+  isAnyLoginRoute: (method: string, pattern: string) => boolean;
+  memberMayRead: (method: string, pattern: string) => boolean;
+  memberMayWrite: (method: string, pattern: string) => boolean;
+  prefixClass: (pattern: string) => RouteClass | null;
+}>;
+
+export function rowAnswers(manifest: readonly RouteManifestEntry[] = routeManifest): RowAnswers {
+  const rows = buildRoutePolicy(manifest);
+  const byPattern = new Map<string, RouteRow[]>();
+  for (const row of rows.values()) {
+    const list = byPattern.get(row.pattern) ?? [];
+    list.push(row);
+    byPattern.set(row.pattern, list);
+  }
+  const rowOf = (method: string, pattern: string) =>
+    rows.get(`${method.toUpperCase()} ${pattern}`) ?? null;
+  // A login list named GET, never HEAD; the open reads read HEAD as GET.
+  const listed = (method: string, pattern: string) =>
+    method.toUpperCase() === 'HEAD' ? null : rowOf(method, pattern);
+  // A v1 row opens to a login as its base does (D3): the base's list, not
+  // its own (the member lists named no v1 route).
+  const ownList = (row: RouteRow | null) =>
+    row !== null && !row.pattern.startsWith('/api/v1/') ? row.logins : null;
+  return {
+    rowOf,
+    isReadRequest: (method, pattern) => {
+      const row = rowOf(method, pattern);
+      return row ? row.effect === 'read' : methodEffect(method) === 'read';
+    },
+    isMemberRoute: (method, pattern) => ownList(listed(method, pattern)) === 'member',
+    isAnyLoginRoute: (method, pattern) => {
+      const row = listed(method, pattern);
+      return row !== null && anyLoginRow(row);
+    },
+    memberMayRead: (method, pattern) => {
+      const m = method.toUpperCase() === 'HEAD' ? 'GET' : method;
+      const row = rowOf(m, pattern);
+      return ownList(row) === 'owner' && row!.effect === 'read';
+    },
+    memberMayWrite: (method, pattern) => {
+      const row = listed(method, pattern);
+      return ownList(row) === 'owner' && row!.effect === 'write';
+    },
+    prefixClass: (pattern) => {
+      const of = byPattern.get(pattern) ?? [];
+      const carved = (r: RouteRow) => r.logins === 'telegram' || r.caller === 'session';
+      const plain = of.find((r) => !carved(r));
+      if (plain) return plain.scope;
+      // Every row of the pattern is a carve-out: the prefix named an area
+      // (the Telegram routes: connectors).
+      return of.length > 0 && of.every((r) => r.logins === 'telegram')
+        ? { kind: 'area', area: 'connectors' }
+        : null;
+    },
+  };
 }

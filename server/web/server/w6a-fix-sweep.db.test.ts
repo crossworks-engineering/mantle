@@ -25,8 +25,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isReadRequest, routeClass } from '../lib/auth/route-scope';
-import { isMemberRoute } from '../lib/auth/member-routes';
+import { rowAnswers, type RowAnswers } from './test-support';
 import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -48,6 +47,8 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
   let m: typeof import('@mantle/db');
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
+  // What the deleted route lists answered, off the rows (S9 part 3).
+  let answers: RowAnswers | null = null;
   let cookieOf: (id: string) => string;
   let dir = '';
   const owner = randomUUID(); // the anchor, an Admin user
@@ -148,6 +149,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
+    answers = rowAnswers(manifest);
     side = json((await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).text).id as string;
     ro = json((await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).text).id as string;
     expect(side && ro).toBeTruthy();
@@ -511,8 +513,10 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     let calls = 0;
     for (const e of manifest) {
       if (!e.methods.includes('GET') || SKIP.some((re) => re.test(e.pattern))) continue;
-      if (routeClass(e.pattern)?.kind !== 'content' || !isReadRequest('GET', e.pattern)) continue;
-      if (isMemberRoute('GET', e.pattern) || e.pattern.startsWith('/api/client/')) continue;
+      if (answers!.prefixClass(e.pattern)?.kind !== 'content') continue;
+      if (!answers!.isReadRequest('GET', e.pattern)) continue;
+      if (answers!.isMemberRoute('GET', e.pattern) || e.pattern.startsWith('/api/client/'))
+        continue;
       const segs = e.pattern.split('/');
       const paths = segs.includes(':id')
         ? ids.map((id) =>

@@ -23,7 +23,6 @@ vi.mock('../../../../packages/db/src/create-home', () => ({
 
 import { loginActor, type GatePolicy } from '@mantle/db';
 import { createHomeStep } from '../../../../packages/db/src/gate';
-import { isReadRequest } from './route-scope';
 import { buildRouteRow, routeGatePolicy } from './route-policy';
 import { requestCreateHomeArgs } from './session';
 
@@ -54,6 +53,8 @@ beforeEach(() => {
 describe.skipIf(!hasManifest)('step 6 with the HTTP rule equals createHomeFor', () => {
   it('for every write route, login kind and ?ws=', async () => {
     const { routeManifest } = await import('../../server/route-manifest.gen');
+    // A read is its row's effect (S9 part 3: the lists are gone).
+    const { isReadRequest } = (await import('../../server/test-support')).rowAnswers(routeManifest);
     let cells = 0;
     for (const e of routeManifest) {
       if (!e.pattern.startsWith('/api/')) continue;

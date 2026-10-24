@@ -29,10 +29,13 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
-import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { isMemberRoute } from '../lib/auth/member-routes';
-import { isReadRequest, itemWriteTarget, routeClass } from '../lib/auth/route-scope';
-import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
+import {
+  buildRoutePolicy,
+  memberOpenRead,
+  memberOpenWrite,
+  routeItemTarget,
+} from '../lib/auth/route-policy';
+import { rowAnswers, type RowAnswers } from './test-support';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
 import { asSuperuser } from '@mantle/db/test-support';
 
@@ -152,7 +155,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let app: import('hono').Hono;
-  let manifest: Array<{ pattern: string; methods: string[] }>;
+  let manifest: readonly import('../lib/auth/route-policy').RouteManifestEntry[];
   let cookieOf: (id: string) => string;
   const owner = randomUUID(); // the anchor, an Admin user
   const noArea = randomUUID(); // an Admin user with every area off
@@ -348,6 +351,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
+    answers = rowAnswers(manifest);
     // Two workspaces through the real routes: Side (mem2 only) and the
     // member's private one (mem only).
     side = JSON.parse((await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).text).id;
@@ -407,6 +411,19 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   const memberMayWrite = (method: string, pattern: string) => {
     const row = rowOf(method, pattern);
     return !!row && memberOpenWrite(row);
+  };
+
+  // What the deleted route lists answered, off the rows (S9 part 3,
+  // test-support.ts rowAnswers: proved equal over every route and method).
+  let answers: RowAnswers | null = null;
+  const isMemberRoute = (m: string, p: string) => answers!.isMemberRoute(m, p);
+  const isAnyLoginRoute = (m: string, p: string) => answers!.isAnyLoginRoute(m, p);
+  const isReadRequest = (m: string, p: string) => answers!.isReadRequest(m, p);
+  const routeClass = (p: string) => answers!.prefixClass(p);
+  // The item a write names, off its row (none since plan v3.2 S6 c2).
+  const itemWriteTarget = (m: string, p: string, path: string) => {
+    const row = answers!.rowOf(m, p);
+    return row ? routeItemTarget(row, path) : null;
   };
 
   const isOwnerRoute = (method: string, pattern: string) =>
@@ -792,7 +809,6 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     });
     expect(made.status, made.text).toBe(201);
     const secret = (JSON.parse(made.text) as { secret: string }).secret;
-    const { API_V1_ROUTES } = await import('../lib/api-v1');
     const failures: string[] = [];
     let checked = 0;
     let based = 0;
@@ -809,12 +825,13 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
           if (r.status !== 200 || r.outcome?.kind !== 'user') failures.push(`${key} ${r.status}`);
           continue;
         }
-        // The base route: the one the file re-exports, or the table's own.
+        // The base route: the one the file re-exports, or the one its
+        // declaration names (`base`, a v1 file with a handler of its own).
         const row = rowOf(method, e.pattern);
-        const base =
-          row?.aliasOf ??
-          API_V1_ROUTES.find((v) => v.method === method && v.pattern === e.pattern)?.base ??
-          null;
+        const declared = (e.policy as Readonly<Record<string, { base?: string }>> | undefined)?.[
+          method
+        ];
+        const base = row?.aliasOf ?? declared?.base ?? null;
         if (!base) {
           // No base (the table row writes): Admin users only.
           if (r.status !== 403 || !r.text.includes('member-login')) {
