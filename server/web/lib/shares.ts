@@ -524,41 +524,56 @@ function noteEmbeds(content: string, walk: (doc: unknown) => string[]): string[]
   return walk(markdownToDoc(content)).map((id) => id.toLowerCase());
 }
 
-/** May this share show the snapshot of the canvas `presentId`? Only a page
- *  or a note share, only a canvas its own content embeds
- *  (`![Title](present:<id>)`), only one the link serves (isServed: the
- *  owner put it on the served list, or a contact share names it), and only
- *  when the canvas has a snapshot. Never the canvas itself: a link shows
- *  the picture, no frame and no source. The /s/:token/present/:presentId
- *  route's authorization, and what the share page asks before it places
- *  the picture. */
-export async function isEmbeddedPresentAllowed(share: Share, presentId: string): Promise<boolean> {
-  if (!isUuid(presentId)) return false;
-  const id = presentId.toLowerCase();
+/** The canvases a page or note share's own content embeds (its page's
+ *  committed doc, its note's markdown), lower-case; none for any other
+ *  share. Read once per check, however many canvases are asked about. */
+async function shareEmbeddedPresents(share: Share): Promise<Set<string>> {
   if (share.nodeType === 'page') {
     const page = await getPage(share.ownerId, share.nodeId);
-    if (!page || !referencedPresentIds(page.doc).some((d) => d.toLowerCase() === id)) return false;
-  } else if (share.nodeType === 'note') {
-    const content = await loadSharedNote(share);
-    if (content === null || !noteEmbeds(content, referencedPresentIds).includes(id)) return false;
-  } else {
-    return false;
+    return new Set((page ? referencedPresentIds(page.doc) : []).map((d) => d.toLowerCase()));
   }
-  if (!(await isServed(share, id))) return false;
+  if (share.nodeType === 'note') {
+    const content = await loadSharedNote(share);
+    return new Set(content === null ? [] : noteEmbeds(content, referencedPresentIds));
+  }
+  return new Set();
+}
+
+/** May this share show the snapshot of the canvas `id` (lower-case), one
+ *  its content embeds (`embedded`)? Only one the link serves (isServed: the
+ *  owner put it on the served list, or a contact share names it), and only
+ *  when the canvas has a snapshot. */
+async function presentShown(share: Share, embedded: Set<string>, id: string): Promise<boolean> {
+  if (!embedded.has(id) || !(await isServed(share, id))) return false;
   const facts = await getPresentEmbedFacts(share.ownerId, id);
   return facts?.posterRev != null;
 }
 
+/** May this share show the snapshot of the canvas `presentId`? Only a page
+ *  or a note share, only a canvas its own content embeds
+ *  (`![Canvas](present:<id>)` in the page's committed doc, never its draft),
+ *  only one the link serves, and only when the canvas has a snapshot. Never
+ *  the canvas itself: a link shows the picture, no frame and no source. The
+ *  /s/:token/present/:presentId route's authorization. */
+export async function isEmbeddedPresentAllowed(share: Share, presentId: string): Promise<boolean> {
+  if (!isUuid(presentId)) return false;
+  const id = presentId.toLowerCase();
+  return presentShown(share, await shareEmbeddedPresents(share), id);
+}
+
 /** The canvases among `ids` this share shows (isEmbeddedPresentAllowed),
- *  lower-case: the share page places only their pictures, the rest as a
- *  labelled placeholder. */
+ *  lower-case, the share's content read once: the share page places only
+ *  their pictures, the rest as a bare placeholder. */
 export async function sharePresentsShown(
   share: Share,
   ids: readonly string[],
 ): Promise<Set<string>> {
   const out = new Set<string>();
-  for (const id of new Set(ids.map((i) => i.toLowerCase()))) {
-    if (await isEmbeddedPresentAllowed(share, id)) out.add(id);
+  const wanted = [...new Set(ids.map((i) => i.toLowerCase()))].filter((i) => isUuid(i));
+  if (wanted.length === 0) return out;
+  const embedded = await shareEmbeddedPresents(share);
+  for (const id of wanted) {
+    if (await presentShown(share, embedded, id)) out.add(id);
   }
   return out;
 }

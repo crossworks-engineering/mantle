@@ -427,9 +427,10 @@ describe('the reads and the restore', () => {
     h.getPresent.mockResolvedValueOnce(detail(CANVAS));
     const plain = await tool('present_get').handler({ id: ID }, ctx);
     expect((plain as { output: { source?: string } }).output.source).toBe(CANVAS);
-    // The page line that shows it in a page, its title without brackets.
-    expect((plain as { output: { page_embed?: string } }).output.page_embed).toMatch(
-      new RegExp(`^!\\[[^\\[\\]]*\\]\\(present:${ID}\\)$`),
+    // The page line that shows it in a page: the alt is "Canvas", never the
+    // canvas's title (page text every reader of the page sees).
+    expect((plain as { output: { page_embed?: string } }).output.page_embed).toBe(
+      `![Canvas](present:${ID})`,
     );
 
     await tool('present_create').handler({ template: 'flow', data: FLOW, look: false }, ctx);

@@ -416,8 +416,8 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
       const presentId = str(node.attrs?.presentId);
       if (presentId) {
         return [
-          imageParagraph(ctx.presents.get(presentId)) ??
-            placeholder(`canvas: ${alt || 'untitled'}`),
+          // A bare placeholder: the alt may carry a title the reader may not see.
+          imageParagraph(ctx.presents.get(presentId)) ?? placeholder('canvas'),
         ];
       }
       const fileId = str(node.attrs?.nodeId);

@@ -1,6 +1,7 @@
 import { presentPosterSrc } from '@mantle/content-core/markdown-refs';
 import type { Context } from 'hono';
-import { getPage, getDraw, getDrawSvg } from '@mantle/content';
+import { getPage, getDraw, getDrawSvg, referencedPresentIds } from '@mantle/content';
+import { getPresentEmbedFacts } from '@/lib/presents';
 import { requireOwnerForRender } from '@/lib/auth';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { htmlPage } from './template';
@@ -120,6 +121,14 @@ async function printPage(c: Context): Promise<Response> {
   // can carry one) prints as a broken image: the policy refuses it.
   c.header('Content-Security-Policy', PRINT_CSP);
 
+  // The canvases the page embeds that have a snapshot for this caller: the
+  // rest print as a bare placeholder, never a broken picture with its alt.
+  const printable = new Set<string>();
+  for (const cid of new Set(referencedPresentIds(page.doc))) {
+    const facts = await getPresentEmbedFacts(user.id, cid).catch(() => null);
+    if (facts?.posterRev != null) printable.add(cid);
+  }
+
   // Same authed asset path the in-app editor uses; the render cookie is
   // accepted there, so embedded images load in the sidecar.
   const html = renderPageDoc(page.doc, {
@@ -132,7 +141,8 @@ async function printPage(c: Context): Promise<Response> {
     drawUrl: (drawId: string) => `/api/draws/${encodeURIComponent(drawId)}/svg?raw=1&nofill=1`,
     // A canvas's snapshot is a stored picture, never rendered on read, so
     // it needs no nofill: the poster route spends no sidecar time.
-    presentUrl: (presentId: string) => presentPosterSrc(presentId),
+    presentUrl: (presentId: string) =>
+      printable.has(presentId) ? presentPosterSrc(presentId) : null,
   });
   const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 

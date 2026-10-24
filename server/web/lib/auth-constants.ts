@@ -18,7 +18,9 @@ export const RENDER_COOKIE_NAME = 'mantle_render';
 /** The byte routes a render surface loads: page images and scene images
  *  (/api/files/files/:id), embedded drawings (/api/draws/:id/svg) and the
  *  snapshots of embedded canvases (/api/presents/:id/poster). Nothing
- *  else: not the admin private-space bytes, not any JSON API. The render
+ *  else: not the admin private-space bytes, not any JSON API but the
+ *  facts that same poster route answers (`?meta=1`: its title and revs, in
+ *  the caller's scope), as the drawing route answers its JSON shape. The render
  *  pages themselves are ROUTE_POLICY rows of class 'render'
  *  (lib/auth/route-policy.ts); a row's `renderCookie` is what the gate reads. */
 const RENDER_ASSET_RE =

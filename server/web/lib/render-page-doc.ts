@@ -209,15 +209,7 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       const drawId = str(node.attrs?.drawId);
       const presentId = str(node.attrs?.presentId);
       const alt = escAttr(str(node.attrs?.alt));
-      // An embedded canvas: its snapshot, a PNG, or the placeholder where
-      // this surface does not show it (a link that does not serve it).
-      if (presentId) {
-        const posterSrc = opts.presentUrl?.(presentId) ?? null;
-        if (!posterSrc) {
-          return `<p><em>[canvas: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
-        }
-        return `<img class="canvas-embed" src="${escAttr(posterSrc)}" alt="${alt}" loading="lazy">`;
-      }
+
       if (drawId) {
         const drawSrc = opts.drawUrl?.(drawId);
         // A caller that can't serve drawings says so, rather than dropping the
@@ -227,6 +219,15 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
           return `<p><em>[drawing: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
         }
         return `<img src="${escAttr(drawSrc)}" alt="${alt}" loading="lazy">`;
+      }
+      // An embedded canvas (after a drawing, the one order every renderer
+      // keeps): its snapshot, a PNG, or a bare placeholder where this surface
+      // does not show it. The placeholder names nothing: not the alt either,
+      // which may carry a title the reader may not see.
+      if (presentId) {
+        const posterSrc = opts.presentUrl?.(presentId) ?? null;
+        if (!posterSrc) return '<p><em>[canvas]</em></p>';
+        return `<img class="canvas-embed" src="${escAttr(posterSrc)}" alt="${alt}" loading="lazy">`;
       }
       const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
       return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';

@@ -62,7 +62,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
-  // Only the canvases this link serves show their snapshot (share.tsx).
+  // Only the canvases this link serves show their snapshot (share.tsx). A
+  // note's payload is its markdown, which carries no URL: its canvases show
+  // as their placeholder (NotePresenter with no presentUrl).
   const shownCanvases =
     view.kind === 'page'
       ? await sharePresentsShown(share, referencedPresentIds(view.doc))
