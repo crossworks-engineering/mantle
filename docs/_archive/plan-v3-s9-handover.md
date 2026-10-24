@@ -1376,7 +1376,7 @@ slow run met, not an answer. Not proven.
 
 Branch feat/s9-p3, from origin/main d3b6e9281 (v0.300.145, part 2
 merged). Wave 5 freeze. No migration, no SQL. The Present branch (the
-M4's) is not on main, so no rebase; the dev-brain task the brief named
+other session's) is not on main, so no rebase; the dev-brain task the brief named
 (cfa8b8fa) is the client's Peers screen merge, not Present. Handed over at
 about 120 tool calls, before the workstation lanes (see "Left").
 
@@ -1491,7 +1491,7 @@ resolution) are server/web/scripts/route-callers-policy.test.ts now.
   POST /api/files/files parent) and PUT /api/app-nav/pins (app ids in the
   body). No pin change.
 - FLIP L4: kept as named in section 2.
-- A8 (the M4's note): the tool-cell time ceiling 210 s to 360 s, with its
+- A8 (the other session's note): the tool-cell time ceiling 210 s to 360 s, with its
   note (a loaded box used about 199 s).
 
 ### 7. Changed answers
