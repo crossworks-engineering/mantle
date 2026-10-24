@@ -57,7 +57,7 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
   let sql: ReturnType<typeof postgres>;
   let oldKinds: string[] = [];
   let teamReadsBefore = '';
-  /** The node types before 0295: a later kind (present, 0330) is not in
+  /** The node types before 0295: a later kind (present, 0331) is not in
    *  the before answer, so the comparison reads these only. */
   let enumBefore: string[] = [];
   let validBefore: Record<string, boolean> = {};

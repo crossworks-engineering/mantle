@@ -4,8 +4,13 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listPresentRevisions } from '@/lib/presents';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

@@ -626,7 +626,7 @@ front of people.
 ## 12. What P0 and P1 built, and where it differs
 
 Built on branches (not merged): the `present` node type and the `presents`
-sidecar (migrations 0330 and 0331), the content layer
+sidecar (migrations 0331 and 0332), the content layer
 (`packages/content/src/presents.ts`), the routes under
 `server/web/app/api/presents/`, the frame document
 (`packages/share-ui/src/canvas-frame-html.ts`), the canvas runtime

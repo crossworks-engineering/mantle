@@ -668,7 +668,7 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 
 /** The narrow role's table counts: `all` only goes down. */
 // member_turn_ledger to read (0326: its definers write it).
-// presents and present_revisions read (0331: a Present canvas is content,
+// presents and present_revisions read (0332: a Present canvas is content,
 // written by its editors' scope, never by narrow work).
 const NARROW_COUNTS = { all: 96, read: 39, none: 8 };
 

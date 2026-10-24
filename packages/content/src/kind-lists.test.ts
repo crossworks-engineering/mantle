@@ -40,7 +40,7 @@ describe('kind lists derived from the registry', () => {
         'task',
         'event',
         'recall',
-        // Present (0330): a workspace kind like draw.
+        // Present (0331): a workspace kind like draw.
         'present',
       ]),
     );

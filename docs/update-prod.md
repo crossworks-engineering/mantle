@@ -1313,6 +1313,25 @@ The repair, on the older image, before rolling again:
 The logins, by id only (as the superuser, on the box):
 `select l.id from auth.users l join workspace_users u on u.login_id = l.id join workspaces w on w.id = u.workspace_id and w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null where l.role <> 'admin';`
 
+## Going up to 0331 and 0332 (Present, the canvas workspace)
+
+Migration 0331 adds the `present` node type; 0332 adds the `presents` and
+`present_revisions` tables with their row security, actor and edit checks
+(each following the box mode, as the loops leave them), and puts `present`
+into `mantle_kind_class` and the folder depth check. Nothing to do before
+the roll: both only add.
+
+- **The browser sidecar is required for Present.** Every canvas save is
+  drawn there (`BROWSER_WS_ENDPOINT`), and each render connects with its own
+  launch flags (no name resolution, a dead proxy, no direct WebRTC UDP), so
+  the sidecar must be browserless, which takes `launch` from the URL. Without
+  a sidecar a canvas still saves and runs, but nothing can be drawn or
+  exported.
+- **Rolling back below it:** optional; the older image works with both in
+  place. The reverts (`packages/db/rollback/0332_presents.revert.sql`, then
+  `0331_node_type_present.revert.sql`) only take the two off the ledger and
+  keep every canvas, so going up again picks them up as they were.
+
 ## Rollback
 
 ```bash

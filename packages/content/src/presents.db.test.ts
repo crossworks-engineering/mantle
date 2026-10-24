@@ -1,5 +1,5 @@
 /**
- * Present canvases on Postgres (migrations 0330, 0331): create under the
+ * Present canvases on Postgres (migrations 0331, 0332): create under the
  * `present` root with its text and head facts, a save that is live at once
  * with the `rev` etag, the last ten versions kept, the quiet-period rule (a
  * text change marks the canvas due, a colour change does not, the flush

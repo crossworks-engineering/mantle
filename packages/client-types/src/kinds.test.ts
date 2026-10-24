@@ -44,7 +44,7 @@ describe('the kind registry', () => {
       'formula',
       'draw',
       'recall',
-      // Present (0330), appended.
+      // Present (0331), appended.
       'present',
     ]);
   });

@@ -173,7 +173,7 @@ export const RECORDED = {
  *  set in registry order (the code asks membership only, or the order is
  *  only how a schema prints). */
 export const CHANGES = {
-  // Present (0330), a new kind: every list it joins, at once. Its corpus
+  // Present (0331), a new kind: every list it joins, at once. Its corpus
   // starts empty, and a save re-extracts only after the quiet period
   // (@mantle/content presents), so joining the extract set is no burst.
   DEFAULT_EXTRACT_TYPES: {
