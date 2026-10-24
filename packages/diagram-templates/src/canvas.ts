@@ -131,11 +131,15 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
     (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
   );
   if (typeof data.title === 'string')
-    out = out.replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(data.title)}</title>`);
+    // A function replacer: a title with `$&` or `$'` is text, not a pattern.
+    out = out.replace(
+      /<title>[\s\S]*?<\/title>/,
+      () => `<title>${esc(String(data.title))}</title>`,
+    );
   if (typeof data.description === 'string') {
     out = out.replace(
       /<meta name="description" content="[^"]*">/,
-      `<meta name="description" content="${esc(data.description)}">`,
+      () => `<meta name="description" content="${esc(String(data.description))}">`,
     );
   }
   return out;

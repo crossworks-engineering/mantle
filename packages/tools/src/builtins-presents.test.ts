@@ -258,6 +258,56 @@ describe('present_export', () => {
     expect(file.filename).toBe('ingest.svg');
     expect(file.bytes.toString('utf8')).toBe(svg);
     expect((out as { output: { embed: string } }).output.embed).toBe('![Pumps](media:f1)');
+    // The export never stamps the poster: it may run for a reader.
+    expect(h.setPresentPoster).not.toHaveBeenCalled();
+  });
+
+  it("draws a template export from the checked data, not the stored source's script", async () => {
+    await tool('present_create').handler({ template: 'flow', data: FLOW, look: false }, ctx);
+    const stored = (h.createPresent.mock.calls[0]![1] as { source: string }).source;
+    // An editor replaced the runtime import with a script of their own.
+    const tampered = stored.replace(
+      /<script type="module">[\s\S]*?<\/script>/,
+      '<script>window.diagram={ready:Promise.resolve({ok:true}),exportSvg:()=>"<svg/>"}</script>',
+    );
+    h.getPresent.mockResolvedValue(detail(tampered));
+    withRenderer('<svg/>');
+    await tool('present_export').handler({ id: ID }, ctx);
+    const drawn = renders[0]!.canvas.source;
+    expect(drawn).not.toContain('window.diagram={');
+    expect(drawn).toContain("from '@mantle/diagram-templates/browser'");
+  });
+
+  it('refuses an SVG with a namespace prefix or an encoded character', async () => {
+    const created = await tool('present_create').handler(
+      { template: 'flow', data: FLOW, look: false },
+      ctx,
+    );
+    expect(created.ok).toBe(true);
+    const source = (h.createPresent.mock.calls[0]![1] as { source: string }).source;
+    h.getPresent.mockResolvedValue(detail(source));
+    const base =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10" role="img" aria-labelledby="t"><title id="t">x</title><desc>A box.</desc>';
+    for (const bad of [
+      `${base}<s:script xmlns:s="http://www.w3.org/2000/svg">alert(1)</s:script></svg>`,
+      `${base}<a href="#x"><text>javascript&#58;x</text></a></svg>`,
+    ]) {
+      withRenderer(bad);
+      const out = await tool('present_export').handler({ id: ID }, ctx);
+      expect(out.ok, bad).toBe(false);
+    }
+    expect(h.upsertFile).not.toHaveBeenCalled();
+  });
+
+  it('a name clash asks for overwrite instead of replacing the file', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    withRenderer();
+    const { ConflictError } = await import('@mantle/std');
+    h.upsertFile.mockRejectedValue(new ConflictError('exists'));
+    const out = await tool('present_export').handler({ id: ID, filename: 'pumps.png' }, ctx);
+    expect(out.ok).toBe(false);
+    expect((out as { error: string }).error).toContain('overwrite: true');
+    expect((h.upsertFile.mock.calls[0]![0] as { overwrite: boolean }).overwrite).toBe(false);
   });
 
   it('exports any other canvas as a PNG at twice the pixels', async () => {

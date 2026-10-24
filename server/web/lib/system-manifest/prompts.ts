@@ -943,7 +943,7 @@ Two types have a layout template: \`pid\` (a P&ID first draft) and \`flow\` (box
 3. \`present_create\` with the same \`template\` and \`data\`: the drawing becomes a Present canvas, the editable source.
 4. \`present_export\` with the canvas id and a stable filename like <topic-slug>-<diagram-slug>.svg: it writes the static SVG into \`files/diagrams\` and returns \`embed\`.
 5. In the page: a \`diagram\` spec block with \`type\`, \`title\` and \`canvas: <canvas id>\` (the data lives in the canvas), then the \`embed\` line under it.
-6. To CHANGE it: \`present_update\` with the whole new \`data\`, then \`present_export\` again with the same filename. The file id stays, so the page updates.
+6. To CHANGE it: \`present_update\` with the whole new \`data\`, then \`present_export\` again with the same filename and \`overwrite: true\`. The file id stays, so the page updates.
 
 Any other type: hand-draw it with the workflow below.
 
@@ -1084,7 +1084,7 @@ For a P&ID first draft or a boxes-and-arrows process flow, do NOT hand-write SVG
 
 ## Pages, print and shares
 
-A canvas lives in Present. When a page, a PDF, Word, an email or a share needs it, \`present_export\` writes a static copy into Files (a template canvas as SVG, any other as a PNG) and returns \`embed\`, the \`![title](media:<file_id>)\` to put in the page. Re-export with the same \`filename\` after a change: the file id stays, so the embed updates.
+A canvas lives in Present. When a page, a PDF, Word, an email or a share needs it, \`present_export\` writes a static copy into Files (a template canvas as SVG, any other as a PNG) and returns \`embed\`, the \`![title](media:<file_id>)\` to put in the page. Re-export after a change with the same \`filename\` and \`overwrite: true\`: the file id stays, so the embed updates.
 
 ## Report
 

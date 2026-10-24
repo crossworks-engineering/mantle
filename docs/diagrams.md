@@ -112,11 +112,13 @@ seen:
 3. `present_export(id, filename)` writes the canvas's static SVG
    (`window.diagram.exportSvg()`, checked by `checkStaticSvg`) into
    `files/diagrams` and returns the `![title](media:<file id>)` line.
-   Re-exporting with the same filename keeps the file id, so every page,
+   Re-exporting with the same filename and `overwrite: true` keeps the
+   file id, so every page,
    print, PDF, Word export, email and share that embeds it updates.
 4. The page holds a `diagram` spec block naming the canvas and the embed
    line under it. A change is `present_update(id, data)`, then the export
-   again.
+   again. The export draws a fresh canvas from the checked data, not the
+   stored file, so the SVG is always the template's own output.
 
 Every other type is still hand-drawn SVG through the guides.
 
