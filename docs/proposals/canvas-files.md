@@ -859,3 +859,38 @@ in the `present` group (Presenter and Draftsman) and on the MCP surface;
 before using any of them. The theme tokens are `oklch()`, which ECharts,
 Konva and three.js cannot parse, so each chart guide carries a small
 `token()` helper that converts one to `rgb()`.
+
+**The re-audit of the fix round** (brain 19e2832b6, client 00006d6a), its
+round:
+
+- The frame prelude reads `window.parent` once, first, and posts `ready`,
+  errors and the theme check through that: `parent` is replaceable, so a
+  canvas that set it to an object of its own was handed the nonce at load.
+  The real parent is another origin's window, whose `postMessage` a canvas
+  cannot change. A test runs the prelude, then a canvas that swaps the
+  parent, and the nonce reaches only the real one. Still open on the web: a
+  canvas can navigate its frame away and carry what it holds (its own text
+  and its 30 second ticket) in the address. In Firefox and Safari, which
+  ignore the iframe's `csp` attribute, the page it reaches has the network.
+  The parent takes that page down, but the request has already gone. The
+  desktop app refuses the navigation before it leaves.
+- A render page starts no worker (`worker-src 'none'` in the render's
+  CSP): a worker's console reached the renderer past the page's caps. No
+  library of the runtime needs one (Plotly only for its map tiles, which
+  need the network). A live frame keeps blob workers.
+- `diagram_guide` puts the site profile inside the data fence and no longer
+  tells the model to follow it; an untrusted tool's error is fenced too
+  (after the sanitizer, which strips markers), and `present_list` is
+  fenced. The profile's `json profile` block is read from the whole file,
+  past the guide's cut, and the guide's pages and the profile's cut are
+  measured in JSON bytes, so a profile in another script stays inline.
+- An API key at the frame ticket is a plain 403.
+- A sidecar connect that answers after its timeout is dropped.
+- A canvas whose index flush fails (a lock held past 2 seconds) is passed
+  over for 5 minutes, so the same oldest rows cannot starve the rest.
+- A pid canvas keeps the profile it was saved with; the pid guide says how
+  to redraw one with the profile as it is now.
+- The owner UI's Full screen follows the sandbox's own up and down signal
+  (`onDown`), not the text of its error.
+- The canvas frame ticket counts an Admin user too, as main's app limits do
+  since v0.300.142, without their app text.
