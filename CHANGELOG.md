@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Drift in full colour on public pages, subtle in the app
+
+- **Change:** the saved Drift background now has two looks, picked by one
+  `surface` argument to `driftOptionsFromSpec` (`@mantle/share-ui/drift`).
+  The /s share reader (and, in the client, the sign-in and invite screens)
+  paint the spec's full colour with no legibility floor; inside the app,
+  and in every mini-app frame, the floor holds as before (muted text at AA
+  on every colour painted). With a background saved, the /s reader puts
+  its content on an opaque sheet with the gradient as a frame round it,
+  and the footer line on its own pill, so no text sits on full colour.
+
 ## Unreleased: a mini app's computed import cannot read the server's disk
 
 - **Security fix:** an `import()` or `require()` with a computed path (a

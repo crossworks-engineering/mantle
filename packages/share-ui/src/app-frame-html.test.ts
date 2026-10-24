@@ -76,6 +76,9 @@ describe('buildAppFrameHtml — the Neat backdrop', () => {
     expect(html).toContain('src="/share-runtime/share-page.js"');
     // No reader attribute — the runtime must never mount its toggle in a frame.
     expect(html).not.toContain('data-share-mode-default');
+    // No surface attribute: an app's own text sits on the gradient, so every
+    // frame paints the floored 'app' look (readDriftSurface's default).
+    expect(html).not.toContain('data-drift-surface');
   });
 
   it('keeps html transparent so the body ground propagates BENEATH the canvas', () => {

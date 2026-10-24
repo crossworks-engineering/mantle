@@ -233,7 +233,9 @@ ${
      data-share-mode-default, which frames deliberately lack), and the
      runtime's class observer repaints it when the parent posts a theme
      change. z-index:-1 sits above the html ground (the canvas layer) and
-     below all app content. */
+     below all app content. No data-drift-surface, deliberately: an app's own
+     text sits right on the gradient, so every frame, owner or shared, paints
+     the floored 'app' look (DriftSurface in drift/spec.ts). */
   opts.neatSpec
     ? `<div data-neat-spec="${attr(opts.neatSpec)}" style="position:fixed;inset:0;z-index:-1;pointer-events:none" aria-hidden="true"></div>\n`
     : ''

@@ -11,6 +11,7 @@ Appearance sets how MantleOS looks. Most choices apply as you click.
 - **Fonts**: set the **Interface font**, the **Wordmark** (the brain's name in the header), **Pages and Notes** (the editor, shared pages and PDF export) and the **Peer name**, each with its own size.
 - **Avatar style**: the look of every generated avatar. **Logo**: upload your own logo.
 - **Backgrounds**: a generated backdrop for the Menu, Brand, Chat and Activity areas. Each can be Off. Only the menu has one at first.
+- **Background generator**: one animated background for the whole brain. Inside the app it stays close to the page colour so text on it keeps reading. The sign-in, invite and shared pages show it in full colour, with their text on a solid card.
 
 Pick a theme by contrast as well as colour. The status colours (success, warning, error) need to stand apart so you spot a failed job at a glance.
 

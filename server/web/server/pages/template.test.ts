@@ -58,6 +58,9 @@ describe('htmlPage — share reader chrome', () => {
     // The spec is attribute-escaped, exactly once, ahead of the body.
     expect(html).toContain('data-neat-spec="{&quot;v&quot;:1');
     expect(html).toContain('pointer-events-none fixed inset-0 -z-10');
+    // The reader is a public surface: full colour, its text kept off the
+    // gradient by shareShell's sheet.
+    expect(html).toContain('data-drift-surface="public"');
   });
 
   it('keeps the toggle runtime without a host div when no background is saved', () => {
@@ -85,7 +88,33 @@ describe('shareShell — the ground under the gradient', () => {
     expect(shareShell('<p>x</p>')).toContain('bg-background');
   });
 
-  it('goes transparent when a gradient is active — body remains the fallback fill', () => {
-    expect(shareShell('<p>x</p>', { neat: true })).not.toContain('bg-background');
+  it('goes transparent round an opaque sheet when a gradient is active', () => {
+    const html = shareShell('<p>x</p>', { neat: true });
+    // The shell's own ground is gone, so the gradient shows round the sheet.
+    expect(html).toMatch(
+      /^<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin text-foreground">/,
+    );
+    // Every word of the content sits on the opaque sheet.
+    expect(html).toMatch(
+      /<div data-share-sheet class="[^"]*\bbg-background\b[^"]*"><p>x<\/p><\/div>/,
+    );
+    // overflow-clip, never hidden: the sheet must not become a scroll
+    // container, or the contact strip inside it stops being sticky.
+    expect(html).toContain('overflow-clip');
+    expect(html).not.toContain('overflow-hidden');
+  });
+
+  it('keeps the public rule: no text sits directly on the full-colour gradient', () => {
+    // The public Drift surface drops the legibility floor (spec.ts
+    // DriftSurface), so every text node outside the sheet must have an
+    // opaque backing of its own. Strip the sheet's contents and check what
+    // is left: each remaining text run sits in a bg-background element.
+    const html = shareShell('<p>x</p>', { neat: true }).replace(
+      /(<div data-share-sheet[^>]*>)[\s\S]*?(<\/div><\/main>)/,
+      '$1$2',
+    );
+    const texts = [...html.matchAll(/>([^<>]*\S[^<>]*)</g)].map((m) => m[1]!.trim());
+    expect(texts).toEqual(['Shared via', 'mantle']);
+    expect(html).toMatch(/<span class="[^"]*\bbg-background\b[^"]*">Shared via <span/);
   });
 });

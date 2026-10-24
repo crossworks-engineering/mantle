@@ -1,6 +1,10 @@
 import type { DriftOptions } from './drift/options';
-import { driftOptionsFromSpec, type DriftSpec } from './drift/spec';
+import { driftOptionsFromSpec, type DriftSpec, type DriftSurface } from './drift/spec';
 import { readDriftThemeTokens } from './drift/theme';
+
+// A plain-script host reads its surface off markup with this; re-exported
+// here so the page bundle never imports the engine-carrying drift index.
+export { readDriftSurface, type DriftSurface } from './drift/spec';
 
 /**
  * The one way a plain-script page puts a saved Drift spec onto a canvas: the
@@ -17,8 +21,9 @@ import { readDriftThemeTokens } from './drift/theme';
  *  - `prefers-reduced-motion` renders one still frame (the engine's
  *    `respectReducedMotion`, on by default); the wash still paints. Pointer
  *    lean stays off: it is a lab option, never a real surface's.
- *  - The palette holds the legibility floor (muted text at AA), see
- *    driftOptionsFromSpec.
+ *  - `surface` picks the look: 'app' holds the legibility floor (muted text
+ *    at AA), 'public' paints full colour under pages that keep their text
+ *    off the gradient; see DriftSurface in drift/spec.ts.
  *  - A mode or theme change is `repaint`: new colours as uniform writes on
  *    the same context, never a teardown.
  *
@@ -44,12 +49,13 @@ export async function mountDrift(
   canvas: HTMLCanvasElement,
   spec: DriftSpec,
   mode: 'light' | 'dark',
+  surface: DriftSurface,
   overrides: Partial<DriftOptions> = {},
 ): Promise<DriftMountHandle | null> {
   const { createDrift } = await import('./drift/engine');
   const tokens = readDriftThemeTokens();
   if (!tokens) return null;
-  const options = driftOptionsFromSpec(spec, tokens, mode);
+  const options = driftOptionsFromSpec(spec, tokens, mode, surface);
   // A theme whose colours did not parse paints NOTHING, not a guessed palette.
   if (!options.colors || options.colors.length === 0) return null;
   let engine: ReturnType<typeof createDrift>;
@@ -63,7 +69,8 @@ export async function mountDrift(
   return {
     repaint(next) {
       const fresh = readDriftThemeTokens();
-      if (fresh) handle.update({ ...driftOptionsFromSpec(spec, fresh, next), ...overrides });
+      if (fresh)
+        handle.update({ ...driftOptionsFromSpec(spec, fresh, next, surface), ...overrides });
     },
     destroy: () => handle.destroy(),
   };
