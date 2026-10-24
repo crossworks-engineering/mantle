@@ -424,7 +424,9 @@ const ROUTE_LISTS_NOT_POLICY = Object.freeze({
   // and its siblings): how many bytes a request may send, read by the gate
   // before a row is found and by the loader, never who may call (plan v3.2
   // S9 part 3: the owner's decision of part 0 round 2 kept the ceilings a
-  // list, and they name no caller, open, item or area).
+  // list, and they name no caller, open, item or area). Out of the policy
+  // count: accepted at part 3's review, since they limit sizes, not who
+  // may call.
   'server/web/lib/body-limit.ts': 'size ceilings',
 });
 
