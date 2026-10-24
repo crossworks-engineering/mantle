@@ -35,6 +35,10 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   // The DELETE handler is called directly below: the owner the gate would
   // have answered for its row.
   ownerCaller: vi.fn(() => ({ id: ANCHOR })),
+  // The pipeline's answer, but for one call that stands in for a key's.
+  ownerCallerWithSource: vi.fn(
+    (await importOriginal<typeof import('@/lib/auth')>()).ownerCallerWithSource,
+  ),
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
@@ -119,6 +123,22 @@ describe('POST /api/presents/:id/frame-ticket', () => {
     expect((await runRoute(null, 'POST', `/api/presents/${CANVAS}/frame-ticket`, {})).status).toBe(
       401,
     );
+  });
+});
+
+describe('an API key at the frame ticket (the re-audit R4)', () => {
+  it('is refused with a plain 403, never a 500', async () => {
+    const auth = await import('@/lib/auth');
+    vi.mocked(auth.ownerCallerWithSource).mockReturnValueOnce({
+      user: { id: ANCHOR } as never,
+      source: 'api',
+    });
+    const { POST } = await import('./[id]/frame-ticket/route');
+    const res = await POST(new Request(`http://brain.test/api/presents/${CANVAS}/frame-ticket`), {
+      params: Promise.resolve({ id: CANVAS }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toContain('API key');
   });
 });
 
