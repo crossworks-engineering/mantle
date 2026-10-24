@@ -151,9 +151,11 @@ const LUCIDE_ROOT = fs.realpathSync(
 /** Code an app may hold: what esbuild parses as a module. */
 const CODE_LOADERS = new Set(['tsx', 'ts', 'jsx', 'js']);
 
-/** Wrappers esbuild strips before it reads a call: TypeScript casts and
- *  non-null marks (`(require as any)(…)`, `require!(…)`), and parentheses. */
+/** Wrappers esbuild strips before it reads a call: TypeScript casts,
+ *  non-null marks and type arguments (`(require as any)(…)`, `require!(…)`,
+ *  `(require<any>)(…)`), and parentheses. */
 const TRANSPARENT = new Set([
+  'TSInstantiationExpression',
   'TSAsExpression',
   'TSSatisfiesExpression',
   'TSNonNullExpression',
@@ -217,7 +219,9 @@ function computedCall(ast: unknown): 'import' | 'require' | null {
     const node = stack.pop() as Record<string, unknown> | null;
     if (!node || typeof node !== 'object') continue;
     if (node.type === 'ImportExpression' && !isPlainPath(node.source)) return 'import';
-    if (node.type === 'CallExpression') {
+    // An optional call (`require?.(…)`) is not expanded by esbuild today; it
+    // is checked the same way, so a later esbuild cannot open a gap.
+    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
       const callee = unwrap(node.callee);
       const args = (node.arguments as unknown[]) ?? [];
       if (callee?.type === 'Import' && !isPlainPath(args[0])) return 'import';
@@ -278,7 +282,7 @@ async function computedImportErrors(source: AppSource): Promise<BuildMessage[]> 
     const kind = computedCall(ast);
     if (kind) {
       out.push({
-        text: `${kind}() in a mini app takes one quoted path, like ${kind}('./Chart'). A computed path (a template string or a joined string) is not allowed.`,
+        text: `${kind}() in a mini app takes one quoted path, like ${kind}('./Chart'). A computed path (a variable, a template string or a joined string) is not allowed.`,
         location: { file, line: 0, column: 0 },
       });
     }
@@ -299,23 +303,29 @@ function inputsOutsideTheApp(inputs: Record<string, unknown>): string[] {
   );
 }
 
-/** A message about a file that is not the app's own carries no text or
- *  path of it: a failed parse quotes the file (audit 2026-10-24). */
-/** esbuild quotes a disk path in double quotes (`Cannot read file
- *  "../../x.json"`, `Could not resolve "/etc/x"`): one that climbs out or is
- *  absolute names a file outside the app, wherever the message is located
- *  (the audit of 2026-10-24: a glob's read error sat at `app:App.tsx`). */
-// A real path only: `"../x"`, `"/a/b"`, `"C:\\x"`. Not `"/"` alone, which a
-// plain syntax error quotes (`Expected ";" but found "/"`).
-const OUTSIDE_PATH_RE = /"(?:\.\.[\\/]|\/[^"\s/]+\/|[A-Za-z]:[\\/])[^"]*"/;
+/** esbuild's messages about reading a file off the disk. One can sit at an
+ *  app file (a glob's read error is located at the call), so these are
+ *  generic wherever they are located (the audits of 2026-10-24). */
+const DISK_READ_RE = /Cannot read (file|directory)|No loader is configured|Could not read/;
+/** A path that climbs out or is absolute, quoted or not: `../x`, `/a/b`,
+ *  `C:\\x`. Not `"/"` alone, which a plain syntax error quotes. */
+const OUTSIDE_PATH_RE = /(?:^|[\s"'(:])(?:\.\.[\\/]|\/[^\s"'/]+\/|[A-Za-z]:[\\/])/;
 const GENERIC_MSG = 'The build failed on a file that is not part of this app.';
 
+/**
+ * A build message the author may see. One about the app's own code (located
+ * at `app:<key>`, or the stdin entry) keeps its text, so a warning such as a
+ * duplicate key still helps; a disk-read message never does. Any other
+ * message carries no text or path of a file that is not the app's: a failed
+ * parse quotes the file (audit 2026-10-24).
+ */
 function appOnlyMsg(source: AppSource, m: Message): BuildMessage {
-  if (OUTSIDE_PATH_RE.test(m.text) || /Cannot read (file|directory)/.test(m.text)) {
-    return { text: GENERIC_MSG, location: null };
-  }
+  if (DISK_READ_RE.test(m.text)) return { text: GENERIC_MSG, location: null };
   const file = m.location?.file;
-  if (!file || file === STDIN || file.endsWith(`/${STDIN}`)) return toMsg(m);
+  if (!file) {
+    return OUTSIDE_PATH_RE.test(m.text) ? { text: GENERIC_MSG, location: null } : toMsg(m);
+  }
+  if (file === STDIN || file.endsWith(`/${STDIN}`)) return toMsg(m);
   // An app file is located as `app:<key>` (its namespace). A bare path that
   // merely equals a file key is a disk file, not the app's (the M2's C2).
   if (file.startsWith(`${APP_NS}:`) && Object.hasOwn(source.files, file.slice(APP_NS.length + 1))) {

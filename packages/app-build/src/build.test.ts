@@ -163,6 +163,9 @@ describe('buildApp — the import allowlist (security boundary)', () => {
         `const m = (require as any)(\`${R}/\${n}.json\`);`,
         `const m = require!(\`${R}/\${n}.json\`);`,
         `const m = import((\`${R}/\${n}.json\`) as string);`,
+        `const m = (require<any>)(\`${R}/\${n}.json\`);`,
+        `const m = (require!<any>)(\`${R}/\${n}.json\`);`,
+        `const m = require?.(\`${R}/\${n}.json\`);`,
       ];
       for (const line of cases) {
         const res = await buildApp(
@@ -183,6 +186,20 @@ describe('buildApp — the import allowlist (security boundary)', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("keeps a warning about the app's own code, even when it quotes a path-like key", async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          'const o = { "/api/v1/": 1, "/api/v1/": 2 };\nexport default function App() { return <p>{String(o["/api/v1/"])}</p>; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.ok).toBe(true);
+    expect(
+      res.warnings.some((w) => /Duplicate key/.test(w.text) && w.location?.file === 'app:App.tsx'),
+    ).toBe(true);
   });
 
   it('still builds a typed app: generics, casts, enums and a quoted lazy import', async () => {
