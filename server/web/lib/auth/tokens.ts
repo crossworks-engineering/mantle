@@ -574,6 +574,17 @@ export function buildCanvasFrameTicket(opts: {
   });
 }
 
+/** The secret a canvas frame proves it is the document the brain served:
+ *  derived from its ticket under a key of this brain, so only the frame-ticket
+ *  route (which hands it to the parent page) and the frame route (which puts
+ *  it in the frame's prelude, out of the canvas's reach) can know it. A page
+ *  a canvas navigated its frame to cannot (canvas-sandbox.tsx). */
+export function canvasFrameNonce(ticket: string): string {
+  return b64urlEncode(
+    createHmac('sha256', derivedSecret('canvas-frame-nonce')).update(ticket).digest(),
+  ).slice(0, 32);
+}
+
 /** Verify a canvas frame ticket: a canvas's only (see verifyAppFrameTicket). */
 export function verifyCanvasFrameTicket(value: string): AppFrameTicket | null {
   return verifyAppFrameTicket(value, { canvas: true });

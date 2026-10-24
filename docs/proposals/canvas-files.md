@@ -772,3 +772,39 @@ browser, which the stand-in browser of the unit test could not show.
 Open for later: one login can still take both slots and the queue for a
 render's length (no per-login fairness); the canvas's text reaches the
 model with a note, not under the `untrusted` fence, which dispatch sets.
+
+**The final audit of the Present system** (five independent read-only
+audits on brain 6273c382b and client 0861657a), fix round. Security:
+
+- The owner UI's frame could show another site: a canvas that navigates
+  its frame in its head made the other page the frame's first load. Now
+  the frame proves itself: the frame-ticket route returns a nonce derived
+  from the ticket under a key of this brain, the frame's prelude holds it
+  in a closure (the script removes itself) and posts it with `ready`, and
+  `CanvasSandbox` takes the frame down on a load with no proof, on any load
+  after the proof, and when no proof comes within 20 seconds (a page that
+  never finishes loading). The iframe also requires its CSP of whatever
+  loads in it (`csp`, embedded enforcement; the frame route answers
+  `Allow-CSP-From`), and the desktop app refuses a canvas frame's
+  navigation before it leaves (`will-frame-navigate`). Checked in headless
+  Chrome: a jump in the head, after load, through a link, to a page that
+  allows the CSP, and to a page that never ends are all taken down, and a
+  page that posts `ready` without the nonce is never shown. Left: in a
+  browser the navigation request itself still leaves (no CSP directive
+  stops it, and the Navigation API does not fire for an opaque frame's
+  navigations), carrying only what the canvas holds (its own content and
+  its 30 second ticket).
+- Render output is bounded: at most 4K pixels with the scale lowered to
+  fit, a PNG over 6 MB is taken again as a JPEG, one still over is refused;
+  the model sees a picture only under 3.5 MB, and the poster is kept only
+  as a PNG under 2 MB. An 8000x8000 noise canvas at 2x comes back as a
+  2.9 MB JPEG.
+- The render page keeps the probe's built-ins where the canvas cannot
+  change them, caps every console message and their count in the page, and
+  turns an uncaught error into one short line; the probe answers JSON text
+  of bounded length. A canvas printing 2000 messages of 2 MB returns in 2
+  seconds with short lines.
+- `present_export` has no key area (open only to an all-areas key);
+  `present_delete` is peer risky; every tool that returns canvas text is
+  fenced as data (`outside.untrusted`) and the reply says so; renders are
+  limited per caller (one at a time, 20 in 5 minutes).

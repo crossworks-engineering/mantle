@@ -71,6 +71,11 @@ const MAX_WAITING = 6;
 const MAX_LINES = 50;
 const MAX_LINE_CHARS = 300;
 const MAX_SVG_CHARS = 3_000_000;
+/** The picture's pixels, scale included (4K): past it the scale is lowered
+ *  to fit, so a big canvas at 2x cannot make a 90 MB picture. */
+const MAX_PIXELS = 3840 * 2160;
+/** A PNG past this is taken again as a JPEG; a JPEG past it is refused. */
+const MAX_IMAGE_BYTES = 6_000_000;
 
 /** Launch flags for the sidecar's browser, per connection (browserless
  *  starts one browser per connection and takes `launch` from the URL). A
@@ -101,12 +106,38 @@ export function lockedEndpoint(endpoint: string): string {
 }
 
 /** Run before any canvas script, in every frame the page makes (a blank
- *  iframe's window included): no WebRTC anywhere. The frame prelude removes
- *  it from the top window only. */
-const NO_WEBRTC = `(() => {
+ *  iframe's window included):
+ *   - no WebRTC anywhere (the frame prelude removes it from the top window
+ *     only);
+ *   - the built-ins the diagram probe uses, kept where the canvas cannot
+ *     change them (a canvas may replace Array, String and JSON's methods);
+ *   - the console capped where it is written: each message cut to a short
+ *     text and only the first ones kept, so a canvas that prints without end
+ *     cannot send it all back to the server;
+ *   - an uncaught error reported as a short console line, not in full. */
+export const RENDER_INIT = `(() => {
+  const D = Object.defineProperty;
   for (const n of ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver']) {
-    try { Object.defineProperty(globalThis, n, { value: undefined, configurable: false, writable: false }); } catch {}
+    try { D(globalThis, n, { value: undefined, configurable: false, writable: false }); } catch {}
   }
+  const P = Object.freeze({
+    stringify: JSON.stringify, apply: Reflect.apply, isArray: Array.isArray,
+    slice: Array.prototype.slice, strSlice: String.prototype.slice, String: String,
+    keys: Object.keys,
+  });
+  try { D(globalThis, '__mantleProbe', { value: P, configurable: false, writable: false, enumerable: false }); } catch {}
+  const apply = Reflect.apply, S = String, cut = String.prototype.slice;
+  let n = 0;
+  const short = (v) => { try { return apply(cut, S(v), [0, ${MAX_LINE_CHARS}]); } catch { return '?'; } };
+  for (const k of ['error', 'warn', 'log', 'info', 'debug', 'trace', 'dir', 'table']) {
+    const orig = console[k];
+    if (typeof orig !== 'function') continue;
+    const fn = function (a) { if (++n > ${MAX_LINES}) return; return apply(orig, console, [short(a)]); };
+    try { D(console, k, { value: fn, configurable: false, writable: false }); } catch {}
+  }
+  const err = console.error;
+  addEventListener('error', (e) => { e.preventDefault(); err(e && (e.message || (e.error && e.error.message)) || 'an uncaught error'); }, true);
+  addEventListener('unhandledrejection', (e) => { e.preventDefault(); err(e && e.reason && (e.reason.message || e.reason) || 'an unhandled rejection'); }, true);
 })();`;
 
 let busy = 0;
@@ -176,30 +207,43 @@ export function diagramProbe(
   maxSvg: number,
 ): string {
   const args = JSON.stringify([wantSvg, maxLines, maxChars, maxSvg]);
+  const maxTotal = maxSvg + 2 * maxLines * maxChars + 4096;
   return `(async ([wantSvg, maxLines, maxChars, maxSvg]) => {
+  const P = globalThis.__mantleProbe;
+  if (!P) return null;
   const d = window.diagram;
   if (!d) return null;
   const o = await d.ready;
-  const lines = (v) => (Array.isArray(v) ? v.slice(0, maxLines).map((x) => String(x).slice(0, maxChars)) : []);
+  const str = (x) => P.apply(P.strSlice, P.String(x), [0, maxChars]);
+  const lines = (v) => {
+    if (!P.isArray(v)) return [];
+    const head = P.apply(P.slice, v, [0, maxLines]);
+    const out = [];
+    for (let i = 0; i < head.length && i < maxLines; i++) out[i] = str(head[i]);
+    return out;
+  };
   const stats = {};
   if (o && o.ok && o.stats && typeof o.stats === 'object') {
-    for (const [k, v] of Object.entries(o.stats).slice(0, maxLines)) {
-      if (typeof v === 'number') stats[k.slice(0, 40)] = v;
+    const ks = P.apply(P.slice, P.keys(o.stats), [0, maxLines]);
+    for (let i = 0; i < ks.length && i < maxLines; i++) {
+      const v = o.stats[ks[i]];
+      if (typeof v === 'number') stats[P.apply(P.strSlice, P.String(ks[i]), [0, 40])] = v;
     }
   }
-  if (!o || !o.ok) return { ok: false, errors: lines(o && o.errors), warnings: lines(o && o.warnings), stats };
-  let svg;
-  if (wantSvg) {
-    const out = d.exportSvg();
-    svg = typeof out === 'string' && out.length <= maxSvg ? out : undefined;
+  let out;
+  if (!o || !o.ok) {
+    out = { ok: false, errors: lines(o && o.errors), warnings: lines(o && o.warnings), stats };
+  } else {
+    let svg;
+    if (wantSvg) {
+      const x = d.exportSvg();
+      svg = typeof x === 'string' && x.length <= maxSvg ? x : undefined;
+    }
+    out = { ok: true, errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [], warnings: lines(o.warnings), stats };
+    if (svg !== undefined) out.svg = svg;
   }
-  return {
-    ok: true,
-    errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [],
-    warnings: lines(o.warnings),
-    stats,
-    ...(svg !== undefined ? { svg } : {}),
-  };
+  const text = P.stringify(out);
+  return typeof text === 'string' && text.length <= ${maxTotal} ? text : null;
 })(${args})`;
 }
 
@@ -307,9 +351,11 @@ async function renderInSlot(
       await page.close().catch(() => {});
       throw new Error('the render ran out of time before the page opened');
     }
-    await page.evaluateOnNewDocument(NO_WEBRTC);
+    await page.evaluateOnNewDocument(RENDER_INIT);
     const view = viewportFor(req);
-    await page.setViewport({ ...view, deviceScaleFactor: req.scale === 2 ? 2 : 1 });
+    const want = req.scale === 2 ? 2 : 1;
+    const deviceScaleFactor = Math.min(want, Math.sqrt(MAX_PIXELS / (view.width * view.height)));
+    await page.setViewport({ ...view, deviceScaleFactor });
     await page.setRequestInterception(true);
     page.on('request', (r) => {
       if (r.isInterceptResolutionHandled()) return;
@@ -374,18 +420,38 @@ async function renderInSlot(
     }
     await new Promise((r) => setTimeout(r, settle * 1000));
 
-    const reported: unknown = await Promise.race([
+    const sent: unknown = await Promise.race([
       page.evaluate(diagramProbe(req.exportSvg === true, MAX_LINES, MAX_LINE_CHARS, MAX_SVG_CHARS)),
       new Promise<null>((r) => setTimeout(() => r(null), DIAGRAM_TIMEOUT_MS)),
     ]);
-    // Capped again here: the caps inside the page run in the canvas's own
-    // world, whose Array and String it may have replaced.
+    // The probe answers JSON text of bounded length; read it and cap again.
+    let reported: unknown = null;
+    if (typeof sent === 'string') {
+      try {
+        reported = JSON.parse(sent);
+      } catch {
+        reported = null;
+      }
+    }
     const diagram = cappedReport(reported);
 
-    const png = Buffer.from(await page.screenshot({ type: 'png' }));
+    let png = Buffer.from(await page.screenshot({ type: 'png' }));
+    let mime: 'image/png' | 'image/jpeg' = 'image/png';
+    if (png.length > MAX_IMAGE_BYTES) {
+      png = Buffer.from(await page.screenshot({ type: 'jpeg', quality: 70 }));
+      mime = 'image/jpeg';
+    }
+    if (png.length > MAX_IMAGE_BYTES) {
+      return {
+        ok: false,
+        error:
+          'The canvas drew a picture too large to keep (it is mostly noise, or very large). Make it simpler or smaller.',
+      };
+    }
     return {
       ok: true,
       png,
+      mime,
       width: view.width,
       height: view.height,
       consoleErrors: [...new Set(consoleErrors)].slice(0, 20),

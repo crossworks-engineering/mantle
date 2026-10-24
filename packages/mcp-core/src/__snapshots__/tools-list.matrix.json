@@ -1011,7 +1011,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -1166,7 +1166,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -1178,7 +1177,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ede477d19f48e236ea95cc1d89aec95ef741b87926936b5cff91d9732e27ec33",
+  "sha256": "7d83e84fdea7b1341ebdf4d1c2b3322f6099d5a991d0209b15cf37a6eb8f8e3d",
   "names": [
    "tree_list",
    "search",
@@ -1353,7 +1352,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1386,7 +1384,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "0ab2a9ef3fa99db496622ea8c530f3038fadf071f5d52ecc83a96692a4668eb4",
+  "sha256": "da97579c88ae15c5f41ee7569323a82c0bca763fa65f5f4fcebb0243ef92a0f6",
   "names": [
    "tree_list",
    "search",
@@ -1557,7 +1555,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1584,7 +1581,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "59c900dd4e81477ed7d2475329bb25bd9bdfbdb82c2d23335b37651be8289153",
+  "sha256": "9e6c9cc43a1351ffd934ca0897cadaa3a5f8f6b41e8fe1b1db36d71da1176022",
   "names": [
    "tree_list",
    "search",
@@ -1754,7 +1751,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -1955,7 +1951,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -2110,7 +2106,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2122,7 +2117,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ede477d19f48e236ea95cc1d89aec95ef741b87926936b5cff91d9732e27ec33",
+  "sha256": "7d83e84fdea7b1341ebdf4d1c2b3322f6099d5a991d0209b15cf37a6eb8f8e3d",
   "names": [
    "tree_list",
    "search",
@@ -2297,7 +2292,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2330,7 +2324,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "0ab2a9ef3fa99db496622ea8c530f3038fadf071f5d52ecc83a96692a4668eb4",
+  "sha256": "da97579c88ae15c5f41ee7569323a82c0bca763fa65f5f4fcebb0243ef92a0f6",
   "names": [
    "tree_list",
    "search",
@@ -2501,7 +2495,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2528,7 +2521,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "59c900dd4e81477ed7d2475329bb25bd9bdfbdb82c2d23335b37651be8289153",
+  "sha256": "9e6c9cc43a1351ffd934ca0897cadaa3a5f8f6b41e8fe1b1db36d71da1176022",
   "names": [
    "tree_list",
    "search",
@@ -2698,7 +2691,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -2723,7 +2715,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -2878,7 +2870,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -2890,7 +2881,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "52814696035c763c37308091d25dcabe4cc0db8500257837bd603ccbe27ea00d",
+  "sha256": "55c25f523e3edb84432a98c0000378c2af37966c874804494474e0f81660c82b",
   "names": [
    "tree_list",
    "search",
@@ -3067,7 +3058,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3101,7 +3091,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "6bbbdbf9dd3ded019dd915176d1c42adc2f3f74d509ca812b40ee855e838b52a",
+  "sha256": "5b0506ec744208333b545a5259eb9c9427957fe3c22b05d43946c9a70f443358",
   "names": [
    "tree_list",
    "search",
@@ -3272,7 +3262,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -3300,7 +3289,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "a4a1012f293ab08dfcbc3fb7663bef1fd1fb49b399e84bdc1d5cbb5c46ced23a",
+  "sha256": "5601a59564b4d409a5570dda6b8ea467084d527036b98f8ee8f0ce20fe2d8d7a",
   "names": [
    "tree_list",
    "search",
@@ -3470,7 +3459,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6037,7 +6025,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -6192,7 +6180,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -6204,7 +6191,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ede477d19f48e236ea95cc1d89aec95ef741b87926936b5cff91d9732e27ec33",
+  "sha256": "7d83e84fdea7b1341ebdf4d1c2b3322f6099d5a991d0209b15cf37a6eb8f8e3d",
   "names": [
    "tree_list",
    "search",
@@ -6379,7 +6366,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6412,7 +6398,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "0ab2a9ef3fa99db496622ea8c530f3038fadf071f5d52ecc83a96692a4668eb4",
+  "sha256": "da97579c88ae15c5f41ee7569323a82c0bca763fa65f5f4fcebb0243ef92a0f6",
   "names": [
    "tree_list",
    "search",
@@ -6583,7 +6569,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6610,7 +6595,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "59c900dd4e81477ed7d2475329bb25bd9bdfbdb82c2d23335b37651be8289153",
+  "sha256": "9e6c9cc43a1351ffd934ca0897cadaa3a5f8f6b41e8fe1b1db36d71da1176022",
   "names": [
    "tree_list",
    "search",
@@ -6780,7 +6765,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -6981,7 +6965,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -7136,7 +7120,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -7148,7 +7131,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ede477d19f48e236ea95cc1d89aec95ef741b87926936b5cff91d9732e27ec33",
+  "sha256": "7d83e84fdea7b1341ebdf4d1c2b3322f6099d5a991d0209b15cf37a6eb8f8e3d",
   "names": [
    "tree_list",
    "search",
@@ -7323,7 +7306,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7356,7 +7338,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "0ab2a9ef3fa99db496622ea8c530f3038fadf071f5d52ecc83a96692a4668eb4",
+  "sha256": "da97579c88ae15c5f41ee7569323a82c0bca763fa65f5f4fcebb0243ef92a0f6",
   "names": [
    "tree_list",
    "search",
@@ -7527,7 +7509,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7554,7 +7535,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "59c900dd4e81477ed7d2475329bb25bd9bdfbdb82c2d23335b37651be8289153",
+  "sha256": "9e6c9cc43a1351ffd934ca0897cadaa3a5f8f6b41e8fe1b1db36d71da1176022",
   "names": [
    "tree_list",
    "search",
@@ -7724,7 +7705,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -7749,7 +7729,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "f64670e497f94dbf847de514dc73f212bf637fb026966ba3d5d860307014a0a7",
+  "sha256": "46636f1db4dfae15c6defb28446e09b763c334387dad6d8c15edb0192288cabc",
   "names": [
    "tree_list",
    "search",
@@ -7904,7 +7884,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "location_nearby",
@@ -7916,7 +7895,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "52814696035c763c37308091d25dcabe4cc0db8500257837bd603ccbe27ea00d",
+  "sha256": "55c25f523e3edb84432a98c0000378c2af37966c874804494474e0f81660c82b",
   "names": [
    "tree_list",
    "search",
@@ -8093,7 +8072,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8127,7 +8105,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "6bbbdbf9dd3ded019dd915176d1c42adc2f3f74d509ca812b40ee855e838b52a",
+  "sha256": "5b0506ec744208333b545a5259eb9c9427957fe3c22b05d43946c9a70f443358",
   "names": [
    "tree_list",
    "search",
@@ -8298,7 +8276,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",
@@ -8326,7 +8303,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "a4a1012f293ab08dfcbc3fb7663bef1fd1fb49b399e84bdc1d5cbb5c46ced23a",
+  "sha256": "5601a59564b4d409a5570dda6b8ea467084d527036b98f8ee8f0ce20fe2d8d7a",
   "names": [
    "tree_list",
    "search",
@@ -8496,7 +8473,6 @@
    "present_update",
    "present_restore",
    "present_export",
-   "present_delete",
    "file_create",
    "folder_get_by_path",
    "content_supersede",

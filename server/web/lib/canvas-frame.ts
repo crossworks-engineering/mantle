@@ -76,6 +76,7 @@ export async function canvasFrameDocument(
   ownerId: string,
   canvas: { source: string; css: string; meta: PresentMeta },
   theme: { cls: string; colorTheme: string | null },
+  nonce?: string,
 ): Promise<string> {
   const [importMapJson, fontCss] = await Promise.all([
     loadCanvasImportMap(),
@@ -90,6 +91,7 @@ export async function canvasFrameDocument(
     size: canvas.meta.size,
     theme: canvas.meta.theme,
     fontCss,
+    ...(nonce ? { nonce } : {}),
   });
 }
 
@@ -102,12 +104,15 @@ export async function renderCanvasFrame(
   req: Request,
   ownerId: string,
   canvas: { source: string; css: string; meta: PresentMeta },
+  nonce: string,
 ): Promise<Response> {
   const url = new URL(req.url);
-  const html = await canvasFrameDocument(ownerId, canvas, {
-    cls: url.searchParams.get('cls') ?? '',
-    colorTheme: url.searchParams.get('ct'),
-  });
+  const html = await canvasFrameDocument(
+    ownerId,
+    canvas,
+    { cls: url.searchParams.get('cls') ?? '', colorTheme: url.searchParams.get('ct') },
+    nonce,
+  );
   return new NextResponse(html, {
     status: 200,
     headers: {
@@ -119,6 +124,10 @@ export async function renderCanvasFrame(
       // No DNS lookups ahead of a navigation a canvas names (a prefetch is
       // a lookup the CSP does not see).
       'x-dns-prefetch-control': 'off',
+      // The parent embeds the frame with a required CSP (the iframe's `csp`
+      // attribute, canvas-sandbox.tsx): this document takes it. A page the
+      // canvas navigated to that does not say so is not loaded at all.
+      'allow-csp-from': '*',
       // No Cache-Control here: /api answers no-store by default.
       'referrer-policy': 'no-referrer',
     },

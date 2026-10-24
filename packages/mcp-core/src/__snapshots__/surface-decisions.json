@@ -3254,7 +3254,7 @@
  },
  "present_delete": {
   "readOnly": false,
-  "peerRisky": false,
+  "peerRisky": true,
   "spendsOwnerKeys": false,
   "keyArea": null,
   "keySharedContent": false,
@@ -3267,14 +3267,14 @@
    "spends": "none",
    "creates": false,
    "keyArea": null,
-   "peerRisky": false
+   "peerRisky": true
   }
  },
  "present_export": {
   "readOnly": false,
   "peerRisky": false,
   "spendsOwnerKeys": false,
-  "keyArea": "files",
+  "keyArea": null,
   "keySharedContent": false,
   "keyEmailList": false,
   "adminKindCreate": false,
@@ -3284,7 +3284,7 @@
    "scope": "any",
    "spends": "none",
    "creates": true,
-   "keyArea": "files",
+   "keyArea": null,
    "peerRisky": false
   }
  },

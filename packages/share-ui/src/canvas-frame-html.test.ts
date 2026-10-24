@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCanvasFrameCsp, buildCanvasFrameHtml } from './canvas-frame-html';
+import {
+  buildCanvasEmbedCsp,
+  buildCanvasFrameCsp,
+  buildCanvasFrameHtml,
+} from './canvas-frame-html';
 
 const ORIGIN = 'https://brain.example.test';
 
@@ -115,5 +119,36 @@ describe('the prelude', () => {
     });
     expect(html.indexOf("'RTCPeerConnection'")).toBeGreaterThan(0);
     expect(html.indexOf("'RTCPeerConnection'")).toBeLessThan(html.indexOf('new RTCPeerConnection'));
+  });
+
+  it('holds the nonce in its closure, posts it with ready, and removes its own script', () => {
+    const html = buildCanvasFrameHtml({
+      source: '<html><body>x</body></html>',
+      css: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      size: 'fill',
+      theme: 'follow',
+      fontCss: '',
+      nonce: 'abc123',
+    });
+    const prelude = html.slice(0, html.indexOf('<html>'));
+    expect(prelude).toContain('"n":"abc123"');
+    expect(prelude).toContain('document.currentScript');
+    expect(prelude).toContain("kind:'ready',n:nonce");
+    // The canvas's own text never holds it.
+    expect(html.slice(html.indexOf('<html>'))).not.toContain('abc123');
+  });
+});
+
+describe('buildCanvasEmbedCsp', () => {
+  it('requires no network of whatever loads in the frame, and names only what an embedder may', () => {
+    const csp = buildCanvasEmbedCsp('https://brain.example');
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain('https://brain.example/canvas-runtime/');
+    expect(csp).not.toContain('sandbox');
+    expect(csp).not.toContain('frame-ancestors');
   });
 });
