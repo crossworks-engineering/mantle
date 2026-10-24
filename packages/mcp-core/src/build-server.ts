@@ -364,9 +364,10 @@ export function registerMantleTools(
   // read from the guide files in the image, so an outside agent draws to the
   // same rules as the Draftsman. Static reads, no spend.
   registerBuiltinTools(DIAGRAM_TOOLS);
-  // Present canvases and the template look. The pictures need
-  // the browser sidecar, which only the web process registers: on stdio a
-  // save still lands and says it was not drawn.
+  // Present canvases and the template look. The pictures need the browser
+  // sidecar's renderer, which the host process registers (the web process,
+  // and server/mcp for stdio): a host without it still lands a save and
+  // says it was not drawn.
   registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
   registerBuiltinTools(PRESENT_TOOLS);
   registerBuiltinTools(CANVAS_LIBRARY_TOOLS);
