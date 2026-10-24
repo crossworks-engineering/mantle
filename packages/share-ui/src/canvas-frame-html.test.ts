@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   buildCanvasEmbedCsp,
@@ -139,6 +140,58 @@ describe('the prelude', () => {
     expect(prelude).toContain("kind:'ready',n:nonce");
     // The canvas's own text never holds it.
     expect(html.slice(html.indexOf('<html>'))).not.toContain('abc123');
+  });
+
+  it('a canvas that replaces window.parent cannot obtain the nonce (the re-audit R1)', () => {
+    const html = buildCanvasFrameHtml({
+      source: '<html><body>x</body></html>',
+      css: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      size: 'fill',
+      theme: 'follow',
+      fontCss: '',
+      nonce: 'secret-nonce',
+    });
+    const prelude = /<script>(\(function\(\)\{[\s\S]*?\}\)\(\);)<\/script>/.exec(html)![1]!;
+    // A window as far as the prelude reads one: the real parent another
+    // origin's, its postMessage out of the canvas's reach.
+    const toParent: unknown[] = [];
+    const stolen: unknown[] = [];
+    const handlers: Record<string, Array<(e: unknown) => void>> = {};
+    const el = {
+      className: '',
+      setAttribute() {},
+      removeAttribute() {},
+      style: { setProperty() {} },
+    };
+    const win: Record<string, unknown> = {
+      parent: Object.freeze({ postMessage: (m: unknown) => toParent.push(m) }),
+      addEventListener: (k: string, f: (e: unknown) => void) => (handlers[k] ??= []).push(f),
+      innerWidth: 800,
+      innerHeight: 600,
+    };
+    const document = { currentScript: null, documentElement: el };
+    const ctx = { window: win, document, Object, String, Math };
+    runInNewContext(prelude, ctx);
+    // The canvas runs after the prelude: it swaps the parent for its own.
+    runInNewContext(
+      'window.parent = { postMessage: function (m) { stolen.push(m); } };',
+      Object.assign(ctx, { stolen }),
+    );
+    for (const f of handlers.load ?? []) f({});
+    for (const f of handlers.error ?? []) f({ message: 'boom' });
+    expect(stolen).toEqual([]);
+    expect(toParent).toEqual([
+      { v: 1, kind: 'ready', n: 'secret-nonce' },
+      { v: 1, kind: 'error', message: 'boom' },
+    ]);
+    // A theme message from the canvas's fake parent is not the parent's.
+    const fake = win.parent;
+    for (const f of handlers.message ?? [])
+      f({ source: fake, data: { v: 1, kind: 'theme', cls: 'x' } });
+    expect(el.className).toBe('');
   });
 });
 
