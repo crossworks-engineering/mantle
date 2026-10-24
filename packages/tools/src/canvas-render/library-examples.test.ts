@@ -85,8 +85,15 @@ describe.skipIf(!chrome || !runtimeBuilt)('canvas_library examples in a real bro
     browser = await puppeteer.launch({
       executablePath: chrome!,
       headless: true,
-      // The flags a production render runs with (sidecar.ts).
-      args: [...sidecar.RENDER_LAUNCH_ARGS, '--no-first-run', '--use-angle=swiftshader'],
+      // The flags a production render runs with (sidecar.ts). Ubuntu's
+      // AppArmor refuses Chrome's sandbox to a plain user; the pages here
+      // are our own guide examples.
+      args: [
+        ...sidecar.RENDER_LAUNCH_ARGS,
+        '--no-first-run',
+        '--use-angle=swiftshader',
+        ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
+      ],
     });
     process.env.BROWSER_WS_ENDPOINT = browser.wsEndpoint();
     render = sidecar.renderCanvas;
