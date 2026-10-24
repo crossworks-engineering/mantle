@@ -10,6 +10,8 @@
  * Build inputs are agent-authored TSX; build errors are returned (not thrown)
  * with file/line locations so Appsmith can read them and self-correct.
  */
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
@@ -105,6 +107,92 @@ function loaderFor(p: string): 'tsx' | 'ts' | 'js' | 'jsx' | 'json' | 'css' {
   if (p.endsWith('.json')) return 'json';
   if (p.endsWith('.css')) return 'css';
   return 'tsx';
+}
+
+/** The one package a build reads from disk (react and react-dom are
+ *  external), by its real directory, so a folder that is merely NAMED
+ *  `node_modules/lucide-react` elsewhere does not pass (audit 2026-10-24). */
+const LUCIDE_ROOT = fs.realpathSync(
+  path.dirname(createRequire(import.meta.url).resolve('lucide-react/package.json')),
+);
+
+/** Code an app may hold: what esbuild parses as a module. */
+const CODE_LOADERS = new Set(['tsx', 'ts', 'jsx', 'js']);
+
+/** A call esbuild expands into a read of the real disk: `import(` or
+ *  `require(` whose argument is not one plain string. */
+const CALL_RE = /(?<![\w$.])(import|require)\s*\(/g;
+const PLAIN_ARG_RE = /^\s*"(?:[^"\\\n]|\\.)*"\s*[,)]/;
+
+/**
+ * Refuse an `import()` or `require()` with a computed path before esbuild
+ * runs. esbuild expands one (`require(\`./${x}\`)`, `'./' + x`) by reading the
+ * matching files on the real disk itself, with no onResolve call, so the
+ * plugin gates never see them, and a file that fails to parse is quoted in
+ * the error (audit 2026-10-24). Each file is first put through esbuild's own
+ * transform, which prints plain JavaScript: identifier escapes
+ * (`require`), comments and constant joins (`'./' + 'x'`) are gone, so the
+ * scan reads what the bundler will.
+ */
+async function computedImportErrors(source: AppSource): Promise<BuildMessage[]> {
+  const out: BuildMessage[] = [];
+  for (const [file, text] of Object.entries(source.files)) {
+    const loader = loaderFor(file);
+    if (!CODE_LOADERS.has(loader)) continue;
+    let code: string;
+    try {
+      code = (
+        await esbuild.transform(text, {
+          loader: loader as 'tsx' | 'ts' | 'jsx' | 'js',
+          jsx: 'automatic',
+          minifySyntax: true,
+          legalComments: 'none',
+          target: 'es2020',
+        })
+      ).code;
+    } catch {
+      continue; // a syntax error: the build reports it, and reads nothing
+    }
+    // esbuild prints every plain string in double quotes: empty them, so
+    // text an app shows ("call require(x)") is not read as a call. A quoted
+    // path stays a quoted path ("").
+    code = code.replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+    CALL_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = CALL_RE.exec(code)) !== null) {
+      if (PLAIN_ARG_RE.test(code.slice(m.index + m[0].length))) continue;
+      out.push({
+        text: `${m[1]}() in a mini app takes one quoted path, like ${m[1]}('./Chart'). A computed path (a template string or a joined string) is not allowed.`,
+        location: { file, line: 0, column: 0 },
+      });
+      break;
+    }
+  }
+  return out;
+}
+
+/** Every file a build read that is neither an app file (the virtual
+ *  namespace), the stdin entry, nor inside lucide-react's real directory.
+ *  The backstop behind computedImportErrors. */
+function inputsOutsideTheApp(inputs: Record<string, unknown>): string[] {
+  return Object.keys(inputs).filter(
+    (p) =>
+      !p.startsWith(`${APP_NS}:`) &&
+      p !== STDIN &&
+      !p.endsWith(`/${STDIN}`) &&
+      !path.resolve(p).startsWith(LUCIDE_ROOT + path.sep),
+  );
+}
+
+/** A message about a file that is not the app's own carries no text or
+ *  path of it: a failed parse quotes the file (audit 2026-10-24). */
+function appOnlyMsg(source: AppSource, m: Message): BuildMessage {
+  const file = m.location?.file;
+  if (!file || file === STDIN || file.endsWith(`/${STDIN}`)) return toMsg(m);
+  const key = file.startsWith(`${APP_NS}:`) ? file.slice(APP_NS.length + 1) : file;
+  if (Object.hasOwn(source.files, key)) return toMsg(m);
+  if (path.resolve(file).startsWith(LUCIDE_ROOT + path.sep)) return toMsg(m);
+  return { text: 'The build failed on a file that is not part of this app.', location: null };
 }
 
 /** Normalize a key as it appears in `files` (posix, no leading ./). */
@@ -403,6 +491,11 @@ export async function buildApp(
   if (importErrors.length) {
     return { ok: false, errors: importErrors, warnings: [], esbuildVersion: ESBUILD_VERSION };
   }
+  // Before esbuild, which would read the disk for a computed import.
+  const computedErrors = await computedImportErrors(source);
+  if (computedErrors.length) {
+    return { ok: false, errors: computedErrors, warnings: [], esbuildVersion: ESBUILD_VERSION };
+  }
   const toolWarnings = opts.declaredToolSlugs ? lintToolRefs(source, opts.declaredToolSlugs) : [];
   const withToolWarnings = (r: BuildResult): BuildResult =>
     toolWarnings.length ? { ...r, warnings: [...r.warnings, ...toolWarnings] } : r;
@@ -455,17 +548,33 @@ async function buildAppInner(source: AppSource): Promise<BuildResult> {
     legalComments: 'none',
     logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"production"' },
+    metafile: true,
     plugins: [virtualPlugin(source)],
   };
 
+  const appMsg = (m: Message) => appOnlyMsg(source, m);
   try {
     const res = await esbuild.build(options);
+    if (inputsOutsideTheApp(res.metafile?.inputs ?? {}).length) {
+      return {
+        ok: false,
+        // No path: it would tell the author which files exist off the app.
+        errors: [
+          {
+            text: 'The build read a file that is not part of this app. An import() or require() in a mini app takes one quoted path: a computed path (a template string or a joined string) is not allowed.',
+            location: null,
+          },
+        ],
+        warnings: res.warnings.map(appMsg),
+        esbuildVersion: ESBUILD_VERSION,
+      };
+    }
     const code = res.outputFiles?.[0]?.text;
     return {
       ok: !!code,
       ...(code ? { code } : {}),
-      errors: res.errors.map(toMsg),
-      warnings: res.warnings.map(toMsg),
+      errors: res.errors.map(appMsg),
+      warnings: res.warnings.map(appMsg),
       esbuildVersion: ESBUILD_VERSION,
     };
   } catch (err) {
@@ -474,8 +583,8 @@ async function buildAppInner(source: AppSource): Promise<BuildResult> {
     if (bf && Array.isArray(bf.errors)) {
       return {
         ok: false,
-        errors: bf.errors.map(toMsg),
-        warnings: (bf.warnings ?? []).map(toMsg),
+        errors: bf.errors.map(appMsg),
+        warnings: (bf.warnings ?? []).map(appMsg),
         esbuildVersion: ESBUILD_VERSION,
       };
     }
