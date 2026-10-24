@@ -29,7 +29,7 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 
 - A canvas is a `present` node with a sidecar that holds one HTML document, its text for search, and its compiled styles.
 - The canvas runs in a locked frame: it cannot fetch or send data, and it has no database, no tools and no cookies. It can only draw. A canvas that tries to open another page in its frame is stopped and taken off the screen (the desktop app stops the request too; a browser may still send that one request).
-- Libraries come from the brain, never from the internet: ECharts, Plotly, D3, Konva, Three.js, Motion, reveal.js, KaTeX and Alpine.js.
+- Libraries come from the brain, never from the internet: ECharts, Plotly, D3, Konva, Three.js, Motion, reveal.js, KaTeX and Alpine.js. Presenter reads a short guide for each (`canvas_library`), written for the exact version the brain serves.
 - Search reads the canvas title, description and visible text. A canvas is indexed again only after five minutes without a text change, so many quick saves cost one pass.
 - The last ten versions of each canvas are kept. Presenter can bring one back.
 - The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.

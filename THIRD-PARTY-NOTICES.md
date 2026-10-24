@@ -17260,7 +17260,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-#### alpinejs (3.17.4)
+#### alpinejs (3.17.5)
 
 **Author:** Caleb Porzio · **License:** MIT · **Homepage:** https://alpinejs.dev
 
@@ -20078,7 +20078,7 @@ SOFTWARE.
 
 </details>
 
-#### framer-motion (13.5.1)
+#### framer-motion (14.6.0)
 
 **Author:** Matt Perry · **License:** MIT · **Homepage:** https://github.com/motiondivision/motion#readme
 
@@ -21696,7 +21696,7 @@ THE SOFTWARE.
 
 </details>
 
-#### katex (0.16.47, 0.19.0)
+#### katex (0.16.47, 0.19.1)
 
 **License:** MIT · **Homepage:** https://katex.org
 
@@ -21728,7 +21728,7 @@ SOFTWARE.
 
 </details>
 
-#### konva (10.7.1)
+#### konva (10.9.0)
 
 **Author:** Anton Lavrenov · **License:** MIT · **Homepage:** https://konvajs.org/
 
@@ -24806,7 +24806,7 @@ SOFTWARE.
 
 </details>
 
-#### motion (13.5.1)
+#### motion (14.6.0)
 
 **Author:** Matt Perry · **License:** MIT · **Homepage:** https://github.com/motiondivision/motion#readme
 
@@ -24838,7 +24838,7 @@ SOFTWARE.
 
 </details>
 
-#### motion-dom (13.5.1)
+#### motion-dom (14.6.0)
 
 **Author:** Matt Perry · **License:** MIT · **Homepage:** https://github.com/motiondivision/motion#readme
 
@@ -24870,7 +24870,7 @@ SOFTWARE.
 
 </details>
 
-#### motion-utils (13.5.0)
+#### motion-utils (14.6.0)
 
 **Author:** Matt Perry · **License:** MIT · **Homepage:** https://github.com/motiondivision/motion#readme
 

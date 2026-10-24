@@ -269,6 +269,7 @@ const HTTP_SURFACE = [
   'present_restore',
   'present_export',
   'present_delete',
+  'canvas_library',
   'file_create',
   'folder_get_by_path',
   'content_supersede',

@@ -166,6 +166,7 @@ export {
   PRESENT_READ_SLUGS,
   DIAGRAM_RENDER_TOOLS,
 } from './builtins-presents';
+export { CANVAS_LIBRARY_TOOLS, CANVAS_LIBRARIES } from './builtins-canvas-library';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, parsePlan } from './builtins-runs';

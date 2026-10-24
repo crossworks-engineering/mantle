@@ -31,7 +31,7 @@ overrides:
   qs@>=6.11.1 <6.15.2: ^6.15.2
 
 patchedDependencies:
-  katex@0.19.0: c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a
+  katex@0.19.1: c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4
   postgres@3.4.9: 5f9e843345f7ff09bcc85aa0d63fa992bd13de09064392e281914af27ac298e2
 
 importers:
@@ -109,8 +109,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
       alpinejs:
-        specifier: 3.17.4
-        version: 3.17.4
+        specifier: 3.17.5
+        version: 3.17.5
       d3:
         specifier: 7.9.0
         version: 7.9.0
@@ -121,17 +121,17 @@ importers:
         specifier: ^0.28.2
         version: 0.28.2
       katex:
-        specifier: 0.19.0
-        version: 0.19.0(patch_hash=c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a)
+        specifier: 0.19.1
+        version: 0.19.1(patch_hash=c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4)
       konva:
-        specifier: 10.7.1
-        version: 10.7.1
+        specifier: 10.9.0
+        version: 10.9.0
       lucide-react:
         specifier: ^1.52.0
         version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
       motion:
-        specifier: 13.5.1
-        version: 13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: 14.6.0
+        version: 14.6.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       plotly.js-dist-min:
         specifier: 4.1.2
         version: 4.1.2
@@ -792,8 +792,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       katex:
-        specifier: ^0.19.0
-        version: 0.19.0(patch_hash=c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a)
+        specifier: 0.19.1
+        version: 0.19.1(patch_hash=c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4)
       lucide-react:
         specifier: ^1.52.0
         version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
@@ -1343,8 +1343,8 @@ importers:
         specifier: ^4.13.13
         version: 4.13.13
       katex:
-        specifier: ^0.19.0
-        version: 0.19.0(patch_hash=c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a)
+        specifier: 0.19.1
+        version: 0.19.1(patch_hash=c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4)
       libsodium-wrappers:
         specifier: ^0.8.4
         version: 0.8.4
@@ -3163,8 +3163,8 @@ packages:
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
 
-  alpinejs@3.17.4:
-    resolution: {integrity: sha512-N2gsr+58XVUt7OAPKnUGiKPDtkd+xbSGTae8C8IJxeRdkkhBJPIautkJ+qcwb7lcjJ/QK3/CPVIbN20JPvtK7A==}
+  alpinejs@3.17.5:
+    resolution: {integrity: sha512-XewMqRC6zjy8iaUPn86dxjvooAsNai3hUtQbdn0A5H2w7Jt10xHGZ1SczN5+Dvp3UKkuSEt9moy/UaUWOwKdnQ==}
 
   ansi-regex@6.4.0:
     resolution: {integrity: sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw==}
@@ -4061,8 +4061,8 @@ packages:
     resolution: {integrity: sha512-PcOxmqwYCW7O2ovKRU8OoQQj2yqTfEB/yeTYk4gPid6dN5ODRfU1hXd9tTVZzax/0NkO7AxpHykvZnT1aYp/BQ==}
     engines: {node: ^14.13.1 || >=16.0.0}
 
-  framer-motion@13.5.1:
-    resolution: {integrity: sha512-HeWOaeHD3kyTSIEMT6+nw7fBn4saIfxxabZyAITbycAl4xr1kzGJKIvGt/OWghSlvIA9qTnZ1zTGelHAe6S8DA==}
+  framer-motion@14.6.0:
+    resolution: {integrity: sha512-MzBgZxGgoHPfSLEXmo4o5XlZvb+nVRFdHtGjVhm6LMIEJKTt/8hNO023euL5mYyzc8llV/hQTfjnN68tNRHalw==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -4402,8 +4402,8 @@ packages:
     resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
     hasBin: true
 
-  katex@0.19.0:
-    resolution: {integrity: sha512-v6Tznz3zJ7u3niRCoDTsumM2+HA2XXcCu+WAacCeHD2z3p9A9Ks987o5FzfTGBN0e8A0vjEgIDvLbICrXpdw/Q==}
+  katex@0.19.1:
+    resolution: {integrity: sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==}
     hasBin: true
 
   keyv@5.6.0:
@@ -4412,8 +4412,8 @@ packages:
   khroma@2.1.0:
     resolution: {integrity: sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw==}
 
-  konva@10.7.1:
-    resolution: {integrity: sha512-z/JyXPaT6tWBSEcaT70mdfN3oNQ6U6rDxlH9OkRdxlJaf23DOqfMPGptQWVvXlWfKMJQWEa+PNe9ru3zQR7ifw==}
+  konva@10.9.0:
+    resolution: {integrity: sha512-3NOOlcbimFDp4+/DfXGTBkfn3cn3VP1BESPySQ6ayCzgMA9JSMGJNNxeIKw5jpHL6SAl6gHsrv10DUEjNRL0Qg==}
     peerDependencies:
       canvas: ^3.0.0
       skia-canvas: ^3.0.0
@@ -4917,14 +4917,14 @@ packages:
     resolution: {integrity: sha512-snEhs+6G5Tjd4I7tLCDOaoln2RgE0bD19RzEKgvgK2hZ5VKy3MpLhLTZ2fWpXSTg4K2cyPwp+VHATFJhxfnOeA==}
     engines: {node: '>=18.0.0'}
 
-  motion-dom@13.5.1:
-    resolution: {integrity: sha512-/7CVCD20Mz1KobktorpdgvowV0V41J7UxqE+qWS3GkSJqrRr5ft+2RloOYtEKv+wvBp3JaSFBclhxt4ja8ovHg==}
+  motion-dom@14.6.0:
+    resolution: {integrity: sha512-lIojTl9aYSPIkeOOSzBliy1nNvpdO3JtVzW2WgTXQlOP4ZMuJhtWO3fP7OD4TVFwlRucdvxlDSMkL+fEQnQ52A==}
 
-  motion-utils@13.5.0:
-    resolution: {integrity: sha512-Hqe/sqjIKliPZg8sVjWAkdySDPJNIeKH+euVkDOG8ri3DUUU7ZjndmHsGqEPz2iHpiyVaV5I22iguCMHU2he+Q==}
+  motion-utils@14.6.0:
+    resolution: {integrity: sha512-bZJo2AmQ2aOFkaato6VXrTbkPG0XhMzivWUWSaI59pxyllj8QMQUFZ84MYRQnPkK+7dr4KldyJwF2+RM0sdq/w==}
 
-  motion@13.5.1:
-    resolution: {integrity: sha512-eV9SUem6KnzEa9+eT+dVBeDlhy5TTdn09YWR1WhUsKoZCJPw/n4TcYhjbxq2Gy5PTwDr//4H3r5vxkcZnNnO1w==}
+  motion@14.6.0:
+    resolution: {integrity: sha512-qqaZbyubgk7x3zxjPgP1l3Br/KQXol/IIV1uqb358SoN4ApcqNuV7+wyDPg/XLErmuyQL5lL8JVI/fOmDsmBKQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -7686,7 +7686,7 @@ snapshots:
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
 
-  alpinejs@3.17.4:
+  alpinejs@3.17.5:
     dependencies:
       '@vue/reactivity': 3.5.44
 
@@ -8600,10 +8600,10 @@ snapshots:
 
   fractional-indexing@3.2.0: {}
 
-  framer-motion@13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  framer-motion@14.6.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
-      motion-dom: 13.5.1
-      motion-utils: 13.5.0
+      motion-dom: 14.6.0
+      motion-utils: 14.6.0
       tslib: 2.8.1
     optionalDependencies:
       react: 19.3.0
@@ -8936,7 +8936,7 @@ snapshots:
     dependencies:
       commander: 8.3.0
 
-  katex@0.19.0(patch_hash=c567d7837fc3dd1d7d42e61fb1e319f81170902b2dd57073ecfddeeb7b12a74a):
+  katex@0.19.1(patch_hash=c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4):
     dependencies:
       commander: 15.0.0
 
@@ -8946,7 +8946,7 @@ snapshots:
 
   khroma@2.1.0: {}
 
-  konva@10.7.1: {}
+  konva@10.9.0: {}
 
   langium@3.3.1:
     dependencies:
@@ -9630,15 +9630,15 @@ snapshots:
 
   modern-tar@0.8.5: {}
 
-  motion-dom@13.5.1:
+  motion-dom@14.6.0:
     dependencies:
-      motion-utils: 13.5.0
+      motion-utils: 14.6.0
 
-  motion-utils@13.5.0: {}
+  motion-utils@14.6.0: {}
 
-  motion@13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  motion@14.6.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
-      framer-motion: 13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      framer-motion: 14.6.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       tslib: 2.8.1
     optionalDependencies:
       react: 19.3.0

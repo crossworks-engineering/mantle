@@ -808,3 +808,54 @@ audits on brain 6273c382b and client 0861657a), fix round. Security:
   `present_delete` is peer risky; every tool that returns canvas text is
   fenced as data (`outside.untrusted`) and the reply says so; renders are
   limited per caller (one at a time, 20 in 5 minutes).
+
+Correctness, from the same audit:
+
+- The renderer moved into `@mantle/tools` (`canvas-render/sidecar.ts`,
+  `frame-document.ts`) and is registered by server/api, where the agent
+  turns run, and server/mcp, as well as server/web; before, every canvas
+  Presenter saved from a chat turn was undrawn. A background worker says
+  plainly that it draws nothing.
+- `diagram_guide` replies stay under the 32 KB inline cap: a template type
+  (`flow`, `pid`) gets its data contract with a complete example (under 16
+  KB), a long guide comes in parts, `variant` keeps one chart variant, and
+  a site profile is capped at 6 KB and labelled as data.
+- `present_update` saves edits and data against the rev just read;
+  `present_export` overwrites only an earlier export of the same canvas
+  (`exportOf` on the file) and returns no picture; the sidecar connect has
+  its own timeout; a manual rename survives saves that keep the head's
+  title; the index flush backs off and isolates each canvas.
+
+The drawing path: `docs/diagram-guides/mantle/type-flow.md` and the pid
+guide's template data section (both examples validate in a test), the site
+profile's `json profile` block filled in as the data's `profile`, the
+template self-check catching what the busy column sample got wrong
+(circuit boxes that take in other items, lines through labels, the line,
+crossing and width budgets), THIRD-PARTY-NOTICES with dagre and the
+vendored guides' MIT text, and five unlicensed logos left out.
+
+Deferred: circuits drawn as hulls (the self-check warns instead); per-login
+fairness beyond one render at a time and 20 in 5 minutes; the poster has no
+reader until P3's cards; the pid data model's next steps (tees, branches,
+bypasses, nozzles, instrument loops across sheets).
+
+**Library versions and guides** (Jason, 2026-10-24). The canvas runtime pins
+motion 14.6.0, konva 10.9.0, katex 0.19.1 (exact; its woff2-only patch
+regenerated) and alpinejs 3.17.5; echarts 6.1.0, d3 7.9.0, three 0.186.1 and
+reveal.js 6.0.2 were already the latest. These four are days old when
+pinned, against the two-week rule section 12 records: a decision to bump,
+not an accident. Motion 14's one breaking change removes internal APIs no
+canvas, skill or test used.
+
+`canvas_library(name)` returns our own guide to one library, from
+`docs/canvas-libraries/` (3 to 6 KB each, the largest three.js at about 5
+KB): its import, core API, what changed from versions a model knows, the
+canvas rules, and one example canvas. A test pins each guide to the pinned
+version (a bump without a new guide fails), and another renders every
+example in a real Chrome through the canvas pipeline with the sidecar's
+launch flags: no console error, no refused request, not blank. The tool is
+in the `present` group (Presenter and Draftsman) and on the MCP surface;
+`canvas_authoring` lists the libraries one line each and says to call it
+before using any of them. The theme tokens are `oklch()`, which ECharts,
+Konva and three.js cannot parse, so each chart guide carries a small
+`token()` helper that converts one to `rgb()`.

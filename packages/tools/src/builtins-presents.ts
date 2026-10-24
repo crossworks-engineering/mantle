@@ -908,7 +908,9 @@ const present_export: BuiltinToolDef = {
   policy: {
     // What it returns carries the canvas's own text: fenced as data.
     outside: { untrusted: true },
-    matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
+    // The canvas's read, and the create in its destination folder (as
+    // file_copy).
+    matrix: { action: 'read', param: 'id', kinds: ['present'], dest: 'parent_path' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
