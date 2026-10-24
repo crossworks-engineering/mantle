@@ -9,7 +9,7 @@ import {
   randomDriftSpec,
   type DriftSpec,
 } from './spec';
-import { driftPaletteFromTheme, type DriftThemeTokens } from './theme';
+import { contrastRatio, driftPaletteFromTheme, type DriftThemeTokens } from './theme';
 
 const TOKENS: DriftThemeTokens = {
   background: '#fff',
@@ -117,6 +117,47 @@ describe('theme palette', () => {
     expect(p.colors).toHaveLength(TOKENS.chart.length + 1);
   });
 
+  it('holds muted text at AA on the default theme, light and dark, at any strength', () => {
+    // The jackdaw theme's own tokens (styles/themes.css).
+    const THEMES: Array<[DriftThemeTokens, 'light' | 'dark']> = [
+      [
+        {
+          background: '#faedcf',
+          mutedForeground: '#6a4f30',
+          primary: '#b23a06',
+          accent: '#f0c88c',
+          secondary: '#f0c88c',
+          chart: ['#e46e08', '#eb9f13', '#c83c04', '#5c1e02', '#baae94'],
+        },
+        'light',
+      ],
+      [
+        {
+          background: '#120f0e',
+          mutedForeground: '#bda882',
+          primary: '#eb9f13',
+          accent: '#2d241d',
+          secondary: '#2d241d',
+          chart: ['#eb9f13', '#e46e08', '#f0c88c', '#c83c04', '#baae94'],
+        },
+        'dark',
+      ],
+    ];
+    for (const [tokens, mode] of THEMES) {
+      const muted = parseHexOrRgb(tokens.mutedForeground!)!;
+      for (const str of [0, 0.55, 1])
+        for (const pal of ['brand', 'chart'] as const)
+          for (const tone of ['auto', 'darker', 'lighter'] as const)
+            for (let seed = 1; seed < 400; seed += 37) {
+              const spec = { ...decodeDriftSpec(`{"v":2,"seed":${seed}}`)!, str, pal, tone };
+              const o = driftOptionsFromSpec(spec, tokens, mode);
+              for (const c of [o.background!, ...(o.colors as string[])]) {
+                expect(contrastRatio(muted, parseHexOrRgb(c)!)).toBeGreaterThanOrEqual(4.5);
+              }
+            }
+    }
+  });
+
   it('maps a spec onto engine options', () => {
     const spec = { ...decodeDriftSpec('{"v":2,"seed":9,"speed":4,"style":"dunes"}')! };
     const o = driftOptionsFromSpec(spec, TOKENS, 'dark');
@@ -130,7 +171,10 @@ describe('options', () => {
   it('fills defaults, clamps, and leaves resolution 0 to mean per-style', () => {
     const o = normalizeDriftOptions({ warp: 5, colors: [], resolution: 0 });
     expect(o.warp).toBe(1);
-    expect(o.colors.length).toBeGreaterThan(0);
+    // An explicit empty list stays empty (the engine then paints nothing);
+    // only an omitted one takes the defaults.
+    expect(o.colors.length).toBe(0);
+    expect(normalizeDriftOptions({}).colors.length).toBeGreaterThan(0);
     expect(o.resolution).toBe(0);
     expect(DRIFT_STYLE_RESOLUTION.mesh).toBeLessThan(DRIFT_STYLE_RESOLUTION.silk);
   });

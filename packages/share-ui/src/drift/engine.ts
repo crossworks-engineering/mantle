@@ -153,11 +153,15 @@ type Derived = {
   ph: Float32Array; // 6 × vec4
   timeOffset: number;
   grainSeed: number;
+  /** False when the ground or every colour failed to parse: paint NOTHING
+   *  (the element's own surface shows) rather than a guessed palette. */
+  paintable: boolean;
 };
 
 function derive(o: DriftOptions): Derived {
   const fallback: Rgb = [0, 0, 0];
-  const bgRgb = parseColor(o.background) ?? fallback;
+  const bgParsed = parseColor(o.background);
+  const bgRgb = bgParsed ?? fallback;
   const entries = o.colors
     .map((c) => (typeof c === 'string' ? { color: c } : c) as DriftColor)
     .map((c) => ({ rgb: parseColor(c.color), weight: Math.max(0, Math.min(2, c.weight ?? 1)) }))
@@ -200,7 +204,22 @@ function derive(o: DriftOptions): Derived {
     ph,
     timeOffset: rnd() * 200,
     grainSeed: Math.floor(rnd() * 1000),
+    paintable: bgParsed !== null && entries.length > 0,
   };
+}
+
+/** A frame gap longer than this is the main thread or the tab, not the GPU. */
+const JANK_GAP_MS = 100;
+/** On-time measurement windows (45 frames each) before the field grows back. */
+const GROW_BACK_WINDOWS = 4;
+/** Engine seconds per half-period of the time fold (fp32 keeps ~0.5 ms here). */
+export const TIME_FOLD = 4096;
+
+/** Engine time folded into 0..TIME_FOLD as a triangle wave: continuous, so
+ *  no frame ever jumps, and bounded, so the shader's fp32 clock stays exact. */
+export function foldTime(t: number): number {
+  const p = t % (TIME_FOLD * 2);
+  return p <= TIME_FOLD ? p : TIME_FOLD * 2 - p;
 }
 
 /**
@@ -364,6 +383,12 @@ export function createDrift(
   }
 
   // ---- drawing -------------------------------------------------------------
+  // Engine time, folded before it reaches the shader: u_time is fp32 on the
+  // GPU, and an ever-growing clock loses the precision the small offsets need
+  // (a visible stutter after a day or two in a desktop shell). A triangle
+  // fold keeps every frame continuous with the last (the motion reverses,
+  // slowly, once every TIME_FOLD seconds of engine time), unlike a modulo,
+  // which would jump.
   let time = 0;
   let ptrX = 0.5;
   let ptrY = 0.5;
@@ -377,9 +402,13 @@ export function createDrift(
   /** Resolve the last pointer position against the canvas — once per frame,
    *  not once per pointermove (which can fire 120+ times a second, each a
    *  layout read). */
+  let ptrRect: DOMRect | null = null;
   function resolvePointer() {
     if (Number.isNaN(ptrClientX)) return;
-    const r = canvas.getBoundingClientRect();
+    // The box is read once and re-read only when it can have moved (resize,
+    // scroll), never per frame.
+    ptrRect ??= canvas.getBoundingClientRect();
+    const r = ptrRect;
     if (r.width === 0 || r.height === 0) return;
     const x = (ptrClientX - r.left) / r.width;
     const y = 1 - (ptrClientY - r.top) / r.height;
@@ -390,6 +419,13 @@ export function createDrift(
 
   function draw() {
     if (gl!.isContextLost() || !composite || !hasSize()) return;
+    if (!derived.paintable) {
+      // Nothing to paint: stay invisible so the surface underneath shows (an
+      // opaque context that never drew would otherwise show black).
+      shown = false;
+      canvas.style.opacity = '0';
+      return;
+    }
     applySize();
     const fp = program(opts.style);
     if (!fp) return;
@@ -402,14 +438,14 @@ export function createDrift(
     gl!.useProgram(fp.program);
     const rad = (opts.angle * Math.PI) / 180;
     gl!.uniform2f(u.u_res!, fieldW, fieldH);
-    gl!.uniform1f(u.u_time!, time + d.timeOffset);
+    gl!.uniform1f(u.u_time!, foldTime(time) + d.timeOffset);
     gl!.uniform1f(u.u_scale!, opts.scale);
     gl!.uniform1f(u.u_warp!, opts.warp);
     gl!.uniform1f(u.u_soft!, opts.softness);
     gl!.uniform1f(u.u_light!, opts.lighting);
     gl!.uniform1f(u.u_sat!, opts.saturation);
     gl!.uniform2f(u.u_rot!, Math.cos(rad), Math.sin(rad));
-    gl!.uniform3f(u.u_ptr!, ptrX, ptrY, ptrStrength * opts.pointer);
+    gl!.uniform3f(u.u_ptr!, ptrX, ptrY, pointerOn() ? ptrStrength * opts.pointer : 0);
     gl!.uniform3f(u.u_bg!, d.bg[0], d.bg[1], d.bg[2]);
     gl!.uniform3fv(u.u_col!, d.col);
     gl!.uniform1fv(u.u_w!, d.w);
@@ -441,6 +477,7 @@ export function createDrift(
 
   // ---- scheduling ----------------------------------------------------------
   let raf = 0;
+  let timer = 0;
   let last = 0;
   let lastDrawn = 0;
   let paused = false;
@@ -456,10 +493,12 @@ export function createDrift(
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
       : null;
 
-  const moving = () =>
-    opts.speed > 0 && !(opts.respectReducedMotion && reducedQuery?.matches === true);
+  const reduced = () => opts.respectReducedMotion && reducedQuery?.matches === true;
+  const moving = () => opts.speed > 0 && !reduced();
+  // Pointer lean is motion too: reduced motion switches it off.
+  const pointerOn = () => opts.pointer > 0 && !reduced();
   const pointerSettling = () =>
-    opts.pointer > 0 &&
+    pointerOn() &&
     (Math.abs(ptrTargetX - ptrX) > 1e-3 ||
       Math.abs(ptrTargetY - ptrY) > 1e-3 ||
       Math.abs((ptrInside ? 1 : 0) - ptrStrength) > 1e-3);
@@ -470,18 +509,59 @@ export function createDrift(
     document.visibilityState !== 'hidden' &&
     !gl!.isContextLost();
 
+  const armed = () => raf !== 0 || timer !== 0;
+
+  function cancel() {
+    if (raf) cancelAnimationFrame(raf);
+    if (timer) clearTimeout(timer);
+    raf = timer = 0;
+  }
+
+  /** The loop stopped (still, paused, hidden, off-screen, no size): the next
+   *  start measures afresh, so a stop is never read as one long late frame. */
+  function stopTiming() {
+    last = 0;
+    lastDrawn = 0;
+    lateSamples.length = 0;
+  }
+
   function schedule() {
-    if (raf || !canRun()) return;
+    if (armed() || !canRun()) return;
     raf = requestAnimationFrame(tick);
+  }
+
+  /** The next frame at the cap's next slot: sleep on a timer until just
+   *  before it, then take the display's frame. A capped loop never wakes at
+   *  the display rate only to skip. */
+  function scheduleAt(dueIn: number) {
+    if (armed()) return;
+    if (dueIn > 4) {
+      timer = window.setTimeout(() => {
+        timer = 0;
+        if (canRun()) raf = requestAnimationFrame(tick);
+        else stopTiming();
+      }, dueIn - 3);
+    } else {
+      raf = requestAnimationFrame(tick);
+    }
   }
 
   function tick(now: number) {
     raf = 0;
-    if (!canRun()) return;
+    if (!canRun()) {
+      stopTiming();
+      return;
+    }
+    // A zero-size box (collapsed, display:none) has nothing to draw: stop
+    // rather than spin; the ResizeObserver restarts the loop.
+    if (!hasSize()) {
+      stopTiming();
+      return;
+    }
     const animating = moving() || pointerSettling();
     const minGap = 1000 / opts.maxFps;
     if (animating && lastDrawn && now - lastDrawn < minGap - 2) {
-      raf = requestAnimationFrame(tick);
+      scheduleAt(minGap - (now - lastDrawn));
       return;
     }
     // Cap the step so a long pause (hidden tab, off-screen) resumes in place
@@ -489,7 +569,7 @@ export function createDrift(
     const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
     last = now;
     if (moving()) time += dt * opts.speed;
-    if (opts.pointer > 0) {
+    if (pointerOn()) {
       resolvePointer();
       const k = Math.min(1, dt * 5);
       ptrX += (ptrTargetX - ptrX) * k;
@@ -500,8 +580,8 @@ export function createDrift(
     lastDrawn = now;
     draw();
     countFps(now);
-    if (moving() || pointerSettling()) raf = requestAnimationFrame(tick);
-    else last = 0;
+    if (moving() || pointerSettling()) scheduleAt(minGap - (performance.now() - now));
+    else stopTiming();
   }
 
   function countFps(now: number) {
@@ -514,17 +594,31 @@ export function createDrift(
     }
   }
 
-  /** Frames consistently late → shrink the field. Never grows back within a
-   *  session: oscillating quality is worse than a slightly softer field. */
+  /** A window of frames consistently late shrinks the field; several on-time
+   *  windows in a row grow it back a step, so a busy spell does not cost the
+   *  quality for good. Gaps over ~100 ms are not GPU slowness (a long task on
+   *  the main thread, a GC, a stalled tab) and are not counted at all. */
+  let onTimeWindows = 0;
   function adapt(gap: number, target: number) {
+    if (gap > JANK_GAP_MS) return;
     lateSamples.push(gap);
     if (lateSamples.length < 45) return;
     lateSamples.sort((a, b) => a - b);
     const median = lateSamples[Math.floor(lateSamples.length / 2)] ?? 0;
     lateSamples.length = 0;
     // Late against the cap AND against a 60Hz display's natural cadence.
-    if (median > Math.max(target, 16.7) * 1.4 && baseResolution() * adaptiveScale > 0.12) {
-      adaptiveScale *= 0.8;
+    const budget = Math.max(target, 16.7);
+    if (median > budget * 1.4) {
+      onTimeWindows = 0;
+      if (baseResolution() * adaptiveScale > 0.12) adaptiveScale *= 0.8;
+    } else if (median <= budget * 1.1 && adaptiveScale < 1) {
+      onTimeWindows++;
+      if (onTimeWindows >= GROW_BACK_WINDOWS) {
+        onTimeWindows = 0;
+        adaptiveScale = Math.min(1, adaptiveScale / 0.8);
+      }
+    } else {
+      onTimeWindows = 0;
     }
   }
 
@@ -532,6 +626,11 @@ export function createDrift(
   function redraw() {
     if (!canRun()) return;
     if (raf) return; // the running loop will pick it up
+    // A loop asleep until its next slot: take the frame now instead.
+    if (timer) {
+      clearTimeout(timer);
+      timer = 0;
+    }
     raf = requestAnimationFrame(tick);
   }
 
@@ -543,6 +642,7 @@ export function createDrift(
           if (!box) return;
           cssW = box.width;
           cssH = box.height;
+          ptrRect = null;
           redraw();
         })
       : null;
@@ -562,7 +662,10 @@ export function createDrift(
   };
   document.addEventListener('visibilitychange', onVisibility);
 
-  const onReducedChange = () => redraw();
+  const onReducedChange = () => {
+    bindPointer();
+    redraw();
+  };
   reducedQuery?.addEventListener?.('change', onReducedChange);
 
   const onPointerMove = (e: PointerEvent) => {
@@ -574,6 +677,9 @@ export function createDrift(
       redraw();
     }
   };
+  const onLayoutMove = () => {
+    ptrRect = null;
+  };
   const onPointerLeave = () => {
     ptrClientX = Number.NaN;
     ptrInside = false;
@@ -581,22 +687,27 @@ export function createDrift(
   };
   let pointerBound = false;
   function bindPointer() {
-    const want = opts.pointer > 0;
+    const want = pointerOn() && !destroyed;
     if (want === pointerBound) return;
     pointerBound = want;
     if (want) {
+      ptrRect = null;
       window.addEventListener('pointermove', onPointerMove, { passive: true });
+      window.addEventListener('scroll', onLayoutMove, { passive: true, capture: true });
+      window.addEventListener('resize', onLayoutMove, { passive: true });
       document.documentElement.addEventListener('pointerleave', onPointerLeave);
     } else {
       window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('scroll', onLayoutMove, { capture: true });
+      window.removeEventListener('resize', onLayoutMove);
       document.documentElement.removeEventListener('pointerleave', onPointerLeave);
     }
   }
 
   const onLost = (e: Event) => {
     e.preventDefault(); // ask for a restore
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
+    cancel();
+    stopTiming();
   };
   const onRestored = () => {
     if (destroyed) return;
@@ -609,13 +720,11 @@ export function createDrift(
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
+    cancel();
     resizeObserver?.disconnect();
     intersection?.disconnect();
     document.removeEventListener('visibilitychange', onVisibility);
     reducedQuery?.removeEventListener?.('change', onReducedChange);
-    opts = { ...opts, pointer: 0 };
     bindPointer();
     canvas.removeEventListener('webglcontextlost', onLost);
     canvas.removeEventListener('webglcontextrestored', onRestored);
@@ -642,16 +751,18 @@ export function createDrift(
       if (next.colors !== undefined || next.background !== undefined || next.seed !== undefined) {
         derived = derive(opts);
       }
-      if (prev.resolution !== opts.resolution || prev.style !== opts.style) adaptiveScale = 1;
+      if (prev.resolution !== opts.resolution || prev.style !== opts.style) {
+        adaptiveScale = 1;
+        onTimeWindows = 0;
+      }
       bindPointer();
       redraw();
     },
     redraw,
     pause() {
       paused = true;
-      if (raf) cancelAnimationFrame(raf);
-      raf = 0;
-      last = 0;
+      cancel();
+      stopTiming();
     },
     resume() {
       paused = false;
@@ -659,14 +770,14 @@ export function createDrift(
     },
     destroy,
     stats: () => ({
-      fps: raf ? fps : 0,
+      fps: armed() ? fps : 0,
       fieldWidth: fieldW,
       fieldHeight: fieldH,
       outputWidth: canvas.width,
       outputHeight: canvas.height,
       resolution: baseResolution() * adaptiveScale,
       halfFloat,
-      animating: raf !== 0,
+      animating: armed(),
     }),
   };
 }

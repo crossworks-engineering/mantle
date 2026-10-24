@@ -15,7 +15,10 @@ import { readDriftThemeTokens } from './drift/theme';
  *    literals, not `var()`); an unresolvable theme mounts NOTHING rather
  *    than a wrong guess, and the themed surface underneath is the fallback.
  *  - `prefers-reduced-motion` renders one still frame (the engine's
- *    `respectReducedMotion`, on by default); the wash still paints.
+ *    `respectReducedMotion`, on by default); the wash still paints. Pointer
+ *    lean stays off: it is a lab option, never a real surface's.
+ *  - The palette holds the legibility floor (muted text at AA), see
+ *    driftOptionsFromSpec.
  *  - A mode or theme change is `repaint`: new colours as uniform writes on
  *    the same context, never a teardown.
  *
@@ -46,9 +49,12 @@ export async function mountDrift(
   const { createDrift } = await import('./drift/engine');
   const tokens = readDriftThemeTokens();
   if (!tokens) return null;
+  const options = driftOptionsFromSpec(spec, tokens, mode);
+  // A theme whose colours did not parse paints NOTHING, not a guessed palette.
+  if (!options.colors || options.colors.length === 0) return null;
   let engine: ReturnType<typeof createDrift>;
   try {
-    engine = createDrift(canvas, { ...driftOptionsFromSpec(spec, tokens, mode), ...overrides });
+    engine = createDrift(canvas, { ...options, ...overrides });
   } catch {
     return null;
   }

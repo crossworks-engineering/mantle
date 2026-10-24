@@ -1,4 +1,4 @@
-import { mixLab, oklabToRgb, parseColor, rgbToHex, rgbToOklab, type Lab } from './color';
+import { mixLab, oklabToRgb, parseColor, rgbToHex, rgbToOklab, type Lab, type Rgb } from './color';
 import { mulberry32 } from './options';
 import type { DriftPaletteSource, DriftTone } from '@mantle/content-core/drift-spec';
 
@@ -19,6 +19,9 @@ export type { DriftPaletteSource, DriftTone };
 
 export type DriftThemeTokens = {
   background: string;
+  /** The quietest text that sits on the background; the legibility floor
+   *  is measured against it. Absent: no floor (a test, a bare palette). */
+  mutedForeground?: string;
   primary: string;
   accent: string;
   secondary: string;
@@ -35,6 +38,7 @@ export function readDriftThemeTokens(
   const read = (name: string) => cs.getPropertyValue(name).trim();
   const tokens: DriftThemeTokens = {
     background: read('--background'),
+    mutedForeground: read('--muted-foreground') || undefined,
     primary: read('--primary'),
     accent: read('--accent'),
     secondary: read('--secondary'),
@@ -50,7 +54,46 @@ export type DriftPaletteInput = {
   source: DriftPaletteSource;
   /** 0 = a whisper of colour on the page surface, 1 = the raw theme colours. */
   strength: number;
+  /** Minimum contrast (WCAG ratio) of `tokens.mutedForeground` against every
+   *  colour painted; a colour below it is pulled toward the page surface
+   *  until it passes. Omitted or no muted token: no floor. */
+  textFloor?: number;
 };
+
+/** The floor every real surface paints with: AA for body text (4.5:1) on the
+ *  palette, plus a margin for the shading and grain the shader adds on top. */
+export const DRIFT_TEXT_FLOOR = 4.8;
+
+function luminance([r, g, b]: Rgb): number {
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** WCAG contrast ratio of two sRGB colours, 1 to 21. */
+export function contrastRatio(a: Rgb, b: Rgb): number {
+  const x = luminance(a);
+  const y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** `lab` pulled toward `ground` just far enough that `text` reads on it at
+ *  `floor`. When even the ground fails the floor (a theme's own problem),
+ *  the ground is the best there is. */
+function liftToFloor(lab: Lab, ground: Lab, text: Rgb, floor: number): Lab {
+  if (contrastRatio(text, oklabToRgb(lab)) >= floor) return lab;
+  if (contrastRatio(text, oklabToRgb(ground)) < floor) return ground;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    if (contrastRatio(text, oklabToRgb(mixLab(lab, ground, mid))) >= floor) hi = mid;
+    else lo = mid;
+  }
+  return mixLab(lab, ground, hi);
+}
 
 /** Spec + live tokens → the background and colours Drift paints. Pure and
  *  deterministic: a preview and the real surface can never disagree. */
@@ -81,6 +124,13 @@ export function driftPaletteFromTheme(
     lab[2],
   ];
 
+  // The legibility floor: every colour painted keeps the quietest text
+  // readable, whatever the strength, tone or theme asked for.
+  const text =
+    input.textFloor && tokens.mutedForeground ? parseColor(tokens.mutedForeground) : null;
+  const floor = (lab: Lab): Lab =>
+    text && input.textFloor ? liftToFloor(lab, bg, text, input.textFloor) : lab;
+
   const colors: string[] = [];
   for (const { c } of order) {
     const rgb = parseColor(c);
@@ -88,10 +138,14 @@ export function driftPaletteFromTheme(
     // Per-colour jitter keeps the washes from all landing at one distance.
     const toward = (1 - strength) * (0.75 + rnd() * 0.25);
     const washed = shift(mixLab(rgbToOklab(rgb), bg, toward), 0.03);
-    colors.push(rgbToHex(oklabToRgb(washed)));
+    colors.push(rgbToHex(oklabToRgb(floor(washed))));
   }
   // The ground itself, once, so every style can open space between colours.
-  colors.splice(Math.floor(rnd() * (colors.length + 1)), 0, rgbToHex(oklabToRgb(shift(bg, 0.015))));
+  colors.splice(
+    Math.floor(rnd() * (colors.length + 1)),
+    0,
+    rgbToHex(oklabToRgb(floor(shift(bg, 0.015)))),
+  );
 
-  return { background: rgbToHex(oklabToRgb(shift(bg, 0.02))), colors };
+  return { background: rgbToHex(oklabToRgb(floor(shift(bg, 0.02)))), colors };
 }
