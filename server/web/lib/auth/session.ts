@@ -371,7 +371,11 @@ async function memberRouteScope(loginId: string): Promise<NextResponse | null> {
 async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
   if (res?.kind === 'member') return res.member;
-  const member = await requestLogins().memberAsset(req.url);
+  // A member's `?at=` token opens a GET only, as ownerForAsset reads the
+  // owner's. Unreachable on a HEAD today: the gate admits a token on a GET
+  // alone, so a HEAD with only a token is answered 401 before any guard
+  // runs. For symmetry, not an answer change.
+  const member = req.method === 'GET' ? await requestLogins().memberAsset(req.url) : null;
   return member ?? accessRefusal(new AccessError('unauthorized'));
 }
 
