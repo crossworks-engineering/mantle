@@ -120,7 +120,10 @@ export function normalizeDriftOptions(input: Partial<DriftOptions>): DriftOption
   return {
     style,
     background: typeof input.background === 'string' ? input.background : d.background,
-    colors: colors.length > 0 ? colors : d.colors,
+    // Omitted takes the defaults; an explicit empty list stays empty, and the
+    // engine then paints nothing (a theme it could not read is not a reason
+    // to paint someone else's colours).
+    colors: input.colors === undefined ? d.colors : colors,
     seed: Math.floor(clamp(input.seed, 0, 0xffffffff, d.seed)),
     speed: clamp(input.speed, 0, 10, d.speed),
     scale: clamp(input.scale, 0.25, 4, d.scale),

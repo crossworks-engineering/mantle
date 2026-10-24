@@ -1,4 +1,4 @@
-export { createDrift, type DriftHandle, type DriftStats } from './engine';
+export { TIME_FOLD, createDrift, foldTime, type DriftHandle, type DriftStats } from './engine';
 export {
   DRIFT_DEFAULTS,
   DRIFT_MAX_COLORS,
@@ -20,6 +20,8 @@ export {
   type DriftSpec,
 } from './spec';
 export {
+  DRIFT_TEXT_FLOOR,
+  contrastRatio,
   driftPaletteFromTheme,
   readDriftThemeTokens,
   type DriftPaletteSource,
