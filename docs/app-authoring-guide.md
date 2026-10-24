@@ -61,10 +61,51 @@ Only these resolve, esbuild **rejects any other bare import**:
 - `lucide-react` icons
 - `host` from `@host` (the runtime bridge, below)
 - relative files within the app (`./lib/fmt`, etc.)
+- the vendored libraries, by exact name (next section)
 
 No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
 Type-only imports (`import type { ReactNode } from 'react'`, `import { type X }`,
 `export type { X } from`) are erased at compile time, so neither check counts them.
+
+## Libraries: charts, 3D, shapes, formulas, motion, diagrams
+
+The same pinned library set a Present canvas uses, served by the brain to
+the app frame (never from a CDN, never bundled into the app: an app pays for
+a library only when it imports it, and every app shares one cached copy).
+**Call `canvas_library(name, for: 'app')` before you use one.** It returns the
+import as an app writes it, the library's API for this exact version, the
+React pattern, and a complete `App.tsx` that a browser test renders.
+
+| Import                                                                    | Use it for                                  |
+| ------------------------------------------------------------------------- | ------------------------------------------- |
+| `import * as echarts from 'echarts'`                                      | business charts and dashboards              |
+| `import * as d3 from 'd3'`                                                | custom charts, scales, shapes, force graphs |
+| `import * as THREE from 'three'`                                          | 3D scenes                                   |
+| `import { OrbitControls } from 'three/addons/controls/OrbitControls.js'`  | orbit, zoom and pan for a 3D scene          |
+| `import Konva from 'konva'`                                               | 2D shapes people drag and click             |
+| `import katex from 'katex'`                                               | typeset formulas                            |
+| `import { motion, AnimatePresence } from 'motion/react'`                  | animation                                   |
+| `import { render, domMeasurer } from '@mantle/diagram-templates/browser'` | flow and P&ID diagrams drawn from data      |
+
+The React pattern, the same for each library that owns a DOM node: a
+container with a real height in a `useRef`; create the chart, scene or stage
+in a `useEffect`; return a cleanup that disposes it (`chart.dispose()`,
+`renderer.dispose()`, `stage.destroy()`); a `ResizeObserver` for size; theme
+tokens (`--chart-1`, `--foreground`, which are `oklch()`) converted to rgb for
+a library that paints a canvas, read again when the host switches theme.
+
+Exact names only: `echarts/core`, `three/examples/jsm/...` and `d3-scale` are
+refused. Not available in an app: `reveal.js` (a deck is a Present canvas),
+`alpinejs` (it competes with React for the DOM and needs `unsafe-eval`),
+plain `motion` (use `motion/react`). The frame has no `unsafe-eval`, so
+`d3.csvParse` (it compiles its row reader with `new Function`) fails here: use
+`d3.csvParseRows` or rows from `host.db`. No library can reach the network:
+data comes from `host.db` or a declared tool.
+
+A diagram template (`flow`, `pid`) takes data and returns a static SVG
+string; its data contract is `diagram_guide` with `type` `flow` or `pid`, and
+`diagram_render` draws data to look at it. Showing a saved Present canvas
+inside an app is not supported (the app frame allows no nested frame).
 
 ## The entry contract
 
@@ -140,11 +181,11 @@ so the iframe never sees secrets or credentials.
 Every `host.db.query`, `host.db.exec` and `host.tools.call` is one request
 to the brain, and each login has a budget a minute, an Admin user's too:
 
-| Bridge call | Budget a minute, per login |
-|---|---|
-| `host.db.query` and `host.db.exec` together | 600 |
-| `host.tools.call` | 120 |
-| opening the app (its frame ticket) | 30 |
+| Bridge call                                 | Budget a minute, per login |
+| ------------------------------------------- | -------------------------- |
+| `host.db.query` and `host.db.exec` together | 600                        |
+| `host.tools.call`                           | 120                        |
+| opening the app (its frame ticket)          | 30                         |
 
 Over it, the call fails with `Too many requests: this app made more than
 ...`, which names the budget, says how to stay under it and how many
@@ -156,7 +197,7 @@ seconds, so build for the budget from the start:
   keep it in state; do not ask again for what you already have.
 - **One write for many rows.** `INSERT ... VALUES (...), (...)` with
   `ON CONFLICT ... DO UPDATE` (or `INSERT OR REPLACE`), or an `UPDATE ...
-  SET col = CASE id WHEN ? THEN ? ... END WHERE id IN (...)`. Chunk big
+SET col = CASE id WHEN ? THEN ? ... END WHERE id IN (...)`. Chunk big
   sets (SQLite allows 999 parameters a statement). Never one `exec` per row.
 - **Save text when typing stops.** Update the screen at once, but save a
   text field about 800 ms after the last keystroke, on blur, and when the
@@ -634,6 +675,8 @@ export default function App() {
 
 - **No `export default function App()`** → blank render. Always export the entry.
 - **Disallowed import** → build error. Stick to the allowlist; inline helpers.
+- **`import echarts from 'echarts'`** → build error (no default export). Use
+  the import `canvas_library(name, for: 'app')` gives.
 - **Hardcoded colours** → looks wrong on theme switch. Theme tokens only.
 - **Calling a tool not in the allowlist** → 403 at runtime; `app_build` also
   surfaces undeclared `host.tools.call(slug)` as a warning. Declare first.

@@ -783,6 +783,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_update',
       'tree_item_move',
       ...APP_AUTHORING_TOOL_SLUGS,
+      // The library guides (`for: 'app'`): the vendored libraries an app may
+      // import, for the exact versions the runtime serves.
+      'canvas_library',
     ],
   },
   {
@@ -1751,7 +1754,17 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // APP_TOOL_SLUGS set; `files`/`memory-core` for source reads + lookups;
     // `delegation` so it can hand data-tool work to the toolsmith; `research`
     // (web_search + web_fetch) so it can look up library/API docs while coding.
-    toolGroupSlugs: ['apps', 'app-admin', 'files', 'memory-core', 'delegation', 'research'],
+    // `diagram`: the template data contract (diagram_guide) and a look at it
+    // (diagram_render) for an app that draws a flow or a P&ID.
+    toolGroupSlugs: [
+      'apps',
+      'app-admin',
+      'files',
+      'memory-core',
+      'delegation',
+      'research',
+      'diagram',
+    ],
     skillSlugs: ['app_authoring'],
     isDelegate: true,
     params: { temperature: 0.2, max_tokens: 32000 },

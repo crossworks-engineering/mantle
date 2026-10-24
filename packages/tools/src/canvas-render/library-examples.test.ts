@@ -10,52 +10,17 @@
  * canvas-runtime and share-runtime, made by `pnpm -C server/web build`). Without either it skips,
  * and says so loudly, as the A8 matrix does without a database.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser } from 'puppeteer-core';
 import { CANVAS_LIBRARIES, guideFile } from '../builtins-canvas-library';
+import { findChrome } from './find-chrome';
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const MANIFEST = path.join(ROOT, 'server/web/public/canvas-runtime/manifest.json');
 /** The frame also loads the share runtime's styles (the theme, KaTeX's CSS). */
 const SHARE_CSS = path.join(ROOT, 'server/web/public/share-runtime/styles.css');
-
-/** A Chrome to launch, or null. */
-function findChrome(): string | null {
-  const fixed = [
-    process.env.MANTLE_TEST_CHROME,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-  ].filter((p): p is string => !!p);
-  const hit = fixed.find((p) => existsSync(p));
-  if (hit) return hit;
-  // puppeteer's own downloads: ~/.cache/puppeteer/<kind>/<version>/<platform>/<binary>
-  const cache = path.join(homedir(), '.cache/puppeteer');
-  for (const [kind, bin] of [
-    ['chrome-headless-shell', 'chrome-headless-shell'],
-    ['chrome', 'chrome'],
-  ] as const) {
-    const dir = path.join(cache, kind);
-    if (!existsSync(dir)) continue;
-    // Only directories: a download's leftover (a .zip) sits beside them.
-    const subdirs = (d: string) =>
-      readdirSync(d, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name);
-    for (const version of subdirs(dir).sort().reverse()) {
-      for (const platform of subdirs(path.join(dir, version))) {
-        const p = path.join(dir, version, platform, bin);
-        if (existsSync(p)) return p;
-      }
-    }
-  }
-  return null;
-}
 
 const chrome = findChrome();
 const runtimeBuilt = existsSync(MANIFEST) && existsSync(SHARE_CSS);
