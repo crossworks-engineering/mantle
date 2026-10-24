@@ -180,10 +180,12 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
   const shareAttr = share ? ` data-share-mode-default="${escapeHtml(share.defaultMode)}"` : '';
   // The background host sits at -z-10: above the html/body background (which paints
   // on the root canvas, beneath everything) and below ALL in-flow content —
-  // which is why shareShell drops its own bg when a gradient is active.
+  // which is why shareShell drops its own bg when a gradient is active. The
+  // reader is a PUBLIC surface (full colour, no legibility floor): safe
+  // because shareShell keeps every word of it on an opaque sheet.
   const neatHost =
     share?.readerChrome && share.neat
-      ? `<div data-neat-spec="${escapeHtml(share.neat)}" class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
+      ? `<div data-neat-spec="${escapeHtml(share.neat)}" data-drift-surface="public" class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
       : '';
   const scripts = [
     share?.readerChrome ? `<script type="module" src="/share-runtime/share-page.js"></script>` : '',
@@ -205,12 +207,23 @@ ${scripts}
 
 /** The /s share shell (was app/s/layout.tsx): clean centered surface, quiet
  *  footer, its own scroll container (globals.css pins html/body overflow).
- *  With `neat`, the shell's own ground goes transparent: the fixed -z-10
- *  gradient canvas must show through, and body already paints bg-background
- *  beneath it as the no-WebGL/no-JS fallback. */
+ *
+ *  With `neat`, the gradient behind paints in FULL colour (the 'public' Drift
+ *  surface: no legibility floor), so no text may sit directly on it. The
+ *  content goes on an opaque sheet with the gradient as a frame around it,
+ *  and the footer's line wears its own opaque pill. The shell's own ground
+ *  goes transparent so the fixed -z-10 canvas shows round the sheet; body
+ *  already paints bg-background beneath it as the no-WebGL/no-JS fallback.
+ *  `overflow-clip`, not hidden, rounds the sheet's corners without making it
+ *  a scroll container, so the contact strip inside stays sticky. */
 export function shareShell(inner: string, opts?: { neat?: boolean }): string {
-  const ground = opts?.neat ? '' : ' bg-background';
-  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin${ground} text-foreground">
+  if (opts?.neat) {
+    return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin text-foreground">
+<main class="flex flex-1 flex-col p-3 sm:p-6"><div data-share-sheet class="mx-auto w-full max-w-7xl flex-1 overflow-clip rounded-xl border border-border/60 bg-background shadow-sm">${inner}</div></main>
+<footer class="pb-6 pt-3"><p class="text-center text-xs text-muted-foreground"><span class="rounded-full bg-background px-3 py-1">Shared via <span class="wordmark-brand lowercase">mantle</span></span></p></footer>
+</div>`;
+  }
+  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin bg-background text-foreground">
 <main class="flex-1">${inner}</main>
 <footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="wordmark-brand lowercase">mantle</span></p></footer>
 </div>`;

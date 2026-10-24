@@ -12,7 +12,7 @@
  *    the visitor chooses.
  *  - The saved Drift background. The host div carries the spec
  *    (`[data-neat-spec]`, the stored key's name, only rendered when a
- *    background is saved); the WebGL specifics live in the shared mountDrift
+ *    background is saved) and the surface's look (`[data-drift-surface]`); the WebGL specifics live in the shared mountDrift
  *    (which dynamically imports the engine, so the chunk is only fetched on
  *    brains that actually saved one). Repainted on every mode flip: the theme
  *    tokens it derives colours from change with the `.dark` class.
@@ -24,7 +24,7 @@
  */
 import { SHARE_MODE_STORAGE_KEY } from '@mantle/share-ui/share-mode';
 import { decodeDriftSpec } from '@mantle/content-core/drift-spec';
-import { mountDrift, type DriftMountHandle } from '@mantle/share-ui/drift-mount';
+import { mountDrift, readDriftSurface, type DriftMountHandle } from '@mantle/share-ui/drift-mount';
 import { wireHeadingFolds } from '@mantle/share-ui/heading-fold-dom';
 
 const root = document.documentElement;
@@ -53,6 +53,10 @@ function applyMode(mode: 'light' | 'dark'): void {
 
 const driftHost = document.querySelector<HTMLElement>('[data-neat-spec]');
 const driftSpec = driftHost ? decodeDriftSpec(driftHost.dataset.neatSpec) : null;
+// The /s reader's host says 'public' (full colour, its text on an opaque
+// sheet); an app frame's says nothing and paints the floored 'app' look,
+// since an app's own text sits right on the gradient.
+const driftSurface = readDriftSurface(driftHost?.dataset.driftSurface);
 let backdrop: DriftMountHandle | null = null;
 let mounting = false;
 let raf = 0;
@@ -77,7 +81,7 @@ function repaintDrift(): void {
     const canvas = document.createElement('canvas');
     canvas.className = 'absolute inset-0 size-full';
     host.replaceChildren(canvas);
-    void mountDrift(canvas, spec, currentMode()).then((handle) => {
+    void mountDrift(canvas, spec, currentMode(), driftSurface).then((handle) => {
       mounting = false;
       // Nothing mounted (no WebGL, unresolvable theme): drop the dead canvas;
       // body's bg-background is the designed ground.

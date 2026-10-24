@@ -60,8 +60,9 @@ export type DriftPaletteInput = {
   textFloor?: number;
 };
 
-/** The floor every real surface paints with: AA for body text (4.5:1) on the
- *  palette, plus a margin for the shading and grain the shader adds on top. */
+/** The floor the 'app' surface paints with (see DriftSurface in spec.ts): AA
+ *  for body text (4.5:1) on the palette, plus a margin for the shading and
+ *  grain the shader adds on top. */
 export const DRIFT_TEXT_FLOOR = 4.8;
 
 function luminance([r, g, b]: Rgb): number {

@@ -17,7 +17,9 @@ export {
   driftOptionsFromSpec,
   encodeDriftSpec,
   randomDriftSpec,
+  readDriftSurface,
   type DriftSpec,
+  type DriftSurface,
 } from './spec';
 export {
   DRIFT_TEXT_FLOOR,
