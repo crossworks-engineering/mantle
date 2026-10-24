@@ -829,6 +829,15 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 
 **The whole schema script runs again on every new version**, over the existing tables, so keep every statement re-runnable. \`app_db_schema_set\` tries it on a copy of the live database first and refuses one that fails there, and takes a snapshot of the data before it changes anything.
 
+## Call budget: batch, save once, audit
+Every \`host.db.query\`, \`host.db.exec\` and \`host.tools.call\` is one request, and each login (an Admin user's too) has a budget a minute: 600 database calls, 120 tool calls, 30 app opens. Over it the call fails with "Too many requests: this app made more than …", naming the budget and the wait. Build for it from the start:
+- Read many rows in ONE query (\`WHERE id IN (?, ?, …)\` or a JOIN), never one query per row in a loop; read a screen's data once and keep it in state.
+- Write many rows in ONE statement (multi-row \`INSERT … ON CONFLICT DO UPDATE\`, or \`UPDATE … SET col = CASE id WHEN ? THEN ? … END WHERE id IN (…)\`), chunked under SQLite's 999 parameters; never one exec per row.
+- Save a text field about 800 ms after typing stops (and on blur), only the changed columns of that one row; update the screen at once.
+- Pass many rows to a tool that takes them (an IN list, a rows array); no polling faster than every 15 to 30 s, and only while visible.
+- Route every bridge call through ONE small wrapper: about 3 to 4 calls in flight, and on a 429 (code rate_limited, or "Too many requests") wait retryAfter seconds (or 2 s, doubling) and retry up to 3 times.
+**Audit before publishing:** go through your source and count the requests one user action makes (open the app, open an item, a keystroke, a save, a bulk action, a refresh). Anything that grows with the rows is a loop to batch. Keep the busiest action well under the budget, and check \`app_errors\` after publishing.
+
 ## History — versions and snapshots
 Every publish records a version (code only; pass \`note\`). \`app_snapshot_create\` keeps the code AND a copy of the database: take one before anything that could hurt real data (a bulk \`app_db_seed\` with replace, a change to how the app writes). \`app_snapshot_list\` shows the line. \`app_snapshot_restore\` (code into the draft, data, or full) is the user's call: confirm it with them.
 

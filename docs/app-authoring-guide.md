@@ -135,6 +135,51 @@ hang it.
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.
 
+## Call budget: batch, save once, audit
+
+Every `host.db.query`, `host.db.exec` and `host.tools.call` is one request
+to the brain, and each login has a budget a minute, an Admin user's too:
+
+| Bridge call | Budget a minute, per login |
+|---|---|
+| `host.db.query` and `host.db.exec` together | 600 |
+| `host.tools.call` | 120 |
+| opening the app (its frame ticket) | 30 |
+
+Over it, the call fails with `Too many requests: this app made more than
+...`, which names the budget, says how to stay under it and how many
+seconds to wait. A busy screen built one call per row reaches it in
+seconds, so build for the budget from the start:
+
+- **One query for many rows.** Read with `WHERE id IN (?, ?, ...)` or a
+  `JOIN`, never one query per row in a loop. Read a screen's data once and
+  keep it in state; do not ask again for what you already have.
+- **One write for many rows.** `INSERT ... VALUES (...), (...)` with
+  `ON CONFLICT ... DO UPDATE` (or `INSERT OR REPLACE`), or an `UPDATE ...
+  SET col = CASE id WHEN ? THEN ? ... END WHERE id IN (...)`. Chunk big
+  sets (SQLite allows 999 parameters a statement). Never one `exec` per row.
+- **Save text when typing stops.** Update the screen at once, but save a
+  text field about 800 ms after the last keystroke, on blur, and when the
+  page is hidden; write only the columns that changed, for that one row.
+- **Tools take many rows too.** Pass an IN list or a `rows` array to a tool
+  that takes one (a SQL tool, `table_rows_upsert`) instead of a call per
+  row. Where a tool takes one item only, pace the calls (below).
+- **No tight polling.** Refresh no more often than every 15 to 30 s, and
+  only while the app is visible (`document.visibilityState`).
+- **One paced wrapper.** Route every bridge call through one small helper
+  that keeps about 3 to 4 calls in flight and, on a 429 (`code`
+  `rate_limited`, or `Too many requests` in the message), waits the
+  `retryAfter` seconds (or 2 s, doubling) and tries again up to 3 times. A
+  refused call never ran, so the retry is safe for writes. Keep real errors
+  as they are.
+
+**Audit before you publish.** Read your own source for every bridge call
+and ask how many requests one user action makes: opening the app, opening
+an item, one keystroke, one save, a bulk action, a refresh. Anything that
+grows with the number of rows is a loop to batch. Write the count down in
+the app's description or a code comment for the busiest action, keep it
+well under the budget, and check `app_errors` after publishing.
+
 ## Who is running the app
 
 An app can learn who runs it, and record it so that it cannot be faked.
@@ -594,6 +639,8 @@ export default function App() {
   surfaces undeclared `host.tools.call(slug)` as a warning. Declare first.
 - **Expecting direct brain access** → there is none. Go through a declared tool.
 - **Destructive SQLite migration** → unsupported. Schema is append-only.
+- **One call per row** → `Too many requests` on a busy screen. Batch reads
+  and writes and save text once typing stops (see Call budget).
 - **Drawing the app's own title** → the name shows twice. The host's header
   already shows the name, icon and description; start with the content.
 
