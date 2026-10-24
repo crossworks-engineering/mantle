@@ -28,6 +28,28 @@ export function referencedDrawIds(doc: unknown): string[] {
   return [...out];
 }
 
+/**
+ * The Present canvas ids a page embeds (`![Title](present:<id>)` → an image
+ * node with `attrs.presentId`). Scopes the share surface as
+ * referencedDrawIds does: a shared page serves the snapshot of exactly the
+ * canvases its doc places. Not an embed edge (referencedEmbedIds and the
+ * database's mantle_page_embed_refs leave canvases out): a canvas is read
+ * by its own grants only.
+ */
+export function referencedPresentIds(doc: unknown): string[] {
+  const out = new Set<string>();
+  const walk = (n: PMNode | null | undefined) => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'image') {
+      const id = n.attrs?.presentId;
+      if (typeof id === 'string' && id) out.add(id);
+    }
+    if (Array.isArray(n.content)) for (const c of n.content) walk(c);
+  };
+  walk(doc as PMNode);
+  return [...out];
+}
+
 export function referencedFileIds(doc: unknown): string[] {
   const out = new Set<string>();
   const walk = (n: PMNode | null | undefined) => {

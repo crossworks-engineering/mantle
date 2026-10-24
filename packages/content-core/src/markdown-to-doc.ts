@@ -35,6 +35,7 @@ import {
   MEDIA_HREF,
   PAGE_HREF,
   DRAW_HREF,
+  PRESENT_HREF,
   FOLDER_HREF,
   FOLDER_HERE,
 } from './markdown-refs';
@@ -269,15 +270,19 @@ function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
       // ![alt](draw:<drawId>)  → an embedded drawing, which is still an IMAGE
       // node (block-level picture with alt text) — only the bytes come from a
       // drawing's committed snapshot instead of an uploaded file, so the whole
-      // image pipeline carries it. Anything else is a plain URL image.
+      // image pipeline carries it. ![Title](present:<id>) is a canvas's
+      // snapshot, the same way. Anything else is a plain URL image.
       const media = MEDIA_HREF.exec(t.href ?? '');
       const draw = DRAW_HREF.exec(t.href ?? '');
+      const present = PRESENT_HREF.exec(t.href ?? '');
       out.push(
         media
           ? { type: 'image', attrs: { src: null, alt: t.text ?? null, nodeId: media[1]! } }
           : draw
             ? { type: 'image', attrs: { src: null, alt: t.text ?? null, drawId: draw[1]! } }
-            : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
+            : present
+              ? { type: 'image', attrs: { src: null, alt: t.text ?? null, presentId: present[1]! } }
+              : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
       );
     } else {
       buf.push(t);

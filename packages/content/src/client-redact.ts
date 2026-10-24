@@ -23,7 +23,7 @@
  *
  * What counts as a reference is embed-refs.ts's reading (the one the member
  * save rule uses): `/n/<id>` and any relative path with an id, the app's own
- * schemes (`page:`, `media:`, `draw:`, `mention:node:`), the id attributes.
+ * schemes (`page:`, `media:`, `draw:`, `present:`, `mention:node:`), the id attributes.
  * Pure: `readable` is the set of ids the reader may read (the caller asks
  * the database, once, in the reader's scope). External links stay as
  * they are.
@@ -54,7 +54,7 @@ type PMNode = {
 };
 
 /** Attributes that hold a node id, on any node type (as embed-refs.ts). */
-const ID_ATTRS = ['nodeId', 'drawId', 'pageId'] as const;
+const ID_ATTRS = ['nodeId', 'drawId', 'presentId', 'pageId'] as const;
 /** Block types whose content may be empty; any other container that loses
  *  every child to the embed rule gets an empty paragraph instead. */
 const MAY_BE_EMPTY = new Set(['paragraph', 'heading']);
