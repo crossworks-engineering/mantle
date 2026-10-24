@@ -275,8 +275,16 @@ describe('checkStaticSvg', () => {
     ['<animate attributeName="x"/>', /forbidden element <animate>/],
     ['<a href="javascript:x"></a>', /javascript/],
     ['<text font-family="Inter">x</text>', /generic family/],
+    ['<rect title=">" onmouseover="x()">', /event handler/],
   ])('catches %s', (markup, problem) => {
     expect(checkStaticSvg(inject(markup)).join('\n')).toMatch(problem);
+  });
+
+  it("a '>' in a quoted value does not hide the attributes after it", () => {
+    const p = checkStaticSvg(inject('<rect title=">" onmouseover="x()"></rect>')).join('\n');
+    expect(p).toMatch(/event handler attribute 'onmouseover='/);
+    expect(p).toMatch(/raw '<' or '>'/);
+    expect(checkStaticSvg(inject('<rect title="a &gt; b"/>'))).toEqual([]);
   });
 
   it('needs the title and desc first', () => {

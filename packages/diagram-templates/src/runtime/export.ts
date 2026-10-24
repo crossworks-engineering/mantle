@@ -95,8 +95,19 @@ export function checkStaticSvg(svg: string): string[] {
     if (new RegExp(`<${tag}[\\s/>]`, 'i').test(text)) problems.push(`forbidden element <${tag}>.`);
   }
   // Attribute checks read the tags only: escaped text such as a label that
-  // says 'onload=' is just text.
-  const tags = [...text.matchAll(/<[^>]+>/g)].map((m) => m[0]).join('\n');
+  // says 'onload=' is just text. A tag is read quote-aware, so a '>' inside
+  // a quoted value does not end it early and hide the attributes after it.
+  const tagList = [...text.matchAll(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g)].map((m) => m[0]);
+  const tags = tagList.join('\n');
+  // A raw '<' or '>' in an attribute value is refused outright: the builder
+  // escapes both (svg.ts esc), and another parser may split such a tag
+  // where this one does not.
+  for (const tag of tagList) {
+    if (/=\s*(?:"[^"]*[<>][^"]*"|'[^']*[<>][^']*')/.test(tag)) {
+      problems.push("an attribute value holds a raw '<' or '>'.");
+      break;
+    }
+  }
   const onAttr = /\son[a-z]+\s*=/i.exec(tags);
   if (onAttr) problems.push(`event handler attribute '${onAttr[0].trim()}'.`);
   if (/javascript:/i.test(tags)) problems.push("a 'javascript:' URL.");
