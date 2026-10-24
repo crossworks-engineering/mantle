@@ -1479,6 +1479,29 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(() => session.frameTicketCaller()).toThrow(/answered no frame ticket/);
   });
 
+  it('an `?at=` asset token is read on a GET only: a HEAD ignores it (S9 part 3 round 2, area L4)', async () => {
+    // A direct call of the asset guard, no gate in front: the gate refused
+    // a HEAD with a token before its view (the cells above), so only this
+    // call sees the stricter answer. GET with the token is the Admin user;
+    // HEAD with the same token is no login (401), never the token's.
+    const session = await import('../../lib/auth/session');
+    const tokens = await import('../../lib/auth/tokens');
+    const { runWithRequestContext } = await import('../request-context');
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const path = `/api/files/files/${ID}`;
+    const at = encodeURIComponent(tokens.buildAssetToken(ANCHOR, ADMIN));
+    const call = (method: 'GET' | 'HEAD') => {
+      const req = new Request(`http://brain.example.invalid${path}?at=${at}`, { method });
+      return runWithRequestContext({ req, path, method }, () => session.getOwnerForAsset(req));
+    };
+    const get = await call('GET');
+    expect(get).not.toBeInstanceOf(Response);
+    expect((get as { id: string }).id).toBe(ANCHOR);
+    const head = await call('HEAD');
+    expect(head).toBeInstanceOf(Response);
+    expect((head as Response).status).toBe(401);
+  });
+
   it('the answers taken at the read: what the handler does first stays first (hand batch B)', async () => {
     const { gate } = await import('./gate');
     const { registerRoutes: registerRoutesOf } = await import('../route-loader');
