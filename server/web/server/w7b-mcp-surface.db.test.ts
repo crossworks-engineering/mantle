@@ -84,11 +84,13 @@ const ITEM_RIGHTS = new RegExp(
 const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'input',
-    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted|runs one INSERT, UPDATE, DELETE or REPLACE/i,
+    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted|runs one INSERT, UPDATE, DELETE or REPLACE|source is empty: pass the whole HTML document/i,
   ],
+  // Present (v0.300.148): a canvas create with no source, and a diagram type or
+  // canvas library the sweep made up, are refused by name.
   [
     'not found',
-    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured|diagram type '|canvas library ')|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   [
