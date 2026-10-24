@@ -138,8 +138,8 @@ export const RATE_LIMITS = {
   pushEnrol: perLogin('push-enrol', 10),
   // A member's run of an app (an Admin user's is not limited).
   memberFrameTicket: perMember('member-frame-ticket', 30),
-  memberDbBroker: perMember('member-db-broker', 300),
-  memberToolBroker: perMember('member-tool-broker', 60),
+  memberDbBroker: perMember('member-db-broker', 1200),
+  memberToolBroker: perMember('member-tool-broker', 300),
   // A member's bytes of a file: a thumbnail may decode an image.
   memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
   memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },

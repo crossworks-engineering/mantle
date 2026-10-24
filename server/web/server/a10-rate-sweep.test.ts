@@ -382,13 +382,13 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     row: 'POST /api/apps/:id/db-broker',
     cred: 'member',
     body: JSON_BODY,
-    limits: [members('member-db-broker', 300)],
+    limits: [members('member-db-broker', 1200)],
   },
   {
     row: 'POST /api/apps/:id/tool-broker',
     cred: 'member',
     body: JSON_BODY,
-    limits: [members('member-tool-broker', 60)],
+    limits: [members('member-tool-broker', 300)],
   },
   // A member's bytes: the file, or its thumbnail (a budget of its own).
   ...['/api/files/files/:id', '/api/v1/files/:id'].flatMap((p) => [

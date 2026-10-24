@@ -1,6 +1,7 @@
 # A10 #8: every route rate limit, recorded on main (v0.300.44) BEFORE the move.
 # Written once (A10_RATE_SWEEP_RECORD=1); a10-rate-sweep.test.ts reads it back
 # and holds every probe to it, or to a named change.
+# 2026-10-24 (owner decision): member-db-broker 300 -> 1200 and member-tool-broker 60 -> 300 a minute; their two count lines carry the new numbers, every other part as recorded.
 # probes: 246
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
@@ -112,12 +113,12 @@ POST /api/apps/:id/frame-ticket member member-frame-ticket window => 59s: 429 ap
 POST /api/apps/:id/frame-ticket member member-frame-ticket scope => other address 429; other login 404; other login, other address 404
 POST /api/apps/:id/frame-ticket member member-frame-ticket order: no login => first 429 at 0; answer 401; then 404
 POST /api/apps/:id/frame-ticket member member-frame-ticket order: an Admin user => first 429 at 0; then 404
-POST /api/apps/:id/db-broker member member-db-broker count (login 300/60s members) => first 429 at 301; #300 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /api/apps/:id/db-broker member member-db-broker count (login 1200/60s members) => first 429 at 1201; #1200 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
 POST /api/apps/:id/db-broker member member-db-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
 POST /api/apps/:id/db-broker member member-db-broker scope => other address 429; other login 400; other login, other address 400
 POST /api/apps/:id/db-broker member member-db-broker order: no login => first 429 at 0; answer 401; then 400
 POST /api/apps/:id/db-broker member member-db-broker order: an Admin user => first 429 at 0; then 400
-POST /api/apps/:id/tool-broker member member-tool-broker count (login 60/60s members) => first 429 at 61; #60 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
+POST /api/apps/:id/tool-broker member member-tool-broker count (login 300/60s members) => first 429 at 301; #300 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
 POST /api/apps/:id/tool-broker member member-tool-broker window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
 POST /api/apps/:id/tool-broker member member-tool-broker scope => other address 429; other login 400; other login, other address 400
 POST /api/apps/:id/tool-broker member member-tool-broker order: no login => first 429 at 0; answer 401; then 400
