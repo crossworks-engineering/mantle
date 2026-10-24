@@ -7688,7 +7688,7 @@
  },
  {
   "name": "present_export",
-  "description": "Write a static copy of a canvas into Files for pages, print, PDF, Word, email and shares: a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown to put in a page. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.",
+  "description": "Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.",
   "inputSchema": {
    "type": "object",
    "properties": {

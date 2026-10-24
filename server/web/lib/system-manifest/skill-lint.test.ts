@@ -49,6 +49,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'openweather_geocode', // app_authoring's "never invent a slug like this" example
   'table_xinfo', // SQLite PRAGMA table_xinfo, allowed read-only in app SQL
   'mantle_pg', // the Postgres container name (mantle-ops)
+  'page_embed', // present_get / present_create / present_update result field (a canvas's page line)
 ]);
 
 /** Backticked tokens, with call-shaped suffixes stripped so
