@@ -72,6 +72,7 @@ import {
 } from '../lib/auth/route-switches';
 import {
   DECLARED_METHODS,
+  ROUTE_DECLARATION_MODULE,
   ROUTE_POLICY_EXPORT,
   validateRoutePolicy,
   type RoutePolicyDeclaration,
@@ -957,7 +958,7 @@ function readsFirst(fn: Fn, readsIn: ts.CallExpression[], wrapsIn: ts.CallExpres
 }
 
 /** The module a route file imports routePolicy from, by its own name. */
-const DECLARATION_MODULE = '@/lib/auth/route-declaration';
+const DECLARATION_MODULE = ROUTE_DECLARATION_MODULE;
 
 /**
  * The policy a route file declares (lib/auth/route-declaration.ts):

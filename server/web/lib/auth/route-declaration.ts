@@ -32,6 +32,11 @@ import type { RateLimitName } from '../route-limits';
 /** The name of the export a route file declares its policy by. */
 export const ROUTE_POLICY_EXPORT = 'policy';
 
+/** The module a route file imports routePolicy from, by its own name (the
+ *  generator, scripts/route-callers.ts, and the lint, route-plumbing.mjs,
+ *  both refuse another). */
+export const ROUTE_DECLARATION_MODULE = '@/lib/auth/route-declaration';
+
 /** The methods a declaration names (a HEAD the GET handler answers takes
  *  its GET's; a route that exports its own HEAD declares it). The HTTP
  *  methods a route file exports, for the generator and the lint too. */

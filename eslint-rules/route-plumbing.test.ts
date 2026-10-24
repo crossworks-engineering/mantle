@@ -176,15 +176,16 @@ describe('no-error-text-replies', () => {
 
 /**
  * route-policy-declared (plan v3.2 S9): a route file declares its policy
- * for each method it exports, and no other. Off in eslint.config.mjs until
- * the codemod writes the declarations (part 1).
+ * for each method it exports, and no other, read as the generator reads
+ * it (scripts/route-callers.ts handlerPolicy).
  */
 describe('route-policy-declared', () => {
   const tester = new RuleTester({
     languageOptions: { parser: tseslint.parser, ecmaVersion: 2022, sourceType: 'module' },
   });
   const route = '/r/server/web/app/api/notes/route.ts';
-  const decl = (body: string) => `export const policy = routePolicy({ ${body} });`;
+  const imp = "import { routePolicy } from '@/lib/auth/route-declaration';\n";
+  const decl = (body: string) => `${imp}export const policy = routePolicy({ ${body} });`;
 
   it('names the export the declarations module names', () => {
     expect(ROUTE_POLICY_EXPORT).toBe(DECLARED_EXPORT);
@@ -204,15 +205,15 @@ describe('route-policy-declared', () => {
         // `as`, `satisfies` and `!` unwrapped, as the generator reads them
         // (S9 part 3 round 2, the flip audit).
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } }) as const;`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } }) as const;`,
           filename: route,
         },
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } } satisfies P);`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } } satisfies P);`,
           filename: route,
         },
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } })!;`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } })!;`,
           filename: route,
         },
         // Not a route file.
@@ -271,19 +272,51 @@ describe('route-policy-declared', () => {
           errors: [{ messageId: 'notLiteral' }],
         },
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ ...shared, GET: { class: 'content' } });`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ ...shared, GET: { class: 'content' } });`,
           filename: route,
           errors: [{ messageId: 'notWrittenOut' }],
         },
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ ...shared });`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ ...shared });`,
           filename: route,
           errors: [{ messageId: 'undeclared' }, { messageId: 'notWrittenOut' }],
         },
         {
-          code: `export async function GET() {}\nexport const policy = routePolicy({ [m]: { class: 'content' }, GET: { class: 'content' } });`,
+          code: `${imp}export async function GET() {}\nexport const policy = routePolicy({ [m]: { class: 'content' }, GET: { class: 'content' } });`,
           filename: route,
           errors: [{ messageId: 'notWrittenOut' }],
+        },
+        // As the generator: const only, and routePolicy imported by its
+        // own name from the declarations module (round 3, LOW-4).
+        {
+          code: `${imp}export async function GET() {}\nexport let policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notConst' }],
+        },
+        {
+          code: `${imp}export async function GET() {}\nexport var policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notConst' }],
+        },
+        {
+          code: `export async function GET() {}\nconst routePolicy = (d: unknown) => d;\nexport const policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notImported' }],
+        },
+        {
+          code: `import { routePolicy } from './local';\nexport async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notImported' }],
+        },
+        {
+          code: `import { declare as routePolicy } from '@/lib/auth/route-declaration';\nexport async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notImported' }],
+        },
+        {
+          code: `import type { routePolicy } from '@/lib/auth/route-declaration';\nexport async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notImported' }],
         },
       ],
     });

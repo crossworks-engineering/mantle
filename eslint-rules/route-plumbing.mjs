@@ -18,7 +18,11 @@
  * `.body`, on the handler's request: a parameter typed `Request`, or one
  * named req, request or _req.
  */
-import { DECLARED_METHODS, ROUTE_POLICY_EXPORT } from '../server/web/lib/auth/route-declaration.ts';
+import {
+  DECLARED_METHODS,
+  ROUTE_DECLARATION_MODULE as DECLARATION_MODULE,
+  ROUTE_POLICY_EXPORT,
+} from '../server/web/lib/auth/route-declaration.ts';
 
 /** The route files that read their body another way, each with why. */
 export const BODY_READ_ALLOW = Object.freeze({
@@ -416,6 +420,10 @@ export const routePolicyDeclared = {
         'Write the policy out where it is exported: export const policy = routePolicy({ ... }) with the object literal (the generator reads it as data and refuses a name, a call, a spread or a re-export).',
       notWrittenOut:
         "Name each method's policy with its own key: the generator refuses a spread or a computed key in routePolicy({ ... }).",
+      notConst:
+        'Declare the policy with const: export const policy = routePolicy({ ... }) (the generator refuses let and var).',
+      notImported:
+        "Import routePolicy by its own name: import { routePolicy } from '@/lib/auth/route-declaration' (the generator refuses a local routePolicy, another module's or a renamed import).",
     },
     schema: [],
   },
@@ -426,7 +434,20 @@ export const routePolicyDeclared = {
     /** The declaration's object literal, or null when it is not one. */
     let declared = null;
     let declaredNode = null;
+    /** The routePolicy call the policy is, when it is one. */
+    let call = null;
+    /** Whether routePolicy is imported by its own name from the
+     *  declarations module (route-callers.ts DECLARATION_MODULE). */
+    let imported = false;
     return {
+      ImportDeclaration(node) {
+        if (node.source.value !== DECLARATION_MODULE || node.importKind === 'type') return;
+        for (const sp of node.specifiers) {
+          if (sp.type !== 'ImportSpecifier' || sp.importKind === 'type') continue;
+          const name = sp.imported.type === 'Identifier' ? sp.imported.name : sp.imported.value;
+          if (name === 'routePolicy' && sp.local.name === 'routePolicy') imported = true;
+        }
+      },
       ExportNamedDeclaration(node) {
         const d = node.declaration;
         if (d?.type === 'FunctionDeclaration' && d.id && HTTP_METHODS.has(d.id.name)) {
@@ -437,17 +458,18 @@ export const routePolicyDeclared = {
             if (HTTP_METHODS.has(v.id.name)) exported.add(v.id.name);
             if (v.id.name !== ROUTE_POLICY_EXPORT) continue;
             declaredNode = v;
+            if (d.kind !== 'const') context.report({ node: v, messageId: 'notConst' });
             // As the generator reads it (route-callers.ts handlerPolicy):
             // `as`, `satisfies` and `!` unwrapped, a call of routePolicy
             // by its own name, one object literal.
             const init = bare(v.init);
-            const arg =
+            call =
               init?.type === 'CallExpression' &&
               init.callee.type === 'Identifier' &&
-              init.callee.name === 'routePolicy' &&
-              init.arguments.length === 1
-                ? bare(init.arguments[0])
+              init.callee.name === 'routePolicy'
+                ? init
                 : null;
+            const arg = call?.arguments.length === 1 ? bare(call.arguments[0]) : null;
             declared = arg?.type === 'ObjectExpression' ? arg : null;
           }
         }
@@ -477,6 +499,10 @@ export const routePolicyDeclared = {
           context.report({ node: declaredNode, messageId: 'notLiteral' });
           return;
         }
+        // A call of a routePolicy the file does not import by its own name
+        // from the declarations module (a local one, another module's): the
+        // generator refuses it.
+        if (call && !imported) context.report({ node: call, messageId: 'notImported' });
         const named = new Set();
         for (const p of declared.properties) {
           // A spread or a computed key at the top: the generator refuses
