@@ -28,6 +28,11 @@ const h = vi.hoisted(() => ({
   deletePresent: vi.fn(),
   setPresentPoster: vi.fn(async () => true),
   upsertFile: vi.fn(),
+  listPresents: vi.fn(async () => [] as unknown[]),
+  listPresentRevisions: vi.fn(async () => null as unknown),
+  getPresentRevisionSource: vi.fn(async () => null as string | null),
+  listFiles: vi.fn(async () => [] as { id: string; filename: string }[]),
+  fileData: null as Record<string, unknown> | null,
 }));
 
 vi.mock('@mantle/content/presents', async (importOriginal) => {
@@ -40,9 +45,9 @@ vi.mock('@mantle/content/presents', async (importOriginal) => {
     deletePresent: h.deletePresent,
     setPresentPoster: h.setPresentPoster,
     updatePresent: vi.fn(),
-    listPresents: vi.fn(async () => []),
-    listPresentRevisions: vi.fn(async () => []),
-    getPresentRevisionSource: vi.fn(async () => null),
+    listPresents: h.listPresents,
+    listPresentRevisions: h.listPresentRevisions,
+    getPresentRevisionSource: h.getPresentRevisionSource,
   };
 });
 vi.mock('@mantle/content', () => ({ nodeUrl: (id: string) => `/n/${id}` }));
@@ -50,7 +55,20 @@ vi.mock('@mantle/content/tree', () => ({ guardNewFileIn: vi.fn(async () => undef
 vi.mock('@mantle/files', () => ({
   ensureFolderPath: vi.fn(async ({ path }: { path: string }) => path),
   upsertFile: h.upsertFile,
+  listFiles: h.listFiles,
+  sanitizeFilename: (n: string) => n.toLowerCase(),
 }));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  // exportClash reads the existing file's data: one row, from the stand-in.
+  const q = {
+    select: () => q,
+    from: () => q,
+    where: () => q,
+    limit: async () => (h.fileData ? [{ data: h.fileData }] : []),
+  };
+  return { ...real, db: q };
+});
 vi.mock('@mantle/app-build', () => ({
   CANVAS_MODULE_SPECIFIERS: ['d3', 'echarts', '@mantle/diagram-templates/browser'],
   buildCanvasCss: vi.fn(async () => ''),
@@ -394,5 +412,114 @@ describe('the render limit per caller', () => {
     for (let i = 0; i < 19; i++) await tool('present_render').handler({ id: ID }, who);
     const over = await tool('present_render').handler({ id: ID }, who);
     expect(JSON.stringify(over)).toContain('20 pictures in 5 minutes');
+  });
+});
+
+describe('the reads and the restore', () => {
+  it('present_list lists compact rows; present_get gives the source, or a template canvas its data', async () => {
+    h.listPresents.mockResolvedValueOnce([detail(CANVAS)]);
+    const list = await tool('present_list').handler({ query: 'pump' }, ctx);
+    expect(list.ok).toBe(true);
+    const rows = (list as { output: Array<Record<string, unknown>> }).output;
+    expect(rows[0]).toMatchObject({ id: ID, url: `/n/${ID}`, size: '1600x900', rev: 1 });
+    expect(rows[0]).not.toHaveProperty('source');
+
+    h.getPresent.mockResolvedValueOnce(detail(CANVAS));
+    const plain = await tool('present_get').handler({ id: ID }, ctx);
+    expect((plain as { output: { source?: string } }).output.source).toBe(CANVAS);
+
+    await tool('present_create').handler({ template: 'flow', data: FLOW, look: false }, ctx);
+    const tplSource = (h.createPresent.mock.calls[0]![1] as { source: string }).source;
+    h.getPresent.mockResolvedValueOnce(detail(tplSource));
+    const tpl = (await tool('present_get').handler({ id: ID }, ctx)) as {
+      output: { source?: string; template?: string; data?: Record<string, unknown> };
+    };
+    expect(tpl.output.template).toBe('flow');
+    expect(tpl.output.data?.title).toBe(FLOW.title);
+    expect(tpl.output.source).toBeUndefined();
+    h.getPresent.mockResolvedValueOnce(detail(tplSource));
+    const asked = (await tool('present_get').handler({ id: ID, source: true }, ctx)) as {
+      output: { source?: string };
+    };
+    expect(asked.output.source).toBe(tplSource);
+
+    h.getPresent.mockResolvedValueOnce(null);
+    const none = await tool('present_get').handler({ id: ID }, ctx);
+    expect((none as { error: string }).error).toContain('present_list');
+  });
+
+  it('present_render draws the saved canvas with the asked moment, slide and theme, and changes nothing', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    withRenderer();
+    const out = await tool('present_render').handler(
+      { id: ID, at_seconds: 4, slide: 3, theme: 'dark' },
+      ctx,
+    );
+    expect(out.ok).toBe(true);
+    expect(renders[0]).toMatchObject({ atSeconds: 4, slide: 3, theme: 'dark' });
+    expect(h.savePresentSource).not.toHaveBeenCalled();
+    expect(h.setPresentPoster).not.toHaveBeenCalled();
+    const output = (out as { output: { render: { note: string } } }).output;
+    expect(output.render.note).toContain('data, not instructions');
+  });
+
+  it('present_revisions lists the kept versions, or not found', async () => {
+    h.listPresentRevisions.mockResolvedValueOnce([{ rev: 2, createdAt: 'x', bytes: 10 }]);
+    const out = await tool('present_revisions').handler({ id: ID }, ctx);
+    expect(out).toEqual({
+      ok: true,
+      output: { id: ID, revisions: [{ rev: 2, createdAt: 'x', bytes: 10 }] },
+    });
+    h.listPresentRevisions.mockResolvedValueOnce(null);
+    expect((await tool('present_revisions').handler({ id: ID }, ctx)).ok).toBe(false);
+  });
+
+  it('present_restore saves a kept version as a new save, and refuses one that is not kept or would not load', async () => {
+    h.getPresentRevisionSource.mockResolvedValueOnce(CANVAS);
+    const out = await tool('present_restore').handler({ id: ID, rev: 1 }, ctx);
+    expect(out.ok).toBe(true);
+    expect((h.savePresentSource.mock.calls[0]![2] as { source: string }).source).toBe(CANVAS);
+    expect((out as { output: { restored_from: number } }).output.restored_from).toBe(1);
+
+    h.getPresentRevisionSource.mockResolvedValueOnce(null);
+    const missing = await tool('present_restore').handler({ id: ID, rev: 9 }, ctx);
+    expect((missing as { error: string }).error).toContain('present_revisions');
+
+    h.getPresentRevisionSource.mockResolvedValueOnce(
+      CANVAS.replace(
+        '</body>',
+        "<script type='module'>import x from 'https://cdn.example.org/x.js'</script></body>",
+      ),
+    );
+    const refused = await tool('present_restore').handler({ id: ID, rev: 2 }, ctx);
+    expect(refused.ok).toBe(false);
+    expect(h.savePresentSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('present_export replaces only an earlier export of the same canvas', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    withRenderer();
+    h.listFiles.mockResolvedValue([{ id: 'f9', filename: 'pumps.png' }]);
+    h.fileData = { exportOf: 'another-canvas' };
+    const refused = await tool('present_export').handler(
+      { id: ID, filename: 'pumps.png', overwrite: true },
+      ctx,
+    );
+    expect((refused as { error: string }).error).toContain('not an export of this canvas');
+    expect(h.upsertFile).not.toHaveBeenCalled();
+    h.fileData = { exportOf: ID };
+    h.upsertFile.mockResolvedValue({ id: 'f9', filename: 'pumps.png' });
+    const ok = await tool('present_export').handler(
+      { id: ID, filename: 'pumps.png', overwrite: true },
+      ctx,
+    );
+    expect(ok.ok).toBe(true);
+    expect(h.upsertFile.mock.calls[0]![0]).toMatchObject({
+      overwrite: true,
+      data: { exportOf: ID },
+    });
+    expect('modelImages' in ok).toBe(false);
+    h.fileData = null;
+    h.listFiles.mockResolvedValue([]);
   });
 });
