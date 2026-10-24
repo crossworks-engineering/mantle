@@ -89,4 +89,15 @@ describe('loadProfilePreferences: the fresh-install look', () => {
     state.row = { preferences: { neatBackground: '' } };
     expect((await loadProfilePreferences('u1')).neatBackground).toBeUndefined();
   });
+
+  it('keeps a Drift v2 background as stored, and reads an unknown one as off', async () => {
+    const v2 =
+      '{"v":2,"seed":9,"tone":"auto","speed":2,"style":"dunes","pal":"brand","str":0.55,"scale":1,"warp":0.5,"soft":0.6,"light":0.5,"grain":0.12,"angle":0}';
+    state.row = { preferences: { neatBackground: v2 } };
+    expect((await loadProfilePreferences('u1')).neatBackground).toBe(v2);
+    state.row = { preferences: { neatBackground: '{"v":9,"seed":1}' } };
+    expect((await loadProfilePreferences('u1')).neatBackground).toBeUndefined();
+    state.row = { preferences: { neatBackground: '{broken' } };
+    expect((await loadProfilePreferences('u1')).neatBackground).toBeUndefined();
+  });
 });

@@ -33,6 +33,7 @@ import {
   type ThinkingEffort,
 } from './thinking-tiers';
 import { FRESH_APPEARANCE } from '@mantle/client-types/fresh-appearance';
+import { DRIFT_SPEC_MAX, decodeDriftSpec } from './drift-spec';
 import {
   APP_OPENS_MAX,
   APP_PINS_MAX,
@@ -281,31 +282,24 @@ export function projectBackgrounds(raw: unknown): string | undefined {
 }
 
 /**
- * Project a stored `neatBackground` — the whole-surface animated gradient's
- * spec, compact JSON `{v:1, seed, tone, speed}`.
+ * Project a stored `neatBackground`: the whole-surface animated background's
+ * spec (Drift). The key keeps its first name; the value is compact JSON, v2
+ * (`{v:2, seed, tone, speed, style, ...}`) or a Neat-era v1
+ * (`{v:1, seed, tone, speed}`), which still paints, as silk.
  *
- * Shape-checked only, the projectBackgrounds contract: colours and the full
- * shader parameter derivation live in the web layer
- * (@mantle/web-ui/neat-background), and the client decodes defensively again
- * on read, so a value that survives storage still never reaches WebGL
- * unvalidated. The cap is a storage guard — a canonical spec is ~60 chars.
+ * Validated by the ONE codec every renderer decodes with
+ * (@mantle/content-core/drift-spec), and passed through UNCHANGED when it
+ * decodes: a v1 stays v1 on disk and on the wire. An unknown version or
+ * garbage reads as unset (off), never a crash. Colours and the shader
+ * parameters live in the renderer, which decodes again on read. The cap is a
+ * storage guard.
  */
-export const NEAT_BACKGROUND_MAX = 200;
+export const NEAT_BACKGROUND_MAX = DRIFT_SPEC_MAX;
 
 export function projectNeatBackground(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim();
-  if (!t || t.length > NEAT_BACKGROUND_MAX) return undefined;
-  try {
-    const o = JSON.parse(t) as Record<string, unknown>;
-    if (!o || typeof o !== 'object' || o.v !== 1) return undefined;
-    if (typeof o.seed !== 'number' || !Number.isInteger(o.seed) || o.seed < 0) return undefined;
-    if (o.tone !== 'auto' && o.tone !== 'darker' && o.tone !== 'lighter') return undefined;
-    if (typeof o.speed !== 'number' || !Number.isFinite(o.speed) || o.speed < 0) return undefined;
-    return t;
-  } catch {
-    return undefined;
-  }
+  return decodeDriftSpec(t) ? t : undefined;
 }
 
 /** Project a stored `defaultMode` — the brain's default light/dark mode for

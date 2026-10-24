@@ -15,6 +15,7 @@
     "./canvas": "./src/canvas.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
+    "./drift-spec": "./src/drift-spec.ts",
     "./formula-dimensions": "./src/formula-dimensions.ts",
     "./formula-eval": "./src/formula-eval.ts",
     "./formula-seed": "./src/formula-seed.ts",

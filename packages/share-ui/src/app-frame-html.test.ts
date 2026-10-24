@@ -52,7 +52,7 @@ describe('buildAppFrameHtml — error reporting', () => {
 
 describe('buildAppFrameHtml — the Neat backdrop', () => {
   const SPEC = '{"v":1,"seed":42,"tone":"auto","speed":2}';
-  const withNeat = (neatLicense?: string | null) =>
+  const withNeat = () =>
     buildAppFrameHtml({
       bundleCode: 'console.log(1)',
       appCss: '',
@@ -61,7 +61,6 @@ describe('buildAppFrameHtml — the Neat backdrop', () => {
       colorTheme: 'darkmatter',
       viewport: true,
       neatSpec: SPEC,
-      neatLicense,
     });
 
   it('renders no host div and no runtime script without a spec', () => {
@@ -88,11 +87,6 @@ describe('buildAppFrameHtml — the Neat backdrop', () => {
     expect(html).toContain('body{background:var(--background)}');
     expect(html).not.toContain('html{background');
     expect(html).not.toContain('<body class="bg-background');
-  });
-
-  it('carries the licence only when set', () => {
-    expect(withNeat('k-1')).toContain('data-neat-license="k-1"');
-    expect(withNeat()).not.toContain('data-neat-license');
   });
 
   it('makes --card translucent over a Neat ground, and ONLY then', () => {

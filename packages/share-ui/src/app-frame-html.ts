@@ -41,7 +41,7 @@ export function buildAppFrameCsp(origin: string): string {
     // inside the AppSandbox iframe it composes with the identical attribute.
     `sandbox allow-scripts; ` +
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/share-runtime/; ` +
-    // share-runtime scripts joined app-runtime for the Neat backdrop
+    // share-runtime scripts joined app-runtime for the Drift backdrop
     // (share-page.js + its lazy WebGL chunk) — same-origin built assets,
     // no new capability. canvas-runtime joined for the vendored libraries an
     // app may import (echarts, d3, three, konva, katex, the diagram
@@ -156,14 +156,11 @@ export function buildAppFrameHtml(opts: {
   colorTheme: string | null;
   /** Viewport frame (iframe IS the viewport) vs card frame (auto-sized). */
   viewport: boolean;
-  /** The brain's saved Neat background spec (canonical encoding), or
+  /** The brain's saved background spec (Drift; canonical encoding), or
    *  null/absent for the plain themed ground. Resolved server-side by the
    *  frame route — owner frames from the prefs alone, shared frames gated by
    *  the shareNeat switch. */
   neatSpec?: string | null;
-  /** Neat licence key for watermark removal — same env-sourced value the
-   *  other surfaces ride. */
-  neatLicense?: string | null;
   /** Who runs the app (host.me()); null/absent bakes nothing and host.me()
    *  rejects. Never email: the type has no such field. */
   viewer?: AppViewer | null;
@@ -233,7 +230,7 @@ ${
 </head>
 <body class="text-foreground">
 ${
-  /* The brain's saved Neat gradient, rendered INSIDE the frame document —
+  /* The brain's saved Drift background, rendered INSIDE the frame document —
      the iframe is opaque-origin (sandbox without allow-same-origin), so
      transparency renders WHITE and the host page's backdrop can never show
      through; the only way the background "transfers" into an app is to
@@ -244,9 +241,7 @@ ${
      change. z-index:-1 sits above the html ground (the canvas layer) and
      below all app content. */
   opts.neatSpec
-    ? `<div data-neat-spec="${attr(opts.neatSpec)}"${
-        opts.neatLicense ? ` data-neat-license="${attr(opts.neatLicense)}"` : ''
-      } style="position:fixed;inset:0;z-index:-1;pointer-events:none" aria-hidden="true"></div>\n`
+    ? `<div data-neat-spec="${attr(opts.neatSpec)}" style="position:fixed;inset:0;z-index:-1;pointer-events:none" aria-hidden="true"></div>\n`
     : ''
 }<div id="root"></div>
 <script>${ERROR_REPORTER}</script>

@@ -347,8 +347,9 @@ export type ProfilePreferences = {
    *  on their default are omitted, so a default change still reaches brains
    *  that never chose. Read via projectBackgrounds, never raw. */
   backgrounds?: string;
-  /** The generated whole-surface Neat gradient (login screen, content area),
-   *  as a compact JSON spec `{v,seed,tone,speed}` — colours are DERIVED from
+  /** The generated whole-surface animated background (Drift: login screen,
+   *  content area), as a compact JSON spec (v2, or a Neat-era v1 that paints
+   *  as silk; codec @mantle/content-core/drift-spec). Colours are DERIVED from
    *  the live theme tokens client-side, never stored, so the background
    *  follows every colour theme and mode. Brain-level for the same reason as
    *  backgrounds: it is the look of the product. Never set ⇒ the

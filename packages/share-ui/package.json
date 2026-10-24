@@ -36,8 +36,8 @@
     "./nav-items": "./src/nav-items.ts",
     "./help-topics": "./src/help-topics.ts",
     "./appearance": "./src/appearance.ts",
-    "./neat-background": "./src/neat-background.ts",
-    "./neat-mount": "./src/neat-mount.ts",
+    "./drift": "./src/drift/index.ts",
+    "./drift-mount": "./src/drift-mount.ts",
     "./share-mode": "./src/share-mode.ts",
     "./backgrounds": "./src/backgrounds.ts",
     "./avatar": "./src/avatar.ts",
@@ -48,7 +48,6 @@
   "dependencies": {
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
-    "@firecms/neat": "1.1.0",
     "@mantle/client-types": "workspace:*",
     "@mantle/content-core": "workspace:*",
     "@radix-ui/react-label": "^2.1.16",

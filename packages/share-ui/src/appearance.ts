@@ -58,8 +58,8 @@ export type BrainAppearance = {
   avatarStyle: string | null;
   avatarTint: string | null;
   backgrounds: string | null;
-  /** The generated whole-surface Neat gradient's spec, compact JSON
-   *  `{v,seed,tone,speed}` — colours derive from the live theme client-side.
+  /** The generated whole-surface background's spec (Drift), compact JSON,
+   *  v2 or a Neat-era v1 (decodeDriftSpec reads both); colours derive from the live theme client-side.
    *  NOT stamped onto `<html>`: it feeds a WebGL component, not the CSS.
    *  Optional for the published-contract reason below: readers treat absence
    *  as "not set" and paint the plain themed fill. */
@@ -72,8 +72,8 @@ export type BrainAppearance = {
    *  the published-contract reason below; absence reads as 'light', the share
    *  surface's historical rendering. */
   defaultMode?: string | null;
-  /** Whether shared surfaces (/s, the team workspace) paint the saved Neat
-   *  gradient at all — false is the printable plain fallback. NOT stamped onto
+  /** Whether shared surfaces (/s, the team workspace) paint the saved Drift
+   *  background at all — false is the printable plain fallback. NOT stamped onto
    *  `<html>`; readers treat absence as true (the default). */
   shareNeat?: boolean | null;
   /**

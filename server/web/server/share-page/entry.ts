@@ -2,7 +2,7 @@
  * Client runtime for the /s share reader's page chrome — deliberately NOT an
  * island: islands.js carries React and the interactive presenters, and none
  * of that should ride along on a fully static shared page just to draw a
- * toggle button. This bundle is vanilla DOM + (lazily) the Neat WebGL lib.
+ * toggle button. This bundle is vanilla DOM + (lazily) the Drift WebGL engine.
  *
  * Three jobs:
  *  - The visitor's light/dark toggle. The owner's default arrives stamped on
@@ -10,21 +10,21 @@
  *    inline script in template.ts); the toggle overlays the visitor's own
  *    choice via localStorage, and 'system' defaults follow the OS live until
  *    the visitor chooses.
- *  - The saved Neat gradient. The host div carries the spec
- *    (`[data-neat-spec]`, only rendered when a background is saved); the
- *    WebGL specifics live in the shared mountNeat (which dynamically imports
- *    @firecms/neat, so the chunk is only fetched on brains that actually
- *    saved one). Rebuilt on every mode flip — the theme tokens it derives
- *    colours from change with the `.dark` class.
+ *  - The saved Drift background. The host div carries the spec
+ *    (`[data-neat-spec]`, the stored key's name, only rendered when a
+ *    background is saved); the WebGL specifics live in the shared mountDrift
+ *    (which dynamically imports the engine, so the chunk is only fetched on
+ *    brains that actually saved one). Repainted on every mode flip: the theme
+ *    tokens it derives colours from change with the `.dark` class.
  *  - Foldable headings on a shared page (share-ui heading-fold-dom.ts): the
  *    arrows, the folding, and the visitor's remembered choices.
  *
  * Bundled by scripts/build-share-runtime.ts (esbuild, `splitting: true`) into
- * public/share-runtime/share-page.js + a lazy chunk for the Neat lib.
+ * public/share-runtime/share-page.js + a lazy chunk for the Drift engine.
  */
 import { SHARE_MODE_STORAGE_KEY } from '@mantle/share-ui/share-mode';
-import { decodeNeatSpec } from '@mantle/share-ui/neat-background';
-import { mountNeat, type NeatMountHandle } from '@mantle/share-ui/neat-mount';
+import { decodeDriftSpec } from '@mantle/content-core/drift-spec';
+import { mountDrift, type DriftMountHandle } from '@mantle/share-ui/drift-mount';
 import { wireHeadingFolds } from '@mantle/share-ui/heading-fold-dom';
 
 const root = document.documentElement;
@@ -49,48 +49,45 @@ function applyMode(mode: 'light' | 'dark'): void {
   root.classList.toggle('dark', mode === 'dark');
 }
 
-// ── The Neat backdrop ────────────────────────────────────────────────────────
+// ── The Drift backdrop ───────────────────────────────────────────────────────
 
-const neatHost = document.querySelector<HTMLElement>('[data-neat-spec]');
-const neatSpec = neatHost ? decodeNeatSpec(neatHost.dataset.neatSpec) : null;
-let gradient: NeatMountHandle | null = null;
+const driftHost = document.querySelector<HTMLElement>('[data-neat-spec]');
+const driftSpec = driftHost ? decodeDriftSpec(driftHost.dataset.neatSpec) : null;
+let backdrop: DriftMountHandle | null = null;
+let mounting = false;
 let raf = 0;
-// Repaint generation — the vanilla stand-in for the React renderer's
-// `disposed` flag. A fast double-toggle leaves an EARLIER mount still in
-// flight past its await; without this check it would land a second gradient
-// on a detached canvas that animates (and holds a WebGL context) forever.
-let epoch = 0;
 
-function repaintNeat(): void {
-  if (!neatHost || !neatSpec) return;
-  const host = neatHost;
-  const spec = neatSpec;
-  const mine = ++epoch;
+function repaintDrift(): void {
+  if (!driftHost || !driftSpec) return;
+  const host = driftHost;
+  const spec = driftSpec;
   cancelAnimationFrame(raf);
-  gradient?.destroy();
-  gradient = null;
-  // A frame later, the mountNeat timing contract: class toggles and style
+  // A frame later, the mountDrift timing contract: class toggles and style
   // resolution settle first, so the tokens read are the INCOMING mode's.
   raf = requestAnimationFrame(() => {
+    // A mode flip is new colours on the same context, never a teardown.
+    if (backdrop) {
+      backdrop.repaint(currentMode());
+      return;
+    }
+    // A flip while the first mount is still awaiting its chunk: that mount
+    // reads the tokens after the await, so it already lands in the new mode.
+    if (mounting) return;
+    mounting = true;
     const canvas = document.createElement('canvas');
     canvas.className = 'absolute inset-0 size-full';
     host.replaceChildren(canvas);
-    void mountNeat(canvas, spec, currentMode(), {
-      resolution: 0.75,
-      licenseKey: host.dataset.neatLicense,
-    }).then((handle) => {
-      // Superseded while awaiting — a newer repaint owns the host now.
-      if (mine !== epoch) {
-        handle?.destroy();
-        return;
-      }
-      // Nothing mounted (no WebGL, unresolvable theme) — drop the dead canvas;
+    void mountDrift(canvas, spec, currentMode()).then((handle) => {
+      mounting = false;
+      // Nothing mounted (no WebGL, unresolvable theme): drop the dead canvas;
       // body's bg-background is the designed ground.
       if (!handle) {
         host.replaceChildren();
         return;
       }
-      gradient = handle;
+      backdrop = handle;
+      // The mode may have flipped while the chunk loaded.
+      handle.repaint(currentMode());
     });
   });
 }
@@ -142,7 +139,7 @@ new MutationObserver(() => {
   const dark = currentMode() === 'dark';
   if (dark === lastDark) return;
   lastDark = dark;
-  repaintNeat();
+  repaintDrift();
   const button = document.querySelector<HTMLButtonElement>('[data-share-mode-toggle]');
   if (button) paintToggle(button);
 }).observe(root, { attributes: true, attributeFilter: ['class'] });
@@ -160,7 +157,7 @@ if (root.dataset.shareModeDefault === 'system' && !storedMode()) {
 // attribute. App frames load this bundle for the backdrop alone and lack the
 // attribute, so no toggle ever floats over an app's own UI.
 if (root.dataset.shareModeDefault !== undefined) mountToggle();
-repaintNeat();
+repaintDrift();
 
 // A shared page's foldable headings (the page presenter's `.ProseMirror`).
 for (const doc of document.querySelectorAll<HTMLElement>('.ProseMirror')) wireHeadingFolds(doc);

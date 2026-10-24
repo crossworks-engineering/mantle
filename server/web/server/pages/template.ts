@@ -72,20 +72,17 @@ export type PageMeta = {
    *    paint, so switching never flashes ('system' resolves there too, since
    *    only the browser knows it);
    *  - with `readerChrome` (everything except the full-viewport app kind), loads
-   *    /share-runtime/share-page.js — the mode toggle button plus the Neat
-   *    gradient mount — and, when a background is saved, renders the fixed
+   *    /share-runtime/share-page.js — the mode toggle button plus the Drift
+   *    background mount — and, when a background is saved, renders the fixed
    *    `-z-10` host div the gradient paints into.
    * Absent (print, stubs) ⇒ none of this: those surfaces stay mode-less.
    */
   share?: {
     defaultMode: 'light' | 'dark' | 'system';
-    /** Canonical encoded Neat spec, or null/absent for the plain themed fill. */
+    /** Canonical encoded background spec (Drift), or null/absent for the
+     *  plain themed fill. */
     neat?: string | null;
-    /** Neat licence key (watermark removal on deployed domains) — rides to the
-     *  browser on the host div, exactly like the client app's
-     *  NEXT_PUBLIC_NEAT_LICENSE_KEY. Unset is fine on localhost. */
-    neatLicense?: string;
-    /** Mode toggle + Neat backdrop (false: mode stamping only — the app kind,
+    /** Mode toggle + Drift backdrop (false: mode stamping only — the app kind,
      *  which owns the whole viewport). */
     readerChrome: boolean;
   };
@@ -181,15 +178,12 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
   const share = meta.share;
   const htmlClass = share?.defaultMode === 'dark' ? 'h-full dark' : 'h-full';
   const shareAttr = share ? ` data-share-mode-default="${escapeHtml(share.defaultMode)}"` : '';
-  // The Neat host sits at -z-10: above the html/body background (which paints
+  // The background host sits at -z-10: above the html/body background (which paints
   // on the root canvas, beneath everything) and below ALL in-flow content —
   // which is why shareShell drops its own bg when a gradient is active.
-  const neatLicense = share?.neatLicense
-    ? ` data-neat-license="${escapeHtml(share.neatLicense)}"`
-    : '';
   const neatHost =
     share?.readerChrome && share.neat
-      ? `<div data-neat-spec="${escapeHtml(share.neat)}"${neatLicense} class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
+      ? `<div data-neat-spec="${escapeHtml(share.neat)}" class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
       : '';
   const scripts = [
     share?.readerChrome ? `<script type="module" src="/share-runtime/share-page.js"></script>` : '',

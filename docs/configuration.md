@@ -121,7 +121,7 @@ as `env()` does) and the three profile readers in
 | `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |
 | `narrowSystem` | `MANTLE_NARROW_SYSTEM` | on | the narrow system route: the asSystem reasons and request exits that pick it run as mantle_system_narrow, on a pool that logs in as it (migrate gives the role its login only while this is on) (on everywhere since S7b; 0, off or false is the per-box kill switch) |
 | `mcpTerminal` | `MANTLE_MCP_TERMINAL` | the caller | the MCP surface offers the terminal tools (default: stdio yes, HTTP no) |
-| `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Neat gradient |
+| `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Drift background |
 | `streamThoughts` | `profile.streamThoughts` | on | stream the thought trail live while a turn runs |
 | `persistThoughts` | `profile.persistThoughts` | on | keep the thought trail on the finished message |
 | `toolsmithRequireApproval` | `profile.toolsmithRequireApproval` | off | a tool an agent authors is confirm-gated until the operator clears it |

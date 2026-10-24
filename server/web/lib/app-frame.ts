@@ -9,13 +9,13 @@ import { readFile } from 'node:fs/promises';
 import { NextResponse } from '@/server/http-compat';
 import { getContent } from '@mantle/storage';
 import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
-import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { decodeDriftSpec, encodeDriftSpec } from '@mantle/content-core/drift-spec';
 import { loadProfilePreferences } from '@mantle/content';
 import { appViewerFor, type AppViewer, type AppViewerSubject } from '@mantle/content/app-broker';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
-import { env, feature } from '@mantle/config';
+import { feature } from '@mantle/config';
 import { BundleTextCache } from './bundle-text-cache';
 import { CACHE_CONTROL } from './cache-control';
 
@@ -55,7 +55,7 @@ async function streamToString(body: Readable): Promise<string> {
  *  sidecar (absent on builds that predate per-app CSS). */
 export type FrameBuild = { storageKey: string; css?: { storageKey: string } | null };
 
-/** The brain's saved Neat spec for a frame document, resolved from the anchor
+/** The brain's saved background spec (Drift) for a frame document, resolved from the anchor
  *  prefs (the same source /api/appearance serves). Shared frames additionally
  *  honour the shareNeat switch — OFF keeps shared apps on the plain themed
  *  ground. Fail-soft: an unreadable prefs row means no backdrop, never a
@@ -66,8 +66,8 @@ async function resolveFrameNeat(shared: boolean): Promise<string | null> {
     if (!ownerId) return null;
     const prefs = await loadProfilePreferences(ownerId);
     if (shared && !feature('shareNeat', { prefs })) return null;
-    const spec = decodeNeatSpec(prefs.neatBackground);
-    return spec ? encodeNeatSpec(spec) : null;
+    const spec = decodeDriftSpec(prefs.neatBackground);
+    return spec ? encodeDriftSpec(spec) : null;
   } catch {
     return null;
   }
@@ -126,7 +126,6 @@ export async function renderAppFrame(
     colorTheme: url.searchParams.get('ct'),
     viewport: url.searchParams.get('vp') === '1',
     neatSpec,
-    neatLicense: env('MANTLE_NEAT_LICENSE_KEY') ?? null,
     viewer,
   });
   return new NextResponse(html, {

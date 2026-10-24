@@ -773,9 +773,6 @@ importers:
       '@dicebear/styles':
         specifier: ^10.6.0
         version: 10.6.0
-      '@firecms/neat':
-        specifier: 1.1.0
-        version: 1.1.0
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../client-types
@@ -2017,9 +2014,6 @@ packages:
 
   '@fast-csv/parse@5.0.8':
     resolution: {integrity: sha512-i2R1TWa2tgRn9YEsNplzdCv0z8J1O85nUIqPdAQtQOheZ+Pw/3AhekI27Yp095r7qSJK0l8KwphK8WzB3aCtog==}
-
-  '@firecms/neat@1.1.0':
-    resolution: {integrity: sha512-cHeFNz5zw9YQ6dDrddm+gzZUSi50hLtk+hGFWAKXqi1MBeVglB58PidNp+OXtpnTAsuq1ou93TSjgqPGY6EQbw==}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -6617,8 +6611,6 @@ snapshots:
       lodash.uniq: 4.5.0
 
   '@fast-csv/parse@5.0.8': {}
-
-  '@firecms/neat@1.1.0': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:

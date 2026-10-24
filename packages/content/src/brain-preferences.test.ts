@@ -101,13 +101,23 @@ describe('projectNeatBackground', () => {
     expect(projectNeatBackground(spec)).toBe(spec);
   });
 
+  it('passes a Drift v2 spec through untouched, even one with fields left out', () => {
+    const full =
+      '{"v":2,"seed":5,"tone":"darker","speed":1,"style":"silk","pal":"chart","str":0.7,"scale":2,"warp":0.2,"soft":0.9,"light":0.3,"grain":0,"angle":90}';
+    expect(projectNeatBackground(full)).toBe(full);
+    // A missing field decodes to its default, so the value still paints.
+    const sparse = '{"v":2,"seed":1,"tone":"auto","speed":2}';
+    expect(projectNeatBackground(sparse)).toBe(sparse);
+  });
+
   it('stores garbage as unset, never as an error', () => {
     for (const bad of [
       undefined,
       42,
       '',
       'not json',
-      '{"v":2,"seed":1,"tone":"auto","speed":2}', // unknown version
+      '{"v":3,"seed":1,"tone":"auto","speed":2}', // unknown version
+      '{"v":2,"tone":"auto"}', // v2 without a seed
       '{"v":1,"seed":-1,"tone":"auto","speed":2}', // negative seed
       '{"v":1,"seed":1.5,"tone":"auto","speed":2}', // fractional seed
       '{"v":1,"seed":1,"tone":"loud","speed":2}', // unknown tone
