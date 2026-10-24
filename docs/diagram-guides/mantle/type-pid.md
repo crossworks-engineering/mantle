@@ -278,28 +278,194 @@ lines only, no instruments) follows the ordinary 9-node budget.
 - Tag letters in an order that does not read (`CIF` instead of `FIC`).
 - Colour by service on every line when the request was about one loop.
 
-## Example spec block
+## Template data
 
-```diagram
-type: pid
-title: Feed surge drum level control
-size: doc-wide
-equipment:
-  - V-101: feed surge drum [vertical-vessel]
-  - P-101A: transfer pump [centrifugal-pump]
-  - P-101B: transfer pump, standby [centrifugal-pump]
-lines:
-  - 6"-P-1001-CS150: feed -> V-101
-  - 4"-P-1002-CS150: V-101 -> P-101A, P-101B
-  - 4"-P-1003-CS150: P-101A, P-101B -> LV-101 -> off-page (to sheet 2)
-instruments:
-  - LT-101: on V-101
-  - LIC-101: control room, shared display [focal]
-  - LV-101: control valve on 4"-P-1003, FC [focal]
-  - PSV-101: on V-101 top, to flare
-signals:
-  - LT-101 -> LIC-101: electric
-  - LIC-101 -> LV-101: electric
+A P&ID is drawn by the `pid` template: write the DATA below, never the SVG.
+`diagram_render` with `template: "pid"` and this data draws it and lists
+what to fix; `present_create` saves it as a canvas; `present_export` writes
+the SVG for a page. The template does the layout this guide describes
+(baseline, routing, hops, valve and label placement, ISA letters).
+
+| Field | What it is |
+| --- | --- |
+| `title` | required, up to 80 characters |
+| `description` | one sentence on what the sheet shows (a warning when missing) |
+| `sheet` | `{ "number": "PID-0001", "revision": "A" }`, top right |
+| `equipment[]` | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`) |
+| `equipment[].type` | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter` |
+| `offpage[]` | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`) |
+| `lines[]` | `number` (the user's line number, exactly), `from`, `to` (an equipment or off-page id), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal` |
+| `lines[].inline[]` | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed`, `focal` |
+| `instruments[]` | `tag` (ISA-5.1 letters then the loop number, `LIC-101`), `on` (an equipment id or a line number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
+| `signals[]` | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`) |
+| `circuits[]` | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit |
+| `legend`, `showTitle` | `false` to leave the legend strip or the title out |
+| `profile` | the site profile; filled in for you from this brain's profile (below) when you leave it out |
+
+Unknown fields are errors, and so are dangling ids, a tag whose letters are
+not ISA-5.1, and a line number outside the profile's format when the profile
+enforces it. Every error names the field and the fix; the tool returns them
+all at once.
+
+A complete example (it draws as it stands):
+
+```json
+{
+  "title": "Feed surge drum level control",
+  "description": "Feed enters the surge drum V-101; transfer pumps P-101A/B send it on through level control valve LV-101 to sheet 2, with a relief valve to flare.",
+  "sheet": {
+    "number": "PID-0001",
+    "revision": "A"
+  },
+  "equipment": [
+    {
+      "id": "V-101",
+      "type": "vertical-vessel",
+      "service": "FEED SURGE DRUM"
+    },
+    {
+      "id": "P-101A",
+      "type": "centrifugal-pump",
+      "service": "TRANSFER PUMP"
+    },
+    {
+      "id": "P-101B",
+      "type": "centrifugal-pump",
+      "service": "STANDBY"
+    }
+  ],
+  "offpage": [
+    {
+      "id": "FEED",
+      "direction": "in",
+      "sheet": "1",
+      "text": "FROM UNIT 1"
+    },
+    {
+      "id": "TO-2",
+      "direction": "out",
+      "sheet": "2",
+      "text": "TO E-201"
+    },
+    {
+      "id": "FLARE",
+      "direction": "out",
+      "sheet": "9",
+      "text": "TO FLARE HEADER"
+    }
+  ],
+  "lines": [
+    {
+      "number": "6\"-P-1001-CS150",
+      "from": "FEED",
+      "to": "V-101",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "4\"-P-1002-CS150",
+      "from": "V-101",
+      "to": "P-101A",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "4\"-P-1012-CS150",
+      "from": "V-101",
+      "to": "P-101B",
+      "inline": [
+        {
+          "type": "gate",
+          "closed": true
+        }
+      ]
+    },
+    {
+      "number": "3\"-P-1003-CS150",
+      "from": "P-101A",
+      "to": "TO-2",
+      "inline": [
+        {
+          "type": "check"
+        },
+        {
+          "type": "control",
+          "tag": "LV-101",
+          "fail": "FC",
+          "focal": true
+        }
+      ]
+    },
+    {
+      "number": "3\"-P-1013-CS150",
+      "from": "P-101B",
+      "to": "TO-2",
+      "inline": [
+        {
+          "type": "check"
+        }
+      ]
+    },
+    {
+      "number": "2\"-FL-1004-CS150",
+      "from": "V-101",
+      "fromPort": "top",
+      "to": "FLARE",
+      "weight": "secondary",
+      "inline": [
+        {
+          "type": "relief",
+          "tag": "PSV-101"
+        }
+      ]
+    }
+  ],
+  "instruments": [
+    {
+      "tag": "LT-101",
+      "on": "V-101"
+    },
+    {
+      "tag": "LIC-101",
+      "location": "control-room",
+      "display": "shared",
+      "setpoint": "SP 50 %",
+      "focal": true
+    },
+    {
+      "tag": "PI-102",
+      "on": "3\"-P-1003-CS150"
+    },
+    {
+      "tag": "LAH-103",
+      "location": "control-room",
+      "display": "shared"
+    }
+  ],
+  "signals": [
+    {
+      "from": "LT-101",
+      "to": "LIC-101",
+      "type": "electric"
+    },
+    {
+      "from": "LIC-101",
+      "to": "LV-101",
+      "type": "electric"
+    },
+    {
+      "from": "LT-101",
+      "to": "LAH-103",
+      "type": "data"
+    }
+  ]
+}
 ```
 
 ## Growing the site profile
@@ -312,6 +478,12 @@ so the next drawing gets it right:
 
 1. Read the current profile: `diagram_guide` with this type returns it, or
    says there is none.
+   Conventions the template applies itself go in ONE fenced block with the
+   info string `json profile` (the template's site profile: `lineNumber`
+   with a `pattern`, `example` and `enforce`, `colourByService`,
+   `serviceColours`, `instrumentFirstLetters`, `symbols`). The template
+   tools read that block and pass it as the data's `profile`. Everything
+   else in the file is notes for the drawing.
 2. Add the convention under the matching heading, keeping everything that
    is already there.
 3. Save the whole file with `file_create`: `parent_path`

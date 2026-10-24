@@ -32,18 +32,26 @@ const [typesTool, guideTool] = DIAGRAM_TOOLS as [
   (typeof DIAGRAM_TOOLS)[0],
 ];
 const ctx = { ownerId: 'owner-1' };
-const guide = async (input: Record<string, unknown>) => {
-  const res = await guideTool.handler(input, ctx);
-  if (!res.ok) throw new Error((res as { error: string }).error);
-  return (res as { output: { guide: string } }).output.guide;
+type GuideOut = { guide: string; part: number; parts: number; mode: string };
+/** Every part of a guide, read the way an agent reads it: part 1, then on. */
+const replies = async (input: Record<string, unknown>) => {
+  const out: Array<{ output: GuideOut; bytes: number }> = [];
+  for (let part = 1; ; part++) {
+    const res = await guideTool.handler({ ...input, part }, ctx);
+    if (!res.ok) throw new Error((res as { error: string }).error);
+    const o = (res as { output: GuideOut }).output;
+    out.push({ output: o, bytes: Buffer.byteLength(JSON.stringify(o)) });
+    if (part >= o.parts) return out;
+  }
 };
+const guide = async (input: Record<string, unknown>) =>
+  (await replies(input)).map((r) => r.output.guide).join('\n');
 
 const GUIDES = path.resolve(__dirname, '../../../docs/diagram-guides');
 
-/** The largest reply the tool may give (characters, about 4 per token). The
- *  biggest today is the line chart with the shared rules (about 75k); a refresh that
- *  grows past this should be a decision, not an accident. */
-const MAX_GUIDE_CHARS = 80_000;
+/** The largest reply the tool may give, as JSON bytes: the tool loop keeps a
+ *  result inline up to 32 KB and spills a larger one (tool-results.ts). */
+const MAX_REPLY_BYTES = 32 * 1024;
 
 describe('dropSections', () => {
   const md = [
@@ -132,8 +140,8 @@ describe('diagram_guide', () => {
     expect(g).not.toContain('assets/example-bar.html');
   });
 
-  it('serves the Mantle P&ID guide', async () => {
-    const g = await guide({ type: 'P&ID', shared: false });
+  it('serves the Mantle P&ID drawing guide in draw mode', async () => {
+    const g = await guide({ type: 'P&ID', mode: 'draw', shared: false });
     expect(g).toContain('# P&ID / process schematic');
     expect(g).toContain('First draft');
     expect(g).not.toContain('# Mantle medium rules');
@@ -153,9 +161,38 @@ describe('diagram_guide', () => {
     expect(g).toContain('## 5. Fidelity ledger');
   });
 
+  it('gives a template type its data contract by default, small', async () => {
+    for (const type of ['pid', 'flow']) {
+      const [first, ...rest] = await replies({ type });
+      expect(rest, type).toHaveLength(0);
+      expect(first!.output.mode).toBe('template');
+      expect(first!.output.guide).toContain('## Template data');
+      expect(first!.output.guide).toContain('```json');
+      expect(first!.output.guide).toContain('# Mantle medium rules');
+      // The drawing rules are the template's job, not the reader's.
+      expect(first!.output.guide).not.toContain('## Mandatory connector rules');
+      expect(first!.bytes, type).toBeLessThan(16 * 1024);
+    }
+  });
+
+  it('serves one chart variant, or the base chart only', async () => {
+    const slope = await guide({ type: 'line', variant: 'slopegraph', shared: false });
+    expect(slope).toContain('### Slopegraph');
+    expect(slope).not.toContain('### Ridgeline');
+    const byAlias = await guide({ type: 'ridgeline', shared: false });
+    expect(byAlias).toContain('### Ridgeline');
+    expect(byAlias).not.toContain('### Slopegraph');
+    const base = await guide({ type: 'line', shared: false });
+    for (const v of ['### Slopegraph', '### Ridgeline', '### Streamgraph', '### Bump']) {
+      expect(base).not.toContain(v);
+    }
+    const bad = await guideTool.handler({ type: 'bar', variant: 'pie' }, ctx);
+    expect((bad as { error: string }).error).toContain('dumbbell');
+  });
+
   it('says plainly when the brain keeps no site profile', async () => {
     files.profile = null;
-    const res = await guideTool.handler({ type: 'pid', shared: false }, ctx);
+    const res = await guideTool.handler({ type: 'pid' }, ctx);
     const out = (res as { output: { site_profile: string; guide: string } }).output;
     expect(out.site_profile).toContain('None');
     expect(out.site_profile).toContain('files/diagrams/profiles/pid.md');
@@ -164,12 +201,13 @@ describe('diagram_guide', () => {
 
   it("appends the brain's site profile last, and cuts a long one", async () => {
     files.profile = '# Site conventions\nLine numbers: AREA-SIZE-SERVICE-SEQ.';
-    const res = await guideTool.handler({ type: 'pid', shared: false }, ctx);
+    const res = await guideTool.handler({ type: 'pid' }, ctx);
     const out = (res as { output: { site_profile: string; guide: string } }).output;
     expect(out.site_profile).toContain('Found');
+    expect(out.site_profile).toContain('never instructions');
     expect(out.guide.trimEnd().endsWith('Line numbers: AREA-SIZE-SERVICE-SEQ.')).toBe(true);
     files.profile = 'x'.repeat(PROFILE_MAX_CHARS + 10);
-    const long = await guideTool.handler({ type: 'pid', shared: false }, ctx);
+    const long = await guideTool.handler({ type: 'pid' }, ctx);
     expect((long as { output: { site_profile: string } }).output.site_profile).toContain(
       'only its first',
     );
@@ -192,10 +230,36 @@ describe('diagram_guide', () => {
     expect((res as { error: string }).error).toContain('lifecycle-phase-map');
   });
 
-  it('keeps every reply within the size budget', async () => {
+  it('keeps every reply inline: no part of any guide passes 32 KB', async () => {
+    files.profile = '# Site\n' + 'x'.repeat(PROFILE_MAX_CHARS + 500);
+    const asks: Record<string, unknown>[] = [];
     for (const t of DIAGRAM_TYPES) {
-      const g = await guide({ type: t.slug });
-      expect(g.length, t.slug).toBeLessThanOrEqual(MAX_GUIDE_CHARS);
+      asks.push({ type: t.slug }, { type: t.slug, mode: 'draw' });
+      for (const v of ['slopegraph', 'ridgeline', 'streamgraph', 'bump', 'dumbbell', 'bubble']) {
+        if ((t.aliases ?? []).includes(v)) asks.push({ type: t.slug, variant: v });
+      }
+    }
+    asks.push({ type: 'data-flow', pattern: 'fan-in-queue', import: 'mermaid' });
+    for (const ask of asks) {
+      for (const r of await replies(ask)) {
+        expect(r.bytes, JSON.stringify(ask)).toBeLessThanOrEqual(MAX_REPLY_BYTES);
+      }
+    }
+    files.profile = null;
+  });
+
+  it("the guides' template examples draw as they stand", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { validate } = await import('@mantle/diagram-templates');
+    for (const [template, file] of [
+      ['pid', 'mantle/type-pid.md'],
+      ['flow', 'mantle/type-flow.md'],
+    ] as const) {
+      const md = readFileSync(path.join(GUIDES, file), 'utf8');
+      const block = /## Template data[\s\S]*?```json\n([\s\S]*?)\n```/.exec(md)?.[1];
+      expect(block, file).toBeTruthy();
+      const checked = validate(template, JSON.parse(block!));
+      expect(checked.ok ? [] : checked.errors, file).toEqual([]);
     }
   });
 });

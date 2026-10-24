@@ -12,8 +12,10 @@ standalone SVG file, stored in the brain and shown in a page through `<img>`.
   renders.
 - **No HTML wrapper.** Ignore everything about the page around the diagram:
   the eyebrow and `<h1>`, summary cards, the `overflow-x` scroller, the
-  `min-width` rule, the dark and full-editorial variants, the template files.
-  The SVG is the whole deliverable.
+  `min-width` rule, the dark and full-editorial variants, the template files
+  of the upstream guides. The SVG is the whole deliverable. (Not the same
+  thing as Mantle's layout templates, `flow` and `pid`: for those you write
+  data and `diagram_render` draws it; see the type's template data.)
 - **Size.** One root `<svg>` with a `viewBox` and matching `width` and
   `height` attributes; they set the intrinsic size in the page column. Pick
   the size preset as the shared rules describe (`doc-inline` by default).
@@ -36,7 +38,7 @@ Keep the sizes, weights and the italic of `{callout}` from the guides.
 
 You have no shell and no repository. Skip every instruction that runs a
 script (`python3 scripts/...`, the verifiers, the extractors, the exporters)
-or copies a template or asset file, and check those rules by reading your own
+or copies an upstream template or asset file, and check those rules by reading your own
 SVG instead. For an import, read the source yourself: Mermaid text from the
 page or chat, a `.drawio` file with the file tools, an Excalidraw whiteboard
 with `draw_get`. Then follow the import guide from its second step.
