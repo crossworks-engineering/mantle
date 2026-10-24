@@ -780,3 +780,90 @@ clone of the pushed commit, per the standing rule.
 4. Part 3: as round 3 says.
 5. Each of the 105 placeholders decided (a check or a reason), then the
    lint forbids the string; the 24 'self' ones first.
+
+## S9 part 1: every route file declares its policy
+
+Branch feat/s9-p1, from origin/main at 9da71efd7 (v0.300.139: S9 part 0
+merged in v0.300.137, S8b in v0.300.139). Wave 5 freeze: no other lane
+edits route files or the list files while S9 runs. No migration, no SQL.
+ROUTE_POLICY_SOURCE stays 'lists': every row is still built from the
+lists, so no answer moves.
+
+### S8b's routes in the codemod's inputs (input 1)
+
+S8b changed four route files (the Users list and item routes, the
+personal assistant's admin test, the token refresh) and no list file the
+codemod reads. Its methods and rows did not move: `--check` on the branch
+before any write gave the part 0 numbers again (table below). The dry
+run on a throwaway detached worktree of 9da71efd7: `--write` 418 files
+(+3498 lines), a second `--check` 819 of 819 equal and 0 files to write,
+and the S9 tests on the written tree (route-declaration,
+route-policy-declarations, route-policy, route-policy-rows, route-scope,
+route-callers, route-declarations, route-plumbing, arch-lints,
+route-loader, served-route: 11 files, 239 tests) exit 0. The worktree was
+removed by its exact path.
+
+### What changed
+
+- The codemod's output, one mechanical commit (32769a123, no hand edit):
+  `scripts/route-policy-codemod.ts --write` on the branch. Each of the 418
+  route files gains `export const policy = routePolicy({ ... })` after its
+  routeParams export (else after its last import) and the import of
+  routePolicy. 418 files, +3498 lines, nothing else.
+- Input 3, the proof: route-policy.test.ts ("S9 part 1: every route file
+  declares, and its declarations build the lists' rows") finds no manifest
+  entry without a declaration and every row built from the declarations
+  (buildRoutePolicy, source 'declarations') equal, field for field, to the
+  lists' row. route-policy-declarations.test.ts no longer takes "none" as
+  an answer (part 0's branch for a manifest with no declarations is gone),
+  holds every manifest declaration to the one the lists say, and holds the
+  declarations' rows to `__snapshots__/route-policy.rows.json` as the
+  lists' rows are held (the same file, unchanged). Its L1 test loads all
+  418 route modules and runs checkLoadedPolicy (source 'declarations') on
+  each: every module exports the declaration its manifest entry read.
+- Input 4, missing declaration fails lint and boot:
+  `mantle-plumbing/route-policy-declared` is 'error' (eslint.config.mjs).
+  The boot: route-policy.ts `requireRouteDeclarations(manifest)`, called
+  by createApp (server/app.ts) before registerRoutes, whatever the source:
+  a route file that exports a method it declares no policy for is named
+  and the app does not start; each declaration is held by
+  validateRoutePolicy there too. A test's hand-built manifest is not asked
+  (it goes through registerRoutes, not createApp). The boot smoke
+  (server/main.ts) now runs checkLoadedPolicy (source 'declarations') on
+  each route module it loads, so a stale manifest fails the smoke.
+- Input 5, the placeholders: kept as the one fixed string
+  (ITEM_NONE_PLACEHOLDER, route-declaration.ts), per the owner's decision.
+  A new counter, `itemNonePlaceholders` (eslint-rules/arch-counts.mjs
+  `itemNonePlaceholderCount`, a unit test in arch-lints.test.ts), pinned
+  at 105 in scripts/arch-scoreboard.pins.json with its note: it may only go
+  down; S11b gives each a check or a reason, then the lint forbids the
+  string.
+- docs/actors.md section 10 and 12: a route file declares its policy.
+
+### Measured (the branch on main v0.300.139)
+
+| | |
+|---|---|
+| route files written | 418 |
+| rows (methods served, HEAD included) | 819 |
+| declarations (methods declared) | 572 |
+| rows equal to the lists' (field for field, `audit` included) | 819 of 819 |
+| writes with `item: { none }` | 326 |
+| of them, the placeholder reason | 105, in 82 route files (pinned, `itemNonePlaceholders` 105) |
+| aliases (`aliasOf`) | 25, in 18 files |
+| `audit: 'own'` | 11 |
+| effect exceptions | 3 (one read on a POST, two writes on GETs) |
+| route files with no declaration | 0 |
+
+### Changed answers
+
+None. The rows are the lists' (ROUTE_POLICY_SOURCE 'lists'); the
+declarations build the same rows and the snapshot did not change. The boot
+check refuses only a manifest with an undeclared method, which the
+generated one is not.
+
+### Pins
+
+- `itemNonePlaceholders` new, 105 (only down).
+- routePolicyLists stays 14 (part 3 deletes the lists).
+- docs/actors.md stays under its 350-line cap (348).
