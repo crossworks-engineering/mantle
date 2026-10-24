@@ -10,7 +10,7 @@
  * login that is not an active member is refused there, as with apps).
  */
 import { NextResponse } from '@/server/http-compat';
-import { buildCanvasFrameTicket, ownerLoginCaller } from '@/lib/auth';
+import { buildCanvasFrameTicket, canvasFrameNonce, ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { getPresent } from '@/lib/presents';
 import type { RouteParams } from '@/lib/route-params';
@@ -46,5 +46,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
         presentId: present.id,
         loginId: login.loginId,
       });
-  return NextResponse.json({ ticket, rev: present.rev });
+  // The nonce lets the parent tell the frame it asked for from a page the
+  // canvas navigated to (canvas-sandbox.tsx).
+  return NextResponse.json({ ticket, nonce: canvasFrameNonce(ticket), rev: present.rev });
 }

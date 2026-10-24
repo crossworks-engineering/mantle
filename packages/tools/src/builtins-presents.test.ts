@@ -114,6 +114,7 @@ function withRenderer(svg?: string) {
     return {
       ok: true,
       png: PNG,
+      mime: 'image/png' as const,
       width: 1600,
       height: 900,
       consoleErrors: [],
@@ -360,5 +361,38 @@ describe('present_delete', () => {
     const out = await tool('present_delete').handler({ id: ID }, ctx);
     expect(out.ok).toBe(false);
     expect((out as { error: string }).error).toContain('present_list');
+  });
+});
+
+describe('the render limit per caller', () => {
+  it('one picture at a time and at most twenty in five minutes, per login', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    const who = { ...ctx, surface: { kind: 'owner', loginId: 'login-a' } } as ToolHandlerContext;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    registerCanvasRenderer(async () => {
+      await gate;
+      return {
+        ok: true,
+        png: PNG,
+        mime: 'image/png',
+        width: 1,
+        height: 1,
+        consoleErrors: [],
+        blocked: [],
+      };
+    });
+    const first = tool('present_render').handler({ id: ID }, who);
+    const second = await tool('present_render').handler({ id: ID }, who);
+    expect(JSON.stringify(second)).toContain('still being drawn');
+    // Another login is not held up.
+    const other = { ...ctx, surface: { kind: 'owner', loginId: 'login-b' } } as ToolHandlerContext;
+    const theirs = tool('present_render').handler({ id: ID }, other);
+    release();
+    expect(JSON.stringify(await first)).toContain('"rendered":true');
+    expect(JSON.stringify(await theirs)).toContain('"rendered":true');
+    for (let i = 0; i < 19; i++) await tool('present_render').handler({ id: ID }, who);
+    const over = await tool('present_render').handler({ id: ID }, who);
+    expect(JSON.stringify(over)).toContain('20 pictures in 5 minutes');
   });
 });

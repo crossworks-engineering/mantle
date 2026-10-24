@@ -40,7 +40,10 @@ export type CanvasDiagramReport = {
 export type CanvasRenderResult =
   | {
       ok: true;
+      /** The picture: a PNG, or a JPEG when the PNG was over the byte cap
+       *  (a canvas full of noise). */
       png: Buffer;
+      mime: 'image/png' | 'image/jpeg';
       width: number;
       height: number;
       /** Uncaught errors and console errors the canvas raised. */

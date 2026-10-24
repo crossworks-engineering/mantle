@@ -10,13 +10,22 @@
  *
  * The iframe is `sandbox="allow-scripts"` only: an opaque origin, no
  * cookies, no storage, no forms, no popups, no top navigation. The frame's
- * own CSP header closes the network.
+ * own CSP header closes its network. A sandboxed frame may still navigate
+ * ITSELF, so the frame is shown only after it proves it is the document the
+ * brain served: its `ready` carries the nonce the ticket came with, which
+ * only the frame's prelude holds. A load with no proof, any load after the
+ * proof, or no proof within 20 seconds takes the frame down. The iframe also
+ * requires its CSP of whatever loads in it (`csp`, Chromium). The request
+ * of such a navigation still leaves a browser (no CSP directive stops it,
+ * and the Navigation API does not fire for an opaque frame's navigations);
+ * the desktop app refuses it before it leaves (will-frame-navigate).
  *
  * Replay: bump `reloadKey`; a new ticket is minted and the frame reloads, so
  * an animation starts again from its first frame. Full screen: the host
  * calls `requestFullscreen()` on the element `frameRef` hands back.
  */
 import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { buildCanvasEmbedCsp } from './canvas-frame-html';
 
 type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
@@ -65,11 +74,12 @@ export function CanvasSandbox({
   const [src, setSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [failure, setFailure] = useState<string | null>(null);
-  // Load events of the current frame element. The first is the canvas; a
-  // second means the canvas navigated its own frame somewhere else (it may:
-  // a sandboxed frame keeps self-navigation). The frame is then taken down,
-  // so whatever it went to is never left on screen to be typed into.
-  const loads = useRef(0);
+  // The proof the current frame owes (its ticket's nonce), and whether it
+  // gave it. A load before the proof waits a moment for it (the load and
+  // the message race); a load after it means the canvas went elsewhere.
+  const nonce = useRef<string | null>(null);
+  const proven = useRef(false);
+  const proofWait = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest callbacks, read by the effects without re-running them.
   const handlers = useRef({ onReady, onError, fetcher });
   handlers.current = { onReady, onError, fetcher };
@@ -93,8 +103,10 @@ export function CanvasSandbox({
           return;
         }
         if (!res.ok) throw new Error(`frame ticket: ${res.status}`);
-        const { ticket } = (await res.json()) as { ticket: string };
+        const { ticket, nonce: n } = (await res.json()) as { ticket: string; nonce?: string };
         if (cancelled) return;
+        nonce.current = typeof n === 'string' && n ? n : null;
+        proven.current = false;
         const { cls, colorTheme } = hostTheme();
         const qs = new URLSearchParams({ t: ticket, cls });
         if (colorTheme) qs.set('ct', colorTheme);
@@ -108,12 +120,23 @@ export function CanvasSandbox({
     };
   }, [apiBase, reloadKey]);
 
-  // A canvas that never says ready (a heavy library still loading, or a
-  // script that swallows its load event) is uncovered after a while rather
-  // than hidden behind the loader for good.
+  // Take the frame down: whatever it shows now is not the canvas.
+  const takeDown = (why: string) => {
+    if (proofWait.current) clearTimeout(proofWait.current);
+    proofWait.current = null;
+    setSrc(null);
+    setStatus('left');
+    handlers.current.onError?.(why);
+  };
+
+  // A frame that never proves itself (a page the canvas navigated to that
+  // never finishes loading, or a canvas whose script blocks its load) is
+  // taken down, never uncovered.
   useEffect(() => {
     if (!src) return;
-    const t = setTimeout(() => setStatus((s) => (s === 'loading' ? 'ready' : s)), 15_000);
+    const t = setTimeout(() => {
+      if (!proven.current) takeDown('the canvas did not start');
+    }, 20_000);
     return () => clearTimeout(t);
   }, [src]);
 
@@ -122,9 +145,14 @@ export function CanvasSandbox({
     function onMessage(e: MessageEvent) {
       const frame = iframeRef.current;
       if (!frame || e.source !== frame.contentWindow) return;
-      const m = e.data as { v?: number; kind?: string; message?: unknown } | null;
+      const m = e.data as { v?: number; kind?: string; message?: unknown; n?: unknown } | null;
       if (!m || m.v !== 1) return;
       if (m.kind === 'ready') {
+        // Only the document the brain served knows the nonce.
+        if (!nonce.current || m.n !== nonce.current || proven.current) return;
+        proven.current = true;
+        if (proofWait.current) clearTimeout(proofWait.current);
+        proofWait.current = null;
         setStatus('ready');
         handlers.current.onReady?.();
       } else if (m.kind === 'error') {
@@ -153,21 +181,31 @@ export function CanvasSandbox({
   }, []);
 
   const onFrameLoad = () => {
-    loads.current += 1;
-    if (loads.current < 2) return;
-    setSrc(null);
-    setStatus('left');
-    handlers.current.onError?.('the canvas tried to open another page');
+    // After the proof, any load is another page.
+    if (proven.current) {
+      takeDown('the canvas tried to open another page');
+      return;
+    }
+    // Before it, the proof may still be on its way: give it a moment.
+    if (proofWait.current) return;
+    proofWait.current = setTimeout(() => {
+      proofWait.current = null;
+      if (!proven.current) takeDown('the canvas tried to open another page');
+    }, 1_500);
   };
 
-  // The element the load count belongs to. A callback ref runs again on every
-  // render (null, then the same element), so only a NEW element resets it.
-  const countedFrame = useRef<HTMLIFrameElement | null>(null);
+  useEffect(
+    () => () => {
+      if (proofWait.current) clearTimeout(proofWait.current);
+    },
+    [],
+  );
+
+  // The origin of the canvas API, for the CSP the iframe requires.
+  const apiOrigin =
+    typeof window === 'undefined' ? '' : new URL(apiBase, window.location.href).origin;
+
   const setFrame = (el: HTMLIFrameElement | null) => {
-    if (el && el !== countedFrame.current) {
-      countedFrame.current = el;
-      loads.current = 0;
-    }
     iframeRef.current = el;
     if (typeof frameRef === 'function') frameRef(el);
     else if (frameRef) (frameRef as { current: HTMLIFrameElement | null }).current = el;
@@ -182,6 +220,7 @@ export function CanvasSandbox({
           src={src}
           title={title}
           sandbox="allow-scripts"
+          {...{ csp: buildCanvasEmbedCsp(apiOrigin) }}
           referrerPolicy="no-referrer"
           onLoad={onFrameLoad}
           className="absolute inset-0 h-full w-full border-0 bg-background"

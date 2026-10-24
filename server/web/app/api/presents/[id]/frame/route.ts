@@ -16,7 +16,12 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { withViewer } from '@mantle/db';
-import { adminLoginActive, frameTicketCaller, memberLoginActive } from '@/lib/auth';
+import {
+  adminLoginActive,
+  canvasFrameNonce,
+  frameTicketCaller,
+  memberLoginActive,
+} from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
 import { renderCanvasFrame } from '@/lib/canvas-frame';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -50,5 +55,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return new NextResponse('frame ticket required', { status: 401 });
   }
   if (!canvas) return new NextResponse('not found', { status: 404 });
-  return renderCanvasFrame(req, ticket.ownerId, canvas);
+  const raw = new URL(req.url).searchParams.get('t') ?? '';
+  return renderCanvasFrame(req, ticket.ownerId, canvas, canvasFrameNonce(raw));
 }

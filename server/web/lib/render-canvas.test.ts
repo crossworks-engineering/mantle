@@ -88,7 +88,7 @@ vi.mock('puppeteer-core', () => ({
             },
             focus: async () => {},
             keyboard: { press: async () => {} },
-            evaluate: async () => h.report,
+            evaluate: async () => (h.report === null ? null : JSON.stringify(h.report)),
             screenshot: async () => new Uint8Array([137, 80, 78, 71]),
             createCDPSession: async () => ({ send: async () => ({}) }),
             close: async () => {
@@ -168,6 +168,7 @@ describe('renderCanvas', () => {
     await renderCanvas(REQ);
     expect(h.initScripts).toHaveLength(1);
     expect(h.initScripts[0]).toContain('RTCPeerConnection');
+    expect(h.initScripts[0]).toContain('__mantleProbe');
   });
 
   it('answers the frame with the CSP and DNS prefetch off; serves public files only', async () => {
@@ -226,27 +227,39 @@ describe('renderCanvas', () => {
     expect(d.svg).toBeUndefined();
   });
 
-  it('the diagram probe is plain JavaScript a page runs as it is', async () => {
-    const { runInNewContext } = await import('node:vm');
-    const { diagramProbe } = await import('./render-canvas');
+  it('the diagram probe is plain JavaScript a page runs as it is, on the kept built-ins', async () => {
+    const { runInNewContext, createContext } = await import('node:vm');
+    const { diagramProbe, RENDER_INIT } = await import('./render-canvas');
     const src = diagramProbe(true, 2, 5, 100);
     // No TypeScript helper a runner might add (the page has none).
     expect(src).not.toContain('__name');
-    const window = {
-      diagram: {
-        ready: Promise.resolve({ ok: true, warnings: ['abcdefgh', 'b', 'c'], stats: { n: 3 } }),
-        exportSvg: () => '<svg/>',
-      },
+    expect(RENDER_INIT).not.toContain('__name');
+    const window: Record<string, unknown> = {};
+    const ctx = createContext({
+      window,
+      console: { error() {}, warn() {}, log() {}, info() {}, debug() {} },
+      addEventListener() {},
+    });
+    runInNewContext(RENDER_INIT, ctx);
+    // The canvas replaces the built-ins after the init ran: the probe holds.
+    runInNewContext(
+      "Array.prototype.slice = () => { throw new Error('x') }; String.prototype.slice = () => 'y'.repeat(1e6); JSON.stringify = () => 'z';",
+      ctx,
+    );
+    window.diagram = {
+      ready: Promise.resolve({ ok: true, warnings: ['abcdefgh', 'b', 'c'], stats: { n: 3 } }),
+      exportSvg: () => '<svg/>',
     };
-    const out = await runInNewContext(src, { window });
-    expect(JSON.parse(JSON.stringify(out))).toEqual({
+    const text = await runInNewContext(src, ctx);
+    expect(JSON.parse(text as string)).toEqual({
       ok: true,
       errors: [],
       warnings: ['abcde', 'b'],
       stats: { n: 3 },
       svg: '<svg/>',
     });
-    expect(await runInNewContext(src, { window: {} })).toBeNull();
+    window.diagram = undefined;
+    expect(await runInNewContext(src, ctx)).toBeNull();
   });
 
   it('refuses at once when the queue is full, and the slots come back', async () => {

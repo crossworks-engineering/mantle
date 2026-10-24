@@ -56,6 +56,33 @@ export function buildCanvasFrameCsp(origin: string, frameAncestors: readonly str
   );
 }
 
+/**
+ * The CSP the PARENT requires of whatever loads in a canvas iframe (CSP
+ * embedded enforcement: the iframe's `csp` attribute, canvas-sandbox.tsx).
+ * The frame document's own header already says all of this and more; what
+ * this adds is for a page the canvas navigated its frame to: unless that
+ * page answers `Allow-CSP-From`, the browser does not load it, and if it
+ * does, it runs under these rules (no network, no forms). The directives an
+ * embedder may not require (sandbox, frame-ancestors) are left out.
+ * Chromium enforces it (the desktop app is Chromium); elsewhere the other
+ * layers stand (the ready proof, the navigation guard).
+ */
+export function buildCanvasEmbedCsp(origin: string): string {
+  return (
+    "default-src 'none'; " +
+    `script-src 'unsafe-inline' 'unsafe-eval' ${origin}/canvas-runtime/; ` +
+    `style-src 'unsafe-inline' ${origin}/canvas-runtime/ ${origin}/share-runtime/; ` +
+    'img-src data: blob:; ' +
+    `font-src data: ${origin}/canvas-runtime/ ${origin}/share-runtime/ ${origin}/fonts/ ${origin}/Inter/; ` +
+    'media-src data: blob:; ' +
+    "connect-src 'none'; " +
+    "frame-src 'none'; " +
+    'worker-src blob:; ' +
+    "base-uri 'none'; " +
+    "form-action 'none'"
+  );
+}
+
 /** JSON for an inline script: `<` and the two JS line separators escaped, so
  *  no value can close the tag. */
 function scriptJson(value: unknown): string {
@@ -95,15 +122,21 @@ function preludeScript(opts: {
   colorTheme: string | null;
   followTheme: boolean;
   size: CanvasSize;
+  nonce: string;
 }): string {
   const cfg = scriptJson({
     cls: opts.cls,
     ct: opts.colorTheme,
     follow: opts.followTheme,
     size: opts.size === 'fill' ? null : opts.size,
+    n: opts.nonce,
   });
+  // The script takes itself out of the document as it runs: the nonce lives
+  // on only in this closure, out of the canvas's reach (it runs later, in the
+  // same document, and could otherwise read the script's text).
   return `(function(){
-  var cfg=${cfg};var h=document.documentElement;
+  var me=document.currentScript;if(me&&me.parentNode){me.parentNode.removeChild(me);}
+  var cfg=${cfg};var h=document.documentElement;var nonce=cfg.n;cfg.n='';
   ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription'].forEach(function(n){
     try{Object.defineProperty(window,n,{value:undefined,writable:false,configurable:false});}catch(_){}});
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
@@ -129,7 +162,7 @@ function preludeScript(opts: {
   window.addEventListener('unhandledrejection',function(e){
     report((e&&e.reason&&(e.reason.message||e.reason))||'the canvas failed');});
   window.addEventListener('load',function(){
-    try{window.parent.postMessage({v:1,kind:'ready'},'*');}catch(_){}});
+    try{window.parent.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}});
 })();`;
 }
 
@@ -188,6 +221,9 @@ export function buildCanvasFrameHtml(opts: {
   /** `@font-face` rules for Inter and the Appearance library, plus the
    *  owner's font vars (`:root{--font-sans:...}`). */
   fontCss: string;
+  /** The frame's proof for its parent (canvasFrameNonce); '' for a render
+   *  with no parent. */
+  nonce?: string;
 }): string {
   const follow = opts.theme !== 'fixed';
   // A fixed canvas wears the light baseline: no dark class, no colour theme.
@@ -202,7 +238,7 @@ export function buildCanvasFrameHtml(opts: {
     `<style>${styleText(opts.fontCss)}</style>`,
     `<style>${styleText(opts.css)}</style>`,
     `<style>${layoutCss(opts.size)}</style>`,
-    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size })}</script>`,
+    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size, nonce: opts.nonce ?? '' })}</script>`,
   ].join('\n');
   return `<!doctype html>\n${prelude}\n${stripLeadingDoctype(opts.source)}`;
 }
