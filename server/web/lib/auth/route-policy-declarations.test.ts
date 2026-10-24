@@ -309,12 +309,10 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
         entry('/api/notes', ['GET', 'POST'], { GET: { class: 'content', open: 'owner' } }),
       ]),
     ).toThrow(/declares no policy for POST \/api\/notes/);
-    // A declaration that does not hold is refused there too.
-    expect(() =>
-      requireRouteDeclarations([
-        entry('/api/notes', ['POST'], { POST: { class: 'content', open: 'owner' } }),
-      ]),
-    ).toThrow();
+    // A declaration that does not hold (a write with no item) is refused
+    // there too.
+    const noItem = { POST: { class: 'content', open: 'owner' } } as RoutePolicyDeclaration;
+    expect(() => requireRouteDeclarations([entry('/api/notes', ['POST'], noItem)])).toThrow(/item/);
   });
 
   it('refuses a route file that declares no policy, or one for a method it does not serve', () => {
