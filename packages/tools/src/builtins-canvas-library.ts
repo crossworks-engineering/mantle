@@ -9,7 +9,7 @@
  * rules (no network, the import map, theme tokens, reduced motion, the
  * render check) and one complete example canvas, which a browser test
  * renders, so an upgrade that breaks it fails the gates
- * (canvas-render/library-examples.browser.test.ts).
+ * (canvas-render/library-examples.test.ts).
  *
  * The guides are files baked into the image (MANTLE_DOCS_ROOT, /app/docs in
  * production), read straight from disk like the diagram guides: no

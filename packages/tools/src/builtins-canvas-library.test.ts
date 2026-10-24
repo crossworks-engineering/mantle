@@ -3,7 +3,7 @@
  * version the runtime pins. Pinned here: every library has its guide, each
  * guide is 3 to 6 KB, names the exact pinned version (a bump without a new
  * guide fails here), and holds one complete example canvas that passes the
- * save-time load check. canvas-render/library-examples.browser.test.ts
+ * save-time load check. canvas-render/library-examples.test.ts
  * renders each example in a real browser.
  */
 import { readFileSync, readdirSync } from 'node:fs';
