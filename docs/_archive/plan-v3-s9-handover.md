@@ -1160,3 +1160,214 @@ OWNER_AT_READ_ROWS, FRAME_ROWS, ADMIN_OPEN_ROWS, the key table's policy
 half), `listedFacts`, `source` and the test helpers' list paths
 (route-policy.test.ts's lists comparisons); rows held to
 route-policy.rows.json. S11b: the 111 placeholders (L1 above).
+
+## S9 part 2 round 2: the guard asks again, the device token cell, the gates on one head
+
+Branch feat/s9-p2, the squashed part 2 (a66f1662d) rebased onto origin/main
+b29463850 (v0.300.143). The rebase met no conflict: the branch does not
+touch server/web/lib/route-limits.ts or the A10 sweep files, so main's app
+limits (perLogin `appLimit`, `explain`, the changed sweep records) are on the
+branch as main has them. Pushed with a lease over a66f1662d. Part 2's three open items are
+answered here: the device token cell (sections 1 and 2), the machine
+names (the history was squashed before this round; every record now
+carries `<env>`, section 5) and the reruns on the head (section 7). One
+commit per
+change from here:
+
+| commit    | change                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| 786f01eb9 | part 2, rebased (the squash, unchanged)                                  |
+| a9fa49f1b | the ruling: the guard asks the area again where the view does not answer |
+| cf04c0d4d | gate-caller.test.ts reads the area once in its setup (the cause below)   |
+| 31d8293ce | the device token cells in s9-area-fold.db.test.ts                        |
+| 415dae579 | the cells' records, written on main v0.300.143                           |
+
+### 1. The CEO ruling, applied
+
+session.ts `guardHoldsArea` replaces part 2's fail-closed read. The guard
+reads the gate's Admin view (the one resolveHttpLogin read and step 5 held
+the row to) where it answers: the same login (`httpAdminFor`) and no login
+changed since. Everywhere else (another login than the view's, a login the
+request changed, no view on a test's stand-in route) it asks the area again
+(loginHoldsArea), as main's guard did. A view mismatch is never a refusal of
+its own. Fail closed stays only for a failed area read: the gate's (the
+opaque 500 in the handler's place, RouteLoginError) and the guard's own ask
+(it throws, a 500, as on main).
+
+gate-login.test.ts, "an Admin login whose area is taken away, its role
+kept: the guard asks again (L-a)", is main's cell again: 403 'area', and
+the area asked twice (the gate's question and the guard's). Part 2's
+changed answer 2 is gone: that read answers as main did.
+
+### 2. The device token cell: the cause
+
+Nothing marks the logins changed on the device token path. The 403 was
+not the guard's: on that cell the guard was never reached. It was the
+gate's step 5, refusing on a view that said no, and the view said no
+because the area read ran the real requireArea in place of the test's
+mock.
+
+- gate-caller.test.ts mocks `../../lib/workspaces` (requireArea answers
+  yes for every login but the no-area one). The area read (session.ts
+  loginHoldsArea) imports that module dynamically on its use. Instrumented
+  (a line per read: the answer and the function it called), the failing
+  run's area reads called the real requireArea, whose statements read the
+  test's stubbed database (no rows) and answer no; step 5 refused 403
+  'area' for the Admin user's device token on GET /api/users.
+- It happens only when two first imports of the module are in flight at
+  once. A test runs alone, so that needs a test that timed out still
+  sending requests beside the next one. On the workstation the file's
+  first three tests timed out at 15 s in the shard (17 s, 15 s and 16 s:
+  the first pays the cold imports, 4 s alone on the box; the next two ran
+  beside its requests under the load), and the device token test ran
+  while their requests went on.
+- Reproduced on the Mac by making those tests time out
+  (`--testTimeout=700`, and 500): the device token cell fails with the same
+  403 on the branch AND on main (main's line 1125, `expected 403 to be
+200`), the real requireArea in the log of both. So it is the test
+  harness under load, not the fold: main's file has the same hole and the
+  box's timing found it on the branch's run first.
+- The fix (cf04c0d4d): the file's beforeAll makes one area read through
+  the pipeline, alone, before any test. That resolves the mocked module
+  first (and pays the cold imports in the hook's 60 s, not in a test's
+  15 s). With it the file passes at `--testTimeout` 60, 120, 200, 500 and
+  700 on the Mac (before: 4 failed at 500 and 700). Importing the module
+  from the test itself instead made it worse (every area read got the real
+  module), so the warm-up goes through the same path as the requests.
+
+The production path has no mock: the dynamic import is the one module.
+
+### 3. The new cells
+
+s9-area-fold.db.test.ts, "a device token on area rows": an Admin user's
+device token (a live mobile_tokens row per login, epoch 0) on GET
+/api/users, GET /api/keys and GET /api/agents, for the Admin user with the
+area, the one with every area off, and a member: 9 cells.
+
+| cell                          | answer (main and branch) |
+| ----------------------------- | ------------------------ |
+| GET /api/users bearer:adm     | 200, the users list      |
+| GET /api/users bearer:noArea  | 403 'area' (users)       |
+| GET /api/users bearer:mem     | 403 'member-login'       |
+| GET /api/keys bearer:adm      | 200, the keys list       |
+| GET /api/keys bearer:noArea   | 403 'area' (keys)        |
+| GET /api/keys bearer:mem      | 403 'member-login'       |
+| GET /api/agents bearer:adm    | 200, `{"agents":[]}`     |
+| GET /api/agents bearer:noArea | 403 'area' (assistants)  |
+| GET /api/agents bearer:mem    | 403 'member-login'       |
+
+The file runs in every lane named in the round 2 inputs: both shards (the
+switch on), the full run with the switch off, test:runtime-role, the full
+run with the runtime role off (MANTLE_DB_RUNTIME_ROLE=0), and
+test:actor-on (the 'on' record).
+
+### 4. Rows
+
+The codemod's `--check` on 415dae579: 418 route files, 819 rows, 572
+declarations, 819 of 819 equal, 111 placeholders, 0 files to write.
+route-policy.rows.json and every file under server/web/server/**snapshots**
+byte for byte main's (git diff against origin/main empty).
+
+### 5. The area records, main against the branch
+
+Written with S9_AREA_RECORD=1 on the workstation, each in its own fresh
+clone and cluster: main b29463850 with only the branch's test file and
+actor-on config laid over, and the branch at 415dae579, in five lanes each.
+
+| lane (the same on main and the branch)      | main exit | branch exit | lines | branch against main                       |
+| ------------------------------------------- | --------- | ----------- | ----- | ----------------------------------------- |
+| full run file, warn, switch on              | 0         | 0           | 83    | 79 equal, the 4 `fail:once` lines (named) |
+| test:actor-on, on                           | 0         | 0           | 83    | 79 equal, the 4 `fail:once` lines (named) |
+| switch off (MANTLE_NARROW_SYSTEM=0), warn   | 0         | 0           | 83    | 79 equal, the 4 `fail:once` lines (named) |
+| runtime role off (MANTLE_DB_RUNTIME_ROLE=0) | 0         | 0           | 83    | 79 equal, the 4 `fail:once` lines (named) |
+| test:runtime-role, warn                     | 0         | 0           | 83    | 79 equal, the 4 `fail:once` lines (named) |
+
+Main's four warn-mode records (switch on, switch off, runtime role off,
+test:runtime-role) are byte for byte one another; so are the branch's.
+The 4 lines, main then branch: `GET /api/keys fail:once cookie` 200 then
+500 (the Admin user), `GET /api/users fail:once cookie` 200 then 500, `GET
+attachment fail:once cookie` 404 then 500, `GET /api/keys fail:once
+cookie` 403 'area' then 500 (the no-area Admin). The 9 device token lines
+are equal in every lane: GET /api/users by the Admin user's device token
+answers 200 on main and on the branch, switch on and off, runtime role on
+and off.
+
+The records hold no machine name: the one environment field
+(`tailnetPeers` in GET /api/ai-workers/config) reads `<env>`, the emails
+`<email>`, ids and stamps out; the only address left is the test anchor's
+`test-anchor@example.invalid`. The committed records (83 lines, warn and
+on) are main's: the first 74 lines are part 2's record unchanged, the 9
+device token lines added.
+
+### 6. Changed answers (the branch against main, final)
+
+One, stricter, on the cells of three names:
+
+1. An area read that fails once (requireArea throws on the first ask,
+   then answers): main asked again in the guard and answered the row (200
+   on GET /api/keys and GET /api/users for the Admin user, the handler's
+   404 on the attachment, 403 'area' on GET /api/keys for the no-area
+   Admin); the branch answers the opaque 500 in the handler's place, the
+   CORS headers kept, no handler run. Cells: `GET /api/keys fail:once
+cookie` (two cells of that name: the Admin user and the no-area Admin),
+   `GET /api/users fail:once cookie`, `GET attachment fail:once cookie`.
+
+No other answer moved: the device token cells, the asset rows, the sample
+of area rows, the guard sweeps and the narrow rows are main's. Part 2's
+changed answer 2 (a guard read after the request changed a login) is
+main's again (section 1).
+
+### 7. Gates, on 415dae579
+
+Mac, DATABASE_URL unset:
+
+| gate                                      | exit                                                                                     |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `pnpm -r typecheck`                       | 0                                                                                        |
+| `pnpm lint`                               | 0 (the one warning, the unused disable in contact-sharing-routes.db.test.ts, as on main) |
+| `pnpm format:check`                       | 0                                                                                        |
+| `pnpm docs:check`                         | 0                                                                                        |
+| `pnpm arch:check`                         | 0                                                                                        |
+| `pnpm boot:smoke`                         | 0 (14 services link)                                                                     |
+| `pnpm -C server/web build`                | 0                                                                                        |
+| `vitest run server packages eslint-rules` | 0 (891 files passed, 306 skipped)                                                        |
+
+Workstation, a fresh clone of the pushed 415dae579 per suite, own
+pgvector pg18 container on a checked free port (removed by exact name at
+the end), fsync off, MANTLE_NARROW_SYSTEM=1 unless named, --maxWorkers=3;
+~/s9p2 (`TAG=r2 run.sh`, rec-main.sh, rec-branch.sh). The box's load
+average reached 27 while the set ran.
+
+| suite                                     | exit     | files        | what failed                                                                                               |
+| ----------------------------------------- | -------- | ------------ | --------------------------------------------------------------------------------------------------------- |
+| vitest shard 1/2                          | 0        | 599          |                                                                                                           |
+| vitest shard 2/2                          | 1        | 597 of 598   | eslint-rules/process-entries.test.ts timed out (27.5 s, load); rerun alone: 0. gate-caller.test.ts passed |
+| test:actor-off                            | 0        | 169          |                                                                                                           |
+| test:actor-on                             | 0        | 35           |                                                                                                           |
+| test:edit-on                              | 0        | 47           |                                                                                                           |
+| test:runtime-role                         | 0        | 318          |                                                                                                           |
+| test:serial                               | 0        | 1            |                                                                                                           |
+| test:matrix                               | 0        | 4            |                                                                                                           |
+| switch off (MANTLE_NARROW_SYSTEM=0), full | 1        | 1196 of 1197 | a4-guard-sweep.test.ts: two extra 429 rows in its first pass (below); rerun alone with the switch off: 0  |
+| runtime role off, full                    | 0        | 1197         |                                                                                                           |
+| the area records, main and branch         | 0 (each) | 1 (each)     | section 5: equal but the 4 named lines                                                                    |
+
+gate-caller.test.ts passed in every full run (shard 2: 24 tests in 23 s
+under the load, none timed out; the switch off and the runtime role off
+runs too).
+
+The guard sweep's two rows: the first pass (on the real clock, 34.5 s
+under the load) met two 429 `rate_limited` answers where its record has
+none (cells a135 and a139 of the received table; the rest shifted by
+two). The rate limits are in the process's memory, so no other test file
+can take from them; the second pass stands the clock still for this
+reason, the first does not. Not seen in any other run of this or the
+last round, nor alone (the switch off, exit 0); read as a window the
+slow run met, not an answer. Not proven.
+
+### Left
+
+- CEO full audit (the flip and the fold).
+- Part 3 as written in part 2's "Left".
+- The local pre-squash branch s9-p2-presquash-local holds the old records
+  with the machine names: never pushed; delete it after the merge.
