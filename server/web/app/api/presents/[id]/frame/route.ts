@@ -19,6 +19,11 @@ import { withViewer } from '@mantle/db';
 import { adminLoginActive, frameTicketCaller, memberLoginActive } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
 import { renderCanvasFrame } from '@/lib/canvas-frame';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', caller: 'frame', limits: { rateLimit: ['canvasFrame'] } },
+});
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const ticket = frameTicketCaller();

@@ -56,6 +56,7 @@ COPY packages/content/package.json packages/content/package.json
 COPY packages/content-core/package.json packages/content-core/package.json
 COPY packages/crypto/package.json packages/crypto/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/diagram-templates/package.json packages/diagram-templates/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
 COPY packages/files/package.json packages/files/package.json

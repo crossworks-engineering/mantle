@@ -42,7 +42,7 @@ describe('Recall v2 R1: node type', () => {
   it("adds 'recall' to node_type, at the end", () => {
     expect(nodeType.enumValues).toContain('recall');
     // Appended, never inserted: the enum's order is the DB's order, and an
-    // existing value must not shift. 'present' (0330) was appended after it
+    // existing value must not shift. 'present' (0331) was appended after it
     // later; 'recall' still sits right after 'draw', where it was appended.
     const values = nodeType.enumValues as readonly string[];
     expect(values[values.indexOf('recall') - 1]).toBe('draw');

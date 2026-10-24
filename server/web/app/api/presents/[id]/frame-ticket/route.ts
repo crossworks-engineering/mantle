@@ -14,8 +14,20 @@ import { buildCanvasFrameTicket, ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { getPresent } from '@/lib/presents';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    effect: {
+      read: "a canvas's frame ticket: it reads the canvas and mints a ticket, it stores nothing",
+    },
+    open: 'owner',
+    limits: { rateLimit: ['memberCanvasFrameTicket'] },
+  },
+});
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = ownerLoginCaller();

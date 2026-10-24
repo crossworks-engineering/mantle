@@ -1078,7 +1078,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ],
     writer: 'content',
   },
-  // A Present canvas (0331): the draw rules, with no draft (a save is live).
+  // A Present canvas (0332): the draw rules, with no draft (a save is live).
   {
     table: 'public.presents',
     writeCheck: { kind: 'edit', item: 'node_id' },
@@ -1473,8 +1473,8 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
  *  sync skip them while missing, each logged. Any other missing matrix
  *  table is an error. */
 export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
-  'public.presents', // 0331
-  'public.present_revisions', // 0331
+  'public.presents', // 0332
+  'public.present_revisions', // 0332
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
