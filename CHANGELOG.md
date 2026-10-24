@@ -36,6 +36,23 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Build:** server/web `generate` builds the canvas runtime before the app
   runtime, which reads its manifest.
 
+## Unreleased: the computed-import check reads the app's own source
+
+- **Security hardening:** the check that refuses a computed `import()` or
+  `require()` before a mini app is built read esbuild's transform output
+  with a regular expression. A string that held a double quote could hide a
+  call from it, and the transform also folds constants and drops dead code
+  (`if (false) require(…)`) that the bundler still expands. The backstops
+  refused those builds and nothing leaked, but the first check missed them.
+  It now parses each app file as written (`@babel/parser`, pinned, with
+  TypeScript and JSX) and reads every `import()` and `require()` call, also
+  behind a cast or in dead code, so quotes, regular expressions, comments
+  and templates cannot hide one. A file it cannot parse is refused with the
+  parser's message. It also ends a false alarm: an app whose text or regular
+  expressions only mention `require(` builds again. A build message is
+  trusted as the app's own only when it is located in the app's `app:`
+  namespace, and one that names a path outside the app gets a generic text.
+
 ## Unreleased: a mini app's computed import cannot read the server's disk
 
 - **Security fix:** an `import()` or `require()` with a computed path (a

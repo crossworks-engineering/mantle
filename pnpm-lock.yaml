@@ -102,6 +102,9 @@ importers:
 
   packages/app-build:
     dependencies:
+      '@babel/parser':
+        specifier: 7.29.9
+        version: 7.29.9
       '@mantle/share-ui':
         specifier: workspace:*
         version: link:../share-ui

@@ -14,6 +14,7 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse, type ParserPlugin } from '@babel/parser';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { buildAppCss } from './css';
 import { KIT } from './kit';
@@ -150,53 +151,136 @@ const LUCIDE_ROOT = fs.realpathSync(
 /** Code an app may hold: what esbuild parses as a module. */
 const CODE_LOADERS = new Set(['tsx', 'ts', 'jsx', 'js']);
 
-/** A call esbuild expands into a read of the real disk: `import(` or
- *  `require(` whose argument is not one plain string. */
-const CALL_RE = /(?<![\w$.])(import|require)\s*\(/g;
-const PLAIN_ARG_RE = /^\s*"(?:[^"\\\n]|\\.)*"\s*[,)]/;
+/** Wrappers esbuild strips before it reads a call: TypeScript casts and
+ *  non-null marks (`(require as any)(…)`, `require!(…)`), and parentheses. */
+const TRANSPARENT = new Set([
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'TSTypeAssertion',
+  'ParenthesizedExpression',
+]);
+
+function unwrap(node: unknown): Record<string, unknown> | undefined {
+  let n = node as Record<string, unknown> | undefined;
+  while (n && typeof n.type === 'string' && TRANSPARENT.has(n.type)) {
+    n = n.expression as Record<string, unknown> | undefined;
+  }
+  return n;
+}
+
+/** What a call's argument must be for esbuild to resolve it through the
+ *  plugin gates: one plain string, or a template with no substitution. */
+function isPlainPath(arg: unknown): boolean {
+  const a = unwrap(arg);
+  if (!a) return false;
+  if (a.type === 'StringLiteral') return true;
+  if (a.type === 'TemplateLiteral') return ((a.expressions as unknown[]) ?? []).length === 0;
+  return false;
+}
+
+/** `require` as a callee, also when wrapped: `(0, require)`, `(require)`, a cast. */
+function isRequireCallee(callee: unknown): boolean {
+  const c = unwrap(callee);
+  if (!c) return false;
+  if (c.type === 'Identifier') return c.name === 'require';
+  if (c.type === 'SequenceExpression') {
+    const exprs = (c.expressions as unknown[]) ?? [];
+    return isRequireCallee(exprs[exprs.length - 1]);
+  }
+  return false;
+}
+
+/** Keys of a Babel node that hold no code. */
+const NOT_CODE = new Set([
+  'type',
+  'start',
+  'end',
+  'loc',
+  'range',
+  'extra',
+  'leadingComments',
+  'trailingComments',
+  'innerComments',
+  'comments',
+  'tokens',
+]);
+
+/** The first `import()` or `require()` in a parsed module whose argument is
+ *  not a plain path, or null. The tree is the app's own source as written,
+ *  so neither quote style, regular expressions, comments, template nesting
+ *  nor dead code (`if (false) require(…)`, which the bundler still expands)
+ *  can hide a call (the M2's probe and the audit of 2026-10-24). */
+function computedCall(ast: unknown): 'import' | 'require' | null {
+  const stack: unknown[] = [ast];
+  while (stack.length) {
+    const node = stack.pop() as Record<string, unknown> | null;
+    if (!node || typeof node !== 'object') continue;
+    if (node.type === 'ImportExpression' && !isPlainPath(node.source)) return 'import';
+    if (node.type === 'CallExpression') {
+      const callee = unwrap(node.callee);
+      const args = (node.arguments as unknown[]) ?? [];
+      if (callee?.type === 'Import' && !isPlainPath(args[0])) return 'import';
+      if (isRequireCallee(callee) && (args.length === 0 || !isPlainPath(args[0]))) return 'require';
+    }
+    for (const key of Object.keys(node)) {
+      if (NOT_CODE.has(key)) continue;
+      const v = node[key];
+      // One at a time: a spread of a huge array (10^5 statements) throws.
+      if (Array.isArray(v)) for (const item of v) stack.push(item);
+      else if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return null;
+}
+
+/** The Babel syntax plugins for an app file's loader: the language as
+ *  written, TypeScript and JSX included, with no transform in between. */
+function parserPlugins(loader: string): ParserPlugin[] {
+  if (loader === 'tsx') return ['typescript', 'jsx', 'decorators-legacy'];
+  if (loader === 'ts') return ['typescript', 'decorators-legacy'];
+  return ['jsx', ['decorators', {}]];
+}
 
 /**
  * Refuse an `import()` or `require()` with a computed path before esbuild
  * runs. esbuild expands one (`require(\`./${x}\`)`, `'./' + x`) by reading the
  * matching files on the real disk itself, with no onResolve call, so the
  * plugin gates never see them, and a file that fails to parse is quoted in
- * the error (audit 2026-10-24). Each file is first put through esbuild's own
- * transform, which prints plain JavaScript: identifier escapes
- * (`require`), comments and constant joins (`'./' + 'x'`) are gone, so the
- * scan reads what the bundler will.
+ * the error (audit 2026-10-24). Each app file is parsed AS WRITTEN (Babel,
+ * TypeScript and JSX), not through a transform, which folds constants and
+ * drops dead code the bundler still expands. A file the parser cannot read
+ * is refused with the parser's own message: the check fails closed.
  */
 async function computedImportErrors(source: AppSource): Promise<BuildMessage[]> {
   const out: BuildMessage[] = [];
   for (const [file, text] of Object.entries(source.files)) {
     const loader = loaderFor(file);
     if (!CODE_LOADERS.has(loader)) continue;
-    let code: string;
+    let ast: unknown;
     try {
-      code = (
-        await esbuild.transform(text, {
-          loader: loader as 'tsx' | 'ts' | 'jsx' | 'js',
-          jsx: 'automatic',
-          minifySyntax: true,
-          legalComments: 'none',
-          target: 'es2020',
-        })
-      ).code;
-    } catch {
-      continue; // a syntax error: the build reports it, and reads nothing
-    }
-    // esbuild prints every plain string in double quotes: empty them, so
-    // text an app shows ("call require(x)") is not read as a call. A quoted
-    // path stays a quoted path ("").
-    code = code.replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
-    CALL_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = CALL_RE.exec(code)) !== null) {
-      if (PLAIN_ARG_RE.test(code.slice(m.index + m[0].length))) continue;
+      ast = parse(text, {
+        sourceType: 'module',
+        sourceFilename: file,
+        plugins: parserPlugins(loader),
+        createImportExpressions: true,
+        errorRecovery: false,
+      });
+    } catch (err) {
+      // About the app's own source, so it goes back as it is.
+      const e = err as { message?: string; loc?: { line: number; column: number } };
       out.push({
-        text: `${m[1]}() in a mini app takes one quoted path, like ${m[1]}('./Chart'). A computed path (a template string or a joined string) is not allowed.`,
+        text: `This file could not be checked for computed imports, so the build is refused: ${e.message ?? 'unreadable'}`,
+        location: { file, line: e.loc?.line ?? 0, column: e.loc?.column ?? 0 },
+      });
+      continue;
+    }
+    const kind = computedCall(ast);
+    if (kind) {
+      out.push({
+        text: `${kind}() in a mini app takes one quoted path, like ${kind}('./Chart'). A computed path (a template string or a joined string) is not allowed.`,
         location: { file, line: 0, column: 0 },
       });
-      break;
     }
   }
   return out;
@@ -217,13 +301,28 @@ function inputsOutsideTheApp(inputs: Record<string, unknown>): string[] {
 
 /** A message about a file that is not the app's own carries no text or
  *  path of it: a failed parse quotes the file (audit 2026-10-24). */
+/** esbuild quotes a disk path in double quotes (`Cannot read file
+ *  "../../x.json"`, `Could not resolve "/etc/x"`): one that climbs out or is
+ *  absolute names a file outside the app, wherever the message is located
+ *  (the audit of 2026-10-24: a glob's read error sat at `app:App.tsx`). */
+// A real path only: `"../x"`, `"/a/b"`, `"C:\\x"`. Not `"/"` alone, which a
+// plain syntax error quotes (`Expected ";" but found "/"`).
+const OUTSIDE_PATH_RE = /"(?:\.\.[\\/]|\/[^"\s/]+\/|[A-Za-z]:[\\/])[^"]*"/;
+const GENERIC_MSG = 'The build failed on a file that is not part of this app.';
+
 function appOnlyMsg(source: AppSource, m: Message): BuildMessage {
+  if (OUTSIDE_PATH_RE.test(m.text) || /Cannot read (file|directory)/.test(m.text)) {
+    return { text: GENERIC_MSG, location: null };
+  }
   const file = m.location?.file;
   if (!file || file === STDIN || file.endsWith(`/${STDIN}`)) return toMsg(m);
-  const key = file.startsWith(`${APP_NS}:`) ? file.slice(APP_NS.length + 1) : file;
-  if (Object.hasOwn(source.files, key)) return toMsg(m);
+  // An app file is located as `app:<key>` (its namespace). A bare path that
+  // merely equals a file key is a disk file, not the app's (the M2's C2).
+  if (file.startsWith(`${APP_NS}:`) && Object.hasOwn(source.files, file.slice(APP_NS.length + 1))) {
+    return toMsg(m);
+  }
   if (path.resolve(file).startsWith(LUCIDE_ROOT + path.sep)) return toMsg(m);
-  return { text: 'The build failed on a file that is not part of this app.', location: null };
+  return { text: GENERIC_MSG, location: null };
 }
 
 /** Normalize a key as it appears in `files` (posix, no leading ./). */

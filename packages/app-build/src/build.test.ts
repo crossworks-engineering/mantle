@@ -132,6 +132,85 @@ describe('buildApp — the import allowlist (security boundary)', () => {
     }
   });
 
+  it('refuses a computed call in the FIRST layer, whatever the quotes, regexes or comments around it', async () => {
+    // The M2's probe (2026-10-24): a string holding a double quote printed in
+    // single quotes, and the string-emptying regex swallowed the call. Each
+    // case must be refused before the build (the first layer's own text),
+    // not by a backstop, and no canary text may come back.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-build-first-layer-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'x.json'), '{ "CANARY_JSON": 1 }\n');
+      fs.writeFileSync(path.join(dir, 'x.js'), "export default 'CANARY_JS';\n");
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const R = path.relative(here, dir).split(path.sep).join('/');
+      const cases = [
+        `const t = ['q"', require(\`${R}/\${n}.json\`), "z"];`,
+        `const a = 'he said "hi"'; const m = import(\`${R}/\${n}.js\`); const b = "q";`,
+        `const r = /"/; const m = require(\`${R}/\${n}.js\`); const z = "x";`,
+        `const r = /['"\`]/g; const m = require(\`${R}/\${n}.js\`); const z = '"';`,
+        `/* " */ const m = require(\`${R}/\${n}.js\`); // "`,
+        `const m = \`\${require(\`${R}/\${n}.js\`)}\`;`,
+        `const m = [1].map(() => require(\`${R}/\${n}.js\`));`,
+        `const m = (0, require)(\`${R}/\${n}.js\`);`,
+        // Dead code: the bundler still expands it (the audit of 2026-10-24).
+        `if (false) { require(\`${R}/\${n}.json\`); }`,
+        `const m = false && require(\`${R}/\${n}.json\`);`,
+        `function f() { return 1; require(\`${R}/\${n}.json\`); }\nvoid f;`,
+        // Syntax a lower transform target refused, so the file went unchecked.
+        `import { "a b" as q } from './m';\nconst m = require(\`${R}/\${n}.json\`);\nvoid q;`,
+        `await 0;\nconst m = require(\`${R}/\${n}.json\`);`,
+        // TypeScript wrappers esbuild strips before it reads the call.
+        `const m = (require as any)(\`${R}/\${n}.json\`);`,
+        `const m = require!(\`${R}/\${n}.json\`);`,
+        `const m = import((\`${R}/\${n}.json\`) as string);`,
+      ];
+      for (const line of cases) {
+        const res = await buildApp(
+          app({
+            'App.tsx': `const n = String(Date.now());\n${line}\nexport default function App() { return <div>{String(n)}</div>; }\n`,
+            'm.ts': 'const v = 1;\nexport { v as "a b" };\n',
+          }),
+          { runtimeExports: RT },
+        );
+        expect(res.ok, line).toBe(false);
+        expect(res.code, line).toBeUndefined();
+        // The first layer's own text; a backstop's refusal reads differently.
+        expect(res.errors[0]!.text, line).toMatch(
+          /^(require|import)\(\) in a mini app takes one quoted path/,
+        );
+        expect(JSON.stringify(res.errors), line).not.toContain('CANARY');
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still builds a typed app: generics, casts, enums and a quoted lazy import', async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          "enum Mode { A, B }\ntype Row<T> = { v: T };\nconst rows: Row<number>[] = [{ v: 1 }];\nconst load = () => import('./B' as string);\nexport default function App() { void load; return <p>{String(rows[0]!.v as number)}{Mode.B}</p>; }\n",
+        'B.tsx': 'export default function B() { return <span>b</span>; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it('still builds an app whose strings and regexes only mention require( or import(', async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          "const s = 'say \"require(x)\" or import(`./${y}`) now';\nconst r = /require\\(|import\\(/;\nconst load = () => import('./B');\nexport default function App() { void load; return <p title={String(r)}>{s}</p>; }\n",
+        'B.tsx': 'export default function B() { return <span>b</span>; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
   it('refuses a computed call however it is spelled, and quotes nothing off the app', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-build-escape-'));
     try {
