@@ -789,7 +789,7 @@ edits route files or the list files while S9 runs. No migration, no SQL.
 ROUTE_POLICY_SOURCE stays 'lists': every row is still built from the
 lists, so no answer moves.
 
-### S8b's routes in the codemod's inputs (input 1)
+### The users routes in the codemod's inputs (input 1)
 
 S8b changed four route files (the Users list and item routes, the
 personal assistant's admin test, the token refresh) and no list file the
@@ -866,4 +866,5 @@ generated one is not.
 
 - `itemNonePlaceholders` new, 105 (only down).
 - routePolicyLists stays 14 (part 3 deletes the lists).
-- docs/actors.md stays under its 350-line cap (348).
+- docs/actors.md stays at 344 lines (section 10's row bullet says the
+  declaration in the same four lines).

@@ -253,13 +253,9 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 ## 10. HTTP
 
 - Every route of the manifest and method has one `ROUTE_POLICY` row
-  (`server/web/lib/auth/route-policy.ts`, `buildRouteRow`): class, scope,
-  area, effect, open, logins, creates, item, key area, limits. A route
-  with no row is refused.
-- Each route file declares its methods' policy, `routePolicy({ ... })`
-  (`lib/auth/route-declaration.ts`); it builds the lists' rows field for
-  field (`route-policy.test.ts`, the rows snapshot) while
-  `ROUTE_POLICY_SOURCE` is 'lists'. A file without one fails lint and boot.
+  (`lib/auth/route-policy.ts`): class, scope, area, effect, open, logins,
+  creates, item, key area, limits; a route with none is refused. Its route
+  file declares it too (`routePolicy`; lint and boot refuse a file without).
 - The gate (`packages/db/src/gate.ts`, `enterCall`) runs eight steps for
   every way in: resolve, bind the caller, look up the policy and bind the
   actor and scope, narrow by surface, the Admin step, the create home,
