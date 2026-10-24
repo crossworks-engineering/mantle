@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a mini app's computed import cannot read the server's disk
+
+- **Security fix:** an `import()` or `require()` with a computed path (a
+  template string or a joined string) made esbuild read the matching files
+  from the disk itself, past the import gate, so a file outside the app
+  could land in the bundle, or be quoted in the build error when it did not
+  parse. Such a call is now refused before the build. As a backstop, a build
+  that read any file outside the app and `lucide-react` is refused, and a
+  build message about a file that is not the app's own carries no text or
+  path of it. A quoted `import('./Chart')` and text that only mentions
+  `require(` build as before.
+
 ## Unreleased: diagram guides become tools; a P&ID type
 
 - **Feature:** two read-only tools in a new `diagram` tool group,

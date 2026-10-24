@@ -1,3 +1,7 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildApp, type AppSource } from './index';
 import { RUNTIME_EXPORTS_FIXTURE as RT } from './runtime-exports.fixture';
@@ -89,6 +93,100 @@ describe('buildApp — the import allowlist (security boundary)', () => {
     const res = await buildApp(src, { runtimeExports: RT });
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => /Unknown import/i.test(e.text))).toBe(true);
+  });
+
+  it('refuses a computed require() that reaches a readable file on disk', async () => {
+    // A file outside the app that parses: on the old code its text landed in
+    // the bundle. The path is relative to this package's src, the bundler's
+    // resolveDir, as an author would write it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-build-escape-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'secret.js'), "export default 'SECRET-7f3a';\n");
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const rel = path.relative(here, dir).split(path.sep).join('/');
+      for (const call of [`require(\`${rel}/\${n}.js\`)`, `import(\`${rel}/\${n}.js\`)`]) {
+        const res = await buildApp(
+          app({
+            'App.tsx': `const n = 'secret';\nconst m = ${call};\nexport default function App() { return <div>{String(m)}</div>; }\n`,
+          }),
+          { runtimeExports: RT },
+        );
+        expect(res.ok, call).toBe(false);
+        expect(res.code, call).toBeUndefined();
+        expect(res.errors[0]!.text, call).toContain('one quoted path');
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a computed call however it is spelled, and quotes nothing off the app', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-build-escape-'));
+    try {
+      // A file that fails to parse (its text was quoted in the error) and a
+      // folder only NAMED like the allowed package.
+      fs.writeFileSync(path.join(dir, 'bad.json'), '{ MARKER_BADJSON: 1 }\n');
+      fs.mkdirSync(path.join(dir, 'node_modules', 'lucide-react'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'node_modules', 'lucide-react', 'x.js'),
+        "export default 'MARKER_FAKE';\n",
+      );
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const rel = path.relative(here, dir).split(path.sep).join('/');
+      for (const call of [
+        `require(\`${rel}/\${n}.json\`)`,
+        `requir\\u0065(\`${rel}/\${n}.json\`)`,
+        `require(\`${rel}/node_modules/lucide-react/\${n}.js\`)`,
+        `require /* c */ (\`${rel}/\${n}.json\`)`,
+      ]) {
+        const res = await buildApp(
+          app({
+            'App.tsx': `const n = String(Date.now());\nconst m = ${call};\nexport default function App() { return <div>{String(m)}</div>; }\n`,
+          }),
+          { runtimeExports: RT },
+        );
+        expect(res.ok, call).toBe(false);
+        expect(res.code, call).toBeUndefined();
+        const all = JSON.stringify(res.errors);
+        expect(all, call).not.toContain('MARKER');
+        expect(all, call).not.toContain(dir);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a computed import() or require() (esbuild read the real disk for it)', async () => {
+    for (const call of [
+      'require(`./${n}`)',
+      'require(`../${n}`)',
+      'require(`../../${n}`)',
+      'import(`./${n}`)',
+      "require('./' + n)",
+      "require('../' + n)",
+    ]) {
+      const res = await buildApp(
+        app({
+          'App.tsx': `const n = String(Date.now());\nconst m = ${call};\nexport default function App() { return <div>{String(m)}</div>; }\n`,
+        }),
+        { runtimeExports: RT },
+      );
+      expect(res.ok, call).toBe(false);
+      expect(res.code, call).toBeUndefined();
+    }
+  });
+
+  it('still builds a quoted import(), and text that only mentions require(', async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          "const load = () => import('./Chart');\nexport default function App() { void load; return <div>{'call require(x) or import(`./${y}`)'}</div>; }\n",
+        'Chart.tsx': 'export default function Chart() { return <span>c</span>; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
   });
 });
 
