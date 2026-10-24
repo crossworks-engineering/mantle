@@ -352,6 +352,13 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
   const writes = effect === 'write';
 
   if (own('open') && !has(DECLARED_OPEN, d.open)) bad(`open ${String(d.open)}`);
+  // A member reaches an owner route through the item it names (its
+  // workspace's content); a row that is no content has no item to grant
+  // it, so open: 'owner' there would open an Admin or self route to every
+  // member. Refused here, at the generator and at boot alike.
+  if (d.open === 'owner' && cls !== 'content') {
+    bad(`open owner on the class ${cls}: only a content row opens to a member's item`);
+  }
   if (own('creates') && (d.creates !== true || !writes)) bad('creates: true, on a write only');
   if (own('makesItems') && (d.makesItems !== false || !writes)) {
     bad('makesItems: false, on a write only');

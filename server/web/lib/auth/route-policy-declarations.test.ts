@@ -138,6 +138,23 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     expect(PUBLIC_PATHS.filter((p) => !routed(p))).toEqual(['/login', '/app-runtime']);
   });
 
+  it("a row open to a member's item (logins 'owner') is a served content row (S9 part 3 MED-1)", () => {
+    // The guarantee the deleted list cells gave (every member read and
+    // write a served content route), now the validator's: open: 'owner'
+    // only on a content row. Each such row is of the class content, and
+    // the manifest serves its method (a HEAD through its GET).
+    const served = (r: RouteRow) =>
+      manifest.some(
+        (e) =>
+          e.pattern === r.pattern &&
+          (e.methods.includes(r.method) || (r.method === 'HEAD' && e.methods.includes('GET'))),
+      );
+    const owner = [...rows.values()].filter((r) => r.logins === 'owner');
+    expect(owner.filter((r) => r.class !== 'content' || !served(r)).map((r) => r.key)).toEqual([]);
+    // 175 on main v0.300.147: the floor only says the walk saw them.
+    expect(owner.length).toBeGreaterThan(150);
+  });
+
   it("the app's manifest passes the boot's declaration check (requireRouteDeclarations)", () => {
     expect(() => requireRouteDeclarations(manifest)).not.toThrow();
   });
@@ -254,6 +271,16 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     bad('/api/notes', { class: 'content', scope: null, ...w }, /scope: only/);
     bad('/api/x', { class: 'self', scope: null, ...w }, /no list opens/);
     bad('/api/notes', { class: 'content', open: 'all', ...w }, /open all/);
+    // MED-1: open: 'owner' only on a content row, whatever else it says.
+    bad(
+      '/api/users',
+      { class: 'area', area: 'settings', open: 'owner' },
+      /open owner on the class area/,
+      'GET',
+    );
+    bad('/api/x', { class: 'self', open: 'owner' }, /open owner on the class self/, 'GET');
+    bad('/api/x', { class: 'self', open: 'owner', ...w }, /open owner on the class self/);
+    bad('/api/x', { class: 'public', open: 'owner' }, /open owner on the class public/, 'GET');
     bad('/api/notes', { class: 'content', wat: 1, ...w }, /the key wat/);
     // M2: the effect is the method's; only an exception, with its reason.
     bad('/api/notes', { class: 'content', effect: 'write', ...w }, /effect that is not/);
