@@ -117,7 +117,7 @@ function mountToggle(): void {
   button.dataset.shareModeToggle = '1';
   button.className =
     'fixed right-4 top-4 z-20 inline-flex size-9 items-center justify-center rounded-full ' +
-    'border border-border/60 bg-background/70 text-muted-foreground backdrop-blur ' +
+    'border border-border/60 bg-background text-muted-foreground ' +
     'transition-colors hover:text-foreground';
   paintToggle(button);
   button.addEventListener('click', () => {

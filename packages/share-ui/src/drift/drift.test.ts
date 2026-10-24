@@ -208,6 +208,18 @@ describe('theme palette', () => {
       expect(readDriftSurface(raw)).toBe('app');
   });
 
+  it('holds the floor for any surface but the exact public, also from untyped callers', () => {
+    const spec = decodeDriftSpec('{"v":2,"seed":5,"str":1}')!;
+    const floored = driftOptionsFromSpec(spec, JACKDAW_LIGHT, 'light', 'app');
+    for (const raw of [undefined, null, '', 'App', 'PUBLIC', { pointer: 0.6 }]) {
+      const o = driftOptionsFromSpec(spec, JACKDAW_LIGHT, 'light', raw as unknown as 'app');
+      expect({ background: o.background, colors: o.colors }).toEqual({
+        background: floored.background,
+        colors: floored.colors,
+      });
+    }
+  });
+
   it('maps a spec onto engine options', () => {
     const spec = { ...decodeDriftSpec('{"v":2,"seed":9,"speed":4,"style":"dunes"}')! };
     const o = driftOptionsFromSpec(spec, TOKENS, 'dark', 'app');

@@ -56,7 +56,8 @@ export function driftOptionsFromSpec(
     mode,
     source: spec.pal,
     strength: spec.str,
-    textFloor: surface === 'app' ? DRIFT_TEXT_FLOOR : undefined,
+    // Fail closed: only the exact 'public' drops the floor, as readDriftSurface.
+    textFloor: surface === 'public' ? undefined : DRIFT_TEXT_FLOOR,
   });
   return {
     style: spec.style,
