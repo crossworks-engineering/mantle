@@ -280,4 +280,27 @@ describe('renderCanvas', () => {
     h.hold = null;
     expect((await renderCanvas(REQ)).ok).toBe(true);
   });
+
+  it('drops a connect that answers after its timeout (the re-audit N3)', async () => {
+    const puppeteer = (await import('puppeteer-core')).default;
+    const { renderCanvas } = await import('./sidecar');
+    let answer!: (b: unknown) => void;
+    const disconnect = vi.fn(async () => {});
+    vi.mocked(puppeteer.connect).mockImplementationOnce(
+      () => new Promise((r) => (answer = r as (b: unknown) => void)) as never,
+    );
+    vi.useFakeTimers();
+    try {
+      const pending = renderCanvas(REQ);
+      await vi.advanceTimersByTimeAsync(10_001);
+      const res = await pending;
+      expect(res.ok).toBe(false);
+      expect(!res.ok && res.error).toMatch(/not reachable/);
+      answer({ disconnect });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
