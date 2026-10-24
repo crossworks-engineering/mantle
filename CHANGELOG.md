@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: mini apps import the canvas libraries
+
+- **Feature:** a mini app may import `echarts`, `d3`, `three` (with
+  `three/addons/controls/OrbitControls.js`), `konva`, `katex`,
+  `motion/react` and `@mantle/diagram-templates/browser` (the `flow` and
+  `pid` templates, drawn from data). They are the same pinned files a Present
+  canvas loads from `/canvas-runtime/`, named in the app import map and never
+  bundled into an app; `motion/react` is built into the app runtime on the
+  one shared React. Exact names only; `reveal.js` and `alpinejs` stay out
+  (a deck is a canvas; Alpine fights React for the DOM and needs
+  `unsafe-eval`). The app import check knows each library's exports, so
+  `import echarts from 'echarts'` fails the build with the fix.
+- **Feature:** `canvas_library(name, for: 'app')` returns an app guide per
+  library: the import, the React pattern (mount in an effect, clean up,
+  resize, theme tokens) and a complete App.tsx, which a browser test builds
+  and runs in the app frame. Appsmith holds it (in the `apps` group) and the
+  `diagram` group; the `app_authoring` skill and the app guide say to call it
+  first.
+- **Security:** the app frame CSP adds the brain's own `/canvas-runtime/` to
+  `script-src` and nothing else: no new origin, no `unsafe-eval`,
+  `connect-src` stays `'none'`. A browser test pins that an app with a
+  library loaded still cannot fetch, eval or load from another origin.
+- **Build:** server/web `generate` builds the canvas runtime before the app
+  runtime, which reads its manifest.
+
 ## Unreleased: a mini app's computed import cannot read the server's disk
 
 - **Security fix:** an `import()` or `require()` with a computed path (a
@@ -146,7 +171,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   other).
 - **The 410 stubs are gone** (132 retired route files and the PUT of
   `/api/app-nav`): their paths answer a signed-in caller 404 (`PUT
-  /api/app-nav` 405), and no credential the gate's 401 as before.
+/api/app-nav` 405), and no credential the gate's 401 as before.
   `GET /api/apps/:id` with an id that is not a uuid is a 404, where it was
   a 500. Count a box's stub hits first: `scripts/arch-scoreboard-box.sh`.
 

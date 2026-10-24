@@ -327,7 +327,9 @@ Adding a library is a normal release change: pinned version, a line in
 `lucide-react`, `packages/app-build/src/index.ts` line 66). Build ONE
 vendored runtime and one import map that canvases and mini apps both read.
 That is a separate change on its own branch, best landed before or with
-Present P1.
+Present P1. (Done after Present P1: apps read a subset of this runtime,
+`packages/app-build/src/app-libraries.ts`; see the app guide's Libraries
+section.)
 
 ### 6.2 How loading works: the agent configures nothing
 
