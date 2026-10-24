@@ -899,3 +899,39 @@ round:
   (`onDown`), not the text of its error.
 - The canvas frame ticket counts an Admin user too, as main's app limits do
   since v0.300.142, without their app text.
+
+## 14. Present in Pages
+
+A page holds a canvas as `![Title](present:<id>)`, an image node with
+`presentId`, the shape of a drawing's embed (`draw:`). It is a live
+reference: the page shows the canvas's latest snapshot (the poster its last
+save with a look drew) and opens the canvas itself.
+
+- **The snapshot.** GET `/api/presents/:id/poster` answers the stored PNG in
+  the caller's scope, an asset route like a drawing's SVG (the `?at=` token,
+  the render cookie, a member's read); `?meta=1` answers the title, the rev
+  and whether the picture is current. A canvas the caller may not read is a
+  404 in both shapes. The route never renders: a page view spends no
+  sidecar time. When the canvas was saved after its picture, the page says
+  a newer version exists (the simpler of the two choices, and correct: the
+  poster is redrawn on every save that looks).
+- **Rights.** The canvas's own. The live view is the Present frame, with its
+  ticket and nonce proof (section 13); the page reader's access to the page
+  opens nothing of the canvas. A canvas is no embed edge (node_embeds,
+  migration 0208): it never gains readers through a page, and "Grant these
+  too" does not offer it.
+- **The owner UI.** The image node draws a figure around the snapshot with a
+  caption bar; a stamp marks its state for this reader (live, stale, none,
+  hidden). A click opens the live canvas over the page's display area
+  (`CanvasEmbedHost`, client canvas-embed.tsx) with the standard header,
+  Back to page, Full screen and Open in Present; in the editor only the bar
+  opens it. Any login that may read the canvas opens it, as in Present.
+- **Share links, print, Word.** `/s/:token/present/:presentId` serves the
+  snapshot of a canvas the shared page or note embeds, only when the link
+  serves it (the owner adds it to the served list, which already offers
+  what a page's text names); the share page places a placeholder for any
+  other. Never the frame. Print and Word carry the snapshot. The mobile
+  apps show the snapshot only.
+- **Agents.** `present_create`, `present_update` and `present_get` return
+  `page_embed`; `canvas_authoring` and `page_editing` say to use it for a
+  page and `present_export` only for outside Mantle.
