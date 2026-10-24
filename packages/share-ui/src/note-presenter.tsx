@@ -63,6 +63,10 @@ export function NotePresenter({
         return url ? (
           // eslint-disable-next-line @next/next/no-img-element -- token-routed share bytes; next/image cannot optimise them
           <img src={url} alt={alt ?? ''} />
+        ) : presentNodeId(src.trim()) ? (
+          // A canvas this surface does not show: a bare placeholder, never
+          // the alt (it may carry a title the reader may not see).
+          <span className="text-muted-foreground">[canvas]</span>
         ) : (
           <span className="text-muted-foreground">[{alt?.trim() || 'image'}]</span>
         );
