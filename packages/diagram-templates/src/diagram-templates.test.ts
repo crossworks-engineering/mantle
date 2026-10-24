@@ -311,6 +311,17 @@ describe('canvas', () => {
     expect(next).toContain(runtime);
   });
 
+  it('a title with replacement patterns is kept as text', () => {
+    const html = buildCanvas({ template: 'flow', data: minimalFlow(), runtime });
+    const next = replaceCanvasData(html, {
+      ...minimalFlow(),
+      title: "Cost $& and $' check",
+      description: 'Saves $` too',
+    });
+    expect(next).toContain("<title>Cost $&amp; and $' check</title>");
+    expect(next).toContain('content="Saves $` too"');
+  });
+
   it('import mode loads the runtime by name', () => {
     const html = buildCanvas({ template: 'pid', data: minimalPid(), mode: 'import' });
     expect(html).toContain("import { mount } from '@mantle/diagram-templates/browser'");

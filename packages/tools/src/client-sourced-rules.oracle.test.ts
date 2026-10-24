@@ -272,13 +272,13 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   formula_update: onNodes('id'),
   formula_delete: onNodes('id'),
   // Present's tools: new since main's table, written as main's rules would have
-  // them (a create; a write into the canvas; the export is a file create
-  // that always overwrites).
+  // them (a create; a write into the canvas; the export is a file create,
+  // as file_create, that waits when it overwrites).
   present_create: creates(),
   present_update: onNodes('id'),
   present_restore: onNodes('id'),
   present_delete: onNodes('id'),
-  present_export: { ...creates(), alwaysWhen: () => true, paths: ['parent_path'] },
+  present_export: { ...creates(), alwaysWhen: overwrites, paths: ['parent_path'] },
   secret_create: creates(),
   location_save: creates(),
   content_supersede: onNodes('node_id', 'superseded_by'),

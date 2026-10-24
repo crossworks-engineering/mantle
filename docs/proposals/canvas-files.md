@@ -712,7 +712,9 @@ static SVG out).
   names no private package). `present_export` writes a template canvas's
   static SVG, or a PNG at twice the pixels of any other canvas, into
   `files/diagrams`, and returns the `media:` embed line. Re-exporting with
-  the same filename keeps the file id.
+  the same filename and `overwrite: true` keeps the file id. A template's
+  SVG comes from a fresh canvas built from its checked data, never from the
+  stored source.
 - **Agents.** `presenter` (groups `present`, `diagram`, `files`,
   `memory-core`; skills `canvas_authoring`, `writing_style`). Draftsman
   gains `present` and a template path in `diagram_design` for P&IDs and
@@ -730,3 +732,33 @@ static SVG out).
   because `@mantle/diagram-templates` imports with `.ts` extensions (its
   scripts run under Node's type stripping). Every typecheck in the repo
   runs with `--noEmit`, which the option needs.
+
+**The P2 security audit** (independent, read only, on the brain commit
+9f0a08f7b): ship with fixes. Fixed on the branch:
+
+- The sidecar's browser could still reach the outside without passing
+  interception: WebRTC from a fresh iframe, DNS hints. Each render now
+  connects with its own launch flags (no name resolves, every request goes
+  to a proxy that is not there, loopback included, and WebRTC sends no UDP
+  past it), WebRTC is removed in every frame before any canvas script, and
+  the frame answer turns DNS prefetch off. Checked on browserless v2.57.0:
+  the flags reach the browser, and a canvas finds no WebRTC in its window
+  or in an iframe it makes.
+- A template export trusted the stored canvas, whose script an editor can
+  change. The export now draws a fresh canvas built from the checked data,
+  and refuses an SVG with a namespace prefix, a numeric character reference
+  or over 3 MB, on top of `checkStaticSvg`.
+- What a canvas prints and reports about itself is capped where it is
+  gathered (50 lines of 300 characters; the SVG at 3 MB), and labelled as
+  the canvas's own text in the reply to the model.
+- An export replaces a file only with `overwrite: true` (a client-sourced
+  turn's overwrite waits, as `file_create`'s does), and never writes the
+  poster (it may run for a reader).
+- At most six renders wait for the two slots; past that a render is
+  refused at once. Connecting to the sidecar counts against the 45 second
+  budget. The model gets fixed error text; the detail goes to the log.
+- A template title with `$&` or `$'` is now kept as text.
+
+Open for later: one login can still take both slots for a render's length
+(no per-login fairness); `present_restore` brings back an old version
+without the save-time load check.

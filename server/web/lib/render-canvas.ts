@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import puppeteer, { type Page } from 'puppeteer-core';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
 import type { CanvasDiagramReport, CanvasRenderRequest, CanvasRenderResult } from '@mantle/tools';
 import { canvasFrameDocument } from './canvas-frame';
@@ -61,11 +62,55 @@ const DIAGRAM_TIMEOUT_MS = 8_000;
  *  this the page is closed and the slot freed. */
 const RENDER_BUDGET_MS = 45_000;
 const SLOTS = 2;
+/** Renders that may wait for a slot; past this a render is refused at once
+ *  rather than queued behind work it cannot see the end of. */
+const MAX_WAITING = 6;
+/** What a render collects from the canvas: its console, its refused
+ *  requests and what it says about itself are the canvas's own text, so
+ *  each is capped where it is gathered, not after. */
+const MAX_LINES = 50;
+const MAX_LINE_CHARS = 300;
+const MAX_SVG_CHARS = 3_000_000;
+
+/** Launch flags for the sidecar's browser, per connection (browserless
+ *  starts one browser per connection and takes `launch` from the URL). A
+ *  render needs no network at all: every request it makes is answered or
+ *  refused by interception. These close what interception does not see:
+ *  no name resolves, everything else goes to a proxy that is not there
+ *  (loopback included), and WebRTC may not send UDP past it. */
+export const RENDER_LAUNCH_ARGS: readonly string[] = [
+  '--host-resolver-rules=MAP * ~NOTFOUND',
+  '--proxy-server=http://127.0.0.1:9',
+  '--proxy-bypass-list=<-loopback>',
+  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+  '--dns-prefetch-disable',
+];
+
+/** The sidecar URL with the launch flags; a bare DevTools endpoint (a local
+ *  Chrome) is left as it is: that browser was started by whoever runs it. */
+export function lockedEndpoint(endpoint: string): string {
+  if (endpoint.includes('/devtools/browser/')) return endpoint;
+  const url = new URL(endpoint);
+  url.searchParams.set('launch', JSON.stringify({ args: RENDER_LAUNCH_ARGS }));
+  return url.toString();
+}
+
+/** Run before any canvas script, in every frame the page makes (a blank
+ *  iframe's window included): no WebRTC anywhere. The frame prelude removes
+ *  it from the top window only. */
+const NO_WEBRTC = `(() => {
+  for (const n of ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver']) {
+    try { Object.defineProperty(globalThis, n, { value: undefined, configurable: false, writable: false }); } catch {}
+  }
+})();`;
 
 let busy = 0;
 const waiting: Array<() => void> = [];
 
+class RenderBusyError extends Error {}
+
 async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (busy >= SLOTS && waiting.length >= MAX_WAITING) throw new RenderBusyError();
   // `while`: a woken waiter re-checks (draw-snapshot.ts withSlot says why).
   while (busy >= SLOTS) await new Promise<void>((r) => waiting.push(r));
   busy++;
@@ -130,91 +175,132 @@ export async function renderCanvas(req: CanvasRenderRequest): Promise<CanvasRend
         'No browser sidecar on this brain (BROWSER_WS_ENDPOINT is not set), so a canvas cannot be drawn to a picture. The canvas itself is saved and runs in Present.',
     };
   }
-  return withSlot(async () => {
-    let browser;
-    try {
-      browser = await puppeteer.connect({ browserWSEndpoint: endpoint });
-    } catch (err) {
-      return { ok: false, error: `The browser sidecar is not reachable (${errorMessage(err)}).` };
+  try {
+    return await withSlot(() => renderInSlot(endpoint, req));
+  } catch (err) {
+    if (err instanceof RenderBusyError) {
+      return {
+        ok: false,
+        error:
+          'The canvas renderer is busy with other canvases. The canvas is saved; look at it again in a minute.',
+      };
     }
-    const consoleErrors: string[] = [];
-    const blocked = new Set<string>();
-    let page: Page | null = null;
-    let budget: ReturnType<typeof setTimeout> | undefined;
-    const overBudget = new Promise<CanvasRenderResult>((resolve) => {
-      budget = setTimeout(
-        () =>
-          resolve({
-            ok: false,
-            error: `The canvas did not finish drawing within ${RENDER_BUDGET_MS / 1000} seconds. Something in it runs without end (a loop, a busy animation): fix that and save again.`,
-          }),
-        RENDER_BUDGET_MS,
-      );
+    throw err;
+  }
+}
+
+async function renderInSlot(
+  endpoint: string,
+  req: CanvasRenderRequest,
+): Promise<CanvasRenderResult> {
+  const consoleErrors: string[] = [];
+  const blocked = new Set<string>();
+  const note = (list: string[], text: string) => {
+    if (list.length < MAX_LINES) list.push(text.slice(0, MAX_LINE_CHARS));
+  };
+  let browser: Awaited<ReturnType<typeof puppeteer.connect>> | null = null;
+  let page: Page | null = null;
+  /** Set when the render is over (budget or done): work still in flight
+   *  must not open what the cleanup has already passed. */
+  let over = false;
+  let budget: ReturnType<typeof setTimeout> | undefined;
+  const overBudget = new Promise<CanvasRenderResult>((resolve) => {
+    budget = setTimeout(
+      () =>
+        resolve({
+          ok: false,
+          error: `The canvas did not finish drawing within ${RENDER_BUDGET_MS / 1000} seconds. Something in it runs without end (a loop, a busy animation): fix that and save again.`,
+        }),
+      RENDER_BUDGET_MS,
+    );
+  });
+  const work = async (): Promise<CanvasRenderResult> => {
+    const html = await canvasFrameDocument(req.ownerId, req.canvas, {
+      cls: req.theme === 'dark' ? 'dark' : '',
+      colorTheme: null,
     });
-    const work = async (): Promise<CanvasRenderResult> => {
-      const html = await canvasFrameDocument(req.ownerId, req.canvas, {
-        cls: req.theme === 'dark' ? 'dark' : '',
-        colorTheme: null,
-      });
-      page = await browser.newPage();
-      const view = viewportFor(req);
-      await page.setViewport({ ...view, deviceScaleFactor: req.scale === 2 ? 2 : 1 });
-      await page.setRequestInterception(true);
-      page.on('request', (r) => {
-        if (r.isInterceptResolutionHandled()) return;
-        const url = r.url();
-        if (url.startsWith('data:') || url.startsWith('blob:')) {
-          void r.continue().catch(() => {});
+    try {
+      browser = await puppeteer.connect({ browserWSEndpoint: lockedEndpoint(endpoint) });
+    } catch (err) {
+      log('render-canvas').error(`sidecar connect failed: ${errorMessage(err)}`);
+      return { ok: false, error: 'The browser sidecar is not reachable right now.' };
+    }
+    if (over) {
+      // The cleanup ran while we connected: this connection is ours to drop.
+      await browser.disconnect().catch(() => {});
+      throw new Error('the render ran out of time before the browser answered');
+    }
+    page = await browser.newPage();
+    await page.evaluateOnNewDocument(NO_WEBRTC);
+    const view = viewportFor(req);
+    await page.setViewport({ ...view, deviceScaleFactor: req.scale === 2 ? 2 : 1 });
+    await page.setRequestInterception(true);
+    page.on('request', (r) => {
+      if (r.isInterceptResolutionHandled()) return;
+      const url = r.url();
+      if (url.startsWith('data:') || url.startsWith('blob:')) {
+        void r.continue().catch(() => {});
+        return;
+      }
+      void (async () => {
+        let parsed: URL | null;
+        try {
+          parsed = new URL(url);
+        } catch {
+          parsed = null;
+        }
+        if (parsed?.origin === RENDER_ORIGIN && parsed.pathname === '/frame') {
+          await r.respond({
+            status: 200,
+            headers: {
+              'content-security-policy': buildCanvasFrameCsp(RENDER_ORIGIN, []),
+              'x-dns-prefetch-control': 'off',
+            },
+            contentType: 'text/html; charset=utf-8',
+            body: html,
+          });
           return;
         }
-        void (async () => {
-          let parsed: URL | null;
-          try {
-            parsed = new URL(url);
-          } catch {
-            parsed = null;
-          }
-          if (parsed?.origin === RENDER_ORIGIN && parsed.pathname === '/frame') {
-            await r.respond({
-              status: 200,
-              headers: { 'content-security-policy': buildCanvasFrameCsp(RENDER_ORIGIN, []) },
-              contentType: 'text/html; charset=utf-8',
-              body: html,
-            });
-            return;
-          }
-          const file = parsed?.origin === RENDER_ORIGIN ? await publicFile(parsed.pathname) : null;
-          if (file) {
-            await r.respond({
-              status: 200,
-              headers: { 'access-control-allow-origin': '*' },
-              contentType: file.type,
-              body: file.body,
-            });
-            return;
-          }
-          blocked.add(parsed?.origin === RENDER_ORIGIN ? parsed.pathname : originOf(url));
-          await r.abort('blockedbyclient');
-        })().catch(() => {});
-      });
-      page.on('console', (m) => {
-        if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300));
-      });
-      page.on('pageerror', (err) => consoleErrors.push(errorMessage(err).slice(0, 300)));
-
-      await page.goto(`${RENDER_ORIGIN}/frame`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-      const settle = Math.min(SETTLE_MAX_S, Math.max(0, req.atSeconds ?? SETTLE_DEFAULT_S));
-      if (req.slide && req.slide > 1) {
-        await page.focus('body').catch(() => {});
-        for (let i = 1; i < Math.min(req.slide, 200); i++) {
-          await page.keyboard.press('ArrowRight');
-          await new Promise((r) => setTimeout(r, 120));
+        const file = parsed?.origin === RENDER_ORIGIN ? await publicFile(parsed.pathname) : null;
+        if (file) {
+          await r.respond({
+            status: 200,
+            headers: { 'access-control-allow-origin': '*' },
+            contentType: file.type,
+            body: file.body,
+          });
+          return;
         }
-      }
-      await new Promise((r) => setTimeout(r, settle * 1000));
+        if (blocked.size < MAX_LINES) {
+          blocked.add(
+            (parsed?.origin === RENDER_ORIGIN ? parsed.pathname : originOf(url)).slice(
+              0,
+              MAX_LINE_CHARS,
+            ),
+          );
+        }
+        await r.abort('blockedbyclient');
+      })().catch(() => {});
+    });
+    page.on('console', (m) => {
+      if (m.type() === 'error') note(consoleErrors, m.text());
+    });
+    page.on('pageerror', (err) => note(consoleErrors, errorMessage(err)));
 
-      const diagram: CanvasDiagramReport | null = await Promise.race([
-        page.evaluate(async (wantSvg: boolean) => {
+    await page.goto(`${RENDER_ORIGIN}/frame`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
+    const settle = Math.min(SETTLE_MAX_S, Math.max(0, req.atSeconds ?? SETTLE_DEFAULT_S));
+    if (req.slide && req.slide > 1) {
+      await page.focus('body').catch(() => {});
+      for (let i = 1; i < Math.min(req.slide, 200); i++) {
+        await page.keyboard.press('ArrowRight');
+        await new Promise((r) => setTimeout(r, 120));
+      }
+    }
+    await new Promise((r) => setTimeout(r, settle * 1000));
+
+    const diagram: CanvasDiagramReport | null = await Promise.race([
+      page.evaluate(
+        async (wantSvg: boolean, maxLines: number, maxChars: number, maxSvg: number) => {
           type Outcome =
             | { ok: true; warnings: string[]; stats: Record<string, number> }
             | { ok: false; errors: string[]; warnings: string[] };
@@ -225,59 +311,78 @@ export async function renderCanvas(req: CanvasRenderRequest): Promise<CanvasRend
           ).diagram;
           if (!d) return null;
           const o = await d.ready;
-          return o.ok
-            ? {
-                ok: true,
-                errors: [],
-                warnings: o.warnings,
-                stats: o.stats,
-                ...(wantSvg ? { svg: d.exportSvg() } : {}),
-              }
-            : { ok: false, errors: o.errors, warnings: o.warnings, stats: {} };
-        }, req.exportSvg === true),
-        new Promise<null>((r) => setTimeout(() => r(null), DIAGRAM_TIMEOUT_MS)),
-      ]);
+          // The canvas's own words: capped here, before they cross.
+          const lines = (v: unknown): string[] =>
+            Array.isArray(v) ? v.slice(0, maxLines).map((x) => String(x).slice(0, maxChars)) : [];
+          const stats: Record<string, number> = {};
+          if (o.ok && o.stats && typeof o.stats === 'object') {
+            for (const [k, v] of Object.entries(o.stats).slice(0, maxLines)) {
+              if (typeof v === 'number') stats[k.slice(0, 40)] = v;
+            }
+          }
+          if (!o.ok) {
+            return { ok: false, errors: lines(o.errors), warnings: lines(o.warnings), stats };
+          }
+          let svg: string | undefined;
+          if (wantSvg) {
+            const out: unknown = d.exportSvg();
+            svg = typeof out === 'string' && out.length <= maxSvg ? out : undefined;
+          }
+          return {
+            ok: true,
+            errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [],
+            warnings: lines(o.warnings),
+            stats,
+            ...(svg !== undefined ? { svg } : {}),
+          };
+        },
+        req.exportSvg === true,
+        MAX_LINES,
+        MAX_LINE_CHARS,
+        MAX_SVG_CHARS,
+      ),
+      new Promise<null>((r) => setTimeout(() => r(null), DIAGRAM_TIMEOUT_MS)),
+    ]);
 
-      const png = Buffer.from(await page.screenshot({ type: 'png' }));
-      return {
-        ok: true,
-        png,
-        width: view.width,
-        height: view.height,
-        consoleErrors: [...new Set(consoleErrors)].slice(0, 20),
-        blocked: [...blocked].slice(0, 20),
-        ...(diagram ? { diagram } : {}),
-      };
+    const png = Buffer.from(await page.screenshot({ type: 'png' }));
+    return {
+      ok: true,
+      png,
+      width: view.width,
+      height: view.height,
+      consoleErrors: [...new Set(consoleErrors)].slice(0, 20),
+      blocked: [...blocked].slice(0, 20),
+      ...(diagram ? { diagram } : {}),
     };
-    try {
-      return await Promise.race([
-        work().catch((err: unknown): CanvasRenderResult => ({
-          ok: false,
-          error: `The canvas could not be drawn (${errorMessage(err)}).`,
-        })),
-        overBudget,
+  };
+  try {
+    return await Promise.race([
+      work().catch((err: unknown): CanvasRenderResult => {
+        log('render-canvas').error(`render failed: ${errorMessage(err)}`);
+        return { ok: false, error: 'The canvas could not be drawn (the browser gave up on it).' };
+      }),
+      overBudget,
+    ]);
+  } finally {
+    over = true;
+    clearTimeout(budget);
+    // Closed whatever happened: a page left open would keep running in
+    // the sidecar after we disconnect. A page whose script never yields
+    // is stopped first (CDP answers that while the page is busy), or the
+    // close waits on it.
+    const open = page as Page | null;
+    if (open) {
+      await Promise.race([
+        open
+          .createCDPSession()
+          .then((cdp) => cdp.send('Runtime.terminateExecution'))
+          .catch(() => {}),
+        new Promise((r) => setTimeout(r, 2_000)),
       ]);
-    } finally {
-      clearTimeout(budget);
-      // Closed whatever happened: a page left open would keep running in
-      // the sidecar after we disconnect. A page whose script never yields
-      // is stopped first (CDP answers that while the page is busy), or the
-      // close waits on it.
-      const open = page as Page | null;
-      if (open) {
-        await Promise.race([
-          open
-            .createCDPSession()
-            .then((cdp) => cdp.send('Runtime.terminateExecution'))
-            .catch(() => {}),
-          new Promise((r) => setTimeout(r, 2_000)),
-        ]);
-        await Promise.race([
-          open.close().catch(() => {}),
-          new Promise((r) => setTimeout(r, 5_000)),
-        ]);
-      }
-      await browser.disconnect().catch(() => {});
+      await Promise.race([open.close().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
     }
-  });
+    await (browser as Awaited<ReturnType<typeof puppeteer.connect>> | null)
+      ?.disconnect()
+      .catch(() => {});
+  }
 }

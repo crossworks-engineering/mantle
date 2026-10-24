@@ -7670,7 +7670,7 @@
  },
  {
   "name": "present_export",
-  "description": "Write a static copy of a canvas into Files for pages, print, PDF, Word, email and shares: a template canvas exports its SVG, any other canvas a PNG picture. Overwrites the file of the same name, so re-exporting with the same `filename` keeps the file id and every embed stays live. Returns the file id and `embed`, the markdown to put in a page. The canvas stays the editable source: change it with `present_update`, then export again.",
+  "description": "Write a static copy of a canvas into Files for pages, print, PDF, Word, email and shares: a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown to put in a page. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7685,6 +7685,10 @@
     "parent_path": {
      "type": "string",
      "description": "ltree path of the folder, e.g. 'files.diagrams'."
+    },
+    "overwrite": {
+     "type": "boolean",
+     "description": "Replace the file of the same name: only when it is an earlier export of this canvas."
     },
     "confirm": {
      "type": "boolean",
