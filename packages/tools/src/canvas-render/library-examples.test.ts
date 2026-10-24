@@ -136,6 +136,30 @@ describe.skipIf(!chrome || !runtimeBuilt)('canvas_library examples in a real bro
     }
   }
 
+  it('a render starts no worker (the re-audit R2): the page refuses it', async () => {
+    const source = [
+      '<!doctype html><html><head><title>Worker</title>',
+      '<meta name="canvas:size" content="400x200"></head>',
+      '<body><p id="o">waiting</p><script>',
+      'var o = document.getElementById("o");',
+      'try {',
+      '  var w = new Worker(URL.createObjectURL(new Blob(["for(;;){console.error(\'x\'.repeat(1e6))}"])));',
+      '  w.onerror = function () { o.textContent = "refused"; };',
+      '  o.textContent = "started";',
+      '} catch (e) { o.textContent = "refused"; }',
+      '</script></body></html>',
+    ].join('\n');
+    const r = await render({
+      ownerId: '00000000-0000-4000-8000-000000000000',
+      canvas: { source, css: '', meta: readCanvas(source).meta },
+      atSeconds: 1,
+    });
+    expect(r.ok, r.ok ? '' : r.error).toBe(true);
+    if (!r.ok) return;
+    expect(r.consoleErrors.join('\n')).toMatch(/worker/i);
+    expect(r.consoleErrors.join('').length).toBeLessThan(5000);
+  }, 60_000);
+
   for (const lib of CANVAS_LIBRARIES) {
     it(`${lib.name}: renders clean and not blank`, async () => {
       const md = readFileSync(path.join(ROOT, 'docs/canvas-libraries', guideFile(lib)), 'utf8');

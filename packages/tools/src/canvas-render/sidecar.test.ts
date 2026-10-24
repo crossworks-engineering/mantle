@@ -183,6 +183,8 @@ describe('renderCanvas', () => {
     const out = await renderCanvas(REQ);
     const frame = h.responded.find((r) => r.url.endsWith('/frame'))!;
     expect(frame.headers['content-security-policy']).toContain("connect-src 'none'");
+    // No workers in a render: a worker's console is outside the page's caps.
+    expect(frame.headers['content-security-policy']).toContain("worker-src 'none'");
     expect(frame.headers['x-dns-prefetch-control']).toBe('off');
     // The runtime manifest is a public file only when it was built.
     expect(h.aborted).toContain(`${RENDER_ORIGIN}/api/presents`);
