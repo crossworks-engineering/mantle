@@ -47,7 +47,7 @@ const TYPES: Readonly<Record<string, string>> = {
   '.ttf': 'font/ttf',
 };
 
-const chrome = findChrome();
+const chrome = findChrome(process.env.MANTLE_TEST_CHROME);
 const runtimeBuilt = [APP_MANIFEST, CANVAS_MANIFEST, SHARE_CSS].every((p) => existsSync(p));
 if (!chrome || !runtimeBuilt) {
   const bar = '='.repeat(72);

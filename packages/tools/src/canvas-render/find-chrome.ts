@@ -1,15 +1,16 @@
 /**
  * A Chrome for the real-browser tests (the canvas and the mini-app library
- * examples): MANTLE_TEST_CHROME, a usual install path, or puppeteer's own
- * cache. Null when there is none; the tests then skip and say so.
+ * examples): the caller's override (a test passes MANTLE_TEST_CHROME), a
+ * usual install path, or puppeteer's own cache. Null when there is none; the
+ * tests then skip and say so.
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export function findChrome(): string | null {
+export function findChrome(override?: string): string | null {
   const fixed = [
-    process.env.MANTLE_TEST_CHROME,
+    override,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
     '/usr/bin/google-chrome',

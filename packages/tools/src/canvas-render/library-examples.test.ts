@@ -22,7 +22,7 @@ const MANIFEST = path.join(ROOT, 'server/web/public/canvas-runtime/manifest.json
 /** The frame also loads the share runtime's styles (the theme, KaTeX's CSS). */
 const SHARE_CSS = path.join(ROOT, 'server/web/public/share-runtime/styles.css');
 
-const chrome = findChrome();
+const chrome = findChrome(process.env.MANTLE_TEST_CHROME);
 const runtimeBuilt = existsSync(MANIFEST) && existsSync(SHARE_CSS);
 if (!chrome || !runtimeBuilt) {
   const bar = '='.repeat(72);
