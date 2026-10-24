@@ -34,6 +34,7 @@ import {
   ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
   findsNoLogin,
+  requireRouteDeclarations,
   type RouteCaller,
   type RouteManifestEntry,
   type RouteRow,
@@ -212,6 +213,10 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     expect(PUBLIC_PATHS.filter((p) => !routed(p))).toEqual(['/login', '/app-runtime']);
   });
 
+  it("the app's manifest passes the boot's declaration check (requireRouteDeclarations)", () => {
+    expect(() => requireRouteDeclarations(manifest)).not.toThrow();
+  });
+
   it('every route module loads and exports the policy its manifest entry carries (L1)', async () => {
     const refused: string[] = [];
     for (const e of manifest as ReadonlyArray<
@@ -285,6 +290,31 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(rows.get('POST /api/calc')?.effect).toBe('read');
     expect(rows.get('GET /api/cb')?.effect).toBe('write');
     expect(rows.get('HEAD /api/cb')?.effect).toBe('write');
+  });
+
+  it("the app's boot refuses a route file that declares no policy, whatever the source (part 1)", () => {
+    const declared = entry('/api/notes', ['GET', 'POST'], {
+      GET: { class: 'content', open: 'owner' },
+      POST: { class: 'content', open: 'owner', item: none },
+    });
+    expect(() => requireRouteDeclarations([declared])).not.toThrow();
+    expect(() =>
+      requireRouteDeclarations([
+        declared,
+        { pattern: '/api/new', methods: ['GET', 'DELETE'], reads: { GET: 'owner' } },
+      ]),
+    ).toThrow(/declares no policy for GET \/api\/new, DELETE \/api\/new/);
+    expect(() =>
+      requireRouteDeclarations([
+        entry('/api/notes', ['GET', 'POST'], { GET: { class: 'content', open: 'owner' } }),
+      ]),
+    ).toThrow(/declares no policy for POST \/api\/notes/);
+    // A declaration that does not hold is refused there too.
+    expect(() =>
+      requireRouteDeclarations([
+        entry('/api/notes', ['POST'], { POST: { class: 'content', open: 'owner' } }),
+      ]),
+    ).toThrow();
   });
 
   it('refuses a route file that declares no policy, or one for a method it does not serve', () => {

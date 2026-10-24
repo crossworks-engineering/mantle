@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { answerAppError } from './app-error';
 import { apiCacheDefault, gate } from './middleware/gate';
 import { registerPages, registerRoutes } from './route-loader';
+import { requireRouteDeclarations } from '../lib/auth/route-policy';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
 import { mountRetiredTeamPages } from './pages/stubs';
 
@@ -27,6 +28,8 @@ export async function createApp(): Promise<Hono> {
   // The generated manifest is imported lazily so `createApp` stays importable
   // in unit tests without a generation step having run.
   const { routeManifest } = await import('./route-manifest.gen');
+  // Every route file declares its policy (S9): one that does not fails here.
+  requireRouteDeclarations(routeManifest);
   registerRoutes(app, routeManifest);
 
   // Render surfaces (after the API routes: /s/:token must not shadow the

@@ -89,8 +89,12 @@ if (isBootSmoke()) {
   await bootSmokeExit('web', [
     () => createApp(),
     async () => {
+      // Each module's policy export is the one its manifest entry read (S9).
       const { routeManifest } = await import('./route-manifest.gen');
-      for (const route of routeManifest) await route.load();
+      const { checkLoadedPolicy } = await import('./route-loader');
+      for (const route of routeManifest) {
+        checkLoadedPolicy(route, await route.load(), 'declarations');
+      }
     },
     () => import('../lib/system-manifest/reconcile'),
     () => import('../lib/workspaces-migrate'),

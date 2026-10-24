@@ -1128,6 +1128,27 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
   return methods.includes('GET') && !methods.includes('HEAD') ? [...methods, 'HEAD'] : methods;
 }
 
+/** Every route file of the app's manifest declares its policy, one for
+ *  each method it exports, and each holds (validateRoutePolicy), whichever
+ *  source the rows are read from (S9 part 1: the codemod wrote them; lint
+ *  holds a new file to it, route-plumbing.mjs route-policy-declared). The
+ *  app's boot asks it of the generated manifest (createApp); a test's
+ *  hand-built manifest is not asked. Throws naming each route that does
+ *  not. */
+export function requireRouteDeclarations(manifest: readonly RouteManifestEntry[]): void {
+  const missing: string[] = [];
+  for (const entry of manifest) {
+    const policy = entry.policy as Readonly<Record<string, unknown>> | undefined;
+    for (const m of entry.methods) {
+      if (policy === undefined || !Object.hasOwn(policy, m)) missing.push(`${m} ${entry.pattern}`);
+    }
+    if (policy !== undefined) validateRoutePolicy(policy, entry.pattern, entry.methods);
+  }
+  if (missing.length > 0) {
+    throw new Error(`ROUTE_POLICY: a route file declares no policy for ${missing.join(', ')}`);
+  }
+}
+
 /** ROUTE_POLICY over a manifest (or, `page`, over a list of pages of
  *  server/pages, all of that class): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
