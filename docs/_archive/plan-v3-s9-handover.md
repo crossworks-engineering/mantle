@@ -1820,19 +1820,19 @@ on a checked free port, removed by exact name, fsync off,
 MANTLE_NARROW_SYSTEM=1 unless named, --maxWorkers=3. Load average up to
 about 31.
 
-| suite                                     | exit    | what failed                                              |
-| ----------------------------------------- | ------- | -------------------------------------------------------- |
-| vitest shard 1/2                          | 1       | w7b-mcp-surface (2 tests): main's, below                 |
-| vitest shard 2/2                          | 1       | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's |
-| test:actor-off                            | 1       | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's |
-| test:actor-on                             | 1       | a6b-exit-sweep rule-in-query: main's                     |
-| test:edit-on                              | 1       | a6b-exit-sweep rule-in-query: main's                     |
-| test:runtime-role                         | 1       | a6b, w7a, w7b, presents.db (2): main's                   |
-| test:serial                               | 0       |                                                          |
-| test:matrix                               | 0       |                                                          |
-| switch off (MANTLE_NARROW_SYSTEM=0), full | running | unit s9p3-p3off, exit in ~/s9p3/x-p3off.exit             |
-| runtime role off, full                    | running | unit s9p3-p3rroff, exit in ~/s9p3/x-p3rroff.exit         |
-| the area records, main and branch         | 0 each  | none; 83 of 83 equal in five lanes                       |
+| suite                                     | exit   | what failed                                                    |
+| ----------------------------------------- | ------ | -------------------------------------------------------------- |
+| vitest shard 1/2                          | 1      | w7b-mcp-surface (2 tests): main's, below                       |
+| vitest shard 2/2                          | 1      | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's       |
+| test:actor-off                            | 1      | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's       |
+| test:actor-on                             | 1      | a6b-exit-sweep rule-in-query: main's                           |
+| test:edit-on                              | 1      | a6b-exit-sweep rule-in-query: main's                           |
+| test:runtime-role                         | 1      | a6b, w7a, w7b, presents.db (2): main's                         |
+| test:serial                               | 0      |                                                                |
+| test:matrix                               | 0      |                                                                |
+| switch off (MANTLE_NARROW_SYSTEM=0), full | 1      | a6b, w7a (3), w7b (2): main's                                  |
+| runtime role off, full                    | 1      | a6b, w7a, w7b: main's; a4-guard-sweep snapshot (load: alone 0) |
+| the area records, main and branch         | 0 each | none; 83 of 83 equal in five lanes                             |
 
 Every failure is main's, from the Present merge, and each was run alone on
 main ca6281500 (a fresh clone and cluster, the same config) and failed the
@@ -1850,6 +1850,11 @@ same way:
   main: 1): `permission denied for function mantle_operator_actor`, the
   runtime role not granted what the Present test calls.
 
+In the runtime-role-off full run a4-guard-sweep.test.ts (not a DB test)
+missed its snapshot once under load (the guard sweep's real-clock window,
+as round 2 named); rerun alone on dab44b685 with the same config: 0 (8
+tests).
+
 None touches a route row, a list or this branch's code; they are left to
 the Present owner (not fixed here: another lane's records and grants).
 
@@ -1862,8 +1867,6 @@ name in them.
 
 ### Left
 
-- The switch-off and runtime-role-off full runs on dab44b685 (running at
-  handover; their exits land in ~/s9p3/x-p3off.exit and x-p3rroff.exit).
 - Present's four failing DB tests on main (section 5), for its owner.
 - CEO full re-audit (MED) of this head.
 - S11b: the 113 placeholders, the body-folder creates and PUT
