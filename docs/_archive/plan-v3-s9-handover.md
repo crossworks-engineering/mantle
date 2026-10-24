@@ -1503,8 +1503,20 @@ workstation area cells must confirm it (left). Every row is main's.
 
 ### 8. Gates
 
-Mac, DATABASE_URL unset, on 351f9f4ef: see the table the final reply of
-this round gives (filled in below when the run ends).
+Mac, DATABASE_URL unset. The full set ran on 351f9f4ef; three failed and
+were fixed in 0d76bd528 (two unused imports, a heading quote in a pin
+note), and the failed gates were rerun on 0d76bd528:
+
+| gate                                      | 351f9f4ef                                                                                                           | 0d76bd528                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `pnpm -r typecheck`                       | 0                                                                                                                   | tsc over server/web 0                             |
+| `pnpm lint`                               | 1 (5 unused imports in two test files)                                                                              | 0                                                 |
+| `pnpm format:check`                       | 0                                                                                                                   | 0                                                 |
+| `pnpm docs:check`                         | 0                                                                                                                   | 0                                                 |
+| `pnpm arch:check`                         | 1 (heading quotes of the history 71 to 72: the pin note quoted this heading)                                        | 0                                                 |
+| `pnpm boot:smoke`                         | 0 (14 services link)                                                                                                | not rerun                                         |
+| `pnpm -C server/web build`                | 0                                                                                                                   | not rerun                                         |
+| `vitest run server packages eslint-rules` | 1 (890 of 891 files; deploy-scripts.test.ts, a spawnSync timeout of its bash harness, load; no code of this branch) | the file alone 0, with the two changed test files |
 
 Workstation: not run this round (handed over at the tool-call budget).
 
