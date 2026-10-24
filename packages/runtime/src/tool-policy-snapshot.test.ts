@@ -242,6 +242,8 @@ const LISTS: Record<string, readonly string[]> = {
     'page_from_note',
     'page_from_notes',
     'page_split',
+    'present_create',
+    'present_export',
     'recall_map_create',
     'sheet_build',
     'table_create',

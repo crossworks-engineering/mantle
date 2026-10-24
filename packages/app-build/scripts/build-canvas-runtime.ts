@@ -14,6 +14,6 @@ if (!existsSync(path.join(appDir, 'public'))) {
   process.exit(1);
 }
 const outDir = path.join(appDir, 'public/canvas-runtime');
-const manifest = await buildCanvasRuntime(outDir);
+const manifest = await buildCanvasRuntime(outDir, '/canvas-runtime/', appDir);
 console.log(`canvas-runtime: ${Object.keys(manifest.imports).length} modules → ${outDir}`);
 for (const [spec, url] of Object.entries(manifest.imports)) console.log(`  ${spec}  →  ${url}`);

@@ -672,3 +672,61 @@ cookie on a one-origin box (mini-app frames share this; a gate rule that
 refuses cookie auth on a cross-site iframe navigation would close both); a
 runaway canvas can freeze the owner UI in the desktop app unless sandboxed
 frames get their own process.
+
+## 13. What P2 built, and where it differs
+
+Built on the same branch (not merged), on top of two branches merged into
+it: `feat/diagram-guide-tools` (the `diagram_types` and `diagram_guide`
+tools, the guide files, site profiles) and `claude/diagram-templates-deb1f7`
+(`packages/diagram-templates`: the `flow` and `pid` templates, data in,
+static SVG out).
+
+- **The render.** `server/web/lib/render-canvas.ts` draws a canvas in the
+  browser sidecar. The page opens a made-up origin
+  (`https://canvas.render.invalid`) that request interception answers
+  itself: the frame document with its CSP header (the same builder the
+  frame route uses) and the vendored files under `/canvas-runtime/`,
+  `/share-runtime/`, `/fonts/` and `/Inter/`, read from disk. Every other
+  request is refused and reported. No cookie, no ticket and no route is
+  involved, so the sidecar holds no credential. Two renders at a time,
+  every step under a timeout. The tools reach it through a bridge
+  (`packages/tools/src/canvas-render-bridge.ts`) that only the web process
+  registers; elsewhere (an MCP stdio process, a worker) a save still lands
+  and says it was not drawn.
+- **The tools** (`packages/tools/src/builtins-presents.ts`): `present_list`,
+  `present_get`, `present_render`, `present_revisions` (reads);
+  `present_create`, `present_update` (`edits` find/replace, `source`, or
+  template `data`; `if_rev`), `present_restore`, `present_export`;
+  `present_delete` (in `present-admin`). Every save is drawn and the picture
+  goes to the model with the canvas's errors and refused requests. A save
+  that would not load (a CDN import, an outside URL, a library outside the
+  set) is refused with every problem listed (`canvasLoadProblems`).
+- **The poster** is the save's own picture, stored only while the canvas is
+  still at the rev it shows. No background job: section 7.4's queue was not
+  needed, as every save already renders.
+- **Templates are canvases.** `diagram_render` (in the `diagram` group)
+  draws template data without saving. `present_create` and `present_update`
+  take `template` and `data`; the canvas imports the template runtime from
+  the canvas library set (`@mantle/diagram-templates/browser`, built into
+  `/canvas-runtime/` from the app, so the published `@crossworks/app-build`
+  names no private package). `present_export` writes a template canvas's
+  static SVG, or a PNG at twice the pixels of any other canvas, into
+  `files/diagrams`, and returns the `media:` embed line. Re-exporting with
+  the same filename keeps the file id.
+- **Agents.** `presenter` (groups `present`, `diagram`, `files`,
+  `memory-core`; skills `canvas_authoring`, `writing_style`). Draftsman
+  gains `present` and a template path in `diagram_design` for P&IDs and
+  process flows. The persona gains `present-read`; `specialist_routing` and
+  `visual_answers` name the Presenter.
+- **Differences from section 8.2:** no `show_present` and no `.canvas`
+  import or export yet (P3). `present_export` here is the static copy for
+  pages, not the `.canvas` file. No folder argument on `present_create`: a
+  canvas lands by the home rule, as a formula does (one more A8 exemption,
+  `a8Exempt` 102 to 103).
+- **No `eval:route` cases.** `eval:route` scores passage retrieval, not
+  which specialist a turn hands work to, so it cannot measure the Presenter
+  routing. A delegation eval is its own piece of work.
+- **TypeScript:** `allowImportingTsExtensions` is on in the base config,
+  because `@mantle/diagram-templates` imports with `.ts` extensions (its
+  scripts run under Node's type stripping). Every typecheck in the repo
+  runs with `--noEmit`, which the option needs.

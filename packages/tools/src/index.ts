@@ -160,6 +160,12 @@ export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './b
 export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './builtins-formulas';
 export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
+export {
+  PRESENT_TOOLS,
+  PRESENT_TOOL_SLUGS,
+  PRESENT_READ_SLUGS,
+  DIAGRAM_RENDER_TOOLS,
+} from './builtins-presents';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, parsePlan } from './builtins-runs';
@@ -414,6 +420,15 @@ export {
   type InvokeAgentInput,
   type InvokeAgentResult,
 } from './agent-bridge';
+export {
+  registerCanvasRenderer,
+  getCanvasRenderer,
+  CANVAS_RENDER_UNAVAILABLE,
+  type CanvasRenderer,
+  type CanvasRenderRequest,
+  type CanvasRenderResult,
+  type CanvasDiagramReport,
+} from './canvas-render-bridge';
 
 export {
   MAX_AGENT_DEPTH,

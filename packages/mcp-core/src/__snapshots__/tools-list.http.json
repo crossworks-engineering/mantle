@@ -7384,6 +7384,341 @@
   }
  },
  {
+  "name": "diagram_render",
+  "description": "Lay out and draw a diagram template's data (`flow`: boxes and arrows; `pid`: a P&ID first draft) and return the picture, the data errors and the layout warnings. Saves nothing: the look while you compose. When it is right, save it with `present_create` (same `template` and `data`) and export it for a page with `present_export`. For a hand-drawn diagram type use `diagram_guide`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "template": {
+     "type": "string",
+     "enum": [
+      "flow",
+      "pid"
+     ],
+     "description": "The template, e.g. 'pid'."
+    },
+    "data": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The template data: title, then its nodes, lines and the rest the template guide names."
+    }
+   },
+   "required": [
+    "template",
+    "data"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_list",
+  "description": "List the owner's Present canvases (agent-written HTML: decks, dashboards, schematics, diagrams), most recently edited first. Optional `query` matches title and text; `tag` filters. For topic search use `search_nodes` with `type='present'`. For one canvas's source use `present_get`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string",
+     "description": "substring of the title or text, e.g. 'pump'"
+    },
+    "tag": {
+     "type": "string",
+     "description": "Only return items carrying this tag."
+    },
+    "limit": {
+     "type": "number",
+     "minimum": 1,
+     "maximum": 200,
+     "description": "Max rows to return."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_get",
+  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    },
+    "source": {
+     "type": "boolean",
+     "description": "Include the HTML source. False for the facts only."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_render",
+  "description": "Draw a saved canvas in the browser and return it as a picture, with the errors it raised and the requests it was refused. Saves already return a picture; use this to look again: a later moment of an animation (`at_seconds`), one slide of a deck (`slide`), the dark theme, or another window size for a `fill` canvas. Changes nothing. To look at template data before saving use `diagram_render`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    },
+    "at_seconds": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 10,
+     "description": "Seconds after load to take the picture, e.g. 4 for the end of an intro."
+    },
+    "slide": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200,
+     "description": "A deck: the slide to show, e.g. 3."
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "light",
+      "dark"
+     ],
+     "description": "Draw in this theme."
+    },
+    "width": {
+     "type": "integer",
+     "minimum": 320,
+     "maximum": 2400,
+     "description": "A fill canvas: window width, e.g. 1280."
+    },
+    "height": {
+     "type": "integer",
+     "minimum": 240,
+     "maximum": 2400,
+     "description": "A fill canvas: window height, e.g. 800."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_revisions",
+  "description": "List the kept past versions of a canvas (the last ten saves), newest first, by rev with their time and size. Bring one back with `present_restore`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_create",
+  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. Change one with `present_update`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "type": "string",
+     "description": "The whole canvas, `<!doctype html>` to `</html>`."
+    },
+    "template": {
+     "type": "string",
+     "enum": [
+      "flow",
+      "pid"
+     ],
+     "description": "A diagram template instead of source, e.g. 'flow'."
+    },
+    "data": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The template data, with `template`."
+    },
+    "title": {
+     "type": "string",
+     "description": "Display name; defaults to the canvas <title>."
+    },
+    "tags": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Labels, e.g. ['q3-review']."
+    },
+    "look": {
+     "type": "boolean",
+     "description": "Draw the saved canvas and return the picture. False only for a batch of small fixes."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_update",
+  "description": "Change a canvas and return it drawn as a picture with its errors. Pass ONE of: `edits` (find/replace pairs, each `find` exactly once in the source: the usual fix), `source` (the whole new document), or `data` (a template canvas: its whole new data). `title`/`tags` alone change only the name and labels. Live at once; the last ten versions are kept (`present_revisions`). `if_rev` refuses the save when someone saved since you read it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "find": {
+        "type": "string",
+        "description": "Exact text in the source, long enough to be unique."
+       },
+       "replace": {
+        "type": "string",
+        "description": "What replaces it; empty deletes it."
+       }
+      },
+      "required": [
+       "find",
+       "replace"
+      ]
+     },
+     "description": "Applied in order to the current source."
+    },
+    "source": {
+     "type": "string",
+     "description": "The whole new canvas document."
+    },
+    "data": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "A template canvas: the whole new data."
+    },
+    "title": {
+     "type": "string",
+     "description": "New display name."
+    },
+    "tags": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Replaces all tags."
+    },
+    "if_rev": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "The rev you read, e.g. 4."
+    },
+    "look": {
+     "type": "boolean",
+     "description": "Draw the saved canvas and return the picture. False only for a batch of small fixes."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_restore",
+  "description": "Bring back a kept past version of a canvas as a new save (nothing is lost: the current version stays in the kept list), and return it drawn. Find the rev with `present_revisions`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    },
+    "rev": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991,
+     "description": "The version to bring back, e.g. 3."
+    }
+   },
+   "required": [
+    "id",
+    "rev"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_export",
+  "description": "Write a static copy of a canvas into Files for pages, print, PDF, Word, email and shares: a template canvas exports its SVG, any other canvas a PNG picture. Overwrites the file of the same name, so re-exporting with the same `filename` keeps the file id and every embed stays live. Returns the file id and `embed`, the markdown to put in a page. The canvas stays the editable source: change it with `present_update`, then export again.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    },
+    "filename": {
+     "type": "string",
+     "description": "Stable file name; reuse it to update an export, e.g. 'feed-pump-pid.svg'."
+    },
+    "parent_path": {
+     "type": "string",
+     "description": "ltree path of the folder, e.g. 'files.diagrams'."
+    },
+    "confirm": {
+     "type": "boolean",
+     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "present_delete",
+  "description": "Permanently delete a canvas with its kept versions and its brain index. Not reversible. Files exported from it stay in Files.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The canvas id, from `present_list`."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
   "name": "file_create",
   "description": "Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.",
   "inputSchema": {

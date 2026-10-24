@@ -309,3 +309,60 @@ export function canvasImports(html: string): { modules: string[]; scripts: strin
   }
   return { modules, scripts };
 }
+
+/** The path classic scripts and stylesheets of the vendored set sit under. */
+export const CANVAS_RUNTIME_PREFIX = '/canvas-runtime/';
+
+/** `src` and `href` values of the document's tags, in order (bounded scan). */
+function urlAttributes(html: string): string[] {
+  const out: string[] = [];
+  for (const m of html.matchAll(
+    /<(?:script|link|img|source|audio|video|iframe|embed|object)\b[^>]{0,2000}>/gi,
+  )) {
+    for (const name of ['src', 'href', 'data', 'poster']) {
+      const v = attrOf(m[0], name);
+      if (v !== null) out.push(v.trim());
+    }
+  }
+  return out;
+}
+
+/**
+ * What would make a canvas fail in its frame, found before it is saved
+ * (section 6.2): a module the vendored set does not have, a classic script
+ * or stylesheet outside `/canvas-runtime/` and `/share-runtime/`, or any URL
+ * to another host (the frame refuses the network, so it would only ever be
+ * blank). `modules` is the import map's specifiers. Each problem names the
+ * fix; the caller refuses the save with the list.
+ */
+export function canvasLoadProblems(html: string, modules: readonly string[]): string[] {
+  const problems: string[] = [];
+  const known = new Set(modules);
+  const { modules: imported } = canvasImports(html);
+  for (const spec of imported) {
+    if (known.has(spec)) continue;
+    if (/^(https?:)?\/\//i.test(spec)) {
+      problems.push(
+        `import '${spec}': the frame has no network. Import a library by its bare name instead: ${modules.join(', ')}.`,
+      );
+    } else {
+      problems.push(
+        `import '${spec}': not in the canvas library set. Use one of: ${modules.join(', ')}; or plain SVG and JS.`,
+      );
+    }
+  }
+  for (const url of urlAttributes(html)) {
+    if (!url || url.startsWith('#') || /^(data|blob):/i.test(url)) continue;
+    if (/^(https?:)?\/\//i.test(url)) {
+      problems.push(
+        `'${url.slice(0, 120)}': the frame has no network, so nothing loads from another host. Inline it (a data: URL, inline SVG) or use the vendored set.`,
+      );
+      continue;
+    }
+    if (url.startsWith(CANVAS_RUNTIME_PREFIX) || url.startsWith('/share-runtime/')) continue;
+    problems.push(
+      `'${url.slice(0, 120)}': only files under ${CANVAS_RUNTIME_PREFIX} (for example ${CANVAS_RUNTIME_PREFIX}plotly/plotly.min.js) load in a canvas. Inline anything else.`,
+    );
+  }
+  return [...new Set(problems)];
+}

@@ -39,6 +39,7 @@ const areaOf = (slug: string) => {
  *  they copy, convert, import, show or send), or a folder they create in
  *  (the database's create check). */
 const READS_ITS_ITEM: ReadonlySet<string> = new Set([
+  'present_export',
   'file_copy',
   'folder_copy',
   'note_from_file',
@@ -78,6 +79,7 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ['note_from_page', 'reads the source; the note is a create'],
   ['page_create', "a create: the folder's create check is the database's"],
   ['page_from_journal', 'reads the entries; the page is a create'],
+  ['present_export', 'reads the canvas it exports; the file it saves is a create'],
   ['peer_file_copy', "reads a linked brain's file; the copy is a create"],
   ['pending_approve', "a pending call, not an item: the caller's own (approvePendingCall)"],
   ['pending_reject', "a pending call, not an item: the caller's own (rejectPendingCall)"],
@@ -139,6 +141,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['task_delete', entry('id', 'manage', DELETE)],
   ['event_delete', entry('id', 'manage', DELETE)],
   ['formula_delete', entry('id', 'manage', DELETE)],
+  ['present_delete', entry('id', 'manage', DELETE)],
+  ['present_update', entry('id', 'edit', lib('savePresentSource, before the save'))],
+  ['present_restore', entry('id', 'edit', lib('savePresentSource, before the save'))],
   ['contact_delete', entry('id', 'manage', DELETE)],
   ['journal_delete', entry('id', 'manage', DELETE)],
   ['page_update', entry('id', 'edit', WRITE)],
@@ -258,7 +263,7 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
 describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3.
-    expect(DATABASE_CHECKED.size).toBe(98);
+    expect(DATABASE_CHECKED.size).toBe(101);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

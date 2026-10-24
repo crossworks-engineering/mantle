@@ -931,6 +931,9 @@ importers:
       '@mantle/decisions':
         specifier: workspace:*
         version: link:../decisions
+      '@mantle/diagram-templates':
+        specifier: workspace:*
+        version: link:../diagram-templates
       '@mantle/email':
         specifier: workspace:*
         version: link:../email
@@ -1249,6 +1252,9 @@ importers:
       '@mantle/decisions':
         specifier: workspace:*
         version: link:../../packages/decisions
+      '@mantle/diagram-templates':
+        specifier: workspace:*
+        version: link:../../packages/diagram-templates
       '@mantle/email':
         specifier: workspace:*
         version: link:../../packages/email

@@ -170,6 +170,50 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(node!.work).toBe('extract');
   });
 
+  it('a poster is kept only at the rev it shows, and is no content change', async () => {
+    const p = await presents.createPresent(owner, { source: canvas(`${tag} Poster`, 'one') });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    const work = async () =>
+      (
+        await admin<{ work: string | null; due: unknown }[]>`
+          select n.data->>'index_work' as work, p.index_due_at as due
+            from nodes n join presents p on p.node_id = n.id where n.id = ${p.id}`
+      )[0]!;
+    const before = await work();
+    expect(await presents.setPresentPoster(owner, p.id, png, 1)).toBe(true);
+    const got = await presents.getPresentPoster(owner, p.id);
+    expect(got?.current).toBe(true);
+    expect(Buffer.compare(got!.png, png)).toBe(0);
+    expect((await presents.getPresent(owner, p.id))?.hasPoster).toBe(true);
+    // Nothing to index: the poster is a cache.
+    expect(await work()).toEqual(before);
+
+    // A save moves the rev on: the old poster is no longer current, and a
+    // render of the old rev cannot stamp itself current.
+    await presents.savePresentSource(owner, p.id, {
+      source: canvas(`${tag} Poster`, 'two'),
+      css: '',
+    });
+    expect((await presents.getPresentPoster(owner, p.id))?.current).toBe(false);
+    expect(await presents.setPresentPoster(owner, p.id, png, 1)).toBe(false);
+    expect(await presents.setPresentPoster(owner, p.id, png, 2)).toBe(true);
+    expect((await presents.getPresentPoster(owner, p.id))?.current).toBe(true);
+
+    // Another owner's canvas is not this owner's to stamp.
+    expect(await presents.setPresentPoster(randomUUID(), p.id, png, 2)).toBe(false);
+  });
+
+  it('reads back a kept version by rev', async () => {
+    const p = await presents.createPresent(owner, { source: canvas(`${tag} Back`, 'first') });
+    await presents.savePresentSource(owner, p.id, {
+      source: canvas(`${tag} Back`, 'second'),
+      css: '',
+    });
+    expect(await presents.getPresentRevisionSource(owner, p.id, 1)).toContain('first');
+    expect(await presents.getPresentRevisionSource(owner, p.id, 9)).toBeNull();
+    expect(await presents.getPresentRevisionSource(randomUUID(), p.id, 1)).toBeNull();
+  });
+
   it('refuses a source over the size limit', async () => {
     const big = canvas(`${tag} Big`, 'x'.repeat(1_000_100));
     await expect(presents.createPresent(owner, { source: big })).rejects.toThrow(/over 1 MB/);

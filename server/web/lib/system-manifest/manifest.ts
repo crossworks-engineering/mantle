@@ -37,6 +37,7 @@ import {
   FORMULA_AUTO_GRANT_SLUGS,
   CALCULATE_TOOL_SLUGS,
   DIAGRAM_TOOL_SLUGS,
+  PRESENT_READ_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
@@ -331,6 +332,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description:
       'Draw presentation-grade SVG diagrams + charts into pages: the spec-block contract, the medium rules, and the diagram_types / diagram_guide workflow.',
     instructions: SKILL_INSTRUCTIONS['diagram_design']!,
+  },
+  {
+    slug: 'canvas_authoring',
+    name: 'Canvas authoring',
+    description:
+      'Write Present canvases (HTML that runs in a locked frame): the head contract, the library set, theme and fonts, decks, the diagram templates, and the write, look, fix loop.',
+    instructions: SKILL_INSTRUCTIONS['canvas_authoring']!,
   },
   {
     slug: 'mantle-ops',
@@ -971,8 +979,39 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'diagram',
     name: 'Diagram guides',
     description:
-      "List the diagram types and read one type's drawing guide (static files baked into the image; no index, no spend).",
-    toolSlugs: [...DIAGRAM_TOOL_SLUGS],
+      "List the diagram types, read one type's drawing guide (static files baked into the image; no index, no spend), and draw a template's data (P&ID, process flow) to look at it before saving.",
+    toolSlugs: [...DIAGRAM_TOOL_SLUGS, 'diagram_render'],
+  },
+  {
+    slug: 'present-read',
+    name: 'Present (read)',
+    description:
+      'List and read Present canvases, and look at one as a picture. No authoring: that is the Presenter.',
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      ...PRESENT_READ_SLUGS,
+    ],
+  },
+  {
+    slug: 'present',
+    name: 'Present',
+    description:
+      'Author Present canvases: create, change (edits, source or template data), restore a version, and export a static copy for pages. Every save is drawn and returned as a picture. No delete.',
+    toolSlugs: [
+      'tree_folders',
+      ...PRESENT_READ_SLUGS,
+      'present_create',
+      'present_update',
+      'present_restore',
+      'present_export',
+    ],
+  },
+  {
+    slug: 'present-admin',
+    name: 'Present admin',
+    description: 'Delete a canvas: deliberate-only; not on the persona.',
+    toolSlugs: ['present_delete'],
   },
   {
     slug: 'formulas-admin',
@@ -1402,6 +1441,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'calculator',
       'pages-draft',
       'draw-read',
+      // Find and read canvases; authoring routes to the Presenter.
+      'present-read',
       'app-data',
       'federation',
       // Powers the brain_health heartbeat (brain_capacity + recall_eval). The
@@ -1534,7 +1575,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // spec block + embed edits, `files` for the SVG upload (file_create) +
     // source reads, `memory-core` for sourcing chart data from the brain. No
     // page-admin/page-share: deletes and sharing stay deliberate human acts.
-    toolGroupSlugs: ['diagram', 'pages', 'files', 'memory-core'],
+    // `present`: a P&ID or a process flow is template data saved as
+    // a canvas (the editable source) and exported as the page's SVG.
+    toolGroupSlugs: ['diagram', 'present', 'pages', 'files', 'memory-core'],
     skillSlugs: ['diagram_design', 'page_editing', 'writing_style'],
     isDelegate: true,
     // A single hand-drawn SVG easily runs thousands of tokens; match the
@@ -1542,6 +1585,28 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     params: { temperature: 0.3, max_tokens: 32000 },
     // Guide reads + data lookups + draft writes add up; give it headroom over
     // the flat default.
+    memoryConfig: { max_iterations: 25 },
+    priority: 100,
+  },
+  {
+    slug: 'presenter',
+    name: 'Presenter',
+    description:
+      'Canvas specialist: schematics, animated explainers, decks, dashboards and posters as live HTML canvases in Present, drawn and checked before it reports.',
+    role: 'custom',
+    model: DEFAULT_AGENT_MODEL,
+    envModelVar: 'PRESENTER_MODEL',
+    systemPrompt: AGENT_PROMPTS['presenter']!,
+    // `present` to author and look (no delete: present-admin stays
+    // deliberate), `diagram` for the guides, site profiles and the template
+    // look (a P&ID is template data), `files` for source reads and the
+    // export, `memory-core` for the data a canvas shows.
+    toolGroupSlugs: ['present', 'diagram', 'files', 'memory-core'],
+    skillSlugs: ['canvas_authoring', 'writing_style'],
+    isDelegate: true,
+    // A whole canvas is thousands of tokens of HTML, like a hand-drawn SVG.
+    params: { temperature: 0.3, max_tokens: 32000 },
+    // Each canvas is written, looked at and fixed, plus data lookups.
     memoryConfig: { max_iterations: 25 },
     priority: 100,
   },
