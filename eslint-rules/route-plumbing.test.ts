@@ -201,6 +201,20 @@ describe('route-policy-declared', () => {
           code: `export { GET } from '../../notes/route';\n${decl("GET: { class: 'content' }")}`,
           filename: route,
         },
+        // `as`, `satisfies` and `!` unwrapped, as the generator reads them
+        // (S9 part 3 round 2, the flip audit's L1).
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } }) as const;`,
+          filename: route,
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } } satisfies P);`,
+          filename: route,
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ GET: { class: 'content' } })!;`,
+          filename: route,
+        },
         // Not a route file.
         { code: 'export async function GET() {}', filename: '/r/server/web/lib/notes.ts' },
         // A route file that exports no handler.
@@ -243,6 +257,33 @@ describe('route-policy-declared', () => {
           code: "export async function GET() {}\nexport { policy } from '../../notes/route';",
           filename: route,
           errors: [{ messageId: 'notLiteral' }],
+        },
+        // The callee is routePolicy by its own name; a spread or a
+        // computed key at the top is reported (the flip audit's L1).
+        {
+          code: `export async function GET() {}\nexport const policy = declare({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = lib.routePolicy({ GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notLiteral' }],
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ ...shared, GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notWrittenOut' }],
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ ...shared });`,
+          filename: route,
+          errors: [{ messageId: 'undeclared' }, { messageId: 'notWrittenOut' }],
+        },
+        {
+          code: `export async function GET() {}\nexport const policy = routePolicy({ [m]: { class: 'content' }, GET: { class: 'content' } });`,
+          filename: route,
+          errors: [{ messageId: 'notWrittenOut' }],
         },
       ],
     });

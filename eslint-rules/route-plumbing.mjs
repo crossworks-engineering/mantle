@@ -370,6 +370,20 @@ export const noRouteRateLimits = {
   },
 };
 
+/** `e` without `as`, `satisfies` and `!` (route-callers.ts bare, in
+ *  ESLint's tree: parentheses leave no node there). */
+function bare(e) {
+  while (
+    e &&
+    (e.type === 'TSAsExpression' ||
+      e.type === 'TSSatisfiesExpression' ||
+      e.type === 'TSNonNullExpression')
+  ) {
+    e = e.expression;
+  }
+  return e ?? null;
+}
+
 /** The HTTP methods a route file exports and the name of its policy
  *  export: the declaration's own (route-declaration.ts, the one shape
  *  source; Node loads the TypeScript file as it is). */
@@ -400,6 +414,8 @@ export const routePolicyDeclared = {
       stray: 'The policy names {{method}}, which this file does not export.',
       notLiteral:
         'Write the policy out where it is exported: export const policy = routePolicy({ ... }) with the object literal (the generator reads it as data and refuses a name, a call, a spread or a re-export).',
+      notWrittenOut:
+        "Name each method's policy with its own key: the generator refuses a spread or a computed key in routePolicy({ ... }).",
     },
     schema: [],
   },
@@ -421,10 +437,17 @@ export const routePolicyDeclared = {
             if (HTTP_METHODS.has(v.id.name)) exported.add(v.id.name);
             if (v.id.name !== ROUTE_POLICY_EXPORT) continue;
             declaredNode = v;
-            const init = v.init;
+            // As the generator reads it (route-callers.ts handlerPolicy):
+            // `as`, `satisfies` and `!` unwrapped, a call of routePolicy
+            // by its own name, one object literal (S9 part 3 round 2, the
+            // flip audit's L1).
+            const init = bare(v.init);
             const arg =
-              init?.type === 'CallExpression' && init.arguments.length === 1
-                ? init.arguments[0]
+              init?.type === 'CallExpression' &&
+              init.callee.type === 'Identifier' &&
+              init.callee.name === 'routePolicy' &&
+              init.arguments.length === 1
+                ? bare(init.arguments[0])
                 : null;
             declared = arg?.type === 'ObjectExpression' ? arg : null;
           }
@@ -457,7 +480,12 @@ export const routePolicyDeclared = {
         }
         const named = new Set();
         for (const p of declared.properties) {
-          if (p.type !== 'Property' || p.computed) continue;
+          // A spread or a computed key at the top: the generator refuses
+          // it, so the methods it names cannot be read here either.
+          if (p.type !== 'Property' || p.computed) {
+            context.report({ node: p, messageId: 'notWrittenOut' });
+            continue;
+          }
           const key = p.key.type === 'Identifier' ? p.key.name : String(p.key.value);
           named.add(key);
           if (!exported.has(key)) {
