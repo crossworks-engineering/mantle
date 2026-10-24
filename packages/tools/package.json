@@ -26,6 +26,7 @@
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/decisions": "workspace:*",
+    "@mantle/diagram-templates": "workspace:*",
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",

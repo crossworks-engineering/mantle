@@ -43,6 +43,8 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'input_image_ids', // generate_image param, the image-to-image path (visual_answers)
   'purge_files', // sandbox_rm param (sandbox-work)
   'timeout_seconds', // sandbox_exec param (sandbox-work)
+  'if_rev', // present_update param, the stale-save guard (canvas_authoring)
+  'at_seconds', // present_render param, a later moment of an animation (canvas_authoring)
   // Deliberate non-tools named in prose
   'openweather_geocode', // app_authoring's "never invent a slug like this" example
   'table_xinfo', // SQLite PRAGMA table_xinfo, allowed read-only in app SQL

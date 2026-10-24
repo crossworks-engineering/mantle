@@ -64,6 +64,35 @@ function frameAncestors(): string[] {
   return [...(ORIGIN_RE.test(client) ? [client] : []), ...named, ...LOCAL_CLIENT_ANCESTORS];
 }
 
+/** The canvas runtime's import map specifiers (what a canvas may import by
+ *  name), for the save check (content-core canvasLoadProblems). */
+export async function canvasModuleNames(): Promise<string[]> {
+  return Object.keys((JSON.parse(await loadCanvasImportMap()) as { imports: object }).imports);
+}
+
+/** The frame document of a canvas, for the frame route and the sidecar
+ *  render alike: one builder, so a poster shows what the frame runs. */
+export async function canvasFrameDocument(
+  ownerId: string,
+  canvas: { source: string; css: string; meta: PresentMeta },
+  theme: { cls: string; colorTheme: string | null },
+): Promise<string> {
+  const [importMapJson, fontCss] = await Promise.all([
+    loadCanvasImportMap(),
+    canvasFontCss(ownerId),
+  ]);
+  return buildCanvasFrameHtml({
+    source: canvas.source,
+    css: canvas.css,
+    importMapJson,
+    cls: theme.cls.slice(0, 200),
+    colorTheme: theme.colorTheme?.slice(0, 60) || null,
+    size: canvas.meta.size,
+    theme: canvas.meta.theme,
+    fontCss,
+  });
+}
+
 /**
  * Render the frame document of a canvas already authorized. Query params
  * carry PRESENTATION only (the host's theme class and data-color-theme) and
@@ -75,19 +104,9 @@ export async function renderCanvasFrame(
   canvas: { source: string; css: string; meta: PresentMeta },
 ): Promise<Response> {
   const url = new URL(req.url);
-  const [importMapJson, fontCss] = await Promise.all([
-    loadCanvasImportMap(),
-    canvasFontCss(ownerId),
-  ]);
-  const html = buildCanvasFrameHtml({
-    source: canvas.source,
-    css: canvas.css,
-    importMapJson,
-    cls: (url.searchParams.get('cls') ?? '').slice(0, 200),
-    colorTheme: url.searchParams.get('ct')?.slice(0, 60) || null,
-    size: canvas.meta.size,
-    theme: canvas.meta.theme,
-    fontCss,
+  const html = await canvasFrameDocument(ownerId, canvas, {
+    cls: url.searchParams.get('cls') ?? '',
+    colorTheme: url.searchParams.get('ct'),
   });
   return new NextResponse(html, {
     status: 200,

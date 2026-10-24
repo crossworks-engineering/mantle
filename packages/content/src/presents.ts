@@ -9,7 +9,7 @@
  *   presents.source_text    derived text (search and the extractor read it)
  *   presents.meta           size, theme and libraries read off the head
  *   presents.css            Tailwind utilities compiled from the source
- *   presents.poster_png     a cached picture (P2), never the source
+ *   presents.poster_png     a cached picture of the canvas, never the source
  *
  * All under the `present` ltree root, lazy-created on first write, in the
  * shared row-only kind folders like Draw. Unlike Draw there is no draft and
@@ -86,7 +86,7 @@ export type PresentRow = {
   summary: string | null;
   meta: PresentMeta;
   rev: number;
-  /** Whether a poster is cached for the current rev (P2 fills it). */
+  /** Whether a poster is cached for the current rev (the save's own render). */
   hasPoster: boolean;
   /** A read-only snapshot copy of an accepted item (as draws). */
   readOnly?: true;
@@ -563,4 +563,67 @@ export async function flushDuePresentIndex(limit = 25): Promise<number> {
     if (done) announced++;
   }
   return announced;
+}
+
+/**
+ * Store a rendered poster (a CACHE of the canvas as a picture, section 7.4).
+ * Written only when the canvas is still at `rev`, so a render of an older
+ * save never stamps itself current. Never a content change: no index work,
+ * no announcement (a render must not cause an extractor pass).
+ */
+export async function setPresentPoster(
+  ownerId: string,
+  id: string,
+  png: Buffer,
+  rev: number,
+): Promise<boolean> {
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'present')))
+    .limit(1);
+  if (!node) return false;
+  const written = await db
+    .update(presents)
+    .set({ posterPng: png, posterRev: rev })
+    .where(and(eq(presents.nodeId, id), eq(presents.rev, rev)))
+    .returning({ id: presents.nodeId });
+  return written.length > 0;
+}
+
+/** The cached poster and whether it shows the latest save, or null. */
+export async function getPresentPoster(
+  ownerId: string,
+  id: string,
+): Promise<{ png: Buffer; current: boolean } | null> {
+  const [row] = await db
+    .select({ png: presents.posterPng, posterRev: presents.posterRev, rev: presents.rev })
+    .from(presents)
+    .innerJoin(nodes, eq(nodes.id, presents.nodeId))
+    .where(and(eq(presents.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'present')))
+    .limit(1);
+  if (!row?.png) return null;
+  return { png: row.png, current: row.posterRev === row.rev };
+}
+
+/** One kept version's source, or null (no such canvas or version). */
+export async function getPresentRevisionSource(
+  ownerId: string,
+  id: string,
+  rev: number,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ source: presentRevisions.source })
+    .from(presentRevisions)
+    .innerJoin(nodes, eq(nodes.id, presentRevisions.nodeId))
+    .where(
+      and(
+        eq(presentRevisions.nodeId, id),
+        eq(presentRevisions.rev, rev),
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'present'),
+      ),
+    )
+    .limit(1);
+  return row?.source ?? null;
 }

@@ -155,6 +155,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'pending_approve',
   'pending_get',
   'pending_reject',
+  'present_create',
   'recall_eval',
   'recall_revision_restore',
   'recipe_tool_create',

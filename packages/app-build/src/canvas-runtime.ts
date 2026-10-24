@@ -38,6 +38,10 @@ type CanvasModule = {
   source: string;
   pkg: string;
   external?: string[];
+  /** Resolved from the APP that serves the runtime (server/web), not from
+   *  this package: a private workspace package this published one must not
+   *  name as a dependency (scripts/publish-contract.mjs refuses that). */
+  fromApp?: true;
 };
 
 /** The import map's modules, by bare specifier. A canvas writes exactly
@@ -72,6 +76,16 @@ export const CANVAS_MODULES: readonly CanvasModule[] = [
     pkg: 'katex',
     source: "import katex from 'katex';\nexport default katex;",
   },
+  // The diagram templates' browser runtime (@mantle/diagram-templates): a
+  // template canvas imports `mount` from here instead of carrying the
+  // runtime inline, so it is its data and a few lines.
+  {
+    specifier: '@mantle/diagram-templates/browser',
+    entry: 'diagram-templates',
+    pkg: '@mantle/diagram-templates',
+    source: "export * from '@mantle/diagram-templates/browser';",
+    fromApp: true,
+  },
   {
     specifier: 'alpinejs',
     entry: 'alpine',
@@ -104,23 +118,25 @@ export type CanvasRuntimeManifest = {
 
 /** A package's install directory. Not `require.resolve('<pkg>/package.json')`:
  *  a package whose `exports` omits it (reveal.js) refuses that. */
-function packageDir(pkg: string): string {
-  for (const base of require.resolve.paths(pkg) ?? []) {
+function packageDir(pkg: string, from: NodeJS.Require = require): string {
+  for (const base of from.resolve.paths(pkg) ?? []) {
     const dir = path.join(base, pkg);
     if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
   }
   throw new Error(`canvas runtime: package '${pkg}' is not installed`);
 }
 
-function packageVersion(pkg: string): string {
-  const json = JSON.parse(fs.readFileSync(path.join(packageDir(pkg), 'package.json'), 'utf8')) as {
+function packageVersion(pkg: string, from: NodeJS.Require = require): string {
+  const json = JSON.parse(
+    fs.readFileSync(path.join(packageDir(pkg, from), 'package.json'), 'utf8'),
+  ) as {
     version: string;
   };
   return json.version;
 }
 
-function entryPlugin(): esbuild.Plugin {
-  const byEntry = new Map(CANVAS_MODULES.map((m) => [m.entry, m.source]));
+function entryPlugin(appDir: string): esbuild.Plugin {
+  const byEntry = new Map(CANVAS_MODULES.map((m) => [m.entry, m]));
   return {
     name: 'canvas-runtime',
     setup(build) {
@@ -129,9 +145,9 @@ function entryPlugin(): esbuild.Plugin {
         namespace: ENTRY_NS,
       }));
       build.onLoad({ filter: /.*/, namespace: ENTRY_NS }, (args) => ({
-        contents: byEntry.get(args.path) ?? '',
+        contents: byEntry.get(args.path)?.source ?? '',
         loader: 'js',
-        resolveDir: REAL_DIR,
+        resolveDir: byEntry.get(args.path)?.fromApp ? appDir : REAL_DIR,
       }));
     },
   };
@@ -158,12 +174,15 @@ export function canvasImportMapJson(manifest: Pick<CanvasRuntimeManifest, 'impor
 
 /**
  * Build the canvas runtime into `outDir` (server/web/public/canvas-runtime)
- * and return its manifest. `urlPrefix` is the public path it is served at.
+ * and return its manifest. `urlPrefix` is the public path it is served at;
+ * `appDir` is the app that serves it (a `fromApp` module resolves there).
  */
 export async function buildCanvasRuntime(
   outDir: string,
   urlPrefix = '/canvas-runtime/',
+  appDir = path.resolve(outDir, '..', '..'),
 ): Promise<CanvasRuntimeManifest> {
+  const appRequire = createRequire(path.join(appDir, 'package.json'));
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -185,7 +204,7 @@ export async function buildCanvasRuntime(
       write: true,
       metafile: true,
       logLevel: 'silent',
-      plugins: [entryPlugin(), exactExternals(m.external ?? [])],
+      plugins: [entryPlugin(appDir), exactExternals(m.external ?? [])],
     });
     const out = Object.keys(result.metafile.outputs).find((p) => p.endsWith('.js'));
     if (!out) throw new Error(`canvas runtime: no output for '${m.specifier}'`);
@@ -202,12 +221,10 @@ export async function buildCanvasRuntime(
   }
 
   const libs: Record<string, string> = {};
-  for (const pkg of new Set([
-    ...CANVAS_MODULES.map((m) => m.pkg),
-    ...CLASSIC_SCRIPTS.map((s) => s.pkg),
-  ])) {
-    libs[pkg] = packageVersion(pkg);
+  for (const m of CANVAS_MODULES) {
+    libs[m.pkg] = packageVersion(m.pkg, m.fromApp ? appRequire : require);
   }
+  for (const s of CLASSIC_SCRIPTS) libs[s.pkg] = packageVersion(s.pkg);
 
   const manifest: CanvasRuntimeManifest = {
     imports,
@@ -218,3 +235,6 @@ export async function buildCanvasRuntime(
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   return manifest;
 }
+
+/** The bare specifiers a canvas may import (the import map's keys). */
+export const CANVAS_MODULE_SPECIFIERS: readonly string[] = CANVAS_MODULES.map((m) => m.specifier);

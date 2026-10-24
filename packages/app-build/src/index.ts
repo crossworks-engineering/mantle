@@ -386,6 +386,7 @@ export function lintRuntimeImports(
  *  appended to the build's warnings (see lintToolRefs). */
 export { loadRuntimeExports } from './runtime-exports';
 export { buildCanvasCss } from './css';
+export { CANVAS_MODULE_SPECIFIERS } from './canvas-runtime';
 
 export async function buildApp(
   source: AppSource,

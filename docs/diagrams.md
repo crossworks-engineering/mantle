@@ -50,9 +50,10 @@ system font stacks.
 
 | Piece                  | Where                                        | What                                                                                                                                          |
 | ---------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent `diagrammer`     | `server/web/lib/system-manifest/manifest.ts` | Delegate specialist; groups `diagram` + `pages` + `files` + `memory-core`; skills `diagram_design`, `page_editing`, `writing_style`           |
+| Agent `diagrammer`     | `server/web/lib/system-manifest/manifest.ts` | Delegate specialist; groups `diagram` + `present` + `pages` + `files` + `memory-core`; skills `diagram_design`, `page_editing`, `writing_style` |
 | Skill `diagram_design` | `server/web/lib/system-manifest/prompts.ts`  | The page contract, the medium rules, the workflow (`diagram_types`, then `diagram_guide`, then draw), the connector rules and the final check |
-| Tool group `diagram`   | `packages/tools/src/builtins-diagrams.ts`    | `diagram_types` + `diagram_guide`: read-only, no model call, no database; also on the MCP surface                                             |
+| Tool group `diagram`   | `packages/tools/src/builtins-diagrams.ts`    | `diagram_types` + `diagram_guide`: read-only, no model call, no database; also on the MCP surface. Plus `diagram_render` (below)             |
+| Templates              | `packages/diagram-templates/`                | `flow` and `pid`: the agent writes data, the template lays it out and exports a static SVG (below)                                          |
 | Vendored guides        | `docs/diagram-guides/`                       | Upstream's per-type references and shared rules, verbatim                                                                                     |
 | Mantle's own guides    | `docs/diagram-guides/mantle/`                | The medium rules (`medium.md`) and Mantle's own types (`type-pid.md`)                                                                         |
 | Routing                | `specialist_routing` + `rich_writing` skills | The main assistant hands ALL diagram + chart work to the Draftsman; no agent hand-writes diagram source                                       |
@@ -92,6 +93,32 @@ rounds searching for guides that were not there. A fresh brain no longer gets
 that collection row. A row an existing brain already has stays: disabled it
 is inert, enabled it indexes the same files harmlessly (switch it off at
 `/docs`).
+
+## The template path: P&ID and process flow
+
+Two types have a layout template (`packages/diagram-templates`): `pid`, a
+P&ID first draft, and `flow`, boxes and arrows. For these the Draftsman (and
+the Presenter) write DATA, not SVG, and the drawing is made where it can be
+seen:
+
+1. `diagram_render(template, data)` draws the data in the browser sidecar and
+   returns the picture, the data errors (each names its fix) and the layout
+   warnings. It saves nothing.
+2. `present_create(template, data)` saves the drawing as a Present canvas
+   (docs/proposals/canvas-files.md): the editable source. The canvas imports
+   the template runtime from the canvas library set
+   (`@mantle/diagram-templates/browser` in `/canvas-runtime/`), so the file
+   is its data and a few lines.
+3. `present_export(id, filename)` writes the canvas's static SVG
+   (`window.diagram.exportSvg()`, checked by `checkStaticSvg`) into
+   `files/diagrams` and returns the `![title](media:<file id>)` line.
+   Re-exporting with the same filename keeps the file id, so every page,
+   print, PDF, Word export, email and share that embeds it updates.
+4. The page holds a `diagram` spec block naming the canvas and the embed
+   line under it. A change is `present_update(id, data)`, then the export
+   again.
+
+Every other type is still hand-drawn SVG through the guides.
 
 ## Site profiles
 

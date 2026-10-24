@@ -40,6 +40,8 @@ import {
   APP_TOOLS,
   APP_GUIDE_TOOLS,
   DIAGRAM_TOOLS,
+  DIAGRAM_RENDER_TOOLS,
+  PRESENT_TOOLS,
   WORKSPACE_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
@@ -361,6 +363,11 @@ export function registerMantleTools(
   // read from the guide files in the image, so an outside agent draws to the
   // same rules as the Draftsman. Static reads, no spend.
   registerBuiltinTools(DIAGRAM_TOOLS);
+  // Present canvases and the template look. The pictures need
+  // the browser sidecar, which only the web process registers: on stdio a
+  // save still lands and says it was not drawn.
+  registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
+  registerBuiltinTools(PRESENT_TOOLS);
 
   // Files: create-from-text and resolve-a-folder-by-path, the two the
   // hand-written file surface never had.

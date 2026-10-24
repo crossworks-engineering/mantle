@@ -43,6 +43,7 @@ import { JOURNAL_TOOLS } from './builtins-journal';
 import { FORMULA_TOOLS } from './builtins-formulas';
 import { CALCULATE_TOOLS } from './builtins-calculate';
 import { DIAGRAM_TOOLS } from './builtins-diagrams';
+import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
 import { RUN_TOOLS } from './builtins-runs';
@@ -220,6 +221,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Diagram guides: the design system's type list and per-type drawing
   // instructions, read from the guide files baked into the image.
   ...DIAGRAM_TOOLS,
+  ...DIAGRAM_RENDER_TOOLS,
+  ...PRESENT_TOOLS,
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,

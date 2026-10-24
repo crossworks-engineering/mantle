@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANVAS_DEFAULT_SIZE,
   canvasImports,
+  canvasLoadProblems,
   canvasText,
   decodeHtmlEntities,
   parseCanvasHead,
@@ -127,5 +128,27 @@ describe('linear on hostile input (the canvas audit)', () => {
       expect(quick(() => canvasText(html))).toBeLessThan(1000);
       expect(quick(() => canvasImports(html))).toBeLessThan(1000);
     }
+  });
+});
+
+describe('canvasLoadProblems', () => {
+  const MODULES = ['d3', 'motion', 'echarts'];
+  it('passes the vendored set, inline data and the runtime paths', () => {
+    const ok = `<html><head><link rel="stylesheet" href="/canvas-runtime/reveal/reveal.css"></head>
+      <body><img src="data:image/png;base64,AA"><script src="/canvas-runtime/plotly/plotly.min.js"></script>
+      <script type="module">import * as d3 from 'd3'; import { animate } from 'motion';</script></body></html>`;
+    expect(canvasLoadProblems(ok, MODULES)).toEqual([]);
+  });
+
+  it('names an unknown library, a CDN and an outside file, with the fix', () => {
+    const bad = `<html><body><script src="https://cdn.example.test/x.js"></script>
+      <img src="/api/files/1"><script type="module">import gsap from 'gsap'; import x from 'https://esm.example.test/y';</script></body></html>`;
+    const p = canvasLoadProblems(bad, MODULES);
+    expect(p).toHaveLength(4);
+    expect(p.join('\n')).toMatch(
+      /'gsap': not in the canvas library set\. Use one of: d3, motion, echarts/,
+    );
+    expect(p.join('\n')).toMatch(/no network/);
+    expect(p.join('\n')).toMatch(/only files under \/canvas-runtime\//);
   });
 });

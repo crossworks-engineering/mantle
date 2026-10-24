@@ -1,6 +1,6 @@
 ---
 title: Present
-toolGroups: []
+toolGroups: [present, present-read, present-admin]
 ---
 
 ## Present
@@ -18,7 +18,12 @@ The latest save is always what you see. There is no draft and no commit step.
 
 ## Assistant
 
-Present is agent driven. You change a canvas by asking for the change in chat. There are no drawing tools.
+Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. You change a canvas the same way: ask for the change. There are no drawing tools.
+
+- Presenter looks at every canvas it saves, in a real browser, and fixes what it sees before it reports.
+- A P&ID or a process flow is drawn from data by a layout template, so the result is neat and the same every time. Draftsman uses the same path for the diagrams it puts in pages.
+- To put a canvas in a page, ask for it. The assistant exports a static copy into Files (`files/diagrams`) and embeds it. Print, PDF, Word, email and shares show that copy. The canvas stays the one you change; after a change, ask for the page copy to be updated.
+- Deleting a canvas is a deliberate step: the assistant asks first.
 
 ## Technical
 
@@ -26,4 +31,5 @@ Present is agent driven. You change a canvas by asking for the change in chat. T
 - The canvas runs in a locked frame: no network, no database, no tools, no cookies. It can only draw.
 - Libraries come from the brain, never from the internet: ECharts, Plotly, D3, Konva, Three.js, Motion, reveal.js, KaTeX and Alpine.js.
 - Search reads the canvas title, description and visible text. A canvas is indexed again only after five minutes without a text change, so many quick saves cost one pass.
-- The last ten versions of each canvas are kept.
+- The last ten versions of each canvas are kept. Presenter can bring one back.
+- The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.
