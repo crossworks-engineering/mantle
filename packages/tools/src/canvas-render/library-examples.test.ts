@@ -42,8 +42,13 @@ function findChrome(): string | null {
   ] as const) {
     const dir = path.join(cache, kind);
     if (!existsSync(dir)) continue;
-    for (const version of readdirSync(dir).sort().reverse()) {
-      for (const platform of readdirSync(path.join(dir, version))) {
+    // Only directories: a download's leftover (a .zip) sits beside them.
+    const subdirs = (d: string) =>
+      readdirSync(d, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+    for (const version of subdirs(dir).sort().reverse()) {
+      for (const platform of subdirs(path.join(dir, version))) {
         const p = path.join(dir, version, platform, bin);
         if (existsSync(p)) return p;
       }
