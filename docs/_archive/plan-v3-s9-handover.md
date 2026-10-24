@@ -1702,3 +1702,169 @@ test:actor-off met the guard sweep's real-clock window once (a 429
   sandbox image touches no file of this branch).
 - S11b: the 111 placeholders, the body-folder creates and PUT
   /api/app-nav/pins (part 3, section 6).
+
+## S9 part 3 round 3: the owner opening held to content, the LOWs, onto Present
+
+Branch feat/s9-p3, rebased twice this round: onto main v0.300.147
+(3e2720bbc), then, on the owner's word mid-round, onto v0.300.148
+(ca6281500, Present merged). The lanes started on the first base were
+stopped (their units and containers by exact name) and started again on
+the rebased head. Wave 5 freeze. No migration, no SQL. Code and gates on
+dab44b685; the commit after it is this section.
+
+| commit    | change                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------- |
+| f69381061 | the validator refuses `open: 'owner'` off a content row; the owner-open cell (MED-1)        |
+| 3adabe4e2 | the handover names no machine (LOW-6)                                                       |
+| d7ca50f8a | a member's `?at=` token read on a GET only (LOW-5)                                          |
+| 2eabf1498 | the stale pointers at the deleted lists and the codemod (LOW-1)                             |
+| 642d735b3 | the body ceilings out of the route list count by their three names (LOW-2)                  |
+| 535128f87 | the pin note for it (LOW-2)                                                                 |
+| 99a465924 | two test counts after the rebase onto Present (the effect exceptions, the owner-open floor) |
+| 355c2b2b0 | the workspaces-mock guard asks for a call (LOW-3)                                           |
+| dab44b685 | the lint refuses `export let policy` and a routePolicy not imported (LOW-4)                 |
+
+### 1. The rebase onto Present
+
+Present added its rows to lists this branch deletes: ROUTE_PREFIXES,
+READ_POSTS and MEMBER_OPEN_READS (route-scope.ts), FRAME_ROWS
+(route-policy.ts) and two ROUTE_GATES rows (route-limits.ts). Each is in
+Present's route files' declarations already (class content, `open:
+'owner'`, the frame-ticket POST's effect exception, `caller: 'frame'`,
+`limits`), so the conflicts took this branch's side, and RATE_LIMITS kept
+Present's two limits (memberCanvasFrameTicket, canvasFrame). The kind
+registry cell gained /api/presents, the frame cell its two rows, the
+effect exceptions count 1 to 2 (the frame ticket). Pins after the rebase:
+routePolicyLists 15 (main) to 1 (Present's FRAME_ROWS is a deleted list
+now), itemNonePlaceholders 113 as main, historyCodeComments 2325 and
+actorsStepRefs 12 as round 1. The codemod's file Present touched stays
+deleted.
+
+### 2. The rows, byte-equal to main v0.300.148
+
+Every row of the manifest and the pages, every field, dumped as JSON on
+main ca6281500 (a detached copy of main, removed after) and on the branch
+after the rebase: 839 rows each (831 manifest rows, 8 page rows), byte for
+byte equal (sha1 515f7db7e66ddb5cb5a323978ed5cc520eb0ccf6 both). Before
+the second rebase the branch's 827 rows were the 839 less the 12 Present
+rows, every other row equal. route-policy.rows.json and every snapshot
+under server/web unchanged against origin/main.
+
+### 3. The items
+
+1. Rebase: above (both bases).
+2. MED-1. validateMethodPolicy refuses `open: 'owner'` on any class but
+   content ("open owner on the class area: only a content row opens to a
+   member's item"); the one validator, so the generator (pretypecheck) and
+   the boot (declaredFacts) both fail closed. Cells: the two named shapes
+   (`{ class: 'area', area: 'settings', open: 'owner' }`,
+   `{ class: 'self', open: 'owner' }`, a GET and a write) and a public
+   row, refused; with the check taken out the cell fails. A manifest cell:
+   every row with `logins === 'owner'` is of the class content and served
+   (its method, or a HEAD's GET, in the entry's methods). The proof it
+   refuses nothing that exists, on the rebased head: 108 declared methods
+   say `open: 'owner'`, all content; they build 185 rows with logins
+   owner (35 of them /api/v1 aliases, taking the base's), all content.
+   On v0.300.147, before Present: 101 methods, 175 rows, all content.
+3. LOW-1. The four pointers: app/api/workspaces/route.ts (the policy's
+   `open: 'any'`), server/a8-grants-panel.matrix.test.ts (the same),
+   scripts/gen-route-manifest.ts (the generated header: the entry's
+   policy), scripts/route-callers.ts (one resolver for the generator and
+   its cells). Also route-declaration.ts's placeholder comment (it said
+   the codemod writes).
+4. LOW-2. arch-counts.mjs ROUTE_LIST_NAMES_NOT_POLICY names body-limit.ts's
+   UPLOAD_PATHS, MULTIPART_CEILINGS and OWNER_DOCUMENT_PREFIXES;
+   routePolicyLists blanks those lists out and counts the rest of the
+   file (body-limit.ts is swept again). A name the file does not declare
+   throws. Cells: the file counts 0 with the names and 1 without; a route
+   list beside a named one is counted; a stale name throws. Pin note and
+   ROUTE_LIST_PINS comment say so. routePolicyLists stays 1.
+5. LOW-3. workspaces-mock.test.ts: the guard asks for a call
+   (`beforeAll(warmWorkspacesMock)` or `warmWorkspacesMock()` on a line of
+   code; an import, a comment or a bare name is not one), and sees
+   vi.mock and vi.doMock, by a string or by `import(...)`, in .test.ts and
+   .test.tsx. Cells for each shape; with role-sweep.test.ts's call
+   commented out the guard fails on it.
+6. LOW-4. route-plumbing.mjs route-policy-declared: `export let` or `var
+policy` is reported (notConst); a routePolicy call with no import of
+   routePolicy by its own name from the declarations module (a local
+   function, another module's, a renamed import, a type-only import) is
+   reported (notImported). The module name is one constant,
+   route-declaration.ts ROUTE_DECLARATION_MODULE, read by the generator and
+   the lint. Cells for each; lint over the tree: no new report.
+7. LOW-5. memberForAsset reads a member's `?at=` token on a GET only, as
+   ownerForAsset does (findMemberAsset takes the URL alone, so the method
+   is checked in its one caller, before the lookup). Unreachable on a HEAD
+   today: the gate admits an `?at=` token on a GET alone (gate.ts), so a
+   HEAD with only a token is answered 401 before any guard. No answer
+   moves; no cell (a direct call needs a member login row).
+8. LOW-6. The two machine names in the round 1 section are neutral words.
+
+### 4. Changed answers
+
+None new. A HEAD with an `?at=` token was already refused at the gate; the
+member path now ignores it too (unreachable). The validator's refusal
+refuses no declaration that exists (section 3, item 2). Every row is
+main's (section 2).
+
+### 5. Gates
+
+Mac, DATABASE_URL unset, on dab44b685: `pnpm -r typecheck` 0, `pnpm lint`
+0 (the one warning as on main), `pnpm format:check` 0, `pnpm docs:check`
+0, `pnpm arch:check` 0, `pnpm boot:smoke` 0, `pnpm -C server/web build` 0,
+`vitest run server packages eslint-rules` 0 (902 files passed).
+
+Workstation, a fresh clone of the pushed dab44b685 per suite (~/s9p3,
+`TAG=p3 run.sh`, rec-main.sh, rec-branch.sh), own pgvector pg18 container
+on a checked free port, removed by exact name, fsync off,
+MANTLE_NARROW_SYSTEM=1 unless named, --maxWorkers=3. Load average up to
+about 31.
+
+| suite                                     | exit    | what failed                                              |
+| ----------------------------------------- | ------- | -------------------------------------------------------- |
+| vitest shard 1/2                          | 1       | w7b-mcp-surface (2 tests): main's, below                 |
+| vitest shard 2/2                          | 1       | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's |
+| test:actor-off                            | 1       | a6b-exit-sweep rule-in-query, w7a-tool-sweep (3): main's |
+| test:actor-on                             | 1       | a6b-exit-sweep rule-in-query: main's                     |
+| test:edit-on                              | 1       | a6b-exit-sweep rule-in-query: main's                     |
+| test:runtime-role                         | 1       | a6b, w7a, w7b, presents.db (2): main's                   |
+| test:serial                               | 0       |                                                          |
+| test:matrix                               | 0       |                                                          |
+| switch off (MANTLE_NARROW_SYSTEM=0), full | running | unit s9p3-p3off, exit in ~/s9p3/x-p3off.exit             |
+| runtime role off, full                    | running | unit s9p3-p3rroff, exit in ~/s9p3/x-p3rroff.exit         |
+| the area records, main and branch         | 0 each  | none; 83 of 83 equal in five lanes                       |
+
+Every failure is main's, from the Present merge, and each was run alone on
+main ca6281500 (a fresh clone and cluster, the same config) and failed the
+same way:
+
+- a6b-exit-sweep.db.test.ts rule-in-query (test:actor-on on main: 1): the
+  committed record's GET /api/shell `treeKinds` has no `present`; the
+  shell now lists it (6 changed lines, the same on main).
+- w7a-tool-sweep.db.test.ts (test:actor-off on main: 1) and
+  w7b-mcp-surface.db.test.ts (vitest on main: 1): the new tools
+  present_create, canvas_library and diagram_guide answer the sweep's
+  dummy arguments with an error the sweeps do not list as an expected
+  refusal.
+- packages/content/src/presents.db.test.ts under test:runtime-role (on
+  main: 1): `permission denied for function mantle_operator_actor`, the
+  runtime role not granted what the Present test calls.
+
+None touches a route row, a list or this branch's code; they are left to
+the Present owner (not fixed here: another lane's records and grants).
+
+The area records (S9_AREA_RECORD=1; main ca6281500 with the branch's test
+file, actor-on config and warm-up helper laid over, against the branch):
+full run file warn, test:actor-on, switch off, runtime role off,
+test:runtime-role: each lane's record main against branch 83 of 83 equal,
+and every record byte for byte round 2's (md5 494be895...). No machine
+name in them.
+
+### Left
+
+- The switch-off and runtime-role-off full runs on dab44b685 (running at
+  handover; their exits land in ~/s9p3/x-p3off.exit and x-p3rroff.exit).
+- Present's four failing DB tests on main (section 5), for its owner.
+- CEO full re-audit (MED) of this head.
+- S11b: the 113 placeholders, the body-folder creates and PUT
+  /api/app-nav/pins.
