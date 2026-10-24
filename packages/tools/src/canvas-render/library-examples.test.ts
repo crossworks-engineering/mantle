@@ -6,8 +6,8 @@
  * breaks an example fails here.
  *
  * Needs a Chrome (MANTLE_TEST_CHROME, a usual install path, or puppeteer's
- * cache) and the built canvas runtime (server/web/public/canvas-runtime,
- * made by `pnpm -C server/web build` or generate). Without either it skips,
+ * cache) and the built canvas and share runtimes (server/web/public/
+ * canvas-runtime and share-runtime, made by `pnpm -C server/web build`). Without either it skips,
  * and says so loudly, as the A8 matrix does without a database.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -19,6 +19,8 @@ import { CANVAS_LIBRARIES, guideFile } from '../builtins-canvas-library';
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const MANIFEST = path.join(ROOT, 'server/web/public/canvas-runtime/manifest.json');
+/** The frame also loads the share runtime's styles (the theme, KaTeX's CSS). */
+const SHARE_CSS = path.join(ROOT, 'server/web/public/share-runtime/styles.css');
 
 /** A Chrome to launch, or null. */
 function findChrome(): string | null {
@@ -51,13 +53,13 @@ function findChrome(): string | null {
 }
 
 const chrome = findChrome();
-const runtimeBuilt = existsSync(MANIFEST);
+const runtimeBuilt = existsSync(MANIFEST) && existsSync(SHARE_CSS);
 if (!chrome || !runtimeBuilt) {
   const bar = '='.repeat(72);
   console.warn(
     [
       bar,
-      `CANVAS LIBRARY EXAMPLES SKIPPED: ${!chrome ? 'no Chrome found (set MANTLE_TEST_CHROME)' : 'the canvas runtime is not built (pnpm -C server/web build)'}.`,
+      `CANVAS LIBRARY EXAMPLES SKIPPED: ${!chrome ? 'no Chrome found (set MANTLE_TEST_CHROME)' : 'the canvas and share runtimes are not built (pnpm -C server/web build)'}.`,
       'The canvas_library guides’ examples were not rendered in a browser.',
       bar,
     ].join('\n'),
