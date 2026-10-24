@@ -3,6 +3,17 @@ import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginCaller } from '@/lib/
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    caller: 'publicLogin',
+    item: { none: "the login's own things, not an item" },
+    limits: { crossSite: 'origin' },
+  },
+});
 
 /**
  * POST /api/auth/logout: clear this browser's session cookie. With a body of

@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listBacklinks } from '@/lib/pages';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /** Nodes that reference this page (inbound @-mention edges). Read-only — the
  *  extractor is the sole edge writer. Owner-scoped via the join in the lib. */

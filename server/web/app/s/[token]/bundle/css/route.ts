@@ -10,6 +10,11 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link' },
+});
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;

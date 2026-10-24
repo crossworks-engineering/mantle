@@ -17,6 +17,20 @@ import {
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

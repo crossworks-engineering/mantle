@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { countContextTurns, listContextTurns } from '@/lib/debug';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/context?page=&q= — per-turn retrieval audit (question ·
  *  context sent · response), paginated. */

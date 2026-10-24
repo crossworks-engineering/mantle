@@ -4,6 +4,11 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link', limits: { rateLimit: ['shareRows'] } },
+});
 
 /**
  * Row window for a SHARED table — the public counterpart of

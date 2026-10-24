@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getTailnetPeerNames } from '@/lib/tailscale';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * Online tailnet peer MagicDNS names — feeds the per-route base-URL datalist on

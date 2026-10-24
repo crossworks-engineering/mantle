@@ -9,6 +9,16 @@ import {
 import type { MessageDetailDTO } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /**
  * One owner-scoped message with its attachments. Mapped to the wire DTO: the raw

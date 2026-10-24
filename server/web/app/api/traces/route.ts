@@ -3,6 +3,11 @@ import { ownerCaller } from '@/lib/auth';
 import { countTraces, listTraces } from '@/lib/traces';
 import { toolMakerFor } from '@/lib/tools';
 import type { TraceSort, TraceSortDir } from '@mantle/client-types/traces-format';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/traces?kind=&status=&hours=&sort=&dir=&page=

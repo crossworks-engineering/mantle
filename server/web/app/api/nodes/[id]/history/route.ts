@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { loadNodeBiography } from '@/lib/node-biography';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 /**
  * GET /api/nodes/[id]/history — the full node "biography": the node + every

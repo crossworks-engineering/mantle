@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { browseDrive, type GraphError } from '@mantle/microsoft';
 import type { MsDriveChildDTO } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /**
  * List a drive folder's children for the scope picker (`id` = drive db id;

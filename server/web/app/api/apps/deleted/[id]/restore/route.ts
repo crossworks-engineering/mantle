@@ -15,6 +15,14 @@ import { ownerCaller } from '@/lib/auth';
 import { adminAppTrashAct } from '@mantle/content';
 import { restoreDeletedAppFrom } from '@mantle/content/app-trash';
 import { itemNotFound } from '@/lib/auth/item-answers';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

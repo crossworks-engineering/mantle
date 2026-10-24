@@ -22,6 +22,16 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+  PATCH: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+  },
+});
 
 export async function GET() {
   const user = ownerCaller();

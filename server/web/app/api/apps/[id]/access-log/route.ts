@@ -9,6 +9,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listAppAccess, type AppAccessKind } from '@mantle/content';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+});
 
 const KINDS: readonly AppAccessKind[] = ['auth', 'tool', 'db', 'error'];
 

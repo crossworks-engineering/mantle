@@ -7,6 +7,11 @@ import { renderAvatarSvg, resolveAvatarTint } from '@mantle/share-ui/avatar';
 import { db, agents } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+});
 
 // Server-render the agent's avatar SVG so non-web clients (the mobile
 // companion) show the same one the web app does.

@@ -4,6 +4,11 @@ import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link', limits: { rateLimit: ['shareAsset'] } },
+});
 
 /**
  * Public asset bytes for a shared node. Authorization = the token must be

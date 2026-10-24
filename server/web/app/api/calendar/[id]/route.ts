@@ -3,6 +3,20 @@ import { z } from 'zod';
 import { deleteCalendarAccount, setCalendarEnabled } from '@mantle/calendar';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 const PatchBody = z.object({ enabled: z.boolean() });
 

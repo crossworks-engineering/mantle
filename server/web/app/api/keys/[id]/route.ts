@@ -4,6 +4,20 @@ import { ownerCaller } from '@/lib/auth';
 import { deleteApiKey, setApiKeyAnthropicWorkspace } from '@/lib/api-keys';
 import { retryProvidersAfterKeyChange } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

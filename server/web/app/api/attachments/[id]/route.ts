@@ -6,6 +6,11 @@ import { db, emailAccounts, emailAttachments, emails } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { ownerAssetCaller } from '@/lib/auth';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /**
  * Attachment download. Looks up the attachment by id, verifies it belongs to

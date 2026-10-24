@@ -22,6 +22,15 @@ import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** Never served in production: the gate answers 404 there, first. */
 export const routeSwitches = { POST: 'not-production' } as const satisfies RouteSwitches;

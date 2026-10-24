@@ -6,6 +6,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listDeletedApps } from '@mantle/content/app-trash';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 export async function GET() {
   const user = ownerCaller();

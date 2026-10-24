@@ -4,6 +4,12 @@ import { assertMayLink, checkServeList } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { createShare, getActiveShareForNode, SERVE_MAX } from '@/lib/shares';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 /** GET /api/shares?nodeId=… → the node's active link (or null), with its
  *  served list (`served`, node ids, plan 8.1). `childCount` is always 0

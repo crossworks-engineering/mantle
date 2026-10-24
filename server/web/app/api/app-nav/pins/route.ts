@@ -4,6 +4,11 @@ import { APP_PINS_MAX } from '@mantle/client-types/app-nav';
 import { ownerCaller } from '@/lib/auth';
 import { saveAppPins } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PUT: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 /**
  * PUT /api/app-nav/pins { pins } — replace this LOGIN's pinned apps, in order.

@@ -4,6 +4,16 @@ import { ownerCaller } from '@/lib/auth';
 import { getToolById } from '@/lib/tools';
 import { setToolExternalAccess } from '@mantle/tools';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PUT: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+    audit: 'own',
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

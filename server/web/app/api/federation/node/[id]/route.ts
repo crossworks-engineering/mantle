@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { getNodeForPeer } from '@mantle/content';
 import { startTrace, step } from '@mantle/tracing';
 import { authenticatePeer } from '@/lib/federation-auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors', public: true },
+});
 
 /**
  * Fetch one granted node's full content for a peer. 404 when the node isn't

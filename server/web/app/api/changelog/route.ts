@@ -5,6 +5,11 @@ import {
   getLatestChangelogVersion,
   listChangelogVersions,
 } from '@/lib/changelog';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 /**
  * GET /api/changelog[?version=x.y.z] — the CHANGELOG.md reader for the

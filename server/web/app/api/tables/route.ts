@@ -14,6 +14,17 @@ import {
 } from '@/lib/tables';
 import { recordIngest } from '@mantle/tracing';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+});
 
 const SORTS: TableSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;

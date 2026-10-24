@@ -12,6 +12,21 @@ import { deleteToolGroup, getToolGroup, updateToolGroup } from '@/lib/tool-group
 import { firstIssue } from '@/lib/zod-issue';
 import { toolMakerFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+  PATCH: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

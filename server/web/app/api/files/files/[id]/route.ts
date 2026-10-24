@@ -22,11 +22,30 @@ import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import type { FileCascadeDeleteResponse } from '@mantle/client-types';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
  *  item gate no longer answers a bad id here (docs/actors.md). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner', limits: { rateLimit: ['memberBytes', 'memberThumbs'] } },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  PATCH: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** A write's first read (pre-check removal part 2): the file in the
  *  caller's scope, the 404 of none for one it does not read (as for an id

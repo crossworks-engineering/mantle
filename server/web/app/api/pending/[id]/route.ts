@@ -4,6 +4,16 @@ import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/t
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  PATCH: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.object({

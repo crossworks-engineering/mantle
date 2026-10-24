@@ -12,6 +12,15 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 export async function POST() {
   ownerCaller();

@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { pairCodeStatus } from '@/lib/pair-code';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', public: true, caller: 'publicLogin' },
+});
 
 const Params = z.object({ id: z.string().uuid() });
 

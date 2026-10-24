@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { spendByDay } from '@/lib/metrics';
 import { brainCounts, vectorCounts, pendingToolCount } from '@/lib/dashboard';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/dashboard/summary — compact headline metrics for the mobile

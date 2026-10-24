@@ -16,6 +16,18 @@ import { applyShareMode, getLiveShare, revokeShare, SERVE_MAX, setShareServed } 
 import { readJson } from '@/lib/read-body';
 import { readBodyCapped } from '@/lib/body-limit';
 import { itemNotFound, shareItemRefusal } from '@/lib/auth/item-answers';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
  *  (owner-scoped; `ok` false when it was already gone). Who may: an Admin

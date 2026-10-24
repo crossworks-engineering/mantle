@@ -2,6 +2,15 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { rotateInboundToken } from '@mantle/content';
 import { PEER_OWNER_ONLY, peerBoundToOwner, peerChangeNeedsOwner } from '@/lib/peer-access';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Mint a fresh inbound token for this peer. Returns the plaintext ONCE — the
  *  old token stops working immediately, so the peer must be re-issued this. */

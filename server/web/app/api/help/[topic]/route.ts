@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listToolGroupBackrefs } from '@/lib/tool-groups';
 import { loadHelpTopic } from '@/lib/help';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 /**
  * One screen's help panel. Fetched ONLY when the reader clicks the "?" — the

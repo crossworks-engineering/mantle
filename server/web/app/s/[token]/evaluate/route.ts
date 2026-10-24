@@ -5,6 +5,15 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'link',
+    item: { none: 'a link route: its share token names what it opens' },
+    limits: { rateLimit: ['shareEvaluate'] },
+  },
+});
 
 /**
  * Evaluate one target of a SHARED formula — the public counterpart of

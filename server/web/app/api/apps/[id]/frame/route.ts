@@ -24,6 +24,11 @@ import { adminLoginActive, frameTicketCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 import { isMemberFrameTicket, memberFrame } from '@/lib/app-runner';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', caller: 'frame' },
+});
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const ticket = frameTicketCaller();

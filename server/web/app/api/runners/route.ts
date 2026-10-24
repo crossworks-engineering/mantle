@@ -3,6 +3,11 @@ import type { WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { ownerCaller } from '@/lib/auth';
 import { listRuns } from '@/lib/runners';
 import { RUNNER_STATUSES } from '@mantle/client-types/runners-types';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/runners?status=&name=&queue=&hours=&page=

@@ -17,6 +17,16 @@ import { createMemberInvite, inviteLinkPath, listMemberInvites } from '@mantle/c
 import type { MemberInviteCreated, MemberInviteList } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+  POST: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+  },
+});
 
 export async function GET() {
   const user = ownerCaller();

@@ -4,6 +4,16 @@ import { ownerCaller } from '@/lib/auth';
 import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
  *  or 404. Drives the detail pane. Owner-gated. */

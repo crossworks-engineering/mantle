@@ -3,6 +3,16 @@ import { db, onFullSystemRoute } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** GET /api/runs/:id — one run's compiled tree (the run view payload). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

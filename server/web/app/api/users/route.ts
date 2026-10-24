@@ -26,6 +26,17 @@ import { insertLoginWithWorkspaces } from '@/lib/login-create';
 import { adminMembershipRefusal, LoginRoleSchema } from '@/lib/login-update';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+  POST: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+    audit: 'own',
+  },
+});
 
 /**
  * Co-admin login management (Settings → Logins). Logins are NOT tenants: every

@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { isFirstRun } from '@/lib/auth';
 import { setupCodeConfigured } from '@/lib/auth/setup-code';
 import type { BootstrapStateDTO } from '@mantle/client-types';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', public: true },
+});
 
 /**
  * GET /api/auth/bootstrap-state: is this a fresh install (no user yet), and

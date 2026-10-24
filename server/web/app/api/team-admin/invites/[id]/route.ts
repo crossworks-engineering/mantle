@@ -7,6 +7,15 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { revokeMemberInvite } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+  },
+});
 
 const Params = z.object({ id: z.string().uuid() });
 

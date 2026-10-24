@@ -11,6 +11,11 @@ import type {
   RunState,
 } from '@mantle/client-types/types/maintenance';
 import { envDynamic } from '@mantle/config';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
 

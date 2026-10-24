@@ -5,6 +5,12 @@ import { countJournals, createJournal, listJournalTags, listJournals } from '@/l
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 const PAGE_SIZE = 50;
 

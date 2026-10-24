@@ -5,6 +5,11 @@ import { adminFacts } from '@/lib/auth/login';
 import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', public: true, caller: 'publicLogin' },
+});
 
 /**
  * GET /api/auth/whoami: who a credential belongs to, for any role

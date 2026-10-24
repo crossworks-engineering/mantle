@@ -7,6 +7,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { chatLoginCaller } from '@/lib/auth';
 import { moderateTelegramChatResponse } from '@/lib/agent-telegram';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    open: 'telegram',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = chatLoginCaller();

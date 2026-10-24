@@ -6,6 +6,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { issuerUrl, mcpResourceUrl } from '@/lib/mcp-oauth';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'public' },
+});
 
 export async function GET() {
   return NextResponse.json(

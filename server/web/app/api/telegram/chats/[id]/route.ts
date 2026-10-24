@@ -6,6 +6,15 @@ import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from '@mantle/telegram';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

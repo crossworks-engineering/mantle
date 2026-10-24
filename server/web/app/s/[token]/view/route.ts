@@ -7,6 +7,11 @@ import { renderPageDoc } from '@/lib/render-page-doc';
 import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link', limits: { rateLimit: ['shareView'] } },
+});
 
 /**
  * The share view as JSON, for a client that renders the presenter itself (no

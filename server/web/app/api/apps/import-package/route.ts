@@ -22,6 +22,11 @@ import { BodyTooLargeError } from '@/lib/body-limit';
 import { appPackageMaxBytes, takeAppImportSlot } from '@mantle/content/app-package';
 import { spoolUpload, UploadTooLargeError } from '@mantle/files';
 import { importAppPackage } from '@mantle/tools';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 export async function POST(req: Request) {
   const user = ownerCaller();

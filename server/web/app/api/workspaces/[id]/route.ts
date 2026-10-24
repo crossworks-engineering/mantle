@@ -2,6 +2,17 @@ import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { getWorkspace, patchWorkspace, wsBody, wsRoute } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any' },
+  PATCH: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 type Ctx = { params: Promise<{ id: string }> };
 

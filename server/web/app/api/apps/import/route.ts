@@ -41,6 +41,11 @@ import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 const Body = AppMetaFields.partial({ name: true }).extend({
   /** Update this app if given; otherwise create a new one (then `name` is required). */

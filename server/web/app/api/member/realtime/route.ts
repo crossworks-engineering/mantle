@@ -2,6 +2,11 @@ import { memberCaller, memberLoginActive, sessionCookieExpiryMs } from '@/lib/au
 import { sseResponse } from '@/lib/sse';
 import { memberStreamLifetimeMs, takeMemberStream } from '@/lib/member-streams';
 import { rateLimitedResponse } from '@/lib/route-limits';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'member' },
+});
 
 /**
  * GET /api/member/realtime : Server-Sent Events for a MEMBER (member logins

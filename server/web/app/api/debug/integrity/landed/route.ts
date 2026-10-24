@@ -4,6 +4,11 @@ import { ownerCaller } from '@/lib/auth';
 import { resolveCapabilities } from '@/lib/integrity/capabilities';
 import { countLanded, listLanded } from '@/lib/integrity/landed';
 import type { LandedReport } from '@mantle/client-types/types/integrity';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 // Read-only live view of the real content you've added and its brain footprint.
 // No writes, no fixtures — safe to poll and safe to leave mid-load.

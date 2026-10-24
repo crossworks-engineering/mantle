@@ -5,6 +5,11 @@ import { chatCaller } from '@/lib/auth';
 import { messagesForReader, resolveChatAgentById } from '@/lib/assistant-chat';
 import { recentAssistantMessages } from '@/lib/assistant';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+});
 
 /**
  * GET /api/assistant/threads/<id>: one chat thread with its summary and its

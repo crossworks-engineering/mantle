@@ -15,6 +15,17 @@ import {
 } from '@/lib/tasks';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+});
 
 const PAGE_SIZE = 50;
 /** The board view loads every column in one call — cap it, don't paginate it. */

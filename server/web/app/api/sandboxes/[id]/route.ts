@@ -4,6 +4,16 @@ import { db, traceSteps } from '@mantle/db';
 import { deleteSandboxRow } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { sandboxForLogin, sandboxdList, sandboxdRm } from '@/lib/sandboxd';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  DELETE: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /**
  * GET /api/sandboxes/:id — one sandbox (owner-scoped, live status merged) plus

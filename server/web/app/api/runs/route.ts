@@ -3,6 +3,11 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
 import { feature } from '@mantle/config';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/runs — the run surface's list payload (owner-scoped). Two shapes:

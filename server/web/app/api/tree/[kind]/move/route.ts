@@ -5,6 +5,15 @@ import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { movedAppToolWarnings } from '@mantle/tools';
 import { treeKindOr404 } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 const Body = z.object({
   ids: z.array(z.string().uuid()).min(1).max(200),

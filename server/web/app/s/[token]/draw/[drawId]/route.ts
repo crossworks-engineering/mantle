@@ -2,6 +2,11 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isEmbeddedDrawAllowed } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link', limits: { rateLimit: ['shareDrawEmbed'] } },
+});
 
 /**
  * A drawing EMBEDDED in a shared page or note, as an image.

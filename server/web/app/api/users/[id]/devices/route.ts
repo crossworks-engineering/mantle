@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, mobileTokens, authUsers, and, eq, isNull, gt, desc } from '@mantle/db';
 import { mobileTokenJti, ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

@@ -1,6 +1,11 @@
 import { chatCaller } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+});
 
 /**
  * Server-Sent Events stream of live conversation turns for the current owner —

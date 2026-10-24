@@ -12,6 +12,11 @@ import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any' },
+});
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 

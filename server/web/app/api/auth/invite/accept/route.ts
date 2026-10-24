@@ -21,6 +21,16 @@ import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed } from '@/lib/member-invites';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { crossSite: 'json', rateLimit: ['inviteAccept', 'inviteAcceptFailures'] },
+  },
+});
 
 const AcceptBody = z.object({
   code: z.string().min(1).max(64),

@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { loadComboContext } from '@/lib/model-combos-context';
 import { COMBO_DEFS, buildComboDiff } from '@/lib/model-combos';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 export async function GET() {
   const user = ownerCaller();

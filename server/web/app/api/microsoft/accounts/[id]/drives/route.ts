@@ -2,6 +2,16 @@ import { NextResponse } from '@/server/http-compat';
 import { discoverForAccount, listAccounts, listDrives } from '@mantle/microsoft';
 import type { MsDriveDTO } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** 404 unless the account belongs to the owner (`listDrives` isn't owner-scoped). */
 async function assertOwned(ownerId: string, accountId: string): Promise<boolean> {

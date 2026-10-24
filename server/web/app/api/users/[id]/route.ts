@@ -16,6 +16,22 @@ import {
   type LoginChangeRefusal,
 } from '@/lib/login-update';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+    audit: 'own',
+  },
+  DELETE: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+    audit: 'own',
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

@@ -28,6 +28,15 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'link',
+    item: { none: 'a link route: its share token names what it opens' },
+    limits: { crossSite: 'json', rateLimit: ['contactCode', 'contactCodeHour'] },
+  },
+});
 
 const Body = z.object({ code: z.string().max(64) });
 

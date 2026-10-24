@@ -7,6 +7,16 @@ import { planRun, runEnv } from '@/lib/maintenance/run-args';
 import { getRun, isRunning, startRun } from '@/lib/maintenance/run-store';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 // Start (POST) / poll (GET) a maintenance run. The rails mirror the CLI
 // (scripts/maintain.ts) via the shared planRun() — the UI cannot bypass them.

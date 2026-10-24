@@ -8,6 +8,16 @@ import {
   deleteTokenSubscriptions,
   forgetRelayDevices,
 } from '@/lib/push/store';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+    audit: 'own',
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid(), jti: z.string().min(1) });
 

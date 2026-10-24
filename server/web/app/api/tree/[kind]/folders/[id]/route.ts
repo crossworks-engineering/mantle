@@ -8,11 +8,25 @@ import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { treeKindOr404 } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
  *  item gate no longer answers a bad id here (docs/actors.md). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 type Ctx = { params: Promise<{ kind: string; id: string }> };
 

@@ -12,6 +12,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { appSnapshotFile } from '@mantle/content/app-snapshots';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
   const user = ownerCaller();

@@ -10,6 +10,15 @@ import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'link',
+    item: { none: 'a link route: its share token names what it opens' },
+    limits: { rateLimit: ['shareFrameTicket'] },
+  },
+});
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;

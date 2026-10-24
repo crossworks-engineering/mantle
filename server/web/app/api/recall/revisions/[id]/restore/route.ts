@@ -3,6 +3,15 @@ import { restoreRecallRevision } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /**
  * Undo: put one revision's BEFORE state back.

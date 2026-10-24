@@ -6,6 +6,11 @@ import { embed } from '@mantle/embeddings';
 import { nodeUrl } from '@mantle/content';
 import type { SearchChunkHit, SearchNodeHit } from '@mantle/client-types';
 import { currentFirst, hitWorkspaces, parseReadCover } from '@/lib/list-workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /**
  * Owner-facing hybrid search — the HTTP twin of the `search_nodes` /

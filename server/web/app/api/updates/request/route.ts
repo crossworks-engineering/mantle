@@ -4,6 +4,15 @@ import { requestUpdate } from '@/lib/updates';
 import { serviceRunBusy } from '@/lib/services';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z
   .object({

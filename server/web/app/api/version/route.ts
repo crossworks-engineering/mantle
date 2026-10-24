@@ -1,5 +1,10 @@
 import { NextResponse } from '@/server/http-compat';
 import { APP_VERSION, GIT_SHA, BUILD_TIME, CONTRACT_VERSION } from '@mantle/client-types/version';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', public: true },
+});
 
 // Build identity for ops / uptime checks. Values are baked in at compile time
 // (next.config.ts), so this is constant for the life of the build — serve it

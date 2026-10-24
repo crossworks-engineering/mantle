@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getReaderNav } from '@/lib/docs-reader';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 /**
  * GET /api/docs/reader — the docs reader's navigation tree (collections +

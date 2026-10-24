@@ -4,6 +4,12 @@ import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { loadPreferencesFor, savePreferencesFor } from '@mantle/content';
 import { putContent, deleteContent } from '@mantle/storage/write';
 import { sniffType, staleLogoBytes, SVG_ACTIVE_RE, LOGO_MAX_BYTES } from '@/lib/logo-validation';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+  DELETE: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * PUT /api/profile/logo (multipart `file`) / DELETE — the brand logo that

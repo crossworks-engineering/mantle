@@ -10,6 +10,16 @@ import { connectorUrl } from '@/lib/mcp-oauth';
 import { listConnectedClients } from '@/lib/mcp-clients';
 import { readJson } from '@/lib/read-body';
 import { feature } from '@mantle/config';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  PATCH: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 export async function GET() {
   const user = ownerCaller();

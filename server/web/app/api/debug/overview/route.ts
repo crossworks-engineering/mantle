@@ -11,6 +11,11 @@ import {
   topErrors,
   trafficWindow,
 } from '@/lib/metrics';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/debug/overview — the Debug overview bundle: system health at a glance

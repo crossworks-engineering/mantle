@@ -27,6 +27,16 @@ import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    open: 'chat',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['chatTranscribe'] },
+  },
+});
 
 export async function POST(req: Request) {
   // A member's clips: the gate took the row's limit (lib/route-limits.ts

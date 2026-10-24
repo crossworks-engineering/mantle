@@ -22,6 +22,12 @@ import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 export async function GET() {
   const owner = ownerCaller();

@@ -1,5 +1,16 @@
 import { memberCaller } from '@/lib/auth';
 import { loginPushDevices, loginPushSubscribe } from '@/lib/push/login-routes';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'member' },
+  POST: {
+    class: 'self',
+    open: 'member',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['pushEnrol'] },
+  },
+});
 
 /**
  * /api/member/push/subscriptions (a MEMBER login's own devices, mobile_roles_push)

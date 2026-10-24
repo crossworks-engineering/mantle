@@ -8,6 +8,15 @@ import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'public',
+    item: { none: 'a public route: it judges its own credential' },
+    limits: { rateLimit: ['oauthRegister'] },
+  },
+});
 
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(

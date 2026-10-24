@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { recentAgentContext, spendInRange, type SpendRange } from '@/lib/metrics';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 const VALID_RANGES: SpendRange[] = ['day', 'week', 'month'];
 

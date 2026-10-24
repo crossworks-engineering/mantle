@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getLiveActivity } from '@/lib/journey';
 import { toolMakerFor } from '@/lib/tools';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 /**
  * Live activity for the always-on Activity surfaces (the app-shell column and

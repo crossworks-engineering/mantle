@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { recentUnknownSenders, imap, type PeekProviderResolver } from '@mantle/email';
 import { graphMailProvider } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /** Peek IMAP accounts over IMAP and Microsoft companions over Graph. Lives
  *  here (not in @mantle/email) because only the app layer may depend on

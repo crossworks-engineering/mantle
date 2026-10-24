@@ -10,6 +10,16 @@ import { ownerCaller } from '@/lib/auth';
 import { callerTokenId } from '@/lib/push/login-routes';
 import { forgetRelayDevices, insertSubscription, listAdminDeviceList } from '@/lib/push/store';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+  POST: {
+    class: 'self',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['pushEnrol'] },
+  },
+});
 
 export async function POST(req: NextRequest) {
   // The gate took the row's per-login limit (lib/route-limits.ts pushEnrol).

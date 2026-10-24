@@ -30,6 +30,15 @@ import { appDbWrite } from '@mantle/content/app-db-write';
 
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'link',
+    item: { none: 'a link route: its share token names what it opens' },
+    limits: { rateLimit: ['shareDbBroker'] },
+  },
+});
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;

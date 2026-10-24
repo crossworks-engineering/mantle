@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { setDriveEnabled } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({ enabled: z.boolean() });
 

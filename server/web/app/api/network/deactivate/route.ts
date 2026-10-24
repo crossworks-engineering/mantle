@@ -1,6 +1,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { tailnetDown } from '@/lib/tailscale';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** Log tailscaled out (leave the tailnet). */
 export async function POST() {

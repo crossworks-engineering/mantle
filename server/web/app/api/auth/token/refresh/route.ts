@@ -25,6 +25,16 @@ import { brainIdField } from '@/lib/brain-identity';
 import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { loginRole } from '@/lib/auth/admin-seat';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['authTokenRefresh'] },
+  },
+});
 
 /**
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,

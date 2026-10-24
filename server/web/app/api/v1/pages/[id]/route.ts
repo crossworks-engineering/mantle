@@ -26,6 +26,18 @@ import { othersCanRead } from '@mantle/mcp-core/shared-item';
 import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
 import { ownerCallerAtRead } from '@/lib/auth';
 import { PATCH as patchPage } from '../../../pages/[id]/route';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', keyArea: 'pages', aliasOf: 'GET /api/pages/:id' },
+  PATCH: {
+    class: 'content',
+    caller: 'ownerAtRead',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+    keyArea: 'pages',
+    base: 'PATCH /api/pages/:id',
+  },
+});
 
 export { GET, routeParams } from '../../../pages/[id]/route';
 

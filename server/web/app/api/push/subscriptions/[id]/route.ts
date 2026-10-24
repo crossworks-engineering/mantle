@@ -4,6 +4,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { deleteSubscription, forgetRelayDevices } from '@/lib/push/store';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'self',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const owner = ownerCaller();

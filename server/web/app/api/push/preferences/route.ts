@@ -7,6 +7,12 @@ import { ownerCaller } from '@/lib/auth';
 import { getPushPrefs, updatePushPrefs } from '@/lib/push/store';
 import { sanitizePushPrefs } from '@/lib/push/preferences-sanitize';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 export async function GET() {
   // Owner only: the gate answered the caller and refused anyone else.

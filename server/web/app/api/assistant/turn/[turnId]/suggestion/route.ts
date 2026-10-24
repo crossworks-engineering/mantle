@@ -3,6 +3,11 @@ import { db, assistantMessages } from '@mantle/db';
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { suggestionPayload } from '@/lib/turn-suggestion-read';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 /**
  * GET /api/assistant/turn/[turnId]/suggestion: the follow-up suggestion for a

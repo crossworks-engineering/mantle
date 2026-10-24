@@ -32,6 +32,15 @@ import { firstIssue } from '@/lib/zod-issue';
 import { vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
 import { timeoutSignal } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 

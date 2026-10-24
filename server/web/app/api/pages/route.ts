@@ -17,6 +17,17 @@ import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { chipped, parseWsFilter } from '@/lib/list-workspaces';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+});
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;

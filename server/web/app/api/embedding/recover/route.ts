@@ -2,6 +2,16 @@ import { NextResponse } from '@/server/http-compat';
 import { loadProviderAlerts } from '@mantle/content';
 import { retryProvidersNow } from '@/lib/embedding-config';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /**
  * GET: the provider outages an admin sees (docs/embeddings.md "Provider

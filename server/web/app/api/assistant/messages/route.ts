@@ -5,6 +5,11 @@ import { UUID_RE } from '@mantle/std';
 import { assistantMessagesBefore } from '@/lib/assistant';
 import { messagesForReader, resolveChatAgent, resolveChatAgentById } from '@/lib/assistant-chat';
 import { threadRange } from '@/lib/chat-threads';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+});
 
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up

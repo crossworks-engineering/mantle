@@ -4,6 +4,11 @@ import { loadProfilePreferences, logoVersion } from '@mantle/content';
 import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 import { feature } from '@mantle/config';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings', public: true },
+});
 
 /**
  * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the

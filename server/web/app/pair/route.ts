@@ -1,4 +1,9 @@
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'public' },
+});
 /**
  * GET /pair — where a BROWSER lands when it scans the "Sign in on your phone"
  * QR (the phone app parses the URL itself and never opens it). The code is in

@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { countDigests, listDigests } from '@/lib/debug';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/digests?page=&q= — conversation digests, paginated. */
 const PAGE_SIZE = 25;

@@ -6,6 +6,16 @@ import { claimPairCode } from '@/lib/pair-code';
 import { brainIdField } from '@/lib/brain-identity';
 import { isWorkspaceMobileBuild, updateTheAppResponse } from '@/lib/mobile-build';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['authPairClaim'] },
+  },
+});
 
 /**
  * POST /api/auth/pair/claim — the phone's half of QR sign-in. Public (the

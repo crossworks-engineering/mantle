@@ -27,6 +27,15 @@ import { NextResponse } from '@/server/http-compat';
 import { liveServedIds } from '@/lib/shares';
 import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'link',
+    item: { none: 'a link route: its share token names what it opens' },
+    limits: { rateLimit: ['shareToolBroker'] },
+  },
+});
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;

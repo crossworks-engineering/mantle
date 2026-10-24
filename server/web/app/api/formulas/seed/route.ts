@@ -4,6 +4,11 @@ import { ownerCaller } from '@/lib/auth';
 import { itemErrorText } from '@mantle/std';
 import { nameTaken } from '@mantle/db';
 import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 /**
  * Add the five instructional formulas — the primer that teaches the spec format

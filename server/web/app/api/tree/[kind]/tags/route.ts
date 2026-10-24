@@ -3,6 +3,11 @@ import { ownerCaller } from '@/lib/auth';
 import { listTreeTags } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
 import { parseWsFilter } from '@/lib/list-workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /** GET /api/tree/:kind/tags?ws= — the tags on the kind's items, most used
  *  first (TreeTagList), for the tree's filter menu. `ws` counts only the

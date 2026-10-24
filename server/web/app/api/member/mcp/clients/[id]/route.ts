@@ -9,6 +9,15 @@ import { NextResponse } from '@/server/http-compat';
 import { isUuid } from '@mantle/std';
 import { memberCaller } from '@/lib/auth';
 import { disconnectLoginClient } from '@/lib/mcp-clients';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'self',
+    open: 'member',
+    item: { none: "one of the login's own MCP clients, found by the login" },
+  },
+});
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = memberCaller();

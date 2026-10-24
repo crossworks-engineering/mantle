@@ -19,6 +19,15 @@ import {
 } from '@/lib/mcp-oauth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'public',
+    item: { none: 'a public route: it judges its own credential' },
+    limits: { rateLimit: ['oauthToken'] },
+  },
+});
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(

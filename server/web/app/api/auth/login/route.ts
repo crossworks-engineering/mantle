@@ -4,6 +4,16 @@ import { db, authUsers, eq, sql } from '@mantle/db';
 import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { crossSite: 'json', rateLimit: ['authLogin'] },
+  },
+});
 
 const LoginBody = z.object({
   email: z.string().email(),

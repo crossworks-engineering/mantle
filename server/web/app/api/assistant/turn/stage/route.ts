@@ -11,6 +11,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { currentTurnStageLabel } from '@/lib/assistant/turn-stage';
 import { toolMakerFor } from '@/lib/tools';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 export async function GET() {
   const user = ownerCaller();

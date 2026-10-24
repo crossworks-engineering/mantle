@@ -13,6 +13,14 @@ import { UUID_RE } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
 import { adminAppTrashAct } from '@mantle/content';
 import { itemNotFound } from '@/lib/auth/item-answers';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

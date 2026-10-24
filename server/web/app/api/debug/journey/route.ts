@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listActivity } from '@/lib/journey';
 import { toolMakerFor } from '@/lib/tools';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/journey?cat=&done= — the activity feed (Activity → Reaction).
  *  `cat` filters by pipeline category; `done=1` hides no-op skips. */

@@ -6,6 +6,11 @@ import {
   listTelegramChats,
   telegramChatVisibility,
 } from '@/lib/debug';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/telegram?page=&q= — Telegram chats (paginated) plus the agent
  *  list for the per-chat responder override dropdown. Only the chats the

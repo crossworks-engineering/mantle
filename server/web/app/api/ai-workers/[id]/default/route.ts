@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { ownerCaller } from '@/lib/auth';
 import { setDefaultWorker, toAiWorkerDTO } from '@/lib/ai-workers';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

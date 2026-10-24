@@ -6,6 +6,21 @@ import { getOpenapiConnector, updateOpenapiConnector } from '@/lib/openapi-conne
 import { firstIssue } from '@/lib/zod-issue';
 import { toolMakerFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const user = ownerCaller();

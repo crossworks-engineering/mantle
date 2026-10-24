@@ -13,6 +13,16 @@ import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
 import { readBody } from '@/lib/read-body';
 import { tableTitle } from '@mantle/content/table-snapshots';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', keyArea: 'tables', aliasOf: 'GET /api/tables/:id/rows' },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+    keyArea: 'tables',
+  },
+});
 
 export { GET, routeParams } from '../../../../tables/[id]/rows/route';
 

@@ -4,6 +4,15 @@ import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { setAgentTelegramChat } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({

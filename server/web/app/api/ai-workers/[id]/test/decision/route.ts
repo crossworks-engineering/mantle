@@ -4,6 +4,15 @@ import { ownerCaller } from '@/lib/auth';
 import { testDecision } from '@/lib/ai-worker-rpc';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({ text: z.string().max(2000).default('') });
 

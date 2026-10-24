@@ -23,6 +23,18 @@ import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import type { BulkDeleteCascadeResponse, BulkDeleteFilesResponse } from '@mantle/client-types';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+  DELETE: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),

@@ -7,6 +7,15 @@ import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    open: 'chat',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /**
  * POST /api/assistant/threads/<id>/continue: "Continue from this" (chat

@@ -1,5 +1,15 @@
 import { anyLoginCaller } from '@/lib/auth';
 import { archiveWorkspace, wsRoute } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** Archive a workspace. Refused while it is any item's home, for the Admin
  *  workspace, and for the workspaces the level bridge keeps (until W5b). */

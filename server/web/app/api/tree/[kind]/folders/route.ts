@@ -6,6 +6,16 @@ import { createTreeFolder, notifyTreeChanged } from '@mantle/content/tree';
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { ensureTreeRoot, treeKindOr404 } from '@/lib/tree-route';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 const Body = z.object({
   /** The folder to create it in; null = the top level. */

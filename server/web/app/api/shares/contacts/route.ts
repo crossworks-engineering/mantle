@@ -18,6 +18,11 @@ import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 const Body = z.object({
   nodeId: z.string().uuid(),

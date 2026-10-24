@@ -5,6 +5,15 @@ import { ownerCaller } from '@/lib/auth';
 import { deleteLandedNode } from '@/lib/integrity/landed';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 // Delete one real node + its brain footprint via the canonical cascade/reaper
 // path. Owner-scoped; the destructive confirm lives in the client.

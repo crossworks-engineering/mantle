@@ -13,6 +13,11 @@ import {
   telegramStats,
   vectorCounts,
 } from '@/lib/dashboard';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/dashboard — the full "brain health" bundle for the web dashboard

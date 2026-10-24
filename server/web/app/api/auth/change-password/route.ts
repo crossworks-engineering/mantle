@@ -11,6 +11,17 @@ import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    caller: 'publicLogin',
+    item: { none: "the login's own things, not an item" },
+    limits: { crossSite: 'json', rateLimit: ['authChangePassword'] },
+  },
+});
 
 const ChangePasswordBody = z
   .object({

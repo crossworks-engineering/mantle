@@ -1,5 +1,10 @@
 import { anyLoginCaller } from '@/lib/auth';
 import { searchUsers, wsRoute } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any', limits: { rateLimit: ['wsUserSearch'] } },
+});
 
 /** Logins by email or name, for adding them to a workspace (plan 18.13
  *  Q3). A Moderator of any workspace or an Admin user; an Admin user pages

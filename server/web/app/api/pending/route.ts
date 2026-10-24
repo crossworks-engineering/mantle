@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listPendingCalls } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 const ListQuery = z.object({
   status: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),

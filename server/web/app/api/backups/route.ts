@@ -13,6 +13,16 @@ import {
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** Backup settings + last-run status + dumps on disk for /settings/backups. */
 export async function GET() {

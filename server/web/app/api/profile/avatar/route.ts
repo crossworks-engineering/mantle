@@ -4,6 +4,11 @@ import { ownerCaller } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { savePreferencesFor } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * PUT /api/profile/avatar { avatarStyle?, avatarTint? } — persist the brain's

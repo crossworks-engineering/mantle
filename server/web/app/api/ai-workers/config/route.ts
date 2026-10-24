@@ -3,6 +3,11 @@ import { nativeDocumentProviders } from '@mantle/voice';
 import type { AiWorkerConfig } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { getTailnetPeerNames } from '@/lib/tailscale';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** Static-ish bits the worker form needs but can't compute client-side:
  *  which providers have a native-PDF adapter, and the online tailnet peers. */

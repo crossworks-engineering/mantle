@@ -4,6 +4,16 @@ import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { isOptionalService, requestServiceSwitch } from '@/lib/services';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+    audit: 'own',
+  },
+});
 
 const Body = z.object({ enable: z.boolean() }).strict();
 

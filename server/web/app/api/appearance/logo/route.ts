@@ -4,6 +4,11 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings', public: true },
+});
 
 /**
  * GET /api/appearance/logo — the brand logo bytes, public like the rest of

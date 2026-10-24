@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { getMailAccount, setMailEnabled } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  PATCH: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Whether Outlook mail sync is enabled for this account. Both helpers are
  *  owner-scoped, so a non-owned id reads as `{ enabled: false }`. */

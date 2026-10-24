@@ -5,6 +5,15 @@ import { previewOpenapiSpec } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** The pick step: fetch + parse a spec WITHOUT creating anything and return
  *  its inventory (title, servers, security schemes, tags with counts, and

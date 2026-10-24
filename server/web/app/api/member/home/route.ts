@@ -3,6 +3,11 @@ import type { MemberHomeData } from '@mantle/client-types';
 import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
 import { memberCaller } from '@/lib/auth';
 import { firstSharedWorkspaceOf, landingName, workspaceHome } from '@/lib/landing';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'member' },
+});
 
 /**
  * GET /api/member/home: the member home of an app older than per-workspace

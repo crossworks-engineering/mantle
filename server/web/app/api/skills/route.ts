@@ -6,6 +6,16 @@ import { toolMakerFor } from '@/lib/tools';
 import { firstIssue } from '@/lib/zod-issue';
 import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+  POST: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 export async function GET() {
   const user = ownerCaller();

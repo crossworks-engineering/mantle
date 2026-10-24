@@ -37,6 +37,16 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 import type { LoginRole } from '@mantle/client-types/role-names';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'public', caller: 'publicLogin' },
+  POST: {
+    class: 'public',
+    caller: 'publicLogin',
+    item: { none: 'a public route: it judges its own credential' },
+  },
+});
 
 type AuthorizeParams = {
   clientId: string;

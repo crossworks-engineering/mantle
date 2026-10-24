@@ -10,6 +10,21 @@ import { ownerCaller } from '@/lib/auth';
 import { getRecallMapDetail, recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  PATCH: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** One map: its cards (without bodies) and options. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {

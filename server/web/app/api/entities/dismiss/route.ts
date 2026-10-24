@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { dismissMergeCandidate } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'content', item: { none: 'names no item in its path' } },
+});
 
 const Body = z.object({ idA: z.string().uuid(), idB: z.string().uuid() });
 

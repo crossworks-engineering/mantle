@@ -6,10 +6,25 @@ import { UpdateHeartbeatBody, toUpdateInput } from '@/lib/heartbeat-schema';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+  PATCH: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 /** One owner-scoped heartbeat (summary), or 404. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -6,6 +6,11 @@ import {
   contextLimitsFetchedAt,
   pricingMap,
 } from '@mantle/tracing';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * Live model → catalog map, sourced from OpenRouter's public

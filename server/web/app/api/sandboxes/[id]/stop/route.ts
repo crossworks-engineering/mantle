@@ -2,6 +2,15 @@ import { NextResponse } from '@/server/http-compat';
 import { setSandboxStatus } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { sandboxForLogin, sandboxdStop } from '@/lib/sandboxd';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /**
  * POST /api/sandboxes/:id/stop — the UI's `sandbox_stop`: stop the container

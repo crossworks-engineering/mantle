@@ -15,6 +15,17 @@ import { z } from 'zod';
 import { db } from '@mantle/db';
 import { forgetRequestLogins, loginCaller, type AnyLogin } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+    audit: 'own',
+  },
+});
 
 const Params = z.object({ id: z.string().uuid() });
 

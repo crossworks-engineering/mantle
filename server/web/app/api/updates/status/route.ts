@@ -8,6 +8,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
 import { APP_VERSION } from '@mantle/client-types/version';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** Needs the settings area (the owner's decision, 2026-10-14): the gate
  *  answers before it. */

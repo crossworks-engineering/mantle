@@ -5,6 +5,12 @@ import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+  POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * GET  /api/assistant/threads[?agent=<slug>]: the login's OWN threads with

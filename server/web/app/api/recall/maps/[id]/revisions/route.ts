@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getRecallRevisions, recallMapReadable } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /** The revisions panel, newest first. Also the audit of AGENT edits, which
  *  matters because v2 serves an agent's card edit immediately. */

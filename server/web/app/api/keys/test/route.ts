@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { probeApiKey } from '@/lib/api-key-test';
 import { ownerCaller } from '@/lib/auth';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({ keyId: z.string().min(1), service: z.string().min(1) });
 

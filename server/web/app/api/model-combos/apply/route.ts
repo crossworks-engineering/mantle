@@ -9,6 +9,15 @@ import { loadComboContext } from '@/lib/model-combos-context';
 import { itemErrorText } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({
   combo: z.enum(['best-advanced', 'cost-aware', 'cheapest', 'free']),

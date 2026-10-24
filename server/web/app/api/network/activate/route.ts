@@ -6,6 +6,15 @@ import {
 } from '@/lib/tailscale-config';
 import { tailnetUp } from '@/lib/tailscale';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** Decrypt the stored key and drive tailscaled login over the socket. The join
  *  is async — the UI polls /api/network for `Running` after this returns ok. */

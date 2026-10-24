@@ -12,6 +12,21 @@ import { ownerCaller } from '@/lib/auth';
 import { getRecallCardDetail, recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  PUT: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /**
  * One card of a native Recall map. `card` in the path is the card's SLUG, not

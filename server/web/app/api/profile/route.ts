@@ -35,6 +35,12 @@ import {
 import { listReminderCapableAgents } from '@/lib/agents';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 export async function GET() {
   const user = ownerCaller();

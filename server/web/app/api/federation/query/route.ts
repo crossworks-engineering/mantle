@@ -6,6 +6,16 @@ import { startTrace, step } from '@mantle/tracing';
 import { authenticatePeer } from '@/lib/federation-auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    public: true,
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /**
  * Inbound federation query — a peer Mantle asking what we hold for it.

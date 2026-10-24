@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { buildStudioGraph } from '@/lib/studio/graph';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+});
 
 /**
  * GET /api/studio — the Agent Studio graph: live agent/skill/tool-group/worker

@@ -18,6 +18,16 @@ import {
 import { loadProfilePreferences } from '@mantle/content';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's

@@ -10,6 +10,21 @@ import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'keys' },
+  PATCH: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 const FieldSchema = z.object({
   label: z.string().max(80),

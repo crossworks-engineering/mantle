@@ -12,6 +12,15 @@ import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
 import { readBody } from '@/lib/read-body';
 import { tableTitle } from '@mantle/content/table-snapshots';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+    keyArea: 'tables',
+  },
+});
 
 const Params = z.object({ id: z.string().uuid(), rowId: z.string().min(1).max(100) });
 const Body = z.object({

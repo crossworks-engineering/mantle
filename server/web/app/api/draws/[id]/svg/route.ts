@@ -4,6 +4,11 @@ import { getDrawSvg, scopedDrawSvg } from '@mantle/content';
 import { isUuid } from '@mantle/std';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /**
  * The committed SVG snapshot, in two shapes:

@@ -8,6 +8,15 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { chatLoginCaller } from '@/lib/auth';
 import { unpairMyTelegramChat } from '@/lib/agent-telegram';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  DELETE: {
+    class: 'self',
+    open: 'telegram',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 

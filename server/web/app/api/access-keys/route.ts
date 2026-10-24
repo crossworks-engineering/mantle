@@ -55,6 +55,18 @@ import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import { readBody } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any' },
+  POST: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: "the login's own things, not an item" },
+    audit: 'own',
+  },
+});
 
 const NO_STORE = { 'Cache-Control': CACHE_CONTROL.none };
 /** Keys a login may make an hour (final audit F6): a make-and-revoke loop

@@ -6,6 +6,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { chatLoginCaller } from '@/lib/auth';
 import { listMyTelegramChats } from '@/lib/agent-telegram';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'telegram' },
+});
 
 export async function GET() {
   const login = chatLoginCaller();

@@ -2,6 +2,17 @@ import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { addGrant, getGrants, grantsRoute } from '@/lib/grants';
 import { wsBody } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any' },
+  POST: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 const AddBody = z.object({
   wsId: z.string().uuid(),

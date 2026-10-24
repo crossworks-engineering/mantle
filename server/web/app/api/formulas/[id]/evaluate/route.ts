@@ -5,10 +5,19 @@ import { evaluateSpec, readFormulaSpec, type FormulaValue } from '@/lib/formulas
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    effect: { read: "a formula's calculator: it evaluates and stores nothing" },
+    open: 'owner',
+  },
+});
 
 const Body = z.object({
   target: z.string().min(1).max(200),

@@ -12,6 +12,17 @@ import {
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
+    limits: { rateLimit: ['passwordReset'] },
+    audit: 'own',
+  },
+});
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({ newPassword: z.string().min(8).max(1024) });

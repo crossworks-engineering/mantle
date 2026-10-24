@@ -3,6 +3,15 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { applyManifest, MANIFEST_AGENTS } from '@/lib/system-manifest';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 // POST /api/studio/reset  { slug }
 // Resets a manifest agent to its canonical default (overwrite mode) — system

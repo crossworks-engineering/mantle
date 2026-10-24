@@ -1,5 +1,15 @@
 import { WEB_TOKEN_TTL_SECONDS } from '@/lib/auth';
 import { handleTokenLogin } from '@/lib/token-login';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['authTokenLogin'] },
+  },
+});
 
 /**
  * Web-client token login — the owner UI's credential→bearer exchange for the

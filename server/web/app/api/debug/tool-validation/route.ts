@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { resolveToolValidationMode } from '@mantle/runtime/agent';
 import { toolValidationByTool, toolValidationRecent } from '@/lib/metrics';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/tool-validation — the central arg-validator's telemetry:
  *  per-tool flagged-call tallies + the most recent flagged calls in detail,

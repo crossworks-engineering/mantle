@@ -16,6 +16,11 @@ import {
   appPackageTempPath,
   writeAppPackage,
 } from '@mantle/content/app-package';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

@@ -32,6 +32,16 @@ import {
   previewMyTelegramChat,
 } from '@/lib/agent-telegram';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    open: 'telegram',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['telegramPair'] },
+  },
+});
 
 const Body = z
   .object({

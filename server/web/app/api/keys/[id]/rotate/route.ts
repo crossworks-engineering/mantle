@@ -5,6 +5,15 @@ import { rotateApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { retryProvidersAfterKeyChange } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 const RotateBody = z.object({
   plaintext: z.string().min(1).max(8192),

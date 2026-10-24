@@ -11,6 +11,11 @@ import { registerInstance } from '@/lib/push/relay-client';
 import { deleteAllSubscriptions, getPushInstance, savePushInstance } from '@/lib/push/store';
 import { DEFAULT_RELAY_URL } from '@/lib/push/connect';
 import { env } from '@mantle/config';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 export async function POST() {
   const owner = ownerCaller();

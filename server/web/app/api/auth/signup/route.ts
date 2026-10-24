@@ -8,6 +8,16 @@ import { createFirstOwner } from '@/lib/auth/first-owner';
 import { refuseUnswitchedBrain } from '@/lib/auth/unswitched-brain';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { crossSite: 'json', rateLimit: ['authSignup'] },
+  },
+});
 
 /**
  * First-run account creation — the signup that replaces the old manual

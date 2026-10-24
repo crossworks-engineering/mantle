@@ -3,6 +3,11 @@ import { getOwnedNode } from '@mantle/content';
 import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller } from '@/lib/auth';
 import { olderSummaryOf } from '@mantle/db';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /** One owner-scoped node's id + type — the type-blind resolver behind the
  *  `/n/<id>` permalink. 404 (not 403) for a leaked id so existence doesn't leak.

@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getJourney } from '@/lib/journey';
 import { toolMakerFor } from '@/lib/tools';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** GET /api/debug/journey/[traceId] — the reaction story for one action: the
  *  trace step timeline + the brain layers it produced. 404 if not owned. */

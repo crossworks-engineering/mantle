@@ -58,6 +58,11 @@ import { errorMessage, TtlCache } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
+});
 
 const logger = log('assistant/turn');
 

@@ -6,6 +6,16 @@ import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 import { firstIssue } from '@/lib/zod-issue';
 import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+  POST: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 /** List the owner's heartbeats (summaries). A heartbeat's state shows only
  *  to its maker (W7 integration fix 2). */

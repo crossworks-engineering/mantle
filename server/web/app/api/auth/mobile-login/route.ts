@@ -1,4 +1,14 @@
 import { handleTokenLogin } from '@/lib/token-login';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['authTokenLogin'] },
+  },
+});
 
 /**
  * Mobile companion login. Same credentials as the web login, but instead of a

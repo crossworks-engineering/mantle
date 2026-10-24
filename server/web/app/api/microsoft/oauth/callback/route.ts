@@ -8,6 +8,18 @@ import {
 } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: {
+    class: 'area',
+    area: 'connectors',
+    effect: {
+      write: "the Microsoft connector's OAuth callback: it stores the tokens the provider gave",
+    },
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /**
  * OAuth callback: validate state against the cookie, exchange the code (+ PKCE

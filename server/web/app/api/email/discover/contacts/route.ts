@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { addContactFromSender } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({
   address: z.string().email(),

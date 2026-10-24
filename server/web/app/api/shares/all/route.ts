@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { listActiveShares } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 /** GET /api/shares/all → every ACTIVE share the owner has, newest first — the
  *  "what is exposed right now" registry (every live link is public). No

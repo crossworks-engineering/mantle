@@ -3,6 +3,17 @@ import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    caller: 'publicLogin',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['authPairIssue'] },
+  },
+});
 
 /**
  * POST /api/auth/pair — mint a one-time pairing code for "Sign in on your

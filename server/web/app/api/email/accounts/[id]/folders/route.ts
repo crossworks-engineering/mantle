@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { listAccountFolders, setIncludedFolders } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  PUT: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Live IMAP folder tree + current scan config for one account. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

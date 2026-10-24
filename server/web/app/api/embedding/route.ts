@@ -9,6 +9,16 @@ import { ownerCaller } from '@/lib/auth';
 import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** The single embedder config + the vector-column dim + the owner's API keys
  *  (for the route key pickers), for /settings/embedding. Also what an admin

@@ -37,6 +37,21 @@ import { isSubscriptionListen, mcpHttpHandler } from '@/lib/mcp-http';
 import { rateLimit } from '@/lib/rate-limit';
 import { rateLimitedResponse } from '@/lib/route-limits';
 import { rateLimitAccessKey } from '@/lib/access-keys';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'public', limits: { rateLimit: ['mcp'] } },
+  POST: {
+    class: 'public',
+    item: { none: 'a public route: it judges its own credential' },
+    limits: { rateLimit: ['mcp'] },
+  },
+  DELETE: {
+    class: 'public',
+    item: { none: 'a public route: it judges its own credential' },
+    limits: { rateLimit: ['mcp'] },
+  },
+});
 
 /** Per login, so one login's client cannot use up the box's budget. Taken
  *  here, once the bearer is resolved (the caller is this route's own

@@ -1,6 +1,11 @@
 import { ownerCaller } from '@/lib/auth';
 import { subscribeRealtime, type RealtimeChange } from '@/lib/realtime';
 import { sseResponse } from '@/lib/sse';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 /**
  * Server-Sent Events stream of live node changes for the current owner. Backed

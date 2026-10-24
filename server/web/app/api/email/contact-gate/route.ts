@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { loadContactGate } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /**
  * Inbox inbound allowlist state. The contacts list IS the email allowlist, so

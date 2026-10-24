@@ -3,6 +3,11 @@ import { db, authUsers, mobileTokens, eq, onLoginHoldSpot } from '@mantle/db';
 import { forgetRequestLogins, verifyMobileToken } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteTokenSubscriptions, forgetRelayDevices } from '@/lib/push/store';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'self', public: true, item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * Revoke the calling device's mobile token. Self-authenticates from the

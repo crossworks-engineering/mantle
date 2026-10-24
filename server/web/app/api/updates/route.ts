@@ -7,6 +7,11 @@ import {
 } from '@/lib/updates';
 import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/client-types/version';
 import { ownerCaller } from '@/lib/auth';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /** Initial-load bundle for /settings/updates — the release check, whether the
  *  updater sidecar is present, the last updater status, and this build's

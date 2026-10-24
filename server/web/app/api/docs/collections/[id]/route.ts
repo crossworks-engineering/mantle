@@ -4,6 +4,15 @@ import { setCollectionEnabled } from '@mantle/files';
 import { ownerCaller } from '@/lib/auth';
 import { publicErrorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({ enabled: z.boolean() });
 

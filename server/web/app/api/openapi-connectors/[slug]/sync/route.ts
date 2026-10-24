@@ -5,6 +5,15 @@ import { syncOpenapiConnector } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Re-fetch the spec and reconcile the connector's mirrored tools. Explicit
  *  only — sync never runs on a schedule (cost-safety rule). Pass

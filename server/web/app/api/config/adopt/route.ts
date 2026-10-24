@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({
   kind: z.enum(['persona', 'agent', 'skill', 'tool-group', 'worker']),

@@ -3,6 +3,15 @@ import { ownerCaller } from '@/lib/auth';
 import { connectorOAuthCallbackUrl } from '@/lib/mcp-connectors';
 import { dbMcpOAuthStore, startMcpOAuth } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Begin (or restart) the OAuth authorization flow for a connector — used on
  *  first connect and whenever the connector reports `needs_reconnect`. The

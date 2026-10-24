@@ -3,6 +3,11 @@ import { anyLoginCaller, legacyLogin } from '@/lib/auth';
 import type { Login } from '@/lib/auth/login';
 import { getRequestContext } from '@/server/request-context';
 import type { ApiV1Whoami } from '@mantle/client-types';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'any', keyArea: 'self' },
+});
 
 /**
  * GET /api/v1/whoami (public API v1): who the credential acts as, and, for

@@ -4,6 +4,20 @@ import { setTailscaleConfig, clearTailscaleConfig } from '@/lib/tailscale-config
 import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+  DELETE: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 type NetworkResult = { ok: boolean; message: string };
 const json = (r: NetworkResult) => NextResponse.json(r);

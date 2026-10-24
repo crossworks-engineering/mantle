@@ -1,6 +1,22 @@
 import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { removeUser, setModerator, wsBody, wsRoute } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  PATCH: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 type Ctx = { params: Promise<{ id: string; loginId: string }> };
 

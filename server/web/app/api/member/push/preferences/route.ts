@@ -1,5 +1,11 @@
 import { memberCaller } from '@/lib/auth';
 import { loginPushPrefs, loginPushPrefsUpdate } from '@/lib/push/login-routes';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'member' },
+  PUT: { class: 'self', open: 'member', item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * GET/PUT /api/member/push/preferences: this login's own push toggles

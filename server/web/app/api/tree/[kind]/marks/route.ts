@@ -5,6 +5,11 @@ import { TREE_MARK_VIEWS } from '@mantle/client-types/tree';
 import { listTreeMarks } from '@mantle/content/tree';
 import { ensureTreeRoot, treeKindOr404 } from '@/lib/tree-route';
 import { chipped } from '@/lib/list-workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 const Query = z.object({ view: z.enum(TREE_MARK_VIEWS) });
 

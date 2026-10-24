@@ -16,11 +16,30 @@ import { firstIssue } from '@/lib/zod-issue';
 import { guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). Since the pre-check removal part 2 the
  *  item gate no longer answers a bad id here (docs/actors.md). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  PATCH: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+  DELETE: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** A write's first read (pre-check removal part 2): the folder in the
  *  caller's scope; one it does not read is the 404 of none (as for an id no

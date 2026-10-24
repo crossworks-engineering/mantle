@@ -12,10 +12,15 @@ import { draftAbsOf } from '@mantle/content/table-storage';
 import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /**
  * Keyset page of rows for the grid's lazy-load (P3). Draft-first like every

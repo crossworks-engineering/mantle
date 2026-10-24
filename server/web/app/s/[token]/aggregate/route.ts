@@ -5,6 +5,11 @@ import { db, nodes, tables } from '@mantle/db';
 import { aggregateWindow, resolveStoragePath } from '@mantle/tabledb';
 import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'link', limits: { rateLimit: ['shareAggregate'] } },
+});
 
 /**
  * One footer total for a SHARED table, computed over the whole tab.

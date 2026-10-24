@@ -5,6 +5,15 @@ import { ownerCaller } from '@/lib/auth';
 import { recallActorOf } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /** Drag-to-reorder: the whole card order, by slug. The entry card keeps its
  *  place at the top whatever is sent — a walk starts there. */

@@ -5,6 +5,17 @@ import { parseWsFilter } from '@/lib/list-workspaces';
 import { countEvents, createEvent, listEvents } from '@/lib/events';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+});
 
 const PAGE_SIZE = 50;
 

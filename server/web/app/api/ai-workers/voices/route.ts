@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { listVoices } from '@/lib/ai-worker-rpc';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({
   apiKeyId: z.string(),

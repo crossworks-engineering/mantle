@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from '@/server/http-compat';
 import { buildAuthorizeUrl, createPkce, createState, resolveOAuthConfig } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
 import { requestOrigin, secureCookies } from '@/lib/auth-constants';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /**
  * Kick off the delegated OAuth flow: resolve this brain's Azure app config

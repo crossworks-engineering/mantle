@@ -6,6 +6,16 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller, sessionUserCaller } from '@/lib/auth';
 import { checkForUpdate } from '@/lib/updates';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', caller: 'session' },
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 /** The cached release check: open to every Admin user, whatever its areas
  *  (the owner's carve-out, 2026-10-14: its row is the login's own,

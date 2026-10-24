@@ -3,6 +3,11 @@ import { ownerCaller } from '@/lib/auth';
 import { searchEntities } from '@mantle/search';
 import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';
 import { MENTION_TARGET_KINDS } from '@mantle/client-types/kind-lists';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 /**
  * Read-only resolver for the editor's @-mention picker. Returns two kinds of

@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { listSandboxes } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { sandboxdEnabled, sandboxdList } from '@/lib/sandboxd';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/sandboxes — the Sandboxes surface's list payload (owner-scoped).

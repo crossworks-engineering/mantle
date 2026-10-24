@@ -5,6 +5,11 @@ import { TREE_SEARCH_MAX, TREE_TAG_MAX } from '@mantle/client-types/tree';
 import { searchTree } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
 import { hitWorkspaces, parseReadCover, withChips, workspaceChips } from '@/lib/list-workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content', open: 'owner' },
+});
 
 const Query = z.object({
   q: z.string().trim().max(TREE_SEARCH_MAX).default(''),

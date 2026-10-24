@@ -6,6 +6,11 @@ import { loadProfilePreferences } from '@mantle/content';
 import { feature } from '@mantle/config';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+});
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight

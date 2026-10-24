@@ -2,6 +2,15 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { syncMcpConnector } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Re-list the remote server's tools and reconcile the connector's rows.
  *  Explicit only — sync never runs on a schedule (cost-safety rule). */

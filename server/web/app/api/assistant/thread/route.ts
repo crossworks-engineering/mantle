@@ -11,6 +11,11 @@ import { openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+});
 
 /**
  * GET /api/assistant/thread[?agent=<slug>][&withMessages=0]: the /assistant

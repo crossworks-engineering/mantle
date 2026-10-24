@@ -5,6 +5,16 @@ import type { ToolSettings } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
 import { feature } from '@mantle/config';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+  PUT: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 /** The two owner-level tool policy toggles (stored in profile preferences):
  *  agent-built-tool approval, and the unattended-heartbeat email/web egress gate. */

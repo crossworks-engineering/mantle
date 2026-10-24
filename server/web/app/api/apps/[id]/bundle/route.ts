@@ -14,6 +14,11 @@ import { ownerCaller } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

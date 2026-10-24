@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { connectImapAccount, latestSyncRuns, listAccounts, redactAccount } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+  POST: {
+    class: 'area',
+    area: 'connectors',
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** List the owner's email accounts plus the latest sync run per account. The
  *  sealed IMAP credential is stripped before it leaves the process. */

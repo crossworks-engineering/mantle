@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getReaderDoc } from '@/lib/docs-reader';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+});
 
 /**
  * GET /api/docs/reader/doc?collection=<key>&path=<relPath> — one doc's

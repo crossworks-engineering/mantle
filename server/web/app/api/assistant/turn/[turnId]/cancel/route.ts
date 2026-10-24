@@ -5,6 +5,14 @@ import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.

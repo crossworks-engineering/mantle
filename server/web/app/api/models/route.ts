@@ -4,6 +4,11 @@ import { ownedKeyService } from '@mantle/api-keys';
 import { isUuid } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
 import { fetchProviderModels } from '@/lib/model-explorer';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * GET /api/models?provider=<id>[&keyId=<uuid>][&refresh=1]

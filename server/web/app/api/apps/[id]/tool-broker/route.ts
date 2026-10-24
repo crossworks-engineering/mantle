@@ -23,11 +23,22 @@ import { memberToolBroker } from '@/lib/app-runner';
 import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
  *  404 before the handler (lib/route-params.ts; the item gate answered it
  *  until the pre-check removal part 2). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    makesItems: false,
+    item: { none: 'not decided yet: the write names an item no check reads' },
+    limits: { rateLimit: ['memberToolBroker'] },
+  },
+});
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = ownerLoginCaller();

@@ -7,6 +7,13 @@ import { getContent } from '@mantle/storage';
 import { putContent } from '@mantle/storage/write';
 import { sniffType, LOGO_MAX_BYTES } from '@/lib/logo-validation';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self' },
+  PUT: { class: 'self', item: { none: "the login's own things, not an item" } },
+  DELETE: { class: 'self', item: { none: "the login's own things, not an item" } },
+});
 
 /**
  * The user's PROFILE PHOTO — an uploaded, pre-cropped square raster that

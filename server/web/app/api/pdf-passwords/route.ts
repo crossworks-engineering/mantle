@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createPdfPassword, listPdfPasswords } from '@mantle/content';
 import { readBody } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'keys' },
+  POST: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 export async function GET() {
   const user = ownerCaller();

@@ -6,6 +6,16 @@
  */
 import { V1_DOWNLOAD_QUERY } from '@/lib/auth/route-policy';
 import { GET as fileRoute } from '../../../../files/files/[id]/route';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: {
+    class: 'content',
+    keyArea: 'files',
+    limits: { rateLimit: ['memberBytes'] },
+    base: 'GET /api/files/files/:id',
+  },
+});
 
 // route-callers: hand case. The bytes handler reads the asset reader the
 // gate answered (readerAssetCaller); the code before its call only sets

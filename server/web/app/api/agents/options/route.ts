@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listAgentOptions } from '@/lib/agents';
 import type { AgentOptionDTO } from '@mantle/client-types';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'assistants' },
+});
 
 /**
  * Lightweight agent picker options — EVERY agent (slug + name + role), unlike

@@ -8,6 +8,15 @@ import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { connectDevice, parseConnectBody } from '@/lib/push/connect';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['pushEnrol'] },
+  },
+});
 
 export async function POST(req: NextRequest) {
   // A bare read, its value unused: it is here for the route manifest only

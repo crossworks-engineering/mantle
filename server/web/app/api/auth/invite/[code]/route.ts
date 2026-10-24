@@ -10,6 +10,15 @@ import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, previewMemberInvite } from '@mantle/content';
 import type { MemberInvitePreview } from '@mantle/client-types';
 import { inviteFailed } from '@/lib/member-invites';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: {
+    class: 'self',
+    public: true,
+    limits: { rateLimit: ['invitePreview', 'invitePreviewFailures'] },
+  },
+});
 
 export async function GET(_req: Request, ctx: { params: Promise<{ code: string }> }) {
   const { code } = await ctx.params;

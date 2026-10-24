@@ -7,6 +7,15 @@ import { modelRoutePairing } from '@/lib/model-route-pair';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { errorMessage } from '@mantle/std';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 const Body = z.object({
   provider: z.string(),

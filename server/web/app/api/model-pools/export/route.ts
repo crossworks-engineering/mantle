@@ -3,6 +3,11 @@ import { asc, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import type { CuratedTemplateEntry } from '@mantle/client-types/model-pools-data';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'settings' },
+});
 
 /**
  * Export the curated pools as the repo-shipped TEMPLATE. The curator drafts in

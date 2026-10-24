@@ -27,6 +27,11 @@ import { connectorUrl } from '@/lib/mcp-oauth';
 import { listLoginClients } from '@/lib/mcp-clients';
 import { feature } from '@mantle/config';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'member' },
+});
 
 export async function GET() {
   const member = memberCaller();

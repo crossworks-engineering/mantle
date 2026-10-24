@@ -11,6 +11,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listActiveShares } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'users' },
+});
 
 export async function GET() {
   const user = ownerCaller();

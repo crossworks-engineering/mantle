@@ -1,6 +1,17 @@
 import { anyLoginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { createWorkspace, listWorkspaces, wsBody, wsRoute } from '@/lib/workspaces';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', scope: null, open: 'any' },
+  POST: {
+    class: 'self',
+    scope: null,
+    open: 'any',
+    item: { none: "the login's own things, not an item" },
+  },
+});
 
 /**
  * Workspaces (plan page 4887b8e7, W5a; lib/workspaces.ts holds the rules).

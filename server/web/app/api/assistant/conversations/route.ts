@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { chatCaller } from '@/lib/auth';
 import { assistantConversations } from '@/lib/assistant-inbox';
 import { chatAgentIds } from '@/lib/assistant-chat';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'self', open: 'chat' },
+});
 
 /**
  * GET /api/assistant/conversations — the inbox for the mobile companion: one row

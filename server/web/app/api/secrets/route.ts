@@ -11,6 +11,16 @@ import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, countSecrets, createSecret, listSecrets } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'keys' },
+  POST: {
+    class: 'area',
+    area: 'keys',
+    item: { none: 'manages the keys area: the Admin step checks it' },
+  },
+});
 
 const PAGE_SIZE = 50;
 

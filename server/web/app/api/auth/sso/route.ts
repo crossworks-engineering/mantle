@@ -6,6 +6,17 @@
  */
 import { cookieUpgradeCaller } from '@/lib/auth';
 import { handleOwnerSso } from '@/lib/owner-sso';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    public: true,
+    caller: 'cookieUpgrade',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['ownerSso'] },
+  },
+});
 
 export async function POST(req: Request) {
   // Awaited where it is called (owner-caller-imports): the read runs the

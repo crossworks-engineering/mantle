@@ -4,6 +4,11 @@ import { chatCaller } from '@/lib/auth';
 import { resolveChatAgentToWrite } from '@/lib/assistant-chat';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
+});
 
 const Body = z.object({
   agentSlug: z.string().min(1).optional(),

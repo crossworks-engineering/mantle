@@ -15,10 +15,19 @@ import {
 } from '@mantle/content/table-snapshots';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The [id] is a uuid: any other names nothing, the one 404 before the
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  GET: { class: 'content' },
+  POST: {
+    class: 'content',
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();

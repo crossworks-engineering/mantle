@@ -1,5 +1,15 @@
 import { memberCaller } from '@/lib/auth';
 import { loginPushConnect } from '@/lib/push/login-routes';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'self',
+    open: 'member',
+    item: { none: "the login's own things, not an item" },
+    limits: { rateLimit: ['pushEnrol'] },
+  },
+});
 
 /**
  * POST /api/member/push/connect { platform, osPushToken } -> { ticket,

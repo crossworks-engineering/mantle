@@ -7,6 +7,15 @@ import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/runtime/agent';
 import { loadProfilePreferences } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'assistants',
+    item: { none: 'manages the assistants area: the Admin step checks it' },
+  },
+});
 
 /**
  * Agent Studio Phase 4 — the no-persist sandbox (docs/agent-studio.md).

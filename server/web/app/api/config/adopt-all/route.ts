@@ -2,6 +2,15 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
 import { computeConfigDiff } from '@/lib/system-manifest/config-diff-db';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+});
 
 // Apply order: groups + skills before agents (so grants resolve), persona after
 // its specialists exist, workers last.

@@ -9,6 +9,16 @@ import {
   syncMcpConnector,
 } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: {
+    class: 'area',
+    area: 'connectors',
+    effect: { write: "an MCP connector's OAuth callback: it stores the tokens the provider gave" },
+    item: { none: 'manages the connectors area: the Admin step checks it' },
+  },
+});
 
 /** Minimal self-closing result page — the flow runs in a spare browser tab. */
 function htmlPage(title: string, detail: string, ok: boolean): Response {

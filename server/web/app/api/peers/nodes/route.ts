@@ -2,6 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { and, db, desc, eq, ilike, not, inArray, nodes, sql } from '@mantle/db';
 import { PEER_PICK_EXCLUDED_KINDS } from '@mantle/client-types/kind-lists';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  GET: { class: 'area', area: 'connectors' },
+});
 
 /**
  * Node picker for the peer-grant UI: title search across grantable node types.

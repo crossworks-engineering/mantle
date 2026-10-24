@@ -12,11 +12,20 @@ import { ownerCaller } from '@/lib/auth';
 import { duplicateApp } from '@mantle/content/app-package';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
+import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** The ids are uuids: any other names nothing, the params gateway's one
  *  404 before the handler (lib/route-params.ts; the item gate answered it
  *  until the pre-check removal part 2). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    makesItems: false,
+    item: { none: 'not decided yet: the write names an item no check reads' },
+  },
+});
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
