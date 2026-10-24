@@ -35,5 +35,6 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 - Search reads the canvas title, description and visible text. A canvas is indexed again only after five minutes without a text change, so many quick saves cost one pass.
 - The last ten versions of each canvas are kept. Presenter can bring one back.
 - In a page a canvas is `![Title](present:<id>)`. Who may open it is the canvas's own access, never the page's: a reader of the page who may not read the canvas sees a placeholder, with no picture and nothing of the canvas.
+- Sharing works as it does for a drawing in a page. Sharing the page with a workspace does not share the canvas. The page's **Access** panel lists it under **Grant these too**; grant it there, and the workspace's users can open it. Taking the canvas out of the page ends that offer, but a grant already made stays until you remove it.
 - On a share link (`/s/...`), and in the mobile apps, a page shows the picture only, never the live canvas. A link shows a canvas's picture only when you add the canvas to the link's served items in Access; otherwise it shows a placeholder. PDF and Word exports of the page carry the picture.
 - The pictures need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs, but Presenter cannot look at its work, and nothing can be exported.

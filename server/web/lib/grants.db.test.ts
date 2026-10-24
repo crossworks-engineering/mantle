@@ -594,6 +594,46 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     );
   });
 
+  it('a canvas a page embeds: Grant these too offers it as a drawing, the grant opens it, taking it out of the page ends the offer (0333)', async () => {
+    const pg = await node('page', 'canvas host', 'pages');
+    const cv = await node('present', 'Pump deck', 'present');
+    await homeIn(pg, P);
+    await homeIn(cv, P);
+    // A real page save: the page's embed trigger reads presentId (0333).
+    const doc = {
+      type: 'doc',
+      content: [{ type: 'image', attrs: { presentId: cv, alt: 'Canvas' } }],
+    };
+    await x(
+      sql`insert into pages (node_id, doc, doc_text) values (${pg}, ${JSON.stringify(doc)}::jsonb, '')`,
+    );
+    const edges = await x<{ n: number }>(
+      sql`select count(*)::int as n from node_embeds where from_id = ${pg} and to_id = ${cv}`,
+    );
+    expect(edges[0]!.n).toBe(1);
+    await as(owner);
+    expect((await add(pg, Q)).status).toBe(200);
+    // The page is in Q now; the canvas is not, until it is granted too.
+    expect(await readWs(cv)).toEqual([P]);
+    expect((await get(pg)).body.embedsNotGranted).toEqual([
+      { nodeId: cv, title: 'Pump deck', kind: 'present' },
+    ]);
+    const ok = await call(r.embeds.POST(req('POST', { wsIds: [Q] }), p({ nodeId: pg })));
+    expect(ok.body.skipped).toEqual([]);
+    expect((await readWs(cv)).sort()).toEqual([P, Q].sort());
+    // A workspace it was never granted to still does not read it.
+    expect(await readWs(cv)).not.toContain(R);
+    // Out of the committed page: the edge goes, so it is offered no more;
+    // the grant made stays, as a drawing's does.
+    await x(
+      sql`update pages set doc = ${JSON.stringify({ type: 'doc', content: [] })}::jsonb where node_id = ${pg}`,
+    );
+    const after = await x<{ n: number }>(
+      sql`select count(*)::int as n from node_embeds where from_id = ${pg} and to_id = ${cv}`,
+    );
+    expect(after[0]!.n).toBe(0);
+  });
+
   it('the open link: its served list, and what the caller may serve', async () => {
     const pg = await node('page', 'link host', 'pages');
     const e1 = await node('file', 'served.png', 'files');

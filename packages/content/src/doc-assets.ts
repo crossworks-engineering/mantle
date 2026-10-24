@@ -32,9 +32,9 @@ export function referencedDrawIds(doc: unknown): string[] {
  * The Present canvas ids a page embeds (`![Title](present:<id>)` → an image
  * node with `attrs.presentId`). Scopes the share surface as
  * referencedDrawIds does: a shared page serves the snapshot of exactly the
- * canvases its doc places. Not an embed edge (referencedEmbedIds and the
- * database's mantle_page_embed_refs leave canvases out): a canvas is read
- * by its own grants only.
+ * canvases its doc places. A canvas is an embed edge too
+ * (referencedEmbedIds, the database's mantle_page_embed_refs, 0333): what
+ * "Grant these too" offers, as a drawing; it opens nothing by itself.
  */
 export function referencedPresentIds(doc: unknown): string[] {
   const out = new Set<string>();
@@ -65,11 +65,12 @@ export function referencedFileIds(doc: unknown): string[] {
 }
 
 /** Node types whose ids render INSIDE a page: an image or page image (an
- *  uploaded file by `nodeId`, a drawing by `drawId`), a file embed, and a
+ *  uploaded file by `nodeId`, a drawing by `drawId`, a canvas by
+ *  `presentId`), a file embed, and a
  *  child page card (`pageId`). */
 const EMBED_ATTRS: Record<string, readonly string[]> = {
-  image: ['nodeId', 'drawId'],
-  pageImage: ['nodeId', 'drawId'],
+  image: ['nodeId', 'drawId', 'presentId'],
+  pageImage: ['nodeId', 'drawId', 'presentId'],
   fileEmbed: ['nodeId'],
   childPage: ['pageId'],
 };

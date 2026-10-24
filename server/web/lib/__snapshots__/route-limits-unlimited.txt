@@ -53,7 +53,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (125):
+owner rows open to members (124):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -92,7 +92,6 @@ owner rows open to members (125):
   GET /api/pages/:id/descendant-count
   GET /api/presents
   GET /api/presents/:id
-  GET /api/presents/:id/poster
   GET /api/presents/:id/revisions
   GET /api/recall/maps
   GET /api/recall/maps/:id

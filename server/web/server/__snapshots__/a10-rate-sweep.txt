@@ -5,7 +5,8 @@
 # 2026-10-24 (owner decision): the three app limits (member-frame-ticket, member-db-broker, member-tool-broker) count an Admin user too; their count lines say so and their "order: an Admin user" probes are gone.
 # 2026-10-24 (Present, owner decision of the app limits): member-canvas-frame-ticket follows the app rule, an Admin user counts too; its count line says so and it has no "order: an Admin user" probe. The canvas-frame and member-canvas-frame-ticket probes are the Present routes', recorded on the branch.
 # 2026-10-24 (Present in Pages): GET and HEAD /s/:token/present/:presentId, a shared page's canvas snapshot, take share-present-embed, the limit of its drawing sibling; their probes are that sibling's answers, as main recorded them.
-# probes: 259
+# 2026-10-24 (Present in Pages): GET and HEAD /api/presents/:id/poster, a canvas's snapshot in a page, take present-poster (600 a minute per login); its probes are the branch's own answers (no route on main).
+# probes: 267
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -115,6 +116,14 @@ POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s) 
 POST /api/apps/:id/frame-ticket member member-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
 POST /api/apps/:id/frame-ticket member member-frame-ticket scope => other address 429; other login 404; other login, other address 404
 POST /api/apps/:id/frame-ticket member member-frame-ticket order: no login => first 429 at 0; answer 401; then 404
+GET /api/presents/:id/poster member present-poster count (login 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/presents/:id/poster member present-poster window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/presents/:id/poster member present-poster scope => other address 429; other login 404; other login, other address 404
+GET /api/presents/:id/poster member present-poster order: no login => first 429 at 0; answer 401; then 404
+HEAD /api/presents/:id/poster member present-poster count (login 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/presents/:id/poster member present-poster window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/presents/:id/poster member present-poster scope => other address 429; other login 404; other login, other address 404
+HEAD /api/presents/:id/poster member present-poster order: no login => first 429 at 0; answer 401; then 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket scope => other address 429; other login 404; other login, other address 404

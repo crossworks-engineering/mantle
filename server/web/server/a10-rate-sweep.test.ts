@@ -382,6 +382,10 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [login('member-frame-ticket', 30)],
   },
+  ...getHead('/api/presents/:id/poster', {
+    cred: 'member',
+    limits: [login('present-poster', 600)],
+  }),
   {
     row: 'POST /api/presents/:id/frame-ticket',
     cred: 'member',

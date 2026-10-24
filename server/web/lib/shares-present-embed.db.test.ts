@@ -104,4 +104,32 @@ describe.skipIf(!URL)('a shared page shows the canvases its link serves', () => 
     const self = { ...(await link()), nodeId: id.served, nodeType: 'present' } as Share;
     expect(await shares.isEmbeddedPresentAllowed(self, id.served)).toBe(false);
   });
+
+  it('reads the committed page only (it rewrites the page): a canvas in the draft alone, or taken out, is not shown', async () => {
+    const p = await link();
+    // In the draft only (on the list, with a snapshot): not the page a link shows.
+    const draft = {
+      type: 'doc',
+      content: [{ type: 'image', attrs: { presentId: id.notEmbedded, alt: 'Deck' } }],
+    };
+    await m.db.execute(
+      sqlTag`update pages set draft_doc = ${JSON.stringify(draft)}::jsonb where node_id = ${id.page}`,
+    );
+    expect(await shares.isEmbeddedPresentAllowed(p, id.notEmbedded)).toBe(false);
+    // Taken out of the committed page: no longer shown, though still on the list.
+    const committed = {
+      type: 'doc',
+      content: [{ type: 'image', attrs: { presentId: id.noPoster, alt: 'Deck' } }],
+    };
+    await m.db.execute(
+      sqlTag`update pages set doc = ${JSON.stringify(committed)}::jsonb, draft_doc = null where node_id = ${id.page}`,
+    );
+    expect(await shares.isEmbeddedPresentAllowed(p, id.served)).toBe(false);
+  });
+
+  // Last: it ends the link the others use.
+  it('a link that is no longer live shows nothing', async () => {
+    await m.db.execute(sqlTag`update shares set revoked_at = now() where token = ${token}`);
+    expect(await shares.resolveActiveShareByToken(token)).toBeNull();
+  });
 });
