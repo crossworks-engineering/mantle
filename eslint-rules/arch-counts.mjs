@@ -98,6 +98,7 @@ import { checkDocQuotes } from './docs-quotes.mjs';
 import { rightsCounts } from './rights-counts.mjs';
 import { sqlCode } from '../packages/db/src/sql-text.ts';
 import { cleanupCounts } from './cleanup-counts.mjs';
+import { ITEM_NONE_PLACEHOLDER } from '../server/web/lib/auth/route-declaration.ts';
 import { gatewayCounts } from './gateway-counts.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
@@ -395,6 +396,17 @@ export function toolPolicySwept(path) {
 const ROUTE_ENTRY = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD) \/|\/api(?:\/|$))/;
 
 /** The route policy lists of `text`: lists holding 3 or more routes. */
+/**
+ * The route declarations' undecided writes (plan v3.2 S9 part 1): each
+ * `item: { none: ITEM_NONE_PLACEHOLDER }` the codemod wrote where a write
+ * names an item no check reads (server/web/lib/auth/route-declaration.ts).
+ * A count that only goes down: S11b gives each a check or a reason, then
+ * the lint forbids the string.
+ */
+export function itemNonePlaceholderCount(code) {
+  return code.split(ITEM_NONE_PLACEHOLDER).length - 1;
+}
+
 export function routePolicyLists(text) {
   return listLiterals(stripComments(text))
     .map((l) => stringsIn(l).filter((s) => ROUTE_ENTRY.test(s)).length)
@@ -1038,6 +1050,7 @@ export function measure(root) {
   let routeFiles = 0;
   let apiRouteFiles = 0;
   let goneStubs = 0;
+  let itemNonePlaceholders = 0;
   let guards = 0;
   let guardFiles = 0;
   let liveUnguarded = 0;
@@ -1126,6 +1139,7 @@ export function measure(root) {
       if (f.startsWith('server/web/app/api/')) apiRouteFiles += 1;
       const gone = isGoneStub(text);
       if (gone) goneStubs += 1;
+      itemNonePlaceholders += itemNonePlaceholderCount(code);
       const g = guardCalls(text);
       guards += g;
       const r = callerReads(text);
@@ -1244,6 +1258,7 @@ export function measure(root) {
       routeFiles,
       apiRouteFiles,
       goneStubs,
+      itemNonePlaceholders,
       guardCalls: guards,
       guardCallFiles: guardFiles,
       liveRoutesWithoutGuard: liveUnguarded,

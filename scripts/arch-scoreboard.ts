@@ -38,6 +38,8 @@ const LABELS: Record<string, string> = {
   routeFiles: 'route files',
   apiRouteFiles: 'route files under /api',
   goneStubs: 'route files answering 410',
+  itemNonePlaceholders:
+    'route declarations whose write item is the placeholder (item none, not decided; plan v3.2 S9, S11b)',
   guardCalls: 'guard calls in route files',
   guardCallFiles: 'route files with a guard call',
   liveRoutesWithoutGuard: 'live /api routes calling no guard',

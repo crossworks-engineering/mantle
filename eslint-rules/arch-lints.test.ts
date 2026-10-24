@@ -5,6 +5,7 @@ import { RuleTester } from 'eslint';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { asSystemExits, holderProblems, systemDbUses } from './as-system-exits.mjs';
 import { describe, expect, it } from 'vitest';
+import { ITEM_NONE_PLACEHOLDER } from '../server/web/lib/auth/route-declaration';
 import {
   asSystemSites,
   failOpenSiteCount,
@@ -28,6 +29,7 @@ import {
   rawAclLines,
   readRepoFile,
   routePolicyLists,
+  itemNonePlaceholderCount,
   stripComments,
   toolPolicyLists,
   toolPolicySwept,
@@ -635,6 +637,15 @@ describe('the counters', () => {
     expect(toolPolicySwept('packages/tools/src/selection/deferred.ts')).toBe(true);
     expect(toolPolicySwept('server/web/lib/system-manifest/manifest.ts')).toBe(false);
     expect(toolPolicySwept('packages/tools/src/turn-listing.ts')).toBe(true);
+  });
+
+  it("count the route declarations' placeholder item reasons (plan v3.2 S9 part 1)", () => {
+    const p = JSON.stringify(ITEM_NONE_PLACEHOLDER);
+    const file = `export const policy = routePolicy({\n  POST: { class: 'content', item: { none: ${p} } },\n  DELETE: { class: 'content', item: { none: ${p} } },\n  PUT: { class: 'content', item: { none: 'a reason of its own' } },\n});`;
+    expect(itemNonePlaceholderCount(file)).toBe(2);
+    expect(
+      itemNonePlaceholderCount("export const policy = routePolicy({ GET: { class: 'content' } });"),
+    ).toBe(0);
   });
 
   it('count guard calls and know a route file', () => {
