@@ -12,14 +12,15 @@ export const policy = routePolicy({
 
 /**
  * PUT /api/profile/neat-background { neatBackground }, persist the generated
- * whole-surface gradient's spec — compact JSON `{v:1, seed, tone, speed}`.
+ * whole-surface background's spec (Drift): compact JSON, v2 from the current
+ * generator, or a Neat-era v1. The route keeps its first name.
  *
  * Tiny by design, exactly like /api/profile/backgrounds, and the same
  * contracts throughout: BRAIN-level (the look of the product, so it lands on
  * the shared anchor row via savePreferencesFor); an EMPTY string is the
  * deliberate clear, not a missing value; validation of the spec itself
- * happens in the shared projection (projectNeatBackground) and again in the
- * client's decode, so garbage stores as unset, never as an error.
+ * happens in the shared projection (projectNeatBackground, through the one
+ * Drift codec) and again in the client's decode, so garbage stores as unset, never as an error.
  *
  * Colours are deliberately NOT stored — the client derives them from the
  * live theme tokens, which is what keeps one saved background correct across

@@ -8,7 +8,7 @@ import {
   DEFAULT_COLOR_THEME,
   FRESH_COLOR_THEME,
 } from './lib/themes';
-import { decodeNeatSpec, encodeNeatSpec } from './neat-background';
+import { decodeDriftSpec } from './drift/spec';
 
 /**
  * The client fallbacks for the fresh-install look agree with the brain's
@@ -36,10 +36,10 @@ describe('the fresh-install look exists', () => {
     expect(AVATAR_PICKER_STYLES.map((s) => s.id)).toContain(FRESH_APPEARANCE.avatarStyle);
   });
 
-  it('carries a Neat spec in canonical form', () => {
-    const spec = decodeNeatSpec(FRESH_APPEARANCE.neatBackground);
+  it('carries a background spec that decodes (a Neat v1 spec, painted as silk)', () => {
+    const spec = decodeDriftSpec(FRESH_APPEARANCE.neatBackground);
     expect(spec).not.toBeNull();
-    expect(encodeNeatSpec(spec!)).toBe(FRESH_APPEARANCE.neatBackground);
+    expect(spec?.style).toBe('silk');
   });
 });
 

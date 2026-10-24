@@ -21,7 +21,6 @@ import { FolderPresenter, loadFolderListing } from '@/components/share/folder-pr
 import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
 import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
-import { env } from '@mantle/config';
 import type { PageRoute } from '../route-loader';
 import { CACHE_CONTROL } from '../../lib/cache-control';
 
@@ -135,7 +134,7 @@ async function renderShare(c: Context): Promise<Response> {
   const heading = 'title' in view ? view.title : view.filename;
   // The owner's brand renders into the <html> tag — a share page is the
   // BRAIN's surface, so the owner's theme + fonts are the only appearance.
-  // The owner also sets the DEFAULT mode and the Neat backdrop; the visitor's
+  // The owner also sets the DEFAULT mode and the Drift backdrop; the visitor's
   // own mode toggle (share-page.js) overlays the default, locally only.
   const {
     attrs: appearance,
@@ -149,12 +148,10 @@ async function renderShare(c: Context): Promise<Response> {
     appearance,
   };
 
-  // One reader chrome for every shelled body. The licence key is the same
-  // env var the client app uses, so one box config serves both surfaces.
+  // One reader chrome for every shelled body.
   const shareMeta = {
     defaultMode,
     neat: neatBackground,
-    neatLicense: env('MANTLE_NEAT_LICENSE_KEY'),
     readerChrome: true,
   };
 

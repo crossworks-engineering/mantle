@@ -12,9 +12,10 @@
  * look (clean-slate, thumbs, Neat off) into every profile row that existed
  * before this release, so an existing brain looks exactly as it did.
  *
- * `neatBackground` is the canonical encodeNeatSpec form of
- * `{v:1, seed, tone:'auto', speed:2}`. The seed was picked by eye against the
- * Jackdaw theme in light and dark: a soft wash that stays behind content.
+ * `neatBackground` is a Neat-era v1 spec `{v:1, seed, tone:'auto', speed:2}`.
+ * It stays v1 on purpose: the Drift codec (@mantle/content-core/drift-spec)
+ * decodes v1 as the silk style, the closest look to what fresh brains showed,
+ * and keeping the string means no stored row or test fixture changes.
  */
 export const FRESH_APPEARANCE = {
   colorTheme: 'jackdaw',

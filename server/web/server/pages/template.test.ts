@@ -78,22 +78,6 @@ describe('htmlPage — share reader chrome', () => {
     expect(html).not.toContain('share-page.js');
     expect(html).not.toContain('data-neat-spec');
   });
-
-  it('carries the licence key on the host div only when set', () => {
-    const on = htmlPage(
-      {
-        title: 'T',
-        share: { defaultMode: 'light', neat: SPEC, neatLicense: 'k-1', readerChrome: true },
-      },
-      '<p>b</p>',
-    );
-    expect(on).toContain('data-neat-license="k-1"');
-    const off = htmlPage(
-      { title: 'T', share: { defaultMode: 'light', neat: SPEC, readerChrome: true } },
-      '<p>b</p>',
-    );
-    expect(off).not.toContain('data-neat-license');
-  });
 });
 
 describe('shareShell — the ground under the gradient', () => {

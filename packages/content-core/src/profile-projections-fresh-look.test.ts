@@ -79,8 +79,18 @@ describe('readNeatBackground', () => {
     expect(readNeatBackground(mine)).toBe(mine);
   });
 
-  it('reads garbage as off, never as the default', () => {
+  it('keeps a Drift v2 spec, unchanged', () => {
+    const v2 =
+      '{"v":2,"seed":9,"tone":"auto","speed":2,"style":"aurora","pal":"chart","str":0.4,"scale":1,"warp":0.5,"soft":0.6,"light":0.5,"grain":0.12,"angle":30}';
+    expect(readNeatBackground(v2)).toBe(v2);
+  });
+
+  it('reads garbage and unknown versions as off, never as the default', () => {
     expect(readNeatBackground('{"v":2}')).toBeUndefined();
+    expect(readNeatBackground('{"v":3,"seed":1}')).toBeUndefined();
+    expect(readNeatBackground('{"v":1,"seed":1,"tone":"neon","speed":2}')).toBeUndefined();
+    expect(readNeatBackground('not json')).toBeUndefined();
+    expect(readNeatBackground('x'.repeat(201))).toBeUndefined();
     expect(readNeatBackground(42)).toBeUndefined();
   });
 });

@@ -228,7 +228,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
     secret: process.env.SESSION_SECRET,
     cors: process.env.MANTLE_API_CORS_ORIGINS,
     detached: process.env.MANTLE_DETACHED_DEV,
-    neat: process.env.MANTLE_NEAT_LICENSE_KEY,
   };
   let app: import('hono').Hono;
   let tokens: typeof import('../lib/auth/tokens');
@@ -237,7 +236,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
     process.env.SESSION_SECRET = 'link-render-sweep-secret-at-least-32-chars';
     process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
     delete process.env.MANTLE_DETACHED_DEV;
-    delete process.env.MANTLE_NEAT_LICENSE_KEY;
     tokens = await import('../lib/auth/tokens');
     const { createApp } = await import('./app');
     app = await createApp();
@@ -248,7 +246,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       ['SESSION_SECRET', saved.secret],
       ['MANTLE_API_CORS_ORIGINS', saved.cors],
       ['MANTLE_DETACHED_DEV', saved.detached],
-      ['MANTLE_NEAT_LICENSE_KEY', saved.neat],
     ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;

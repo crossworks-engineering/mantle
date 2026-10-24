@@ -53,9 +53,9 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
-// ── 2b. Share-page chrome (mode toggle + Neat backdrop) ──────────────────────
+// ── 2b. Share-page chrome (mode toggle + Drift backdrop) ─────────────────────
 // Separate from islands.js on purpose: this loads on EVERY shelled /s page,
-// so it must not drag React along. `splitting` keeps the Neat WebGL lib in a
+// so it must not drag React along. `splitting` keeps the Drift WebGL engine in a
 // lazy chunk that is only fetched when a brain actually saved a background.
 await esbuild.build({
   entryPoints: { 'share-page': join(webRoot, 'server/share-page/entry.ts') },

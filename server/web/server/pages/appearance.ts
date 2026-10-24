@@ -1,7 +1,7 @@
 import { loadProfilePreferences, projectDefaultMode } from '@mantle/content';
 import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/share-ui/appearance';
-import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { decodeDriftSpec, encodeDriftSpec } from '@mantle/content-core/drift-spec';
 import { feature } from '@mantle/config';
 
 /**
@@ -47,13 +47,13 @@ export async function loadAppearanceAttrs(ownerId: string): Promise<AppearanceAt
 }
 
 /** What the /s share surface needs beyond the `<html>` attributes: the owner's
- *  default light/dark mode and the saved Neat gradient spec. */
+ *  default light/dark mode and the saved Drift background spec. */
 export type ShareAppearance = {
   attrs: AppearanceAttrs | undefined;
   /** 'light' | 'dark' | 'system' — unset stores read as 'light', the share
    *  surface's historical rendering. */
   defaultMode: 'light' | 'dark' | 'system';
-  /** The saved Neat spec in its canonical encoding, or null when no background
+  /** The saved background spec (Drift) in its canonical encoding, or null when no background
    *  is set (or the stored value doesn't decode) — null means the plain themed
    *  fill, exactly like the app surfaces. */
   neatBackground: string | null;
@@ -61,14 +61,14 @@ export type ShareAppearance = {
 
 /**
  * The share surface's full appearance in one prefs read — the attrs (same
- * projection as loadAppearanceAttrs), the owner's default mode, and the Neat
+ * projection as loadAppearanceAttrs), the owner's default mode, and the Drift
  * background spec. Same fail-soft contract: unreadable prefs render the
  * defaults, never an error page.
  */
 export async function loadShareAppearance(ownerId: string): Promise<ShareAppearance> {
   try {
     const prefs = await loadProfilePreferences(ownerId);
-    const spec = decodeNeatSpec(prefs.neatBackground);
+    const spec = decodeDriftSpec(prefs.neatBackground);
     return {
       attrs: resolveAppearanceAttrs({
         colorTheme: prefs.colorTheme ?? null,
@@ -89,7 +89,7 @@ export async function loadShareAppearance(ownerId: string): Promise<ShareAppeara
       // canonical form of a spec that actually decodes. The shareNeat switch
       // gates it here so OFF renders the plain, printable surface with no
       // trace of the gradient in the document at all.
-      neatBackground: spec && feature('shareNeat', { prefs }) ? encodeNeatSpec(spec) : null,
+      neatBackground: spec && feature('shareNeat', { prefs }) ? encodeDriftSpec(spec) : null,
     };
   } catch {
     // prefs unavailable: fall back to the defaults rather than failing,
