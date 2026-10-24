@@ -170,6 +170,47 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(node!.work).toBe('extract');
   });
 
+  it('a canvas whose flush fails goes to the back; the next one is announced (the re-audit N4)', async () => {
+    const stuck = await presents.createPresent(owner, { source: canvas(`${tag} Stuck`, 'a') });
+    const next = await presents.createPresent(owner, { source: canvas(`${tag} Next`, 'b') });
+    await asOperator(
+      (tx) => tx`update presents set index_due_at = case node_id
+        when ${stuck.id}::uuid then now() - interval '2 minutes'
+        else now() - interval '1 minute' end
+        where node_id in (${stuck.id}, ${next.id})`,
+    );
+    const dueOf = async (id: string) =>
+      (
+        await admin<{ due: Date | string | null }[]>`
+          select index_due_at as due from presents where node_id = ${id}`
+      )[0]!.due;
+    // A save holds the stuck canvas's row past the flush's lock wait.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = admin.begin(async (tx) => {
+      await tx`select 1 from presents where node_id = ${stuck.id} for update`;
+      locked();
+      await held;
+    });
+    await isLocked;
+    const announced = await presents.flushDuePresentIndex(1).then(async (first) => {
+      // One row a tick: the stuck one (oldest) fails and is passed over...
+      expect(first).toBe(0);
+      // ...so the next tick reaches the other.
+      return presents.flushDuePresentIndex(1);
+    });
+    release();
+    await holder;
+    expect(announced).toBe(1);
+    expect(await dueOf(next.id)).toBeNull();
+    // The stuck one keeps its mark, passed over for a while, not lost.
+    expect(await dueOf(stuck.id)).not.toBeNull();
+    await presents.flushDuePresentIndex();
+    expect(await dueOf(stuck.id)).not.toBeNull();
+  }, 30_000);
+
   it('a poster is kept only at the rev it shows, and is no content change', async () => {
     const p = await presents.createPresent(owner, { source: canvas(`${tag} Poster`, 'one') });
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
