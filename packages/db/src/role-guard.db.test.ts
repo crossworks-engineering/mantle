@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NARROW_ROLE, RUNTIME_ROLE, runtimeRoleOn } from './runtime-role';
+import { applyRuntimeGrants, NARROW_ROLE, RUNTIME_ROLE, runtimeRoleOn } from './runtime-role';
 import {
   createMigratedScratchDatabase,
   createScratchDatabaseBefore,
@@ -825,6 +825,10 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
           await sql.unsafe(`CREATE TRIGGER "users_zz_bridge" AFTER INSERT OR UPDATE OF "role" ON auth.users
             FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_login_trg"()`);
         }
+        // The runtime role's rights as a box on main has them (a scratch
+        // database before a migration grants it every routine; migrate's
+        // own pass grants the allowlist only).
+        await applyRuntimeGrants(sql);
         const before = await catalog(sql);
         expect(before.filter((r) => r.what.endsWith('_zz_bridge')).length, String(switched)).toBe(
           switched ? 0 : 2,
