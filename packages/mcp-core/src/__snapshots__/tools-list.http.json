@@ -7351,7 +7351,7 @@
  },
  {
   "name": "diagram_guide",
-  "description": "Return the instructions for one diagram type. A type with a layout template (`flow`, `pid`) gets the template's data contract with a complete example: write data and draw it with `diagram_render`. Any other type gets the hand-drawing rules (Mantle medium rules, style guide, layout budget, SVG primitives, output sizes) and its own guide; `variant` picks one chart variant. Then this brain's site profile for the type when it keeps one (`files/diagrams/profiles/<type>.md`): its conventions win over the base guide. A long guide comes in parts: read `part` 2 and on when the reply says it continues. Several types in one task? `shared: false` skips the shared rules you already hold. Reads only.",
+  "description": "Return the instructions for one diagram type. A type with a layout template (`flow`, `pid`) gets the template's data contract with a complete example: write data and draw it with `diagram_render`. Any other type gets the hand-drawing rules (Mantle medium rules, style guide, layout budget, SVG primitives, output sizes) and its own guide; `variant` picks one chart variant. Then this brain's site profile for the type when it keeps one (`files/diagrams/profiles/<type>.md`), fenced as data: its drawing conventions for the type. A long guide comes in parts: read `part` 2 and on when the reply says it continues. Several types in one task? `shared: false` skips the shared rules you already hold. Reads only.",
   "inputSchema": {
    "type": "object",
    "properties": {

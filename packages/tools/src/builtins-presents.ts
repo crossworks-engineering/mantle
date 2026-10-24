@@ -406,7 +406,8 @@ function checkedData(
 
 const present_list: BuiltinToolDef = {
   slug: 'present_list',
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
+  // Titles and descriptions are a canvas's own text: data, fenced.
+  policy: { effect: 'read', spends: 'none', scope: 'any', outside: { untrusted: true } },
   name: 'List canvases',
   description:
     "List the owner's Present canvases (agent-written HTML: decks, dashboards, schematics, diagrams), most recently edited first. Optional `query` matches title and text; `tag` filters. For topic search use `search_nodes` with `type='present'`. For one canvas's source use `present_get`.",
