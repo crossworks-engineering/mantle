@@ -164,7 +164,7 @@ export async function installProbe(sql: Sql): Promise<void> {
           'home', n.home_ws,
           'read', (select coalesce(array_agg(x order by x), '{}') from unnest(n.read_ws) x),
           'write', (select coalesce(array_agg(x order by x), '{}') from unnest(n.write_ws) x),
-          'doc', coalesce(p.doc::text, d.scene::text, t.data::text),
+          'doc', coalesce(p.doc::text, d.scene::text, t.data::text, ps.source),
           'draft', coalesce(p.draft_doc::text, d.draft_scene::text, t.draft_data::text,
                             a.draft_source::text),
           'cards', (select string_agg(r.body_md, '|' order by r.slug)
@@ -181,6 +181,7 @@ export async function installProbe(sql: Sql): Promise<void> {
           left join draws d on d.node_id = n.id
           left join tables t on t.node_id = n.id
           left join apps a on a.node_id = n.id
+          left join presents ps on ps.node_id = n.id
          where n.id = i), 'gone')
     $$;
     revoke all on function a8_probe(uuid) from public;
