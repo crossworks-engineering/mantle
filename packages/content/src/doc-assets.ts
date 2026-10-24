@@ -40,7 +40,9 @@ export function referencedPresentIds(doc: unknown): string[] {
   const out = new Set<string>();
   const walk = (n: PMNode | null | undefined) => {
     if (!n || typeof n !== 'object') return;
-    if (n.type === 'image') {
+    // An image or a page image, as the embed parsers read it; a node that
+    // also names a drawing is a drawing (every renderer's order).
+    if ((n.type === 'image' || n.type === 'pageImage') && !n.attrs?.drawId) {
       const id = n.attrs?.presentId;
       if (typeof id === 'string' && id) out.add(id);
     }

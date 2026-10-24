@@ -12,7 +12,8 @@
 -- Only the two parsers change (CREATE OR REPLACE, the same signatures);
 -- every trigger of 0208 calls them as before. The backfill makes the edges
 -- of the pages and notes that already embed a canvas (none before this
--- release wrote one; the filter keeps it to an index probe elsewhere).
+-- release wrote one): one scan of the pages and the notes, once, that
+-- rewrites edges only where a canvas is named.
 --
 -- Rollback: packages/db/rollback/0333_present_embeds.revert.sql puts 0208's
 -- parsers back; the older image works either way.

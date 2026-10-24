@@ -52,3 +52,23 @@ describe('NotePresenter: media: and draw: references', () => {
     expect(bare).not.toMatch(/<img[^>]*src="[^"]*(?:11111111|22222222)/);
   });
 });
+
+describe('NotePresenter: present: canvases', () => {
+  const CANVAS = '33333333-3333-4333-8333-333333333333';
+  const OTHER = '44444444-4444-4444-8444-444444444444';
+  const md = `![Pump deck](present:${CANVAS})\n\n![Private plan](present:${OTHER})`;
+  const html = renderToStaticMarkup(
+    createElement(NotePresenter, {
+      view: { title: 'n', content: md },
+      chrome: 'embedded',
+      presentUrl: (id: string) => (id === CANVAS ? `/s/tok/present/${id}` : null),
+    }),
+  );
+
+  it('shows a canvas this surface serves, and a bare placeholder for any other', () => {
+    expect(html).toContain(`<img src="/s/tok/present/${CANVAS}" alt="Pump deck"/>`);
+    expect(html).toContain('[canvas]');
+    expect(html).not.toContain('Private plan');
+    expect(html).not.toContain(OTHER);
+  });
+});
