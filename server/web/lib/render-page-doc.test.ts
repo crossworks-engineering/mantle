@@ -142,11 +142,12 @@ describe('renderPageDoc', () => {
     expect(html).toContain(
       '<img class="canvas-embed" src="/s/T/present/c1" alt="Pump &quot;deck&quot;"',
     );
-    expect(html).toContain('[canvas: Hidden &lt;deck&gt;]');
+    expect(html).toContain('<p><em>[canvas]</em></p>');
     expect(html).not.toContain('c2');
+    expect(html).not.toContain('Hidden');
     // No callback: every canvas is its placeholder.
     expect(renderPageDoc(doc([{ type: 'image', attrs: { presentId: 'c1' } }]), opts)).toContain(
-      '[canvas: untitled]',
+      '[canvas]',
     );
   });
 

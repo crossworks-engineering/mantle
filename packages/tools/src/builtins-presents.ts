@@ -317,11 +317,13 @@ function lookWanted(input: Record<string, unknown>): boolean {
   return input.look !== false;
 }
 
-/** The page line that shows a canvas in a page (`![Title](present:<id>)`,
- *  content-core markdown-refs PRESENT_HREF): its live snapshot, opening the
- *  canvas for a reader who may read it. */
-function pageEmbed(p: { id: string; title: string }): string {
-  return `![${p.title.replace(/[[\]]/g, '')}](present:${p.id})`;
+/** The page line that shows a canvas in a page (content-core markdown-refs
+ *  PRESENT_HREF): its live snapshot, opening the canvas for a reader who may
+ *  read it. The alt is the page's own text, which every reader of the page
+ *  sees, so it is the word "Canvas", never the canvas's title (a reader who
+ *  may not read the canvas must learn nothing of it). */
+function pageEmbed(p: { id: string }): string {
+  return `![Canvas](present:${p.id})`;
 }
 
 function saved(
