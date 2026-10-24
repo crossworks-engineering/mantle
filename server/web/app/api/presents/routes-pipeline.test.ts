@@ -59,6 +59,12 @@ vi.mock('@/lib/presents', () => ({
     h.deleted.push(id);
     return true;
   }),
+  getPresentPoster: vi.fn(async (_owner: string, id: string) =>
+    id === CANVAS ? { png: Buffer.from('PNGBYTES'), current: false, posterRev: 2 } : null,
+  ),
+  getPresentEmbedFacts: vi.fn(async (_owner: string, id: string) =>
+    id === CANVAS ? { title: 'Pump deck', rev: 3, posterRev: 2 } : null,
+  ),
   compileCanvasCss: vi.fn(async () => ''),
   savePresentSource: vi.fn(),
   updatePresent: vi.fn(),
@@ -119,6 +125,38 @@ describe('POST /api/presents/:id/frame-ticket', () => {
     expect((await runRoute(null, 'POST', `/api/presents/${CANVAS}/frame-ticket`, {})).status).toBe(
       401,
     );
+  });
+});
+
+describe('GET /api/presents/:id/poster, the snapshot a page embeds', () => {
+  it('answers the PNG with its rev as the tag, and a 304 for the same tag', async () => {
+    const res = await runRoute(ANCHOR, 'GET', `/api/presents/${CANVAS}/poster`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('cache-control')).toBe('private, no-cache');
+    const etag = res.headers.get('etag')!;
+    expect(etag).toBe(`"${CANVAS}.2"`);
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('PNGBYTES');
+    const again = await runRoute(ANCHOR, 'GET', `/api/presents/${CANVAS}/poster`, undefined, {
+      headers: { 'if-none-match': etag },
+    });
+    expect(again.status).toBe(304);
+  });
+
+  it('?meta=1 says the title and that the picture is behind the canvas', async () => {
+    const res = await runRoute(ANCHOR, 'GET', `/api/presents/${CANVAS}/poster?meta=1`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ title: 'Pump deck', rev: 3, posterRev: 2, current: false });
+  });
+
+  it('a canvas the caller cannot read is a 404 in both shapes; no login is a 401', async () => {
+    for (const q of ['', '?meta=1']) {
+      const res = await runRoute(ANCHOR, 'GET', `/api/presents/${MISSING}/poster${q}`);
+      expect(res.status, q).toBe(404);
+      expect(await res.text()).not.toContain('Pump');
+    }
+    expect((await runRoute(null, 'GET', `/api/presents/${CANVAS}/poster`)).status).toBe(401);
   });
 });
 

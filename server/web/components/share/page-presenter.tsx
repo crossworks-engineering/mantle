@@ -13,6 +13,7 @@ export function PagePresenter({
   view,
   assetUrl,
   drawUrl,
+  presentUrl,
 }: {
   view: {
     title: string;
@@ -23,8 +24,15 @@ export function PagePresenter({
   assetUrl: (fileId: string) => string;
   /** Embedded drawings resolve through the share's own draw route. */
   drawUrl?: (drawId: string) => string;
+  /** Embedded canvases: their snapshot through the share's own route, or
+   *  null for one the link does not serve. */
+  presentUrl?: (presentId: string) => string | null;
 }) {
-  const html = renderPageDoc(view.doc, { assetUrl, ...(drawUrl ? { drawUrl } : {}) });
+  const html = renderPageDoc(view.doc, {
+    assetUrl,
+    ...(drawUrl ? { drawUrl } : {}),
+    ...(presentUrl ? { presentUrl } : {}),
+  });
   const toc = buildPageToc(view.doc);
   const widthClass = view.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
   // The page name is intentionally NOT rendered on the public surface — a

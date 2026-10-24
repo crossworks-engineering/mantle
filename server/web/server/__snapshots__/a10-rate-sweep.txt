@@ -4,7 +4,8 @@
 # 2026-10-24 (owner decision): member-db-broker 300 -> 600 and member-tool-broker 60 -> 120 a minute; their two count lines carry the new numbers, every other part as recorded.
 # 2026-10-24 (owner decision): the three app limits (member-frame-ticket, member-db-broker, member-tool-broker) count an Admin user too; their count lines say so and their "order: an Admin user" probes are gone.
 # 2026-10-24 (Present, owner decision of the app limits): member-canvas-frame-ticket follows the app rule, an Admin user counts too; its count line says so and it has no "order: an Admin user" probe. The canvas-frame and member-canvas-frame-ticket probes are the Present routes', recorded on the branch.
-# probes: 253
+# 2026-10-24 (Present in Pages): GET and HEAD /s/:token/present/:presentId, a shared page's canvas snapshot, take share-present-embed, the limit of its drawing sibling; their probes are that sibling's answers, as main recorded them.
+# probes: 259
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -225,6 +226,12 @@ GET /s/:token/draw/:drawId none share-draw-embed scope => other address 404
 HEAD /s/:token/draw/:drawId none share-draw-embed count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
 HEAD /s/:token/draw/:drawId none share-draw-embed window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
 HEAD /s/:token/draw/:drawId none share-draw-embed scope => other address 404
+GET /s/:token/present/:presentId none share-present-embed count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store Too many requests
+GET /s/:token/present/:presentId none share-present-embed window => 59s: 429 text/plain retry-after=1 cache-control=no-store Too many requests; 60s: 404
+GET /s/:token/present/:presentId none share-present-embed scope => other address 404
+HEAD /s/:token/present/:presentId none share-present-embed count (ip 240/60s) => first 429 at 241; #240 404; over 429 text/plain retry-after=60 cache-control=no-store 
+HEAD /s/:token/present/:presentId none share-present-embed window => 59s: 429 text/plain retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /s/:token/present/:presentId none share-present-embed scope => other address 404
 POST /s/:token/evaluate none share-evaluate count (ip 60/60s) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"too many requests"}
 POST /s/:token/evaluate none share-evaluate window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"too many requests"}; 60s: 404
 POST /s/:token/evaluate none share-evaluate scope => other address 404

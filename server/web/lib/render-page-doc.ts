@@ -43,6 +43,10 @@ export type RenderOptions = {
    *  existing callers keep compiling; without it an embedded drawing renders
    *  as a labelled `[drawing: alt]` placeholder rather than disappearing. */
   drawUrl?: (drawId: string) => string;
+  /** Build the URL for an embedded Present canvas's snapshot, or null when
+   *  this surface may not show that canvas. Without it, or with null, the
+   *  canvas renders as a labelled `[canvas: alt]` placeholder. */
+  presentUrl?: (presentId: string) => string | null;
 };
 
 function esc(s: string): string {
@@ -203,7 +207,17 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       // snapshot is third-party-shaped SVG and image context is what makes it
       // inert (see docs/draw-audit-findings.md §2).
       const drawId = str(node.attrs?.drawId);
+      const presentId = str(node.attrs?.presentId);
       const alt = escAttr(str(node.attrs?.alt));
+      // An embedded canvas: its snapshot, a PNG, or the placeholder where
+      // this surface does not show it (a link that does not serve it).
+      if (presentId) {
+        const posterSrc = opts.presentUrl?.(presentId) ?? null;
+        if (!posterSrc) {
+          return `<p><em>[canvas: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
+        }
+        return `<img class="canvas-embed" src="${escAttr(posterSrc)}" alt="${alt}" loading="lazy">`;
+      }
       if (drawId) {
         const drawSrc = opts.drawUrl?.(drawId);
         // A caller that can't serve drawings says so, rather than dropping the

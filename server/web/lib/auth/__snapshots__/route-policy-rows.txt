@@ -212,6 +212,7 @@ GET /api/pending/:id class=area scope=area:settings caller=owner gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
 GET /api/presents/:id/frame class=content scope=content caller=frame gone=false
+GET /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 GET /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 GET /api/profile class=self scope=self caller=owner gone=false
 GET /api/profile/photo class=self scope=self caller=ownerAsset gone=false
@@ -307,6 +308,7 @@ GET /s/:token/bundle/css class=link scope=- caller=- gone=false
 GET /s/:token/draw class=link scope=- caller=- gone=false
 GET /s/:token/draw/:drawId class=link scope=- caller=- gone=false
 GET /s/:token/frame class=link scope=- caller=- gone=false
+GET /s/:token/present/:presentId class=link scope=- caller=- gone=false
 GET /s/:token/rows class=link scope=- caller=- gone=false
 GET /s/:token/view class=link scope=- caller=- gone=false
 HEAD /.well-known/oauth-authorization-server class=public scope=- caller=- gone=false
@@ -463,6 +465,7 @@ HEAD /api/pending/:id class=area scope=area:settings caller=owner gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/frame class=content scope=content caller=frame gone=false
+HEAD /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 HEAD /api/presents/:id/revisions class=content scope=content caller=owner gone=false
 HEAD /api/profile class=self scope=self caller=owner gone=false
 HEAD /api/profile/photo class=self scope=self caller=ownerAsset gone=false
@@ -558,6 +561,7 @@ HEAD /s/:token/bundle/css class=link scope=- caller=- gone=false
 HEAD /s/:token/draw class=link scope=- caller=- gone=false
 HEAD /s/:token/draw/:drawId class=link scope=- caller=- gone=false
 HEAD /s/:token/frame class=link scope=- caller=- gone=false
+HEAD /s/:token/present/:presentId class=link scope=- caller=- gone=false
 HEAD /s/:token/rows class=link scope=- caller=- gone=false
 HEAD /s/:token/view class=link scope=- caller=- gone=false
 PATCH /api/agents/:id class=area scope=area:assistants caller=owner gone=false

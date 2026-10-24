@@ -224,7 +224,7 @@ m222 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m223 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m224 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9430
+# cells whose guard entry moved to the pipeline: 9457
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -3644,6 +3644,23 @@ first POST /api/presents/:id/frame-ticket member-cookie=m182
 first POST /api/presents/:id/frame-ticket admin-bearer=m183
 first POST /api/presents/:id/frame-ticket member-bearer=m184
 first POST /api/presents/:id/frame-ticket revoked-bearer=m57
+first GET /api/presents/:id/poster owner-cookie=m128
+first GET /api/presents/:id/poster admin-cookie=m129
+first GET /api/presents/:id/poster limited-cookie=m130
+first GET /api/presents/:id/poster member-cookie=m131
+first GET /api/presents/:id/poster admin-bearer=m132
+first GET /api/presents/:id/poster member-bearer=m133
+first GET /api/presents/:id/poster revoked-bearer=m134
+first GET /api/presents/:id/poster asset-admin=m135
+first GET /api/presents/:id/poster asset-member=m131
+first GET /api/presents/:id/poster render=m129
+first HEAD /api/presents/:id/poster owner-cookie=m136
+first HEAD /api/presents/:id/poster admin-cookie=m137
+first HEAD /api/presents/:id/poster limited-cookie=m138
+first HEAD /api/presents/:id/poster member-cookie=m139
+first HEAD /api/presents/:id/poster admin-bearer=m140
+first HEAD /api/presents/:id/poster member-bearer=m141
+first HEAD /api/presents/:id/poster revoked-bearer=m142
 first GET /api/presents/:id/revisions owner-cookie=m21
 first GET /api/presents/:id/revisions admin-cookie=m22
 first GET /api/presents/:id/revisions limited-cookie=m23
@@ -8220,6 +8237,16 @@ more POST /api/presents/:id/frame-ticket bumped-cookie=m57
 more POST /api/presents/:id/frame-ticket gone-cookie=m57
 more POST /api/presents/:id/frame-ticket rotated-bearer=m57
 more POST /api/presents/:id/frame-ticket expired-bearer=m57
+more GET /api/presents/:id/poster disabled-cookie=m134
+more GET /api/presents/:id/poster bumped-cookie=m134
+more GET /api/presents/:id/poster gone-cookie=m134
+more GET /api/presents/:id/poster rotated-bearer=m134
+more GET /api/presents/:id/poster expired-bearer=m134
+more HEAD /api/presents/:id/poster disabled-cookie=m142
+more HEAD /api/presents/:id/poster bumped-cookie=m142
+more HEAD /api/presents/:id/poster gone-cookie=m142
+more HEAD /api/presents/:id/poster rotated-bearer=m142
+more HEAD /api/presents/:id/poster expired-bearer=m142
 more GET /api/presents/:id/revisions disabled-cookie=m27
 more GET /api/presents/:id/revisions bumped-cookie=m27
 more GET /api/presents/:id/revisions gone-cookie=m27

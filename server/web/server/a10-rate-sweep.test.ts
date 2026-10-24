@@ -441,6 +441,10 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   },
   ...getHead('/s/:token/draw', { cred: 'none', limits: [ip('share-draw', 240)] }),
   ...getHead('/s/:token/draw/:drawId', { cred: 'none', limits: [ip('share-draw-embed', 240)] }),
+  ...getHead('/s/:token/present/:presentId', {
+    cred: 'none',
+    limits: [ip('share-present-embed', 240)],
+  }),
   {
     row: 'POST /s/:token/evaluate',
     cred: 'none',

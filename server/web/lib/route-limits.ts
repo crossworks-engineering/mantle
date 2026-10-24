@@ -186,6 +186,7 @@ export const RATE_LIMITS = {
   shareDbBroker: perIp('share-db-broker', 300),
   shareDraw: perIp('share-draw', 240),
   shareDrawEmbed: perIp('share-draw-embed', 240),
+  sharePresentEmbed: perIp('share-present-embed', 240),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
   shareRows: perIp('share-rows', 120),
