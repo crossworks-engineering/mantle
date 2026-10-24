@@ -507,6 +507,12 @@ again later.", "code": "rate_limited", "retryAfter": N }`, with
   (below), the API key budgets (`server/web/server/middleware/access-key-gate.ts`),
   a member's turns a minute (`server/web/lib/workspace-turn.ts`) and the member
   stream cap (`GET /api/member/realtime`, Retry-After 30 as before).
+  An app's limits (an app's starts, its database calls and its tool
+  calls, per login, an Admin user's too, owner decision 2026-10-24) carry
+  an explanation (`RateLimitSpec.explain`): their 429 says in `error`
+  which limit the app hit, how an app stays under it (batch rows, save
+  once typing stops) and the wait, so the app's author reads it where
+  the app shows the error. Every other limit keeps the one text.
 - **Retry-After on the daily caps.** The member chat's daily turn cap and
   token budget (`workspace-turn.ts`, a turn and a voice clip or summary)
   are quotas, not limits of the table, and keep their bodies (`reason:

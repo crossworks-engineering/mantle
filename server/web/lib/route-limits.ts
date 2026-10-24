@@ -55,6 +55,10 @@ export type RateLimitSpec = Readonly<{
    *  `error: 'rate_limited'`, the code those clients read (the machine
    *  shape of rateLimitedAnswer; A10 lows, #8 L1). */
   machine?: true;
+  /** For an app's author: what the limit counts and how to stay under it.
+   *  A 429 of this limit says it in `error` (with the wait), in place of
+   *  the one text, so the app shows it (owner decision 2026-10-24). */
+  explain?: string;
 }>;
 
 const MIN = 60_000;
@@ -75,6 +79,12 @@ const perLogin = (bucket: string, max: number, windowMs = MIN): RateLimitSpec =>
 const perMember = (bucket: string, max: number, windowMs = MIN): RateLimitSpec => ({
   ...perLogin(bucket, max, windowMs),
   members: true,
+});
+/** A limit on an app's calls to the brain, per login, an Admin user's
+ *  too: `what` it counts, `how` an app stays under it. */
+const appLimit = (bucket: string, max: number, what: string, how: string): RateLimitSpec => ({
+  ...perLogin(bucket, max),
+  explain: `Too many requests: this app made more than ${max} ${what} in a minute for this login. ${how}`,
 });
 const failures = (bucket: string, max: number): RateLimitSpec => ({
   bucket,
@@ -138,9 +148,24 @@ export const RATE_LIMITS = {
   pushEnrol: perLogin('push-enrol', 10),
   // A run of an app, per login: an Admin user's counts too (owner decision
   // 2026-10-24), so a wasteful app shows up when an Admin tests it.
-  memberFrameTicket: perLogin('member-frame-ticket', 30),
-  memberDbBroker: perLogin('member-db-broker', 600),
-  memberToolBroker: perLogin('member-tool-broker', 120),
+  memberFrameTicket: appLimit(
+    'member-frame-ticket',
+    30,
+    'starts (frame tickets)',
+    'Keep the app open instead of reloading it.',
+  ),
+  memberDbBroker: appLimit(
+    'member-db-broker',
+    600,
+    'database calls (host.db.query and host.db.exec)',
+    'Batch them: one query with IN (...) or a JOIN instead of one per row, one write with many rows instead of one per row, and save a text edit once typing stops.',
+  ),
+  memberToolBroker: appLimit(
+    'member-tool-broker',
+    120,
+    'tool calls (host.tools.call)',
+    'Batch them: one call for many rows (an IN list, a rows array) instead of one per row, keep what it already read, and call again only when the user acts.',
+  ),
   // A member's bytes of a file: a thumbnail may decode an image.
   memberBytes: { ...perMember('member-bytes', 240), when: BYTES_ASKED },
   memberThumbs: { ...perMember('member-thumbs', 60), when: THUMB_ASKED },
@@ -262,24 +287,32 @@ export type RateLimitedShape = 'person' | 'machine';
 export function rateLimitedResponse(
   retryAfterSec: number,
   shape: RateLimitedShape = 'person',
+  explain?: string,
 ): NextResponse {
-  const a = rateLimitedAnswer(retryAfterSec, shape);
+  const a = rateLimitedAnswer(retryAfterSec, shape, explain);
   return NextResponse.json(a.body, { status: a.status, headers: a.headers });
 }
 
 /** The one 429 as its parts, for an answer that is built later (a chat
  *  turn's, which the turn route keeps for a retry with the same key). */
-export function rateLimitedAnswer(retryAfterSec: number, shape: RateLimitedShape = 'person') {
+export function rateLimitedAnswer(
+  retryAfterSec: number,
+  shape: RateLimitedShape = 'person',
+  explain?: string,
+) {
   const sec = Math.max(1, Math.ceil(retryAfterSec));
+  // A limit with an explanation (an app's, RateLimitSpec.explain) says it,
+  // with the wait; every other limit the one text.
+  const text = explain ? `${explain} Try again in ${sec} s.` : RATE_LIMITED_TEXT;
   const body =
     shape === 'machine'
       ? {
           error: 'rate_limited' as const,
           code: 'rate_limited' as const,
-          message: RATE_LIMITED_TEXT,
+          message: text,
           retryAfter: sec,
         }
-      : { error: RATE_LIMITED_TEXT, code: 'rate_limited' as const, retryAfter: sec };
+      : { error: text, code: 'rate_limited' as const, retryAfter: sec };
   return {
     status: 429 as const,
     body,
@@ -334,7 +367,7 @@ export function takeRouteLimits(
   }>,
 ): NextResponse | null {
   const query = o.query ?? new URL(o.req.url).searchParams;
-  const takes: RateLimitResult[] = [];
+  const takes: Array<[RateLimitSpec, RateLimitResult]> = [];
   const peeks: Array<[RateLimitSpec, string]> = [];
   const shape: RateLimitedShape = names.some((n) => (RATE_LIMITS[n] as RateLimitSpec).machine)
     ? 'machine'
@@ -345,14 +378,16 @@ export function takeRouteLimits(
     const key = keyOf(spec, o.req, query, o.login);
     if (key === null) continue;
     if (spec.peek) peeks.push([spec, key]);
-    else takes.push(rateLimit(key, spec));
+    else takes.push([spec, rateLimit(key, spec)]);
   }
-  if (takes.some((t) => !t.ok)) {
-    return rateLimitedResponse(Math.max(...takes.map((t) => t.retryAfterSec)), shape);
+  const refused = takes.filter(([, t]) => !t.ok);
+  if (refused.length > 0) {
+    const explain = refused.find(([s]) => s.explain)?.[0].explain;
+    return rateLimitedResponse(Math.max(...takes.map(([, t]) => t.retryAfterSec)), shape, explain);
   }
   for (const [spec, key] of peeks) {
     const seen = rateLimitPeek(key, spec);
-    if (!seen.ok) return rateLimitedResponse(seen.retryAfterSec, shape);
+    if (!seen.ok) return rateLimitedResponse(seen.retryAfterSec, shape, spec.explain);
   }
   return null;
 }

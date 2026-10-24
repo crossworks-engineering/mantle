@@ -1,9 +1,10 @@
 # A10 #8: the probes that answer otherwise than on main, each with its named
 # kind (changeKind, a10-rate-sweep.test.ts), its answer on main and now. Every
 # other probe of a10-rate-sweep.txt answers byte for byte as recorded.
-# one-429: 88 probes
+# one-429: 82 probes
 # machine-429: 8 probes
 # machine-429 (Retry-After added): 4 probes
+# one-429 (explained): 6 probes
 # a8-f1-member-on-v1: 32 probes
 # one-429 (Retry-After added): 4 probes
 # counted-before-the-route: 2 probes
@@ -163,24 +164,24 @@ POST /api/member/push/subscriptions member push-enrol count (login 10/60s) [one-
 POST /api/member/push/subscriptions member push-enrol window [one-429]
   main 59s: 429 application/json retry-after=1 cache-control=- {"error":"too_many_requests"}; 60s: 400
   now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
-POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s) [one-429]
+POST /api/apps/:id/frame-ticket member member-frame-ticket count (login 30/60s) [one-429 (explained)]
   main first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
-  now  first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/apps/:id/frame-ticket member member-frame-ticket window [one-429]
+  now  first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests: this app made more than 30 starts (frame tickets) in a minute for this login. Keep the app open instead of reloading it. Try again in 60 s.","code":"rate_limited","retryAfter":60}
+POST /api/apps/:id/frame-ticket member member-frame-ticket window [one-429 (explained)]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 404
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
-POST /api/apps/:id/db-broker member member-db-broker count (login 600/60s) [one-429]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests: this app made more than 30 starts (frame tickets) in a minute for this login. Keep the app open instead of reloading it. Try again in 1 s.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/apps/:id/db-broker member member-db-broker count (login 600/60s) [one-429 (explained)]
   main first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
-  now  first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/apps/:id/db-broker member member-db-broker window [one-429]
+  now  first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests: this app made more than 600 database calls (host.db.query and host.db.exec) in a minute for this login. Batch them: one query with IN (...) or a JOIN instead of one per row, one write with many rows instead of one per row, and save a text edit once typing stops. Try agai…(350)
+POST /api/apps/:id/db-broker member member-db-broker window [one-429 (explained)]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
-POST /api/apps/:id/tool-broker member member-tool-broker count (login 120/60s) [one-429]
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests: this app made more than 600 database calls (host.db.query and host.db.exec) in a minute for this login. Batch them: one query with IN (...) or a JOIN instead of one per row, one write with many rows instead of one per row, and save a text edit once typing stops. Try agai…(348); 60s: 400
+POST /api/apps/:id/tool-broker member member-tool-broker count (login 120/60s) [one-429 (explained)]
   main first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
-  now  first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
-POST /api/apps/:id/tool-broker member member-tool-broker window [one-429]
+  now  first 429 at 121; #120 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests: this app made more than 120 tool calls (host.tools.call) in a minute for this login. Batch them: one call for many rows (an IN list, a rows array) instead of one per row, keep what it already read, and call again only when the user acts. Try again in 60 s.","code":"rate_…(325)
+POST /api/apps/:id/tool-broker member member-tool-broker window [one-429 (explained)]
   main 59s: 429 application/json retry-after=1 cache-control=- {"ok":false,"error":"too many requests"}; 60s: 400
-  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
+  now  59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests: this app made more than 120 tool calls (host.tools.call) in a minute for this login. Batch them: one call for many rows (an IN list, a rows array) instead of one per row, keep what it already read, and call again only when the user acts. Try again in 1 s.","code":"rate_l…(323); 60s: 400
 GET /api/files/files/:id?raw=1 member member-bytes count (login 240/60s members) [one-429]
   main first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=- {"error":"Too many requests. Try again shortly.","reason":"rate-limit"}
   now  first 429 at 241; #240 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}

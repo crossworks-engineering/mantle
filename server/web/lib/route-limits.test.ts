@@ -85,6 +85,28 @@ describe('takeRouteLimits', () => {
     expect(takeRouteLimits(['memberDbBroker'], o)?.status).toBe(429);
   });
 
+  it("tells an app's author which limit it hit and how to stay under it", async () => {
+    const o = {
+      req: req('192.0.2.5'),
+      scopes: ALL,
+      login: { loginId: 'app-author', member: true },
+    };
+    for (let i = 0; i < 120; i++) takeRouteLimits(['memberToolBroker'], o);
+    const res = takeRouteLimits(['memberToolBroker'], o)!;
+    const body = (await res.json()) as { error: string; code: string; retryAfter: number };
+    expect(res.status).toBe(429);
+    expect(body.code).toBe('rate_limited');
+    expect(body.error).toMatch(
+      /^Too many requests: this app made more than 120 tool calls \(host\.tools\.call\) in a minute for this login\. Batch them: .* Try again in \d+ s\.$/,
+    );
+    expect(body.error).toContain(`Try again in ${body.retryAfter} s.`);
+    // A limit with no explanation keeps the one text.
+    const ip = { req: req('192.0.2.6'), login: null, scopes: ALL };
+    for (let i = 0; i < 10; i++) takeRouteLimits(['authLogin'], ip);
+    const plain = (await takeRouteLimits(['authLogin'], ip)!.json()) as { error: string };
+    expect(plain.error).toBe(RATE_LIMITED_TEXT);
+  });
+
   it('takes the bytes or the thumbnail budget by the query, and none for the metadata', () => {
     const member = { loginId: 'member-2', member: true };
     const at = (q: string) => ({ req: req('192.0.2.2', `/f${q}`), login: member, scopes: ALL });

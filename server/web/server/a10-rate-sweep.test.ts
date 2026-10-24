@@ -837,6 +837,10 @@ const ONE_429 =
  *  and the remote MCP's limits keep `error: 'rate_limited'`. */
 const ONE_429_MACHINE =
   /429 application\/json retry-after=(\d+) cache-control=no-store (?:\{"error":"rate_limited","code":"rate_limited","message":"Too many requests\. Try again later\.","retryAfter":(\d+)\})?/g;
+/** An app limit's 429 (owner decision 2026-10-24): the one 429 with the
+ *  limit's explanation and the wait in `error` (RateLimitSpec.explain). */
+const ONE_429_EXPLAINED =
+  /429 application\/json retry-after=(\d+) cache-control=no-store \{"error":"Too many requests: this app made more than \d+ .*?(?=; \d+s: |$)/g;
 /** Any 429 answer on main, up to where the probe's text goes on. */
 const MAIN_429 = /429 \S+ retry-after=(\S+) cache-control=\S+ .*?(?=; \d+s: |$)/g;
 
@@ -849,6 +853,9 @@ const MAIN_429 = /429 \S+ retry-after=(\S+) cache-control=\S+ .*?(?=; \d+s: |$)/
  *    no-store), where each route answered a 429 of its own (four texts, a
  *    text body on three /s routes, two header spellings, no Cache-Control
  *    on most); every other part of the probe as on main;
+ *  - one-429 (explained): the one 429 of an app limit (owner decision
+ *    2026-10-24), whose `error` names the limit, says how an app stays
+ *    under it and the wait, in place of the one text;
  *  - one-429 (Retry-After added): the same, where main's 429 had no
  *    Retry-After (the user search's);
  *  - machine-429 (A10 lows, #8 L1): the one 429 in its machine shape on
@@ -875,6 +882,13 @@ function changeKind(probe: string, main: string, now: string): string | null {
       mark(main, MAIN_429, false) === mark(now, ONE_429_MACHINE, false)
     ) {
       return 'machine-429 (Retry-After added)';
+    }
+  }
+  if (/ member-(?:frame-ticket|db-broker|tool-broker) /.test(probe) && now.includes('429 ')) {
+    // The probe cuts a long answer short, so the body's wait is not read
+    // here; route-limits.test.ts holds the text and its wait.
+    if (mark(main, MAIN_429, true) === mark(now, ONE_429_EXPLAINED, true)) {
+      return 'one-429 (explained)';
     }
   }
   if (nowOk && now.includes('429 ')) {
