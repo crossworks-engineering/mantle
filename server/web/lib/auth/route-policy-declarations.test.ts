@@ -1,15 +1,16 @@
 /**
  * Plan v3.2 S9: the route lists folded into a declaration in each route
- * file (route-declaration.ts). Part 0 builds the tooling; the lists stay
- * the source (ROUTE_POLICY_SOURCE) until part 2.
+ * file (route-declaration.ts). Part 0 built the tooling; part 1 wrote every
+ * route file's declaration; the lists stay the source (ROUTE_POLICY_SOURCE)
+ * until part 2.
  *
  * Pinned here, on every run:
  *  - the declarations the codemod derives from the lists
  *    (scripts/route-declarations.ts) build every row equal, field for
  *    field, to the lists' row (buildRoutePolicy, source 'declarations');
- *  - a manifest that carries declarations (after part 1's codemod run, or
- *    on its dry-run tree) carries one for every route file, each the one
- *    the lists say, and its rows are the lists' rows;
+ *  - the manifest carries a declaration for every route file (part 1's
+ *    codemod run wrote them), each the one the lists say, and its rows are
+ *    the lists' rows;
  *  - every row, every field, against the snapshot
  *    (__snapshots__/route-policy.rows.json): the rows parts 2 and 3 hold
  *    byte-equal while the lists go;
@@ -108,13 +109,10 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     expect(lists.size).toBeGreaterThan(methods);
   });
 
-  it("a manifest's declarations: one for every route file or none, each the lists' own", () => {
-    const withPolicy = manifest.filter((e) => e.policy !== undefined);
-    if (withPolicy.length === 0) {
-      // Part 0: no route file declares yet, and the rows are the lists'.
-      expect(ROUTE_POLICY_SOURCE).toBe('lists');
-      return;
-    }
+  it("the manifest's declarations: one for every route file, each the lists' own", () => {
+    // Part 1: every route file declares; the lists stay the rows' source
+    // until part 2's flip.
+    expect(ROUTE_POLICY_SOURCE).toBe('lists');
     expect(manifest.filter((e) => e.policy === undefined).map((e) => e.pattern)).toEqual([]);
     for (const e of manifest) {
       expect(e.policy, e.pattern).toEqual(entryDeclaration(lists, e));
@@ -230,6 +228,15 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
 
   it('every row, every field, as the snapshot says', async () => {
     const lines = [...lists.values()].map(snapshotLine).sort();
+    await expect(`{\n${lines.join(',\n')}\n}\n`).toMatchFileSnapshot(
+      './__snapshots__/route-policy.rows.json',
+    );
+  });
+
+  it("the rows the route files' declarations build, every field, as the snapshot says", async () => {
+    const declared = buildRoutePolicy(manifest, { source: 'declarations' });
+    expect(declared.size).toBe(lists.size);
+    const lines = [...declared.values()].map(snapshotLine).sort();
     await expect(`{\n${lines.join(',\n')}\n}\n`).toMatchFileSnapshot(
       './__snapshots__/route-policy.rows.json',
     );

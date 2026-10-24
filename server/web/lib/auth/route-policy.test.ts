@@ -65,6 +65,7 @@ import {
   routeRef,
   routeSwitchedOff,
   rowKeyRoute,
+  ROUTE_POLICY_SOURCE,
   servedMethods,
   spellsPattern,
   type RouteRow,
@@ -116,6 +117,24 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     }
     expect(table.size).toBe(rows);
     expect(rows).toBeGreaterThan(600);
+  });
+
+  it("S9 part 1: every route file declares, and its declarations build the lists' rows", () => {
+    // Field for field, every row (route-policy-declarations.test.ts holds
+    // the same rows to __snapshots__/route-policy.rows.json). The lists
+    // stay the source until part 2's flip.
+    expect(ROUTE_POLICY_SOURCE).toBe('lists');
+    const undeclared = (manifest as Array<{ pattern: string; policy?: unknown }>)
+      .filter((e) => e.policy === undefined)
+      .map((e) => e.pattern);
+    expect(undeclared).toEqual([]);
+    const declared = buildRoutePolicy(manifest, { source: 'declarations' });
+    const diffs: string[] = [];
+    for (const [key, row] of table) {
+      if (JSON.stringify(declared.get(key)) !== JSON.stringify(row)) diffs.push(key);
+    }
+    expect(diffs).toEqual([]);
+    expect(declared.size).toBe(table.size);
   });
 
   it('every field answers what its list answers', () => {
