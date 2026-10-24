@@ -25,7 +25,7 @@
  * once that period passes. A save whose text is unchanged (a colour, a
  * layout) costs nothing.
  */
-import { and, asc, desc, eq, ilike, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNotNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
@@ -540,26 +540,47 @@ export async function listPresentRevisions(
   }));
 }
 
+/** How long the flush waits for a canvas's row lock (a save holds it). */
+export const PRESENT_FLUSH_LOCK_MS = 2_000;
+/** How long a canvas whose flush failed is passed over. */
+export const PRESENT_FLUSH_RETRY_MS = 5 * 60_000;
+/** The canvases whose flush failed, to when they are tried again. Kept in
+ *  the process: a held lock would refuse a write of the row's own mark. */
+const flushRetryAt = new Map<string, number>();
+
 /**
  * Re-index the canvases whose quiet period has passed (section 4.3): one
  * announcement each, through markContentChanged, then the due mark is
  * cleared. Run on the agent runtime's timer. Bounded per tick; a row whose
  * mark moved on since it was read (a save landed) is left for a later tick.
- * Returns how many were announced.
+ * A row that fails (a lock held past PRESENT_FLUSH_LOCK_MS, a row gone
+ * meanwhile) is passed over for PRESENT_FLUSH_RETRY_MS, so the same oldest
+ * rows failing every tick never starve the rest. Returns how many were announced.
  */
 export async function flushDuePresentIndex(limit = 25): Promise<number> {
+  const now = Date.now();
+  for (const [id, at] of flushRetryAt) if (at <= now) flushRetryAt.delete(id);
+  const passed = [...flushRetryAt.keys()];
   const due = await db
     .select({ id: presents.nodeId })
     .from(presents)
-    .where(and(isNotNull(presents.indexDueAt), lte(presents.indexDueAt, new Date())))
+    .where(
+      and(
+        isNotNull(presents.indexDueAt),
+        lte(presents.indexDueAt, new Date()),
+        ...(passed.length ? [notInArray(presents.nodeId, passed)] : []),
+      ),
+    )
     .orderBy(asc(presents.indexDueAt))
     .limit(limit);
   let announced = 0;
   for (const d of due) {
     // One canvas's failure (a lock, a row gone meanwhile) is that canvas's:
-    // its mark stays for a later tick, and the others are announced now.
+    // it is passed over for PRESENT_FLUSH_RETRY_MS, and the others are
+    // announced now.
     const done = await db
       .transaction(async (tx) => {
+        await tx.execute(sql.raw(`set local lock_timeout = '${PRESENT_FLUSH_LOCK_MS}ms'`));
         // Still due now: a save since the read pushed the mark on (compared
         // in the database, which keeps microseconds a JS Date drops).
         const cleared = await tx
@@ -571,8 +592,9 @@ export async function flushDuePresentIndex(limit = 25): Promise<number> {
         await markContentChanged(tx, { id: d.id, type: 'present' }, ['source']);
         return true;
       })
-      .catch(() => false);
+      .catch(() => null);
     if (done) announced++;
+    if (done === null) flushRetryAt.set(d.id, Date.now() + PRESENT_FLUSH_RETRY_MS);
   }
   return announced;
 }

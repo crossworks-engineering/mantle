@@ -497,6 +497,11 @@ so the next drawing gets it right:
    `files.diagrams.profiles`, `filename` `pid.md`, `overwrite` true.
 4. Say what you added. Only record what the owner said or showed; never a
    guess.
+5. A pid canvas keeps the profile it was saved with: a later change to the
+   profile does not reach it on its own. To redraw one with the new
+   profile, read its data with `present_get`, leave `profile` out, and save
+   that data with `present_update`; the template tools fill in the
+   profile as it is now. Say which canvases you redrew.
 
 Suggested headings for the profile (use only those the site needs):
 
