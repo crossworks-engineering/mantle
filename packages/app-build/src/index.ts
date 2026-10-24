@@ -389,6 +389,14 @@ export function lintToolRefs(source: AppSource, declaredSlugs: string[]): BuildM
  *  and named (including a default+named combination). */
 const IMPORT_RE = /import\s+([^'";]+?)\s+from\s*['"]([^'"]+)['"]/g;
 
+/** A re-export links like an import: `export { a } from 'm'`,
+ *  `export type { A } from 'm'`, `export * as ns from 'm'`. Only these exact
+ *  shapes (the clause runs to `from` with nothing between), so an `export`
+ *  statement without a `from` never reaches over to a later import.
+ *  `export * from 'm'` names nothing and is left alone. */
+const REEXPORT_RE =
+  /export\s+((?:type\s*)?\{[^}]*\}|\*\s+as\s+[A-Za-z_$][\w$]*)\s*from\s*['"]([^'"]+)['"]/g;
+
 /** `import type …` — the whole clause is type-only. Lookahead keeps
  *  `import type from 'm'` and `import type, { a } from 'm'` (a default import
  *  that happens to be NAMED `type`) as value imports. */
@@ -456,29 +464,31 @@ export function lintRuntimeImports(
 ): BuildMessage[] {
   const out: BuildMessage[] = [];
   for (const [file, text] of Object.entries(source.files)) {
-    IMPORT_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = IMPORT_RE.exec(text)) !== null) {
-      const spec = m[2]!;
-      if (spec.startsWith('.') || spec.startsWith('/')) continue;
-      const available = runtimeExports[spec];
-      if (!available) continue; // not a shared-runtime specifier; esbuild will rule on it
-      const { names, namespace } = importedNames(m[1]!);
-      if (namespace) continue;
-      const have = new Set(available);
-      for (const name of names) {
-        if (have.has(name)) continue;
-        const pre = text.slice(0, m.index);
-        const line = pre.length - pre.replace(/\n/g, '').length + 1; // 1-based
-        const column = m.index - (pre.lastIndexOf('\n') + 1); // 0-based within line
-        const hint =
-          name === 'default'
-            ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
-            : `'${spec}' does not export '${name}'.`;
-        out.push({
-          text: `${hint} It exports: ${available.join(', ')}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
-          location: { file, line, column },
-        });
+    for (const re of [IMPORT_RE, REEXPORT_RE]) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        const spec = m[2]!;
+        if (spec.startsWith('.') || spec.startsWith('/')) continue;
+        const available = runtimeExports[spec];
+        if (!available) continue; // not a shared-runtime specifier; esbuild will rule on it
+        const { names, namespace } = importedNames(m[1]!);
+        if (namespace) continue;
+        const have = new Set(available);
+        for (const name of names) {
+          if (have.has(name)) continue;
+          const pre = text.slice(0, m.index);
+          const line = pre.length - pre.replace(/\n/g, '').length + 1; // 1-based
+          const column = m.index - (pre.lastIndexOf('\n') + 1); // 0-based within line
+          const hint =
+            name === 'default'
+              ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
+              : `'${spec}' does not export '${name}'.`;
+          out.push({
+            text: `${hint} It exports: ${available.join(', ')}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
+            location: { file, line, column },
+          });
+        }
       }
     }
   }

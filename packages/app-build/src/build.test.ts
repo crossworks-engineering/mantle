@@ -95,6 +95,18 @@ describe('buildApp — the import allowlist (security boundary)', () => {
     expect(res.errors.some((e) => /Unknown import/i.test(e.text))).toBe(true);
   });
 
+  it('still bundles lucide-react icons, tree-shaken', async () => {
+    const res = await buildApp(
+      app({
+        'App.tsx':
+          "import { Home } from 'lucide-react';\nexport default function App() { return <Home />; }\n",
+      }),
+      { runtimeExports: RT },
+    );
+    expect(res.errors).toEqual([]);
+    expect(res.code!.length).toBeLessThan(8000);
+  });
+
   it('refuses a computed require() that reaches a readable file on disk', async () => {
     // A file outside the app that parses: on the old code its text landed in
     // the bundle. The path is relative to this package's src, the bundler's

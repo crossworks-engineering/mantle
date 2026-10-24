@@ -17,3 +17,9 @@ const outDir = path.join(appDir, 'public/canvas-runtime');
 const manifest = await buildCanvasRuntime(outDir, '/canvas-runtime/', appDir);
 console.log(`canvas-runtime: ${Object.keys(manifest.imports).length} modules → ${outDir}`);
 for (const [spec, url] of Object.entries(manifest.imports)) console.log(`  ${spec}  →  ${url}`);
+// The app runtime's import map names some of these hashed files
+// (app-libraries.ts): it is stale until the app runtime is built again,
+// which server/web `generate` does next. Run on its own, say so.
+console.log(
+  'canvas-runtime: rebuild the app runtime next (server/web `app-runtime`), or mini apps keep the old library URLs.',
+);

@@ -207,6 +207,11 @@ export async function buildRuntime(
   }
 
   if (libraries) {
+    for (const spec of Object.keys(libraries.imports)) {
+      // A library named like a runtime module would replace it silently.
+      if (spec in imports)
+        throw new Error(`app runtime: '${spec}' is both a runtime module and a library`);
+    }
     Object.assign(imports, libraries.imports);
     Object.assign(exports, libraries.exports);
   }

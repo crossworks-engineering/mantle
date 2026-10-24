@@ -172,3 +172,28 @@ describe('buildApp — runtime import check', () => {
     expect(res.errors).toEqual([]);
   });
 });
+
+describe('lintRuntimeImports: re-exports link like imports', () => {
+  it('checks export { a } from a runtime module', () => {
+    const msgs = lintRuntimeImports(src({ 'a.ts': "export { nope } from '@host';\n" }), RT);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.text).toContain("'@host' does not export 'nope'");
+  });
+
+  it('accepts a correct re-export, export * and export * as', () => {
+    for (const line of [
+      "export { host } from '@host';",
+      "export { host as h } from '@host';",
+      "export * from '@host';",
+      "export * as h from '@host';",
+      "export type { Nope } from '@host';",
+    ]) {
+      expect(lintRuntimeImports(src({ 'a.ts': `${line}\n` }), RT), line).toEqual([]);
+    }
+  });
+
+  it('an export without from does not reach over to a later import', () => {
+    const text = "export const o = { nope: 1 }\nexport { o as p }\nimport { host } from '@host'\n";
+    expect(lintRuntimeImports(src({ 'a.ts': text }), RT)).toEqual([]);
+  });
+});

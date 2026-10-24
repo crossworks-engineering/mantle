@@ -30,6 +30,9 @@ the app.
   host switches theme (a `MutationObserver` on the `<html>` class).
 - Data comes from `host.db` or a declared tool, never a URL: the frame has
   no network.
+- A `formatter` FUNCTION (tooltip, label) returns raw HTML: pass row text
+  through `echarts.format.encodeHTML(text)` first. A string template
+  (`'{b}: {c}'`) is escaped for you.
 - Reduced motion: `animation: false` when `prefers-reduced-motion` asks.
 
 ## App example
