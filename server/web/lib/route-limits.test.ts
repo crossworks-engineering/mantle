@@ -1,7 +1,7 @@
 /**
  * The rate limits of the ROUTE_POLICY row (A10 #8; docs/request-plumbing.md,
  * "Rate limits"): the one 429, how a row's limits are taken, every name of
- * ROUTE_GATES a served row, and the named list of the rows a caller other
+ * RATE_LIMITS some row's, and the named list of the rows a caller other
  * than an Admin user reaches with no limit (pinned here and in the docs, so
  * a new one is a decision, not an accident).
  */
@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   RATE_LIMITS,
   RATE_LIMITED_TEXT,
-  ROUTE_GATES,
   countRateFailure,
   rateLimitedResponse,
   takeRouteLimits,
@@ -184,12 +183,11 @@ const listText = (rows: Map<string, string[]>) =>
     .join('\n');
 
 describe.skipIf(!existsSync(MANIFEST))('the rows', () => {
-  it('names every ROUTE_GATES key as a served row', async () => {
+  it("names every limit as some row's", async () => {
     const { routeManifest } = await import('../server/route-manifest.gen');
     const { buildRoutePolicy } = await import('./auth/route-policy');
     const policy = buildRoutePolicy(routeManifest);
-    expect([...ROUTE_GATES.keys()].filter((k) => !policy.has(k))).toEqual([]);
-    // Each named limit is some row's.
+    // Each named limit is some row's (a route file's declaration states it).
     const used = new Set([...policy.values()].flatMap((r) => r.rateLimit));
     expect(Object.keys(RATE_LIMITS).filter((n) => !used.has(n as never))).toEqual([]);
   });

@@ -217,7 +217,7 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
 
 /**
  * What a row checks of its request before the handler (route-limits.ts
- * ROUTE_GATES; A10 #8), in the gate's request slot, once the caller is
+ * its declaration's `limits`; A10 #8), in the gate's request slot, once the caller is
  * answered: the cross-site refusal of a public auth post first (no page on
  * another site spends a visitor's budget), then the row's rate limits, with
  * the one 429. A login's limit counts the login the pipeline answered

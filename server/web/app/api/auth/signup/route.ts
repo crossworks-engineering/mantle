@@ -41,7 +41,7 @@ const SignupBody = z.object({
 
 export async function POST(req: Request) {
   // The gate refused a cross-site post and took the row's limit first
-  // (lib/route-limits.ts ROUTE_GATES: authSignup), before the setup-code
+  // (this file's `limits`: authSignup), before the setup-code
   // compare and the (intentionally slow) bcrypt hash.
   // Single-user: signup is only available on a fresh install.
   if ((await countUsers()) > 0) {

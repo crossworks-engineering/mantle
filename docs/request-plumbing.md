@@ -465,9 +465,10 @@ remembered one.
   budget of its own; the metadata none). The store is
   `server/web/lib/rate-limit.ts`, unchanged (a fixed window per key, in
   memory, `MANTLE_RATE_LIMIT_SCALE` for the test stack).
-- **The row names its limits** (`ROUTE_GATES`, the same file; RouteRow
-  `rateLimit`, `server/web/lib/auth/route-policy.ts`): each row to its
-  limits by name, read into the row by `buildRouteRow`. A HEAD the GET
+- **The row names its limits** (the route file's `policy`, `limits`;
+  RouteRow `rateLimit`, `server/web/lib/auth/route-policy.ts`): each row's
+  limits by name, read into the row by `buildRouteRow` (the `ROUTE_GATES`
+  table that held them went in plan v3.2 S9 part 3). A HEAD the GET
   handler answers takes its GET's; an /api/v1 alias its base route's (it
   runs that handler; `GET /api/v1/files/:id/download`, which hands the
   bytes handler `?raw=1`, names the bytes limit itself). A row that takes a
@@ -835,8 +836,8 @@ byte for byte.
   `crossSite`).
   `eslint-rules/arch-lints.test.ts` holds the count at 0 and the named list
   to the files that still take a budget.
-- `server/web/lib/route-limits.test.ts`: every key of `ROUTE_GATES` is a
-  served row, every named limit some row's, and the list above.
+- `server/web/lib/route-limits.test.ts`: every named limit some row's, and
+  the list above.
 
 ## App tool broker (A10 #9)
 

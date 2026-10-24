@@ -12,11 +12,12 @@
  *    main), whose key it counts (the caller's address, its login, or the
  *    whole brain), its max and its window, and the narrowings a limit had
  *    (members only; a query it applies to).
- *  - ROUTE_GATES: what the gate checks of a request before its handler, by
+ *  - RouteGates: what the gate checks of a request before its handler, by
  *    row: the cross-site refusal (refuseCrossSiteAuthPost, which comes
- *    before any limit) and the named limits. buildRouteRow reads it into
- *    the row's `crossSite` and `rateLimit` (an /api/v1 alias takes its base
- *    route's, as it runs the base's handler).
+ *    before any limit) and the named limits. Each route file's declaration
+ *    states them (`limits`); buildRouteRow reads them into the row's
+ *    `crossSite` and `rateLimit` (an /api/v1 alias takes its base route's,
+ *    as it runs the base's handler).
  *  - takeRouteLimits: the gate takes a row's limits once the caller is
  *    answered (gate.ts), or, on a public row that reads its login at the
  *    read, when the handler reads it (session.ts publicLoginCaller): where
@@ -200,7 +201,12 @@ export function isRateLimitName(name: string): name is RateLimitName {
   return Object.hasOwn(RATE_LIMITS, name);
 }
 
-/** What the gate checks of a request before its handler, on one row. */
+/** What the gate checks of a request before its handler, on one row: a
+ *  route file's declaration states it (`limits`, route-declaration.ts; S9
+ *  part 3, was ROUTE_GATES here), an /api/v1 alias takes its base's. A row
+ *  that is reachable by a caller that is not an Admin user and has no limit
+ *  is named in the docs and pinned (route-limits.test.ts), so a new one is a
+ *  decision. */
 export type RouteGates = Readonly<{
   /** The login-CSRF refusal of the public auth posts
    *  (refuseCrossSiteAuthPost): 'json' also refuses a body not declared
@@ -211,67 +217,6 @@ export type RouteGates = Readonly<{
    *  budgets. */
   rateLimit?: readonly RateLimitName[];
 }>;
-
-/**
- * ROUTE_GATES: each row (`METHOD pattern`) to what the gate checks before
- * its handler. A HEAD the GET handler answers takes its GET's; an /api/v1
- * alias its base route's. route-policy.test.ts holds every key to a served
- * row. A row that is reachable by a caller that is not an Admin user and
- * has no limit is named in the docs and pinned (route-limits.test.ts), so a
- * new one is a decision.
- */
-export const ROUTE_GATES: ReadonlyMap<string, RouteGates> = new Map<string, RouteGates>([
-  ['POST /api/auth/login', { crossSite: 'json', rateLimit: ['authLogin'] }],
-  ['POST /api/auth/signup', { crossSite: 'json', rateLimit: ['authSignup'] }],
-  ['POST /api/auth/logout', { crossSite: 'origin' }],
-  ['POST /api/auth/change-password', { crossSite: 'json', rateLimit: ['authChangePassword'] }],
-  ['POST /api/auth/pair', { rateLimit: ['authPairIssue'] }],
-  ['POST /api/auth/pair/claim', { rateLimit: ['authPairClaim'] }],
-  ['POST /api/auth/token/refresh', { rateLimit: ['authTokenRefresh'] }],
-  ['POST /api/auth/token', { rateLimit: ['authTokenLogin'] }],
-  ['POST /api/auth/mobile-login', { rateLimit: ['authTokenLogin'] }],
-  ['POST /api/auth/device-login', { rateLimit: ['authTokenLogin'] }],
-  ['POST /api/auth/sso', { rateLimit: ['ownerSso'] }],
-  ['GET /api/auth/invite/:code', { rateLimit: ['invitePreview', 'invitePreviewFailures'] }],
-  [
-    'POST /api/auth/invite/accept',
-    { crossSite: 'json', rateLimit: ['inviteAccept', 'inviteAcceptFailures'] },
-  ],
-  ['GET /api/mcp', { rateLimit: ['mcp'] }],
-  ['POST /api/mcp', { rateLimit: ['mcp'] }],
-  ['DELETE /api/mcp', { rateLimit: ['mcp'] }],
-  ['POST /api/oauth/register', { rateLimit: ['oauthRegister'] }],
-  ['POST /api/oauth/token', { rateLimit: ['oauthToken'] }],
-  ['POST /api/telegram/pair', { rateLimit: ['telegramPair'] }],
-  ['POST /api/assistant/transcribe', { rateLimit: ['chatTranscribe'] }],
-  ['POST /api/users/:id/password', { rateLimit: ['passwordReset'] }],
-  ['POST /api/push/connect', { rateLimit: ['pushEnrol'] }],
-  ['POST /api/push/subscriptions', { rateLimit: ['pushEnrol'] }],
-  ['POST /api/member/push/connect', { rateLimit: ['pushEnrol'] }],
-  ['POST /api/member/push/subscriptions', { rateLimit: ['pushEnrol'] }],
-  ['POST /api/apps/:id/frame-ticket', { rateLimit: ['memberFrameTicket'] }],
-  ['POST /api/presents/:id/frame-ticket', { rateLimit: ['memberCanvasFrameTicket'] }],
-  ['GET /api/presents/:id/frame', { rateLimit: ['canvasFrame'] }],
-  ['POST /api/apps/:id/db-broker', { rateLimit: ['memberDbBroker'] }],
-  ['POST /api/apps/:id/tool-broker', { rateLimit: ['memberToolBroker'] }],
-  ['GET /api/files/files/:id', { rateLimit: ['memberBytes', 'memberThumbs'] }],
-  // Runs the bytes handler with `?raw=1` (route-policy.ts V1_DOWNLOAD_QUERY):
-  // the bytes, never the thumbnail.
-  ['GET /api/v1/files/:id/download', { rateLimit: ['memberBytes'] }],
-  ['GET /api/workspaces/user-search', { rateLimit: ['wsUserSearch'] }],
-  ['GET /s/:token/aggregate', { rateLimit: ['shareAggregate'] }],
-  ['GET /s/:token/bundle', { rateLimit: ['shareBundle'] }],
-  ['POST /s/:token/code', { crossSite: 'json', rateLimit: ['contactCode', 'contactCodeHour'] }],
-  ['POST /s/:token/db-broker', { rateLimit: ['shareDbBroker'] }],
-  ['GET /s/:token/draw', { rateLimit: ['shareDraw'] }],
-  ['GET /s/:token/draw/:drawId', { rateLimit: ['shareDrawEmbed'] }],
-  ['POST /s/:token/evaluate', { rateLimit: ['shareEvaluate'] }],
-  ['POST /s/:token/frame-ticket', { rateLimit: ['shareFrameTicket'] }],
-  ['GET /s/:token/rows', { rateLimit: ['shareRows'] }],
-  ['POST /s/:token/tool-broker', { rateLimit: ['shareToolBroker'] }],
-  ['GET /s/:token/view', { rateLimit: ['shareView'] }],
-  ['GET /s/:token/a/:fileId', { rateLimit: ['shareAsset'] }],
-]);
 
 /** The one 429's text: what a person reads, whatever the limit. */
 export const RATE_LIMITED_TEXT = 'Too many requests. Try again later.';

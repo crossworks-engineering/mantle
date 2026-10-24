@@ -27,7 +27,7 @@ const AUTH_FAILED_MESSAGE = 'Invalid email or password.';
 
 export async function POST(req: Request) {
   // The gate refused a cross-site post and took the row's limit first
-  // (lib/route-limits.ts ROUTE_GATES: authLogin, 10 a minute per address,
+  // (this file's `limits`: authLogin, 10 a minute per address,
   // before bcrypt so a flood cannot pin the CPU).
   const raw = (await readJson(req)) ?? {};
   const parsed = LoginBody.safeParse(raw);

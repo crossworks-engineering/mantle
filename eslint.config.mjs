@@ -403,8 +403,8 @@ export default tseslint.config(
       // A route answers no cross-site refusal of its own: it is its
       // ROUTE_POLICY row's (A10 #8, lib/route-limits.ts).
       'mantle-plumbing/no-route-rate-limits': 'error',
-      // Plan v3.2 S9: every route file declares its policy (part 1's codemod
-      // wrote them, scripts/route-policy-codemod.ts); a new route file
+      // Plan v3.2 S9: every route file declares its policy (the rows' one
+      // source since part 3 deleted the route lists); a new route file
       // without one fails here, and at boot (requireRouteDeclarations).
       'mantle-plumbing/route-policy-declared': 'error',
     },

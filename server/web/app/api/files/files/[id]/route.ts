@@ -80,7 +80,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // loaded as an <img>/<iframe>/download src that can't carry a bearer, so a
   // detached client authenticates via the `?at=` asset token. Session
   // (cookie/bearer) still wins. Every login since W7e: a member reads the
-  // detail AND the bytes of a file in its own scope (MEMBER_OPEN_READS); a
+  // detail AND the bytes of a file in its own scope (its row's `open: 'owner'`); a
   // file it does not read is a 404.
   // A member's bytes are rate limited per login (the file and its
   // thumbnail each a budget of their own): the gate took the row's limits

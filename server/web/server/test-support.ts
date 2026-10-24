@@ -8,6 +8,7 @@ import type { Context } from 'hono';
 import {
   methodEffect,
   routePolicy,
+  type MethodPolicy,
   type RoutePolicyDeclaration,
 } from '../lib/auth/route-declaration';
 import {
@@ -211,6 +212,46 @@ export function rowAnswers(manifest: readonly RouteManifestEntry[] = routeManife
       return of.length > 0 && of.every((r) => r.logins === 'telegram')
         ? { kind: 'area', area: 'connectors' }
         : null;
+    },
+  };
+}
+
+/**
+ * The app's declaration of `method pattern` (its route file's, from the
+ * generated manifest; a HEAD the GET handler answers: its GET's), for a
+ * test that builds one row by hand (buildRouteRow reads a row from a
+ * declaration only, S9 part 3), and `served`, the manifest's keys, for an
+ * alias's base. Throws where the app declares none.
+ */
+export function realDeclaration(
+  method: string,
+  pattern: string,
+): Readonly<{
+  served: (key: string) => boolean;
+  declared: MethodPolicy;
+  declaredOf: (key: string) => MethodPolicy | undefined;
+}> {
+  const policyOf = (m: string, p: string): MethodPolicy | undefined => {
+    const e = routeManifest.find((r) => r.pattern === p);
+    if (!e?.policy) return undefined;
+    const as = m === 'HEAD' && !e.methods.includes('HEAD') ? 'GET' : m;
+    return (e.policy as Readonly<Record<string, MethodPolicy | undefined>>)[as];
+  };
+  const declared = policyOf(method.toUpperCase(), pattern);
+  if (!declared) throw new Error(`realDeclaration: the app declares no ${method} ${pattern}`);
+  const keys = new Set(
+    routeManifest.flatMap((e) =>
+      [...e.methods, ...(e.methods.includes('GET') ? ['HEAD'] : [])].map(
+        (m) => `${m} ${e.pattern}`,
+      ),
+    ),
+  );
+  return {
+    served: (key) => keys.has(key),
+    declared,
+    declaredOf: (key) => {
+      const at = key.indexOf(' ');
+      return policyOf(key.slice(0, at), key.slice(at + 1));
     },
   };
 }

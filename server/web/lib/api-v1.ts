@@ -1,15 +1,15 @@
 /**
  * The public HTTP API, version 1 (plan page 1e62e204, section 2.6).
  *
- * Every /api/v1 route is listed here with the area it belongs to and
- * whether it reads or writes. The table is the contract an API key is held
- * to: the gate looks a request up here (server/middleware/access-key-gate.ts)
- * and refuses a key outside its areas or a write its access does not
- * allow. A key acts as its login (workspaces plan 7.5): the login's rights
- * and workspaces decide, and the key's access and areas only narrow them,
- * never widen. A path under /api/v1 that is not in this table is a 404 for
- * a key, so a route file added without a row can never be reached with one.
- * api-v1.test.ts pins the table to the route files.
+ * Every /api/v1 route file declares, per method, the area an API key needs
+ * (`keyArea` in its `policy`, route-declaration.ts; plan v3.2 S9 part 3:
+ * the table that listed them here is gone). That is the contract a key is
+ * held to: the gate reads the request's row (route-policy.ts keyOnRow) and
+ * refuses a key outside its areas or a write its access does not allow. A
+ * key acts as its login (workspaces plan 7.5): the login's rights and
+ * workspaces decide, and the key's access and areas only narrow them,
+ * never widen. A row under /api/v1 that declares no key area is a 404 for
+ * a key, so a route file added without one can never be reached with one.
  *
  * Most routes are thin aliases of the routes Jackdaw uses (the same handler,
  * re-exported from app/api/v1/**). The shapes in docs/guide/07-api are the
@@ -20,11 +20,11 @@
  * its base route does (plan v2 D3; the A8 finding F1, owner decision a): a
  * login outside Admin, or a key that acts as one, reads and writes through
  * a v1 route exactly where the base route (the route the v1 file
- * re-exports, or `base` for a v1 file with a handler of its own) admits it,
- * in its own scope, and gets 403 `member-login` where the base route
- * refuses it. A v1 route with a handler of its own and no base (the table
- * row writes, which run a builtin on the owner's surface) stays for Admin
- * users only.
+ * re-exports, or the `base` a v1 file with a handler of its own declares)
+ * admits it, in its own scope, and gets 403 `member-login` where the base
+ * route refuses it. A v1 route with a handler of its own and no base (the
+ * table row writes, which run a builtin on the owner's surface) stays for
+ * Admin users only.
  */
 import { emailAttachmentIds } from '@mantle/files';
 import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
@@ -69,125 +69,23 @@ export function isApiKeyRequest(): boolean {
   return !!getRequestContext()?.accessKey;
 }
 
-export type ApiV1Route = {
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  /** The pattern as the route manifest writes it (`:id` for a segment). */
-  pattern: string;
+export type KeyScopeRefusal = 'not-in-api' | 'key-area' | 'key-read-only';
+
+/** What keyMayCall reads of a v1 route, as its ROUTE_POLICY row carries
+ *  it (route-policy.ts rowKeyRoute): the row's effect, and the key area
+ *  its route file declares (`keyArea`; S9 part 3, was the key table
+ *  API_V1_ROUTES here). */
+export type KeyRoute = Readonly<{
+  access: 'read' | 'write';
   /** null = about the key itself (`self`), or open only to a key with
    *  every area. */
   area: AccessKeyArea | null;
-  access: 'read' | 'write';
   /** About the key itself (whoami): every key may call it, whatever its
-   *  areas. The route's ROUTE_POLICY row carries it (keySelf), so the
-   *  gate's key narrower would answer what keyMayCall answers (it does not
-   *  run on HTTP: the HTTP caller sets no key areas). */
+   *  areas. */
   self?: true;
-  /** The v1 file has its own handler (it narrows a key past the route it
-   *  wraps): not an alias of the route without /v1 (ROUTE_POLICY aliasOf,
-   *  D3). Absent: the file re-exports that route's handler, where there is
-   *  one (route-policy.test.ts reads the files). */
-  own?: true;
-  /** A v1 file with a handler of its own (`own`, or the download, which
-   *  hands the bytes handler its query): the base route (`METHOD pattern`)
-   *  whose rules it follows for a login (D3, the A8 finding F1): it admits a
-   *  login outside Admin where that route does. None: Admin users only. A
-   *  re-exporting file's base is the route it re-exports (ROUTE_POLICY
-   *  aliasOf). */
-  base?: string;
-};
+}>;
 
-const r = (
-  method: ApiV1Route['method'],
-  pattern: string,
-  area: AccessKeyArea | null,
-  access: ApiV1Route['access'],
-  own?: 'own' | 'self',
-  base?: string,
-): ApiV1Route => ({
-  method,
-  pattern,
-  area,
-  access,
-  ...(own === 'own' ? { own: true as const } : {}),
-  ...(own === 'self' ? { self: true as const } : {}),
-  ...(base ? { base } : {}),
-});
-
-export const API_V1_ROUTES: readonly ApiV1Route[] = [
-  r('GET', '/api/v1/whoami', null, 'read', 'self'),
-  // Search and any item by id.
-  r('GET', '/api/v1/search', 'search', 'read'),
-  r('GET', '/api/v1/nodes/:id', null, 'read'),
-  // Pages.
-  r('GET', '/api/v1/pages', 'pages', 'read'),
-  r('POST', '/api/v1/pages', 'pages', 'write'),
-  r('GET', '/api/v1/pages/:id', 'pages', 'read'),
-  r('PATCH', '/api/v1/pages/:id', 'pages', 'write', 'own', 'PATCH /api/pages/:id'),
-  // Notes.
-  r('GET', '/api/v1/notes', 'notes', 'read'),
-  r('POST', '/api/v1/notes', 'notes', 'write'),
-  r('GET', '/api/v1/notes/:id', 'notes', 'read'),
-  // Tasks.
-  r('GET', '/api/v1/tasks', 'tasks', 'read'),
-  r('POST', '/api/v1/tasks', 'tasks', 'write'),
-  r('GET', '/api/v1/tasks/:id', 'tasks', 'read'),
-  r('PATCH', '/api/v1/tasks/:id', 'tasks', 'write'),
-  // Tables: rows are written to the draft; commit publishes it.
-  r('GET', '/api/v1/tables', 'tables', 'read'),
-  r('GET', '/api/v1/tables/:id', 'tables', 'read'),
-  r('GET', '/api/v1/tables/:id/rows', 'tables', 'read'),
-  r('POST', '/api/v1/tables/:id/rows', 'tables', 'write', 'own'),
-  r('PATCH', '/api/v1/tables/:id/rows/:rowId', 'tables', 'write', 'own'),
-  r('POST', '/api/v1/tables/:id/commit', 'tables', 'write'),
-  // Files.
-  r('GET', '/api/v1/files', 'files', 'read'),
-  r('POST', '/api/v1/files', 'files', 'write'),
-  r('GET', '/api/v1/files/:id', 'files', 'read'),
-  r('GET', '/api/v1/files/:id/download', 'files', 'read', undefined, 'GET /api/files/files/:id'),
-  // Calendar events.
-  r('GET', '/api/v1/events', 'calendar', 'read'),
-  r('POST', '/api/v1/events', 'calendar', 'write'),
-  // Contacts (read only).
-  r('GET', '/api/v1/contacts', 'contacts', 'read'),
-  r('GET', '/api/v1/contacts/:id', 'contacts', 'read'),
-  // Journal.
-  r('GET', '/api/v1/journal', 'journal', 'read'),
-  r('POST', '/api/v1/journal', 'journal', 'write'),
-];
-
-const compiled = API_V1_ROUTES.map((route) => ({
-  route,
-  re: new RegExp(`^${route.pattern.replace(/:[A-Za-z]+/g, '[^/]+')}/?$`),
-}));
-
-/** The key table's route of a manifest pattern and method, or null: HEAD
- *  is looked up as GET (the GET handler answers it). The one lookup of a
- *  pattern's row in the table: the route rows (route-policy.ts) and the
- *  declarations the codemod writes (scripts/route-declarations.ts) read it. */
-export function apiV1RouteOf(method: string, pattern: string): ApiV1Route | null {
-  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
-  return API_V1_ROUTES.find((r) => r.method === m && r.pattern === pattern) ?? null;
-}
-
-/** The v1 route a RAW (undecoded) request path names, or null. HEAD is
- *  looked up as GET. The table's own answer for a path: the gate and the
- *  guard judge a key on the request's ROUTE_POLICY row, where the raw path
- *  spells its pattern (route-policy.ts requestKeyRoute), and
- *  route-policy.test.ts pins that to this on every v1 row, so an encoded
- *  spelling Hono decodes onto a row is still not in the API. */
-export function matchApiV1Route(method: string, path: string): ApiV1Route | null {
-  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
-  for (const { route, re } of compiled) if (route.method === m && re.test(path)) return route;
-  return null;
-}
-
-export type KeyScopeRefusal = 'not-in-api' | 'key-area' | 'key-read-only';
-
-/** What keyMayCall reads of a v1 route: a table entry, or the same as a
- *  ROUTE_POLICY row carries it (route-policy.ts rowKeyRoute). */
-export type KeyRoute = Pick<ApiV1Route, 'access' | 'area' | 'self'>;
-
-/** Whether an API key may call this v1 route: the route is in the table,
+/** Whether an API key may call this v1 route: the route is in the API,
  *  its area is one of the key's (or the key has all), and a write needs a
  *  read_write key. This only narrows: the login's own rights still decide
  *  past it (plan 7.5). */

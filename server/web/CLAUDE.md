@@ -45,8 +45,8 @@ What is here:
   `eslint-rules/route-plumbing.mjs`; `docs/request-plumbing.md`).
   Rate limits: a route takes none itself. Name the limit in
   `server/web/lib/route-limits.ts` (`RATE_LIMITS`) and give the row it in
-  `ROUTE_GATES`; the gate takes it once the caller is answered and answers
-  the one 429 (a lint error otherwise, `docs/request-plumbing.md`).
+  the route file's `policy` (`limits: { rateLimit: [...] }`); the gate
+  takes it once the caller is answered and answers the one 429 (a lint error otherwise, `docs/request-plumbing.md`).
 - **`lib/**`** — the HTTP-side domain adapters (agents, heartbeats, runs,
   shares, model pools, onboarding, integrity, maintenance …). Business logic
   belongs in `packages/*`; a `lib/` module is the thin layer between a route

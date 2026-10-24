@@ -420,6 +420,12 @@ const ROUTE_LISTS_NOT_POLICY = Object.freeze({
   // data under server/, read by the sweeps only (the route declarations,
   // plan v3.2: the owner's decision of 2026-10-22).
   'server/web/server/public-session-routes.ts': 'test data',
+  // The request body's ceiling by the decoded path (OWNER_DOCUMENT_PREFIXES
+  // and its siblings): how many bytes a request may send, read by the gate
+  // before a row is found and by the loader, never who may call (plan v3.2
+  // S9 part 3: the owner's decision of part 0 round 2 kept the ceilings a
+  // list, and they name no caller, open, item or area).
+  'server/web/lib/body-limit.ts': 'size ceilings',
 });
 
 /** Whether route policy lists are looked for in `path`: the HTTP tier's
@@ -837,7 +843,7 @@ export function itemPrecheckToolEntries(text, resolvers) {
 }
 
 /** The HTTP item pre-check lists (server/web/lib/auth/route-scope.ts,
- *  itemWriteTarget): the item routes, the routes reached by another id, and
+ *  the row's item): the item routes, the routes reached by another id, and
  *  the read and manage exceptions. */
 export const ITEM_PRECHECK_ROUTE_FILE = 'server/web/lib/auth/route-scope.ts';
 export const ITEM_PRECHECK_ROUTE_LISTS = Object.freeze([

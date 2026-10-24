@@ -6,48 +6,36 @@
  * sets it on the request context and hands it to enterCall (@mantle/db
  * gate.ts). Every session guard and the API key checks (the gate's
  * gateAccessKey, the login lookup's findKeyLogin, both through keyOnRow)
- * read the row (currentRoute()), never the route lists.
+ * read the row (currentRoute()).
  *
- * Step 1 is no behaviour change: each field is folded from the list that
- * decided it before, by the same functions, so every answer is what it
- * was (route-policy.test.ts pins each field against its list for every
- * route and method). Step 4 moves the lists' data into this table and
- * deletes them:
+ * A row's policy is its route file's declaration (`policy = routePolicy({
+ * ... })`, route-declaration.ts; plan v3.2 S9): its class, area, who it
+ * opens to, an effect exception, what it creates, the item a write names,
+ * its own audit, the named caller it reads, its key area on /api/v1, its
+ * limits and an /api/v1 alias's base, read into the manifest by the
+ * generator and checked at boot (declaredFacts). The route lists the rows
+ * were folded from (route-scope.ts, any-login-routes.ts, member-routes.ts,
+ * the key table, ROUTE_GATES and the named rows here) are gone (S9 part
+ * 3); the rows are held to __snapshots__/route-policy.rows.json.
  *
- *  - class, scope, area: ROUTE_PREFIXES (routeClass), PUBLIC_PATHS, the
- *    /s link routes and the login lists;
- *  - effect: READ_POSTS and WRITE_GETS (isReadRequest);
- *  - open, logins: MEMBER_OPEN_READS, MEMBER_OPEN_WRITES, ANY_LOGIN_ROUTES,
- *    CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES and MEMBER_ROUTES;
- *  - creates, makesItems: CREATE_ROUTES and NO_ITEM_WRITES (what
- *    requestCreatePolicy read);
- *  - item: ITEM_REF_PREFIXES (itemWriteTarget: a share and a deleted app,
- *    the two the pre-check removal part 2 keeps);
- *  - keyArea, aliasOf: API_V1_ROUTES and the v1 alias files.
- *
- * Step 2 adds the pages of server/pages (the /s page, class 'link'; the
- * render surfaces, class 'render'): the loader registers them with their
- * rows (registerPages), so they run through enterCall too. The gate reads
- * a routed request's credential answers from its row (gateRouteView in the
- * gate middleware): `public`, the /s brokers' CORS (`cors`, was the gate's
- * SHARE_BROKER_RE) and the render cookie (`renderCookie`, was isRenderPath).
- *
- * The content rows come from the kind registry (@mantle/client-types
- * kinds) through those lists: WORKSPACE_ITEM_PREFIXES, CREATE_ROUTES and
- * the member lists are generated from ITEM_KINDS.
+ * The pages of server/pages (the /s page, class 'link'; the render
+ * surfaces, class 'render') have no route file: the loader registers them
+ * with their rows (registerPages, pageFacts), so they run through enterCall
+ * too. The gate reads a routed request's credential answers from its row
+ * (gateRouteView in the gate middleware): `public`, the /s brokers' CORS
+ * (`cors`) and the render cookie (`renderCookie`). What stays a list, each
+ * for a request a row does not answer alone: PUBLIC_PATHS (the gate's
+ * answer for a path no row answers, auth-constants.ts), the asset paths
+ * (isAssetPath, isRenderAssetPath, ASSET_V1_PATTERNS: the gate reads them
+ * on the raw path too), LINK_CORS_PATTERNS (a preflight has no row) and
+ * the page lists.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
 import { env, feature } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
-import { apiV1RouteOf, keyMayCall, type KeyRoute } from '../api-v1';
-import {
-  RATE_LIMITS,
-  ROUTE_GATES,
-  isRateLimitName,
-  type RateLimitName,
-  type RouteGates,
-} from '../route-limits';
+import { keyMayCall, type KeyRoute } from '../api-v1';
+import { RATE_LIMITS, isRateLimitName, type RateLimitName, type RouteGates } from '../route-limits';
 import type { RouteSwitch } from './route-switches';
 import {
   ALIAS_COPIES,
@@ -63,22 +51,8 @@ import {
   type RoutePolicyDeclaration,
 } from './route-declaration';
 import { getRequestContext } from '../../server/request-context';
-import { isAssetPath, isAuditSelfLogged, isPublicPath, isRenderAssetPath } from '../auth-constants';
-import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
-import { isMemberRoute } from './member-routes';
-import {
-  auditsAsWrite,
-  CREATE_ROUTES,
-  isReadRequest,
-  itemWriteTarget,
-  memberMayRead,
-  memberMayWrite,
-  NO_ITEM_WRITES,
-  routeClass,
-  type ItemRef,
-  type ItemWriteNeed,
-  type RouteClass,
-} from './route-scope';
+import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
+import { auditsAsWrite, type ItemRef, type ItemWriteNeed, type RouteClass } from './route-scope';
 
 /**
  * The class of a page of server/pages, as the page list says it when the
@@ -115,13 +89,13 @@ export function linkCors(pattern: string): boolean {
 /** The class of a route (plan 7). */
 export type RoutePolicyClass = 'public' | 'link' | 'render' | 'self' | 'area' | 'content';
 
-/** Which login list opens a route to a login outside Admin: the owner
- *  routes a non-Admin login may call (MEMBER_OPEN_READS and
- *  MEMBER_OPEN_WRITES), the any-login routes, the chat routes, the Telegram
- *  pairing routes, the member routes. */
+/** Whom a route opens to beyond Admin (a declaration's `open`): the owner
+ *  routes a non-Admin login may call in its scope ('owner'), the any-login
+ *  routes, the chat routes, the Telegram pairing routes, the member
+ *  routes. */
 export type RouteLogins = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
 
-/** The item a write names (itemWriteTarget): what it needs of the item,
+/** The item a write names (a declaration's `item`): what it needs of it,
  *  how the id names it, and the path segment the id is in. */
 export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: number }>;
 
@@ -133,14 +107,15 @@ export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: numbe
  *  'chat': the chat guard's (getChatLoginOr401), on the chat and Telegram
  *  lists (A4 step 3b part 5); 'session': the session user's
  *  (getSessionUser: any Admin user, or null, never a refusal), on the rows
- *  open to every Admin user (ADMIN_OPEN_ROWS, A4 hand batch A).
+ *  open to every Admin user (a declared `caller: 'session'`, A4 hand
+ *  batch A).
  *
  *  A4 hand batch B:
  *  - the asset answers, on the byte routes a browser-native src opens
  *    (a `?at=` asset token, the render cookie): 'ownerAsset'
  *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows;
  *  - 'frame': the `?t=` frame ticket of a sandbox frame document, verified
- *    (FRAME_ROWS), no login and never a refusal;
+ *    (a declared `caller: 'frame'`), no login and never a refusal;
  *  - the answers taken at the read (ANSWERED_AT_READ): the gate binds the
  *    kind's answer and the handler's first read runs it, once, where the
  *    handler read its guard before, so what the handler does first (a public
@@ -207,63 +182,19 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
   login: ['any'],
   chat: ['chat', 'telegram'],
   // The session user's guard serves only the named carve-outs open to
-  // every Admin user (ADMIN_OPEN_ROWS, checked in buildRouteRow).
+  // every Admin user (a declared `caller: 'session'`, callerServes).
   session: [],
   // The asset guards serve the owner rows a byte src opens (an Admin user,
   // and a member on the reads open to it: getReaderForAsset).
   ownerAsset: [null, 'owner'],
   readerAsset: [null, 'owner'],
-  // The frame documents (FRAME_ROWS, checked in buildRouteRow).
+  // The frame documents (a declared `caller: 'frame'`, callerServes).
   frame: [],
   // Public rows only (PUBLIC_CALLERS, checked in buildRouteRow).
   publicLogin: [],
   cookieUpgrade: [],
   ownerAtRead: [null, 'owner'],
 };
-
-/**
- * The sandbox frame documents (A4 hand batch B): opened by the `?t=` frame
- * ticket the gate admitted, with no other credential (a sandboxed iframe's
- * navigation carries none). Their caller is the ticket ('frame'); the gate
- * finds no login for them (findsNoLogin, read by session.ts).
- */
-export const FRAME_ROWS: ReadonlySet<string> = new Set([
-  '/api/apps/:id/frame',
-  '/api/member/apps/:id/frame',
-  // A Present canvas (a canvas's ticket only: session.ts frameTicketOf).
-  '/api/presents/:id/frame',
-]);
-
-/**
- * The public rows that read the login (A4 hand batch B), each to the kind it
- * reads (`METHOD pattern`, a HEAD the GET handler answers under its GET's):
- * the public login kinds are read only here (callerServes). A public row
- * judges its own credential, and most read no login at all (the /s link
- * routes, /api/mcp, federation, sign-in): a public kind read on one of them
- * would find a login its handler never looked for.
- */
-export const PUBLIC_LOGIN_ROWS: ReadonlyMap<string, RouteCaller> = new Map([
-  ['GET /api/auth/whoami', 'publicLogin'],
-  ['POST /api/auth/logout', 'publicLogin'],
-  ['POST /api/auth/change-password', 'publicLogin'],
-  ['POST /api/auth/pair', 'publicLogin'],
-  ['GET /api/auth/pair/:id', 'publicLogin'],
-  ['GET /api/oauth/authorize', 'publicLogin'],
-  ['POST /api/oauth/authorize', 'publicLogin'],
-  ['POST /api/auth/sso', 'cookieUpgrade'],
-]);
-
-/**
- * The owner rows whose handler runs a key's checks before it reads the
- * owner (A4 hand batch B): the page route's PATCH and its /api/v1 wrapper.
- * The owner taken at the read ('ownerAtRead') is read only here
- * (callerServes): its refusal comes after the handler's first code, so on
- * any other row the gate's answer would no longer come first.
- */
-export const OWNER_AT_READ_ROWS: ReadonlySet<string> = new Set([
-  'PATCH /api/pages/:id',
-  'PATCH /api/v1/pages/:id',
-]);
 
 /** The asset caller kinds: answered from a `?at=` asset token or the render
  *  cookie as well as a login, read only on an asset row (assetRow). */
@@ -325,7 +256,7 @@ export type RouteRow = Readonly<{
   /** The class (plan 7): what the route serves. A link route (/s) and a
    *  public one name no login; the others are the scope's. */
   class: RoutePolicyClass;
-  /** What the owner session guard does with the route (routeClass): reads
+  /** What the owner session guard does with the route (its class): reads
    *  in the login's scope (content), the login's own things (self), or
    *  management of an area. Null: no owner guard serves it (one refuses it,
    *  unclassified). */
@@ -347,16 +278,15 @@ export type RouteRow = Readonly<{
   item: RouteItem | null;
   /** The write logs its own audit event: the session guards' generic
    *  `api.write` row is not written for it (session.ts auditMutation reads
-   *  isAuditSelfLogged today; part 2 of the route declarations reads this).
-   *  'own' only on a row that audits as a write (route-scope.ts
-   *  auditsAsWrite) under a path of AUDIT_SELF_LOGGED_PATHS, or its
-   *  declaration's `audit`; null elsewhere. */
+   *  this). 'own' only where the declaration says `audit: 'own'` and the
+   *  row audits as a write (route-scope.ts auditsAsWrite); null
+   *  elsewhere. */
   audit: 'own' | null;
   /** The area an API key needs (an /api/v1 row of the key table): null
    *  for a route open only to a key with every area, or about the key
    *  itself (keySelf); absent off the key table. */
   keyArea?: AccessKeyArea | null;
-  /** An /api/v1 row about the key itself (whoami, API_V1_ROUTES `self`):
+  /** An /api/v1 row about the key itself (whoami, its declaration's `keyArea: 'self'`):
    *  every key may call it, whatever its areas. Absent off the key table. */
   keySelf?: boolean;
   /** A v1 row: the route whose handler it re-exports (D3). */
@@ -399,7 +329,7 @@ export type RouteRow = Readonly<{
    *  (routeSwitchedOff). Null: always served. */
   switch: RouteSwitch | null;
   /** The login-CSRF refusal the gate answers before the row's limits and
-   *  its handler (refuseCrossSiteAuthPost; route-limits.ts ROUTE_GATES): a
+   *  its handler (refuseCrossSiteAuthPost; its declaration's `limits`): a
    *  public auth post that sets or uses the session cookie. Null: none. */
   crossSite: 'json' | 'origin' | null;
   /** The row's rate limits, by name (route-limits.ts RATE_LIMITS; A10 #8),
@@ -426,53 +356,6 @@ function markedPath(pattern: string): string {
   return pattern.replace(/:[A-Za-z0-9_]+\??/g, () => `{p${i++}}`).replace(/\*$/, '{rest}');
 }
 
-/** The login list that opens `method pattern`; at most one does. */
-function loginsOf(method: string, pattern: string): RouteLogins | null {
-  const key = `${method} ${pattern}`;
-  const found: RouteLogins[] = [];
-  if (memberMayRead(method, pattern) || memberMayWrite(method, pattern)) found.push('owner');
-  if (ANY_LOGIN_ROUTES.includes(key)) found.push('any');
-  if (CHAT_LOGIN_ROUTES.includes(key)) found.push('chat');
-  if (TELEGRAM_LOGIN_ROUTES.includes(key)) found.push('telegram');
-  if (isMemberRoute(method, pattern)) found.push('member');
-  if (found.length > 1) {
-    throw new Error(`ROUTE_POLICY: ${key} is in more than one login list (${found.join(', ')})`);
-  }
-  return found[0] ?? null;
-}
-
-/** The v1 route a pattern and method name (HEAD as GET: apiV1RouteOf). */
-const v1Route = apiV1RouteOf;
-
-/** A v1 row's base route (D3): the same method on the pattern without
- *  /v1 (files: /api/files/files), when the manifest serves it there and
- *  the v1 file has no handler of its own (API_V1_ROUTES `own`). The alias
- *  files re-export that handler (route-policy.test.ts reads them). */
-function aliasOf(method: string, pattern: string, served: (key: string) => boolean): string | null {
-  if (!pattern.startsWith('/api/v1/') || v1Route(method, pattern)?.own) return null;
-  const base = pattern.startsWith('/api/v1/files')
-    ? pattern.replace('/api/v1/files', '/api/files/files')
-    : pattern.replace('/api/v1/', '/api/');
-  const key = `${method} ${base}`;
-  return served(key) ? key : null;
-}
-
-/** The base route (`METHOD pattern`) a v1 row answers a login as (D3):
- *  the route its file re-exports (aliasOf), else the table's `base` for a
- *  file with a handler of its own; null off /api/v1 or with neither. */
-function v1BaseOf(method: string, pattern: string, served: (key: string) => boolean) {
-  if (!pattern.startsWith('/api/v1/')) return null;
-  return aliasOf(method, pattern, served) ?? v1Route(method, pattern)?.base ?? null;
-}
-
-/** The login list a v1 row takes from its base (D3): 'owner' where the base
- *  is one of the owner routes open to a login outside Admin
- *  (memberMayRead, memberMayWrite), else none (Admin users only). */
-function v1BaseLogins(base: string): RouteLogins | null {
-  const at = base.indexOf(' ');
-  return loginsOf(base.slice(0, at), base.slice(at + 1)) === 'owner' ? 'owner' : null;
-}
-
 /**
  * The caller kinds whose answer names the login a login limit counts
  * (session.ts answeredLimitLogin): the guards answered before the handler,
@@ -487,19 +370,8 @@ const LIMIT_LOGIN_CALLERS: ReadonlySet<RouteCaller> = new Set([
   'publicLogin',
 ]);
 
-/**
- * What the gate checks of `key`'s request before its handler (route-limits.ts
- * ROUTE_GATES): the row's own entry, or, for an /api/v1 alias, its base
- * route's (it runs that handler); checked against the row (the scope of
- * each limit needs a caller that names it, a catch-all or a page takes
- * none).
- */
-function listedGates(key: string, alias: string | null): RouteGates {
-  return ROUTE_GATES.get(key) ?? (alias ? ROUTE_GATES.get(alias) : undefined) ?? {};
-}
-
-/** The row's gates (listedGates, or its declaration's `limits`), checked
- *  against the row. */
+/** The row's gates (its declaration's `limits`, an alias's its base's),
+ *  checked against the row. */
 function gatesOf(
   key: string,
   gates: RouteGates,
@@ -523,39 +395,6 @@ function gatesOf(
 
 /** The class of the login's own things (route-scope.ts `self`). */
 const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
-
-/**
- * Rows open to every Admin user though their prefix names an Admin area: a
- * named carve-out, the login's own (`self`). The owner's decision of
- * 2026-10-14 (docs/actors.md, A4 step 3b part 4): the cached update banner,
- * GET /api/updates/check (and its HEAD), stays open to every Admin user,
- * while GET /api/updates/status and POST /api/updates/check need the
- * settings area their rows name.
- */
-export const ADMIN_OPEN_ROWS: ReadonlySet<string> = new Set(['GET /api/updates/check']);
-
-/**
- * What the row serves (its scope): its pattern's prefix (routeClass), but
- * the Telegram chat rows (TELEGRAM_LOGIN_ROUTES, and the HEAD their GET
- * handler answers) are the login's own chats, `self`, whatever their prefix
- * says (A4 step 3b must-do, the 3a audit's L5). They are open to every
- * login and served by their own gate (getChatLoginOr401), which never asks
- * an Admin area, like the assistant chat rows: classed in the connectors
- * area, the gate's area check would refuse an Admin user without that area
- * while letting a member in. And the named carve-outs open to every Admin
- * user (ADMIN_OPEN_ROWS). `method` is the method whose handler answers
- * (GET's for a HEAD the GET handler answers); `classLogins` the login list
- * of the row's class (that method's).
- */
-function rowScope(
-  method: string,
-  pattern: string,
-  classLogins: RouteLogins | null,
-): RouteClass | null {
-  if (classLogins === 'telegram') return SELF_SCOPE;
-  if (ADMIN_OPEN_ROWS.has(`${method} ${pattern}`)) return SELF_SCOPE;
-  return routeClass(pattern);
-}
 
 /**
  * The switches a route is served under (A4 hand batch A): its handler
@@ -600,15 +439,15 @@ export function routeSwitchedOff(
 /**
  * Whether the guard of `caller` serves a row (buildRouteRow): a public row
  * reads only a public kind and no other row does, each kind only on the
- * public rows named for it (PUBLIC_LOGIN_ROWS); an asset kind only an
- * asset row (assetRow: a GET or HEAD of a byte route); the owner taken at
- * the read only its named rows (OWNER_AT_READ_ROWS); a gone row takes its
- * stub's kind whatever list it is in; the session user's guard serves the
- * named carve-outs (ADMIN_OPEN_ROWS), the frame answer the frame documents
- * (FRAME_ROWS); the owner guard and its asset and at-read forms a row its
- * prefix classes (a scope), the at-read form none that manages an Admin
+ * public rows that declare it (`caller`); an asset kind only an asset row
+ * (assetRow: a GET or HEAD of a byte route); the owner taken at the read
+ * only the rows that declare it; a gone row takes its stub's kind whoever
+ * it opens to; the session user's guard serves the rows that declare it
+ * (the carve-outs open to every Admin user), the frame answer the frame
+ * documents (`caller: 'frame'`); the owner guard and its asset and at-read
+ * forms a row with a scope, the at-read form none that manages an Admin
  * area (the gate's Admin step comes before the handler); every other kind
- * the rows of its own lists (CALLER_LOGINS). The kinds of A4 hand batch B
+ * the rows it opens to (CALLER_LOGINS). The kinds of A4 hand batch B
  * are each read on rows named for them (fix round 1, M2), as the frame
  * answer and the session user's are: a class of rows is never enough.
  */
@@ -640,55 +479,19 @@ function callerServes(
   return row.gone || CALLER_LOGINS[caller].includes(row.classLogins);
 }
 
-/** Whether the lists name the row `key` (`METHOD pattern`, the method
- *  whose handler answers) of `pattern` for the caller kind `kind`:
- *  PUBLIC_LOGIN_ROWS, OWNER_AT_READ_ROWS, ADMIN_OPEN_ROWS, FRAME_ROWS (by
- *  pattern). A declaration names it with `caller`. */
-function listNamed(kind: NamedCaller, key: string, pattern: string): boolean {
-  switch (kind) {
-    case 'publicLogin':
-    case 'cookieUpgrade':
-      return PUBLIC_LOGIN_ROWS.get(key) === kind;
-    case 'ownerAtRead':
-      return OWNER_AT_READ_ROWS.has(key);
-    case 'session':
-      return ADMIN_OPEN_ROWS.has(key);
-    case 'frame':
-      return FRAME_ROWS.has(pattern);
-  }
-}
-
-/**
- * Where the rows' policy comes from (plan v3.2, the route declarations): the lists (today), or
- * the declaration each route file exports (`policy`, route-declaration.ts),
- * which the manifest carries. Part 2 flips this to 'declarations', once
- * part 1's codemod has written every route file's declaration and
- * route-policy-declarations.test.ts finds every row equal; part 3 deletes
- * the lists. A page of server/pages has no route file: its row is the
- * lists' in either source.
- */
-export type RoutePolicySource = 'lists' | 'declarations';
-export const ROUTE_POLICY_SOURCE: RoutePolicySource = 'declarations';
-
 /**
  * Whether the gate finds no login for `row` (session.ts resolveHttpLogin):
  * a sandbox frame document's row, whose caller is the frame ticket and
- * whose handler reads no login. One source, the frame caller: the lists
- * name it by pattern (FRAME_ROWS, as before), a declaration by `caller:
- * 'frame'` (the row's caller is then the frame, callerServes checks the
- * two are one). route-policy-declarations.test.ts finds the two answers
- * the same for every row of the manifest.
+ * whose handler reads no login: its declaration's `caller: 'frame'`
+ * (callerServes holds the declared and the read kind to one).
  */
-export function findsNoLogin(
-  row: Pick<RouteRow, 'pattern' | 'caller'>,
-  source: RoutePolicySource = ROUTE_POLICY_SOURCE,
-): boolean {
-  return source === 'lists' ? FRAME_ROWS.has(row.pattern) : row.caller === 'frame';
+export function findsNoLogin(row: Pick<RouteRow, 'caller'>): boolean {
+  return row.caller === 'frame';
 }
 
-/** What a row's policy says, from the lists or from a declaration; the
- *  rest of the row (its caller, switch, gone stub, page) comes from the
- *  manifest either way. */
+/** What a row's policy says, from its declaration (a page's: pageFacts);
+ *  the rest of the row (its caller, switch, gone stub, page) comes from the
+ *  manifest. */
 type RowFacts = Readonly<{
   scope: RouteClass | null;
   /** The class before a page's own (buildRouteRow), null where none. */
@@ -706,74 +509,33 @@ type RowFacts = Readonly<{
   /** Whether the row is named for a caller kind (callerServes). */
   named: (kind: NamedCaller) => boolean;
   /** The named caller kind a declaration states (`caller`), read from
-   *  its checked copy; null from the lists, which state none. */
+   *  its checked copy; null on a page, which states none. */
   declaredCaller: NamedCaller | null;
 }>;
 
-/** The facts of a row from the lists (step 1). `m` is the row's method,
- *  `answeredAs` the method whose handler answers (GET's for a HEAD the GET
- *  handler answers). */
-function listedFacts(
-  m: string,
-  answeredAs: string,
-  pattern: string,
-  path: string,
-  served: (key: string) => boolean,
-): RowFacts {
-  const key = `${m} ${pattern}`;
-  // A v1 row admits a login as its base route does (D3; the A8 finding F1,
-  // owner decision a): the base's login list, of the owner lists only (a
-  // member's open reads and writes). No base: Admin users only.
-  const v1Base = v1BaseOf(answeredAs, pattern, served);
-  const logins = v1Base ? v1BaseLogins(v1Base) : loginsOf(answeredAs, pattern);
-  const scope = rowScope(answeredAs, pattern, logins);
-  const effect = isReadRequest(m, pattern) ? 'read' : 'write';
-  if (memberMayRead(m, pattern) && effect !== 'read') {
-    throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);
-  }
-  if (memberMayWrite(m, pattern) && effect !== 'write') {
-    throw new Error(`ROUTE_POLICY: ${key} is a member write that reads`);
-  }
-  const target = itemWriteTarget(m, pattern, path);
-  let item: RouteItem | null = null;
-  if (target) {
-    const seg = path.split('/').indexOf(target.id);
-    if (seg < 0) throw new Error(`ROUTE_POLICY: ${key} names its item outside a path param`);
-    item = Object.freeze({ need: target.need, ref: target.ref, seg });
-  }
-  const isPublic = isPublicPath(path);
-  const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
-    ? 'link'
-    : (scope?.kind ?? (isPublic ? 'public' : logins ? 'self' : null));
-  const v1 = v1Route(m, pattern);
-  // An alias runs its base's handler: the same method on the base pattern.
-  const alias = aliasOf(m, pattern, served);
+/**
+ * The facts of a page's row (server/pages: no route file, so no
+ * declaration; S9 part 3, where the lists' row was read before, the same
+ * values): a page names no login list, no item, no key area, no limit and
+ * no audit of its own; it is public where the gate lets its path in with
+ * no credential (PUBLIC_PATHS: the /s page), and a page under /s is a link
+ * row. A render page is classed by its list alone (buildRouteRow).
+ */
+function pageFacts(m: string, pattern: string, path: string): RowFacts {
   return {
-    scope,
-    listed,
-    isPublic,
-    logins,
-    effect,
-    // A v1 create reads ?ws= as its base route does (D3; the A8 fix round 1
-    // L3, owner decision: yes), for every key, the owner's and an Admin
-    // user's too. Without ?ws= nothing changes.
-    creates: CREATE_ROUTES.has(key) || (v1Base !== null && CREATE_ROUTES.has(v1Base)),
-    makesItems: !(m === 'DELETE' || NO_ITEM_WRITES.has(key)),
-    item,
-    // A v1 pattern the key table does not list has none: no key calls it
-    // (api-v1.test.ts pins the table to the route files).
-    key:
-      pattern.startsWith('/api/v1/') && v1 ? { keyArea: v1.area, keySelf: v1.self === true } : null,
-    alias,
-    gates: listedGates(
-      `${answeredAs} ${pattern}`,
-      alias ? `${answeredAs} ${alias.slice(alias.indexOf(' ') + 1)}` : null,
-    ),
-    // The path the request names spells the pattern: a marked path is under
-    // the same prefixes (route-policy-declarations.test.ts proves it for
-    // every pattern and the params that could spell a listed prefix).
-    audit: isAuditSelfLogged(path) && auditsAsWrite(m, effect) ? 'own' : null,
-    named: (kind) => listNamed(kind, `${answeredAs} ${pattern}`, pattern),
+    scope: null,
+    listed: pattern.startsWith('/s/') ? 'link' : null,
+    isPublic: isPublicPath(path),
+    logins: null,
+    effect: methodEffect(m),
+    creates: false,
+    makesItems: m !== 'DELETE',
+    item: null,
+    key: null,
+    alias: null,
+    gates: {},
+    audit: null,
+    named: () => false,
     declaredCaller: null,
   };
 }
@@ -828,12 +590,9 @@ function declaredFacts(
     const b = splitRouteKey(baseKey)!;
     if (!served(`${m} ${b.pattern}`))
       bad(`${baseKey} as its base, which the manifest does not serve`);
-    // While the key table names a base (api-v1.ts API_V1_ROUTES `base`), a
-    // declared one is that one. (An alias's base is the route its file
-    // re-exports: the generator checks it, route-callers.ts aliasMismatches.)
-    if (d.base !== undefined && d.base !== (v1Route(m, pattern)?.base ?? null)) {
-      bad(`the base ${d.base}, which the key table (API_V1_ROUTES) does not name`);
-    }
+    // (An alias's base is the route its file re-exports: the generator
+    // checks it, route-callers.ts aliasMismatches. A `base` is the one
+    // source of a v1 row's base since the key table went, S9 part 3.)
     // The base's values are read from its own checked copy, as the row's.
     base = validateMethodPolicy(
       declaredOf(baseKey) ?? bad(`${baseKey} as its base, which declares no policy`),
@@ -892,18 +651,10 @@ function declaredFacts(
       seg: pattern.split('/').indexOf(`:${d.item.param}`),
     });
   }
+  // The key area an API key needs (an /api/v1 row only: the validator): the
+  // one source since the key table went (S9 part 3). A v1 row that declares
+  // none is not in the API (keyOnRow: 'not-in-api').
   const keyArea = d.keyArea;
-  // While the key table names each v1 row's key area (api-v1.ts
-  // API_V1_ROUTES `area`, `self`), a declared one is that one, and a row
-  // the table names declares it (as `base` above): the
-  // gate's key check reads the table, the row's facts the declaration.
-  const v1 = pattern.startsWith('/api/v1/') ? v1Route(m, pattern) : null;
-  const tableKey = v1 ? `${v1.self === true ? 'self' : 'area'} ${String(v1.area)}` : 'none';
-  const declaredKey =
-    keyArea === undefined ? 'none' : keyArea === 'self' ? 'self null' : `area ${String(keyArea)}`;
-  if (declaredKey !== tableKey) {
-    bad(`the key area ${declaredKey}, where the key table (API_V1_ROUTES) says ${tableKey}`);
-  }
   return {
     scope,
     listed: d.class,
@@ -933,9 +684,8 @@ function declaredFacts(
 }
 
 /**
- * The row of `method pattern`, from the lists (step 1), or, with
- * `declared` (part 2, ROUTE_POLICY_SOURCE), from the route file's
- * declaration for the method. `served` says which `METHOD pattern` keys the
+ * The row of `method pattern`, from the route file's declaration for the
+ * method (`declared`), or a page's (`page`, pageFacts). `served` says which `METHOD pattern` keys the
  * manifest serves (the v1 aliases).
  */
 export function buildRouteRow(
@@ -959,8 +709,9 @@ export function buildRouteRow(
      *  passes it (arch-lints.test.ts pins it). */
     standIn?: boolean;
     /** The route file's declaration for the method whose handler answers
-     *  (a HEAD the GET handler answers: its GET's): the row's policy
-     *  is read from it, not from the lists. */
+     *  (a HEAD the GET handler answers: its GET's): the row's policy is
+     *  read from it. Required but on a page (S9 part 3: no list is left to
+     *  read a row from). */
     declared?: MethodPolicy;
     /** The declaration of another row (`METHOD pattern`; a HEAD the GET
      *  handler answers: its GET's), for a declared alias's base. */
@@ -975,38 +726,43 @@ export function buildRouteRow(
   // HEAD is answered by the GET handler, so it has GET's class and GET's
   // logins (the owner's decision of 2026-10-14, 2a, the open question M3):
   // a login outside Admin that may GET a row may HEAD it, under the same
-  // rule (the any-login, chat and Telegram lists: its own scope, not the
-  // system pool). The owner routes' HEAD always had it (memberMayRead
-  // reads HEAD as GET); the lists name GET only. Only where the GET
-  // handler answers it: a route that exports its own HEAD (`ownHead`) has
-  // its own handler, and its HEAD row is that method's, as listed (fix
-  // round 1, L3).
+  // rule (the any-login, chat and Telegram rows: its own scope, not the
+  // system pool). Only where the GET handler answers it: a route that
+  // exports its own HEAD (`ownHead`) has its own handler, and its HEAD row
+  // is that method's declaration's (fix round 1, L3).
   const answeredAs = m === 'HEAD' && !opts.ownHead ? 'GET' : m;
   const path = markedPath(pattern);
-  const facts = opts.declared
-    ? declaredFacts(
-        m,
-        answeredAs,
-        pattern,
-        served,
-        opts.declared,
-        opts.declaredOf ?? (() => undefined),
-      )
-    : listedFacts(m, answeredAs, pattern, path, served);
+  let facts: RowFacts;
+  if (opts.page) facts = pageFacts(m, pattern, path);
+  else if (opts.declared) {
+    facts = declaredFacts(
+      m,
+      answeredAs,
+      pattern,
+      served,
+      opts.declared,
+      opts.declaredOf ?? (() => undefined),
+    );
+  } else throw new Error(`ROUTE_POLICY: ${key} declares no policy for ${answeredAs}`);
   const { scope, listed, isPublic, logins, effect } = facts;
   const classLogins = logins;
   // A page's class is its list's (registerPages). A link page is an /s
-  // pattern; a render page is one no list classes, so it can never shadow
-  // a route the lists know. Nothing else is mounted outside the manifest.
+  // pattern; a render page is off /s and off /api, so it can never shadow a
+  // route a declaration classes. Nothing else is mounted outside the
+  // manifest.
   const pageClass = opts.page ?? null;
-  if (pageClass !== null && listed !== (pageClass === 'link' ? 'link' : null)) {
+  if (
+    pageClass !== null &&
+    (listed !== (pageClass === 'link' ? 'link' : null) ||
+      (pageClass === 'render' && (pattern === '/api' || pattern.startsWith('/api/'))))
+  ) {
     throw new Error(
-      `ROUTE_POLICY: ${key} is a page of class ${pageClass}; the lists class it ${listed ?? 'not at all'}`,
+      `ROUTE_POLICY: ${key} is a page of class ${pageClass}; its pattern is ${listed === 'link' ? 'a link route' : 'not one'}`,
     );
   }
   const cls = pageClass ?? listed;
-  // A route no list names is refused here, so a new route is classed
-  // before it ships (route-policy.test.ts builds every row).
+  // A row with no class is refused here (a declaration always states one;
+  // a render page takes its list's).
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
   const page = pageClass !== null;
   // The pipeline answers a kind's caller only on a row that kind's guard
@@ -1182,14 +938,14 @@ export function requireRouteDeclarations(manifest: readonly RouteManifestEntry[]
  *  server/pages, all of that class): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
   manifest: readonly RouteManifestEntry[],
-  opts: { page?: PageClass; standIn?: boolean; source?: RoutePolicySource } = {},
+  opts: { page?: PageClass; standIn?: boolean } = {},
 ): ReadonlyMap<string, RouteRow> {
   const keys = new Set(manifest.flatMap((e) => servedMethods(e).map((m) => `${m} ${e.pattern}`)));
   const served = (key: string) => keys.has(key);
   const table = new Map<string, RouteRow>();
-  const { source = ROUTE_POLICY_SOURCE, ...rowOpts } = opts;
-  // A page has no route file, so no declaration: its row is the lists'.
-  const declared = source === 'declarations' && !opts.page;
+  const rowOpts = opts;
+  // A page has no route file, so no declaration: its row is pageFacts'.
+  const declared = !opts.page;
   // Each row's declaration by `METHOD pattern` (a HEAD the GET handler
   // answers: its GET's), for an alias's base. Each route's declaration is
   // read once, here, into its checked copy (validateRoutePolicy): every row
@@ -1213,7 +969,7 @@ export function buildRoutePolicy(
     const gone = new Set(entry.gone ?? []);
     const switches = entry.switches ?? {};
     // A switch declared for a method the route does not export would guard
-    // nothing: refused at boot, as a row no list classes is.
+    // nothing: refused at boot, as a row with no class is.
     for (const m of Object.keys(switches)) {
       if (!entry.methods.includes(m)) {
         throw new Error(
@@ -1221,8 +977,7 @@ export function buildRoutePolicy(
         );
       }
     }
-    // So would a policy for a method it does not export, whichever source
-    // the rows are read from.
+    // So would a policy for a method it does not export.
     for (const m of Object.keys(entry.policy ?? {})) {
       if (!isDeclaredMethod(m) || !entry.methods.includes(m)) {
         throw new Error(
@@ -1398,8 +1153,7 @@ export function keyOnRow(
   return keyMayCall(grant, requestKeyRoute(row, rawPath));
 }
 
-/** The item a write request names, from its row and path (what
- *  itemWriteTarget answers), or null. */
+/** The item a write request names, from its row and path, or null. */
 export function routeItemTarget(
   row: RouteRow,
   path: string,
@@ -1410,20 +1164,18 @@ export function routeItemTarget(
   return { id, need: row.item.need, ref: row.item.ref };
 }
 
-/** A login outside Admin may read through this owner route
- *  (memberMayRead). */
+/** A login outside Admin may read through this owner route. */
 export function memberOpenRead(row: RouteRow): boolean {
   return row.logins === 'owner' && row.effect === 'read';
 }
 
-/** A login outside Admin may write through this owner route
- *  (memberMayWrite). */
+/** A login outside Admin may write through this owner route. */
 export function memberOpenWrite(row: RouteRow): boolean {
   return row.logins === 'owner' && row.effect === 'write';
 }
 
-/** An any-login route: the any-login, chat and Telegram lists
- *  (isAnyLoginRoute). */
+/** An any-login route: the rows open to any login, the chat rows and the
+ *  Telegram rows. */
 export function anyLoginRow(row: RouteRow): boolean {
   return row.logins === 'any' || row.logins === 'chat' || row.logins === 'telegram';
 }

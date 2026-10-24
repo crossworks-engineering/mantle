@@ -551,10 +551,10 @@ already dead ends nothing.
 admin sees and revokes it in Settings > Logins > Devices
 (`GET /api/users/:id/devices`, `DELETE /api/users/:id/devices/:jti`).
 
-**What a token reaches.** A member token reaches `MEMBER_ROUTES`,
-`ANY_LOGIN_ROUTES` (`server/web/lib/auth/*-routes.ts`) and the owner routes
-`server/web/lib/auth/route-scope.ts` opens to a non-Admin login, each in its
-own workspaces. Every other route answers 403 with `reason` =
+**What a token reaches.** A member token reaches the member routes, the
+any-login routes and the owner routes open to a non-Admin login (each route
+file's `policy`: `open: 'member'`, `'any'`, `'chat'`, `'telegram'` or
+`'owner'`), each in its own workspaces. Every other route answers 403 with `reason` =
 `member-login`, or 401. An admin's call on a member-only route answers 403
 `admin-login`.
 

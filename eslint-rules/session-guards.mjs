@@ -41,7 +41,7 @@ export const SESSION_GUARDS = Object.freeze([
  *    the member list; the any-login guard the any-login list; the chat
  *    guard the chat and Telegram lists (A4 step 3b part 5); the session
  *    user's guard (getSessionUser: any Admin user, or null) the rows open to
- *    every Admin user (route-policy.ts ADMIN_OPEN_ROWS, A4 hand batch A).
+ *    every Admin user (a declared caller: 'session', A4 hand batch A).
  *    A4 hand batch B: the asset guards (getOwnerForAsset,
  *    getReaderForAsset) the byte routes; the frame
  *    ticket the frame documents; and, answered at the read (`atRead`), the

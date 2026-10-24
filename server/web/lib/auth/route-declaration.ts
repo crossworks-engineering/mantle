@@ -11,11 +11,10 @@
  * The route manifest generator reads the declaration from the code
  * (scripts/route-callers.ts handlerPolicy) into the manifest (`policy`), so
  * the loader has it when it registers the route, without loading the
- * module; a declaration is data, literals only. buildRouteRow reads it in
- * place of the lists once ROUTE_POLICY_SOURCE says so (part 2). Until
- * then the rows come from the lists, and route-policy-declarations.test.ts
- * proves the declarations the codemod (scripts/route-policy-codemod.ts)
- * derives from them build every row equal.
+ * module; a declaration is data, literals only. buildRouteRow reads every
+ * row from it (part 2); the lists the codemod wrote the declarations from
+ * are gone (part 3), and route-policy-declarations.test.ts holds every row
+ * to __snapshots__/route-policy.rows.json.
  *
  * One shape source: the const arrays below give the type, the checks of
  * validateMethodPolicy (the generator's, at pretypecheck, and the boot's,
@@ -48,7 +47,7 @@ export const DECLARED_METHODS = [
 
 export type DeclaredMethod = (typeof DECLARED_METHODS)[number];
 
-/** The methods that read (route-scope.ts isReadRequest): every other one
+/** The methods that read (a row's effect by its method): every other one
  *  writes. A declaration states only an exception (`effect`). */
 export const READ_METHODS = ['GET', 'HEAD'] as const;
 type ReadMethod = (typeof READ_METHODS)[number];
@@ -178,7 +177,7 @@ type Common = Readonly<{
    *  base's (open: 'owner' or none), so it declares neither. */
   base?: string;
   /** The write logs its own audit event: the generic `api.write` row is
-   *  not written (was AUDIT_SELF_LOGGED_PATHS). A row that audits as a
+   *  not written (session.ts auditMutation). A row that audits as a
    *  write only. */
   audit?: 'own';
 }>;

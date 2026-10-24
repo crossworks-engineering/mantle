@@ -315,7 +315,7 @@ async function findRender(): Promise<{ user: SessionUser; nodeId: string } | nul
  * The byte routes of brain items for EVERY login (W7e): an Admin user as
  * getOwnerForAsset (its session, an asset token, the render cookie; `member`
  * null); a member by its session or a member `?at=` token (an <img> src
- * carries no bearer), on a route open to it (memberMayRead), in its own
+ * carries no bearer), on a route open to it (memberOpenRead), in its own
  * request scope (`member` set). An item the login does not read is the
  * route's own 404.
  */
@@ -1293,7 +1293,7 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
     case 'session':
       // Any Admin user, or null (A4 hand batch A): never a refusal, the
       // handler answers a null as it did (the rows open to every Admin
-      // user, ADMIN_OPEN_ROWS).
+      // user: their declaration's `caller: 'session'`).
       return { caller, user: await getSessionUser() };
     case 'ownerAsset': {
       const user = await getOwnerForAsset(assetRequest(row));
@@ -1496,8 +1496,8 @@ export function chatCallerOf(chat: ChatLogin): ChatCaller {
 /**
  * The session user the pipeline answered for this request (A4 hand batch
  * A): what getSessionUser answers, any Admin user or null (a member, no
- * login), on a row open to every Admin user (route-policy.ts
- * ADMIN_OPEN_ROWS), read from the pipeline's answer as ownerCaller() reads
+ * login), on a row open to every Admin user (its declaration's
+ * `caller: 'session'`), read from the pipeline's answer as ownerCaller() reads
  * the owner: no lookup, no effect, and a throw where the pipeline answered
  * no session user. The gate refuses nothing for it: the handler answers a
  * null, as it did after the guard.
@@ -1722,7 +1722,7 @@ export async function requireOwnerForRender(nodeId: string): Promise<SessionUser
  * request's row: auditsAsWrite) it fire-and-forgets a generic `api.write`
  * row recording who did what — unless the route logs its own richer event
  * (its row's `audit: 'own'`, the route file's declaration). Reads aren't logged; a GET whose row is a
- * write (a connector's OAuth callback, WRITE_GETS) is.
+ * write (a connector's OAuth callback, an effect exception) is.
  */
 async function auditMutation(user: SessionUser, skip?: (path: string) => boolean): Promise<void> {
   const h = await headers();
@@ -1731,7 +1731,7 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
   const route = currentRoute();
   const mutating = auditsAsWrite(method, route?.effect ?? null);
   // A route that logs its own richer event: its row says so (`audit: 'own'`,
-  // its declaration; S9 part 2, was AUDIT_SELF_LOGGED_PATHS by the path).
+  // its declaration; S9 part 2, was a list of paths).
   if (!mutating || route?.audit === 'own' || skip?.(path)) return;
   // A write made with an API key names the key (never its secret).
   const key = getRequestContext()?.accessKey;
@@ -1772,8 +1772,8 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   if (res.kind !== 'admin') {
     // A member reaches an owner route to read brain items in its
-    // own scope (W6a, MEMBER_OPEN_READS; drafts where it may edit, W6b), or
-    // to create, edit and delete them there (W6b, MEMBER_OPEN_WRITES); every
+    // own scope (W6a, its row's `open: 'owner'`; drafts where it may edit,
+    // W6b), or to create, edit and delete them there (W6b, the same); every
     // other owner route refuses it (member routes use getMemberOr401; the
     // sweeps check both).
     const route = guardRoute();
@@ -1980,7 +1980,7 @@ function itemIdOf(segment: string): string | null {
  * CEO decision 2). The item id is the decoded path segment (itemIdOf); one
  * that is not an item id is the not-found answer, for every login.
  *
- * No route names an item for it now (route-scope.ts itemWriteTarget): the
+ * No route names an item for it now (no row's `item` names one): the
  * pre-check removal part 2 took the item routes' entries, plan v3.2 S6 c2
  * the last two (a share, a deleted app: their handlers ask, shareItemRefusal
  * and mantle_app_trash_act). The pre-check removal cells still feed it the
@@ -2094,8 +2094,8 @@ export function loginRefused(kind: Resolved['kind']): NextResponse {
 /**
  * The member gate (member logins, Phase 1): a MEMBER login, or 401 (no
  * session) / 403 (an admin: member routes are member-specific, never a
- * shared owner route). Only for routes in MEMBER_ROUTES
- * (lib/auth/member-routes.ts); run the handler's reads under
+ * shared owner route). Only for the member routes (their declaration's
+ * `open: 'member'`); run the handler's reads under
  * `withViewer(…)`.
  */
 export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
@@ -2344,7 +2344,7 @@ export type ChatLogin = {
  * The chat gate (W7c, the owner's answer of 2026-10-11): every login chats
  * with the assistants of its workspaces, each in its own thread, and reads
  * only its own threads. The chat routes are any-login routes
- * (CHAT_LOGIN_ROUTES): a read runs in the login's scope, where row security
+ * (`open: 'chat'`): a read runs in the login's scope, where row security
  * holds the messages and threads to its own login (0269); every login's
  * write runs there too, an Admin user's as a member's (anyLoginScope).
  * Every chat helper also names the login (lib/assistant.ts,
@@ -2411,7 +2411,7 @@ export type ChatCaller = Readonly<Omit<ChatLogin, 'kind'> & { asLogin: Login }>;
 
 /**
  * The request scope of getLoginOr401 (W6a). On an any-login route
- * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami; the
+ * (`open: 'any'`: shell, workspaces, grants, access keys, whoami; the
  * chat and Telegram pairing routes) every login enters its scope, reads and
  * writes alike: an Admin user's write too since plan v3.2 S6 c3 (its keys,
  * its chat threads and Telegram pairings ran on the system pool with no

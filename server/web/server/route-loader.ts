@@ -1,13 +1,11 @@
 import type { Context, Hono } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import {
-  ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
   requireRouteDeclarations,
   compileSpelling,
   linkCors,
   servedMethods,
-  type RoutePolicySource,
   type PageClass,
   type RouteCaller,
   type RouteRow,
@@ -76,8 +74,7 @@ export type RouteEntry = {
   switches?: Readonly<Record<string, RouteSwitch>>;
   /** The policy the route file declares (`policy`,
    *  lib/auth/route-declaration.ts), as the generator read it
-   *  from the code: the rows are built from it where the source is
-   *  'declarations' (ROUTE_POLICY_SOURCE). */
+   *  from the code: the rows are built from it. */
   policy?: RoutePolicyDeclaration;
   load: () => Promise<RouteModule>;
 };
@@ -111,20 +108,18 @@ function sameData(a: unknown, b: unknown): boolean {
  * from (the route declarations): the generator reads the declaration from
  * the code, the module exports its value, and the two must be one (a
  * manifest older than the file would answer for a policy the file no longer
- * holds). Asked when the module is first loaded, where the rows are read
- * from the declarations: a module that exports another throws, and so does
- * one that exports none where the manifest carries one. A test's stand-in
- * routes (`load: async () => ({ GET })`, no file) opt out by name
- * (`standIn`: registerRoutes' `standInModules`, or its stand-in rows). The lists' rows read
- * no declaration (`source`).
+ * holds). Asked when the module is first loaded: a module that exports
+ * another throws, and so does one that exports none where the manifest
+ * carries one. A test's stand-in routes (`load: async () => ({ GET })`, no
+ * file) opt out by name (`standIn`: registerRoutes' `standInModules`, or its
+ * stand-in rows).
  */
 export function checkLoadedPolicy(
   entry: Pick<RouteEntry, 'pattern' | 'policy'>,
   mod: RouteModule,
-  source: RoutePolicySource = ROUTE_POLICY_SOURCE,
   opts: Readonly<{ standIn?: boolean }> = {},
 ): void {
-  if (source !== 'declarations' || opts.standIn === true) return;
+  if (opts.standIn === true) return;
   const exported = Object.hasOwn(mod, ROUTE_POLICY_EXPORT) ? mod[ROUTE_POLICY_EXPORT] : undefined;
   if (exported === undefined && entry.policy === undefined) return;
   if (exported === undefined) {
@@ -232,7 +227,7 @@ export function registerRoutes(
     compileSpelling(entry.pattern);
     const load = memoize(async () => {
       const mod = await entry.load();
-      checkLoadedPolicy(entry, mod, ROUTE_POLICY_SOURCE, { standIn });
+      checkLoadedPolicy(entry, mod, { standIn });
       return mod;
     });
     const isCatchAll = entry.catchAll !== null;
@@ -351,8 +346,8 @@ export type PageRoute = Readonly<{
 /**
  * Register a list of pages of server/pages (the /s page, the render
  * surfaces), each with its ROUTE_POLICY rows, of the class the list is
- * (`cls`: SHARE_PAGES 'link', PRINT_PAGES 'render'; a page the lists class
- * otherwise throws). The gate finds the row (servedRoute) and runs the page
+ * (`cls`: SHARE_PAGES 'link', PRINT_PAGES 'render'; a page whose pattern is
+ * not of its class throws). The gate finds the row (servedRoute) and runs the page
  * through enterCall in the page's own actor slot (the row's startsAs), as
  * the pages did for themselves before A4 step 2. No 405 answer: another
  * method falls through to the 404, as before.

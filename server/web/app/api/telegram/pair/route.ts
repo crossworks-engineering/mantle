@@ -16,7 +16,7 @@
  * Only the user pairs their own chat: the code is the one the bot sent them
  * on Telegram, and the chat is paired to this login, never to anyone else,
  * only for a bot whose assistant's workspace this login is a user of. Any
- * login but a client (TELEGRAM_LOGIN_ROUTES).
+ * login but a client (`open: 'telegram'`).
  *
  * 200 TelegramPairPreview | TelegramPairResult; 400 bad body (a confirm
  * without previewToken too); 403 not a user

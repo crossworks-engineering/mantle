@@ -7,7 +7,7 @@
  * Their throttles are rows' limits now (A10 #8): each its own named limit
  * (lib/route-limits.ts RATE_LIMITS), taken by the gate before the handler
  * and answered with the one 429. The cross-site refusal is the gate's too,
- * on the rows that name it (ROUTE_GATES `crossSite`), before any limit.
+ * on the rows that name it (a declaration's `limits.crossSite`), before any limit.
  */
 import { NextResponse } from '../../server/http-compat';
 import { requestOrigin } from '../auth-constants';
@@ -52,7 +52,7 @@ function isJsonContentType(req: Request): boolean {
  * set or use the session cookie (client logins audit B15): login, signup,
  * invite/accept, change-password, the contact code (/s/:token/code), and
  * sign-out by its origin. The gate calls it for the rows that name it
- * (lib/route-limits.ts ROUTE_GATES `crossSite`), first, before any limiter
+ * (a declaration's `limits.crossSite`), first, before any limiter
  * or lookup.
  *
  *  - 415 unless the body is declared JSON. A cross-site HTML form can send

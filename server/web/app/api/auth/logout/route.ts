@@ -27,8 +27,7 @@ export const policy = routePolicy({
  */
 export async function POST(req: Request) {
   // The gate refused a cross-site post first, by its origin only: the body
-  // is optional (a plain sign-out sends none; lib/route-limits.ts
-  // ROUTE_GATES).
+  // is optional (a plain sign-out sends none; this file's `limits`).
   // A body that is not JSON (a form post, a stray byte) reads as none, as
   // on main: sign-out still clears the cookie (fix round 1, L4).
   const body = (await readJson(req, { empty: null, invalid: null })) as {

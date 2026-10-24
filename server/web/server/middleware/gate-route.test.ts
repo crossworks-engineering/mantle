@@ -236,6 +236,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
   it('outside a routed request the login lookup holds a key to the raw path too (keyOnRow)', async () => {
     const getOwnerOr401 = ownerGuard;
     const { buildRouteRow } = await import('../../lib/auth/route-policy');
+    const { realDeclaration } = await import('../test-support');
     const path = '/api/v1/pag%65s';
     const req = new Request(`http://x${path}`, {
       headers: { authorization: 'Bearer mtlk_test_secret' },
@@ -245,7 +246,10 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
       path,
       method: 'GET',
       accessKey: GRANT as never,
-      route: buildRouteRow('GET', '/api/v1/pages', () => false, { reads: 'owner' }),
+      route: (() => {
+        const real = realDeclaration('GET', '/api/v1/pages');
+        return buildRouteRow('GET', '/api/v1/pages', real.served, { reads: 'owner', ...real });
+      })(),
     };
     // A key the gate let in on an encoded spelling (it does not) is no
     // login here: the 401. (Not the detached-dev login, which comes first.)

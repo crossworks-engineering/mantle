@@ -18,7 +18,7 @@ export const policy = routePolicy({
  * WorkspaceHomeData (lib/landing.ts).
  *
  * A content read: the guard runs it in the login's request scope
- * (route-scope.ts), and a member reaches it through MEMBER_OPEN_READS.
+ * (route-scope.ts), and a member reaches it through its row (`open: 'owner'`).
  */
 export async function GET(req: Request) {
   const user = ownerCaller();

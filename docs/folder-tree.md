@@ -264,10 +264,10 @@ workspace alone.
   ([access-levels.md](./access-levels.md)).
 - **Who reads the tree.** Every login reads `GET /api/tree/:kind` (with
   `/search` and `/tags`) in its own workspaces
-  (`server/web/lib/auth/route-scope.ts`, `MEMBER_OPEN_READS`): an item or
-  a folder shows when a workspace of the reader holds it (the row rules).
-  Folder writes and moves are open to a non-Admin login where it may edit
-  (`MEMBER_OPEN_WRITES`).
+  (each route file's `policy`, `open: 'owner'`): an item or a folder shows
+  when a workspace of the reader holds it (the row rules). Folder writes
+  and moves are open to a non-Admin login where it may edit (the same
+  `open: 'owner'` on the write).
 - **Folder counts are the reader's.** A folder's item and subfolder counts
   are what the reader sees when it opens the folder in the same scope:
   only what its workspaces read, and with `?ws=` only the items that

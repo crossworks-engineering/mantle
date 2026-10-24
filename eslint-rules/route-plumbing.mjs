@@ -113,7 +113,7 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
  * no-route-rate-limits (A10 #8, rate limits on the ROUTE_POLICY row): a
  * route file takes no rate limit and answers no cross-site refusal of its
  * own. A limit is a row's (server/web/lib/route-limits.ts: a named limit in
- * RATE_LIMITS, the row's entry in ROUTE_GATES), taken by the gate once the
+ * RATE_LIMITS, the route file's declaration's `limits`), taken by the gate once the
  * caller is answered and answered with the one 429; the cross-site refusal
  * of a public auth post is the row's `crossSite`, answered by the gate
  * before any limit. Before: 38 limits, 32 calls in 26 route files and more
@@ -127,7 +127,7 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
  */
 export const RATE_LIMIT_ALLOW = Object.freeze({
   'server/web/lib/route-limits.ts':
-    "the gate itself: it takes each row's named limits (RATE_LIMITS, ROUTE_GATES) and answers the one 429",
+    "the gate itself: it takes each row's named limits (RATE_LIMITS, the declaration's limits) and answers the one 429",
   'server/web/lib/access-keys.ts':
     "the API key budgets (rateLimitAccessKey: a key's and its login's; rateLimitKeySearch) and the failed-key counters, taken once the key is resolved (by the key gate and the MCP route): a budget per key, which the row cannot know",
   'server/web/server/middleware/access-key-gate.ts':
@@ -156,7 +156,7 @@ const LIMITERS = [
   'rateLimitKeySearch',
 ];
 const LIMITER_SET = new Set(LIMITERS);
-/** The refusal the gate answers from the row (ROUTE_GATES crossSite). */
+/** The refusal the gate answers from the row (its declaration's limits.crossSite). */
 const ROW_REFUSALS = new Set(['refuseCrossSiteAuthPost']);
 
 /** A text heuristic of the same check, for the counts (comments already
@@ -336,9 +336,9 @@ export const noRouteRateLimits = {
     },
     messages: {
       limit:
-        "{{what}}(): a rate limit is the row's. Name it in server/web/lib/route-limits.ts (RATE_LIMITS) and give the row it in ROUTE_GATES; the gate takes it and answers the one 429. A budget that is not a gate on the request is named with its reason in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW.",
+        "{{what}}(): a rate limit is the row's. Name it in server/web/lib/route-limits.ts (RATE_LIMITS) and give the row it in the route file's policy (limits.rateLimit); the gate takes it and answers the one 429. A budget that is not a gate on the request is named with its reason in eslint-rules/route-plumbing.mjs RATE_LIMIT_ALLOW.",
       crossSite:
-        "{{what}}() in a route file: the cross-site refusal is the row's (ROUTE_GATES crossSite, server/web/lib/route-limits.ts), answered by the gate before any limit.",
+        "{{what}}() in a route file: the cross-site refusal is the row's (limits.crossSite in the route file's policy), answered by the gate before any limit.",
     },
     schema: [],
   },
@@ -394,7 +394,7 @@ export const routePolicyDeclared = {
     },
     messages: {
       missing:
-        'This route file exports {{methods}} and declares no policy: export const policy = routePolicy({ ... }) beside its handlers (server/web/lib/auth/route-declaration.ts; scripts/route-policy-codemod.ts writes it from the lists).',
+        'This route file exports {{methods}} and declares no policy: export const policy = routePolicy({ ... }) beside its handlers (server/web/lib/auth/route-declaration.ts).',
       undeclared:
         "The policy names no {{method}}, which this file exports: declare each method's policy.",
       stray: 'The policy names {{method}}, which this file does not export.',

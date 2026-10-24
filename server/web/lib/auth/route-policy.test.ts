@@ -1,9 +1,9 @@
 /**
  * ROUTE_POLICY (route-policy.ts, arch A4 step 1): one row for every route
- * of the manifest and every method it is called with, and each field gives
- * exactly the answer of the list it folds, so moving the session guards
- * and the gate onto the row changed no answer (the route sweep of the
- * step). The guards read the row through these same readers
+ * of the manifest and every method it is called with, built from its route
+ * file's declaration (plan v3.2 S9; the lists each field was folded from
+ * went in part 3, and route-policy-declarations.test.ts holds every row to
+ * __snapshots__/route-policy.rows.json). The guards read the row through these same readers
  * (memberOpenRead, memberOpenWrite, anyLoginRow, routeItemTarget); the
  * HTTP sweeps (auth-sweep, role-sweep, member-sweep and the W6a route
  * sweep on a database) drive the real app per login kind.
@@ -36,21 +36,10 @@ import {
 } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { reExportedHandlers, specPattern } from '../../scripts/route-callers';
-import { withRealBases } from '../../server/test-support';
+import { realDeclaration, rowAnswers, withRealBases } from '../../server/test-support';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
-import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
+import { keyMayCall, type KeyRoute } from '../api-v1';
 import { isPublicPath } from '../auth-constants';
-import { TELEGRAM_LOGIN_ROUTES, isAnyLoginRoute } from './any-login-routes';
-import { isMemberRoute } from './member-routes';
-import {
-  CREATE_ROUTES,
-  isReadRequest,
-  itemWriteTarget,
-  memberMayRead,
-  memberMayWrite,
-  routeClass,
-  NO_ITEM_WRITES,
-} from './route-scope';
 import {
   anyLoginRow,
   ADMIN_STEP_CALLERS,
@@ -62,12 +51,10 @@ import {
   registerRouteSource,
   requestKeyRoute,
   routeItemTarget,
-  ADMIN_OPEN_ROWS,
   routeGatePolicy,
   routeRef,
   routeSwitchedOff,
   rowKeyRoute,
-  ROUTE_POLICY_SOURCE,
   servedMethods,
   spellsPattern,
   type RouteRow,
@@ -77,7 +64,7 @@ import {
  *  the patterns the app serves (S9 part 2: the rows' source); a pattern it
  *  does not serve stays undeclared, as a test of the boot's refusal. */
 const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
-  buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
+  buildRoutePolicyOf(opts?.page ? m : withRealBases(m), opts);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '../..');
@@ -98,7 +85,7 @@ function pathsOf(pattern: string): string[] {
 
 type Manifest = Array<{ file: string; pattern: string; methods: string[] }>;
 
-describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
+describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
   let manifest: Manifest;
   let table: ReadonlyMap<string, RouteRow>;
 
@@ -106,6 +93,26 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     manifest = (await import('../../server/route-manifest.gen')).routeManifest;
     table = buildRoutePolicy(manifest);
   });
+
+  /** What the deleted key table answered for a raw path (api-v1.ts
+   *  matchApiV1Route, S9 part 3), rebuilt from the rows' declared key
+   *  areas: a v1 row's pattern with a param as one segment and an optional
+   *  trailing slash, HEAD looked up as GET. */
+  const matchApiV1Route = (
+    method: string,
+    path: string,
+  ): (KeyRoute & { pattern: string }) | null => {
+    const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
+    for (const row of table.values()) {
+      if (row.method !== m || row.keyArea === undefined) continue;
+      const re = new RegExp(`^${row.pattern.replace(/:[A-Za-z]+/g, '[^/]+')}/?$`);
+      if (re.test(path)) return { ...rowKeyRoute(row)!, pattern: row.pattern };
+    }
+    return null;
+  };
+  /** The v1 methods a key may call (the table's length was). */
+  const v1KeyRows = () =>
+    [...table.values()].filter((r) => r.keyArea !== undefined && r.method !== 'HEAD').length;
 
   it('has a row for every route and served method, and none for another method', () => {
     let rows = 0;
@@ -127,85 +134,6 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     expect(rows).toBeGreaterThan(600);
   });
 
-  it("S9 part 1: every route file declares, and its declarations build the lists' rows", () => {
-    // Field for field, every row (route-policy-declarations.test.ts holds
-    // the same rows to __snapshots__/route-policy.rows.json). The rows'
-    // source since part 2's flip; the lists stay, held to it, until part 3.
-    expect(ROUTE_POLICY_SOURCE).toBe('declarations');
-    const undeclared = (manifest as Array<{ pattern: string; policy?: unknown }>)
-      .filter((e) => e.policy === undefined)
-      .map((e) => e.pattern);
-    expect(undeclared).toEqual([]);
-    const declared = buildRoutePolicy(manifest, { source: 'declarations' });
-    const diffs: string[] = [];
-    for (const [key, row] of table) {
-      if (JSON.stringify(declared.get(key)) !== JSON.stringify(row)) diffs.push(key);
-    }
-    expect(diffs).toEqual([]);
-    expect(declared.size).toBe(table.size);
-  });
-
-  it('every field answers what its list answers', () => {
-    const diffs: string[] = [];
-    const check = (key: string, what: string, got: unknown, want: unknown) => {
-      if (JSON.stringify(got) !== JSON.stringify(want)) {
-        diffs.push(`${key} ${what}: ${JSON.stringify(got)} != ${JSON.stringify(want)}`);
-      }
-    };
-    for (const row of table.values()) {
-      const { method: m, pattern: p, key } = row;
-      // The Telegram chat rows (and the HEADs their GET handler answers)
-      // are the login's own chats, whatever their prefix (A4 step 3b), and
-      // so is the update banner, the owner's carve-out (ADMIN_OPEN_ROWS).
-      const asGet = `${m === 'HEAD' ? 'GET' : m} ${p}`;
-      const scope =
-        TELEGRAM_LOGIN_ROUTES.includes(asGet) || asGet === 'GET /api/updates/check'
-          ? { kind: 'self' }
-          : routeClass(p);
-      check(key, 'scope', row.scope, scope);
-      check(
-        key,
-        'area',
-        row.area,
-        scope?.kind === 'area' ? (scope as { area: string }).area : null,
-      );
-      check(key, 'effect', row.effect, isReadRequest(m, p) ? 'read' : 'write');
-      // A v1 row answers a login outside Admin as its base route (D3, the
-      // A8 finding F1), read from the hand-written V1_BASES below, never
-      // from the code under test (fix round 1, finding 8).
-      const asGetKey = `${m === 'HEAD' ? 'GET' : m} ${p}`;
-      const v1Base = p.startsWith('/api/v1/') ? (V1_BASES[asGetKey] ?? null) : null;
-      const [bm, bp] = v1Base
-        ? [v1Base.slice(0, v1Base.indexOf(' ')), v1Base.slice(v1Base.indexOf(' ') + 1)]
-        : [m, p];
-      check(key, 'memberMayRead', memberOpenRead(row), memberMayRead(bm, bp));
-      check(key, 'memberMayWrite', memberOpenWrite(row), memberMayWrite(bm, bp));
-      // A HEAD row has its GET's logins (the owner's decision 2a): the
-      // lists name GET only.
-      const listed = m === 'HEAD' ? 'GET' : m;
-      check(key, 'isAnyLoginRoute', anyLoginRow(row), isAnyLoginRoute(listed, p));
-      check(key, 'isMemberRoute', row.logins === 'member', isMemberRoute(listed, p));
-      check(key, 'open', row.open, row.logins ? 'login' : 'admin');
-      // A v1 create reads ?ws= as its base does (A8 fix round 1, L3).
-      check(key, 'creates', row.creates, CREATE_ROUTES.has(v1Base ?? `${m} ${p}`));
-      for (const path of pathsOf(p)) {
-        const target = itemWriteTarget(m, p, path);
-        check(`${key} @${path}`, 'item', routeItemTarget(row, path), target);
-        // What requestCreatePolicy answered before A4: no item made by a
-        // delete or by a read write (the gate's ITEM_READ_WRITES until the
-        // pre-check removal part 2, NO_ITEM_WRITES since; the same seven).
-        check(
-          `${key} @${path}`,
-          'makesItems',
-          row.makesItems,
-          !(m === 'DELETE' || target?.need === 'read' || NO_ITEM_WRITES.has(`${m} ${p}`)),
-        );
-        check(`${key} @${path}`, 'public', row.public, isPublicPath(path));
-      }
-    }
-    expect(diffs).toEqual([]);
-  });
-
   it('a v1 row: its base, a member’s reach and ?ws= are the hand-written lists (A8 F1, L3)', () => {
     const v1 = [...table.values()].filter((r) => r.pattern.startsWith('/api/v1/'));
     const got: Record<string, string | null> = {};
@@ -213,8 +141,15 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     const creates: string[] = [];
     for (const row of v1) {
       if (row.method === 'HEAD') continue;
-      const v1Row = API_V1_ROUTES.find((r) => r.method === row.method && r.pattern === row.pattern);
-      got[row.key] = row.aliasOf ?? v1Row?.base ?? null;
+      // The base: the route its file re-exports, or the one its own
+      // handler's declaration names (`base`).
+      const entry = (manifest as Array<{ pattern: string; policy?: unknown }>).find(
+        (e) => e.pattern === row.pattern,
+      );
+      const declared = (entry?.policy as Readonly<Record<string, { base?: string }>> | undefined)?.[
+        row.method
+      ];
+      got[row.key] = row.aliasOf ?? declared?.base ?? null;
       if (memberOpenRead(row) || memberOpenWrite(row)) memberReach.push(row.key);
       if (row.creates) creates.push(row.key);
     }
@@ -243,11 +178,11 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
 
   it('a v1 row: its key area and effect are the key table, its alias the file it re-exports', () => {
     const v1 = [...table.values()].filter((r) => r.pattern.startsWith('/api/v1/'));
-    expect(v1.length).toBeGreaterThan(API_V1_ROUTES.length);
+    expect(v1.length).toBeGreaterThan(v1KeyRows());
     for (const row of v1) {
       for (const path of pathsOf(row.pattern)) {
         const route = matchApiV1Route(row.method, path);
-        // api-v1.test.ts pins the key table to the route files.
+        // api-v1.test.ts holds every v1 route file method to a key area.
         expect(route, row.key).not.toBeNull();
         expect(row.keyArea, row.key).toBe(route!.area);
         // The gate's caller carries the key's write switch: the read-only
@@ -307,10 +242,21 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
   });
 
   it("A4 step 3b: the Telegram chat rows are the login's own, in no Admin area", () => {
-    const keys = TELEGRAM_LOGIN_ROUTES.flatMap((k) =>
-      k.startsWith('GET ') ? [k, k.replace(/^GET /, 'HEAD ')] : [k],
+    // The Telegram pairing rows (their declarations' `open: 'telegram'`;
+    // the list that named them went in S9 part 3), a GET's HEAD with it.
+    const keys = [...table.values()].filter((r) => r.logins === 'telegram').map((r) => r.key);
+    expect(keys.sort()).toEqual(
+      [
+        'POST /api/telegram/pair',
+        'GET /api/telegram/my-chats',
+        'HEAD /api/telegram/my-chats',
+        'DELETE /api/telegram/my-chats/:id',
+        'GET /api/telegram/moderated-chats',
+        'HEAD /api/telegram/moderated-chats',
+        'POST /api/telegram/chats/:id/block',
+        'POST /api/telegram/chats/:id/unpair',
+      ].sort(),
     );
-    expect(keys).toHaveLength(8);
     for (const key of keys) {
       const row = table.get(key)!;
       expect(row.class, key).toBe('self');
@@ -319,7 +265,10 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       expect(routeGatePolicy(row).scope, key).toBe('any');
       // Their prefix still names the connectors area: the owner routes
       // under it (PATCH /api/telegram/chats/:id) stay area rows.
-      expect(routeClass(row.pattern), key).toEqual({ kind: 'area', area: 'connectors' });
+      expect(rowAnswers(manifest).prefixClass(row.pattern), key).toEqual({
+        kind: 'area',
+        area: 'connectors',
+      });
     }
     expect(table.get('PATCH /api/telegram/chats/:id')!.area).toBe('connectors');
   });
@@ -327,7 +276,10 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
   it('A4 step 3b: the owner decision of 2026-10-14 on the update routes', () => {
     // The cached update banner is open to every Admin user, a named
     // carve-out: the login's own, in no area.
-    expect([...ADMIN_OPEN_ROWS]).toEqual(['GET /api/updates/check']);
+    expect([...table.values()].filter((r) => r.caller === 'session').map((r) => r.key)).toEqual([
+      'GET /api/updates/check',
+      'HEAD /api/updates/check',
+    ]);
     for (const key of ['GET /api/updates/check', 'HEAD /api/updates/check']) {
       const row = table.get(key)!;
       expect(row.class, key).toBe('self');
@@ -338,7 +290,10 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     }
     // Only a carve-out's row may read the session user.
     expect(() =>
-      buildRouteRow('GET', '/api/updates/status', () => false, { reads: 'session' }),
+      buildRouteRow('GET', '/api/updates/status', () => false, {
+        reads: 'session',
+        ...realDeclaration('GET', '/api/updates/status'),
+      }),
     ).toThrow(/does not serve its row/);
     // The status poll and the forced check need the settings area, and the
     // gate answers it (their handlers read the caller).
@@ -500,7 +455,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     }
     expect(diffs).toEqual([]);
     // Most v1 rows were let in on a plain spelling: not null against null.
-    expect(keyed).toBeGreaterThan(API_V1_ROUTES.length);
+    expect(keyed).toBeGreaterThan(v1KeyRows());
     expect(requestKeyRoute(null, '/api/v1/pages')).toBeNull();
   });
 
@@ -509,17 +464,20 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     // no row of the manifest is a gone row. lib/gone.ts stays for a route
     // retired later, and a gone row must still name its kind.
     expect([...table.values()].filter((r) => r.gone)).toEqual([]);
-    expect(() => buildRouteRow('GET', '/api/shell', () => false, { gone: true })).toThrow(
-      /gone stub with no caller kind/,
-    );
+    expect(() =>
+      buildRouteRow('GET', '/api/shell', () => false, {
+        gone: true,
+        ...realDeclaration('GET', '/api/shell'),
+      }),
+    ).toThrow(/gone stub with no caller kind/);
     expect(table.get('GET /api/shell')?.gone).toBe(false);
   });
 
   it('a row that is not public and reads no caller is refused at boot (A4 hand batch B fix round 1, M1)', () => {
     // A synthetic row: an owner row whose handler reads nothing.
-    expect(() => buildRouteRow('POST', '/api/notes')).toThrow(
-      /POST \/api\/notes reads no caller: a row that is not public reads the caller/,
-    );
+    expect(() =>
+      buildRouteRow('POST', '/api/notes', () => false, realDeclaration('POST', '/api/notes')),
+    ).toThrow(/POST \/api\/notes reads no caller: a row that is not public reads the caller/);
     // A new method of a route file that reads on another method: its own
     // row reads nothing, and is refused whatever the file reads.
     expect(() =>
@@ -534,19 +492,37 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       ['GET', '/api/assistant/thread'],
       ['GET', '/api/updates/check'],
     ] as const) {
-      expect(() => buildRouteRow(method, pattern), `${method} ${pattern}`).toThrow(
-        /reads no caller/,
-      );
+      // (A declared named caller the handler does not read is refused
+      // first: the carve-out's `caller: 'session'`.)
+      expect(
+        () => buildRouteRow(method, pattern, () => false, realDeclaration(method, pattern)),
+        `${method} ${pattern}`,
+      ).toThrow(/reads no caller|its handler reads none/);
     }
     // A public row judges its own credential, and so does a page.
-    expect(buildRouteRow('GET', '/api/version').caller).toBeNull();
-    expect(buildRouteRow('POST', '/api/auth/login').caller).toBeNull();
+    expect(
+      buildRouteRow('GET', '/api/version', () => false, realDeclaration('GET', '/api/version'))
+        .caller,
+    ).toBeNull();
+    expect(
+      buildRouteRow(
+        'POST',
+        '/api/auth/login',
+        () => false,
+        realDeclaration('POST', '/api/auth/login'),
+      ).caller,
+    ).toBeNull();
     expect(buildRouteRow('GET', '/s/:token', () => false, { page: 'link' }).caller).toBeNull();
     expect(
       buildRouteRow('GET', '/print/pages/:id', () => false, { page: 'render' }).caller,
     ).toBeNull();
     // A test's stand-in rows, whose handlers call the guards themselves.
-    expect(buildRouteRow('POST', '/api/notes', () => false, { standIn: true }).caller).toBeNull();
+    expect(
+      buildRouteRow('POST', '/api/notes', () => false, {
+        standIn: true,
+        ...realDeclaration('POST', '/api/notes'),
+      }).caller,
+    ).toBeNull();
     // The app's table: no such row.
     expect([...table.values()].filter((r) => !r.caller && !r.public && !r.page)).toEqual([]);
   });
@@ -966,20 +942,21 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     expect(printPatterns.size).toBe(3);
   });
 
-  it('a page the lists class otherwise is refused', () => {
-    // A link page outside /s, a render page on a route the lists class.
+  it('a page whose pattern is not of its class is refused', () => {
+    // A link page outside /s, a render page on /s or under /api (where a
+    // route file declares the rows).
     expect(() =>
       buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: 'link' }),
-    ).toThrow(/page of class link; the lists class it content/);
+    ).toThrow(/page of class link; its pattern is not one/);
     expect(() =>
       buildRoutePolicy([{ pattern: '/print/x/:id', methods: ['GET'] }], { page: 'link' }),
-    ).toThrow(/page of class link; the lists class it not at all/);
+    ).toThrow(/page of class link; its pattern is not one/);
     expect(() =>
       buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: 'render' }),
     ).toThrow(/page of class render/);
     expect(() =>
       buildRoutePolicy([{ pattern: '/s/:token', methods: ['GET'] }], { page: 'render' }),
-    ).toThrow(/page of class render; the lists class it link/);
+    ).toThrow(/page of class render; its pattern is a link route/);
     // Off a page list, a pattern no route file declares is refused (was,
     // from the lists: no class at all).
     expect(() => buildRoutePolicy([{ pattern: '/print/pages/:id', methods: ['GET'] }])).toThrow(

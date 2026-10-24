@@ -640,7 +640,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       registerRoutesOf(app, withRealPolicies(m), rest[0], { standInModules: true, ...rest[1] });
     const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
     const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
-      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
+      buildRoutePolicyOf(opts?.page ? m : withRealBases(m), opts);
     const session = await import('../../lib/auth/session');
     const pattern = '/api/profile/*';
     const base = buildRoutePolicy([
@@ -1647,7 +1647,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
     const { withRealBases } = await import('../test-support');
     const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
-      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
+      buildRoutePolicyOf(opts?.page ? m : withRealBases(m), opts);
     const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
       buildRoutePolicy([
         {
@@ -1687,14 +1687,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   });
 
   it('the kinds of hand batch B are read only on the rows named for them (fix round 1, M2)', async () => {
-    const {
-      buildRoutePolicy: buildRoutePolicyOf,
-      OWNER_AT_READ_ROWS,
-      PUBLIC_LOGIN_ROWS,
-    } = await import('../../lib/auth/route-policy');
+    const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
     const { withRealBases } = await import('../test-support');
     const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
-      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
+      buildRoutePolicyOf(opts?.page ? m : withRealBases(m), opts);
     const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
       buildRoutePolicy([
         {
@@ -1774,10 +1770,21 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         .map((r) => r.key)
         .sort();
     const asHandled = (key: string) => key.replace(/^HEAD /, 'GET ');
+    // The rows each declares (`caller`), as the named lists held them
+    // before S9 part 3 deleted them.
     expect(new Set(keysOf('publicLogin', 'cookieUpgrade').map(asHandled))).toEqual(
-      new Set(PUBLIC_LOGIN_ROWS.keys()),
+      new Set([
+        'GET /api/auth/whoami',
+        'POST /api/auth/logout',
+        'POST /api/auth/change-password',
+        'POST /api/auth/pair',
+        'GET /api/auth/pair/:id',
+        'GET /api/oauth/authorize',
+        'POST /api/oauth/authorize',
+        'POST /api/auth/sso',
+      ]),
     );
-    expect(keysOf('ownerAtRead')).toEqual([...OWNER_AT_READ_ROWS].sort());
+    expect(keysOf('ownerAtRead')).toEqual(['PATCH /api/pages/:id', 'PATCH /api/v1/pages/:id']);
     for (const r of table.filter((r) => /Asset$/.test(r.caller ?? ''))) {
       expect(['GET', 'HEAD'], r.key).toContain(r.method);
     }
@@ -1819,7 +1826,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const { buildRoutePolicy: buildRoutePolicyOf } = await import('../../lib/auth/route-policy');
     const { withRealBases } = await import('../test-support');
     const buildRoutePolicy: typeof buildRoutePolicyOf = (m, opts) =>
-      buildRoutePolicyOf(opts?.page || opts?.source ? m : withRealBases(m), opts);
+      buildRoutePolicyOf(opts?.page ? m : withRealBases(m), opts);
     // An any-login route (its own guard), a member route, a public route.
     for (const pattern of ['/api/shell', '/api/member/mcp', '/api/auth/whoami']) {
       expect(() =>

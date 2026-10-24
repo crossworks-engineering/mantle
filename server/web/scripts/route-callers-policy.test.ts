@@ -1,14 +1,13 @@
 /**
- * The route policy codemod's core (route-declarations.ts) and the
- * generator's reader of a declaration (route-callers.ts handlerPolicy),
- * plan v3.2 S9: the text written into a route file, where it goes, that a
- * second run changes nothing, and that the generator reads back exactly
- * the declaration written (and refuses what is not data).
+ * The generator's reader of a route file's declaration (route-callers.ts
+ * handlerPolicy), plan v3.2 S9: it reads exactly the declaration written,
+ * refuses what is not data, and holds an alias to the route its file
+ * re-exports. (The codemod that wrote the declarations from the route
+ * lists went with the lists, S9 part 3; these cells were its test's.)
  */
 import { describe, expect, it } from 'vitest';
 import { ITEM_NONE_PLACEHOLDER, type RoutePolicyDeclaration } from '../lib/auth/route-declaration';
 import { buildRouteRow, type RouteCaller } from '../lib/auth/route-policy';
-import { READ_POSTS, WRITE_GETS } from '../lib/auth/route-scope';
 import {
   aliasMismatches,
   handlerPolicy,
@@ -17,14 +16,6 @@ import {
   specPattern,
   specRouteFile,
 } from './route-callers';
-import {
-  CannotExpress,
-  OWN_THINGS,
-  applyDeclaration,
-  itemNoneReason,
-  renderDeclaration,
-  rowDeclaration,
-} from './route-declarations';
 
 const DECL: RoutePolicyDeclaration = {
   GET: { class: 'content', open: 'owner' },
@@ -40,85 +31,6 @@ const DECL: RoutePolicyDeclaration = {
 const ROUTE = { pattern: '/api/notes', methods: ['GET', 'POST'] };
 const IMPORT = "import { routePolicy } from '@/lib/auth/route-declaration';";
 const file = 'app/api/notes/route.ts';
-
-describe('renderDeclaration', () => {
-  it('writes one method a line, literals only, in method order', () => {
-    expect(renderDeclaration({ POST: DECL.POST!, GET: DECL.GET! })).toBe(
-      [
-        'export const policy = routePolicy({',
-        "  GET: { class: 'content', open: 'owner' },",
-        "  POST: { class: 'content', open: 'owner', creates: true, item: { none: 'creates an item: ?ws= names where it lands' }, limits: { crossSite: 'json', rateLimit: ['authLogin'] } },",
-        '});',
-      ].join('\n'),
-    );
-  });
-});
-
-describe('applyDeclaration', () => {
-  const statement = renderDeclaration(DECL);
-
-  it('goes after routeParams, imports routePolicy after the last import, and is idempotent', () => {
-    const src = [
-      "import { ownerCaller } from '@/lib/auth';",
-      "import type { RouteParams } from '@/lib/route-params';",
-      '',
-      "export const routeParams = { id: 'uuid' } as const satisfies RouteParams;",
-      '',
-      'export async function GET() {}',
-      'export async function POST() {}',
-      '',
-    ].join('\n');
-    const once = applyDeclaration(src, file, statement);
-    expect(once).toBe(
-      [
-        "import { ownerCaller } from '@/lib/auth';",
-        "import type { RouteParams } from '@/lib/route-params';",
-        IMPORT,
-        '',
-        "export const routeParams = { id: 'uuid' } as const satisfies RouteParams;",
-        '',
-        statement,
-        '',
-        'export async function GET() {}',
-        'export async function POST() {}',
-        '',
-      ].join('\n'),
-    );
-    expect(applyDeclaration(once, file, statement)).toBe(once);
-    expect(handlerPolicy(once, file, ROUTE)).toEqual(DECL);
-  });
-
-  it('goes after the imports when there is no routeParams, at the end when there is no import', () => {
-    const withImports = applyDeclaration(
-      "import { ownerCaller } from '@/lib/auth';\nexport async function GET() {}\n",
-      file,
-      renderDeclaration({ GET: DECL.GET! }),
-    );
-    expect(withImports.split('\n').slice(0, 3)).toEqual([
-      "import { ownerCaller } from '@/lib/auth';",
-      IMPORT,
-      '',
-    ]);
-    const alias = "/** v1: the same handler. */\nexport { GET } from '../../notes/route';\n";
-    const out = applyDeclaration(alias, file, renderDeclaration({ GET: DECL.GET! }));
-    expect(out.startsWith(`${IMPORT}\n/** v1`)).toBe(true);
-    expect(out.trimEnd().endsWith('});')).toBe(true);
-    expect(handlerPolicy(out, file, { pattern: '/api/notes', methods: ['GET'] })).toEqual({
-      GET: DECL.GET,
-    });
-  });
-
-  it('replaces a declaration that is not what the lists say, and keeps the one import', () => {
-    const old = applyDeclaration(
-      'export async function GET() {}\nexport async function POST() {}\n',
-      file,
-      renderDeclaration({ GET: DECL.GET!, POST: { class: 'content', item: { none: 'x' } } }),
-    );
-    const now = applyDeclaration(old, file, renderDeclaration(DECL));
-    expect(handlerPolicy(now, file, ROUTE)).toEqual(DECL);
-    expect(now.split(IMPORT).length).toBe(2);
-  });
-});
 
 describe('handlerPolicy', () => {
   const src = (decl: string, extra = '') =>
@@ -210,86 +122,6 @@ describe('handlerPolicy', () => {
         ROUTE,
       ),
     ).toThrow(/by its own name/);
-  });
-});
-
-describe('rowDeclaration', () => {
-  it('says a row in the fields that are not its default', () => {
-    const row = buildRouteRow('GET', '/api/workspaces', () => false, { reads: 'login' });
-    expect(rowDeclaration(row)).toEqual({ class: 'self', scope: null, open: 'any' });
-    // A write says its item, with the reason its facts give.
-    const write = buildRouteRow('POST', '/api/notes', () => false, { reads: 'owner' });
-    expect(rowDeclaration(write)).toMatchObject({
-      class: 'content',
-      creates: true,
-      item: { none: 'creates an item: ?ws= names where it lands' },
-    });
-    expect(
-      itemNoneReason(buildRouteRow('PATCH', '/api/notes/:id', () => false, { reads: 'owner' })),
-    ).toBe(ITEM_NONE_PLACEHOLDER);
-  });
-
-  it("a 'self' write's reason only where its path names nothing of another party's (MED-1)", () => {
-    // Each row with the caller its handler reads (the rows snapshot's).
-    const reason = (method: string, pattern: string, reads: RouteCaller) =>
-      itemNoneReason(buildRouteRow(method, pattern, () => false, { reads }));
-    const SELF = "the login's own things, not an item";
-    // No path param, and no item in the body: the login's own things.
-    expect(reason('PUT', '/api/profile', 'owner')).toBe(SELF);
-    expect(reason('POST', '/api/auth/logout', 'publicLogin')).toBe(SELF);
-    // A param that is one of its own things, found by the login and by
-    // nothing else: named for what it is.
-    expect(reason('DELETE', '/api/member/push/subscriptions/:id', 'member')).toBe(
-      OWN_THINGS['/api/member/push/subscriptions/:id'],
-    );
-    expect(reason('DELETE', '/api/member/mcp/clients/:id', 'member')).toMatch(/own MCP clients/);
-    // A handler that reaches past the login is
-    // not the login's own thing, whatever the path says. An Admin user
-    // revokes any login's key; a Moderator or a users-area Admin acts on
-    // another login's Telegram chat; an Admin user deletes a member's
-    // device by its owner id.
-    expect(Object.keys(OWN_THINGS).sort()).toEqual([
-      '/api/member/mcp/clients/:id',
-      '/api/member/push/subscriptions/:id',
-    ]);
-    // Another party's item in the path, or in the body: not decided yet.
-    for (const [m, p, reads] of [
-      ['DELETE', '/api/access-keys/:id', 'login'],
-      ['DELETE', '/api/telegram/my-chats/:id', 'chat'],
-      ['DELETE', '/api/push/subscriptions/:id', 'owner'],
-      ['POST', '/api/grants/:nodeId', 'login'],
-      ['PATCH', '/api/workspaces/:id/users/:loginId', 'login'],
-      ['POST', '/api/assistant/threads/:id/continue', 'chat'],
-      ['POST', '/api/telegram/chats/:id/block', 'chat'],
-      ['POST', '/api/grants/move', 'login'],
-    ] as const) {
-      expect(reason(m, p, reads), `${m} ${p}`).toBe(ITEM_NONE_PLACEHOLDER);
-    }
-  });
-
-  it("the lists' effect exceptions are ones a declaration can state", () => {
-    // A read only on a POST, a write only on a GET (its HEAD with it).
-    for (const k of READ_POSTS) expect(k, k).toMatch(/^POST \//);
-    for (const k of WRITE_GETS) expect(k, k).toMatch(/^GET \//);
-  });
-
-  it('states an effect exception with the reason of its own route', () => {
-    const evaluate = buildRouteRow('POST', '/api/formulas/:id/evaluate', () => false, {
-      reads: 'owner',
-    });
-    expect(rowDeclaration(evaluate).effect).toEqual({
-      read: "a formula's calculator: it evaluates and stores nothing",
-    });
-    const ms = buildRouteRow('GET', '/api/microsoft/oauth/callback', () => false, {
-      reads: 'owner',
-    });
-    expect(rowDeclaration(ms).effect).toEqual({ write: expect.stringMatching(/^the Microsoft/) });
-  });
-
-  it('names a row it cannot say, and writes nothing for it', () => {
-    const row = buildRouteRow('GET', '/s/:token', () => false, { page: 'link' });
-    expect(() => rowDeclaration(row)).toThrow(CannotExpress);
-    expect(() => rowDeclaration(row)).toThrow(/a page of server\/pages/);
   });
 });
 

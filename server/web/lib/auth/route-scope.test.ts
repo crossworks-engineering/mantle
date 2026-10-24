@@ -1,263 +1,60 @@
 /**
- * The W6a route table (lib/auth/route-scope.ts): every owner route the
- * manifest serves is classified (content, the login's own, or one Admin
- * area), so the session guard never meets a route nobody decided on; the
- * routes opened to every login are reads of brain items that exist.
+ * The route scope rules (lib/auth/route-scope.ts) over the rows the route
+ * files' declarations build (plan v3.2 S9 part 3: the prefix table and the
+ * member lists are gone): the audit rule by effect, and the kind registry's
+ * item routes, each open to a login outside Admin in its scope (A1), with
+ * its create reading ?ws=.
  */
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isAnyLoginRoute } from './any-login-routes';
-import { isMemberRoute } from './member-routes';
-import {
-  CREATE_ROUTES,
-  MEMBER_OPEN_READS,
-  MEMBER_OPEN_WRITES,
-  READ_POSTS,
-  WRITE_GETS,
-  auditsAsWrite,
-  isReadRequest,
-  memberMayRead,
-  memberMayWrite,
-  routeClass,
-  itemWriteTarget,
-  WORKSPACE_ITEM_PREFIXES,
-} from './route-scope';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
+import { methodEffect } from './route-declaration';
+import { auditsAsWrite } from './route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, '../../server/route-manifest.gen.ts'));
 
-/** Routes with their own gate (none of the session guards' owner paths). */
-const OWN_GATE = /^\/api\/(mcp|oauth)(\/|$)/;
+/** The content prefixes of the workspace kinds (the kind registry). */
+const WORKSPACE_ITEM_PREFIXES: readonly string[] = ITEM_KIND_NAMES.flatMap((t) => {
+  const spec = ITEM_KINDS[t];
+  return spec.class === 'workspace' && spec.route.content ? [spec.route.content] : [];
+});
 
-describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
-  it('classifies every owner route of the manifest', async () => {
-    const { routeManifest } = await import('../../server/route-manifest.gen');
-    const missing: string[] = [];
-    for (const e of routeManifest) {
-      if (!e.pattern.startsWith('/api/') || OWN_GATE.test(e.pattern)) continue;
-      const owner = e.methods.filter(
-        (m) => !isMemberRoute(m, e.pattern) && !isAnyLoginRoute(m, e.pattern),
-      );
-      if (owner.length && !routeClass(e.pattern)) missing.push(e.pattern);
-    }
-    expect(missing).toEqual([]);
-  });
+async function rows() {
+  const { routeManifest } = await import('../../server/route-manifest.gen');
+  const { buildRoutePolicy } = await import('./route-policy');
+  return buildRoutePolicy(routeManifest);
+}
 
-  it('opens to every login only reads of brain items the manifest serves', async () => {
-    const { routeManifest } = await import('../../server/route-manifest.gen');
-    const served = new Set(routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)));
-    for (const key of MEMBER_OPEN_READS) {
-      const [method, pattern] = key.split(' ') as [string, string];
-      // A GET, or a POST that only reads (READ_POSTS: a formula's calculator).
-      expect(method === 'GET' || READ_POSTS.has(key), key).toBe(true);
-      expect(isReadRequest(method, pattern), key).toBe(true);
-      expect(served.has(key), key).toBe(true);
-      expect(routeClass(pattern), key).toEqual({ kind: 'content' });
-      expect(memberMayRead(method === 'GET' ? 'HEAD' : method, pattern), key).toBe(true);
-    }
-    expect(memberMayRead('POST', '/api/pages')).toBe(false);
-    expect(memberMayRead('GET', '/api/settings')).toBe(false);
-    expect(memberMayRead('GET', null)).toBe(false);
-  });
-
-  it.skipIf(!hasManifest)(
-    'every member write (W6b) is a served content write; creates are among them',
-    async () => {
-      const { routeManifest } = await import('../../server/route-manifest.gen');
-      const served = new Set(
-        routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)),
-      );
-      for (const key of MEMBER_OPEN_WRITES) {
-        const [method, pattern] = key.split(' ') as [string, string];
-        expect(served.has(key), key).toBe(true);
-        expect(routeClass(pattern), key).toEqual({ kind: 'content' });
-        expect(isReadRequest(method, pattern), key).toBe(false);
-        expect(memberMayWrite(method, pattern), key).toBe(true);
-      }
-      for (const key of CREATE_ROUTES) expect(MEMBER_OPEN_WRITES, key).toContain(key);
-      expect(memberMayWrite('DELETE', '/api/files/files')).toBe(false);
-      expect(memberMayWrite('DELETE', '/api/apps/deleted/:id')).toBe(false);
-      expect(memberMayWrite('POST', '/api/contacts')).toBe(false);
-      expect(memberMayWrite('GET', null)).toBe(false);
-    },
-  );
-
-  it.skipIf(!hasManifest)(
-    'every Admin act (F4 fix round 1) is a served content write no member reaches, in the scope since S6 c3',
-    async () => {
-      const { routeManifest } = await import('../../server/route-manifest.gen');
-      const served = new Set(
-        routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)),
-      );
-      // ADMIN_ACT_WRITES (the system-pool list) went in plan v3.2 S6 c3: the
-      // four run in the login's scope, each asking its definer (0308).
-      const acts = [
-        'DELETE /api/contacts/:id/shares',
-        'POST /api/contacts/:id/sharing',
-        'POST /api/entities/merge',
-        'POST /api/shares/contacts',
-      ];
-      for (const key of acts) {
-        const [method, pattern] = key.split(' ') as [string, string];
-        expect(served.has(key), key).toBe(true);
-        expect(routeClass(pattern), key).toEqual({ kind: 'content' });
-        expect(isReadRequest(method, pattern), key).toBe(false);
-        expect(memberMayWrite(method, pattern), key).toBe(false);
-      }
-    },
-  );
-
-  it('takes the longest prefix and knows reads', () => {
-    expect(routeClass('/api/apps/:id')).toEqual({ kind: 'content' });
-    expect(routeClass('/api/apps/:id/access-log')).toEqual({ kind: 'area', area: 'users' });
-    expect(routeClass('/api/docs/reader')).toEqual({ kind: 'content' });
-    expect(routeClass('/api/docs/collections/:id')).toEqual({ kind: 'area', area: 'settings' });
-    expect(routeClass('/api/pagesx')).toBeNull();
-    expect(isReadRequest('GET', '/api/pages')).toBe(true);
-    expect(isReadRequest('PATCH', '/api/pages/:id')).toBe(false);
-    for (const key of READ_POSTS) {
-      const [method, pattern] = key.split(' ') as [string, string];
-      expect(isReadRequest(method, pattern)).toBe(true);
-      expect(routeClass(pattern)).toEqual({ kind: 'content' });
-    }
-    // A connector's OAuth callback writes (it stores the tokens), on its
-    // GET and the HEAD the GET handler answers (A4 step 3b must-do).
-    expect([...WRITE_GETS].sort()).toEqual([
-      'GET /api/mcp-connectors/oauth/callback',
-      'GET /api/microsoft/oauth/callback',
-    ]);
-    for (const key of WRITE_GETS) {
-      const pattern = key.split(' ')[1]!;
-      expect(isReadRequest('GET', pattern), key).toBe(false);
-      expect(isReadRequest('HEAD', pattern), key).toBe(false);
-      expect(routeClass(pattern), key).toEqual({ kind: 'area', area: 'connectors' });
-    }
-  });
-
-  it('audits a write by its method or its row (A4 step 3b part 4 fix round)', () => {
+describe.skipIf(!hasManifest)('route scope (W6a), over the rows', () => {
+  it('audits a write by its method or its row (A4 step 3b part 4 fix round)', async () => {
     // The api.write audit row: a mutating method, or a row whose effect is
-    // a write (an OAuth callback's GET and HEAD). A READ_POSTS row keeps
+    // a write (an OAuth callback's GET and HEAD). A POST that reads keeps
     // the row its method always wrote; outside a routed request, the method.
-    const effect = (m: string, p: string) => (isReadRequest(m, p) ? 'read' : 'write');
-    for (const key of WRITE_GETS) {
-      const pattern = key.split(' ')[1]!;
-      expect(auditsAsWrite('GET', effect('GET', pattern)), key).toBe(true);
-      expect(auditsAsWrite('HEAD', effect('HEAD', pattern)), key).toBe(true);
-      expect(auditsAsWrite('GET', null), key).toBe(false);
+    let writeGets = 0;
+    let readPosts = 0;
+    for (const row of (await rows()).values()) {
+      if (row.effect === methodEffect(row.method)) continue;
+      if (row.effect === 'write') {
+        writeGets += 1;
+        expect(auditsAsWrite(row.method, row.effect), row.key).toBe(true);
+        expect(auditsAsWrite(row.method, null), row.key).toBe(false);
+      } else {
+        readPosts += 1;
+        expect(auditsAsWrite(row.method, row.effect), row.key).toBe(true);
+      }
     }
-    for (const key of READ_POSTS) {
-      const [method, pattern] = key.split(' ') as [string, string];
-      expect(auditsAsWrite(method, effect(method, pattern)), key).toBe(true);
-    }
-    expect(auditsAsWrite('GET', effect('GET', '/api/pages'))).toBe(false);
+    // The two OAuth callbacks (GET and HEAD each) and the formula calculator.
+    expect([writeGets, readPosts]).toEqual([4, 1]);
+    expect(auditsAsWrite('GET', 'read')).toBe(false);
     expect(auditsAsWrite('OPTIONS', null)).toBe(false);
     expect(auditsAsWrite('patch', null)).toBe(true);
   });
-});
-
-describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
-  const id = '6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
-  it('names the item and what the write needs', () => {
-    // A share and a deleted app name no item since plan v3.2 S6 c2: their
-    // handlers ask in the login's scope (shareItemRefusal) and through the
-    // trash's definer (mantle_app_trash_act, 0310).
-    expect(itemWriteTarget('PATCH', '/api/shares/:id', `/api/shares/${id}`)).toBeNull();
-    expect(
-      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
-    ).toBeNull();
-    // Apps and the tree's items name no item since the pre-check removal
-    // part 2 (the last family): an app's edit and delete, its draft, and
-    // the read writes (an open, a pin) read the item in the scope first.
-    expect(itemWriteTarget('PATCH', '/api/apps/:id', `/api/apps/${id}`)).toBeNull();
-    expect(itemWriteTarget('DELETE', '/api/apps/:id', `/api/apps/${id}`)).toBeNull();
-    expect(itemWriteTarget('DELETE', '/api/apps/:id/draft', `/api/apps/${id}/draft`)).toBeNull();
-    expect(itemWriteTarget('POST', '/api/apps/:id/opened', `/api/apps/${id}/opened`)).toBeNull();
-    expect(
-      itemWriteTarget('PUT', '/api/tree/items/:id/pin', `/api/tree/items/${id}/pin`),
-    ).toBeNull();
-    // Notes and drawings name no item since the pre-check removal part 2.
-    expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toBeNull();
-    expect(itemWriteTarget('PUT', '/api/draws/:id/draft', `/api/draws/${id}/draft`)).toBeNull();
-    // Pages too, the move with them (ITEM_MANAGE_WRITES is gone).
-    expect(itemWriteTarget('PATCH', '/api/pages/:id', `/api/pages/${id}`)).toBeNull();
-    expect(itemWriteTarget('PATCH', '/api/v1/pages/:id', `/api/v1/pages/${id}`)).toBeNull();
-    expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toBeNull();
-    // Files, files' folders and the tree's folders too (round 3).
-    expect(
-      itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
-    ).toBeNull();
-    expect(itemWriteTarget('DELETE', '/api/files/files/:id', `/api/files/files/${id}`)).toBeNull();
-    // Tables and their v1 alias too (the draft, ops, import and history
-    // ask the caller's edit first, assertItemRight).
-    expect(itemWriteTarget('PATCH', '/api/tables/:id', `/api/tables/${id}`)).toBeNull();
-    expect(
-      itemWriteTarget('PATCH', '/api/v1/tables/:id/rows/:rowId', `/api/v1/tables/${id}/rows/r1`),
-    ).toBeNull();
-  });
-  it('names no item for a create, a list or another prefix', () => {
-    expect(itemWriteTarget('POST', '/api/pages', '/api/pages')).toBeNull();
-    expect(itemWriteTarget('POST', '/api/tree/:kind/move', '/api/tree/pages/move')).toBeNull();
-    expect(itemWriteTarget('PATCH', '/api/contacts/:id', `/api/contacts/${id}`)).toBeNull();
-    expect(itemWriteTarget('POST', '/api/shares/contacts', '/api/shares/contacts')).toBeNull();
-  });
-  it('fix round 1 (M1): the other workspace kinds, and items named through another row', () => {
-    // Formulas, tasks, events and v1 tasks name no item since the pre-check
-    // removal part 2: the database checks their writes, and the handler's
-    // scoped read answers a hidden one (docs/actors.md).
-    for (const [method, pattern] of [
-      ['DELETE', '/api/tasks/:id'],
-      ['PATCH', '/api/v1/tasks/:id'],
-      ['PATCH', '/api/events/:id'],
-      ['DELETE', '/api/formulas/:id'],
-    ] as const) {
-      expect(itemWriteTarget(method, pattern, pattern.replace(':id', id))).toBeNull();
-    }
-    // Recall maps and their revisions too (the pre-check removal part 2):
-    // the map's lock in the login's scope and the edit check (0281).
-    expect(
-      itemWriteTarget(
-        'POST',
-        '/api/recall/maps/:id/cards/reorder',
-        `/api/recall/maps/${id}/cards/reorder`,
-      ),
-    ).toBeNull();
-    expect(
-      itemWriteTarget(
-        'POST',
-        '/api/recall/revisions/:id/restore',
-        `/api/recall/revisions/${id}/restore`,
-      ),
-    ).toBeNull();
-    // A link and a deleted app's trash too (plan v3.2 S6 c2): the handler
-    // asks the link's rule in the login's scope, the trash its definer.
-    for (const method of ['DELETE', 'PATCH']) {
-      expect(itemWriteTarget(method, '/api/shares/:id', `/api/shares/${id}`)).toBeNull();
-    }
-    expect(
-      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
-    ).toBeNull();
-    expect(
-      itemWriteTarget('POST', '/api/apps/deleted/:id/restore', `/api/apps/deleted/${id}/restore`),
-    ).toBeNull();
-  });
-  it('fix round 1 (M2): the Apps sidebar reads in the login scope', () => {
-    expect(routeClass('/api/app-nav')).toEqual({ kind: 'content' });
-    expect(routeClass('/api/app-nav/pins')).toEqual({ kind: 'content' });
-  });
-});
-
-/**
- * The member route lists are generated from the kind registry since A1
- * (workspaces arch plan v2, section 9): pinned here as sets, so a registry
- * change that opens a route to non-Admin logins is a reviewed edit of this
- * test. The D1 rows (tasks, events, formulas, Recall maps) are marked.
- */
-describe('member route lists (A1: generated from the kind registry)', () => {
-  const set = (xs: Iterable<string>) => [...xs].sort();
 
   it('the workspace kinds with an item route', () => {
+    const set = (xs: Iterable<string>) => [...xs].sort();
     expect(set(WORKSPACE_ITEM_PREFIXES)).toEqual(
       set([
         '/api/files/folders',
@@ -278,167 +75,25 @@ describe('member route lists (A1: generated from the kind registry)', () => {
     );
   });
 
-  it('MEMBER_OPEN_READS', () => {
-    expect(set(MEMBER_OPEN_READS)).toEqual(
-      set([
-        'GET /api/pages',
-        'GET /api/pages/:id',
-        'GET /api/pages/:id/backlinks',
-        'GET /api/pages/:id/descendant-count',
-        'GET /api/notes',
-        'GET /api/notes/:id',
-        'GET /api/draws',
-        'GET /api/draws/:id',
-        'GET /api/tables',
-        'GET /api/tables/:id',
-        'GET /api/tables/:id/rows',
-        'GET /api/tree/:kind',
-        'GET /api/tree/:kind/search',
-        'GET /api/tree/:kind/tags',
-        'GET /api/apps',
-        'GET /api/apps/:id',
-        'GET /api/nodes/:id',
-        'GET /api/search',
-        'GET /api/mentions/search',
-        'GET /api/home',
-        'GET /api/formulas',
-        'GET /api/formulas/:id',
-        'GET /api/files/files',
-        'GET /api/files/files/:id',
-        'GET /api/files/folders',
-        'GET /api/files/folders/:id',
-        'GET /api/tree/:kind/marks',
-        'GET /api/draws/:id/svg',
-        // D1
-        'GET /api/tasks',
-        'GET /api/tasks/:id',
-        'GET /api/events',
-        'GET /api/events/:id',
-        'GET /api/recall/maps',
-        'GET /api/recall/maps/:id',
-        'GET /api/recall/maps/:id/cards/:card',
-        'GET /api/recall/maps/:id/revisions',
-        'POST /api/formulas/:id/evaluate',
-        // Present (P1): a canvas, its kept versions and its frame ticket.
-        'GET /api/presents',
-        'GET /api/presents/:id',
-        'GET /api/presents/:id/revisions',
-        'POST /api/presents/:id/frame-ticket',
-      ]),
-    );
-  });
-
-  it('MEMBER_OPEN_WRITES', () => {
-    expect(set(MEMBER_OPEN_WRITES)).toEqual(
-      set([
-        'POST /api/pages',
-        'PATCH /api/pages/:id',
-        'DELETE /api/pages/:id',
-        'PUT /api/pages/:id/draft',
-        'POST /api/pages/:id/commit',
-        'POST /api/pages/:id/discard-draft',
-        'POST /api/pages/:id/move',
-        'POST /api/notes',
-        'PATCH /api/notes/:id',
-        'DELETE /api/notes/:id',
-        'POST /api/draws',
-        'PATCH /api/draws/:id',
-        'DELETE /api/draws/:id',
-        'PUT /api/draws/:id/draft',
-        'POST /api/draws/:id/commit',
-        'POST /api/draws/:id/discard-draft',
-        'POST /api/tables',
-        'PATCH /api/tables/:id',
-        'DELETE /api/tables/:id',
-        'PUT /api/tables/:id/draft',
-        'POST /api/tables/:id/draft-ops',
-        'POST /api/tables/:id/commit',
-        'POST /api/tables/:id/discard-draft',
-        'POST /api/files/files',
-        'PATCH /api/files/files/:id',
-        'DELETE /api/files/files/:id',
-        'POST /api/files/folders',
-        'PATCH /api/files/folders/:id',
-        'DELETE /api/files/folders/:id',
-        'POST /api/apps',
-        'PATCH /api/apps/:id',
-        'DELETE /api/apps/:id',
-        'PUT /api/apps/:id/draft',
-        'DELETE /api/apps/:id/draft',
-        'POST /api/apps/:id/build',
-        'POST /api/apps/:id/format',
-        'POST /api/apps/:id/publish',
-        'POST /api/tree/:kind/folders',
-        'PATCH /api/tree/:kind/folders/:id',
-        'DELETE /api/tree/:kind/folders/:id',
-        'POST /api/tree/:kind/move',
-        'POST /api/tree/items/:id/opened',
-        'PUT /api/tree/items/:id/pin',
-        'POST /api/apps/:id/frame-ticket',
-        'POST /api/apps/:id/db-broker',
-        'POST /api/apps/:id/tool-broker',
-        // D1
-        'POST /api/tasks',
-        'PATCH /api/tasks/:id',
-        'DELETE /api/tasks/:id',
-        'POST /api/events',
-        'PATCH /api/events/:id',
-        'DELETE /api/events/:id',
-        'POST /api/formulas',
-        'PATCH /api/formulas/:id',
-        'DELETE /api/formulas/:id',
-        'POST /api/recall/maps',
-        'PATCH /api/recall/maps/:id',
-        'DELETE /api/recall/maps/:id',
-        'POST /api/recall/maps/:id/cards',
-        'PUT /api/recall/maps/:id/cards/:card',
-        'DELETE /api/recall/maps/:id/cards/:card',
-        'POST /api/recall/maps/:id/cards/reorder',
-        'POST /api/recall/maps/:id/cards/:card/prompt',
-        'POST /api/recall/revisions/:id/restore',
-        // Present (P1)
-        'POST /api/presents',
-        'PATCH /api/presents/:id',
-        'DELETE /api/presents/:id',
-      ]),
-    );
-  });
-
-  it('CREATE_ROUTES', () => {
-    expect(set(CREATE_ROUTES)).toEqual(
-      set([
-        'POST /api/pages',
-        'POST /api/notes',
-        'POST /api/draws',
-        'POST /api/tables',
-        'POST /api/files/files',
-        'POST /api/files/folders',
-        'POST /api/apps',
-        'POST /api/tree/:kind/folders',
-        // D1
-        'POST /api/tasks',
-        'POST /api/events',
-        'POST /api/formulas',
-        'POST /api/recall/maps',
-        // Present (P1)
-        'POST /api/presents',
-      ]),
-    );
-  });
-
-  it('no D1 item write names its item: the database checks them all', () => {
-    // Tasks, events, formulas and Recall maps lost their entry in the
-    // pre-check removal part 2 (docs/actors.md).
-    const id = '00000000-0000-4000-8000-000000000001';
-    const at = (p: string) => p.replace(':id', id).replace(':card', 'c1');
-    let recall = 0;
-    for (const key of MEMBER_OPEN_WRITES) {
-      const [method, pattern] = key.split(' ') as [string, string];
-      if (!/^\/api\/(recall|tasks|events|formulas)\//.test(pattern)) continue;
-      if (CREATE_ROUTES.has(key)) continue;
-      if (pattern.startsWith('/api/recall/')) recall += 1;
-      expect(itemWriteTarget(method, pattern, at(pattern)), key).toBeNull();
+  it("each workspace kind's item routes open to a login outside Admin, its create reads ?ws= (A1)", async () => {
+    const table = await rows();
+    const checked: string[] = [];
+    for (const p of WORKSPACE_ITEM_PREFIXES) {
+      const routes: ReadonlyArray<readonly [string, 'read' | 'write', boolean]> = [
+        [`GET ${p}`, 'read', false],
+        [`GET ${p}/:id`, 'read', false],
+        [`POST ${p}`, 'write', true],
+        [`PATCH ${p}/:id`, 'write', false],
+        [`DELETE ${p}/:id`, 'write', false],
+      ];
+      for (const [key, effect, creates] of routes) {
+        const row = table.get(key);
+        if (!row) continue;
+        checked.push(key);
+        expect([row.class, row.logins, row.effect], key).toEqual(['content', 'owner', effect]);
+        if (creates) expect(row.creates, key).toBe(true);
+      }
     }
-    expect(recall).toBeGreaterThan(5);
+    expect(checked.length).toBeGreaterThan(40);
   });
 });

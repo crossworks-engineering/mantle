@@ -115,29 +115,6 @@ export function isPublicPath(path: string): boolean {
 }
 
 /**
- * Paths whose routes emit their own richer audit events (`user.*`) — the
- * choke point skips its generic `api.write` row for these to avoid doubles.
- */
-export const AUDIT_SELF_LOGGED_PATHS = [
-  '/api/users',
-  '/api/team-admin/clients',
-  '/api/services',
-  // Inbound API keys write key.created / key.revoked.
-  '/api/access-keys',
-];
-
-/** "External access" on a tool: setToolExternalAccess writes its own
- *  `tool.external_access.on` / `.off` row with the actor and the tool. */
-const TOOL_EXTERNAL_ACCESS_PATH = /^\/api\/tools\/[^/]+\/external-access\/?$/;
-
-export function isAuditSelfLogged(path: string): boolean {
-  return (
-    AUDIT_SELF_LOGGED_PATHS.some((p) => path === p || path.startsWith(p + '/')) ||
-    TOOL_EXTERNAL_ACCESS_PATH.test(path)
-  );
-}
-
-/**
  * Request-context headers injected by the middleware (overwritten there via
  * Headers.set, so a client-supplied value can't survive on any path middleware
  * runs on). They let the Node-side auth gate learn the method/path for audit

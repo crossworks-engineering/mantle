@@ -1,19 +1,17 @@
 /**
  * Plan v3.2 S9: the route lists folded into a declaration in each route
- * file (route-declaration.ts). Part 0 built the tooling; part 1 wrote every
- * route file's declaration; the lists stay the source (ROUTE_POLICY_SOURCE)
- * until part 2.
+ * file (route-declaration.ts). Part 1 wrote every route file's declaration,
+ * part 2 read the rows from them, part 3 deleted the lists: the
+ * declarations are the rows' one source.
  *
  * Pinned here, on every run:
- *  - the declarations the codemod derives from the lists
- *    (scripts/route-declarations.ts) build every row equal, field for
- *    field, to the lists' row (buildRoutePolicy, source 'declarations');
- *  - the manifest carries a declaration for every route file (part 1's
- *    codemod run wrote them), each the one the lists say, and its rows are
- *    the lists' rows;
  *  - every row, every field, against the snapshot
- *    (__snapshots__/route-policy.rows.json): the rows parts 2 and 3 hold
- *    byte-equal while the lists go;
+ *    (__snapshots__/route-policy.rows.json), byte for byte the rows the
+ *    lists built before they went;
+ *  - the manifest carries a declaration for every route file, and every
+ *    route module exports the one its entry carries;
+ *  - a row's `public` is the gate's answer for its path (PUBLIC_PATHS, the
+ *    kept list for a request no row answers), so the two cannot drift;
  *  - a declaration that cannot hold is refused at boot.
  */
 import { existsSync } from 'node:fs';
@@ -21,9 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { checkLoadedPolicy, type RouteModule } from '../../server/route-loader';
-import { isAuditSelfLogged, PUBLIC_PATHS } from '../auth-constants';
-import { auditsAsWrite } from './route-scope';
-import { BODY_NAMES_ITEMS, OWN_THINGS, entryDeclaration } from '../../scripts/route-declarations';
+import { isPublicPath, PUBLIC_PATHS } from '../auth-constants';
 import {
   ALIAS_COPIES,
   ALIAS_OWN,
@@ -31,7 +27,6 @@ import {
   type RoutePolicyDeclaration,
 } from './route-declaration';
 import {
-  ROUTE_POLICY_SOURCE,
   buildRoutePolicy,
   findsNoLogin,
   requireRouteDeclarations,
@@ -82,58 +77,26 @@ function snapshotLine(row: RouteRow): string {
 
 describe.skipIf(!hasManifest)('S9: route declarations', () => {
   let manifest: readonly RouteManifestEntry[];
-  let lists: ReadonlyMap<string, RouteRow>;
+  let rows: ReadonlyMap<string, RouteRow>;
 
   beforeAll(async () => {
     manifest = (await import('../../server/route-manifest.gen')).routeManifest;
-    lists = buildRoutePolicy(manifest, { source: 'lists' });
+    rows = buildRoutePolicy(manifest);
   });
 
-  it('the declarations derived from the lists build every row equal to the lists', () => {
-    const derived = manifest.map((e) => ({ ...e, policy: entryDeclaration(lists, e) }));
-    const declared = buildRoutePolicy(derived, { source: 'declarations' });
-    const diffs: string[] = [];
-    for (const [key, row] of lists) {
-      const got = declared.get(key);
-      if (JSON.stringify(got) !== JSON.stringify(row)) {
-        diffs.push(`${key}: ${JSON.stringify(got)} != ${JSON.stringify(row)}`);
-      }
-    }
-    expect(diffs).toEqual([]);
-    expect(declared.size).toBe(lists.size);
-    // The numbers of the handover (part 0, on main v0.300.132): 418 route
+  it('every route file declares, one policy for each method it exports', () => {
+    expect(manifest.filter((e) => e.policy === undefined).map((e) => e.pattern)).toEqual([]);
+    // The numbers of the handover (part 1, main v0.300.139): 418 route
     // files, 819 rows, 572 methods declared. They move with the routes;
     // the floor only says the walk saw them.
-    const methods = derived.reduce((n, e) => n + Object.keys(e.policy).length, 0);
+    const methods = manifest.reduce((n, e) => n + Object.keys(e.policy ?? {}).length, 0);
     expect(manifest.length).toBeGreaterThan(400);
     expect(methods).toBeGreaterThan(550);
-    expect(lists.size).toBeGreaterThan(methods);
+    expect(rows.size).toBeGreaterThan(methods);
   });
 
-  it("the manifest's declarations: one for every route file, each the lists' own", () => {
-    // Every route file declares, and since part 2's flip the declarations
-    // are the rows' source; until part 3 deletes the lists each one is
-    // still held to what the lists say.
-    expect(ROUTE_POLICY_SOURCE).toBe('declarations');
-    expect(manifest.filter((e) => e.policy === undefined).map((e) => e.pattern)).toEqual([]);
-    for (const e of manifest) {
-      expect(e.policy, e.pattern).toEqual(entryDeclaration(lists, e));
-    }
-    const declared = buildRoutePolicy(manifest, { source: 'declarations' });
-    expect([...declared.values()].map((r) => JSON.stringify(r))).toEqual(
-      [...lists.values()].map((r) => JSON.stringify(r)),
-    );
-  });
-
-  it('a frame document finds no login: the same rows from the lists and the declarations (INFO)', () => {
-    const derived = manifest.map((e) => ({ ...e, policy: entryDeclaration(lists, e) }));
-    const declared = buildRoutePolicy(derived, { source: 'declarations' });
-    const noLogin: string[] = [];
-    for (const [key, row] of lists) {
-      const fromLists = findsNoLogin(row, 'lists');
-      expect(findsNoLogin(declared.get(key)!, 'declarations'), key).toBe(fromLists);
-      if (fromLists) noLogin.push(key);
-    }
+  it('a frame document finds no login, and only it (INFO)', () => {
+    const noLogin = [...rows.values()].filter((r) => findsNoLogin(r)).map((r) => r.key);
     expect(noLogin.sort()).toEqual([
       'GET /api/apps/:id/frame',
       'GET /api/presents/:id/frame',
@@ -142,67 +105,23 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     ]);
   });
 
-  it("each of the login's own things is a 'self' write the manifest serves (MED-1)", () => {
-    const rows = [...lists.values()];
-    for (const p of Object.keys(OWN_THINGS)) {
-      const writes = rows.filter((r) => r.pattern === p && r.effect === 'write');
-      expect(writes.length, p).toBeGreaterThan(0);
-      for (const r of writes) expect(r.class, r.key).toBe('self');
-      expect(p, p).toMatch(/\/:/);
-    }
-    for (const prefix of BODY_NAMES_ITEMS) {
-      expect(rows.some((r) => r.pattern.startsWith(prefix) && r.class === 'self')).toBe(true);
-    }
-  });
-
-  it("a row's audit is the request path's answer, for every path the pattern spells", () => {
-    // The guards ask isAuditSelfLogged of the path as sent (session.ts
-    // auditMutation); the row says it once (`audit`). Each param and the
-    // rest of a catch-all is spelled with every segment a listed path
-    // holds, so a param that could spell a listed prefix is tried.
-    const words = [
-      'x',
-      'users',
-      'team-admin',
-      'clients',
-      'services',
-      'access-keys',
-      'tools',
-      'external-access',
-    ];
-    const spell = (pattern: string): string[] =>
-      pattern
-        .split('/')
-        .reduce<string[]>(
-          (paths, seg) =>
-            paths.flatMap((p) =>
-              seg.startsWith(':')
-                ? words.map((w) => `${p}/${w}`)
-                : seg === '*'
-                  ? [...words.map((w) => `${p}/${w}`), `${p}/x/y`]
-                  : [`${p}/${seg}`],
-            ),
-          [''],
-        )
-        .map((p) => p.slice(1));
-    const differ: string[] = [];
-    let own = 0;
-    for (const row of lists.values()) {
-      if (row.audit === 'own') own += 1;
-      for (const path of spell(row.pattern)) {
-        const asked = auditsAsWrite(row.method, row.effect) && isAuditSelfLogged(path);
-        if (asked !== (row.audit === 'own')) differ.push(`${row.key} at ${path}`);
-      }
-    }
+  it("a row's public is the gate's answer for its path (PUBLIC_PATHS)", () => {
+    // The gate answers a request no row answers by the path (isPublicPath,
+    // gate.ts gateRouteView); a routed one by its row. The same answer for
+    // every path a pattern spells, so neither can drift from the other.
+    const marked = (pattern: string) =>
+      pattern.replace(/:[A-Za-z0-9_]+/g, (_m) => 'p').replace(/\*$/, 'rest');
+    const differ = [...rows.values()]
+      .filter((r) => r.public !== isPublicPath(marked(r.pattern)))
+      .map((r) => r.key);
     expect(differ).toEqual([]);
-    expect(own).toBeGreaterThan(0);
   });
 
-  it('PUBLIC_PATHS: the paths no manifest pattern is under (the list part 3 keeps)', () => {
-    // The owner's decision of 2026-10-22: the rows' `public` is declared;
-    // the list keeps only what no row serves (the gate answers those raw
-    // paths itself: the sign-in page, the app runtime's assets). Pinned, so
-    // a route under one of them fails here first.
+  it('PUBLIC_PATHS: the paths no manifest pattern is under', () => {
+    // The rows' `public` is declared; the list answers a request no row
+    // answers (gate.ts gateRouteView), the two entries below only so: the
+    // sign-in page and the app runtime's assets. Pinned, so a route under
+    // one of them is seen first.
     const under = (path: string, p: string) => path === p || path.startsWith(`${p}/`);
     const routed = (p: string) =>
       manifest.some((e) => {
@@ -229,7 +148,7 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
       RouteManifestEntry & { load: () => Promise<RouteModule> }
     >) {
       try {
-        checkLoadedPolicy(e, await e.load(), 'declarations');
+        checkLoadedPolicy(e, await e.load());
       } catch (err) {
         refused.push(`${e.pattern}: ${String(err)}`);
       }
@@ -237,17 +156,8 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
     expect(refused).toEqual([]);
   }, 120_000);
 
-  it('every row, every field, as the snapshot says', async () => {
-    const lines = [...lists.values()].map(snapshotLine).sort();
-    await expect(`{\n${lines.join(',\n')}\n}\n`).toMatchFileSnapshot(
-      './__snapshots__/route-policy.rows.json',
-    );
-  });
-
   it("the rows the route files' declarations build, every field, as the snapshot says", async () => {
-    const declared = buildRoutePolicy(manifest, { source: 'declarations' });
-    expect(declared.size).toBe(lists.size);
-    const lines = [...declared.values()].map(snapshotLine).sort();
+    const lines = [...rows.values()].map(snapshotLine).sort();
     await expect(`{\n${lines.join(',\n')}\n}\n`).toMatchFileSnapshot(
       './__snapshots__/route-policy.rows.json',
     );
@@ -263,8 +173,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
       methods.map((m) => [m, 'owner' as const]),
     ),
   ) => ({ pattern, methods, reads, policy });
-  const build = (...entries: RouteManifestEntry[]) =>
-    buildRoutePolicy(entries, { source: 'declarations' });
+  const build = (...entries: RouteManifestEntry[]) => buildRoutePolicy(entries);
   const none = { none: 'a test row' } as const;
 
   it('builds the rows a declaration says; the effect is the method’s; a HEAD takes its GET’s', () => {
@@ -329,10 +238,6 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(() => build(entry('/api/notes', ['GET'], stray))).toThrow(
       /policy for POST, which it does not serve/,
     );
-    // The lists' rows read no declaration, but a stray one is still refused.
-    expect(() =>
-      buildRoutePolicy([entry('/api/notes', ['GET'], stray)], { source: 'lists' }),
-    ).toThrow(/policy for POST/);
   });
 
   it('refuses each value that cannot hold (validateMethodPolicy, at boot)', () => {
@@ -432,7 +337,7 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
         GET: { class: 'content', keyArea: 'notes', aliasOf: 'GET /api/notes' },
         POST: { class: 'content', item: none, keyArea: 'notes', aliasOf: 'POST /api/notes' },
       }),
-      // A base is the key table's (api-v1.ts API_V1_ROUTES `base`).
+      // A v1 file with a handler of its own declares its base.
       entry('/api/pages/:id', ['PATCH'], {
         PATCH: {
           class: 'content',
@@ -480,11 +385,11 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(() =>
       build(entry('/api/v1/notes', ['POST'], { POST: alias } as RoutePolicyDeclaration)),
     ).toThrow(/does not serve/);
-    // A base the key table does not name (LOW-1): served and declared, and
-    // still refused while API_V1_ROUTES names each base.
-    expect(() => v1({ class: 'content', item: none, base: 'POST /api/notes' })).toThrow(
-      /the base POST \/api\/notes, which the key table \(API_V1_ROUTES\) does not name/,
-    );
+    // Since the key table went (S9 part 3) a declared base is the one
+    // source: served and declared, it is the row's base.
+    expect(
+      v1({ class: 'content', item: none, base: 'POST /api/notes' }).get('POST /api/v1/notes'),
+    ).toMatchObject({ logins: 'owner', creates: true, aliasOf: null });
   });
 
   it("an alias is its base's row in class, area, effect and item", () => {
@@ -580,22 +485,24 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     );
   });
 
-  it('a v1 row declares the key area the key table names, and only it', () => {
+  it('a v1 row has the key area it declares, the one source (S9 part 3)', () => {
     const base = entry('/api/notes', ['GET'], { GET: { class: 'content', open: 'owner' } });
     const v1 = (pattern: string, d: Record<string, unknown>) =>
       build(base, entry(pattern, ['GET'], { GET: d } as RoutePolicyDeclaration));
     const alias = { class: 'content', aliasOf: 'GET /api/notes' };
-    expect(
-      v1('/api/v1/notes', { ...alias, keyArea: 'notes' }).get('GET /api/v1/notes'),
-    ).toMatchObject({ keyArea: 'notes', keySelf: false });
-    // Another area, no area, every area, or the key itself: refused.
-    for (const keyArea of ['tasks', null, 'self']) {
-      expect(() => v1('/api/v1/notes', { ...alias, keyArea }), String(keyArea)).toThrow(
-        /where the key table \(API_V1_ROUTES\) says area notes/,
-      );
+    for (const keyArea of ['notes', 'tasks', null] as const) {
+      expect(
+        v1('/api/v1/notes', { ...alias, keyArea }).get('GET /api/v1/notes'),
+        String(keyArea),
+      ).toMatchObject({ keyArea, keySelf: false });
     }
-    expect(() => v1('/api/v1/notes', alias)).toThrow(/the key area none, where the key table/);
-    // whoami: the key itself, as the table says.
+    // None declared: not in the API (a key gets 'not-in-api').
+    expect(v1('/api/v1/notes', alias).get('GET /api/v1/notes')?.keyArea).toBeUndefined();
+    // Off /api/v1: refused (validateMethodPolicy).
+    expect(() =>
+      build(entry('/api/x', ['GET'], { GET: { class: 'content', keyArea: 'notes' } })),
+    ).toThrow(/a key area off \/api\/v1/);
+    // whoami: the key itself.
     const whoami = (d: Record<string, unknown>) =>
       build(
         entry('/api/v1/whoami', ['GET'], { GET: d } as RoutePolicyDeclaration, { GET: 'login' }),
@@ -603,9 +510,6 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(
       whoami({ class: 'content', open: 'any', keyArea: 'self' }).get('GET /api/v1/whoami'),
     ).toMatchObject({ keyArea: null, keySelf: true });
-    expect(() => whoami({ class: 'content', open: 'any', keyArea: null })).toThrow(
-      /the key area area null, where the key table \(API_V1_ROUTES\) says self null/,
-    );
   });
 
   it('the named caller is read from the checked copy, once', () => {
@@ -662,28 +566,17 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
 
 describe('S9: the loader asks a loaded module for the policy its rows were built from', () => {
   const policy = { GET: { class: 'content' } } as const;
-  it('passes the same declaration, refuses another or none, and asks nothing of the lists or a stand-in', () => {
+  it('passes the same declaration, refuses another or none, and asks nothing of a stand-in', () => {
     const e = { pattern: '/api/notes', policy };
-    expect(() =>
-      checkLoadedPolicy(e, { policy: { GET: { class: 'content' } } }, 'declarations'),
-    ).not.toThrow();
-    expect(() =>
-      checkLoadedPolicy(e, { policy: { GET: { class: 'self' } } }, 'declarations'),
-    ).toThrow(/not the one the manifest read/);
-    expect(() => checkLoadedPolicy({ pattern: '/api/x' }, { policy }, 'declarations')).toThrow(
-      /not the one/,
+    expect(() => checkLoadedPolicy(e, { policy: { GET: { class: 'content' } } })).not.toThrow();
+    expect(() => checkLoadedPolicy(e, { policy: { GET: { class: 'self' } } })).toThrow(
+      /not the one the manifest read/,
     );
+    expect(() => checkLoadedPolicy({ pattern: '/api/x' }, { policy })).toThrow(/not the one/);
     // L1: the manifest carries one the module does not export.
-    expect(() => checkLoadedPolicy(e, { GET: () => null }, 'declarations')).toThrow(
-      /does not export/,
-    );
+    expect(() => checkLoadedPolicy(e, { GET: () => null })).toThrow(/does not export/);
     // A test's stand-in routes opt out by name; neither carries one: nothing to ask.
-    expect(() =>
-      checkLoadedPolicy(e, { GET: () => null }, 'declarations', { standIn: true }),
-    ).not.toThrow();
-    expect(() =>
-      checkLoadedPolicy({ pattern: '/api/x' }, { GET: () => null }, 'declarations'),
-    ).not.toThrow();
-    expect(() => checkLoadedPolicy(e, {}, 'lists')).not.toThrow();
+    expect(() => checkLoadedPolicy(e, { GET: () => null }, { standIn: true })).not.toThrow();
+    expect(() => checkLoadedPolicy({ pattern: '/api/x' }, { GET: () => null })).not.toThrow();
   });
 });

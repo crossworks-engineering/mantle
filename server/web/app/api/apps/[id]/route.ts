@@ -87,7 +87,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = await readBody(req, PatchBody);
   const { name, trustTools, ...rest } = body;
   // The three admin switches (W6b fix round 1, H2): a member or a client
-  // edits its own app's name and look here (MEMBER_OPEN_WRITES), never its
+  // edits its own app's name and look here (its row's `open: 'owner'`), never its
   // author ceiling, its MCP access or the informational flag.
   if (
     (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&

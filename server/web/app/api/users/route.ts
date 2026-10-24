@@ -48,7 +48,7 @@ export const policy = routePolicy({
  * and reads team-level items through the member routes. These routes emit
  * their own `user.*` audit
  * events (the choke point skips its generic row for /api/users — see
- * AUDIT_SELF_LOGGED_PATHS).
+ * its declaration's `audit: 'own'`).
  *
  * A login may optionally own a personal ASSISTANT (migration 0143): a clone of
  * an existing agent, bound via `agents.assigned_user_id`, which becomes that

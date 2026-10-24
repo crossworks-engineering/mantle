@@ -42,7 +42,7 @@ const INVITE_FAILED_MESSAGE = 'This invite is not valid. Ask for a new one.';
 
 export async function POST(req: Request) {
   // The gate refused a cross-site post and took the row's limits first
-  // (lib/route-limits.ts ROUTE_GATES; lib/member-invites.ts).
+  // (this file's `limits`; lib/member-invites.ts).
   const parsed = AcceptBody.safeParse(await readJson(req, { empty: null }));
   if (!parsed.success) {
     inviteFailed('accept');

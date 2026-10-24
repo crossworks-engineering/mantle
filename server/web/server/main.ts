@@ -100,7 +100,7 @@ if (isBootSmoke()) {
       const { routeManifest } = await import('./route-manifest.gen');
       const { checkLoadedPolicy } = await import('./route-loader');
       for (const route of routeManifest) {
-        checkLoadedPolicy(route, await route.load(), 'declarations');
+        checkLoadedPolicy(route, await route.load());
       }
     },
     () => import('../lib/system-manifest/reconcile'),

@@ -54,7 +54,9 @@ describe.skipIf(!hasManifest)('step 6 with the HTTP rule equals createHomeFor', 
   it('for every write route, login kind and ?ws=', async () => {
     const { routeManifest } = await import('../../server/route-manifest.gen');
     // A read is its row's effect (S9 part 3: the lists are gone).
-    const { isReadRequest } = (await import('../../server/test-support')).rowAnswers(routeManifest);
+    const support = await import('../../server/test-support');
+    const { isReadRequest } = support.rowAnswers(routeManifest);
+    const { realDeclaration } = support;
     let cells = 0;
     for (const e of routeManifest) {
       if (!e.pattern.startsWith('/api/')) continue;
@@ -66,9 +68,12 @@ describe.skipIf(!hasManifest)('step 6 with the HTTP rule equals createHomeFor', 
             const url = `http://brain.test${path}${ws === null ? '' : `?ws=${ws}`}`;
             // The guard and the gate read the same ROUTE_POLICY row (A4 step
             // 1); the gate's policy is the route source's own.
-            const row = buildRouteRow(method, e.pattern, () => false, {
+            const real = realDeclaration(method, e.pattern);
+            const row = buildRouteRow(method, e.pattern, real.served, {
               reads: e.reads?.[method] ?? null,
               gone: e.gone?.includes(method) === true,
+              declared: real.declared,
+              declaredOf: real.declaredOf,
             });
             const today = requestCreateHomeArgs(LOGIN, row, url, ownWork);
             const policy: GatePolicy = routeGatePolicy(row);
