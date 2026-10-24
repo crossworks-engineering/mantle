@@ -25,17 +25,17 @@
     "esbuild": "^0.28.2",
     "katex": "0.19.1",
     "konva": "10.9.0",
-    "lucide-react": "^1.52.0",
+    "lucide-react": "^1.61.0",
     "motion": "14.6.0",
     "plotly.js-dist-min": "4.1.2",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "reveal.js": "6.0.2",
     "tailwindcss": "^4.3.3",
     "three": "0.186.1"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "typescript": "^5.9.3"
