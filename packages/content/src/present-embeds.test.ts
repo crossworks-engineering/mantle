@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedEmbedIds, referencedPresentIds } from './doc-assets';
+import { noteEmbedIds } from './embed-closure';
 import { docToText } from './doc-to-text';
 import { EMBED_MARKER_CANVAS, foldNoteEmbeds } from './embed-fold';
 import { noteRefs, pageRefs } from './embed-refs';
@@ -18,10 +19,11 @@ const OTHER = '66666666-6666-4666-8666-666666666666';
 const md = `Intro\n\n![Pump deck](present:${CANVAS})\n\nOutro`;
 
 describe('a canvas embedded in a page', () => {
-  it('the share surface finds it; the embed edges leave it out (its own grants decide)', () => {
+  it('the share surface finds it, and it is an embed edge as a drawing (Grant these too)', () => {
     const doc = markdownToDoc(md);
     expect(referencedPresentIds(doc)).toEqual([CANVAS]);
-    expect(referencedEmbedIds(doc)).toEqual([]);
+    expect(referencedEmbedIds(doc)).toEqual([CANVAS]);
+    expect(noteEmbedIds(md)).toEqual([CANVAS]);
   });
 
   it('indexes as a marker, never its title', () => {

@@ -17,18 +17,25 @@
 import type { AccessLevel } from '@mantle/client-types';
 import { EMBEDDING_KINDS as REGISTRY_EMBEDDING_KINDS } from '@mantle/client-types/kind-lists';
 import { markdownToDoc } from '@mantle/content-core/markdown';
-import { referencedDrawIds, referencedFileIds } from './doc-assets';
+import { referencedDrawIds, referencedFileIds, referencedPresentIds } from './doc-assets';
 
 /** The kinds that embed other items: the kind registry's `embeds` field
  *  (A10 #12). */
 export const EMBEDDING_KINDS: readonly string[] = REGISTRY_EMBEDDING_KINDS;
 
-/** What a note's markdown embeds: images, file embeds and drawings. (A
+/** What a note's markdown embeds: images, file embeds, drawings and
+ *  canvases. (A
  *  `page:` link in a note is a link, not a child page.) */
 export function noteEmbedIds(markdown: string): string[] {
   if (!markdown) return [];
   const doc = markdownToDoc(markdown);
-  return [...new Set([...referencedFileIds(doc), ...referencedDrawIds(doc)])];
+  return [
+    ...new Set([
+      ...referencedFileIds(doc),
+      ...referencedDrawIds(doc),
+      ...referencedPresentIds(doc),
+    ]),
+  ];
 }
 
 /** What a drawing embeds: the file of every image in its file map. */

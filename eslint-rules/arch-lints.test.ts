@@ -466,8 +466,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(unread).toEqual([]);
     // The pins: rows with a caller, of all the rows. Present (+12): the
     // list, item, revisions, frame-ticket and frame rows, with their HEADs.
-    expect(rows.filter((r) => r.caller).length).toBe(773);
-    expect(rows.length).toBe(831);
+    // Present in Pages (+4 rows, +2 with a caller): the poster with its HEAD
+    // (readerAsset), and the share's canvas snapshot (a link row, no caller).
+    expect(rows.filter((r) => r.caller).length).toBe(775);
+    expect(rows.length).toBe(835);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

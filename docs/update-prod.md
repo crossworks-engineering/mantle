@@ -1332,6 +1332,21 @@ the roll: both only add.
   `0331_node_type_present.revert.sql`) only take the two off the ledger and
   keep every canvas, so going up again picks them up as they were.
 
+## Going up to 0333 (Present in Pages)
+
+Migration 0333 makes a Present canvas that a page or a note embeds an embed
+edge, as a drawing is: the page and note embed triggers read `presentId`
+and the `present:` picture. It changes two parsers and makes the edges of
+the pages and notes that already embed a canvas. Nothing to do before the
+roll.
+
+- **What it changes for readers:** nothing by itself. The Grant Access
+  panel then offers an embedded canvas under "Grant these too", as it
+  offers a drawing.
+- **Rolling back below it:** optional; the older image works with it in
+  place. The revert (`packages/db/rollback/0333_present_embeds.revert.sql`)
+  puts 0208's parsers back and takes 0333 off the ledger.
+
 ## Rollback
 
 ```bash

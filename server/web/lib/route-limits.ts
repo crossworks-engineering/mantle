@@ -187,6 +187,9 @@ export const RATE_LIMITS = {
   shareDraw: perIp('share-draw', 240),
   shareDrawEmbed: perIp('share-draw-embed', 240),
   sharePresentEmbed: perIp('share-present-embed', 240),
+  // A canvas's snapshot in a page, per login: a page with many canvases
+  // loads one each, and a stamp asks ?meta=1 for each.
+  presentPoster: perLogin('present-poster', 600),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
   shareRows: perIp('share-rows', 120),

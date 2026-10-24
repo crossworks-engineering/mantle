@@ -27,7 +27,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
-  GET: { class: 'content', open: 'owner' },
+  GET: { class: 'content', open: 'owner', limits: { rateLimit: ['presentPoster'] } },
 });
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {

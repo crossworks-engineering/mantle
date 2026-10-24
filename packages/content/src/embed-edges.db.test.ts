@@ -6,7 +6,8 @@
  * wherever the note shows it (a heading, a table cell), a little more than
  * noteEmbedIds lists. Each reference also names the kind it may open (an
  * image a file, a drawing image a drawing, a child page card a page), and
- * no stored shape, however malformed, makes them throw. Pinned here so the
+ * no stored shape, however malformed, makes them throw. A canvas is kind
+ * `present` (0333). Pinned here so the
  * two cannot drift.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/embed-edges.db.test.ts
  */
@@ -81,6 +82,23 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     );
     expect(await sqlIds('page', null)).toEqual([]);
     expect(await sqlIds('page', { type: 'doc' })).toEqual([]);
+  });
+
+  it('canvases: a page image and a note picture of a canvas name it, as kind present (0333)', async () => {
+    const [cv, cv2, text] = [id(), id(), id()];
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'image', attrs: { presentId: cv, alt: 'Deck' } },
+        { type: 'pageImage', attrs: { presentId: cv2 } },
+        { type: 'paragraph', content: [{ type: 'text', text: `present:${text}` }] },
+      ],
+    };
+    expect(await sqlIds('page', doc)).toEqual(sortLower(referencedEmbedIds(doc)));
+    expect(await sqlRefs('page', doc)).toEqual([`present:${cv}`, `present:${cv2}`].sort());
+    const md = [`![Deck](present:${cv})`, '', `\`![no](present:${text})\``].join('\n');
+    expect(await sqlIds('note', md)).toEqual(sortLower(noteEmbedIds(md)));
+    expect(await sqlRefs('note', md)).toEqual([`present:${cv}`]);
   });
 
   it('drawings: the files the published scene places, not the whole map', async () => {
