@@ -55,6 +55,7 @@ const BELOW_ON_TOOL_CELLS: readonly string[] = [
   'event_update edit event @root',
   'page_update edit page @root',
   'table_update edit table @root',
+  'present_update edit present @root',
   // A folder's description (the seeded item's probe reads the node's data).
   'folder_describe edit branch @root',
   'folder_describe edit branch @folder',
