@@ -873,7 +873,9 @@ round:
   and its 30 second ticket) in the address. In Firefox and Safari, which
   ignore the iframe's `csp` attribute, the page it reaches has the network.
   The parent takes that page down, but the request has already gone. The
-  desktop app refuses the navigation before it leaves.
+  desktop app refuses the navigation before it leaves. Jason accepted this
+  on 2026-10-24: it is documented here and in the Present guide
+  (docs/guide/06-help/present.md), not closed.
 - A render page starts no worker (`worker-src 'none'` in the render's
   CSP): a worker's console reached the renderer past the page's caps. No
   library of the runtime needs one (Plotly only for its map tiles, which
