@@ -16,6 +16,7 @@
     "build:runtime": "node scripts/build-runtime.ts ../../server/web"
   },
   "dependencies": {
+    "@babel/parser": "7.29.9",
     "@mantle/share-ui": "workspace:*",
     "@tailwindcss/oxide": "^4.3.3",
     "alpinejs": "3.17.5",
