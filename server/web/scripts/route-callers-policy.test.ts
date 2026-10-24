@@ -83,6 +83,13 @@ describe('handlerPolicy', () => {
       /spread/,
     );
     refuses('const p = {};\nexport { p as policy };', /exported by name/);
+    // A method the file exports and the declaration does not name (S9 part
+    // 3 round 2, the flip audit's L2): refused here, as at the boot.
+    refuses("export const policy = routePolicy({ GET: { class: 'content' } });", /names no POST/);
+    refuses(
+      "export const policy = routePolicy({ POST: { class: 'content', item: { none: 'x' } } });",
+      /names no GET, which the file exports/,
+    );
     // The one validator (route-declaration.ts validateMethodPolicy) runs here.
     refuses(
       "export const policy = routePolicy({ GET: { class: 'content', effect: 'read' } });",

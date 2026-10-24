@@ -973,9 +973,10 @@ const DECLARATION_MODULE = '@/lib/auth/route-declaration';
  * DECLARATION_MODULE with one object literal, `export { x as policy }`, a
  * re-export), a value that is not a literal (a name, a call, a spread, a
  * computed key, a template with a substitution), a key named twice or
- * `__proto__`, and a value validateRoutePolicy refuses (route-declaration.ts:
+ * `__proto__`, a value validateRoutePolicy refuses (route-declaration.ts:
  * the one validator, the boot's too; a method the file does not export,
- * `route.methods`, the manifest entry's). What needs the whole manifest
+ * `route.methods`, the manifest entry's), and a method the file exports
+ * that the declaration does not name. What needs the whole manifest
  * (an alias's base) is the boot's (route-policy.ts declaredFacts).
  */
 export function handlerPolicy(
@@ -1073,11 +1074,20 @@ export function handlerPolicy(
     return fail(b, `${NAME}: ${b.getText(sf)} is not a literal: a declaration is data`);
   };
   const decl = value(call.arguments[0]!);
+  let policy: RoutePolicyDeclaration;
   try {
-    return validateRoutePolicy(decl, route.pattern, route.methods);
+    policy = validateRoutePolicy(decl, route.pattern, route.methods);
   } catch (e) {
     return fail(call, errorMessage(e));
   }
+  // Each method the file exports is declared (S9 part 3 round 2, the flip
+  // audit's L2): the boot (requireRouteDeclarations), the lint and the
+  // tests refuse a missing one; the generator says it first, at the line.
+  const missing = route.methods.filter((m) => !Object.hasOwn(policy, m));
+  if (missing.length > 0) {
+    fail(call, `${NAME} names no ${missing.join(', ')}, which the file exports: declare each`);
+  }
+  return policy;
 }
 
 /**
