@@ -309,9 +309,13 @@ export async function toolResultPayload(p: {
     const failures = guards.recordFailure(guardSig);
     // Error strings can embed EXTERNAL content (an HTTP body excerpt, a
     // recipe step's inner error) and bypass the success-path fence below
-    // — sanitize centrally so no handler has to remember to.
+    // — sanitize centrally so no handler has to remember to. A tool whose
+    // policy marks its text untrusted (a canvas's, a page's) has its error
+    // fenced too, after the sanitizer, which would strip the markers: its
+    // error may quote what someone else wrote (the Present re-audit R3).
+    const error = sanitizeToolError(outcome.error);
     return JSON.stringify({
-      error: sanitizeToolError(outcome.error),
+      error: policyUntrusted(builtinPolicy(slug)) ? fenceRetrieved(error) : error,
       ...(failures >= 2
         ? {
             loop_guard:

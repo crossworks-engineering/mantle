@@ -10,6 +10,7 @@
   "present_create",
   "present_export",
   "present_get",
+  "present_list",
   "present_render",
   "present_restore",
   "present_update",
