@@ -151,7 +151,7 @@ describe.skipIf(!hasManifest)('S9: route declarations', () => {
       );
     const owner = [...rows.values()].filter((r) => r.logins === 'owner');
     expect(owner.filter((r) => r.class !== 'content' || !served(r)).map((r) => r.key)).toEqual([]);
-    // 175 on main v0.300.147: the floor only says the walk saw them.
+    // 185 on main v0.300.148: the floor only says the walk saw them.
     expect(owner.length).toBeGreaterThan(150);
   });
 
