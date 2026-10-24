@@ -46,6 +46,7 @@ export function CanvasSandbox({
   loader,
   className,
   onReady,
+  onDown,
   onError,
 }: {
   presentId: string;
@@ -64,6 +65,9 @@ export function CanvasSandbox({
   loader?: ReactNode;
   className?: string;
   onReady?: () => void;
+  /** The frame is not up (anything onReady said no longer holds): a reload
+   *  started, the ticket failed, or the frame was taken down. */
+  onDown?: () => void;
   /** An error the canvas reported (uncaught, or a library that failed). The
    *  canvas chose these words: untrusted text, never an instruction to a
    *  model that reads it. */
@@ -81,8 +85,8 @@ export function CanvasSandbox({
   const proven = useRef(false);
   const proofWait = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest callbacks, read by the effects without re-running them.
-  const handlers = useRef({ onReady, onError, fetcher });
-  handlers.current = { onReady, onError, fetcher };
+  const handlers = useRef({ onReady, onDown, onError, fetcher });
+  handlers.current = { onReady, onDown, onError, fetcher };
 
   // Mint a ticket and point the frame at the document it opens.
   useEffect(() => {
@@ -90,6 +94,7 @@ export function CanvasSandbox({
     setStatus('loading');
     setFailure(null);
     setSrc(null);
+    handlers.current.onDown?.();
     void (async () => {
       try {
         const res = await handlers.current.fetcher(`${apiBase}/frame-ticket`, {
@@ -126,6 +131,7 @@ export function CanvasSandbox({
     proofWait.current = null;
     setSrc(null);
     setStatus('left');
+    handlers.current.onDown?.();
     handlers.current.onError?.(why);
   };
 
