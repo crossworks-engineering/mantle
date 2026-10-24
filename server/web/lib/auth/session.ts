@@ -1643,19 +1643,25 @@ function pipelineAnswer<K extends RouteCaller>(
 }
 
 /**
- * Whether the gate's Admin view of the row's area answers `loginId` holding
- * `area` (S9 part 2): the view resolveHttpLogin read for this login, which
- * the gate's step 5 held the row to. Never asked again: a guard read the
- * view does not answer (another login than the view's, a login the request
- * changed since, forgetRequestLogins; no view, a test's stand-in route) is
- * no, fail closed.
+ * Whether `loginId` holds `area`, for the guard (S9 part 2): the gate's
+ * Admin view of the row's area, the one resolveHttpLogin read and the
+ * gate's step 5 held the row to, where it answers this read; else the area
+ * asked again (loginHoldsArea), as main's guard asked it. The view does not
+ * answer a read for another login than the view's, after the request
+ * changed a login (forgetRequestLogins), or with no view (a test's stand-in
+ * route). A view mismatch is never a refusal of its own (CEO ruling, round
+ * 2): only a failed area read fails closed, thrown here as in the gate.
  */
-function gateHeldArea(loginId: string, area: import('@mantle/client-types').WorkspaceArea) {
+async function guardHoldsArea(
+  loginId: string,
+  area: import('@mantle/client-types').WorkspaceArea,
+): Promise<boolean> {
   const caller = currentCaller();
   const logins = boundLogins(caller);
-  if (!logins || logins.changed) return false;
-  const view = caller?.facts?.[HTTP_ADMIN] as AdminView | undefined;
-  return !!view && caller?.facts?.[HTTP_ADMIN_FOR] === loginId && view.areas.has(area);
+  const view =
+    logins && !logins.changed ? (caller?.facts?.[HTTP_ADMIN] as AdminView | undefined) : undefined;
+  if (view && caller?.facts?.[HTTP_ADMIN_FOR] === loginId) return view.areas.has(area);
+  return loginHoldsArea(loginId, area);
 }
 
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
@@ -1879,9 +1885,9 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   if (cls.kind === 'area') {
     // The gate's step 5 refused a login without the row's area (S9 part 2:
     // every area row's caller, route-policy.ts ADMIN_STEP_CALLERS). The
-    // guard reads the view the gate held it to and asks no area again; a
-    // read that view does not answer is refused (gateHeldArea).
-    if (!gateHeldArea(loginId, cls.area)) {
+    // guard reads the view the gate held it to; a read that view does not
+    // answer asks the area again, as before (guardHoldsArea).
+    if (!(await guardHoldsArea(loginId, cls.area))) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }
     noteRequestSystem('area');

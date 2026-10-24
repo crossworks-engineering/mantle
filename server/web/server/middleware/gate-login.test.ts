@@ -440,7 +440,7 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'member-login' });
   });
 
-  it('an Admin login whose area is taken away, its role kept: the guard refuses it (L-a)', async () => {
+  it('an Admin login whose area is taken away, its role kept: the guard asks again (L-a)', async () => {
     const res = await app.request('/api/users', {
       method: 'POST',
       headers: { cookie: cookieFor(ADMIN) },
@@ -448,10 +448,10 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     // The role is still admin, so only the area answers: from the gate's
     // view the second read would let the login in.
     expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'area' });
-    // The gate's question only (S9 part 2): the second read, after the
-    // request changed a login, is refused from the gate's view, fail
-    // closed, with the answer the area asked again gave (was 2 asks).
-    expect(counts.areas).toBe(1);
+    // The gate's question, and the second read's own: after the request
+    // changed a login the gate's view does not answer, so the guard asks
+    // the area again (S9 part 2 round 2, the CEO ruling: main's answer).
+    expect(counts.areas).toBe(2);
   });
 
   it('a forgotten find that fails after a fresh one was kept leaves the fresh one (L-c)', async () => {
