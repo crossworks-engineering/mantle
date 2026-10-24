@@ -625,21 +625,6 @@ export async function setPresentPoster(
   return written.length > 0;
 }
 
-/** The cached poster and whether it shows the latest save, or null. */
-export async function getPresentPoster(
-  ownerId: string,
-  id: string,
-): Promise<{ png: Buffer; current: boolean } | null> {
-  const [row] = await db
-    .select({ png: presents.posterPng, posterRev: presents.posterRev, rev: presents.rev })
-    .from(presents)
-    .innerJoin(nodes, eq(nodes.id, presents.nodeId))
-    .where(and(eq(presents.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'present')))
-    .limit(1);
-  if (!row?.png) return null;
-  return { png: row.png, current: row.posterRev === row.rev };
-}
-
 /** One kept version's source, or null (no such canvas or version). */
 export async function getPresentRevisionSource(
   ownerId: string,

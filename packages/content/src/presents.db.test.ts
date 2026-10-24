@@ -220,9 +220,16 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
           select n.data->>'index_work' as work, p.index_due_at as due
             from nodes n join presents p on p.node_id = n.id where n.id = ${p.id}`
       )[0]!;
+    // The poster is read raw: nothing in the app reads it back yet.
+    const poster = async () => {
+      const [row] = await admin<{ png: Buffer | null; current: boolean }[]>`
+        select poster_png as png, poster_rev = rev as current
+          from presents where node_id = ${p.id}`;
+      return row?.png ? { png: row.png, current: row.current } : null;
+    };
     const before = await work();
     expect(await presents.setPresentPoster(owner, p.id, png, 1)).toBe(true);
-    const got = await presents.getPresentPoster(owner, p.id);
+    const got = await poster();
     expect(got?.current).toBe(true);
     expect(Buffer.compare(got!.png, png)).toBe(0);
     expect((await presents.getPresent(owner, p.id))?.hasPoster).toBe(true);
@@ -235,10 +242,10 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
       source: canvas(`${tag} Poster`, 'two'),
       css: '',
     });
-    expect((await presents.getPresentPoster(owner, p.id))?.current).toBe(false);
+    expect((await poster())?.current).toBe(false);
     expect(await presents.setPresentPoster(owner, p.id, png, 1)).toBe(false);
     expect(await presents.setPresentPoster(owner, p.id, png, 2)).toBe(true);
-    expect((await presents.getPresentPoster(owner, p.id))?.current).toBe(true);
+    expect((await poster())?.current).toBe(true);
 
     // Another owner's canvas is not this owner's to stamp.
     expect(await presents.setPresentPoster(randomUUID(), p.id, png, 2)).toBe(false);

@@ -22,7 +22,6 @@ export {
   deletePresent,
   listPresentRevisions,
   setPresentPoster,
-  getPresentPoster,
   getPresentRevisionSource,
   type PresentRow,
   type PresentDetail,
