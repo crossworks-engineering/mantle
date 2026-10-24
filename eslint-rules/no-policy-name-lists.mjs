@@ -55,9 +55,10 @@ export const TOOL_LIST_PINS = {
  *  the lists are deleted, each route file's declaration the one source
  *  (api-v1.ts's key table, auth-constants.ts's audit paths, the three of
  *  any-login-routes.ts, member-routes.ts, route-policy.ts's public login
- *  rows, the four of route-scope.ts, route-limits.ts's ROUTE_GATES), and
- *  body-limit.ts leaves the count (its ceilings are sizes, not who may
- *  call: ROUTE_LISTS_NOT_POLICY). One is left: PUBLIC_PATHS, the gate's
+ *  rows and frame rows, the four of route-scope.ts, route-limits.ts's
+ *  ROUTE_GATES), and body-limit.ts's three ceiling lists leave the count by
+ *  name (sizes, not who may call: ROUTE_LIST_NAMES_NOT_POLICY; the rest of
+ *  the file is counted). One is left: PUBLIC_PATHS, the gate's
  *  answer for a request no row answers (gate.ts gateRouteView). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/auth-constants.ts': 1,
