@@ -886,7 +886,10 @@ round:
   fenced. The profile's `json profile` block is read from the whole file,
   past the guide's cut, and the guide's pages and the profile's cut are
   measured in JSON bytes, so a profile in another script stays inline.
-- An API key at the frame ticket is a plain 403.
+- An API key at the frame ticket: no change. The gate already refuses a
+  key on this row with a 401 before the handler runs (a key login exists
+  only on an /api/v1 row), as the A4 guard sweep pins for every key
+  credential.
 - A sidecar connect that answers after its timeout is dropped.
 - A canvas whose index flush fails (a lock held past 2 seconds) is passed
   over for 5 minutes, so the same oldest rows cannot starve the rest.

@@ -8,16 +8,9 @@
  * not read is a 404 and gets no ticket. An Admin user's ticket names the
  * admin login, any other login's its login; the frame re-checks either (a
  * login that is not an active member is refused there, as with apps).
- * A canvas frame is for a person's screen: an API key is refused here, a
- * plain 403 (the owner answer of a key call carries no Login to read).
  */
 import { NextResponse } from '@/server/http-compat';
-import {
-  buildCanvasFrameTicket,
-  canvasFrameNonce,
-  ownerCallerWithSource,
-  ownerLoginCaller,
-} from '@/lib/auth';
+import { buildCanvasFrameTicket, canvasFrameNonce, ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { getPresent } from '@/lib/presents';
 import type { RouteParams } from '@/lib/route-params';
@@ -37,13 +30,6 @@ export const policy = routePolicy({
 });
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { source } = ownerCallerWithSource();
-  if (source === 'api') {
-    return NextResponse.json(
-      { error: 'An API key cannot open a canvas. Open it in the app, signed in.' },
-      { status: 403 },
-    );
-  }
   const login = ownerLoginCaller();
   const { id } = await ctx.params;
   const admin = (await adminFacts(login)).admin;
