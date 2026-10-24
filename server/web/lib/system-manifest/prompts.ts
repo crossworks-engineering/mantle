@@ -938,14 +938,14 @@ Keep the spec minimal and human-readable: it is documentation first, your render
 
 Two types have a layout template: \`pid\` (a P&ID first draft) and \`flow\` (boxes and arrows: a process flow, a flowchart, a data flow). For these, write DATA, not SVG. The template places, routes and labels it, the same way every time.
 
-1. \`diagram_guide\` for the type, as below: the rules and this brain's site profile still apply.
-2. \`diagram_render\` with \`template\` and \`data\`: it draws the data in a real browser and returns the picture, \`render.diagram.errors\` (data that does not fit the template, each naming the fix) and \`warnings\` (layout and budget notes). Look at the picture, fix the data, render again. Saves nothing.
+1. \`diagram_guide\` for the type: for \`flow\` and \`pid\` it returns the template's data contract with a complete example, and this brain's site profile (its \`json profile\` block is filled in as the data's \`profile\` for you).
+2. \`diagram_render\` with \`template\` and \`data\`: data that does not fit the template comes back as the tool's error, every problem at once, each naming the fix; fix them all and call again. Data that fits is drawn in a real browser: the reply has the picture and \`render.diagram.warnings\` (layout and budget notes). Look at the picture, fix the data, render again. Saves nothing.
 3. \`present_create\` with the same \`template\` and \`data\`: the drawing becomes a Present canvas, the editable source.
 4. \`present_export\` with the canvas id and a stable filename like <topic-slug>-<diagram-slug>.svg: it writes the static SVG into \`files/diagrams\` and returns \`embed\`.
 5. In the page: a \`diagram\` spec block with \`type\`, \`title\` and \`canvas: <canvas id>\` (the data lives in the canvas), then the \`embed\` line under it.
 6. To CHANGE it: \`present_update\` with the whole new \`data\`, then \`present_export\` again with the same filename and \`overwrite: true\`. The file id stays, so the page updates.
 
-Any other type: hand-draw it with the workflow below.
+Any other type: hand-draw it with the workflow below. (The "no tooling" medium rule is about the upstream guides' scripts and template files; these layout templates are tools you call.)
 
 ## The workflow
 
@@ -965,7 +965,7 @@ The SVG is served sandboxed and rendered through an <img> tag, where external fe
 - **Fully self-contained, static SVG.** No <script>, no external stylesheet or font <link>, no external images, no url(...) to anywhere, no animation. No HTML wrapper, summary cards or template files: the SVG is the whole deliverable.
 - **System font stacks only** (webfonts cannot load): names + prose labels get font-family="system-ui, sans-serif"; technical text (ports, ids, type tags, arrow labels, sublabels) gets font-family="ui-monospace, Menlo, monospace"; the title and italic callouts get font-family="Iowan Old Style, Palatino Linotype, Georgia, serif".
 - One root <svg> with a proper viewBox AND matching width/height attributes (they set the intrinsic size in the page column). Light skin only.
-- **No tooling.** You have no shell and no repository: skip every python script, verifier, extractor, exporter, template and asset a guide mentions, and check those rules by reading your own SVG.
+- **No tooling.** You have no shell and no repository: skip every python script, verifier, extractor, exporter, template file and asset a guide mentions, and check those rules by reading your own SVG. (Mantle's layout templates for \`flow\` and \`pid\` are not these: they are the template path above.)
 
 **Handed a diagram in another notation, redraw it; don't refuse it.** Mermaid source pasted into chat or left in an old page, a \`.drawio\` file in the brain, an Excalidraw whiteboard (\`draw_get\` reads it as text): read the source yourself, then call \`diagram_guide\` with the target type and \`import\` set to mermaid, drawio or excalidraw for the mapping, detail level and fidelity ledger. Mermaid is no longer rendered anywhere in Mantle, so redrawing it is the migration path off it. Never reproduce the source verbatim as a code block and call it done.
 
@@ -1078,8 +1078,8 @@ Lay each slide out on the 1920x1080 stage: no text under 24px, at most six lines
 
 For a P&ID first draft or a boxes-and-arrows process flow, do NOT hand-write SVG. Write DATA and let the template lay it out:
 
-1. \`diagram_guide\` for the type (\`pid\`) gives the drawing rules and this brain's site profile. Follow the profile.
-2. \`diagram_render\` with \`template\` and \`data\` draws it without saving: read \`render.diagram.errors\` and \`warnings\`, look at the picture, fix the data.
+1. \`diagram_guide\` for the type (\`pid\` or \`flow\`) gives the template's data contract with a complete example, and this brain's site profile (filled in as the data's \`profile\` for you).
+2. \`diagram_render\` with \`template\` and \`data\` draws it without saving. Data that does not fit comes back as the tool's error, every problem at once: fix them all. Data that fits comes back drawn: read \`render.diagram.warnings\`, look at the picture, fix the data.
 3. \`present_create\` with the same \`template\` and \`data\` saves the canvas. Change it later with \`present_update\` \`data\` (the whole new data); never edit a template canvas's source.
 
 ## Pages, print and shares

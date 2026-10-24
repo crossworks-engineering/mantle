@@ -60,6 +60,7 @@ import type {
 import { str, strOptTrim, numOpt } from './coerce';
 import { notFound } from './errors';
 import { CS } from './client-sourced-rule';
+import { readProfileJson } from './builtins-diagrams';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import {
   CANVAS_RENDER_UNAVAILABLE,
@@ -359,6 +360,23 @@ function applyEdits(source: string, raw: unknown): string | { error: string } {
 }
 
 /** A template's data: validated, with its template and version stamped. */
+/** The top-level fields of each template's data, for an error that says
+ *  where the whole contract is. */
+const CONTRACT_FIELDS: Readonly<Record<string, string>> = {
+  flow: 'title, description, direction, nodes[], edges[], groups[], legend, showTitle',
+  pid: 'title, description, sheet, equipment[], offpage[], lines[], instruments[], signals[], circuits[], legend, showTitle, profile',
+};
+
+/** The data with this brain's site profile for the template filled in,
+ *  when the data names none (the profile's `json profile` block,
+ *  builtins-diagrams.ts readProfileJson). */
+async function withSiteProfile(ownerId: string, template: string, data: unknown): Promise<unknown> {
+  if (template !== 'pid' || !data || typeof data !== 'object' || Array.isArray(data)) return data;
+  if ((data as Record<string, unknown>).profile !== undefined) return data;
+  const profile = await readProfileJson(ownerId, template).catch(() => null);
+  return profile ? { ...(data as Record<string, unknown>), profile } : data;
+}
+
 function checkedData(
   template: string,
   data: unknown,
@@ -374,7 +392,7 @@ function checkedData(
   const checked = validateTemplate(template, { ...data, template });
   if (!checked.ok) {
     return {
-      error: `The ${template} data has ${checked.errors.length} problem(s); nothing was saved. Fix all of them and call again:\n- ${checked.errors.join('\n- ')}`,
+      error: `The ${template} data has ${checked.errors.length} problem(s); nothing was saved. Fix all of them and call again:\n- ${checked.errors.join('\n- ')}\nThe ${template} data takes: ${CONTRACT_FIELDS[template]}. The whole contract with an example: diagram_guide with type "${template}".`,
     };
   }
   return {
@@ -439,8 +457,8 @@ const present_get: BuiltinToolDef = {
       id: { type: 'string', format: 'uuid', description: 'The canvas id, from `present_list`.' },
       source: {
         type: 'boolean',
-        default: true,
-        description: 'Include the HTML source. False for the facts only.',
+        description:
+          'Include the HTML source: by default yes, except for a template canvas (its data is what you edit).',
       },
     },
     required: ['id'],
@@ -457,7 +475,9 @@ const present_get: BuiltinToolDef = {
         summary: p.summary,
         libs: p.meta.libs,
         ...(tpl ? { template: tpl.template, data: tpl.data } : {}),
-        ...(input.source !== false ? { source: p.source } : {}),
+        // A template canvas is its data: the source is the template's own
+        // runtime around it, asked for only by name.
+        ...(input.source === true || (input.source !== false && !tpl) ? { source: p.source } : {}),
       },
     };
   },
@@ -596,7 +616,7 @@ const diagram_render: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const template = str(input.template);
-    const checked = checkedData(template, input.data);
+    const checked = checkedData(template, await withSiteProfile(ctx.ownerId, template, input.data));
     if ('error' in checked) return { ok: false, error: checked.error };
     const source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
     const seen = await look(
@@ -672,7 +692,10 @@ const present_create: BuiltinToolDef = {
       return { ok: false, error: 'Give either source or template + data, not both.' };
     }
     if (template) {
-      const checked = checkedData(template, input.data);
+      const checked = checkedData(
+        template,
+        await withSiteProfile(ctx.ownerId, template, input.data),
+      );
       if ('error' in checked) return { ok: false, error: checked.error };
       source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
     }
@@ -772,7 +795,10 @@ const present_update: BuiltinToolDef = {
                 'This canvas is not a diagram template, so it has no data. Change it with edits or source.',
             };
           }
-          const checked = checkedData(tpl.template, input.data);
+          const checked = checkedData(
+            tpl.template,
+            await withSiteProfile(ctx.ownerId, tpl.template, input.data),
+          );
           if ('error' in checked) return { ok: false, error: checked.error };
           next = replaceCanvasData(cur.source, checked.data);
         } else if (input.edits !== undefined) {
