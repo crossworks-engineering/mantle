@@ -80,6 +80,18 @@ const ALLOWED_TEXT =
   `react, react-dom, lucide-react, and the libraries ${APP_LIBRARY_SPECIFIERS.join(', ')} ` +
   `(call canvas_library first)`;
 
+/** A library import stays bare for the import map. It takes no import
+ *  attribute: none means anything for a library module, and the @-scoped
+ *  ones resolve before the attribute gate (audit 2026-10-24). */
+function libraryImport(args: { path: string; with?: Record<string, string> }) {
+  if (args.with && Object.keys(args.with).length) {
+    return {
+      errors: [{ text: `Import '${args.path}' takes no import attribute in a mini app.` }],
+    };
+  }
+  return { path: args.path, external: true };
+}
+
 /** The refusal for a bare import, naming the fix when it is a known one. */
 function refusal(spec: string): string {
   const why = APP_LIBRARIES_LEFT_OUT[spec];
@@ -252,7 +264,7 @@ function virtualPlugin(source: AppSource): Plugin {
       // map at load time instead of being bundled into every app.
       build.onResolve({ filter: /^@/ }, (args) => {
         if (args.path in KIT) return { path: args.path, external: true };
-        if (LIBRARY_EXTERNALS.has(args.path)) return { path: args.path, external: true };
+        if (LIBRARY_EXTERNALS.has(args.path)) return libraryImport(args);
         return {
           errors: [
             {
@@ -308,7 +320,7 @@ function virtualPlugin(source: AppSource): Plugin {
         if (!fromUserSource(args)) return null;
         const refused = { errors: [{ text: refusal(args.path) }] };
         // A vendored library: bare in the output, the import map serves it.
-        if (LIBRARY_EXTERNALS.has(args.path)) return { path: args.path, external: true };
+        if (LIBRARY_EXTERNALS.has(args.path)) return libraryImport(args);
         if (!BARE_ALLOW.test(args.path) || escapesPackage(args.path)) return refused;
         // Backstop: resolve it here, and keep it only when it lands inside
         // the package it names (a symlink or an odd `exports` map aside).

@@ -48,6 +48,19 @@ describe('mini-app library imports', () => {
     });
   }
 
+  it('refuses an import attribute on a library import', async () => {
+    for (const spec of ['echarts', '@mantle/diagram-templates/browser']) {
+      for (const attr of ["{ type: 'text' }", "{ type: 'json' }"]) {
+        const res = await buildApp(
+          app(`import * as x from '${spec}' with ${attr};\nconsole.log(x);`),
+          { runtimeExports: RT },
+        );
+        expect(res.ok, `${spec} ${attr}`).toBe(false);
+        expect(res.errors[0]!.text, `${spec} ${attr}`).toMatch(/import attribute|not allowed/);
+      }
+    }
+  });
+
   it('refuses a subpath of an allowed library', async () => {
     const res = await buildApp(app("import { use } from 'echarts/core';\nuse([]);"), {
       runtimeExports: RT,
