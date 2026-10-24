@@ -346,10 +346,16 @@ async function renderInSlot(
     });
     try {
       let wait: ReturnType<typeof setTimeout> | undefined;
+      const connecting = puppeteer.connect({ browserWSEndpoint: lockedEndpoint(endpoint) });
       browser = await Promise.race([
-        puppeteer.connect({ browserWSEndpoint: lockedEndpoint(endpoint) }),
+        connecting,
         new Promise<never>((_, reject) => {
-          wait = setTimeout(() => reject(new Error('connect timed out')), CONNECT_TIMEOUT_MS);
+          wait = setTimeout(() => {
+            // A connect that answers after the timeout is nobody's: drop it
+            // then, or its browser session stays open in the sidecar.
+            void connecting.then((late) => late.disconnect()).catch(() => {});
+            reject(new Error('connect timed out'));
+          }, CONNECT_TIMEOUT_MS);
         }),
       ]).finally(() => clearTimeout(wait));
     } catch (err) {
