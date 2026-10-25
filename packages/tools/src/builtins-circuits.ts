@@ -13,6 +13,7 @@ import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
 import { dwgTables, readSheet, type CandidateTable } from './circuit-trace/read';
+import { dwgReindexCommand as reindexCommand } from '@mantle/files/dwg';
 import {
   appliedChecks,
   CHECK_KINDS,
@@ -126,6 +127,10 @@ export async function readCircuitSheets(
       limits.push(
         `${s.title}: its drawing file was replaced after its table was built, so this sheet's geometry is the older revision; an owner can rebuild it with ${reindexCommand(s.sourceFileId)}, then trace again.`,
       );
+    else if (s.source === 'unreadable')
+      limits.push(
+        `${s.title}: whether its table still matches its drawing file could not be checked (you cannot read the source file, or it is gone), so the sheet may hold an older revision of the drawing.`,
+      );
   }
   for (const title of preBones) {
     limits.push(
@@ -135,17 +140,11 @@ export async function readCircuitSheets(
   return { sheets, tables, limits };
 }
 
-/** The maintenance command that rebuilds one drawing's table from its
- *  file's bytes now (no model pass). */
-export function reindexCommand(fileId: string | null): string {
-  return `\`pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply\``;
-}
-
 /** The applied checks as circuit_trace reports them, with a count line. */
 function checksSummary(applied: AppliedCheck[]) {
   const n = (v: string) => applied.filter((c) => c.answer === v).length;
   return {
-    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE, still not certain), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess).`,
+    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE, still not certain), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess). Each is the latest sealed answer in the drawing table's Checks tab: a table editor who deletes a newer row brings the older answer back.`,
     items: applied.map((c) => ({
       sheet: c.sheet,
       kind: c.kind,

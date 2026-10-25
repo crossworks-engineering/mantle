@@ -17,9 +17,9 @@
  * flow with a fake sidecar, model and store: no test ever calls a model.
  * Spends only when called: nothing here runs on its own.
  */
-import { createHash } from 'node:crypto';
+import { dwgReindexCommand as reindexCommand, dwgSourceSha } from '@mantle/files/dwg';
 import type { DwgCrops, MediaResult } from '@mantle/files';
-import type { ImagesResult, VisionImage } from '@mantle/voice';
+import { isProviderTimeout, type ImagesResult, type VisionImage } from '@mantle/voice';
 import {
   batchesFor,
   cropSpecFor,
@@ -54,6 +54,11 @@ export type CheckAnswer = {
   crops: { png: Buffer; part: number; of: number; window: number[]; textPx: number | null }[];
 };
 
+/** What filing one sheet's answers did: `stored` rows published, or
+ *  `pending` rows left in a draft someone else wrote to meanwhile (`note`
+ *  says so: they publish with it), or why nothing was written. */
+export type StoreResult = { stored: number; pending?: number; note?: string } | { error: string };
+
 export type VerifyDeps = {
   readSheets: (
     ownerId: string,
@@ -72,10 +77,14 @@ export type VerifyDeps = {
   >;
   ask: (images: VisionImage[], prompt: string) => Promise<ImagesResult>;
   /** Why this caller could not file answers about the sheet (null: it
-   *  can). Asked before any vision request. */
-  storable: (ownerId: string, sheet: SheetInput) => Promise<string | null>;
-  /** File one sheet's answers (crops and Checks rows); the count stored,
-   *  or why not. */
+   *  can). Asked before any vision request; with `dryRun` it makes
+   *  nothing (no crop folder), so a dry run writes nothing. */
+  storable: (
+    ownerId: string,
+    sheet: SheetInput,
+    opts: { dryRun: boolean },
+  ) => Promise<string | null>;
+  /** File one sheet's answers (crops and Checks rows). */
   store: (
     ownerId: string,
     sheet: SheetInput,
@@ -83,7 +92,7 @@ export type VerifyDeps = {
     answers: CheckAnswer[],
     overview: Buffer | null,
     checkedAt: string,
-  ) => Promise<{ stored: number } | { error: string }>;
+  ) => Promise<StoreResult>;
   now: () => Date;
 };
 
@@ -99,24 +108,16 @@ export type VerifyInput = {
 
 const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? '' : /(s|sh|ch|x)$/.test(w) ? 'es' : 's'}`;
-const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
-
-/** The command that rebuilds one drawing's table from its file now. */
-const reindexHint = (fileId: string | null) =>
-  `pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply`;
-
-/** Why a sheet's table no longer matches its drawing, or null. */
+/** Why a sheet's table may not match its drawing, or null. */
 function sourceRefusal(s: SheetInput): string | null {
   if (s.source === 'stale')
-    return `its drawing file was replaced after its table was built, so the table's geometry is an older revision; an owner rebuilds it with \`${reindexHint(s.sourceFileId)}\` (no model pass), then call again`;
+    return `its drawing file was replaced after its table was built, so the table's geometry is an older revision; an owner rebuilds it with ${reindexCommand(s.sourceFileId)} (no model pass), then call again`;
+  if (s.source === 'unreadable')
+    return "you cannot read its drawing file, so neither the drawing's revision nor the crops can be checked; ask someone who can read the drawing to run the check";
   if (s.source !== 'current')
-    return `its table was imported before tables recorded which revision of the drawing they hold, so an answer could be filed under the wrong revision; an owner rebuilds it with \`${reindexHint(s.sourceFileId)}\` (no model pass), then call again`;
+    return `its table was imported before tables recorded which revision of the drawing they hold, so an answer could be filed under the wrong revision; an owner rebuilds it with ${reindexCommand(s.sourceFileId)} (no model pass), then call again`;
   return null;
 }
-
-/** A thrown provider timeout (providerFetch's TimeoutError). */
-const isTimeout = (err: unknown) =>
-  err instanceof Error && (err.name === 'TimeoutError' || /timed out/i.test(err.message));
 
 export async function verifyCircuit(
   ownerId: string,
@@ -180,7 +181,7 @@ export async function verifyCircuit(
     const why =
       sourceRefusal(sin) ??
       (await deps
-        .storable(ownerId, sin)
+        .storable(ownerId, sin, { dryRun: input.dryRun === true })
         .catch(
           (err: unknown) =>
             `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
@@ -228,8 +229,9 @@ export async function verifyCircuit(
   let requests = 0;
   let timedOut = 0;
   let cutOff = 0;
-  // What the replies said they used, for the result only (the spend itself
-  // is recorded by the vision call, @mantle/voice vision-images.ts).
+  // What the replies said they used, for the result only (the spend itself,
+  // a timed-out attempt included, is recorded by the vision call,
+  // @mantle/voice vision-images.ts).
   const usage = { tokensIn: 0, tokensOut: 0 };
   const sheetOrder = [...new Set(questions.map((q) => q.tableId))];
 
@@ -259,7 +261,7 @@ export async function verifyCircuit(
     }
     // The bytes cropped must be the revision the table holds (a file
     // replaced since the read is caught here, before any spend).
-    if (sin.sourceSha && sha256(bytes) !== sin.sourceSha) {
+    if (sin.sourceSha && dwgSourceSha(bytes) !== sin.sourceSha) {
       skip(
         sourceRefusal({ ...sin, source: 'stale' }) ??
           'the drawing changed since its table was built',
@@ -288,17 +290,28 @@ export async function verifyCircuit(
       if (l) l.push(c);
       else cropsOf.set(c.id, [c]);
     }
-    for (const id of cropped.value.capped) {
-      const q = qs.find((x) => x.id === id);
-      if (q && !cropsOf.has(id)) skip("the sidecar's crop budget for one sheet ran out", [q]);
-    }
+    // A question the sidecar's per-sheet crop budget cut is not asked, even
+    // when some of its crops came: a path is never asked about in part.
+    const capped = new Set(cropped.value.capped);
+    for (const q of qs)
+      if (capped.has(q.id))
+        skip(
+          cropsOf.has(q.id)
+            ? "the sidecar's crop budget for one sheet ran out partway along it, so it was not asked on part of its path"
+            : "the sidecar's crop budget for one sheet ran out",
+          [q],
+        );
     const overview = cropped.value.overview?.png ?? null;
     overviews.set(tableId, overview);
     // The call's crop cap: questions past it are not asked.
     const room: CheckQuestion[] = [];
     for (const q of qs) {
       const n = cropsOf.get(q.id)?.length ?? 0;
-      if (!n) continue;
+      if (capped.has(q.id)) continue;
+      if (!n) {
+        skip('the sidecar returned no crop for it', [q]);
+        continue;
+      }
       if (cropsUsed + n > VERIFY_MAX.crops) {
         skip(`the crop cap (${VERIFY_MAX.crops} per call) was reached`, [q]);
         continue;
@@ -340,10 +353,10 @@ export async function verifyCircuit(
         reply = await deps.ask(images, prompt);
       } catch (err) {
         const msg = err instanceof Error ? err.message.slice(0, 200) : 'error';
-        if (isTimeout(err)) {
+        if (isProviderTimeout(err)) {
           timedOut += 1;
           skip(
-            `the vision request timed out (${msg}); the provider may still bill it, and no usage came back to record`,
+            `the vision request timed out (${msg}); the provider may still bill it, and no usage came back (the spend ledger shows the attempt with no tokens, marked timed out)`,
             batch.questions.map((b) => b.q),
           );
         } else {
@@ -384,7 +397,7 @@ export async function verifyCircuit(
   }
   if (timedOut) {
     limits.push(
-      `${plural(timedOut, 'vision request')} timed out: the provider may still bill ${timedOut === 1 ? 'it' : 'them'}, and the brain recorded no spend for ${timedOut === 1 ? 'it' : 'them'} (no usage came back); ${timedOut === 1 ? 'its' : 'their'} questions are in not_asked.`,
+      `${plural(timedOut, 'vision request')} timed out: the provider may still bill ${timedOut === 1 ? 'it' : 'them'}, but no usage came back, so the spend ledger records ${timedOut === 1 ? 'the attempt' : 'each attempt'} with no tokens and no cost, marked timed out; ${timedOut === 1 ? 'its' : 'their'} questions are in not_asked.`,
     );
   }
   if (cutOff) {
@@ -396,6 +409,7 @@ export async function verifyCircuit(
   // File the answers, sheet by sheet: the evidence stays with the drawing.
   const checkedAt = deps.now().toISOString();
   let stored = 0;
+  let pending = 0;
   for (const tableId of sheetOrder) {
     const mine = answers.filter((a) => a.q.tableId === tableId);
     if (!mine.length) continue;
@@ -409,7 +423,11 @@ export async function verifyCircuit(
       limits.push(
         `${sin.title}: the answers could not be stored in its Checks tab (${r.error}); they are only in this result.`,
       );
-    else stored += r.stored;
+    else {
+      stored += r.stored;
+      pending += r.pending ?? 0;
+      if (r.note) limits.push(`${sin.title}: ${r.note}.`);
+    }
   }
 
   const n = (v: Verdict) => answers.filter((a) => a.verdict === v).length;
@@ -419,7 +437,16 @@ export async function verifyCircuit(
       summary:
         `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted, ${n('unsure')} unsure` +
         (notAsked.length ? `; ${notAsked.length} not asked (see not_asked)` : '') +
-        `. ${stored ? `Stored in the Checks tab of each sheet's table, with the crops.` : 'Nothing was stored.'} A confirmed guess is CHECKED BY IMAGE, never certain.`,
+        `. ${
+          [
+            stored ? "Stored in the Checks tab of each sheet's table, with the crops." : '',
+            pending
+              ? `${plural(pending, 'answer')} wait in a table draft someone else is editing (see limits).`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ') || 'Nothing was stored.'
+        } A confirmed guess is CHECKED BY IMAGE, never certain.`,
       worker: { slug: worker.slug, model: worker.model },
       answers: answers.map((a) => ({
         id: a.q.id,

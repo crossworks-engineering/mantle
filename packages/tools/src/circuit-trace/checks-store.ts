@@ -24,7 +24,10 @@
  * write itself asks again (applyTableOps). A draft is never published by
  * accident: the write and the commit are pinned to the draft revision this
  * call made (`ifRev`), and only that draft is discarded when the commit
- * fails, so a user who opens the table meanwhile keeps their work.
+ * fails, so a user who opens the table meanwhile keeps their work. A user
+ * who writes into the draft between the write and the commit keeps it
+ * with these rows in it: they publish with the user's commit, and their
+ * crops are kept as the evidence (the result says the rows are pending).
  */
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
@@ -32,11 +35,13 @@ import { db, nodes, tables, withHeads } from '@mantle/db';
 import { applyTableOps, commitTable, discardTableDraft, tableWriteRefusal } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import {
+  autoFiledFolderPath,
   callerMayEditFolder,
   deleteFileById,
   ensureAutoFiledFolder,
   ensureFilesRootBranch,
   FILES_ROOT_LABEL,
+  folderByPath,
   upsertFile,
 } from '@mantle/files';
 import {
@@ -48,7 +53,7 @@ import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
 import { CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
 import { sealOf } from './check-seal';
-import type { CheckAnswer } from './verify';
+import type { CheckAnswer, StoreResult } from './verify';
 import type { SheetInput } from './walk';
 
 /** Node data key: the table version a check commit made on an unedited
@@ -91,17 +96,29 @@ export async function tableState(tableId: string) {
 
 /** The crop folder of one drawing, made if missing. */
 function cropFolder(ownerId: string, sheet: SheetInput) {
-  return ensureAutoFiledFolder(ownerId, 'drawing-checks', {
-    document: { slug: sheet.sourceFileId ?? sheet.tableId, title: sheet.title },
-  });
+  return ensureAutoFiledFolder(ownerId, 'drawing-checks', { document: cropDocument(sheet) });
 }
+
+/** The crop folder of one drawing, as storeChecks would make it. */
+const cropDocument = (sheet: SheetInput) => ({
+  slug: sheet.sourceFileId ?? sheet.tableId,
+  title: sheet.title,
+});
 
 /**
  * Why this caller could not file answers about `sheet`, or null when it
  * can: asked before any vision request, so a call that could not keep its
  * answers spends nothing. Each reason says what to do instead.
+ *
+ * `dryRun` asks the same without making anything: the crop folders are not
+ * created (a folder not there yet is judged by the Files root right that
+ * creating it needs), so a dry run writes nothing at all.
  */
-export async function storeRefusal(ownerId: string, sheet: SheetInput): Promise<string | null> {
+export async function storeRefusal(
+  ownerId: string,
+  sheet: SheetInput,
+  opts: { dryRun?: boolean } = {},
+): Promise<string | null> {
   const refused = await tableWriteRefusal(ownerId, sheet.tableId);
   if (refused) {
     return `the answers could not be stored: you may not edit its table (${refused.slice(0, 160)}); ask someone who may edit the drawing's table to run the check, or use dry_run to see the questions`;
@@ -113,12 +130,16 @@ export async function storeRefusal(ownerId: string, sheet: SheetInput): Promise<
   }
   // The crops go under Auto-filed, which only a caller that may change the
   // Files root (the owner, an Admin) creates in.
-  await ensureFilesRootBranch(ownerId);
+  if (!opts.dryRun) await ensureFilesRootBranch(ownerId);
   if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) === false) {
     return 'the crops could not be stored: only the owner or an Admin may create files in Auto-filed > Drawing checks; ask one of them to run the check, or use dry_run to see the questions';
   }
-  const folder = await cropFolder(ownerId, sheet);
-  if ((await callerMayEditFolder(ownerId, folder)) === false) {
+  let folder: string | null;
+  if (opts.dryRun) {
+    const path = autoFiledFolderPath('drawing-checks', { document: cropDocument(sheet) });
+    folder = (await folderByPath({ ownerId, path })) ? path : null;
+  } else folder = await cropFolder(ownerId, sheet);
+  if (folder && (await callerMayEditFolder(ownerId, folder)) === false) {
     return 'the crops could not be stored: you may not create files in its Auto-filed > Drawing checks folder; ask the owner or an Admin to run the check, or use dry_run';
   }
   return null;
@@ -131,7 +152,7 @@ export async function storeChecks(
   answers: CheckAnswer[],
   overview: Buffer | null,
   checkedAt: string,
-): Promise<{ stored: number } | { error: string }> {
+): Promise<StoreResult> {
   const before = await tableState(sheet.tableId);
   if (!before) return { error: 'the table is gone' };
   if (before.hasDraft) {
@@ -239,6 +260,7 @@ export async function storeChecks(
   const revision = sheet.revision ?? '';
   for (const a of answers) {
     const ids = cropIds.get(a.q.id) ?? [];
+    const crops = [...(overviewId ? [`overview ${overviewId}`] : []), ...ids].join(' ');
     const cells: Record<CheckColumn, string | number | null> = {
       Key: a.q.key,
       Kind: a.q.kind,
@@ -254,15 +276,18 @@ export async function storeChecks(
       'Checked at': checkedAt,
       Revision: revision,
       File: sheet.sourceFileId ?? '',
-      Crops: [...(overviewId ? [`overview ${overviewId}`] : []), ...ids].join(' '),
+      Crops: crops,
       Seal: sealOf({
         tableId: sheet.tableId,
         key: a.q.key,
+        circuit,
         question: a.q.question,
         answer: a.verdict,
+        reason: a.reason,
         model: a.model,
         revision,
         checkedAt,
+        crops,
       }),
     };
     ops.push({
@@ -290,6 +315,11 @@ export async function storeChecks(
   // is discarded when the commit fails.
   let committed: Awaited<ReturnType<typeof commitTable>> = null;
   let why = 'the commit found no table';
+  /** Whether this call's own draft was thrown away (its rows gone): only
+   *  then are its crops removed. A draft someone else wrote to meanwhile
+   *  is kept with these rows in it (they publish when that draft is
+   *  committed, or already did), so the crops stay as their evidence. */
+  let discarded = false;
   try {
     committed = await commitTable(ownerId, sheet.tableId, undefined, {
       noModelPass: true,
@@ -300,15 +330,20 @@ export async function storeChecks(
     why = `the commit failed (${errorMessage(err).slice(0, 160)})`;
   } finally {
     if (!committed) {
-      await discardTableDraft(ownerId, sheet.tableId, { ifRev: applied.draftRev }).catch(
-        () => false,
-      );
+      discarded = await discardTableDraft(ownerId, sheet.tableId, {
+        ifRev: applied.draftRev,
+      }).catch(() => false);
     }
   }
+  if (!committed && discarded) {
+    return fail(`${why}; nothing was written to the table, call again`);
+  }
   if (!committed) {
-    return fail(
-      `${why}; the rows were not published (a draft someone else wrote to was kept), call again`,
-    );
+    return {
+      stored: 0,
+      pending: answers.length,
+      note: `someone wrote to the table's draft while the checks were being written, so it was not committed here: the ${answers.length === 1 ? 'row waits' : `${answers.length} rows wait`} in that draft and ${answers.length === 1 ? 'publishes' : 'publish'} when it is committed (or already did); the crops are kept`,
+    };
   }
 
   // 3. Not an edit for dwg-reindex, when the table was unedited before.
