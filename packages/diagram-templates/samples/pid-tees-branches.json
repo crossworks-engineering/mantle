@@ -1,0 +1,162 @@
+{
+  "template": "pid",
+  "title": "Suction header with branches",
+  "description": "A made-up sheet: a drum feeds two pumps from one suction header; a drain stub, a capped dead leg, a pressure gauge and a slop line leave the lines on tees.",
+  "equipment": [
+    {
+      "id": "V-10",
+      "type": "vertical-vessel",
+      "service": "SURGE DRUM"
+    },
+    {
+      "id": "P-10A",
+      "type": "centrifugal-pump",
+      "service": "PUMP"
+    },
+    {
+      "id": "P-10B",
+      "type": "centrifugal-pump",
+      "service": "STANDBY"
+    }
+  ],
+  "offpage": [
+    {
+      "id": "IN",
+      "direction": "in",
+      "sheet": "1",
+      "text": "FROM UNIT 1"
+    },
+    {
+      "id": "OUT",
+      "direction": "out",
+      "sheet": "3",
+      "text": "TO UNIT 3"
+    },
+    {
+      "id": "SLOP",
+      "direction": "out",
+      "sheet": "8",
+      "text": "TO SLOP"
+    }
+  ],
+  "lines": [
+    {
+      "number": "6\"-P-0101-CS150",
+      "from": "IN",
+      "to": "V-10",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "4\"-P-0102-CS150",
+      "from": "V-10",
+      "to": "P-10A",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "4\"-P-0103-CS150",
+      "from": "T-1",
+      "to": "P-10B",
+      "inline": [
+        {
+          "type": "gate"
+        }
+      ]
+    },
+    {
+      "number": "3\"-P-0104-CS150",
+      "from": "P-10A",
+      "to": "OUT",
+      "inline": [
+        {
+          "type": "check"
+        }
+      ]
+    },
+    {
+      "number": "3\"-P-0105-CS150",
+      "from": "P-10B",
+      "to": "T-2",
+      "inline": [
+        {
+          "type": "check"
+        }
+      ]
+    },
+    {
+      "id": "DRAIN",
+      "from": "T-3",
+      "end": "open",
+      "inline": [
+        {
+          "type": "gate",
+          "closed": true
+        }
+      ]
+    },
+    {
+      "id": "DL-1",
+      "from": "T-4",
+      "deadleg": true
+    },
+    {
+      "id": "PG",
+      "from": "T-5",
+      "to": "PI-12"
+    },
+    {
+      "number": "2\"-P-0106-CS150",
+      "from": "T-6",
+      "to": "SLOP",
+      "weight": "secondary"
+    }
+  ],
+  "tees": [
+    {
+      "id": "T-1",
+      "on": "4\"-P-0102-CS150"
+    },
+    {
+      "id": "T-2",
+      "on": "3\"-P-0104-CS150",
+      "near": "to"
+    },
+    {
+      "id": "T-3",
+      "on": "4\"-P-0102-CS150",
+      "near": "from"
+    },
+    {
+      "id": "T-4",
+      "on": "6\"-P-0101-CS150"
+    },
+    {
+      "id": "T-5",
+      "on": "3\"-P-0104-CS150"
+    },
+    {
+      "id": "T-6",
+      "on": "3\"-P-0104-CS150"
+    }
+  ],
+  "instruments": [
+    {
+      "tag": "LT-11",
+      "on": "V-10"
+    },
+    {
+      "tag": "PI-12"
+    }
+  ],
+  "sheet": {
+    "number": "PID-0301",
+    "revision": "A"
+  }
+}

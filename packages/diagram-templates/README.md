@@ -37,7 +37,8 @@ pnpm -C packages/diagram-templates test
   error, a console error, any network request, or a non-static export.
   `--chrome <path>` picks a local Chrome; `--ws ws://host:3000` uses a
   browserless service (the `mantle_browser` sidecar on a brain).
-- `test` runs the unit tests (validation, static export, canvas round trip).
+- `test` runs the unit tests (validation, static export, canvas round trip,
+  tees and branches, and the pin that keeps older drawings byte for byte).
 
 Open `templates/*.canvas.html` straight from disk in a browser: it draws with
 no server and no network.
@@ -165,19 +166,20 @@ ids, group loops.
 
 A P&ID first draft, following `docs/diagram-guides/mantle/type-pid.md`.
 
-| Field                                         | Notes                                                                                                                                                                                                                                                           |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`, `description`, `showTitle`, `legend` | as for `flow`                                                                                                                                                                                                                                                   |
-| `sheet`                                       | `{ number, revision }`: top right, and in the `<desc>`                                                                                                                                                                                                          |
-| `profile`                                     | the site profile (below), passed in as data                                                                                                                                                                                                                     |
-| `equipment[]`                                 | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                      |
-| `equipment[].type`                            | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                                |
-| `offpage[]`                                   | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`). A connector whose pipes are all utility lines sits beside its equipment; others sit on the sheet edge. A second pipe to the same connector joins the first with a tee and a join dot             |
-| `lines[]`                                     | `number` (the user's line number, exactly), `from`, `to` (equipment or connector), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`, optional `id` (defaults to the number)              |
-| `lines[].inline[]`                            | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed` (normally closed), `focal`          |
-| `instruments[]`                               | `tag` (ISA-5.1 letters then loop number, `LIC-101`), `on` (an equipment id, or a line id or number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
-| `signals[]`                                   | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                         |
-| `circuits[]`                                  | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                        |
+| Field                                         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`, `description`, `showTitle`, `legend` | as for `flow`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `sheet`                                       | `{ number, revision }`: top right, and in the `<desc>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `profile`                                     | the site profile (below), passed in as data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `equipment[]`                                 | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                                                                                                                                                                                                                                                                                              |
+| `equipment[].type`                            | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                                                                                                                                                                                                                                                                                                        |
+| `offpage[]`                                   | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`). A connector whose pipes are all utility lines sits beside its equipment; others sit on the sheet edge. A second pipe to the same connector joins the first with a tee and a join dot                                                                                                                                                                                                                                                                                     |
+| `lines[]`                                     | `number` (the user's line number, exactly), `from` (equipment, connector or tee), `to` (equipment, connector, tee, or an instrument tag: the bubble sits at the branch end), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`, optional `id` (defaults to the number); `end` (`open`, `cap`: the line stops, with no `to`), `deadleg` (a cap unless it ends elsewhere, and a DL tag), `toward` (`up`, `down`, `left`, `right`: the way a line that stops leaves) |
+| `tees[]`                                      | `id` (a tag), `on` (the parent line's id or number), `near` (`from`, `to`). A line that starts or ends at a tee is a branch: a header take-off, a drain, a vent, a dead leg, a gauge tapping, a bypass (two tees on one line)                                                                                                                                                                                                                                                                                                           |
+| `lines[].inline[]`                            | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed` (normally closed), `focal`                                                                                                                                                                                                                                                                                  |
+| `instruments[]`                               | `tag` (ISA-5.1 letters then loop number, `LIC-101`), `on` (an equipment id, or a line id or number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal`                                                                                                                                                                                                                                                                         |
+| `signals[]`                                   | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `circuits[]`                                  | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 What the template does with it:
 
@@ -190,7 +192,18 @@ What the template does with it:
   the line number goes on a free stretch above a horizontal run;
 - a bubble with `on` sits beside what it measures with a straight connection;
   a controller sits near the middle of its loop;
-- tag letters are checked against ISA-5.1 (`CIF` is an error, `FIC` reads).
+- tag letters are checked against ISA-5.1 (`CIF` is an error, `FIC` reads);
+- tees and branches: once a parent pipe and its valves are down, each tee
+  takes a grid point ON that pipe (clear of its valves, corners, crossings
+  and other tees; by default where its branch leaves most directly, or
+  toward `near`), so the join dot cannot drift off the line, and a self-check
+  warns if it ever did. Branches are routed after their parents, in depth
+  order, on the same grid with equipment, labels and valves blocked, leaving
+  square to the parent. A stub (or a branch to a bubble) is a straight run
+  on the first side with room; a stub's tee is picked where the stub fits.
+  A connector reached only through a tee is placed beside it. Data with no
+  tees takes none of this path and draws byte for byte as before
+  (`src/unchanged-output.test.ts` pins it).
 
 Budget (warnings, from the guide): 8 equipment, 16 bubbles, 20 valves, 5
 loops, 12 lines, 4 line types, 2 accents. Over budget: split the sheet.
@@ -208,7 +221,7 @@ is a made-up example.
 | `colourByService`        | colour lines by service (monochrome otherwise)                                                                                                                                                         |
 | `serviceColours`         | service code to colour (`ST: "series-4"`)                                                                                                                                                              |
 | `instrumentFirstLetters` | extra first letters the site uses (`X`)                                                                                                                                                                |
-| `symbols`                | `normallyClosed` (`text`, `filled`), `checkValve` (`filled`, `arrow`), `corners` (`square`, `round`), `crossing` (`hop`, `gap`)                                                                        |
+| `symbols`                | `normallyClosed` (`text`, `filled`), `checkValve` (`filled`, `arrow`), `corners` (`square`, `round`), `crossing` (`hop`, `gap`), `deadleg` (`cap`, `dashed`)                                           |
 | `customSymbols`          | replace a built-in equipment or valve drawing: `{ w, h, paths: [{ d, fill }] }`; path data only, checked                                                                                               |
 
 ## How an agent uses it
@@ -244,6 +257,8 @@ The Draftsman and the Presenter (`server/web/lib/system-manifest`, skills
   renders with its warnings (a busy middle, 27 crossings). Next steps: signal
   routing that prefers the side of the loop, and a second layout pass that
   moves a controller when its signals cross.
-- The pid data model: tees and branches, bypasses, nozzle ids and
-  elevations, instrument loops across sheets, more equipment types.
+- The pid data model: nozzle ids and elevations, instrument loops across
+  sheets, more equipment types. Tees sit on a pipe's straight runs only, not
+  on a corner (a cross or an elbow tee), and a bypass's tees are placed by
+  `near`, not by the valve they bypass.
 - More templates on the same runtime: sequence, swimlane, state, tree.

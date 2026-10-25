@@ -1,0 +1,22 @@
+{
+  "file": "samples/pid-tees-branches.json",
+  "template": "pid",
+  "ok": true,
+  "errors": [],
+  "warnings": [],
+  "consoleErrors": [],
+  "network": [],
+  "staticProblems": [],
+  "stats": {
+    "equipment": 3,
+    "lines": 9,
+    "instruments": 2,
+    "signals": 0,
+    "valves": 6,
+    "crossings": 0
+  },
+  "size": {
+    "width": 1104,
+    "height": 576
+  }
+}
