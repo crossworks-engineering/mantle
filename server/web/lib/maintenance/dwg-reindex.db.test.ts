@@ -245,7 +245,14 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     // The image check's commit: a Checks tab with one row, then the mark
     // checks-store.ts writes on an unedited table.
     const tab = randomUUID();
-    const [k, a, tg, vd, len, on] = Array.from({ length: 6 }, () => randomUUID());
+    const [k, a, tg, vd, len, on] = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+    ];
     // Beside the two text columns, the types a value copy used to garble:
     // a multiselect (one item holds a comma), a select with its options, a
     // formatted number, a date (MED-1).
