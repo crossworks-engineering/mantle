@@ -10,6 +10,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const listed = vi.hoisted(() => ({ rows: [] as { id: string; title: string; data: unknown }[] }));
 const surfaces = vi.hoisted(() => ({ readable: new Set<string>(), opened: [] as string[] }));
 const sqlCalls = vi.hoisted(() => ({ files: [] as string[] }));
+/** When set, the layout of the drawing's first page is made to fail, as a
+ *  template bug would: pid_check must say so with the page's path. */
+const layout = vi.hoisted(() => ({ fail: false }));
+
+vi.mock('@mantle/diagram-templates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/diagram-templates')>();
+  return {
+    ...real,
+    render: (...args: Parameters<typeof real.render>) => {
+      const out = real.render(...args);
+      if (!layout.fail || !out.ok) return out;
+      return { ...out, failed: [{ page: 'p1', path: 'pages[0].data', error: 'made to fail' }] };
+    },
+  };
+});
 
 vi.mock('@mantle/db', () => {
   const chain = {
@@ -121,6 +136,31 @@ describe('circuit_trace reads only what the caller may read', () => {
     surfaces.readable = new Set(['open', 'unlisted']);
     await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
     expect(surfaces.opened).toEqual(['open']);
+  });
+
+  it('pid_check lays the drawing out: a page whose layout fails is an error with its path', async () => {
+    listed.rows = [dwgRow('open', 'PID-1001')];
+    surfaces.readable = new Set(['open']);
+    type Check = { ok: boolean; errors?: string[] };
+    const check = async () =>
+      (
+        (await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner')) as {
+          output: { pid_check: Check };
+        }
+      ).output.pid_check;
+    expect(await check()).toMatchObject({ ok: true });
+    layout.fail = true;
+    try {
+      const failed = await check();
+      expect(failed.ok).toBe(false);
+      expect(failed.errors).toEqual([
+        expect.stringMatching(
+          /^pages\[0\]\.data: page 'p1' passes the data check but its layout failed \(made to fail\)/,
+        ),
+      ]);
+    } finally {
+      layout.fail = false;
+    }
   });
 
   it('a table that cannot be opened is skipped and named in limits, not the end of the trace', async () => {

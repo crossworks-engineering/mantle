@@ -119,8 +119,20 @@ export async function circuitTraceHandler(
         `${title}: has the circuit's layers but its table predates the geometry tabs; an owner can rebuild it with the dwg-reindex maintenance task.`,
       );
     }
-    const { validate } = await import('@mantle/diagram-templates');
+    const { estimateMeasurer, render, validate } = await import('@mantle/diagram-templates');
     const checked = validate('pid', result.pid);
+    // The data check, then the layout of every page with the estimate
+    // measurer: a page that passes the check but cannot be laid out is an
+    // error here, named by its page, not a broken page on the saved canvas.
+    const drawn = checked.ok ? render('pid', result.pid, estimateMeasurer) : null;
+    const errors = !checked.ok
+      ? checked.errors
+      : drawn && !drawn.ok
+        ? drawn.errors
+        : (drawn?.failed ?? []).map(
+            (f) =>
+              `${f.path}: page '${f.page}' passes the data check but its layout failed (${f.error}); the canvas would show an error panel there. This is a template bug; report it with the circuit.`,
+          );
     return {
       ok: true,
       output: {
@@ -130,8 +142,8 @@ export async function circuitTraceHandler(
         links: result.links,
         pid: result.pid,
         pid_check: {
-          ok: checked.ok,
-          ...(checked.ok ? {} : { errors: checked.errors }),
+          ok: errors.length === 0,
+          ...(errors.length ? { errors } : {}),
           warnings: checked.warnings,
         },
         ...(result.register ? { register: result.register } : {}),
