@@ -603,6 +603,16 @@ Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 | `apps:push`                                 | Pushes a local directory of mini-app source in, builds it, optionally publishes, the headless twin of `/api/apps/import`        |
 | `backup-app-dbs.ts` / `backup-table-dbs.ts` | `VACUUM INTO` snapshots; run **inside** the container by `db-dump.sh`, not by hand                                              |
 
+**`rotate:master-key` and the image checks.** The Checks rows `circuit_verify`
+writes into a drawing's table are sealed (an HMAC) under a key derived from the
+master key, and the rotation does not re-seal them. While a new key is staged in
+`MANTLE_MASTER_KEY_NEXT`, new rows are sealed under it and a seal under either
+key is accepted, so rows checked during the rotation survive the promotion.
+Rows sealed only under the old key stop applying once it is dropped:
+`circuit_trace` shows those guesses as GUESS again and says the rows carry no
+seal of the current or staged key, and the next `circuit_verify` asks them again
+(spending the vision key). A rotated-out key is never kept to vouch for them.
+
 ### Seeds
 
 `seed:*` aliases seed agents, skills and tool groups onto an **existing** brain.

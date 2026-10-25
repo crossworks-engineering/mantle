@@ -20,7 +20,15 @@ dry_run?, recheck?)` checks the guesses `circuit_trace` marks: each
   16 images per request and 8 requests, each cap said when hit; guesses
   already answered at the drawing's revision are skipped (`recheck` asks
   again), so the next call reaches the rest. Spends the owner's vision key,
-  only on an explicit call: never a recipe step or a run item.
+  only on an explicit call: never a recipe step or a run item. `dry_run`
+  writes nothing (its store check makes no crop folder).
+- **Note:** `circuit_verify` joins the existing `circuits` tool group, so
+  every agent that holds the group can call it; grants are unchanged. The
+  shipped agents that hold `circuits` are the Draftsman (`diagrammer`) and
+  the Presenter (`presenter`). Each call that is not a dry run spends the
+  owner's vision key (the default vision worker) and writes Checks rows and
+  crop files; take `circuits` off an agent in Agent Studio if it should
+  trace without that.
 - **Feature:** nothing is spent on what cannot be kept. Before the first
   vision request every sheet is asked whether its answers can be filed (the
   caller may edit the drawing's table, the table is writable and has no
@@ -47,20 +55,33 @@ dry_run?, recheck?)` checks the guesses `circuit_trace` marks: each
   summary) and linked to the drawing and its table. The write and its
   commit are pinned to the draft revision the call made, so a user's draft
   is never published or thrown away, and the commit never starts a model
-  pass. `dwg-reindex` keeps the tab, and an image-check commit is not an
+  pass. When a user writes into that draft before the commit, the sealed
+  rows wait in it and publish with it: the crops are kept and the result
+  says the rows are pending. `dwg-reindex` keeps the tab, and an image-check commit is not an
   edit to it.
 - **Feature:** a new trust level between guess and certain. `circuit_trace`
   reads the Checks tab: a guess the image confirmed is marked CHECKED BY
   IMAGE on the drawing (a valve type in its line's note) and in the
   result's `checks`, never certain; one it contradicted stays a GUESS and
-  says the image said no; unsure stays a GUESS. Only rows circuit_verify
-  wrote count: each carries an HMAC seal under a key derived from
-  MANTLE_MASTER_KEY, and a row typed or changed by hand is kept, never
-  applied, and said. Checks of an older revision, or of a question that
-  reads differently now, are kept, not applied.
+  says the image said no (a line with several joins counts the noes); a
+  guessed link's check shows on both of its ends; unsure stays a GUESS.
+  Only rows circuit_verify wrote count: each carries an HMAC seal over the
+  table, key, circuit, question, answer, reason, model, revision, time
+  and crop ids, under a key derived from the master key, and a row typed
+  or changed by hand is kept, never applied, and said. During a master key
+  rotation rows are sealed under `MANTLE_MASTER_KEY_NEXT` and either key is
+  accepted; rows sealed only under a key since rotated out stop applying
+  (circuit_verify asks those again). Known limit: a table editor who
+  deletes a newer sealed row brings the older sealed answer of the same
+  guess back. Checks of an older revision, or of a question that reads
+  differently now, are kept, not applied. A sheet whose source file the
+  caller cannot read is said to have an unchecked revision, never current,
+  and circuit_verify does not ask about it.
 - **Fix:** a several-image vision request has its own 240 s budget
   (`PROVIDER_TIMEOUTS.visionImages`) and caps the model's reasoning tokens
-  so the answer has room; a timeout is said, with no spend recorded for it.
+  so the answer has room; a timeout is said, and the spend ledger records
+  the attempt with no tokens and no cost, marked `timed_out` on its step
+  (the provider may still bill it).
 - **Fix:** a `pid` line of no length that carries a line number, and
   several lines between the same two pieces of equipment, no longer throw
   in the layout; only a layout that failed is retried with one ranking
