@@ -37,7 +37,8 @@ describe('resolveWorkerRoute', () => {
   });
 
   it('keeps the expected provider/model per worker kind (drift guard)', () => {
-    const byKind = Object.fromEntries(MANIFEST_WORKERS.map((w) => [w.kind, w]));
+    // Keyed like the seed: a job worker by its slug, the default by its kind.
+    const byKind = Object.fromEntries(MANIFEST_WORKERS.map((w) => [w.slug ?? w.kind, w]));
     const expected: Record<string, { provider: string; model: string }> = {
       // Model asserted via the manifest constant, not a literal: this guard is
       // about the ROUTE (which provider each kind lands on), and a second copy
@@ -52,6 +53,7 @@ describe('resolveWorkerRoute', () => {
       stt: { provider: 'openrouter', model: 'openai/gpt-4o-mini-transcribe' },
       search: { provider: 'openrouter', model: 'perplexity/sonar' },
       search_advanced: { provider: 'openrouter', model: 'perplexity/sonar-pro' },
+      'drawing-check': { provider: 'openrouter', model: '~google/gemini-pro-latest' },
     };
     for (const [kind, exp] of Object.entries(expected)) {
       expect(byKind[kind], `worker '${kind}' present`).toBeDefined();

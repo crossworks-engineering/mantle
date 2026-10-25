@@ -145,6 +145,11 @@ export type ManifestAgent = {
 
 export type ManifestWorker = {
   kind: AiWorkerKind;
+  /** Set only on a worker for ONE job beside the default of its kind (the
+   *  drawing check's vision model): seeded and adopted by this slug, never
+   *  as the kind's default, and never a kind's fallback (packages/db
+   *  DEDICATED_WORKER_SLUGS lists it). Absent: the kind's default worker. */
+  slug?: string;
   name: string;
   /** Required for a healthy brain (the always-on indexing pipeline) vs optional
    *  (media — present only when provisioned). */
@@ -1954,6 +1959,21 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     required: false,
     provider: 'openrouter',
     model: DEFAULT_WORKER_MODEL,
+  },
+  {
+    // The image check of a drawing (circuit_verify): a stronger vision
+    // model for narrow yes/no questions on close-up crops, beside the cheap
+    // default above, which keeps reading every image the brain ingests. An
+    // alias like DEFAULT_AGENT_MODEL: plain gemini-3-pro left OpenRouter
+    // (checked 2026-10-25); `~google/gemini-pro-latest` follows the family
+    // (about $2 in / $12 out per M tokens). Spends only when an agent or a
+    // user calls circuit_verify; nothing runs it on its own.
+    kind: 'vision',
+    slug: 'drawing-check',
+    name: 'Check drawings',
+    required: false,
+    provider: 'openrouter',
+    model: '~google/gemini-pro-latest',
   },
   {
     kind: 'image_gen',

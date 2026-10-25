@@ -321,3 +321,48 @@ describe('diffConfig — operator extras', () => {
     expect(find(entities, 'tool-group', 'my-group').status).toBe('extra');
   });
 });
+
+describe('diffConfig — a job worker beside its kind default', () => {
+  const job = {
+    kind: 'vision' as const,
+    slug: 'drawing-check',
+    name: 'Check drawings',
+    required: false,
+    provider: 'openrouter',
+    model: '~google/gemini-pro-latest',
+  };
+  const def = {
+    kind: 'vision' as const,
+    name: 'Read images',
+    required: false,
+    provider: 'openrouter',
+    model: 'cheap/model',
+  };
+  const slices = { ...MANIFEST, workers: [...MANIFEST.workers, def, job] };
+
+  it('is matched by its slug, never by the default of its kind', () => {
+    const live = inSyncLive();
+    live.workers.push({
+      kind: 'vision',
+      slug: 'vision-read-images',
+      name: 'Read images',
+      enabled: true,
+      isDefault: true,
+      model: 'cheap/model',
+    });
+    const entities = diffConfig(live, slices);
+    expect(find(entities, 'worker', 'vision').status).toBe('ok');
+    expect(find(entities, 'worker', 'drawing-check').status).toBe('missing');
+    live.workers.push({
+      kind: 'vision',
+      slug: 'drawing-check',
+      name: 'Check drawings',
+      enabled: true,
+      isDefault: false,
+      model: '~google/gemini-pro-latest',
+    });
+    const again = diffConfig(live, slices);
+    expect(find(again, 'worker', 'drawing-check').status).toBe('ok');
+    expect(find(again, 'worker', 'vision').status).toBe('ok');
+  });
+});

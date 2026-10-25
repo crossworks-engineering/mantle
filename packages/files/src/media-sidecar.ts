@@ -949,3 +949,121 @@ export async function mediaDwgRender(
     },
   );
 }
+
+// ── DWG crops (the image check) ─────────────────────────────────────────────
+
+// Mirror of TIMEOUT_DWG_CROP in app.py, same +30s backstop convention.
+const T_DWG_CROP = 240_000 + BACKSTOP_MS;
+/** At most 48 crops of at most 2000x2000 px plus an overview, base64. */
+const DWG_CROP_WIRE_MAX_BYTES = 160 * 1024 * 1024;
+
+/** One item to crop: a spot (`point`) or a traced path (`path`), in drawing
+ *  units; `marks` get a green ring. Mirrors dwg_crop.parse_spec. */
+export type DwgCropItem =
+  | { id: string; kind: 'point'; at: [number, number]; pad: number; marks?: [number, number][] }
+  | {
+      id: string;
+      kind: 'path';
+      points: [number, number][];
+      pad: number;
+      marks?: [number, number][];
+    };
+
+export type DwgCropSpec = {
+  items: DwgCropItem[];
+  /** The trace drawn over every crop: main red, branch blue, deadleg orange. */
+  overlay?: { color: 'main' | 'branch' | 'deadleg'; segs: [number, number, number, number][] }[];
+  overview?: boolean;
+};
+
+export type DwgCrop = {
+  id: string;
+  /** Which crop of the item (a path is several) and of how many. */
+  part: number;
+  of: number;
+  /** The window in drawing units: [x0, y0, x1, y1]. */
+  window: [number, number, number, number];
+  width: number;
+  height: number;
+  /** The smallest text in the window, in pixels (null: no text there). */
+  textPx: number | null;
+  png: Buffer;
+};
+
+export type DwgCrops = {
+  converter: string | null;
+  crops: DwgCrop[];
+  overview: { window: [number, number, number, number]; png: Buffer } | null;
+  /** Item ids the sidecar did not crop (its crop cap or time budget). */
+  capped: string[];
+};
+
+function windowOf(v: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(v) || v.length !== 4) return null;
+  const n = v.map(finite);
+  return n.every((x) => x !== null) ? (n as [number, number, number, number]) : null;
+}
+
+/**
+ * Close-up crops of ONE drawing for the image check: the spec rides ahead
+ * of the drawing's bytes (X-Crop-Spec-Length), one call per sheet for all
+ * its items. Never throws; same contract as the rest of this module.
+ */
+export async function mediaDwgCrop(
+  dwg: Buffer,
+  spec: DwgCropSpec,
+): Promise<MediaResult<DwgCrops>> {
+  const head = Buffer.from(JSON.stringify(spec), 'utf8');
+  return exchange(
+    '/dwg/crop',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Crop-Spec-Length': String(head.length),
+      },
+      body: Buffer.concat([head, dwg]) as unknown as BodyInit,
+    },
+    T_DWG_CROP,
+    async (res) => {
+      const raw = await collectBytes(res, DWG_CROP_WIRE_MAX_BYTES);
+      if (!raw.ok) return raw;
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(raw.value.toString('utf8')) as Record<string, unknown>;
+      } catch {
+        return { ok: false, code: 'extraction_failed', message: 'sidecar returned non-JSON on a 200' };
+      }
+      const crops: DwgCrop[] = [];
+      for (const c of Array.isArray(body.crops) ? body.crops : []) {
+        const o = c as Record<string, unknown>;
+        const window = windowOf(o.window);
+        if (typeof o.id !== 'string' || !window || typeof o.png_base64 !== 'string') continue;
+        crops.push({
+          id: o.id,
+          part: count(o.part),
+          of: Math.max(1, count(o.of)),
+          window,
+          width: count(o.width),
+          height: count(o.height),
+          textPx: finite(o.text_px),
+          png: Buffer.from(o.png_base64, 'base64'),
+        });
+      }
+      const ov = body.overview as Record<string, unknown> | null | undefined;
+      const ovWindow = ov ? windowOf(ov.window) : null;
+      return {
+        ok: true,
+        value: {
+          converter: typeof body.converter === 'string' ? body.converter : null,
+          crops,
+          overview:
+            ov && ovWindow && typeof ov.png_base64 === 'string'
+              ? { window: ovWindow, png: Buffer.from(ov.png_base64, 'base64') }
+              : null,
+          capped: Array.isArray(body.capped) ? body.capped.map(text).filter(Boolean) : [],
+        },
+      };
+    },
+  );
+}
