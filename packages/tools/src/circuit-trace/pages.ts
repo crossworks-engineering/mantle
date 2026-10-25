@@ -16,8 +16,14 @@
  * Every item ends on exactly one page, until the set's page cap: a set
  * holds `PAGES_MAX` pages in all (`made` of them made elsewhere). Once it
  * is reached nothing new is made; a page still over budget keeps what fits
- * within `fits` (the template's hard limits), the rest is returned in
- * `left` and `capped` is true. The caller says what is on no page.
+ * within `fits` (the template's hard limits), lines with a marker first,
+ * the rest is returned in `left` and `capped` is true. The caller says
+ * what is on no page.
+ *
+ * A marker is always on a page that draws its line, and a detail page's
+ * `origin` is the page that owns its context line: when a line moves on,
+ * its marker and the detail pages hanging off it follow; when it is left
+ * on no page, its marker goes and those detail pages have no origin.
  *
  * A parent loop (a line that is, through its parents, its own parent) has
  * no root: each line on it is read as a root, so none drops out.
@@ -90,8 +96,14 @@ export function splitPages<T>(
     /** Pages the set may still make. */
     const free = () => PAGES_MAX - (made + pages.length + queue.length + details.length);
     const room = () => free() > 0;
-    /** The page's forest, read afresh after every move. */
+    /** The page's forest, read afresh after every move (a move gives the
+     *  page a new items array). */
+    let read: { items: T[]; f: ReturnType<typeof build> } | undefined;
     const forest = () => {
+      if (read?.items !== page.items) read = { items: page.items, f: build() };
+      return read.f;
+    };
+    const build = () => {
       const on = new Set(page.items);
       const parentOn = (t: T) => {
         const p = rules.parentOf(t);
@@ -146,11 +158,27 @@ export function splitPages<T>(
       const roots = page.items.filter((t) => looped.has(t) || !parentIn.has(t));
       return { kids, tree, roots };
     };
-    const detail = (d: Omit<SplitPage<T>, 'key'>, on: T): void => {
+    const detail = (d: Omit<SplitPage<T>, 'key'>, on: T): string => {
       n += 1;
       const key = `${first.key}-${n}`;
       markers.push({ page: page.key, on, to: key, items: d.items });
       details.push({ key, ...d });
+      return key;
+    };
+    /** Lines of this page now drawn on page `to` (or on none): their
+     *  markers and the detail pages hanging off them follow. */
+    const follow = (gone: Set<T>, to: string | undefined) => {
+      for (let i = markers.length - 1; i >= 0; i--) {
+        const mk = markers[i]!;
+        if (mk.page !== page.key || !gone.has(mk.on)) continue;
+        if (to) mk.page = to;
+        else markers.splice(i, 1);
+      }
+      for (const d of [...pages, ...queue, ...details]) {
+        if (d.origin !== page.key || d.context === undefined || !gone.has(d.context)) continue;
+        if (to) d.origin = to;
+        else delete d.origin;
+      }
     };
 
     // 1. A tree over budget on its own: the children of one of its lines
@@ -253,28 +281,45 @@ export function splitPages<T>(
         const gone = new Set(rest);
         page.items = page.items.filter((t) => !gone.has(t));
         const k = Number(/ \(more (\d+)\)$/.exec(page.title)?.[1] ?? 1) + 1;
-        detail(
+        const to = detail(
           {
             title: `${base(page.title)} (more ${k})`,
             items: rest,
             context: page.context,
-            origin: page.origin ?? page.key,
+            // The page that owns the line (none once it is on no page).
+            ...(page.origin ? { origin: page.origin } : {}),
           },
           page.context,
         );
+        follow(gone, to);
       }
     }
     queue.unshift(...parts, ...details);
     if (parts.length || !rules.over(page)) continue;
-    // Still over: the cap stopped the split. What fits stays, in order.
+    // Still over: the cap stopped the split. What fits stays, in order
+    // (lines with a marker first, when they fit).
     capped = true;
     const fits = rules.fits;
     if (!fits || fits(page)) continue;
-    const keep = largest(0, page.items.length - 1, (k) =>
-      fits({ ...page, items: page.items.slice(0, k) }),
-    );
-    left.push(...page.items.slice(Math.max(0, keep)));
-    page.items = page.items.slice(0, Math.max(0, keep));
+    const marked = new Set(markers.filter((mk) => mk.page === page.key).map((mk) => mk.on));
+    let order = [
+      ...page.items.filter((t) => marked.has(t)),
+      ...page.items.filter((t) => !marked.has(t)),
+    ];
+    const most = (ts: T[]) =>
+      Math.max(
+        0,
+        largest(0, ts.length - 1, (k) => fits({ ...page, items: ts.slice(0, k) })),
+      );
+    let kept = new Set(order.slice(0, most(order)));
+    if (!fits({ ...page, items: page.items.filter((t) => kept.has(t)) })) {
+      order = page.items;
+      kept = new Set(order.slice(0, most(order)));
+    }
+    const gone = page.items.filter((t) => !kept.has(t));
+    left.push(...gone);
+    page.items = page.items.filter((t) => kept.has(t));
+    follow(new Set(gone), undefined);
     if (!page.items.length && !page.context) {
       // Nothing of it fits: no page, and nothing links to one.
       pages.pop();

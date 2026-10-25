@@ -29,6 +29,37 @@ const everyOnce = (r: ReturnType<typeof split>, items: L[]) => {
 };
 const view = (r: ReturnType<typeof split>) =>
   r.pages.map((p) => [p.key, p.title, p.context?.id ?? '-', p.items.map((t) => t.id).join(' ')]);
+/** The links hold: a marker is on a page that draws its line and leads to
+ *  a page that exists, one marker a line a page; a detail page's origin
+ *  owns its context line and a marker from a page that draws the line
+ *  leads to it; a detail page with no origin draws a line on no page. */
+const linked = (r: ReturnType<typeof split>): string[] => {
+  const bad: string[] = [];
+  const at = new Map(r.pages.map((p) => [p.key, p]));
+  const owns = (k: string | undefined, t: L) => !!k && !!at.get(k)?.items.includes(t);
+  const draws = (k: string, t: L) => owns(k, t) || at.get(k)?.context === t;
+  const seen = new Set<string>();
+  for (const mk of r.markers) {
+    if (!at.has(mk.to)) bad.push(`marker to no page ${mk.to}`);
+    if (!draws(mk.page, mk.on))
+      bad.push(`marker on ${mk.on.id} on ${mk.page}, which does not draw it`);
+    const k = `${mk.page}/${mk.on.id}`;
+    if (seen.has(k)) bad.push(`two markers on ${k}`);
+    seen.add(k);
+  }
+  for (const p of r.pages) {
+    if (!p.context) continue;
+    if (p.origin === undefined) {
+      if (!r.left.includes(p.context)) bad.push(`${p.key}: no origin, its line is on a page`);
+      continue;
+    }
+    if (!owns(p.origin, p.context)) bad.push(`${p.key}: origin ${p.origin} does not own its line`);
+    if (!r.markers.some((mk) => mk.to === p.key && draws(mk.page, p.context!))) {
+      bad.push(`${p.key}: no marker leads to it`);
+    }
+  }
+  return bad;
+};
 
 describe('splitPages', () => {
   it('a page within budget is left alone', () => {
@@ -158,6 +189,123 @@ describe('splitPages', () => {
     everyOnce(r, items);
     expect(r.left).toEqual([]);
     expect(r.capped).toBe(false);
+  });
+
+  it('lines a chunk moves keep their markers, and the detail pages off them follow', () => {
+    // A header, eight branches of two deadlegs each: the branches' deadlegs
+    // go to detail pages, then the branches are chunked.
+    const h = line('h');
+    const branches = Array.from({ length: 8 }, (_, i) => line(`b${i + 1}`, h));
+    const items = [h, ...branches.flatMap((b) => [b, line(`${b.id}a`, b), line(`${b.id}b`, b)])];
+    const r = split(items);
+    everyOnce(r, items);
+    expect(linked(r)).toEqual([]);
+    expect(view(r).map((v) => [v[0], v[2], v[3]])).toEqual([
+      ['s', '-', 'h'],
+      ['s-1', 'h', 'b1 b2 b3 b4'],
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map((i) => [`s-${i + 1}`, `b${i}`, `b${i}a b${i}b`]),
+      ['s-10', 'h', 'b5 b6 b7 b8'],
+    ]);
+    expect(r.markers.map((k) => [k.page, k.on.id, k.to]).sort()).toEqual(
+      [
+        ['s', 'h', 's-1'],
+        ['s-1', 'h', 's-10'],
+        ...[1, 2, 3, 4].map((i) => ['s-1', `b${i}`, `s-${i + 1}`]),
+        ...[5, 6, 7, 8].map((i) => ['s-10', `b${i}`, `s-${i + 1}`]),
+      ].sort(),
+    );
+    for (const i of [5, 6, 7, 8]) {
+      expect(r.pages.find((p) => p.key === `s-${i + 1}`)!.origin).toBe('s-10');
+    }
+    expect(r.pages.find((p) => p.key === 's-10')!.origin).toBe('s');
+  });
+
+  it('at the cap, a line with a marker stays before one without', () => {
+    const x = line('x');
+    const kids = [1, 2, 3, 4].map((i) => line(`k${i}`, x));
+    const roots = [1, 2, 3, 4, 5, 6].map((i) => line(`r${i}`));
+    const items = [...roots, x, ...kids];
+    // Room for the page and one detail page; the page holds 4.
+    const r = split(items, 3, PAGES_MAX - 2, 4);
+    expect(r.capped).toBe(true);
+    expect(view(r)[0]).toEqual(['s', 'Sheet', '-', 'r1 r2 r3 x']);
+    expect(r.left.map((t) => t.id).slice(0, 3)).toEqual(['r4', 'r5', 'r6']);
+    expect(linked(r)).toEqual([]);
+    everyOnce(r, items);
+  });
+
+  it('at the cap, a line left on no page loses its marker, and its detail page its origin', () => {
+    const lines = ['x', 'y', 'z'].map((id) => line(id));
+    const items = lines.flatMap((l) => [l, line(`${l.id}1`, l), line(`${l.id}2`, l)]);
+    // Room for the page and three detail pages; a page holds 2.
+    const r = split(items, 2, PAGES_MAX - 4, 2);
+    expect(r.capped).toBe(true);
+    expect(view(r)[0]).toEqual(['s', 'Sheet', '-', 'x y']);
+    expect(r.left.map((t) => t.id)).toContain('z');
+    const z = r.pages.find((p) => p.context?.id === 'z')!;
+    expect(z.origin).toBeUndefined();
+    expect(r.markers.some((mk) => mk.to === z.key)).toBe(false);
+    expect(r.markers.map((mk) => mk.on.id).sort()).toEqual(['x', 'y']);
+    expect(linked(r)).toEqual([]);
+    everyOnce(r, items);
+  });
+
+  it('fuzzed trees and budgets: every item once, every link holds, the cap holds', () => {
+    let seed = 12345;
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const ri = (n: number) => Math.floor(rnd() * n);
+    const bad: string[] = [];
+    for (let iter = 0; iter < 1200; iter++) {
+      const n = 1 + ri(iter % 20 === 0 ? 800 : 120);
+      const shape = ri(4);
+      const items: L[] = [];
+      for (let i = 0; i < n; i++) {
+        const l: L = { id: `x${i}` };
+        const p = shape === 0 ? 0.2 : shape === 1 ? 0.9 : 0.6;
+        if (i > 0 && rnd() < p) l.parent = items[shape === 1 ? Math.max(0, i - 1 - ri(3)) : ri(i)];
+        items.push(l);
+      }
+      if (rnd() < 0.2 && n > 3) items[0]!.parent = items[n - 1];
+      if (rnd() < 0.3) {
+        for (let i = n - 1; i > 0; i--) {
+          const j = ri(i + 1);
+          [items[i], items[j]] = [items[j]!, items[i]!];
+        }
+      }
+      const budget = 2 + ri(25);
+      const hard = rnd() < 0.7 ? budget + ri(40) : undefined;
+      const made = rnd() < 0.5 ? 0 : ri(PAGES_MAX + 2);
+      const r = split([...items], budget, made, hard);
+      const tag = `iter ${iter} n=${n} budget=${budget} hard=${hard} made=${made}:`;
+      const all = [...r.pages.flatMap((p) => p.items), ...r.left];
+      if (all.length !== n || new Set(all).size !== n) bad.push(`${tag} items not once`);
+      if (r.pages.length > Math.max(0, PAGES_MAX - made)) bad.push(`${tag} past the cap`);
+      if (new Set(r.pages.map((p) => p.key)).size !== r.pages.length) bad.push(`${tag} keys`);
+      for (const p of r.pages) {
+        if (!r.capped && size(p) > budget) bad.push(`${tag} ${p.key} over budget`);
+        if (hard && size(p) > hard) bad.push(`${tag} ${p.key} past the hard limit`);
+        if (!p.items.length && !p.context) bad.push(`${tag} ${p.key} empty`);
+      }
+      if (r.left.length && !r.capped) bad.push(`${tag} left but not capped`);
+      for (const b of linked(r)) bad.push(`${tag} ${b}`);
+    }
+    expect(bad.slice(0, 10)).toEqual([]);
+  });
+
+  it('many separate trees split in about linear time', () => {
+    const run = (k: number) => {
+      const items = Array.from({ length: k }, (_, i) => line(`r${i}`));
+      const t = performance.now();
+      split(items, 20);
+      return performance.now() - t;
+    };
+    run(500);
+    // Was quadratic: 4000 roots took over a second. Generous, so a slow
+    // machine passes; a return to quadratic does not.
+    expect(run(8000)).toBeLessThan(1500);
   });
 
   it('stops at the page cap and says so', () => {
