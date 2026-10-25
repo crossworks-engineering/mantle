@@ -870,7 +870,6 @@ export function buildPid(
     });
     return out;
   };
-  let ovLines = 0;
 
   /** One page's `pid` data: the lines it owns (and its context line). */
   const emit = (
@@ -1160,7 +1159,7 @@ export function buildPid(
     ovMarkers,
     false,
   );
-  ovLines = (ov.lines as unknown[]).length;
+  const ovLines = (ov.lines as unknown[]).length;
   const sheetData = pages.map(({ page, title, sheet }) => ({
     page,
     title,
