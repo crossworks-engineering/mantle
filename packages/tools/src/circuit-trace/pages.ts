@@ -22,8 +22,11 @@
  *
  * A marker is always on a page that draws its line, and a detail page's
  * `origin` is the page that owns its context line: when a line moves on,
- * its marker and the detail pages hanging off it follow; when it is left
- * on no page, its marker goes and those detail pages have no origin.
+ * its marker and the detail pages hanging off it follow. When the cap
+ * leaves a line off its page, its marker goes; a detail page off it that
+ * is still to be split takes the line as its own (the line is then on
+ * that page, not left), one already split keeps it as context with no
+ * origin (the line is drawn there only).
  *
  * A parent loop (a line that is, through its parents, its own parent) has
  * no root: each line on it is read as a root, so none drops out.
@@ -166,19 +169,29 @@ export function splitPages<T>(
       return key;
     };
     /** Lines of this page now drawn on page `to` (or on none): their
-     *  markers and the detail pages hanging off them follow. */
-    const follow = (gone: Set<T>, to: string | undefined) => {
+     *  markers and the detail pages hanging off them follow. Returns the
+     *  lines a detail page took as its own. */
+    const follow = (gone: Set<T>, to: string | undefined): Set<T> => {
+      const taken = new Set<T>();
       for (let i = markers.length - 1; i >= 0; i--) {
         const mk = markers[i]!;
         if (mk.page !== page.key || !gone.has(mk.on)) continue;
         if (to) mk.page = to;
         else markers.splice(i, 1);
       }
-      for (const d of [...pages, ...queue, ...details]) {
-        if (d.origin !== page.key || d.context === undefined || !gone.has(d.context)) continue;
+      const waiting = new Set(queue);
+      for (const d of new Set([...pages, ...queue, ...details])) {
+        const line = d.context;
+        if (d.origin !== page.key || line === undefined || !gone.has(line)) continue;
         if (to) d.origin = to;
-        else delete d.origin;
+        else if (waiting.has(d)) {
+          d.items = [line, ...d.items];
+          delete d.context;
+          delete d.origin;
+          taken.add(line);
+        } else delete d.origin;
       }
+      return taken;
     };
 
     // 1. A tree over budget on its own: the children of one of its lines
@@ -317,9 +330,9 @@ export function splitPages<T>(
       kept = new Set(order.slice(0, most(order)));
     }
     const gone = page.items.filter((t) => !kept.has(t));
-    left.push(...gone);
     page.items = page.items.filter((t) => kept.has(t));
-    follow(new Set(gone), undefined);
+    const taken = follow(new Set(gone), undefined);
+    left.push(...gone.filter((t) => !taken.has(t)));
     if (!page.items.length && !page.context) {
       // Nothing of it fits: no page, and nothing links to one.
       pages.pop();

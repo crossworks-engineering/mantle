@@ -234,16 +234,18 @@ describe('splitPages', () => {
     everyOnce(r, items);
   });
 
-  it('at the cap, a line left on no page loses its marker, and its detail page its origin', () => {
+  it('at the cap, a line left off its page loses its marker; its detail page takes it as its own', () => {
     const lines = ['x', 'y', 'z'].map((id) => line(id));
     const items = lines.flatMap((l) => [l, line(`${l.id}1`, l), line(`${l.id}2`, l)]);
     // Room for the page and three detail pages; a page holds 2.
     const r = split(items, 2, PAGES_MAX - 4, 2);
     expect(r.capped).toBe(true);
     expect(view(r)[0]).toEqual(['s', 'Sheet', '-', 'x y']);
-    expect(r.left.map((t) => t.id)).toContain('z');
-    const z = r.pages.find((p) => p.context?.id === 'z')!;
+    // z is on the page that was its detail page, as its own line.
+    const z = r.pages.find((p) => p.items[0]?.id === 'z')!;
+    expect(z.context).toBeUndefined();
     expect(z.origin).toBeUndefined();
+    expect(r.left.map((t) => t.id)).not.toContain('z');
     expect(r.markers.some((mk) => mk.to === z.key)).toBe(false);
     expect(r.markers.map((mk) => mk.on.id).sort()).toEqual(['x', 'y']);
     expect(linked(r)).toEqual([]);
