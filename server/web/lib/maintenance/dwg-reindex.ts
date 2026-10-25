@@ -36,6 +36,11 @@
  * discards that draft: no half-done replacement is left to commit by
  * accident.
  *
+ * The image check's Checks tab (circuit_verify) is kept: its rows are read
+ * before the rebuild and written back as the same tab, so the answers, tied
+ * to the drawing's revision, survive. A check commit (circuit_verify writes
+ * the tab, `dwgCheckedVersion`) on an unedited table is not an edit.
+ *
  * Output is counts and ids only: safe on a client box.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -43,7 +48,15 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
 import { commitTable, discardTableDraft, saveTableDraft, tableDocFromGrid } from '@mantle/content';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
-import { cadRegistryWorkbook } from '@mantle/files/dwg';
+import {
+  cadRegistryWorkbook,
+  DWG_CHECKED_VERSION_KEY as CHECKED_VERSION_KEY,
+  DWG_CHECKS_TAB as CHECKS_TAB,
+  DWG_REINDEXED_VERSION_KEY,
+  dwgTableEdited,
+} from '@mantle/files/dwg';
+import { tableSqlSurface } from '@mantle/content/table-storage';
+import { runTableSql } from '@mantle/tabledb';
 import { readFileById } from '@mantle/files';
 import { envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -52,7 +65,7 @@ import { errorMessage } from '@mantle/std';
 export const REINDEX_DEFAULT_LIMIT = 10;
 export const REINDEX_MAX_LIMIT = 50;
 /** Node data key: the table version the last re-index committed. */
-export const REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
+export const REINDEXED_VERSION_KEY = DWG_REINDEXED_VERSION_KEY;
 
 export type ReindexScope = { fileIds?: string[]; folderId?: string };
 
@@ -63,6 +76,8 @@ export type ReindexCandidate = {
   filename: string;
   version: number;
   reindexedVersion: number | null;
+  /** The version the image check's last commit made on an unedited table. */
+  checkedVersion?: number | null;
   hasDraft: boolean;
   tabs: string[];
   /** The table description as the candidate read found it. */
@@ -111,13 +126,16 @@ export function scopeProblem(scope: ReindexScope): string | null {
   return bad ? `not an id: ${bad}` : null;
 }
 
-/** Edited since its import (or its last re-index): its version moved on. */
-export function wasEdited(c: Pick<ReindexCandidate, 'version' | 'reindexedVersion'>): boolean {
-  return c.version > (c.reindexedVersion ?? 1);
+/** Edited since its import, its last re-index or its last image-check
+ *  commit (which is not an edit): its version moved on. */
+export function wasEdited(
+  c: Pick<ReindexCandidate, 'version' | 'reindexedVersion' | 'checkedVersion'>,
+): boolean {
+  return dwgTableEdited(c);
 }
 
 export function decide(
-  c: Pick<ReindexCandidate, 'version' | 'reindexedVersion' | 'hasDraft'>,
+  c: Pick<ReindexCandidate, 'version' | 'reindexedVersion' | 'checkedVersion' | 'hasDraft'>,
   opts: { keepEdits?: boolean },
 ): ReindexDecision {
   if (c.hasDraft) return { action: 'refuse', reason: 'draft' };
@@ -183,6 +201,7 @@ export async function findReindexCandidates(
     const fd = (r.fileData ?? {}) as Record<string, unknown>;
     const stats = (r.stats ?? {}) as { tabs?: { name?: string }[] };
     const rv = Number(d[REINDEXED_VERSION_KEY]);
+    const cv = Number(d[CHECKED_VERSION_KEY]);
     return {
       tableId: r.tableId,
       ownerId: r.ownerId,
@@ -190,6 +209,7 @@ export async function findReindexCandidates(
       filename: typeof fd.filename === 'string' ? fd.filename : r.fileTitle,
       version: Number(r.version),
       reindexedVersion: Number.isFinite(rv) && rv > 0 ? rv : null,
+      checkedVersion: Number.isFinite(cv) && cv > 0 ? cv : null,
       hasDraft: r.hasDraft === true,
       tabs: (stats.tabs ?? []).map((t) => String(t.name ?? '')).filter(Boolean),
       description: typeof d.description === 'string' ? d.description : null,
@@ -210,6 +230,39 @@ export async function buildTabs(bytes: Buffer, filename: string) {
     }))
     .filter((t) => t.columns.length > 0 && t.rows.length > 0);
   return { tabs, description };
+}
+
+/** Rows of the Checks tab read back per page, and at most. */
+const CHECKS_PAGE = 1000;
+const CHECKS_MAX = 100_000;
+
+/** The table's Checks tab (circuit_verify's answers) as a tab to write
+ *  back, or null when it has none. Every column the tab holds is kept. */
+export async function checksTabOf(ownerId: string, tableId: string) {
+  const surface = await tableSqlSurface(ownerId, tableId);
+  const tab = surface?.tabs.find((t) => t.name === CHECKS_TAB);
+  if (!surface || !tab) return null;
+  const names = tab.columns.map((c) => c.name);
+  const ident = (n: string) => `"${n.replace(/"/g, '""')}"`;
+  const rows: (string | number | boolean | null)[][] = [];
+  for (let offset = 0; offset < CHECKS_MAX; offset += CHECKS_PAGE) {
+    const r = await runTableSql(
+      surface.abs,
+      `SELECT ${names.map(ident).join(', ')} FROM ${ident(tab.viewName)} ORDER BY "_rid" LIMIT ${CHECKS_PAGE} OFFSET ${offset}`,
+      { cap: CHECKS_PAGE },
+    );
+    rows.push(...(r.rows as (string | number | boolean | null)[][]));
+    if (r.rows.length < CHECKS_PAGE) break;
+  }
+  const typeOf = (n: string) =>
+    tab.columns.find((c) => c.name === n)?.type === 'number' ? 'number' : 'text';
+  return {
+    ...tableDocFromGrid({
+      columns: names.map((n) => ({ name: n, type: typeOf(n) })),
+      rows,
+    }),
+    name: CHECKS_TAB,
+  };
 }
 
 /** The table's draft state and version now, read right before the write. */
@@ -266,6 +319,10 @@ export async function rebuildOne(
     if (!file)
       return { tableId: c.tableId, result: 'failed', reason: 'the file bytes are missing' };
     const { tabs, description } = await buildTabs(file.bytes, c.filename);
+    // The image check's answers stay with the drawing (same bytes, same
+    // revision): read before the rebuild replaces the tabs.
+    const checks = tabs.length ? await checksTabOf(c.ownerId, c.tableId) : null;
+    if (checks && !tabs.some((t) => t.name === CHECKS_TAB)) tabs.push(checks);
     if (tabs.length === 0) {
       return {
         tableId: c.tableId,

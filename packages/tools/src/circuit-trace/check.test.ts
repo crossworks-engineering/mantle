@@ -384,12 +384,13 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     not_asked?: { id: string; why: string }[];
     questions?: unknown[];
   };
+  const outOf = (r: unknown) => (r as { output: Out }).output;
 
   it('crops each sheet once, asks once per sheet, files every answer with its model and crops', async () => {
     const { d, calls, filed } = deps();
     const r = await verifyCircuit('o', { circuit: C }, d);
     expect(r.ok).toBe(true);
-    const out = (r as { output: Out }).output;
+    const out = outOf(r);
     expect(calls.crop).toHaveLength(2);
     expect(calls.crop[0]!.overlay?.length).toBeGreaterThan(0);
     expect(calls.ask).toHaveLength(2);
@@ -407,7 +408,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
   it('a dry run lists the questions and spends nothing', async () => {
     const { d, calls } = deps();
     const r = await verifyCircuit('o', { circuit: C, dryRun: true }, d);
-    expect((r as { output: Out }).output.questions).toHaveLength(2);
+    expect(outOf(r).questions).toHaveLength(2);
     expect(calls.crop).toHaveLength(0);
     expect(calls.ask).toHaveLength(0);
   });
@@ -424,7 +425,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
       }),
     });
     const r = await verifyCircuit('o', { circuit: C, maxQuestions: 40 }, d);
-    const out = (r as { output: Out }).output;
+    const out = outOf(r);
     expect(calls.ask.length).toBe(VERIFY_MAX.requests);
     expect(out.not_asked?.some((n) => /request cap/.test(n.why))).toBe(true);
   });
@@ -438,7 +439,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
       }),
     });
     const r = await verifyCircuit('o', { circuit: C }, fell.d);
-    expect((r as { output: Out }).output.limits.join(' ')).toMatch(
+    expect(outOf(r).limits.join(' ')).toMatch(
       /no enabled drawing-check worker: the default vision worker 'vision-read' \(cheap\) answered/,
     );
     const single = deps({
@@ -458,14 +459,14 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
       ask: async () => ({ text: 'I think so', model: 'gm' }),
     });
     const r = await verifyCircuit('o', { circuit: C }, d);
-    const out = (r as { output: Out }).output;
+    const out = outOf(r);
     expect(out.answers.every((a) => a.answer === 'unsure')).toBe(true);
   });
 
   it('a store that fails keeps the answers in the result and says so', async () => {
     const { d } = deps({ store: async () => ({ error: 'the table has an unsaved draft' }) });
     const r = await verifyCircuit('o', { circuit: C }, d);
-    const out = (r as { output: Out }).output;
+    const out = outOf(r);
     expect(out.answers).toHaveLength(2);
     expect(out.limits.join(' ')).toMatch(/could not be stored in its Checks tab/);
   });

@@ -24,17 +24,19 @@ import { db, nodes, tables, withHeads } from '@mantle/db';
 import { applyTableOps, commitTable, discardTableDraft } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { ensureAutoFiledFolder, upsertFile } from '@mantle/files';
+import {
+  DWG_CHECKED_VERSION_KEY,
+  DWG_REINDEXED_VERSION_KEY,
+  dwgTableEdited,
+} from '@mantle/files/dwg';
 import type { TableOp } from '@mantle/tabledb';
 import { CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
 import type { CheckAnswer } from './verify';
 import type { SheetInput } from './walk';
 
-/** Node data key: the table version a check commit made, when the table
- *  was unedited before it (dwg-reindex does not count that commit as an
- *  edit; server/web/lib/maintenance/dwg-reindex.ts reads it). */
-export const CHECKED_VERSION_KEY = 'dwgCheckedVersion';
-/** The node data key dwg-reindex writes (its own constant there). */
-const REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
+/** Node data key: the table version a check commit made on an unedited
+ *  table (dwg-reindex reads it: that commit is not an edit). */
+export const CHECKED_VERSION_KEY = DWG_CHECKED_VERSION_KEY;
 
 const COLUMN_TYPE: Partial<Record<CheckColumn, 'number'>> = { Node: 'number' };
 
@@ -63,19 +65,9 @@ async function tableState(tableId: string) {
   return {
     version: Number(r.version),
     hasDraft: r.hasDraft === true,
-    reindexed: num(d[REINDEXED_VERSION_KEY]),
-    checked: num(d[CHECKED_VERSION_KEY]),
+    reindexedVersion: num(d[DWG_REINDEXED_VERSION_KEY]),
+    checkedVersion: num(d[CHECKED_VERSION_KEY]),
   };
-}
-
-/** Edited since its import, its last re-index or its last check commit
- *  (dwg-reindex's own rule, the check commit counted as not an edit). */
-export function editedSince(s: {
-  version: number;
-  reindexed: number | null;
-  checked: number | null;
-}): boolean {
-  return s.version > Math.max(s.reindexed ?? 1, s.checked ?? 0);
 }
 
 export async function storeChecks(
@@ -212,7 +204,7 @@ export async function storeChecks(
   if (!committed) return { error: 'the commit found no table' };
 
   // 3. Not an edit for dwg-reindex, when the table was unedited before.
-  if (!editedSince(before)) {
+  if (!dwgTableEdited(before)) {
     const after = await tableState(sheet.tableId);
     if (after && after.version === before.version + 1) {
       await withHeads([sheet.tableId], 'update', (tx) =>

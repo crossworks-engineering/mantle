@@ -25,6 +25,7 @@
  * No I/O: the tool (builtins-circuits.ts) reads, crops, asks and stores.
  */
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
+import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
 import { endKey, joinKey, linkKey, valveKey } from './check-keys';
 import type { ChainRole, PidChecks, Verdict } from './pid';
 import type { SegRow, SheetInput, SheetLink, TraceSheet } from './walk';
@@ -434,7 +435,7 @@ export function parseAnswers(text: string, ids: readonly string[]): Map<string, 
 
 /** The Checks tab a DWG's table gains: one row per answer, the evidence
  *  kept (question, crops, answer, model) so a miss can be traced later. */
-export const CHECKS_TAB = 'Checks';
+export const CHECKS_TAB = DWG_CHECKS_TAB;
 export const CHECK_COLUMNS = [
   'Key',
   'Kind',

@@ -35,6 +35,27 @@ import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sid
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 
+/** The tab the image check (circuit_verify) adds to a drawing's table, one
+ *  row per answer; dwg-reindex keeps it through a rebuild. */
+export const DWG_CHECKS_TAB = 'Checks';
+/** Table node data key: the version an image-check commit made on a table
+ *  that was unedited before it, so dwg-reindex does not count it an edit. */
+export const DWG_CHECKED_VERSION_KEY = 'dwgCheckedVersion';
+/** Table node data key: the table version the last dwg-reindex committed. */
+export const DWG_REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
+
+/** Whether a drawing's table was edited by someone since its import, its
+ *  last re-index or its last image-check commit (neither of which is an
+ *  edit): its version moved past all three. The one rule dwg-reindex and
+ *  the image check's store both read. */
+export function dwgTableEdited(t: {
+  version: number;
+  reindexedVersion: number | null;
+  checkedVersion?: number | null;
+}): boolean {
+  return t.version > Math.max(t.reindexedVersion ?? 1, t.checkedVersion ?? 0);
+}
+
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {
   return /^AC1\d{3}$/.test(bytes.subarray(0, 6).toString('latin1'));

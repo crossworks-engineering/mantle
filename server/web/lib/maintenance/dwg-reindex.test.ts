@@ -14,6 +14,10 @@ const fresh = vi.hoisted(() => ({
   duringBuild: null as null | (() => void),
   commit: 'ok' as 'ok' | 'null' | 'throw',
   saveConflict: false,
+  /** The table's Checks tab rows (circuit_verify's answers), if it has one. */
+  checks: null as null | unknown[][],
+  /** The tabs the last draft save wrote. */
+  saved: [] as string[],
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -41,8 +45,14 @@ vi.mock('@mantle/content', () => ({
     columns: g.columns.map((c) => ({ id: c.name, name: c.name, type: 'text' })),
     rows: g.rows.map((r, i) => ({ id: String(i), cells: { v: r[0] } })),
   }),
-  saveTableDraft: async (_o: string, id: string, _d: unknown, opts: { ifRev?: number }) => {
+  saveTableDraft: async (
+    _o: string,
+    id: string,
+    d: { tabs: { name: string; rows: unknown[] }[] },
+    opts: { ifRev?: number },
+  ) => {
     calls.log.push(`draft:${id}:ifRev=${opts.ifRev}`);
+    fresh.saved = d.tabs.map((t) => `${t.name}:${t.rows.length}`);
     if (fresh.saveConflict) return { ok: false, conflict: true, currentRev: 99 };
     return { ok: true, draftRev: 1 };
   },
@@ -68,7 +78,39 @@ vi.mock('@mantle/content/table-snapshots', () => ({
     return { id: 'snap-1' };
   },
 }));
+vi.mock('@mantle/content/table-storage', () => ({
+  tableSqlSurface: async () => ({
+    abs: '/x.sqlite',
+    tabs: fresh.checks
+      ? [
+          {
+            name: 'Checks',
+            viewName: 'Checks',
+            columns: [
+              { name: 'Key', type: 'text' },
+              { name: 'Answer', type: 'text' },
+            ],
+          },
+        ]
+      : [],
+  }),
+}));
+vi.mock('@mantle/tabledb', () => ({
+  runTableSql: async (_abs: string, q: string) => ({
+    columns: ['Key', 'Answer'],
+    rows: / OFFSET 0$/.test(q) ? (fresh.checks ?? []) : [],
+    truncated: false,
+  }),
+}));
 vi.mock('@mantle/files/dwg', () => ({
+  DWG_CHECKS_TAB: 'Checks',
+  DWG_CHECKED_VERSION_KEY: 'dwgCheckedVersion',
+  DWG_REINDEXED_VERSION_KEY: 'dwgReindexedVersion',
+  dwgTableEdited: (t: {
+    version: number;
+    reindexedVersion: number | null;
+    checkedVersion?: number | null;
+  }) => t.version > Math.max(t.reindexedVersion ?? 1, t.checkedVersion ?? 0),
   cadRegistryWorkbook: async () => {
     fresh.duringBuild?.();
     return {
@@ -142,6 +184,15 @@ describe('the edited-table rule', () => {
       snapshotFirst: true,
     });
   });
+  it('an image-check commit on an unedited table is not an edit; an edit after it is', () => {
+    expect(decide(cand({ version: 2, checkedVersion: 2 }), {})).toMatchObject({
+      action: 'rebuild',
+    });
+    expect(decide(cand({ version: 3, checkedVersion: 2 }), {})).toEqual({
+      action: 'refuse',
+      reason: 'edited',
+    });
+  });
   it('a draft is always refused', () => {
     expect(decide(cand({ hasDraft: true }), { keepEdits: true })).toEqual({
       action: 'refuse',
@@ -153,6 +204,8 @@ describe('the edited-table rule', () => {
 describe('a rebuild keeps the table', () => {
   beforeEach(() => {
     calls.log = [];
+    fresh.checks = null;
+    fresh.saved = [];
     fresh.row = { version: 1, draftRev: 7, hasDraft: false };
     fresh.duringBuild = null;
     fresh.commit = 'ok';
@@ -172,6 +225,16 @@ describe('a rebuild keeps the table', () => {
       `commit:${c.tableId}:keepSummary=true`,
       `heads:${c.tableId}`,
     ]);
+  });
+
+  it("the image check's Checks tab is written back with the rebuilt tabs", async () => {
+    fresh.checks = [
+      ['join:pGap', 'yes'],
+      ['end:A@20.0,0.0', 'no'],
+    ];
+    const r = await rebuildOne(cand(), {});
+    expect(r).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
+    expect(fresh.saved).toEqual(['Layers:1', 'Segments:1', 'Checks:2']);
   });
 
   it('a draft opened during the sidecar pass is never overwritten (security MED-1)', async () => {
