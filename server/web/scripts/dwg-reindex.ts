@@ -12,6 +12,11 @@
  *     --keep-edits     a table edited after its import: snapshot it, then rebuild
  *     --resummarize    let the commit run the extractor's full pass (one model
  *                      call per table); default keeps the summary (no model pass)
+ *                      except for a table whose old description said it has no
+ *                      vector geometry (that summary is rewritten, one call each)
+ *     --again          include tables already rebuilt (or imported with the
+ *                      geometry tabs); by default a run skips them, so repeated
+ *                      capped runs reach the rest of the scope
  *
  * Prints ids and counts only (safe on a client box). Needs the media sidecar
  * (the DWG parse) and the agent (server/api) running for the re-index.
@@ -23,6 +28,7 @@ import {
   clampLimit,
   decide,
   findReindexCandidates,
+  needsResummary,
   rebuildOne,
   scopeProblem,
 } from '../lib/maintenance/dwg-reindex';
@@ -31,6 +37,7 @@ const argv = process.argv.slice(2);
 const apply = argv.includes('--apply');
 const keepEdits = argv.includes('--keep-edits');
 const resummarize = argv.includes('--resummarize');
+const again = argv.includes('--again');
 const flag = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 const limit = clampLimit(flag('limit') ? Number(flag('limit')) : null);
 const scope = {
@@ -48,11 +55,11 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  const found = await findReindexCandidates(scope, limit);
+  const found = await findReindexCandidates(scope, limit, { again });
   const cut = found.length > limit;
   const chosen = found.slice(0, limit);
   console.log(
-    `[dwg-reindex] candidates in scope: ${chosen.length}${cut ? ` (cut at --limit=${limit}; run again for the rest)` : ''}`,
+    `[dwg-reindex] candidates in scope: ${chosen.length}${cut ? ` (cut at --limit=${limit}; run again for the rest)` : ''}${again ? '' : ' (tables already rebuilt are skipped; --again includes them)'}`,
   );
   if (chosen.length === 0) return;
   for (const c of chosen) {
@@ -66,8 +73,9 @@ async function main() {
           : 'rebuild';
     console.log(`  ${c.tableId} (file ${c.fileId}, v${c.version}, ${has}): ${plan}`);
   }
+  const rewrite = chosen.filter((c) => needsResummary(c.description, null, { resummarize })).length;
   console.log(
-    `  summary: ${resummarize ? 'the full extractor pass runs (one model call per table)' : 'kept (no model pass; the vector and profile are rebuilt)'}`,
+    `  summary: ${resummarize ? 'the full extractor pass runs (one model call per table)' : `kept (no model pass; the vector and profile are rebuilt), except ${rewrite} table${rewrite === 1 ? '' : 's'} whose old description says no vector geometry: rewritten (one model call each)`}`,
   );
   if (!apply) {
     console.log('[dwg-reindex] DRY RUN: pass --apply to rebuild them');
@@ -79,7 +87,7 @@ async function main() {
     counts[r.result] += 1;
     if (r.result === 'rebuilt') {
       console.log(
-        `  ${r.tableId}: rebuilt as v${r.version} (${r.tabs.length} tabs${r.snapshot ? `, snapshot ${r.snapshot} first` : ''})`,
+        `  ${r.tableId}: rebuilt as v${r.version} (${r.tabs.length} tabs${r.snapshot ? `, snapshot ${r.snapshot} first` : ''}${r.resummarized ? ', summary rewritten' : ''})`,
       );
     } else {
       console.log(`  ${r.tableId}: ${r.result}: ${r.reason}`);

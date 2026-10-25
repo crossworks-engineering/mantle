@@ -7,15 +7,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calls = vi.hoisted(() => ({ log: [] as string[] }));
+/** What the fresh read right before the write sees (the table row now). */
+const fresh = vi.hoisted(() => ({
+  row: { version: 1, draftRev: 7, hasDraft: false } as Record<string, unknown>,
+  /** Runs while the sidecar pass "takes a while": a user acting mid-run. */
+  duringBuild: null as null | (() => void),
+  commit: 'ok' as 'ok' | 'null' | 'throw',
+  saveConflict: false,
+}));
 
 vi.mock('@mantle/db', () => ({
   db: {
     select: () => ({
-      from: () => ({ where: () => ({ limit: async () => [{ version: 3 }] }) }),
+      from: () => ({ where: () => ({ limit: async () => [fresh.row] }) }),
     }),
   },
   nodes: { id: 'id', type: 'type', data: 'data' },
-  tables: { version: 'version', nodeId: 'node_id' },
+  tables: {
+    version: 'version',
+    nodeId: 'node_id',
+    draftRev: 'draft_rev',
+    draftPath: 'draft_path',
+    draftData: 'draft_data',
+  },
   withHeads: async (ids: string[], _k: string, fn: (tx: unknown) => Promise<unknown>) => {
     calls.log.push(`heads:${ids.join(',')}`);
     const tx = { update: () => ({ set: () => ({ where: async () => [] }) }) };
@@ -27,13 +41,19 @@ vi.mock('@mantle/content', () => ({
     columns: g.columns.map((c) => ({ id: c.name, name: c.name, type: 'text' })),
     rows: g.rows.map((r, i) => ({ id: String(i), cells: { v: r[0] } })),
   }),
-  saveTableDraft: async (_o: string, id: string) => {
-    calls.log.push(`draft:${id}`);
+  saveTableDraft: async (_o: string, id: string, _d: unknown, opts: { ifRev?: number }) => {
+    calls.log.push(`draft:${id}:ifRev=${opts.ifRev}`);
+    if (fresh.saveConflict) return { ok: false, conflict: true, currentRev: 99 };
     return { ok: true, draftRev: 1 };
   },
   commitTable: async (_o: string, id: string, _d: unknown, opts: { keepSummary?: boolean }) => {
     calls.log.push(`commit:${id}:keepSummary=${opts.keepSummary}`);
-    return { id };
+    if (fresh.commit === 'throw') throw new Error('store refused');
+    return fresh.commit === 'null' ? null : { id };
+  },
+  discardTableDraft: async (_o: string, id: string) => {
+    calls.log.push(`discard:${id}`);
+    return true;
   },
   createTable: async () => {
     calls.log.push('create');
@@ -49,17 +69,20 @@ vi.mock('@mantle/content/table-snapshots', () => ({
   },
 }));
 vi.mock('@mantle/files/dwg', () => ({
-  cadRegistryWorkbook: async () => ({
-    grids: {
-      sheets: [
-        { name: 'Layers', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
-        { name: 'Segments', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
-        { name: 'Empty', columns: [{ name: 'X' }], rows: [] },
-      ],
-      capped: false,
-    },
-    description: 'AutoCAD DWG model-space registry. (rebuilt)',
-  }),
+  cadRegistryWorkbook: async () => {
+    fresh.duringBuild?.();
+    return {
+      grids: {
+        sheets: [
+          { name: 'Layers', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
+          { name: 'Segments', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
+          { name: 'Empty', columns: [{ name: 'X' }], rows: [] },
+        ],
+        capped: false,
+      },
+      description: 'AutoCAD DWG model-space registry. (rebuilt)',
+    };
+  },
 }));
 vi.mock('@mantle/files', () => ({
   readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
@@ -69,6 +92,7 @@ vi.mock('@mantle/config', () => ({ envNum: () => 50 }));
 import {
   clampLimit,
   decide,
+  needsResummary,
   rebuildOne,
   REINDEX_MAX_LIMIT,
   scopeProblem,
@@ -84,6 +108,7 @@ const cand = (over: Partial<ReindexCandidate> = {}): ReindexCandidate => ({
   reindexedVersion: null,
   hasDraft: false,
   tabs: ['Layers'],
+  description: 'AutoCAD DWG model-space registry. Layers counts entities per layer.',
   ...over,
 });
 
@@ -128,6 +153,10 @@ describe('the edited-table rule', () => {
 describe('a rebuild keeps the table', () => {
   beforeEach(() => {
     calls.log = [];
+    fresh.row = { version: 1, draftRev: 7, hasDraft: false };
+    fresh.duringBuild = null;
+    fresh.commit = 'ok';
+    fresh.saveConflict = false;
   });
 
   it('drafts and commits on the same id, keeps the summary, never creates or deletes', async () => {
@@ -139,10 +168,74 @@ describe('a rebuild keeps the table', () => {
       tabs: ['Layers', 'Segments'],
     });
     expect(calls.log).toEqual([
-      `draft:${c.tableId}`,
+      `draft:${c.tableId}:ifRev=7`,
       `commit:${c.tableId}:keepSummary=true`,
       `heads:${c.tableId}`,
     ]);
+  });
+
+  it('a draft opened during the sidecar pass is never overwritten (security MED-1)', async () => {
+    // The candidate read saw no draft; a user opens one while the pass runs.
+    fresh.duringBuild = () => {
+      fresh.row = { version: 1, draftRev: 8, hasDraft: true };
+    };
+    const r = await rebuildOne(cand(), {});
+    expect(r).toMatchObject({ result: 'refused' });
+    expect((r as { reason: string }).reason).toMatch(/draft was opened .* during the run/);
+    expect(calls.log).toEqual([]);
+  });
+
+  it('a commit during the pass is judged on the new version, not the stale read', async () => {
+    fresh.duringBuild = () => {
+      fresh.row = { version: 2, draftRev: 9, hasDraft: false };
+    };
+    expect(await rebuildOne(cand(), {})).toMatchObject({ result: 'refused' });
+    expect(calls.log).toEqual([]);
+  });
+
+  it('the draft is saved against the revision the fresh read saw; a conflict refuses', async () => {
+    fresh.saveConflict = true;
+    const r = await rebuildOne(cand(), {});
+    expect(r).toMatchObject({ result: 'refused' });
+    expect(calls.log).toEqual([`draft:${cand().tableId}:ifRev=7`]);
+  });
+
+  it('a commit that fails after the draft save discards that draft (security LOW-4)', async () => {
+    for (const mode of ['null', 'throw'] as const) {
+      calls.log = [];
+      fresh.commit = mode;
+      const r = await rebuildOne(cand(), {});
+      expect(r).toMatchObject({ result: 'failed' });
+      expect((r as { reason: string }).reason).toMatch(/draft was discarded/);
+      expect(calls.log).toEqual([
+        `draft:${cand().tableId}:ifRev=7`,
+        `commit:${cand().tableId}:keepSummary=true`,
+        `discard:${cand().tableId}`,
+      ]);
+    }
+  });
+
+  it('a summary written from "no vector geometry" is rewritten; others kept (security LOW-3)', async () => {
+    const old = cand({
+      description:
+        'AutoCAD DWG model-space registry. Layers counts entities per layer. Vector geometry beyond text and block positions is not in this table.',
+    });
+    const r = await rebuildOne(old, {});
+    expect(r).toMatchObject({ result: 'rebuilt', resummarized: true });
+    expect(calls.log).toContain(`commit:${old.tableId}:keepSummary=false`);
+    expect(
+      needsResummary(old.description, 'AutoCAD DWG model-space registry. Segments ...', {}),
+    ).toBe(true);
+    // The new pass also failed its geometry: the old claim is still true.
+    expect(
+      needsResummary(
+        old.description,
+        'AutoCAD ... Vector geometry beyond text and block positions is not in this table (the geometry pass failed: x).',
+        {},
+      ),
+    ).toBe(false);
+    expect(needsResummary(cand().description, 'anything', {})).toBe(false);
+    expect(needsResummary(null, 'anything', { resummarize: true })).toBe(true);
   });
 
   it('--resummarize lets the commit run the full pass', async () => {
@@ -152,6 +245,7 @@ describe('a rebuild keeps the table', () => {
 
   it('an edited table: refused untouched, or a snapshot first', async () => {
     const edited = cand({ version: 2 });
+    fresh.row = { version: 2, draftRev: 7, hasDraft: false };
     expect(await rebuildOne(edited, {})).toMatchObject({ result: 'refused' });
     expect(calls.log).toEqual([]);
     const r = await rebuildOne(edited, { keepEdits: true });

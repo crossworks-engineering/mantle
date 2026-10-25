@@ -13,22 +13,35 @@
  *
  * Spend: the commit keeps the table's summary and entities (keepSummary:
  * the re-index is `cells`, the vector and the profile passages again, no
- * model pass). `--resummarize` lets the commit run the extractor's full
- * pass (one model call per table) for a table whose summary should change.
+ * model pass), except where the old description said the table holds no
+ * vector geometry: its summary was written from that claim, which the
+ * rebuild makes false, so that commit runs the extractor's full pass (one
+ * model call per such table, at most the run's cap). `--resummarize` runs
+ * the full pass for every table.
+ *
+ * Progress: a table this task already rebuilt, or one imported with the
+ * bones tabs, is not a candidate again unless `again` (`--again`), so
+ * repeated capped runs reach the rest of the scope.
  *
  * Never deletes a file or a table. A table someone edited after its import
  * (its version moved past the import's, or past the last re-index) is
  * refused, unless `--keep-edits`: then a named snapshot of the edited
  * version is taken first (restorable from the table's history), and the
  * rebuild replaces the tabs. A table with an unsaved draft is always
- * refused: the rebuild would replace someone's working copy.
+ * refused: the rebuild would replace someone's working copy. The draft
+ * state and the version are read again right before the write (a user may
+ * open a draft or commit while the sidecar pass runs), and the draft is
+ * saved against the draft revision that read saw, so a draft made in that
+ * gap is never overwritten. A commit that fails after the draft is saved
+ * discards that draft: no half-done replacement is left to commit by
+ * accident.
  *
  * Output is counts and ids only: safe on a client box.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
-import { commitTable, saveTableDraft, tableDocFromGrid } from '@mantle/content';
+import { commitTable, discardTableDraft, saveTableDraft, tableDocFromGrid } from '@mantle/content';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
 import { cadRegistryWorkbook } from '@mantle/files/dwg';
 import { readFileById } from '@mantle/files';
@@ -52,7 +65,28 @@ export type ReindexCandidate = {
   reindexedVersion: number | null;
   hasDraft: boolean;
   tabs: string[];
+  /** The table description as the candidate read found it. */
+  description: string | null;
 };
+
+/** The sentence a pre-bones DWG description ends with (the old import and
+ *  a failed geometry pass both write it). */
+const NO_GEOMETRY_CLAIM = /Vector geometry\b[^.]*\bnot in this table/i;
+
+/** Whether this rebuild's commit runs the extractor's full pass: always
+ *  with `resummarize`, else only when the old description said there is no
+ *  vector geometry and the new one does not (the old summary repeats a
+ *  claim the rebuild makes false). */
+export function needsResummary(
+  oldDescription: string | null,
+  newDescription: string | null,
+  opts: { resummarize?: boolean },
+): boolean {
+  if (opts.resummarize) return true;
+  return (
+    NO_GEOMETRY_CLAIM.test(oldDescription ?? '') && !NO_GEOMETRY_CLAIM.test(newDescription ?? '')
+  );
+}
 
 export type ReindexDecision =
   { action: 'rebuild'; snapshotFirst: boolean } | { action: 'refuse'; reason: 'draft' | 'edited' };
@@ -104,6 +138,7 @@ export function decide(
 export async function findReindexCandidates(
   scope: ReindexScope,
   limit: number,
+  opts: { again?: boolean } = {},
 ): Promise<ReindexCandidate[]> {
   const f = alias(nodes, 'f');
   const conds = [
@@ -119,6 +154,11 @@ export async function findReindexCandidates(
     conds.push(
       sql`${f.path} <@ (select p.path from ${nodes} p where p.id = ${scope.folderId} and p.type = 'branch')`,
     );
+  }
+  if (!opts.again) {
+    // Already rebuilt by this task, or imported with the bones tabs: done.
+    conds.push(sql`not coalesce(${nodes.data} ? ${REINDEXED_VERSION_KEY}, false)`);
+    conds.push(sql`not coalesce(${tables.stats}->'tabs' @> '[{"name":"Segments"}]'::jsonb, false)`);
   }
   const rows = await db
     .select({
@@ -152,6 +192,7 @@ export async function findReindexCandidates(
       reindexedVersion: Number.isFinite(rv) && rv > 0 ? rv : null,
       hasDraft: r.hasDraft === true,
       tabs: (stats.tabs ?? []).map((t) => String(t.name ?? '')).filter(Boolean),
+      description: typeof d.description === 'string' ? d.description : null,
     };
   });
 }
@@ -171,8 +212,36 @@ export async function buildTabs(bytes: Buffer, filename: string) {
   return { tabs, description };
 }
 
+/** The table's draft state and version now, read right before the write. */
+export async function readFreshState(
+  tableId: string,
+): Promise<{ version: number; hasDraft: boolean; draftRev: number } | null> {
+  const [r] = await db
+    .select({
+      version: tables.version,
+      draftRev: tables.draftRev,
+      hasDraft: sql<boolean>`(${tables.draftPath} is not null or ${tables.draftData} is not null)`,
+    })
+    .from(tables)
+    .where(eq(tables.nodeId, tableId))
+    .limit(1);
+  if (!r) return null;
+  return {
+    version: Number(r.version),
+    hasDraft: r.hasDraft === true,
+    draftRev: Number(r.draftRev ?? 0),
+  };
+}
+
 export type ReindexOutcome =
-  | { tableId: string; result: 'rebuilt'; tabs: string[]; snapshot: string | null; version: number }
+  | {
+      tableId: string;
+      result: 'rebuilt';
+      tabs: string[];
+      snapshot: string | null;
+      version: number;
+      resummarized: boolean;
+    }
   | { tableId: string; result: 'refused'; reason: string }
   | { tableId: string; result: 'failed'; reason: string };
 
@@ -204,6 +273,25 @@ export async function rebuildOne(
         reason: 'the sidecar pass gave no tabs (not a readable drawing); the table is unchanged',
       };
     }
+    // Read again now: the sidecar pass took a while, and someone may have
+    // opened a draft or committed meanwhile. The candidate read is stale.
+    const now = await readFreshState(c.tableId);
+    if (!now) return { tableId: c.tableId, result: 'failed', reason: 'the table is gone' };
+    if (now.hasDraft) {
+      return {
+        tableId: c.tableId,
+        result: 'refused',
+        reason:
+          'a draft was opened on the table during the run: commit or discard it, then run again',
+      };
+    }
+    if (now.version !== c.version) {
+      return {
+        tableId: c.tableId,
+        result: 'refused',
+        reason: 'the table was committed during the run: run again to judge the new version',
+      };
+    }
     let snapshot: string | null = null;
     if (d.snapshotFirst) {
       const snap = await createTableSnapshot(c.ownerId, c.tableId, {
@@ -217,20 +305,49 @@ export async function rebuildOne(
         };
       snapshot = snap.id;
     }
-    const saved = await saveTableDraft(c.ownerId, c.tableId, { tabs }, { replace: true });
+    const saved = await saveTableDraft(
+      c.ownerId,
+      c.tableId,
+      { tabs },
+      { replace: true, ifRev: now.draftRev },
+    );
     if (!saved || !saved.ok) {
+      return saved && !saved.ok
+        ? {
+            tableId: c.tableId,
+            result: 'refused',
+            reason:
+              'the table changed while the draft was written (a draft or a commit): nothing written, run again',
+          }
+        : {
+            tableId: c.tableId,
+            result: 'failed',
+            reason: 'the draft could not be written; nothing committed',
+          };
+    }
+    const resummarized = needsResummary(c.description, description ?? null, opts);
+    let committed: Awaited<ReturnType<typeof commitTable>> = null;
+    try {
+      committed = await commitTable(c.ownerId, c.tableId, undefined, {
+        keepSummary: !resummarized,
+        note: 'dwg-reindex',
+      });
+    } catch (err) {
+      await discardTableDraft(c.ownerId, c.tableId).catch(() => false);
       return {
         tableId: c.tableId,
         result: 'failed',
-        reason: 'the draft could not be written; nothing committed',
+        reason: `the commit failed (${errorMessage(err).slice(0, 200)}); the replacement draft was discarded`,
       };
     }
-    const committed = await commitTable(c.ownerId, c.tableId, undefined, {
-      keepSummary: !opts.resummarize,
-      note: 'dwg-reindex',
-    });
-    if (!committed)
-      return { tableId: c.tableId, result: 'failed', reason: 'the commit found no table' };
+    if (!committed) {
+      await discardTableDraft(c.ownerId, c.tableId).catch(() => false);
+      return {
+        tableId: c.tableId,
+        result: 'failed',
+        reason: 'the commit found no table; the replacement draft was discarded',
+      };
+    }
     const [v] = await db
       .select({ version: tables.version })
       .from(tables)
@@ -255,6 +372,7 @@ export async function rebuildOne(
       tabs: tabs.map((t) => t.name),
       snapshot,
       version,
+      resummarized,
     };
   } catch (err) {
     return { tableId: c.tableId, result: 'failed', reason: errorMessage(err).slice(0, 300) };

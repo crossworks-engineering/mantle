@@ -16,29 +16,35 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor, superuserExec } from '@mantle/db/test-support';
 
+/** Runs inside the stubbed sidecar pass: a user acting while it runs. */
+const midRun = vi.hoisted(() => ({ hook: null as null | (() => Promise<void>) }));
+
 vi.mock('@mantle/files/dwg', async (orig) => ({
   ...(await orig<typeof import('@mantle/files/dwg')>()),
-  cadRegistryWorkbook: async () => ({
-    grids: {
-      sheets: [
-        {
-          name: 'Layers',
-          columns: [{ name: 'Layer', type: 'text' }],
-          rows: [['Circuit 90000-001-01']],
-        },
-        {
-          name: 'Segments',
-          columns: [
-            { name: 'Layer', type: 'text' },
-            { name: 'Length', type: 'number' },
-          ],
-          rows: [['Circuit 90000-001-01', 10]],
-        },
-      ],
-      capped: false,
-    },
-    description: 'AutoCAD DWG model-space registry. Segments is the pipe geometry (rebuilt).',
-  }),
+  cadRegistryWorkbook: async () => {
+    await midRun.hook?.();
+    return {
+      grids: {
+        sheets: [
+          {
+            name: 'Layers',
+            columns: [{ name: 'Layer', type: 'text' }],
+            rows: [['Circuit 90000-001-01']],
+          },
+          {
+            name: 'Segments',
+            columns: [
+              { name: 'Layer', type: 'text' },
+              { name: 'Length', type: 'number' },
+            ],
+            rows: [['Circuit 90000-001-01', 10]],
+          },
+        ],
+        capped: false,
+      },
+      description: 'AutoCAD DWG model-space registry. Segments holds every line (rebuilt).',
+    };
+  },
 }));
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof import('@mantle/files')>()),
@@ -168,11 +174,40 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     expect(t?.title).toBe(`${tag} in`);
     expect(t?.tabs?.map((x) => x.name)).toEqual(['Layers', 'Segments']);
     expect(t?.description).toMatch(/rebuilt/);
-    const [g] = await admin`select count(*)::int as n from item_grants where node_id = ${tIn}`;
+    // Its own workspace's grant (other files' tests share the database).
+    const [g] =
+      await admin`select count(*)::int as n from item_grants where node_id = ${tIn} and workspace_id = ${wsId}`;
     expect(g!.n).toBe(1);
-    // A second run sees its own version, not an edit.
-    const [again] = await r.findReindexCandidates({ fileIds: [fileIn] }, 10);
+  });
+
+  it('a rebuilt table is skipped by the next run unless again (quality MED-7)', async () => {
+    // A capped re-run reaches the rest of the scope instead of the same tables.
+    expect(await r.findReindexCandidates({ fileIds: [fileIn] }, 10)).toEqual([]);
+    const byFolder = await r.findReindexCandidates({ folderId: folder }, 10);
+    expect(byFolder.map((x) => x.tableId)).toEqual([tEdited]);
+    // Asked again, it sees its own version, not an edit.
+    const [again] = await r.findReindexCandidates({ fileIds: [fileIn] }, 10, { again: true });
+    expect(again?.tableId).toBe(tIn);
     expect(r.decide(again!, {})).toEqual({ action: 'rebuild', snapshotFirst: false });
+  });
+
+  it('a draft a user opens during the run is never overwritten (security MED-1)', async () => {
+    const [cand] = await r.findReindexCandidates({ fileIds: [fileOut] }, 10);
+    expect(cand?.hasDraft).toBe(false);
+    midRun.hook = async () => {
+      await c.applyTableOps(anchor, tOut, [{ op: 'row_add', cells: {} }]);
+    };
+    try {
+      const out = await r.rebuildOne(cand!, {});
+      expect(out).toMatchObject({ tableId: tOut, result: 'refused' });
+    } finally {
+      midRun.hook = null;
+    }
+    const now = await r.readFreshState(tOut);
+    expect(now).toMatchObject({ hasDraft: true, version: cand!.version });
+    const t = await c.getTable(anchor, tOut);
+    expect(t?.tabs?.map((x) => x.name) ?? ['Layers']).not.toContain('Segments');
+    expect(await c.discardTableDraft(anchor, tOut)).toBe(true);
   });
 
   it('an edited table is refused, then snapshotted first with keepEdits', async () => {
