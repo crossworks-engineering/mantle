@@ -4,6 +4,37 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a traced circuit as a linked drawing set
+
+- **Feature:** the `pid` template takes a drawing set, a `title` and
+  `pages` of `{ id, title, data }`, each page ordinary `pid` data, with the set's
+  `profile`, `legendNames`, `legend` and `showTitle` as defaults. Inside a
+  set an off-page connector takes `link` and `focus` (the page it continues
+  on and the element to show there), and a line takes a `more` marker
+  (`+7 DEADLEGS`). Every link is checked and printed as a page reference
+  (`SEE PAGE 3: <title>`).
+- **Feature:** the canvas shows a set one page at a time with page buttons,
+  Back and Overview; a link jumps to its page and outlines its element; the
+  arrow keys step through the pages (`present_render` `slide: n` shows page
+  n). A link only switches the canvas's own page: nothing is loaded and the
+  window is never navigated.
+- **Feature:** the export of a set (`window.diagram.exportSvg()`,
+  `present_export`) is every page stacked under a `PAGE n OF m` header, links
+  printed as page references; `exportPageSvg()` gives one page. Single
+  drawings draw byte for byte as before (the pin is unchanged), and the set
+  has its own pin.
+- **Feature:** `circuit_trace` returns its `pid` as a set: an overview (the
+  main line, branches and equipment within 20 lines; a line's deadlegs all
+  or none, a marker counting what it leaves) and a page per sheet, named
+  after the sheet. The 20-line cap is a split rule now, not a cut: a sheet
+  over budget keeps what fits and moves a line's other deadlegs, or a busy
+  branch, to a detail page that draws the line again; separate pieces go to
+  parts; a line with more than six valves goes on through a `CONTINUES`
+  pair. Sheet connectors link to the neighbour sheet's page. Every chain is
+  owned by one page; GUESS marks stay on every page that draws them, and a
+  guessed link gets no page link. Save it with `present_create` as one
+  canvas.
+
 ## Unreleased: a DWG down to the bones
 
 - **Feature:** a DWG or DXF keeps its pipe geometry. The media sidecar's one

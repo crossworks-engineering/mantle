@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { estimateMeasurer, render } from '@mantle/diagram-templates';
 
 const h = vi.hoisted(() => ({
   getPresent: vi.fn(),
@@ -344,6 +345,48 @@ describe('present_export', () => {
     const out = await tool('present_export').handler({ id: ID }, ctx);
     expect(out.ok).toBe(false);
     expect(h.upsertFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('a pid drawing set', () => {
+  const SET = JSON.parse(readFileSync(join(SAMPLES, '../test/pid-set.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  it('saves as one canvas and exports every page stacked, links printed as page references', async () => {
+    const created = await tool('present_create').handler(
+      { template: 'pid', data: SET, look: false },
+      ctx,
+    );
+    expect(created.ok).toBe(true);
+    const source = (h.createPresent.mock.calls[0]![1] as { source: string }).source;
+    h.getPresent.mockResolvedValue(detail(source));
+    // What the canvas's exportSvg() answers: the set stacked (browser.ts).
+    const drawn = render('pid', SET, estimateMeasurer);
+    expect(drawn.ok).toBe(true);
+    if (!drawn.ok) return;
+    withRenderer(drawn.svg);
+    h.upsertFile.mockResolvedValue({ id: 'f1', filename: 'circuit.svg' });
+    const out = await tool('present_export').handler({ id: ID, filename: 'circuit.svg' }, ctx);
+    expect(out.ok, JSON.stringify(out)).toBe(true);
+    const file = h.upsertFile.mock.calls[0]![0] as { bytes: Buffer };
+    const svg = file.bytes.toString('utf8');
+    expect(svg.match(/<svg x="0" y=/g)).toHaveLength(3);
+    expect(svg).toContain('SEE PAGE 2: PID-1001');
+    // The window is sized for one page under the page buttons, not the stack.
+    expect(renders[0]!.height).toBeLessThan(drawn.height);
+  });
+
+  it('a bad link is refused with its path, nothing saved', async () => {
+    const bad = structuredClone(SET) as { pages: { data: { offpage?: { link?: string }[] } }[] };
+    bad.pages[1]!.data.offpage![0]!.link = 'sheet-9';
+    const out = await tool('present_create').handler({ template: 'pid', data: bad }, ctx);
+    expect(out.ok).toBe(false);
+    expect((out as { error: string }).error).toMatch(
+      /pages\[1\]\.data\.offpage\[0\]\.link: no page 'sheet-9'/,
+    );
+    expect(h.createPresent).not.toHaveBeenCalled();
   });
 });
 

@@ -163,10 +163,14 @@ async function cssOf(source: string): Promise<string> {
 function diagramViewport(template: string, data: unknown): { width: number; height: number } {
   const est = renderTemplate(template, data, estimateMeasurer);
   if (!est.ok) return { width: 1600, height: 900 };
-  const k = Math.min(1, DIAGRAM_MAX_EDGE / Math.max(est.width + 32, est.height + 32));
+  // A drawing set shows one page at a time under its page buttons: the
+  // window fits the largest page, not the stacked export.
+  const w = est.pages ? Math.max(...est.pages.map((p) => p.width)) : est.width;
+  const h = est.pages ? Math.max(...est.pages.map((p) => p.height)) + 56 : est.height;
+  const k = Math.min(1, DIAGRAM_MAX_EDGE / Math.max(w + 32, h + 32));
   return {
-    width: Math.max(400, Math.round((est.width + 32) * k)),
-    height: Math.max(300, Math.round((est.height + 32) * k)),
+    width: Math.max(400, Math.round((w + 32) * k)),
+    height: Math.max(300, Math.round((h + 32) * k)),
   };
 }
 
@@ -376,7 +380,7 @@ function applyEdits(source: string, raw: unknown): string | { error: string } {
  *  where the whole contract is. */
 const CONTRACT_FIELDS: Readonly<Record<string, string>> = {
   flow: 'title, description, direction, nodes[], edges[], groups[], legend, showTitle',
-  pid: 'title, description, sheet, equipment[], offpage[], lines[], tees[], instruments[], signals[], circuits[], legend, showTitle, profile',
+  pid: 'title, description, sheet, equipment[], offpage[], lines[], tees[], instruments[], signals[], circuits[], legend, showTitle, profile; or a drawing set: title, description, pages[] ({ id, title, data }), with link/focus on connectors and lines[].more',
 };
 
 /** The data with this brain's site profile for the template filled in,
@@ -934,7 +938,7 @@ const present_export: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Export a canvas for a page',
   description:
-    'Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws, any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
+    'Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws (a drawing set: every page stacked, links printed as page references), any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -317,6 +317,12 @@ not ISA-5.1, and a line number outside the profile's format when the profile
 enforces it. Every error names the field and the fix; the tool returns them
 all at once.
 
+**A drawing set.** Past the budget, split, never cut: `{ title, pages:
+[{ id, title, data }] }`, each `data` a sheet as above. In a set a
+connector takes `link` (a page id) and `focus` (an id there), and a line
+takes `more: { text, link, focus }` (`+7 DEADLEGS`). Links print as
+`SEE PAGE 3: <title>`; the export stacks the pages.
+
 **Tees and branches.** A line that leaves another line mid-run (a header
 take-off, a drain, a vent, a dead leg, a gauge tapping, a bypass) starts or
 ends at a tee on that line; never leave one out. The tee sits on the parent

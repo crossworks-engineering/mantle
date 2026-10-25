@@ -58,7 +58,8 @@ no server and no network.
 | `src/runtime/svg.ts`, `export.ts`       | string SVG builder (no scripts possible) and the static check        |
 | `src/runtime/validate.ts`               | checks with exact paths and "did you mean"                           |
 | `src/templates/flow.ts`                 | the `flow` template                                                  |
-| `src/templates/pid/`                    | the `pid` template: schema, site profile, symbols, render            |
+| `src/templates/pid/`                    | the `pid` template: schema, site profile, symbols, render, sets      |
+| `src/runtime/pages.ts`                  | a drawing set stacked into one static SVG, and its page references   |
 | `scripts/build.ts`, `scripts/render.ts` | the bundle build and the Chromium harness                            |
 | `samples/`                              | sample data, an example site profile, and the rendered results       |
 
@@ -208,6 +209,38 @@ What the template does with it:
 
 Budget (warnings, from the guide): 8 equipment, 16 bubbles, 20 valves, 5
 loops, 12 lines, 4 line types, 2 accents. Over budget: split the sheet.
+
+### Drawing sets
+
+A `pid` input with `pages` is a set: several sheets in one canvas that link
+to each other (`src/templates/pid/set.ts`). A traced circuit
+(`circuit_trace`) is one: an overview, then a page per sheet.
+
+| Field                                           | Notes                                                                                                                        |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `title`, `description`                          | the set's own; `description` is the stacked export's `<desc>`                                                                |
+| `profile`, `legendNames`, `legend`, `showTitle` | defaults for every page that does not set its own; a problem in one is said once                                             |
+| `pages[]`                                       | 1 to 40: `id` (a short tag), `title` (the page button and the export header, up to 60), `data` (ordinary `pid` data)         |
+| `offpage[].link`, `offpage[].focus`             | inside a set only: the page the connector continues on, and the line, equipment, connector or tee to show there              |
+| `lines[].more`                                  | `{ text, link?, focus? }`: a "more here" marker beside the line (`+7 DEADLEGS`); a single drawing may carry one without link |
+
+The check resolves every link: a page that is not there, a focus that names
+nothing on its page, or a link to its own page without a focus is an error
+with its path. Each link is printed as a page reference (`SEE PAGE 3:
+<title>`) under its connector or in its marker, so a static copy still says
+where every line goes.
+
+The canvas shows one page at a time under a row of page buttons, with Back
+and Overview; a click (or Enter) on a linked connector or marker shows its
+page and outlines the `focus` element; the arrow keys and Page Up/Down step
+through the pages (so `present_render` with `slide: n` shows page n). A link
+only switches the canvas's own page: nothing is fetched, no URL is opened and
+the window is never navigated. `window.diagram.exportSvg()` returns every
+page stacked under a `PAGE n OF m: <title>` header (the static export,
+`present_export`); `window.diagram.exportPageSvg(id?)` one page;
+`window.diagram.pages`, `.page` and `.show(id, focus?)` drive it. Single
+drawings are untouched: the pin in `src/unchanged-output.test.ts` holds, and
+`src/pid-set.test.ts` pins the set.
 
 ### Site profile
 

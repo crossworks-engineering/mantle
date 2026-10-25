@@ -142,7 +142,7 @@ export async function circuitTraceHandler(
               hint: `No readable drawing has geometry on 'Circuit ${circuit}' layers. Check the name with table_sql on a DWG table's Circuits tab, or search_nodes for the drawing.`,
             }
           : {
-              next: `Draw it: diagram_render with template "pid" and the pid object as data (label every guessed link and check pid_check first).`,
+              next: `Save it as ONE canvas: present_create with template "pid" and the pid object, unchanged, as data (a drawing set: page 1 the overview, then a page per sheet named after it, linked; pid_check must be ok first). diagram_render shows page 1; present_render with slide N shows page N; present_export writes every page stacked, links printed as page references. Never drop or relabel a GUESS mark.`,
             }),
       },
     };
@@ -163,7 +163,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment go in `guesses`, marked GUESS on the drawing; a ready `pid` template input with the main line equipment to equipment first to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment in `guesses`, marked GUESS on the drawing; `pid`, a linked drawing set (an overview, then a page per sheet; nothing left out) to save as one canvas with `present_create` (template `pid`, data `pid`); and, with `register`, every difference against it. Reads only. For one drawing's raw tabs use `table_sql` instead.",
   inputSchema: {
     type: 'object',
     properties: {
