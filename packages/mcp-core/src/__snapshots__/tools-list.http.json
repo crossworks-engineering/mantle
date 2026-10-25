@@ -7576,6 +7576,10 @@
     "dry_run": {
      "type": "boolean",
      "description": "List the questions only: no crops, no model call, nothing stored."
+    },
+    "recheck": {
+     "type": "boolean",
+     "description": "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked)."
     }
    },
    "required": [

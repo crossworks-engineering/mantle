@@ -102,15 +102,10 @@ vi.mock('@mantle/tabledb', () => ({
     truncated: false,
   }),
 }));
-vi.mock('@mantle/files/dwg', () => ({
-  DWG_CHECKS_TAB: 'Checks',
-  DWG_CHECKED_VERSION_KEY: 'dwgCheckedVersion',
-  DWG_REINDEXED_VERSION_KEY: 'dwgReindexedVersion',
-  dwgTableEdited: (t: {
-    version: number;
-    reindexedVersion: number | null;
-    checkedVersion?: number | null;
-  }) => t.version > Math.max(t.reindexedVersion ?? 1, t.checkedVersion ?? 0),
+// The real keys, dwgTableEdited and dwgSourceSha: only the sidecar pass is
+// made up.
+vi.mock('@mantle/files/dwg', async (orig) => ({
+  ...(await orig<typeof import('@mantle/files/dwg')>()),
   cadRegistryWorkbook: async () => {
     fresh.duringBuild?.();
     return {

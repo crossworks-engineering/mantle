@@ -264,6 +264,7 @@ const LISTS: Record<string, readonly string[]> = {
     'api_tool_list',
     'api_tool_test',
     'api_tool_update',
+    'circuit_verify',
     'invoke_agent',
     'recipe_tool_create',
     'recipe_tool_test',
@@ -282,6 +283,7 @@ const LISTS: Record<string, readonly string[]> = {
     'web_fetch',
   ],
   MEMBER_APP_REFUSED_SLUGS: [
+    'circuit_verify',
     'extract_from_image',
     'my_item_open',
     'my_items_list',
@@ -291,6 +293,7 @@ const LISTS: Record<string, readonly string[]> = {
     'team_request_create',
   ],
   BANNED_ITEM_TOOLS: [
+    'circuit_verify',
     'invoke_agent',
     'run_append',
     'run_audit',

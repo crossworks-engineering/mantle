@@ -119,6 +119,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'app_undelete',
   'ask_as_responder',
   'ask_responder',
+  'circuit_verify',
   'contact_create',
   'contact_delete',
   'contact_get',

@@ -2,6 +2,7 @@
   "app_data_query",
   "app_errors",
   "circuit_trace",
+  "circuit_verify",
   "diagram_render",
   "email_get",
   "email_list",
