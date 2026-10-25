@@ -216,9 +216,15 @@ describe.skipIf(!URL)('the image check store', () => {
   });
 
   it('a read-only snapshot copy is refused before any spend', async () => {
+    // Its own source table: the case does not lean on another test's.
+    const src = await makeTable(`${tag} copy source`);
     const t = await makeTable(`${tag} copy`);
-    await admin`update nodes set data = data || ${JSON.stringify({ snapshot_of: ids[0] })}::jsonb where id = ${t}`;
-    expect(await s.storeRefusal(anchor, sheetOf(t))).toMatch(/may not edit its table/);
+    await admin`update nodes set data = data || ${JSON.stringify({ snapshot_of: src })}::jsonb where id = ${t}`;
+    expect(await s.storeRefusal(anchor, sheetOf(t))).toMatch(
+      /^the answers could not be stored: you may not edit its table \(/,
+    );
+    // The source itself stays writable.
+    expect(await s.storeRefusal(anchor, sheetOf(src), { dryRun: true })).toBeNull();
   });
 
   it('a workspace that only reads the table is refused before any spend', async () => {
@@ -231,7 +237,9 @@ describe.skipIf(!URL)('the image check store', () => {
     const why = await m.withScope({ kind: 'assistant', loginId: null, ws: [wsId], modWs: [] }, () =>
       s.storeRefusal(anchor, sheetOf(t)),
     );
-    expect(why).toMatch(/may not edit its table|Auto-filed/);
+    // The table refusal, first: the crop folder is never reached.
+    expect(why).toMatch(/^the answers could not be stored: you may not edit its table \(/);
+    expect(why).not.toMatch(/Auto-filed/);
     // Under row security the scope still reads the table's own stamp (the
     // revision its checks are filed under); a table it is not granted is
     // not listed at all.
