@@ -309,9 +309,6 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const need = (l: Line) =>
     labelW(l) + itemsW(l) + 72 + (shared(l.to) || shared(l.from) ? 56 : 0) + teeRoom(l);
   const ranksep = Math.min(480, Math.max(152, ...data.lines.map(need)));
-  const g = new dagre.graphlib.Graph({ multigraph: true });
-  g.setGraph({ rankdir: 'LR', nodesep: 96, ranksep, marginx: 0, marginy: 0 });
-  g.setDefaultEdgeLabel(() => ({}));
   // Utility connectors (every pipe on them a utility line) are placed beside
   // their equipment later, so they do not drag the process layout around.
   const utilityOpc = new Set(
@@ -322,36 +319,51 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       })
       .map((o) => o.id),
   );
-  for (const n of nodes.values())
-    if (!utilityOpc.has(n.id)) g.setNode(n.id, { width: n.w, height: n.h });
-  // One ranking edge per pair of pieces, either way round, its weight the
-  // sum of the pipes between them: several pipes joining the same two
-  // pieces made dagre fail ("Not possible to find intersection").
-  const pairEdge = (a: string, b: string) => g.outEdges(a, b)?.[0] ?? g.outEdges(b, a)?.[0];
-  for (const l of plain) {
-    if (l.weight === 'secondary' && (!nodes.get(l.from)!.eq || !nodes.get(l.to)!.eq)) continue;
-    const w = l.weight === 'main' ? 2 : 1;
-    const had = pairEdge(l.from, l.to);
-    if (had) {
-      const lab = g.edge(had) as { minlen: number; weight: number };
-      g.setEdge(had, { ...lab, weight: lab.weight + w });
-      continue;
+  /** The ranking graph. `merge`: one edge per pair of pieces, either way
+   *  round, its weight the sum of the pipes between them. Only a layout
+   *  that failed without it is built so (several pipes joining the same
+   *  two pieces can make dagre fail, "Not possible to find
+   *  intersection"): every drawing that laid out before keeps its exact
+   *  layout. */
+  const rankGraph = (merge: boolean) => {
+    const g = new dagre.graphlib.Graph({ multigraph: true });
+    g.setGraph({ rankdir: 'LR', nodesep: 96, ranksep, marginx: 0, marginy: 0 });
+    g.setDefaultEdgeLabel(() => ({}));
+    for (const n of nodes.values())
+      if (!utilityOpc.has(n.id)) g.setNode(n.id, { width: n.w, height: n.h });
+    const pairEdge = (a: string, b: string) => g.outEdges(a, b)?.[0] ?? g.outEdges(b, a)?.[0];
+    for (const l of plain) {
+      if (l.weight === 'secondary' && (!nodes.get(l.from)!.eq || !nodes.get(l.to)!.eq)) continue;
+      const w = l.weight === 'main' ? 2 : 1;
+      const had = merge ? pairEdge(l.from, l.to) : undefined;
+      if (had) {
+        const lab = g.edge(had) as { minlen: number; weight: number };
+        g.setEdge(had, { ...lab, weight: lab.weight + w });
+        continue;
+      }
+      g.setEdge(l.from, l.to, { minlen: 1, weight: w }, l.id);
     }
-    g.setEdge(l.from, l.to, { minlen: 1, weight: w }, l.id);
+    // A branch ranks what it reaches after the start of the line it leaves.
+    for (const l of branches) {
+      const a = anchorNode(l.from, 'from');
+      const b = anchorNode(l.to, 'to');
+      if (!a || !b || a === b || !g.hasNode(a) || !g.hasNode(b)) continue;
+      if (l.weight === 'secondary' && (!nodes.get(a)!.eq || !nodes.get(b)!.eq)) continue;
+      // One ranking edge per pair (either way round): a branch only says what
+      // it reaches lies downstream, and dagre fails on some of the cycles
+      // repeated pairs make ("Not possible to find intersection").
+      if (pairEdge(a, b)) continue;
+      g.setEdge(a, b, { minlen: 1, weight: 1 }, l.id);
+    }
+    return g;
+  };
+  let g = rankGraph(false);
+  try {
+    dagre.layout(g);
+  } catch {
+    g = rankGraph(true);
+    dagre.layout(g);
   }
-  // A branch ranks what it reaches after the start of the line it leaves.
-  for (const l of branches) {
-    const a = anchorNode(l.from, 'from');
-    const b = anchorNode(l.to, 'to');
-    if (!a || !b || a === b || !g.hasNode(a) || !g.hasNode(b)) continue;
-    if (l.weight === 'secondary' && (!nodes.get(a)!.eq || !nodes.get(b)!.eq)) continue;
-    // One ranking edge per pair (either way round): a branch only says what
-    // it reaches lies downstream, and dagre fails on some of the cycles
-    // repeated pairs make ("Not possible to find intersection").
-    if (pairEdge(a, b)) continue;
-    g.setEdge(a, b, { minlen: 1, weight: 1 }, l.id);
-  }
-  dagre.layout(g);
 
   // ---------------------------------------------------------- 2. baseline
   const BASE = 0;
