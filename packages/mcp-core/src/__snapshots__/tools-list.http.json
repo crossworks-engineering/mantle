@@ -7403,7 +7403,7 @@
  },
  {
   "name": "circuit_trace",
-  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment in `guesses`, marked GUESS on the drawing; `pid`, the drawing (past one page a linked set: an overview, then a page per sheet; what the 40-page cap leaves off is counted in `limits`) to save as one canvas with `present_create` (template `pid`, data `pid`); and, with `register`, every difference against it. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+  "description": "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment in `guesses`, marked GUESS on the drawing; `pid`, the drawing (a linked set past one page; past 40 pages the rest is counted in `limits`) to save as one canvas with `present_create`; and, with `register`, every difference against it. Reads only. For one drawing's raw tabs use `table_sql` instead.",
   "inputSchema": {
    "type": "object",
    "properties": {
