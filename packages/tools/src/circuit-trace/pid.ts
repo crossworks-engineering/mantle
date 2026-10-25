@@ -1,5 +1,6 @@
 /**
- * circuit_trace, the drawing: the traced circuit as `pid` template input.
+ * circuit_trace, the drawing: the traced circuit as `pid` template input,
+ * a linked drawing set (or one drawing, when one page holds it all).
  *
  * Every sheet's chains go into one graph: an end two sheets link is one
  * point there, and every end at a piece of equipment is that equipment. The
@@ -7,34 +8,36 @@
  * the downstream one (the register's from and to when it names them, else
  * the pair whose path crosses the most sheets), never through a deadleg
  * chain (when the only path does, no main line is drawn and that is said in
- * `limits`; the deadleg stays a deadleg); then the
- * branches hang off it on tees, then lines from the equipment on it, and the
- * deadlegs last. The template's line budget goes to them in that order:
- * deadlegs are grouped per parent line, the longest drawn first, and what
- * does not fit is counted in `limits`, never dropped silently.
+ * `limits`; the deadleg stays a deadleg); then the branches hang off it on
+ * tees, then lines from the equipment on it, and the deadlegs last.
+ *
+ * Page 1, the overview, draws the main line and as many lines after it as
+ * fit the line budget (`PID_LINES`); a line's deadlegs all go on it or none
+ * do, and a "+N" marker links to the page that holds what it leaves out.
+ * Then a page per sheet holds that sheet's lines; a sheet over the budget
+ * is split (pages.ts), never cut. The set holds `SET_LIMITS.pages` pages:
+ * past that, every page keeps within the template's hard limits and the
+ * chains on no page are counted in `limits`, per sheet. A circuit that fits
+ * one page is one plain drawing, not a set.
  *
  * Pure: it reads the walk's output and writes the template's input.
  */
 import type { SheetLink, TraceChain, TraceEnd, TraceSheet, TraceValve } from './walk';
-import { PAGES_MAX as SET_PAGES, splitPages, type SplitPage } from './pages';
+import { clipText, PID_LIMITS, SET_LIMITS } from '@mantle/diagram-templates';
+import { splitPages, type SplitPage } from './pages';
 
-/** The template's own hard limits (packages/diagram-templates pid schema). */
-export const PID_MAX = { lines: 60, tees: 30, equipment: 30, offpage: 20, inline: 6 } as const;
 /** Lines drawn: the guide's budget is 12 labelled process lines; a traced
  *  circuit gets 20 so a few deadlegs fit beside the main run and branches. */
 export const PID_LINES = 20;
 const CIRCUIT_ID = 24;
 /** A page's name in the set: its sheet's name, kept short. */
 const PAGE_TITLE = 60;
-const clipTitle = (t: string) => clipTo(t, PAGE_TITLE);
+const clipTitle = (t: string) => clipText(t, PAGE_TITLE);
 
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 /** Register text echoed into limits and guesses is cut to this length. */
 const ECHO_MAX = 40;
-/** Text cut to `max` characters, the cut said with three dots. */
-export const clipTo = (t: string, max: number) =>
-  t.length > max ? `${t.slice(0, max - 3)}...` : t;
-export const clip = (t: string) => clipTo(t, ECHO_MAX);
+export const clip = (t: string) => clipText(t, ECHO_MAX);
 /** The legend's names for the line weights: the main line, and every other
  *  line of the circuit (a branch or a deadleg of a process circuit is a
  *  process line, never a utility line). */
@@ -167,9 +170,14 @@ export function buildPid(
     }
   }
   const adj = new Map<string, Edge[]>();
+  const push = <K, V>(m: Map<K, V[]>, k: K, v: V) => {
+    const list = m.get(k);
+    if (list) list.push(v);
+    else m.set(k, [v]);
+  };
   for (const e of edges) {
-    adj.set(e.a, [...(adj.get(e.a) ?? []), e]);
-    if (e.b !== e.a) adj.set(e.b, [...(adj.get(e.b) ?? []), e]);
+    push(adj, e.a, e);
+    if (e.b !== e.a) push(adj, e.b, e);
   }
   const far = (e: Edge, v: string) => (e.a === v ? e.b : e.a);
   const isEq = (v: string) => v.startsWith('EQ:');
@@ -563,7 +571,7 @@ export function buildPid(
       const n = e.chain.valves.length;
       const valves = last ? last.edges.reduce((x, f) => x + f.chain.valves.length, 0) : 0;
       if (last && last.edges[last.edges.length - 1]!.sheet === e.sheet) {
-        if (valves + n <= PID_MAX.inline) {
+        if (valves + n <= PID_LIMITS.inline) {
           last.edges.push(e);
           last.verts.push(p.verts[i + 1]!);
           return;
@@ -621,10 +629,13 @@ export function buildPid(
   const sheetPlace = new Map(
     sheets.map((s) => [s, placeOn(sheetPieces.filter((pc) => pc.sheet === s))] as const),
   );
+  /** The sheet stretches through each vertex, in plan order. */
+  const piecesAt = new Map<string, Piece[]>();
+  for (const pc of sheetPieces) for (const v of new Set(pc.verts)) push(piecesAt, v, pc);
   /** A stretch on another sheet that passes `v`: where a line crosses. */
   const crossAt = (v: string, pc: Piece): Piece | undefined => {
     if (isEq(v) || !pc.sheet) return undefined;
-    const there = sheetPieces.filter((q) => q.sheet !== pc.sheet && q.verts.includes(v));
+    const there = (piecesAt.get(v) ?? []).filter((q) => q.sheet !== pc.sheet);
     return there.find((q) => q.plan === pc.plan) ?? there[0];
   };
 
@@ -633,21 +644,46 @@ export function buildPid(
    *  direction, sheet), or a stop. The one rule for every page. */
   type EndPlan =
     | { eq: string }
-    | { conn: string; dir: 'in' | 'out'; sheet: string }
+    | { conn: string; dir: 'in' | 'out'; sheet: string; guess?: 'link' | 'near' }
     | { stop: 'open' | 'deadleg' };
+  /** The ends joined into each vertex (read once: the graph is built). */
+  const endKeys = new Map<string, string[]>();
+  for (const k of endAt.keys()) push(endKeys, find(k), k);
+  const endPlans = new Map<string, EndPlan>();
   const endPlan = (v: string, side: 'from' | 'to'): EndPlan => {
+    const key = `${side}|${v}`;
+    let e = endPlans.get(key);
+    if (!e) {
+      e = endPlanOf(v, side);
+      endPlans.set(key, e);
+    }
+    return e;
+  };
+  function endPlanOf(v: string, side: 'from' | 'to'): EndPlan {
     if (isEq(v)) return { eq: v };
     const dir = side === 'from' ? 'in' : 'out';
-    const keys = endAt.has(v) ? [v] : [...endAt.keys()].filter((k) => find(k) === v);
+    const keys = endAt.has(v) ? [v] : (endKeys.get(v) ?? []);
     const at = keys.flatMap((k) => endAt.get(k) ?? []);
     const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
     const mark = ' (GUESS)';
     // Off-page style: an end that is not drawn as the equipment it is near.
-    if (near) return { conn: `NEAR ${near}`.slice(0, 40 - mark.length) + mark, dir, sheet: near };
+    if (near) {
+      return {
+        conn: `NEAR ${near}`.slice(0, 40 - mark.length) + mark,
+        dir,
+        sheet: near,
+        guess: 'near',
+      };
+    }
     const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
     if (guessedLink) {
       const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
-      return { conn: head.slice(0, 40 - mark.length) + mark, dir, sheet: guessedLink.other };
+      return {
+        conn: head.slice(0, 40 - mark.length) + mark,
+        dir,
+        sheet: guessedLink.other,
+        guess: 'link',
+      };
     }
     for (const { sheet, end } of at) {
       if (end.meets.kind === 'circuit')
@@ -661,7 +697,7 @@ export function buildPid(
       if (end.deadleg) return { stop: 'deadleg' };
     }
     return { stop: 'open' };
-  };
+  }
 
   // ------------------------------------------------------------ the budget
   type Page = SplitPage<Piece>;
@@ -698,9 +734,20 @@ export function buildPid(
     const c = costOf(pg);
     return (
       c.lines > PID_LINES ||
-      c.eq > PID_MAX.equipment ||
-      c.conn > PID_MAX.offpage ||
-      c.tees > PID_MAX.tees
+      c.eq > PID_LIMITS.equipment ||
+      c.conn > PID_LIMITS.offpage ||
+      c.tees > PID_LIMITS.tees
+    );
+  };
+  /** Within the template's hard limits: what a page the cap leaves over
+   *  the budget keeps (pages.ts). */
+  const fits = (pg: Page) => {
+    const c = costOf(pg);
+    return (
+      c.lines <= PID_LIMITS.lines &&
+      c.eq <= PID_LIMITS.equipment &&
+      c.conn <= PID_LIMITS.offpage &&
+      c.tees <= PID_LIMITS.tees
     );
   };
   const nameOf = (pc: Piece) => {
@@ -751,8 +798,7 @@ export function buildPid(
   const deadlegsOf = new Map<string, Plan[]>();
   for (const p of plans) {
     if (!p.deadleg) continue;
-    const k = p.parent?.line ?? '-';
-    deadlegsOf.set(k, [...(deadlegsOf.get(k) ?? []), p]);
+    push(deadlegsOf, p.parent?.line ?? '-', p);
   }
   for (const [k, list] of [...deadlegsOf].sort(
     (a, b) => (planById.get(a[0])?.depth ?? 99) - (planById.get(b[0])?.depth ?? 99),
@@ -773,7 +819,7 @@ export function buildPid(
   const valveCut = new Map<Piece, number>();
   for (const pc of ovPieces) {
     const n = pc.edges.reduce((x, e) => x + e.chain.valves.length, 0);
-    if (n > PID_MAX.inline) valveCut.set(pc, n - PID_MAX.inline);
+    if (n > PID_LIMITS.inline) valveCut.set(pc, n - PID_LIMITS.inline);
   }
   const hiddenPlans = plans.filter((p) => !chosen.has(p.id));
   const sheetsUsed = sheets
@@ -792,7 +838,7 @@ export function buildPid(
       const items = sheetPieces.filter((pc) => pc.sheet === s);
       const split = splitPages<Piece>(
         { key: `sheet-${i + 1}`, title: clipTitle(s.title), items },
-        { parentOf: (pc) => pc.parent?.piece, over, budget: PID_LINES, nameOf },
+        { parentOf: (pc) => pc.parent?.piece, over, fits, budget: PID_LINES, nameOf },
         pages.length + 1,
       );
       capped ||= split.capped;
@@ -808,17 +854,12 @@ export function buildPid(
       }
     });
   }
-  if (capped) {
-    limits.push(
-      `the drawing set holds ${SET_PAGES} pages: a sheet that needs more is drawn over the line budget on its last page.`,
-    );
-  }
   // The overview's markers: what hangs off a drawn line but is not drawn
   // there (and the valves past six on it), with the page that holds most
   // of it.
   const kidsOf = new Map<string, Plan[]>();
   for (const p of plans) {
-    if (p.parent) kidsOf.set(p.parent.line, [...(kidsOf.get(p.parent.line) ?? []), p]);
+    if (p.parent) push(kidsOf, p.parent.line, p);
   }
   const below = (p: Plan): Plan[] => [p, ...(kidsOf.get(p.id) ?? []).flatMap(below)];
   const ovMarkers = new Map<Piece, { text: string; page: string; focus: string }>();
@@ -861,7 +902,10 @@ export function buildPid(
     said.add(text);
     limits.push(text);
   };
-  const guessMarks = { linkAt: linkAt.size > 0, inferred: false, near: false };
+  type Mark = 'link' | 'inferred' | 'near';
+  /** The guess kinds drawn on each page, and on the whole set. */
+  const marksOf = new Map<string, Set<Mark>>();
+  const allMarks = new Set<Mark>();
   const valvesOn = (pc: Piece): TraceValve[] => {
     const out: TraceValve[] = [];
     pc.edges.forEach((e, i) => {
@@ -877,11 +921,13 @@ export function buildPid(
     pageTitle: string,
     markers: Map<Piece, { text: string; page: string; focus: string }>,
     sheetMode: boolean,
-  ): Record<string, unknown> => {
+  ): { drawn: Piece[]; cuts: string[]; inlineCut: number; data: Record<string, unknown> } => {
     const all = pg.context ? [pg.context, ...pg.items] : pg.items;
     const onPage = new Set(all);
     const placed = placeOn(all);
     const cuts = new Set<string>();
+    const marks = new Set<Mark>();
+    marksOf.set(pg.key, marks);
     const equipment = new Map<string, { id: string; type: string }>();
     const offpage: {
       id: string;
@@ -893,6 +939,8 @@ export function buildPid(
     }[] = [];
     const tees: { id: string; on: string; at?: number }[] = [];
     const lines: Record<string, unknown>[] = [];
+    /** The pieces drawn here, in the order their lines are. */
+    const drawn: Piece[] = [];
     const taken = new Set<string>();
     const unique = (base: string) => {
       let id = base;
@@ -904,8 +952,8 @@ export function buildPid(
     const equipmentOf = (v: string) => {
       const known = eqId.get(v);
       if (known) return known;
-      if (equipment.size >= PID_MAX.equipment) {
-        cuts.add(`equipment past ${PID_MAX.equipment}: an end drawn without its equipment`);
+      if (equipment.size >= PID_LIMITS.equipment) {
+        cuts.add(`equipment past ${PID_LIMITS.equipment}: an end drawn without its equipment`);
         return null;
       }
       const tag = eqTag(v);
@@ -918,7 +966,7 @@ export function buildPid(
     const teeOn = (lineId: string, at: number, v: string) => {
       const known = teeId.get(v);
       if (known) return known;
-      if (tees.length >= PID_MAX.tees) return null;
+      if (tees.length >= PID_LIMITS.tees) return null;
       const id = unique(`T-${tees.length + 1}`);
       tees.push({ id, on: lineId, at });
       teeId.set(v, id);
@@ -926,8 +974,8 @@ export function buildPid(
     };
     const shortSheet = (t: string) => t.replace(/\s+/g, '').slice(0, 12) || '?';
     const connector = (text: string, dir: 'in' | 'out', sheet: string, to?: Piece) => {
-      if (offpage.length >= PID_MAX.offpage) {
-        cuts.add(`connectors past ${PID_MAX.offpage}: ends drawn open`);
+      if (offpage.length >= PID_LIMITS.offpage) {
+        cuts.add(`connectors past ${PID_LIMITS.offpage}: ends drawn open`);
         return null;
       }
       const id = unique(`OPC-${offpage.length + 1}`);
@@ -960,7 +1008,7 @@ export function buildPid(
         return id ? { id } : { stop: 'open' as const };
       }
       if ('conn' in e) {
-        if (e.conn.startsWith('NEAR ')) guessMarks.near = true;
+        if (e.guess) marks.add(e.guess);
         const id = connector(e.conn, e.dir, e.sheet);
         if (id) return { id };
         return { stop: 'open' as const };
@@ -1092,7 +1140,7 @@ export function buildPid(
       const keep = new Set(
         [...valves.keys()]
           .sort((a, b) => Number(valves[a]!.guessed) - Number(valves[b]!.guessed) || a - b)
-          .slice(0, PID_MAX.inline),
+          .slice(0, PID_LIMITS.inline),
       );
       if (!(sheetMode === false && valveCut.has(pc))) inlineCut += valves.length - keep.size;
       const inline = valves.filter((_, i) => keep.has(i)).map((v) => ({ type: v.type }));
@@ -1103,8 +1151,9 @@ export function buildPid(
         (x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length,
         0,
       );
-      if (inferred) guessMarks.inferred = true;
+      if (inferred) marks.add('inferred');
       const mk = markers.get(pc);
+      drawn.push(pc);
       lines.push({
         id: pc.id,
         ...(number ? { number } : {}),
@@ -1122,51 +1171,43 @@ export function buildPid(
         ...(mk ? { more: { text: mk.text, link: mk.page, focus: mk.focus } } : {}),
       });
     }
-    if (cuts.size) {
-      once(
-        needSheets && !sheetMode
-          ? `the overview is cut at the template limits (${[...cuts].join('; ')}); the sheet pages draw every line.`
-          : `${pageTitle}: the page is cut at the template limits (${[...cuts].join('; ')}); the trace JSON has every chain.`,
-      );
-    }
-    if (inlineCut) {
-      once(
-        `${pageTitle}: ${inlineCut} valve${inlineCut === 1 ? '' : 's'} or reducer${inlineCut === 1 ? '' : 's'} past six on one chain ${inlineCut === 1 ? 'is' : 'are'} left off the drawing (guessed ones first); the trace JSON has them on its chains.`,
-      );
-    }
     const drawnLines = new Set(lines.map((l) => l.id as string));
+    for (const k of marks) allMarks.add(k);
     return {
-      lines,
-      equipment: [...equipment.values()],
-      offpage,
-      tees: tees.filter(
-        (t) => drawnLines.has(t.on) && lines.some((l) => l.from === t.id || l.to === t.id),
-      ),
-      circuits: [
-        {
-          id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', CIRCUIT_ID),
-          label: circuit.slice(0, 40),
-          lines: lines.map((l) => l.id as string),
-          equipment: [...equipment.keys()],
-        },
-      ],
+      drawn,
+      cuts: [...cuts],
+      inlineCut,
+      data: {
+        lines,
+        equipment: [...equipment.values()],
+        offpage,
+        tees: tees.filter(
+          (t) => drawnLines.has(t.on) && lines.some((l) => l.from === t.id || l.to === t.id),
+        ),
+        circuits: [
+          {
+            id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', CIRCUIT_ID),
+            label: circuit.slice(0, 40),
+            lines: lines.map((l) => l.id as string),
+            equipment: [...equipment.keys()],
+          },
+        ],
+      },
     };
   };
 
-  const ov = emit(
+  const ovOut = emit(
     { key: 'overview', title: 'Overview', items: ovPieces },
     'the overview',
     ovMarkers,
     false,
   );
+  const ov = ovOut.data;
   const ovLines = (ov.lines as unknown[]).length;
-  const sheetData = pages.map(({ page, title, sheet }) => ({
-    page,
-    title,
-    sheet,
-    data: emit(page, title, markersOn.get(page.key) ?? new Map(), true),
-  }));
-  if (!ovLines) limits.push('nothing on the circuit could be drawn.');
+  const sheetData = pages.map(({ page, title, sheet }) => {
+    const out = emit(page, title, markersOn.get(page.key) ?? new Map(), true);
+    return { page, title, sheet, out, data: out.data };
+  });
   // A link's focus names a line the target page drew; a line left off at a
   // cap is not there, so the link shows the page alone.
   const drawnOn = new Map<string, Set<string>>(
@@ -1190,59 +1231,129 @@ export function buildPid(
     }
   }
 
-  // Every chain lands on a page that owns it: said when one does not.
+  // Every chain is drawn on a page that owns it: counted, per sheet, when
+  // one is not (the page cap, or a page cut at the template limits).
   const owned = new Set(
-    (needSheets ? pages.flatMap((p) => p.page.items) : ovPieces).flatMap((pc) => pc.edges),
+    (needSheets ? sheetData.flatMap((x) => x.out.drawn) : ovOut.drawn).flatMap((pc) => pc.edges),
   );
-  const lost = edges.filter((e) => !owned.has(e)).length;
-  if (lost) {
-    limits.push(
-      `${lost} chain${lost === 1 ? ' is' : 's are'} on no page of the drawing set; the trace JSON has every chain.`,
+  const lostBy = new Map<TraceSheet, number>();
+  for (const e of edges) if (!owned.has(e)) lostBy.set(e.sheet, (lostBy.get(e.sheet) ?? 0) + 1);
+  const lost = [...lostBy.values()].reduce((a, b) => a + b, 0);
+  const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+
+  // What each page could not draw, in page order.
+  const sheetInlineCut = sheetData.reduce((a, x) => a + x.out.inlineCut, 0);
+  if (ovOut.cuts.length) {
+    once(
+      needSheets
+        ? `the overview is cut at the template limits (${ovOut.cuts.join('; ')}); ${lost ? 'its lines are on the sheet pages, but for the chains on no page counted here' : 'the sheet pages draw every line'}.`
+        : `the overview: the page is cut at the template limits (${ovOut.cuts.join('; ')}); the trace JSON has every chain.`,
     );
   }
-  const marks = [
-    guessMarks.linkAt ? 'sheet links' : '',
-    guessMarks.inferred ? 'joins through process lines' : '',
-    guessMarks.near ? 'ends only near equipment' : '',
-  ].filter(Boolean);
-  const guessNote = marks.length ? ` Guesses are marked GUESS (${marks.join(', ')}).` : '';
+  const valvesCut = (where: string, k: number) =>
+    `${where}: ${k} valve${k === 1 ? '' : 's'} or reducer${k === 1 ? '' : 's'} past six on one chain ${k === 1 ? 'is' : 'are'} left off the drawing (guessed ones first); the trace JSON has them on its chains.`;
+  if (ovOut.inlineCut) once(valvesCut('the overview', ovOut.inlineCut));
+  for (const { title, out } of sheetData) {
+    if (out.cuts.length) {
+      once(
+        `${title}: the page is cut at the template limits (${out.cuts.join('; ')}); the trace JSON has every chain.`,
+      );
+    }
+    if (out.inlineCut) once(valvesCut(title, out.inlineCut));
+  }
+  if (!ovLines) limits.push('nothing on the circuit could be drawn.');
+  if (lost) {
+    const named = sheets.filter((x) => lostBy.has(x));
+    const list = named
+      .slice(0, 4)
+      .map((x) => (named.length === 1 ? clip(x.title) : `${clip(x.title)} (${lostBy.get(x)})`))
+      .join(', ');
+    const more = named.length > 4 ? ` and ${named.length - 4} more` : '';
+    limits.push(
+      `${plural(lost, 'chain')} of sheet${named.length === 1 ? '' : 's'} ${list}${more} ${lost === 1 ? 'is' : 'are'} on no page of the drawing${needSheets ? ' set' : ''}${capped ? `: a set holds at most ${SET_LIMITS.pages} pages, each within the template's limits, and ${lost === 1 ? 'it does' : 'they do'} not fit` : ''}; the trace JSON has every chain.`,
+    );
+  }
+  const heavy = sheetData.filter((x) => (x.data.lines as unknown[]).length > PID_LINES);
+  if (capped && heavy.length) {
+    limits.push(
+      `a drawing set holds at most ${SET_LIMITS.pages} pages: ${plural(heavy.length, 'page')} past the cap draw${heavy.length === 1 ? 's' : ''} more than the ${PID_LINES}-line budget, within the template's limits (${heavy
+        .slice(0, 4)
+        .map((x) => clip(x.title))
+        .join(', ')}${heavy.length > 4 ? ` and ${heavy.length - 4} more` : ''}).`,
+    );
+  }
+
+  const guessNoteOf = (ms: Set<Mark>) => {
+    const words = [
+      ms.has('link') ? 'sheet links' : '',
+      ms.has('inferred') ? 'joins through process lines' : '',
+      ms.has('near') ? 'ends only near equipment' : '',
+    ].filter(Boolean);
+    return words.length ? ` Guesses are marked GUESS (${words.join(', ')}).` : '';
+  };
   const total = plans.length;
+  const rest = lost
+    ? `every other line but ${plural(lost, 'chain')} on no page (see limits)`
+    : sheetInlineCut
+      ? 'every line and deadleg'
+      : 'every line, deadleg and valve';
   const setNote = needSheets
-    ? ` ${pages.length + 1} pages: the overview draws ${ovLines} of ${total} line${total === 1 ? '' : 's'}; the sheet pages draw every line, deadleg and valve.`
+    ? ` ${pages.length + 1} pages: the overview draws ${ovLines} of ${plural(total, 'line')}; the sheet pages draw ${rest}.`
     : '';
   const crossings = m ? new Set(m.edges.map((e) => e.sheet.title)).size - 1 : 0;
-  const description = m
-    ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}.${setNote}${guessNote}`
-    : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${setNote}${guessNote}`;
+  const about = (note: string) =>
+    (m
+      ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}.${setNote}${note}`
+      : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${setNote}${note}`
+    ).slice(0, 300);
   const head = `Circuit ${circuit}`.slice(0, 80);
-  const only = !needSheets && sheetsUsed.length === 1 ? sheetsUsed[0]!.title : undefined;
+  // One page holds it all: one plain drawing, no set around it.
+  if (!needSheets) {
+    return {
+      template: 'pid',
+      title: head,
+      description: about(guessNoteOf(allMarks)),
+      legendNames: LEGEND_NAMES,
+      ...ov,
+    };
+  }
   return {
     template: 'pid',
     title: head,
-    description: description.slice(0, 300),
+    description: about(guessNoteOf(allMarks)),
     legendNames: LEGEND_NAMES,
     pages: [
       {
         id: 'overview',
-        title: only ? clipTitle(only) : 'Overview',
+        title: 'Overview',
         data: {
           title: head,
-          description: description.slice(0, 300),
+          description: about(guessNoteOf(marksOf.get('overview') ?? new Set())),
           ...ov,
         },
       },
-      ...sheetData.map(({ page, title, sheet, data }) => ({
-        id: page.key,
-        title: clipTitle(title),
-        data: {
-          title: `${head}: ${title}`.slice(0, 80),
-          description: (page.context
-            ? `Detail of ${sheet?.title ?? title}: the lines off ${nameOf(page.context)}, drawn again here.`
-            : `Sheet ${sheet?.title ?? title} of circuit ${circuit}: ${(data.lines as unknown[]).length} line${(data.lines as unknown[]).length === 1 ? '' : 's'}, every deadleg and valve on it.${guessNote}`
-          ).slice(0, 300),
-          ...data,
-        },
-      })),
+      ...sheetData.map(({ page, title, sheet, data }) => {
+        const n = (data.lines as { more?: unknown }[]).length;
+        const more = (data.lines as { more?: unknown }[]).some((l) => l.more);
+        // Said once a sheet, on its first page.
+        const lostHere =
+          sheet && sheetData.find((x) => x.sheet === sheet)?.page === page
+            ? (lostBy.get(sheet) ?? 0)
+            : 0;
+        const note = guessNoteOf(marksOf.get(page.key) ?? new Set());
+        return {
+          id: page.key,
+          title: clipTitle(title),
+          data: {
+            title: `${head}: ${title}`.slice(0, 80),
+            description: (page.context
+              ? `Detail of ${sheet?.title ?? title}: the lines off ${nameOf(page.context)}, drawn again here.${note}`
+              : `Sheet ${sheet?.title ?? title} of circuit ${circuit}: ${plural(n, 'line')} drawn here${more ? '; a +N marker links to the page that holds what a line leaves out' : ''}${lostHere ? `; ${plural(lostHere, 'chain')} of this sheet ${lostHere === 1 ? 'is' : 'are'} on no page (see limits)` : ''}.${note}`
+            ).slice(0, 300),
+            ...data,
+          },
+        };
+      }),
     ],
   };
 

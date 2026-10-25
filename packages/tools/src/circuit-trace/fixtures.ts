@@ -122,8 +122,9 @@ export function sheetTwo(): SheetInput {
   };
 }
 
-/** The overview page of a traced drawing set (the first page): what the
- *  single drawing was before sets. */
+/** The first drawing of a trace: the overview page of a drawing set, or
+ *  the drawing itself when one page holds the circuit. */
 export function overviewOf(pid: unknown): Record<string, unknown> {
-  return (pid as { pages: { data: Record<string, unknown> }[] }).pages[0]!.data;
+  const set = pid as { pages?: { data: Record<string, unknown> }[] };
+  return set.pages ? set.pages[0]!.data : (pid as Record<string, unknown>);
 }

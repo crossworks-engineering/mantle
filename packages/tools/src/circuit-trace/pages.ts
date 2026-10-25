@@ -13,9 +13,16 @@
  *      never picked (that would move the whole page);
  *   3. a context line with only childless children: they are cut into
  *      chunks, one detail page each, chained by markers.
- * Every item ends on exactly one page; a context line is drawn on its
- * detail pages but belongs to the page it came from.
+ * Every item ends on exactly one page, until the set's page cap: a set
+ * holds `PAGES_MAX` pages in all (`made` of them made elsewhere). Once it
+ * is reached nothing new is made; a page still over budget keeps what fits
+ * within `fits` (the template's hard limits), the rest is returned in
+ * `left` and `capped` is true. The caller says what is on no page.
+ *
+ * A parent loop (a line that is, through its parents, its own parent) has
+ * no root: each line on it is read as a root, so none drops out.
  */
+import { SET_LIMITS } from '@mantle/diagram-templates';
 
 export type SplitPage<T> = {
   key: string;
@@ -33,8 +40,12 @@ export type SplitMarker<T> = { page: string; on: T; to: string; items: T[] };
 export type SplitRules<T> = {
   /** The item a line hangs off, if it hangs off one. */
   parentOf: (t: T) => T | undefined;
-  /** Whether a page is over budget (lines, equipment, connectors). */
+  /** Whether a page is over budget (lines, equipment, connectors). Must
+   *  grow with the items: more items are never less over. */
   over: (p: SplitPage<T>) => boolean;
+  /** Whether a page is within the hard limits, for a page the cap leaves
+   *  over budget (absent: such a page keeps everything). Grows the same way. */
+  fits?: (p: SplitPage<T>) => boolean;
   /** Lines a page holds, its context line included. */
   budget: number;
   /** A short name of a line, for a detail page's title. */
@@ -42,16 +53,31 @@ export type SplitRules<T> = {
 };
 
 /** The pages a set holds (the pid template's own cap). */
-export const PAGES_MAX = 40;
+export const PAGES_MAX = SET_LIMITS.pages;
+
+/** The largest `k` in [lo, hi] with `ok(k)`, for `ok` true up to some point
+ *  and false after it; `lo - 1` when none is. */
+function largest(lo: number, hi: number, ok: (k: number) => boolean): number {
+  let a = lo - 1;
+  let b = hi;
+  while (a < b) {
+    const mid = Math.ceil((a + b + 1) / 2);
+    if (ok(mid)) a = mid;
+    else b = mid - 1;
+  }
+  return a;
+}
 
 export function splitPages<T>(
   first: SplitPage<T>,
   rules: SplitRules<T>,
   /** Pages already made elsewhere in the set: the cap is over all. */
   made = 0,
-): { pages: SplitPage<T>[]; markers: SplitMarker<T>[]; capped: boolean } {
+): { pages: SplitPage<T>[]; markers: SplitMarker<T>[]; capped: boolean; left: T[] } {
   const pages: SplitPage<T>[] = [];
   const markers: SplitMarker<T>[] = [];
+  const left: T[] = [];
+  if (made >= PAGES_MAX) return { pages, markers, capped: true, left: [...first.items] };
   let capped = false;
   let n = 0;
   const queue: SplitPage<T>[] = [first];
@@ -61,21 +87,63 @@ export function splitPages<T>(
     pages.push(page);
     if (!rules.over(page)) continue;
     const details: SplitPage<T>[] = [];
-    const room = () => made + pages.length + queue.length + details.length < PAGES_MAX;
+    /** Pages the set may still make. */
+    const free = () => PAGES_MAX - (made + pages.length + queue.length + details.length);
+    const room = () => free() > 0;
     /** The page's forest, read afresh after every move. */
     const forest = () => {
       const on = new Set(page.items);
       const parentOn = (t: T) => {
         const p = rules.parentOf(t);
-        return p !== undefined && (on.has(p) || p === page.context) ? p : undefined;
+        return p !== undefined && p !== t && (on.has(p) || p === page.context) ? p : undefined;
       };
       const kids = new Map<T, T[]>();
+      const parentIn = new Map<T, T>();
       for (const t of page.items) {
         const p = parentOn(t);
-        if (p !== undefined) kids.set(p, [...(kids.get(p) ?? []), t]);
+        if (p === undefined) continue;
+        parentIn.set(t, p);
+        const list = kids.get(p);
+        if (list) list.push(t);
+        else kids.set(p, [t]);
       }
-      const tree = (t: T): T[] => [t, ...(kids.get(t) ?? []).flatMap(tree)];
-      const roots = page.items.filter((t) => parentOn(t) === undefined);
+      // A line on a parent loop is a root: walk up from each line; one that
+      // comes back to a line already on its walk is on a loop.
+      const looped = new Set<T>();
+      const done = new Set<T>();
+      for (const t of page.items) {
+        const walk: T[] = [];
+        const onWalk = new Set<T>();
+        let at: T | undefined = t;
+        while (at !== undefined && !done.has(at) && !onWalk.has(at)) {
+          walk.push(at);
+          onWalk.add(at);
+          at = parentIn.get(at);
+        }
+        if (at !== undefined && onWalk.has(at)) {
+          for (let i = walk.indexOf(at); i < walk.length; i++) looped.add(walk[i]!);
+        }
+        for (const w of walk) done.add(w);
+      }
+      for (const t of looped) {
+        const p = parentIn.get(t)!;
+        kids.set(
+          p,
+          kids.get(p)!.filter((k) => k !== t),
+        );
+      }
+      const tree = (t: T): T[] => {
+        const out: T[] = [];
+        const stack = [t];
+        while (stack.length) {
+          const x = stack.pop()!;
+          out.push(x);
+          const ks = kids.get(x);
+          if (ks) for (let i = ks.length - 1; i >= 0; i--) stack.push(ks[i]!);
+        }
+        return out;
+      };
+      const roots = page.items.filter((t) => looped.has(t) || !parentIn.has(t));
       return { kids, tree, roots };
     };
     const detail = (d: Omit<SplitPage<T>, 'key'>, on: T): void => {
@@ -96,7 +164,7 @@ export function splitPages<T>(
         const inScope = new Set(items);
         const excess = Math.max(1, items.length + (page.context ? 1 : 0) - rules.budget);
         const groups = [...kids]
-          .filter(([p]) => p !== page.context && inScope.has(p))
+          .filter(([p, ks]) => ks.length && p !== page.context && inScope.has(p))
           .map(([p, ks]) => ({ p, moved: ks.flatMap(tree) }));
         const pick =
           groups
@@ -108,10 +176,13 @@ export function splitPages<T>(
         // many as fit stay, the rest move.
         const direct = kids.get(pick.p) ?? [];
         if (pick.moved.length === direct.length) {
-          const others = page.items.filter((t) => !direct.includes(t));
-          let keep = direct.length - 1;
-          while (keep > 0 && rules.over({ ...page, items: [...others, ...direct.slice(0, keep)] }))
-            keep -= 1;
+          const gone = new Set(direct);
+          const others = page.items.filter((t) => !gone.has(t));
+          const keep = largest(
+            1,
+            direct.length - 1,
+            (k) => !rules.over({ ...page, items: [...others, ...direct.slice(0, k)] }),
+          );
           if (keep > 0) pick.moved = direct.slice(keep);
         }
         const moved = new Set(pick.moved);
@@ -130,15 +201,22 @@ export function splitPages<T>(
     if (page.context) fit(() => page.items);
     else for (const r of forest().roots) fit(() => forest().tree(r));
 
-    // 2. Several trees still over: parts of the page, packed in order.
+    // 2. Several trees still over: parts of the page, packed in order. The
+    //    parts replace the page, so they may take its place and what the
+    //    set has left; past that the last part holds the rest.
     const parts: SplitPage<T>[] = [];
-    const roots = forest().roots;
-    if (!page.context && roots.length > 1 && rules.over(page) && room()) {
+    const f = forest();
+    const allowed = free() + 1;
+    if (!page.context && f.roots.length > 1 && rules.over(page) && allowed > 1) {
       const groups: T[][] = [];
       let cur: T[] = [];
-      for (const r of roots) {
-        const t = forest().tree(r);
-        if (cur.length && rules.over({ ...page, items: [...cur, ...t] })) {
+      for (const r of f.roots) {
+        const t = f.tree(r);
+        if (
+          cur.length &&
+          groups.length < allowed - 1 &&
+          rules.over({ ...page, items: [...cur, ...t] })
+        ) {
           groups.push(cur);
           cur = [];
         }
@@ -155,7 +233,9 @@ export function splitPages<T>(
           }),
         );
         // What this page said and lent now belongs to the part holding it.
-        const partOf = (t: T) => parts.find((p) => p.items.includes(t))?.key ?? page.key;
+        const partAt = new Map<T, string>();
+        for (const p of parts) for (const t of p.items) partAt.set(t, p.key);
+        const partOf = (t: T) => partAt.get(t) ?? page.key;
         for (const mk of markers) if (mk.page === page.key) mk.page = partOf(mk.on);
         for (const d of details)
           if (d.origin === page.key && d.context) d.origin = partOf(d.context);
@@ -185,7 +265,22 @@ export function splitPages<T>(
       }
     }
     queue.unshift(...parts, ...details);
-    if (!parts.length && rules.over(page)) capped = true;
+    if (parts.length || !rules.over(page)) continue;
+    // Still over: the cap stopped the split. What fits stays, in order.
+    capped = true;
+    const fits = rules.fits;
+    if (!fits || fits(page)) continue;
+    const keep = largest(0, page.items.length - 1, (k) =>
+      fits({ ...page, items: page.items.slice(0, k) }),
+    );
+    left.push(...page.items.slice(Math.max(0, keep)));
+    page.items = page.items.slice(0, Math.max(0, keep));
+    if (!page.items.length && !page.context) {
+      // Nothing of it fits: no page, and nothing links to one.
+      pages.pop();
+      for (let i = markers.length - 1; i >= 0; i--)
+        if (markers[i]!.to === page.key) markers.splice(i, 1);
+    }
   }
-  return { pages, markers, capped };
+  return { pages, markers, capped, left };
 }
