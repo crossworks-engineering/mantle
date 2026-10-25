@@ -7,44 +7,66 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 ## Unreleased: the trace's guesses checked by an image model
 
 - **Feature:** `circuit_verify(circuit, register?, kinds?, max_questions?,
-dry_run?)` checks the guesses `circuit_trace` marks: each inferred join,
-  end only near equipment, guessed sheet link and valve type read from a
-  block name becomes a yes/no question on a close-up crop of the drawing,
-  keyed by DWG handles and coordinates (never pixels). Answers are yes, no
-  or unsure with a reason and the model that gave them; an answer that does
-  not parse is unsure. `dry_run` lists the questions without spending.
-  Capped per call at 40 questions, 80 crops, 16 images per request and 8
-  requests, each cap said when hit. Spends the owner's vision key, only on
-  an explicit call: never a recipe step or a run item.
+dry_run?, recheck?)` checks the guesses `circuit_trace` marks: each
+  inferred join, end only near equipment, guessed sheet link and valve type
+  read from a block name becomes a yes/no question on a close-up crop of
+  the drawing, keyed by DWG handles and coordinates (never pixels; a link
+  also by the sheet it was guessed to continue on). Answers are yes, no or
+  unsure with a reason and the model that gave them; an answer that does
+  not parse, or a reply cut off at its token cap, is unsure and says why.
+  The owner's default vision worker answers (an OpenRouter model: the crops
+  go in one request), its model recorded per answer. `dry_run` lists the
+  questions without spending. Capped per call at 40 questions, 80 crops,
+  16 images per request and 8 requests, each cap said when hit; guesses
+  already answered at the drawing's revision are skipped (`recheck` asks
+  again), so the next call reaches the rest. Spends the owner's vision key,
+  only on an explicit call: never a recipe step or a run item.
+- **Feature:** nothing is spent on what cannot be kept. Before the first
+  vision request every sheet is asked whether its answers can be filed (the
+  caller may edit the drawing's table, the table is writable and has no
+  draft open, the caller may create files in Auto-filed > Drawing checks)
+  and whether its table still matches the drawing: a DWG/DXF table now
+  records the sha256 of the bytes it was built from (at import and on each
+  `dwg-reindex`), and a file replaced in place, or a table imported before
+  this release, is refused with the `pnpm maintain dwg-reindex --file=<id>
+--again --apply` that fixes it; `circuit_trace` says that sheet's geometry
+  is the older revision. A call where no sheet can be checked is refused.
 - **Feature:** the media sidecar's `POST /dwg/crop` crops one sheet for a
   batch of point and path items in one call: zoomed so the smallest text
   in the window reads at about 14 px (long edge at most 2000 px), a path
   as overlapping crops so no joint sits only on an edge, the trace drawn
   over it (main red, branch blue, deadleg orange), green rings on the
   spots asked about, and a sheet overview. At most 48 crops and 150 s per
-  call; what is cut is named.
-- **Feature:** a second vision worker, `drawing-check` ("Check drawings",
-  `~google/gemini-pro-latest` on OpenRouter), ships in the manifest as
-  optional and never becomes the default: image indexing stays on the
-  cheap default, and no kind ever falls back to it. Without it the default
-  vision worker answers, and the result says so.
+  call; what is cut is named. The brain rounds the spec, simplifies join
+  paths (joints kept) and caps the overlay to what the sidecar takes,
+  saying how much of it was left off.
 - **Feature:** every answer is kept with its evidence in a **Checks** tab
   of the drawing's own table (key, question, answer, reason, trust, model,
-  date, revision, file, crop ids); the crops are image files under
+  date, revision, file, crop ids, seal); the crops are image files under
   Auto-filed > Drawing checks, stored by name only (no vision pass, no
-  summary), and the table commit keeps its summary, so filing spends
-  nothing. `dwg-reindex` keeps the tab, and an image-check commit is not
-  an edit to it.
+  summary) and linked to the drawing and its table. The write and its
+  commit are pinned to the draft revision the call made, so a user's draft
+  is never published or thrown away, and the commit never starts a model
+  pass. `dwg-reindex` keeps the tab, and an image-check commit is not an
+  edit to it.
 - **Feature:** a new trust level between guess and certain. `circuit_trace`
   reads the Checks tab: a guess the image confirmed is marked CHECKED BY
-  IMAGE on the drawing and in the result's `checks`, never certain; one it
-  contradicted stays a GUESS and says the image said no; unsure stays a
-  GUESS. Checks of an older revision of the drawing are kept, not applied.
+  IMAGE on the drawing (a valve type in its line's note) and in the
+  result's `checks`, never certain; one it contradicted stays a GUESS and
+  says the image said no; unsure stays a GUESS. Only rows circuit_verify
+  wrote count: each carries an HMAC seal under a key derived from
+  MANTLE_MASTER_KEY, and a row typed or changed by hand is kept, never
+  applied, and said. Checks of an older revision, or of a question that
+  reads differently now, are kept, not applied.
+- **Fix:** a several-image vision request has its own 240 s budget
+  (`PROVIDER_TIMEOUTS.visionImages`) and caps the model's reasoning tokens
+  so the answer has room; a timeout is said, with no spend recorded for it.
 - **Fix:** a `pid` line of no length that carries a line number, and
   several lines between the same two pieces of equipment, no longer throw
-  in the layout (single drawings draw as before). At the page cap a marker
-  moved onto an unrelated line reads `CUT AT PAGE CAP` instead of counting
-  that line's children.
+  in the layout; only a layout that failed is retried with one ranking
+  edge per pair, so every drawing that drew before draws byte for byte as
+  it did. At the page cap a marker moved onto an unrelated line reads `CUT
+AT PAGE CAP` instead of counting that line's children.
 
 ## Unreleased: a traced circuit as a linked drawing set
 

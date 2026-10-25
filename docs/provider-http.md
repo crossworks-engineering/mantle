@@ -323,7 +323,7 @@ retries and the failover. That is a known gap, left for its own step.
   server log; the message text is unchanged). The sentence
   (`publicProviderErrorMessage`, @mantle/std) is, in order: a domain
   error's row (`The provider limits the request rate. (anthropic, HTTP
-  429)` for a `ProviderHttpError`); the classifier's class for any other
+429)` for a `ProviderHttpError`); the classifier's class for any other
   error it names (`The provider refused the API key. (HTTP 403)` for
   OpenRouter's SDK error); the class the status names when the error
   carries one the classifier does not read (an SDK's `statusCode`); else,
@@ -339,14 +339,14 @@ retries and the failover. That is a known gap, left for its own step.
     key."). Now `providerFailureText` names a provider failure only on
     evidence: a `ProviderHttpError` or an SDK's HTTP error on the chain, a
     copy of an adapter's message (`<p> chat 500: `, `openrouter-chat 403
-    on `, `<p> embeddings failed: 502 Bad Gateway`, `stream error 429: `),
+on `, `<p> embeddings failed: 502 Bad Gateway`, `stream error 429: `),
     or a call that got no answer (a deadline's or abort's name, the SDK's
     `ConnectionError`, a network code, undici's `terminated`, a network or
     timeout word when no status says an answer came). In work that called
     a provider, what is left still never says its text: a status says
     `A service the brain called answered with an error. (HTTP n)`, a body
     that did not parse `An answer could not be read: it is not valid
-    JSON.`, a `TypeError` the runtime's fixed sentence. A `TimeoutError`
+JSON.`, a `TypeError` the runtime's fixed sentence. A `TimeoutError`
     is a timeout by its name (before, "timed out after 180 s" read as
     HTTP 180). `providerFailureShape` stays broad for one job only: the
     refused-key reading (the log line and `errorDetail`).
@@ -354,18 +354,18 @@ retries and the failover. That is a known gap, left for its own step.
     refused says why, by its status and a pattern over the body (never the
     body): too long (a 413; a 400 or 422 that says the prompt or context
     is too long) `The request is too long for this model. Send less at
-    once (a shorter input, fewer or smaller files) and try again.`;
+once (a shorter input, fewer or smaller files) and try again.`;
     refused (a 403 or 400 moderation answer) `The provider refused this
-    input under its content policy. Rephrase it or leave out the flagged
-    part.`; a 400 or 422 whose body points at an argument the caller
+input under its content policy. Rephrase it or leave out the flagged
+part.`; a 400 or 422 whose body points at an argument the caller
     sent (an invalid or unsupported value, a parameter, "is required",
     "must be one of", `invalid_type`) and not at the request's own shape
     (`tools.N`, `messages.N`, `contents.N`, `max_tokens`, in dot or
     bracket notation since fix round 2, L-A: `tools[0].function.parameters`,
     `messages.[1].content`, `tools[0].function_declarations[0]`) `The
-    provider rejected the request as invalid. Check the arguments (names, types, sizes) and try
-    again.`; any other 400 or 422 `The model provider refused the
-    request.` (fix round 1, L1: a config-side 400 is ours to fix, and a
+provider rejected the request as invalid. Check the arguments (names, types, sizes) and try
+again.`; any other 400 or 422 `The model provider refused the
+request.` (fix round 1, L1: a config-side 400 is ours to fix, and a
     model told to retry it only spends calls). A person never hears the
     arguments sentence: a member's thread and stream for a failed team
     turn say `personProviderErrorMessage`, the same sentences with the
@@ -373,7 +373,7 @@ retries and the failover. That is a known gap, left for its own step.
     (the `member` reader of the record; its baseline on main is the
     `provider` reader, which a team turn said then); a 2xx with no usable result (AssemblyAI's transcript `error`, an answer
     the SDK could not validate, a Hugging Face 2xx that is no image) `The
-    provider answered without a usable result. (assemblyai)`, no HTTP 200.
+provider answered without a usable result. (assemblyai)`, no HTTP 200.
     Every changed answer is named, cell by cell, in
     `packages/std/src/provider-answers.changes.json` (recorded on main in
     `provider-answers.main.json`).
@@ -396,11 +396,11 @@ retries and the failover. That is a known gap, left for its own step.
     provider and status only. The refusal is read on every error (fix
     round 1, M1), so a wrapper that copied an adapter's message
     (`<p> embeddings failed: 401 Unauthorized - <body>`, `<p> chat 401:
-    Incorrect API key provided: ...`) is one too, and so is a 401 of our
+Incorrect API key provided: ...`) is one too, and so is a 401 of our
     own (a line of detail lost, never a key). With a `step` (ctx.step) the
     detail lands on the owner's trace as `error_detail`: dispatch's catch,
     dispatch's masking (fix round 1, L2: `maskToolDatabaseErrors(where,
-    run, ctx.step)`, so a masked owner turn keeps it too), the speech,
+run, ctx.step)`, so a masked owner turn keeps it too), the speech,
     vision, summary, image, web search, `recall_match` and `find_window`
     tools; `video_ingest`'s transcript step keeps its `error` meta, now
     `errorDetail`. The tool loop's outer masking has no step (it wraps the
@@ -411,7 +411,7 @@ retries and the failover. That is a known gap, left for its own step.
     on every surface that masks (every turn, the owner's too, an MCP
     connection, an app broker, `/api/v1`). The named gap: 111 tool replies
     in @mantle/tools and @mantle/runtime still say `error:
-    errorMessage(err)` (their work calls no provider directly; the masking
+errorMessage(err)` (their work calls no provider directly; the masking
     covers them where it runs), and the owner web's own direct tool calls
     do not mask. Pinned in `packages/tools/src/provider-error-gap.test.ts`,
     down only. Also left: OpenRouter's in-stream error with no numeric
