@@ -110,9 +110,12 @@ const cropDocument = (sheet: SheetInput) => ({
  * can: asked before any vision request, so a call that could not keep its
  * answers spends nothing. Each reason says what to do instead.
  *
- * `dryRun` asks the same without making anything: the crop folders are not
- * created (a folder not there yet is judged by the Files root right that
- * creating it needs), so a dry run writes nothing at all.
+ * Rights only: the drawing's crop folder is never made here (a folder not
+ * there yet is judged by the Files root right that creating it needs).
+ * storeChecks makes it when it files, so a sheet that is then skipped
+ * (its bytes changed, no crop endpoint, a cap reached) leaves no empty
+ * folder. `dryRun` does not make the Files root a fresh box lacks either,
+ * so a dry run writes nothing at all.
  */
 export async function storeRefusal(
   ownerId: string,
@@ -134,11 +137,8 @@ export async function storeRefusal(
   if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) === false) {
     return 'the crops could not be stored: only the owner or an Admin may create files in Auto-filed > Drawing checks; ask one of them to run the check, or use dry_run to see the questions';
   }
-  let folder: string | null;
-  if (opts.dryRun) {
-    const path = autoFiledFolderPath('drawing-checks', { document: cropDocument(sheet) });
-    folder = (await folderByPath({ ownerId, path })) ? path : null;
-  } else folder = await cropFolder(ownerId, sheet);
+  const path = autoFiledFolderPath('drawing-checks', { document: cropDocument(sheet) });
+  const folder = (await folderByPath({ ownerId, path })) ? path : null;
   if (folder && (await callerMayEditFolder(ownerId, folder)) === false) {
     return 'the crops could not be stored: you may not create files in its Auto-filed > Drawing checks folder; ask the owner or an Admin to run the check, or use dry_run';
   }

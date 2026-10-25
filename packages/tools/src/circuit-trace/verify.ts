@@ -12,8 +12,10 @@
  * drawing's bytes (a file replaced in place keeps old geometry until
  * dwg-reindex). A sheet that fails either is not asked, said in
  * `not_asked`; a call where no sheet passes is refused. The worker is
- * resolved after that read-only pass and before anything is made (the
- * crop folders), so a call the worker refuses leaves nothing behind.
+ * resolved after that read-only pass and before anything is made, so a
+ * call the worker refuses leaves nothing behind. A sheet's crop folder is
+ * made only when its answers are filed: a sheet skipped on the way (its
+ * bytes changed, no crop endpoint, a cap reached) leaves no empty folder.
  *
  * Only an answer the model gave is filed: a question its reply skipped,
  * cut off or garbled is listed in `not_asked` and asked again next call.
@@ -83,9 +85,11 @@ export type VerifyDeps = {
   >;
   ask: (images: VisionImage[], prompt: string) => Promise<ImagesResult>;
   /** Why this caller could not file answers about the sheet (null: it
-   *  can). Asked before any vision request: first with `dryRun` (it makes
-   *  nothing, no crop folder) for every sheet, then, once the worker is
-   *  resolved, without it on a real call (it may make the crop folder). */
+   *  can). Rights only, never the crop folder (the store makes that when
+   *  it files). Asked before any vision request: first with `dryRun` (it
+   *  makes nothing at all) for every sheet, then, once the worker is
+   *  resolved, without it on a real call (it may make the Files root a
+   *  fresh box lacks). */
   storable: (
     ownerId: string,
     sheet: SheetInput,
@@ -259,8 +263,9 @@ export async function verifyCircuit(
       error: `circuit_verify sends several crops in one request, which the '${worker.provider}' provider of the default vision worker '${worker.slug}' does not take here. Point the default vision worker at an OpenRouter model in Settings > AI workers, then call again.`,
     };
   }
-  // The worker can answer: now the store check may make what filing needs
-  // (the crop folders), still before any spend.
+  // The worker can answer: now the store check, still before any spend. It
+  // judges rights only; the crop folder is made by the store when a sheet
+  // has answers to file, so a sheet skipped below leaves none behind.
   for (const tableId of new Set(questions.map((q) => q.tableId))) {
     const sin = inputOf.get(tableId)!;
     const why = await deps

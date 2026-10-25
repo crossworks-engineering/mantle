@@ -9,7 +9,10 @@
  * commit keeps their draft, and nothing is published; the revision read
  * (read.ts dwgTables) is the table's stamp, and a file replaced in place
  * reads as stale, its subquery comparing the outer table's own column.
- * Made-up drawing, no model is reached.
+ * The store check before the spend judges rights only: no crop folder is
+ * made until answers are filed, so a sheet skipped on the way (no crop
+ * endpoint, a drawing replaced since its table was read, the request cap)
+ * leaves none. Made-up drawing, no model is reached.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/circuit-trace/checks-store.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -37,6 +40,9 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 type Row = Record<string, unknown>;
 const BYTES = Buffer.from('AC1032 made-up drawing');
 const SHA = createHash('sha256').update(BYTES).digest('hex');
+/** A second drawing, its crop folder this file's own to look for. */
+const BYTES2 = Buffer.from('AC1032 made-up drawing, sheet two');
+const SHA2 = createHash('sha256').update(BYTES2).digest('hex');
 
 describe.skipIf(!URL)('the image check store', () => {
   let m: typeof import('@mantle/db');
@@ -50,8 +56,21 @@ describe.skipIf(!URL)('the image check store', () => {
   const tag = `ckst${randomUUID().slice(0, 6)}`;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-ckst-'));
   let fileId = '';
+  let fileId2 = '';
   const wsId = randomUUID();
   const ids: string[] = [];
+  /** The Drawing checks folders this file's calls may make, by exact path:
+   *  the only folders afterAll removes. */
+  const cropPaths: string[] = [];
+  /** The crop folder path of the second drawing (set in beforeAll). */
+  let files2Path = (): string => '';
+  /** How many folders sit at or under `path` (this file's own paths only:
+   *  other files share the anchor owner, so a total moves under them). */
+  const foldersAt = async (path: string) =>
+    (
+      await admin`select count(*)::int as n from nodes
+        where owner_id = ${anchor} and type = 'branch' and path <@ ${path}::ltree`
+    )[0]!.n as number;
 
   const sheetOf = (tableId: string) => ({
     tableId,
@@ -120,6 +139,127 @@ describe.skipIf(!URL)('the image check store', () => {
     return r.rows.map((row) => Object.fromEntries(r.columns.map((k, i) => [k, row[i]])));
   };
 
+  /** A drawing's auto-import table carrying one circuit: two pipe ends,
+   *  each only near a tag (the guesses circuit_verify asks about). */
+  const circuitTable = async (circuit: string, title: string, file: string, sha: string) => {
+    const layer = `Circuit ${circuit}`;
+    const num = (name: string) => ({ name, type: 'number' as const });
+    const txt = (name: string) => ({ name, type: 'text' as const });
+    const grid = (
+      name: string,
+      columns: { name: string; type: 'text' | 'number' }[],
+      rows: unknown[][],
+    ) => ({
+      ...c.tableDocFromGrid({ columns, rows: rows as never }),
+      name,
+    });
+    const made = await c.createTable(anchor, {
+      title,
+      tags: ['auto-import'],
+      sourceFileId: file,
+      sourceSha256: sha,
+      description: 'AutoCAD DWG model-space registry. ... within 2 drawing units of it ... (test)',
+      tabs: [
+        grid('Layers', [txt('Layer')], [[layer], ['EQUIP']]),
+        grid(
+          'Segments',
+          [
+            txt('Layer'),
+            txt('Handle'),
+            num('X1'),
+            num('Y1'),
+            num('X2'),
+            num('Y2'),
+            num('Length'),
+            num('Node 1'),
+            num('Node 2'),
+            num('Part'),
+          ],
+          [[layer, 'A', 0, 0, 20, 0, 20, 1, 2, 0]],
+        ),
+        grid(
+          'Nodes',
+          [
+            num('Node'),
+            num('X'),
+            num('Y'),
+            num('Degree'),
+            txt('Kind'),
+            txt('Block'),
+            txt('Block handle'),
+            txt('Layers'),
+          ],
+          [
+            [1, 0, 0, 1, 'end', '', '', layer],
+            [2, 20, 0, 1, 'end', '', '', layer],
+          ],
+        ),
+        grid(
+          'Texts',
+          [txt('Text'), txt('Layer'), num('X'), num('Y')],
+          [
+            ['E-101', 'EQUIP', -1, 0],
+            ['V-201', 'EQUIP', 25, 0],
+          ],
+        ),
+      ],
+    });
+    ids.push(made.id);
+    return made.id;
+  };
+
+  /** circuit_verify's outside effects: the real store, a sidecar and a
+   *  model made up (`over` replaces any of them). */
+  const verifyDeps = async (
+    bytes: Buffer,
+    asked: { n: number },
+    over: Partial<import('./verify').VerifyDeps> = {},
+  ): Promise<import('./verify').VerifyDeps> => {
+    const builtins = await import('../builtins-circuits');
+    const png = Buffer.from('png');
+    return {
+      readSheets: builtins.readCircuitSheets,
+      fileBytes: async () => bytes,
+      crop: async (_b, spec) => ({
+        ok: true,
+        value: {
+          converter: 'none',
+          crops: spec.items.map((it) => ({
+            id: it.id,
+            part: 0,
+            of: 1,
+            window: [0, 0, 1, 1] as [number, number, number, number],
+            width: 100,
+            height: 100,
+            textPx: 14,
+            png,
+          })),
+          overview: { window: [0, 0, 1, 1], png },
+          capped: [],
+        },
+      }),
+      worker: async () => ({
+        ok: true,
+        worker: { slug: 'vision-test', provider: 'openrouter', model: 'test/vision-model' },
+        multiImage: true,
+      }),
+      ask: async (_images, prompt) => {
+        asked.n += 1;
+        const qids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]);
+        return {
+          text: JSON.stringify({
+            answers: qids.map((id) => ({ id, answer: 'yes', reason: 'into its nozzle' })),
+          }),
+          model: 'test/vision-model',
+        };
+      },
+      storable: s.storeRefusal,
+      store: s.storeChecks,
+      now: () => new Date('2026-10-25T12:00:00.000Z'),
+      ...over,
+    };
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -152,6 +292,18 @@ describe.skipIf(!URL)('the image check store', () => {
     ).id;
     const [f] = await admin`select data->>'sha256' as sha from nodes where id = ${fileId}`;
     expect(f!.sha).toBe(SHA);
+    fileId2 = (
+      await files.upsertFile({
+        ownerId: anchor,
+        parentPath: 'files',
+        filename: `${tag}-2.dwg`,
+        bytes: BYTES2,
+        overwrite: false,
+      })
+    ).id;
+    for (const slug of [fileId, fileId2])
+      cropPaths.push(files.autoFiledFolderPath('drawing-checks', { document: { slug } }));
+    files2Path = () => cropPaths[1]!;
     await superuserExec(
       URL!,
       sqlTag`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`,
@@ -165,9 +317,21 @@ describe.skipIf(!URL)('the image check store', () => {
       ? await admin`select id from nodes where owner_id = ${anchor}
       and type = 'file' and data->>'sourceTableId' = any(${ids}::text[])`
       : [];
-    const all = [...ids, ...crops.map((r) => String(r.id)), ...(fileId ? [fileId] : [])];
+    const all = [
+      ...ids,
+      ...crops.map((r) => String(r.id)),
+      ...(fileId ? [fileId] : []),
+      ...(fileId2 ? [fileId2] : []),
+    ];
     await admin`delete from item_grants where node_id = any(${all}::uuid[])`;
     await admin`delete from nodes where id = any(${all}::uuid[])`;
+    // The Drawing checks folders its calls made, by exact path, each only
+    // once empty (its crops went above): never a folder it did not make.
+    if (anchor && cropPaths.length)
+      await admin`delete from nodes n where n.owner_id = ${anchor} and n.type = 'branch'
+        and n.path::text = any(${cropPaths}::text[])
+        and not exists (select 1 from nodes c where c.owner_id = ${anchor}
+          and c.path <@ n.path and c.id <> n.id)`;
     await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
@@ -281,140 +445,36 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(await c.discardTableDraft(anchor, t)).toBe(true);
   });
 
-  it("a dry run's store check makes no folder; the real one makes it at the same path", async () => {
+  it('neither store check makes a folder (dry run or real); filing makes it at the same path', async () => {
     const t = await makeTable(`${tag} dry`);
     const sheet = { ...sheetOf(t), sourceFileId: randomUUID(), title: `${tag} dry drawing` };
     const files = await import('@mantle/files');
     const path = files.autoFiledFolderPath('drawing-checks', {
       document: { slug: sheet.sourceFileId },
     });
-    const count = async () =>
-      (
-        await admin`select count(*)::int as n from nodes
-          where owner_id = ${anchor} and type = 'branch'`
-      )[0]!.n as number;
-    const was = await count();
+    cropPaths.push(path);
     expect(await s.storeRefusal(anchor, sheet, { dryRun: true })).toBeNull();
-    expect(await count()).toBe(was);
-    expect(await files.folderByPath({ ownerId: anchor, path })).toBeNull();
+    expect(await foldersAt(path)).toBe(0);
+    // The real pass before the spend judges rights only (LOW-3).
     expect(await s.storeRefusal(anchor, sheet)).toBeNull();
+    expect(await foldersAt(path)).toBe(0);
+    const at = '2026-10-25T12:00:00.000Z';
+    expect(await s.storeChecks(anchor, sheet, 'C-1', [answerOf('k-dry')], null, at)).toEqual({
+      stored: 1,
+    });
     expect(await files.folderByPath({ ownerId: anchor, path })).not.toBeNull();
-    await admin`delete from nodes where owner_id = ${anchor} and type = 'branch'
-      and path::text = ${path}`;
   });
 
   it('end to end: an answer filed by circuit_verify applies in circuit_trace and is not asked again', async () => {
     const circuit = `${tag}-E2E`;
-    const layer = `Circuit ${circuit}`;
-    const num = (name: string) => ({ name, type: 'number' as const });
-    const txt = (name: string) => ({ name, type: 'text' as const });
-    const grid = (
-      name: string,
-      columns: { name: string; type: 'text' | 'number' }[],
-      rows: unknown[][],
-    ) => ({
-      ...c.tableDocFromGrid({ columns, rows: rows as never }),
-      name,
-    });
-    const made = await c.createTable(anchor, {
-      title: `${tag} PID-E2E`,
-      tags: ['auto-import'],
-      sourceFileId: fileId,
-      sourceSha256: SHA,
-      description: 'AutoCAD DWG model-space registry. ... within 2 drawing units of it ... (test)',
-      tabs: [
-        grid('Layers', [txt('Layer')], [[layer], ['EQUIP']]),
-        grid(
-          'Segments',
-          [
-            txt('Layer'),
-            txt('Handle'),
-            num('X1'),
-            num('Y1'),
-            num('X2'),
-            num('Y2'),
-            num('Length'),
-            num('Node 1'),
-            num('Node 2'),
-            num('Part'),
-          ],
-          [[layer, 'A', 0, 0, 20, 0, 20, 1, 2, 0]],
-        ),
-        grid(
-          'Nodes',
-          [
-            num('Node'),
-            num('X'),
-            num('Y'),
-            num('Degree'),
-            txt('Kind'),
-            txt('Block'),
-            txt('Block handle'),
-            txt('Layers'),
-          ],
-          [
-            [1, 0, 0, 1, 'end', '', '', layer],
-            [2, 20, 0, 1, 'end', '', '', layer],
-          ],
-        ),
-        grid(
-          'Texts',
-          [txt('Text'), txt('Layer'), num('X'), num('Y')],
-          [
-            ['E-101', 'EQUIP', -1, 0],
-            ['V-201', 'EQUIP', 25, 0],
-          ],
-        ),
-      ],
-    });
-    ids.push(made.id);
+    await circuitTable(circuit, `${tag} PID-E2E`, fileId, SHA);
     const builtins = await import('../builtins-circuits');
     const { verifyCircuit } = await import('./verify');
-    const png = Buffer.from('png');
-    let asked = 0;
-    const deps: import('./verify').VerifyDeps = {
-      readSheets: builtins.readCircuitSheets,
-      fileBytes: async () => BYTES,
-      crop: async (_b, spec) => ({
-        ok: true,
-        value: {
-          converter: 'none',
-          crops: spec.items.map((it) => ({
-            id: it.id,
-            part: 0,
-            of: 1,
-            window: [0, 0, 1, 1] as [number, number, number, number],
-            width: 100,
-            height: 100,
-            textPx: 14,
-            png,
-          })),
-          overview: { window: [0, 0, 1, 1], png },
-          capped: [],
-        },
-      }),
-      worker: async () => ({
-        ok: true,
-        worker: { slug: 'vision-test', provider: 'openrouter', model: 'test/vision-model' },
-        multiImage: true,
-      }),
-      ask: async (_images, prompt) => {
-        asked += 1;
-        const qids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]);
-        return {
-          text: JSON.stringify({
-            answers: qids.map((id) => ({ id, answer: 'yes', reason: 'into its nozzle' })),
-          }),
-          model: 'test/vision-model',
-        };
-      },
-      storable: s.storeRefusal,
-      store: s.storeChecks,
-      now: () => new Date('2026-10-25T12:00:00.000Z'),
-    };
+    const counter = { n: 0 };
+    const deps = await verifyDeps(BYTES, counter);
     const first = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
     expect(first).toMatchObject({ ok: true });
-    expect(asked).toBe(1);
+    expect(counter.n).toBe(1);
     const out1 = (
       first as unknown as { output: { answers: { answer: string }[]; summary: string } }
     ).output;
@@ -436,10 +496,48 @@ describe.skipIf(!URL)('the image check store', () => {
     // A second call does not pay for the answered question again.
     const second = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
     expect(second).toMatchObject({ ok: true });
-    expect(asked).toBe(1);
+    expect(counter.n).toBe(1);
     expect((second as unknown as { output: { summary: string } }).output.summary).toMatch(
       /no unanswered guess/,
     );
+  });
+
+  it('a sheet skipped before its request leaves no crop folder: no crop endpoint, a replaced drawing, the request cap (LOW-3)', async () => {
+    const { verifyCircuit } = await import('./verify');
+    const circuit = `${tag}-NF`;
+    await circuitTable(circuit, `${tag} PID-NF`, fileId2, SHA2);
+    const path = files2Path();
+    const counter = { n: 0 };
+    const run = async (deps: import('./verify').VerifyDeps) => {
+      const r = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
+      return (
+        (r as unknown as { output?: { not_asked?: { why: string }[] } }).output?.not_asked ?? []
+      );
+    };
+    // The media sidecar has no crop endpoint (an older image).
+    const old = await run(
+      await verifyDeps(BYTES2, counter, {
+        crop: async () => ({ ok: false, code: 'bad_request', message: 'unknown route' }),
+      }),
+    );
+    expect(old.map((x) => x.why).join(' ')).toMatch(/no crop endpoint/);
+    expect(await foldersAt(path)).toBe(0);
+    // The drawing was replaced since its table was read.
+    const replaced = await run(await verifyDeps(Buffer.from('AC1032 replaced'), counter));
+    expect(replaced.length).toBeGreaterThan(0);
+    expect(await foldersAt(path)).toBe(0);
+    // The request cap reached before the sheet.
+    const cap = check.VERIFY_MAX as { requests: number };
+    const was = cap.requests;
+    cap.requests = 0;
+    try {
+      const capped = await run(await verifyDeps(BYTES2, counter));
+      expect(capped.map((x) => x.why).join(' ')).toMatch(/request cap/);
+    } finally {
+      cap.requests = was;
+    }
+    expect(await foldersAt(path)).toBe(0);
+    expect(counter.n).toBe(0);
   });
 
   it('the revision is the stamp; a file replaced in place reads stale', async () => {
