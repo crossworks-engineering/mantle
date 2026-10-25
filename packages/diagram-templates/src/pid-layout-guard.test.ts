@@ -1,9 +1,9 @@
 /**
  * Data that passes the `pid` check must also draw. These shapes once threw
  * inside the layout: a bypass from tee to tee on one parent line whose two
- * tees landed on one point (a pipe of no length, so its valve had no run to
- * sit on), and a connector reached through a tee that was placed on the tee
- * itself. And a set draws every page it can: a page whose layout fails is
+ * tees landed on one point (a pipe of no length, so its valve or its line
+ * number had no run to sit on), a connector reached through a tee that was
+ * placed on the tee itself, and several pipes between the same two pieces. And a set draws every page it can: a page whose layout fails is
  * an error panel, named in `failed` and the warnings, and the rest still
  * draw. All tags and sheets here are made up.
  */
@@ -112,6 +112,83 @@ describe('pid data that passes the check also draws', () => {
     const r = draw(d);
     for (const l of d.lines as Obj[])
       expect(lengthOf(linePoints(r.svg, String(l.id))), String(l.id)).toBeGreaterThan(0);
+  });
+
+  it('a line of no length that carries a line number', () => {
+    // Found by fuzzing: L6 runs tee to tee and its two tees land on one
+    // point, so it has no run for its number until it gets one of no length.
+    const d = {
+      title: 'Numbered line of no length',
+      equipment: [],
+      offpage: [opc('OPC-0', 'in'), opc('OPC-1', 'out'), opc('OPC-2', 'out')],
+      lines: [
+        {
+          id: 'L0',
+          from: 'OPC-0',
+          end: 'cap',
+          inline: [{ type: 'check' }, { type: 'globe' }, { type: 'check' }, { type: 'gate' }],
+        },
+        { id: 'L1', from: 'T-0', to: 'OPC-1' },
+        { id: 'L2', from: 'T-1', end: 'cap', number: '2"-P-424' },
+        { id: 'L3', from: 'T-2', to: 'OPC-2', inline: [{ type: 'blind' }, { type: 'control' }] },
+        { id: 'L4', from: 'T-3', end: 'open' },
+        { id: 'L5', from: 'T-4', to: 'T-5' },
+        { id: 'L6', from: 'T-6', to: 'T-7', number: '2"-P-997' },
+      ],
+      tees: [
+        { id: 'T-0', on: 'L0', at: 0 },
+        { id: 'T-1', on: 'L1', at: 0.1 },
+        { id: 'T-2', on: 'L2', at: 0.5 },
+        { id: 'T-3', on: 'L0' },
+        { id: 'T-4', on: 'L0' },
+        { id: 'T-5', on: 'L3', near: 'from' },
+        { id: 'T-6', on: 'L0' },
+        { id: 'T-7', on: 'L5', near: 'to' },
+      ],
+    };
+    const r = draw(d);
+    expect(r.svg).toContain('2"-P-997'.replace('"', '&quot;'));
+  });
+
+  it('several lines between the same two pieces of equipment', () => {
+    // Three pipes from E-0 to E-2 once made the column layout fail ("Not
+    // possible to find intersection inside of the rectangle").
+    const eq = (id: string, type: string) => ({ id, type });
+    const d = {
+      title: 'Parallel lines',
+      equipment: [eq('E-0', 'vertical-vessel'), eq('E-1', 'vertical-vessel'), eq('E-2', 'filter')],
+      offpage: [
+        opc('OPC-0', 'in'),
+        opc('OPC-1', 'out'),
+        opc('OPC-2', 'in'),
+        opc('OPC-3', 'out'),
+        opc('OPC-5', 'out'),
+      ],
+      lines: [
+        { id: 'L0', from: 'OPC-0', to: 'OPC-1' },
+        { id: 'L1', from: 'T-0', to: 'E-1' },
+        { id: 'L3', from: 'OPC-2', to: 'E-0' },
+        { id: 'L4', from: 'T-2', to: 'OPC-3' },
+        { id: 'L6', from: 'E-2', to: 'OPC-5' },
+        { id: 'L7', from: 'T-3', end: 'open' },
+        { id: 'L10', from: 'T-7', to: 'T-8' },
+        { id: 'L12', from: 'T-10', to: 'E-2' },
+        { id: 'L36', from: 'E-0', to: 'E-2' },
+        { id: 'L46', from: 'E-0', to: 'E-2' },
+        { id: 'L49', from: 'E-0', to: 'E-2' },
+      ],
+      tees: [
+        { id: 'T-0', on: 'L0' },
+        { id: 'T-2', on: 'L1', at: 0.9 },
+        { id: 'T-3', on: 'L6', at: 0.1 },
+        { id: 'T-7', on: 'L4', at: 0.63 },
+        { id: 'T-8', on: 'L7' },
+        { id: 'T-10', on: 'L3', at: 0.1 },
+      ],
+    };
+    const r = draw(d);
+    for (const id of ['L36', 'L46', 'L49'])
+      expect(lengthOf(linePoints(r.svg, id)), id).toBeGreaterThan(0);
   });
 });
 

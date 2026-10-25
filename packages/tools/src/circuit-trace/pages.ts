@@ -47,8 +47,17 @@ export type SplitPage<T> = {
 };
 
 /** A marker on `on`, on page `page`: `items` moved to page `to`, where
- *  `focus` (else `on`) is drawn. */
-export type SplitMarker<T> = { page: string; on: T; to: string; items: T[]; focus?: T };
+ *  `focus` (else `on`) is drawn. `cut`: at the page cap the marker sits on
+ *  a free line that is not what the moved items hang off, so it must not
+ *  read as a count of that line's children. */
+export type SplitMarker<T> = {
+  page: string;
+  on: T;
+  to: string;
+  items: T[];
+  focus?: T;
+  cut?: true;
+};
 
 export type SplitRules<T> = {
   /** The item a line hangs off, if it hangs off one. */
@@ -350,7 +359,7 @@ export function splitPages<T>(
     const chain: SplitPage<T>[] = [];
     for (const d of orphans) {
       const line = d.context!;
-      let host: { page: string; on: T } | undefined;
+      let host: { page: string; on: T; cut?: true } | undefined;
       const seen = new Set<T>();
       for (let up = rules.parentOf(line); up !== undefined && !seen.has(up);) {
         seen.add(up);
@@ -363,7 +372,7 @@ export function splitPages<T>(
       for (let i = chain.length - 1; !host && i >= 0; i--) {
         const c = chain[i]!;
         const free = [c.context!, ...c.items].find((t) => !busy(c.key, t));
-        if (free !== undefined) host = { page: c.key, on: free };
+        if (free !== undefined) host = { page: c.key, on: free, cut: true };
       }
       if (!host) continue;
       markers.push({ ...host, to: d.key, items: [line, ...d.items], focus: line });

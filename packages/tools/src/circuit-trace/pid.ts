@@ -877,7 +877,9 @@ export function buildPid(
       for (const mk of split.markers) {
         const m = markersOn.get(mk.page) ?? new Map();
         m.set(mk.on, {
-          text: countText(mk.items, 0),
+          // A marker re-hosted at the page cap sits on a line the moved
+          // items do not hang off: it says so rather than count them there.
+          text: mk.cut ? 'CUT AT PAGE CAP' : countText(mk.items, 0),
           page: mk.to,
           focus: (mk.focus ?? mk.on).id,
         });

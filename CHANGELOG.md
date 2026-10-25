@@ -43,7 +43,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   says the line is drawn only there. A description keeps its GUESS note
   whole. `present_render` `slide: n` waits for a set to mount, and its
   report names the page shown.
-- **Fix:** `pid` data that passes the check draws: a bypass from tee to tee
+- **Fix:** traced `pid` data that passes the check draws: a bypass from tee to tee
   on one line no longer puts both tees on one point, and a connector
   reached through a tee is never placed on the tee (both threw before). A
   set page whose layout still fails draws as an error panel naming the page,

@@ -324,9 +324,21 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   );
   for (const n of nodes.values())
     if (!utilityOpc.has(n.id)) g.setNode(n.id, { width: n.w, height: n.h });
+  // One ranking edge per pair of pieces, either way round, its weight the
+  // sum of the pipes between them: several pipes joining the same two
+  // pieces made dagre fail ("Not possible to find intersection").
+  const pairEdge = (a: string, b: string) =>
+    g.outEdges(a, b)?.[0] ?? g.outEdges(b, a)?.[0];
   for (const l of plain) {
     if (l.weight === 'secondary' && (!nodes.get(l.from)!.eq || !nodes.get(l.to)!.eq)) continue;
-    g.setEdge(l.from, l.to, { minlen: 1, weight: l.weight === 'main' ? 2 : 1 }, l.id);
+    const w = l.weight === 'main' ? 2 : 1;
+    const had = pairEdge(l.from, l.to);
+    if (had) {
+      const lab = g.edge(had) as { minlen: number; weight: number };
+      g.setEdge(had, { ...lab, weight: lab.weight + w });
+      continue;
+    }
+    g.setEdge(l.from, l.to, { minlen: 1, weight: w }, l.id);
   }
   // A branch ranks what it reaches after the start of the line it leaves.
   for (const l of branches) {
@@ -337,7 +349,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     // One ranking edge per pair (either way round): a branch only says what
     // it reaches lies downstream, and dagre fails on some of the cycles
     // repeated pairs make ("Not possible to find intersection").
-    if (g.outEdges(a, b)?.length || g.outEdges(b, a)?.length) continue;
+    if (pairEdge(a, b)) continue;
     g.setEdge(a, b, { minlen: 1, weight: 1 }, l.id);
   }
   dagre.layout(g);
@@ -1298,7 +1310,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   ];
   for (const l of data.lines) {
     if (!l.number) continue;
-    const segs = segments(routed.get(l.id)!);
+    const segs = runsOf(l.id);
     const tw = gridUp(measure(m, l.number, 'sublabel') + 8);
     const th = 12;
     const cands = [

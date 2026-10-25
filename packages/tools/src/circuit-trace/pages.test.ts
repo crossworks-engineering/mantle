@@ -268,7 +268,13 @@ describe('splitPages', () => {
       const mk = r.markers.find((m) => m.to === p.key);
       expect(mk, p.key).toBeDefined();
       expect(mk!.focus).toBe(p.context);
+      // On a line the moved one does not hang off, the marker is a cut.
+      let up: L | undefined = p.context;
+      const ancestors = new Set<L>();
+      while ((up = up?.parent)) ancestors.add(up);
+      expect(mk!.cut === true, p.key).toBe(!ancestors.has(mk!.on));
     }
+    expect(r.markers.some((m) => m.cut)).toBe(true);
     for (const p of r.pages.filter((q) => q.context))
       expect(
         r.markers.some((m) => m.to === p.key),
