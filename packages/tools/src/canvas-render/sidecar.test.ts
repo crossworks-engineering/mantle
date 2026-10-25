@@ -32,6 +32,10 @@ const h = vi.hoisted(() => ({
   hold: null as Promise<void> | null,
   /** What `window.diagram` hands back (the page's evaluate). */
   report: null as unknown,
+  /** The order a render waits for a set's mount and steps its pages. */
+  events: [] as string[],
+  /** How long a diagram set takes to mount. */
+  mountMs: 0,
 }));
 
 function fire(handlers: Array<(r: Req) => void>, url: string): Promise<void> {
@@ -87,8 +91,20 @@ vi.mock('puppeteer-core', () => ({
               }
             },
             focus: async () => {},
-            keyboard: { press: async () => {} },
-            evaluate: async () => (h.report === null ? null : JSON.stringify(h.report)),
+            keyboard: {
+              press: async (key: string) => {
+                h.events.push(`key ${key}`);
+              },
+            },
+            evaluate: async (src: unknown) => {
+              if (typeof src === 'string' && src.includes('d.ready.then')) {
+                await new Promise((r) => setTimeout(r, h.mountMs));
+                h.events.push('mounted');
+                return true;
+              }
+              h.events.push('probe');
+              return h.report === null ? null : JSON.stringify(h.report);
+            },
             screenshot: async () => new Uint8Array([137, 80, 78, 71]),
             createCDPSession: async () => ({ send: async () => ({}) }),
             close: async () => {
@@ -126,6 +142,8 @@ beforeEach(() => {
   h.consoleLines = 0;
   h.hold = null;
   h.report = null;
+  h.events.length = 0;
+  h.mountMs = 0;
 });
 
 const REQ = {
@@ -145,6 +163,19 @@ const REQ = {
 };
 
 describe('renderCanvas', () => {
+  it('steps a slide only once a diagram set has mounted, and says the page shown', async () => {
+    const { renderCanvas } = await import('./sidecar');
+    h.mountMs = 300;
+    h.report = { ok: true, errors: [], warnings: [], stats: {}, page: 'sheet-2' };
+    const out = await renderCanvas({ ...REQ, slide: 3 });
+    expect(h.events).toEqual(['mounted', 'key ArrowRight', 'key ArrowRight', 'probe']);
+    expect(out.ok && out.diagram?.page).toBe('sheet-2');
+    // No slide: no wait, no keys.
+    h.events.length = 0;
+    await renderCanvas(REQ);
+    expect(h.events).toEqual(['probe']);
+  });
+
   it('starts the sidecar browser locked: no DNS, a dead proxy, no direct WebRTC UDP', async () => {
     const { renderCanvas, RENDER_LAUNCH_ARGS } = await import('./sidecar');
     const out = await renderCanvas(REQ);

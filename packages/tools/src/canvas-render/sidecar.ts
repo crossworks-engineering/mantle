@@ -66,6 +66,12 @@ const MAX_SLIDE = 60;
 const SETTLE_DEFAULT_S = 2;
 const SETTLE_MAX_S = 10;
 const DIAGRAM_TIMEOUT_MS = 8_000;
+/** Resolves once a diagram canvas has mounted (at once for any other). */
+const SET_MOUNTED = `(async () => {
+  const d = window.diagram;
+  if (d && d.ready && typeof d.ready.then === 'function') await d.ready;
+  return true;
+})()`;
 /** The whole render, load to picture. A canvas that blocks its main thread
  *  can stall a step that has no timeout of its own (the screenshot); past
  *  this the page is closed and the slot freed. */
@@ -241,8 +247,11 @@ export function diagramProbe(
     }
   }
   let out;
+  const shown = d.page;
+  const page = typeof shown === 'string' && shown ? P.apply(P.strSlice, shown, [0, 40]) : undefined;
   if (!o || !o.ok) {
     out = { ok: false, errors: lines(o && o.errors), warnings: lines(o && o.warnings), stats };
+    if (page !== undefined) out.page = page;
   } else {
     let svg;
     if (wantSvg) {
@@ -251,6 +260,7 @@ export function diagramProbe(
     }
     out = { ok: true, errors: svg === undefined && wantSvg ? ['the export is missing or too large'] : [], warnings: lines(o.warnings), stats };
     if (svg !== undefined) out.svg = svg;
+    if (page !== undefined) out.page = page;
   }
   const text = P.stringify(out);
   return typeof text === 'string' && text.length <= ${maxTotal} ? text : null;
@@ -273,11 +283,13 @@ function cappedReport(raw: unknown): CanvasDiagramReport | null {
     }
   }
   const svg = typeof r.svg === 'string' && r.svg.length <= MAX_SVG_CHARS ? r.svg : undefined;
+  const page = typeof r.page === 'string' && r.page ? r.page.slice(0, 40) : undefined;
   return {
     ok: r.ok === true,
     errors: lines(r.errors),
     warnings: lines(r.warnings),
     stats,
+    ...(page !== undefined ? { page } : {}),
     ...(svg !== undefined ? { svg } : {}),
   };
 }
@@ -435,6 +447,13 @@ async function renderInSlot(
     await page.goto(`${RENDER_ORIGIN}/frame`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
     const settle = Math.min(SETTLE_MAX_S, Math.max(0, req.atSeconds ?? SETTLE_DEFAULT_S));
     if (req.slide && req.slide > 1) {
+      // A diagram set listens for the arrow keys once it is mounted, after
+      // its fonts are ready: a key before that reaches nothing. Wait for it
+      // (bounded: the canvas's own code runs here).
+      await Promise.race([
+        page.evaluate(SET_MOUNTED).catch(() => null),
+        new Promise((r) => setTimeout(r, DIAGRAM_TIMEOUT_MS)),
+      ]);
       await page.focus('body').catch(() => {});
       for (let i = 1; i < Math.min(req.slide, MAX_SLIDE); i++) {
         await page.keyboard.press('ArrowRight');

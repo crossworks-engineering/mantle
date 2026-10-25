@@ -32,6 +32,8 @@ export type CanvasDiagramReport = {
   errors: string[];
   warnings: string[];
   stats: Record<string, number>;
+  /** A drawing set: the id of the page shown when the picture was taken. */
+  page?: string;
   /** The static export, checked (`svgProblems` empty when it is static). */
   svg?: string;
   svgProblems?: string[];

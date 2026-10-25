@@ -268,6 +268,7 @@ async function look(ctx: ToolHandlerContext, req: CanvasRenderRequest): Promise<
       errors: result.diagram.errors,
       warnings: result.diagram.warnings,
       stats: result.diagram.stats,
+      ...(result.diagram.page ? { page: result.diagram.page } : {}),
     };
   }
   const problems = result.consoleErrors.length + result.blocked.length;

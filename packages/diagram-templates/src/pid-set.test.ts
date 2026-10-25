@@ -186,24 +186,7 @@ describe('a "more here" marker on a single drawing', () => {
   });
 });
 
-describe('the canvas page bar and links', () => {
-  const html = readFileSync(path.join(ROOT, 'templates/pid.canvas.html'), 'utf8');
-
-  it('keeps the page buttons to one row that scrolls sideways, with a thin scrollbar', () => {
-    // A set of 40 pages wraps into rows no window height allows for; one
-    // row keeps the bar at SET_NAV_HEIGHT however many pages there are.
-    expect(html).toMatch(/#diagram-pages\{display:flex;flex-wrap:nowrap;[^}]*overflow-x:auto;/);
-    expect(html).toMatch(/#diagram-pages\{[^}]*scrollbar-width:thin/);
-    expect(html).not.toMatch(/#diagram-pages\{[^}]*flex-wrap:wrap/);
-  });
-
-  it('finds a focus by comparing its id as text, never inside a selector', () => {
-    // No escaping to get wrong: an id with quotes or a newline only matches
-    // or does not.
-    expect(html).not.toContain('CSS.escape');
-    expect(html).toContain('getAttribute');
-  });
-});
+// The canvas page bar, keys and links: browser-set.test.ts (behaviour).
 
 describe('clipText', () => {
   it('cuts with three dots, inside the limit', () => {
