@@ -1,10 +1,15 @@
 /**
  * dwg-reindex without a database: the scope and cap rules, the edited-table
  * rule, and that a rebuild writes the SAME table (draft + commit on its id,
- * never a create or a delete). The real-Postgres half is
- * dwg-reindex.db.test.ts.
+ * never a create or a delete). The Checks tab is read from a real
+ * workbook file written by the store's own writer (@mantle/tabledb, no
+ * database), so its column definitions and cell encoding are the real
+ * ones. The real-Postgres half is dwg-reindex.db.test.ts.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calls = vi.hoisted(() => ({ log: [] as string[] }));
 /** What the fresh read right before the write sees (the table row now). */
@@ -14,17 +19,15 @@ const fresh = vi.hoisted(() => ({
   duringBuild: null as null | (() => void),
   commit: 'ok' as 'ok' | 'null' | 'throw',
   saveConflict: false,
-  /** The table's Checks tab rows (circuit_verify's answers), if it has one. */
-  checks: null as null | unknown[][],
+  /** The table's workbook file when it has a Checks tab (circuit_verify's
+   *  answers), written by the store's own writer. */
+  checksFile: null as null | string,
   /** The tabs the last draft save wrote. */
   saved: [] as string[],
-  /** The column types each grid was built with, by its first column. */
-  grids: [] as string[][],
-  /** The Checks tab's own column types and row count, as the store reads them. */
-  checkColumns: [
-    { name: 'Key', type: 'text' },
-    { name: 'Answer', type: 'text' },
-  ] as { name: string; type: string }[],
+  /** The Checks tab the last draft save wrote, whole. */
+  savedChecks: null as null | Record<string, unknown>,
+  /** The Checks tab's row count as the surface reports it (the real count
+   *  when null). */
   checkRowCount: null as null | number,
 }));
 
@@ -50,7 +53,6 @@ vi.mock('@mantle/db', () => ({
 }));
 vi.mock('@mantle/content', () => ({
   tableDocFromGrid: (g: { columns: { name: string; type?: string }[]; rows: unknown[][] }) => {
-    fresh.grids.push(g.columns.map((c) => `${c.name}:${c.type ?? ''}`));
     return {
       columns: g.columns.map((c) => ({ id: c.name, name: c.name, type: c.type ?? 'text' })),
       rows: g.rows.map((r, i) => ({ id: String(i), cells: { v: r[0] } })),
@@ -64,6 +66,8 @@ vi.mock('@mantle/content', () => ({
   ) => {
     calls.log.push(`draft:${id}:ifRev=${opts.ifRev}`);
     fresh.saved = d.tabs.map((t) => `${t.name}:${t.rows.length}`);
+    fresh.savedChecks =
+      (d.tabs.find((t) => t.name === 'Checks') as Record<string, unknown> | undefined) ?? null;
     if (fresh.saveConflict) return { ok: false, conflict: true, currentRev: 99 };
     return { ok: true, draftRev: 1 };
   },
@@ -89,31 +93,20 @@ vi.mock('@mantle/content/table-snapshots', () => ({
     return { id: 'snap-1' };
   },
 }));
-vi.mock('@mantle/content/table-storage', () => ({
-  tableSqlSurface: async () => ({
-    abs: '/x.sqlite',
-    tabs: fresh.checks
-      ? [
-          {
-            name: 'Checks',
-            viewName: 'Checks',
-            rowCount: fresh.checkRowCount ?? fresh.checks.length,
-            columns: fresh.checkColumns,
-          },
-        ]
-      : [],
-  }),
-}));
-vi.mock('@mantle/tabledb', () => ({
-  runTableSql: async (_abs: string, q: string) => {
-    const [, limit, offset] = / LIMIT (\d+) OFFSET (\d+)$/.exec(q) ?? [];
-    return {
-      columns: fresh.checkColumns.map((c) => c.name),
-      rows: (fresh.checks ?? []).slice(Number(offset), Number(offset) + Number(limit)),
-      truncated: false,
-    };
-  },
-}));
+vi.mock('@mantle/content/table-storage', async () => {
+  const { describeWorkbook } = await import('@mantle/tabledb');
+  return {
+    tableSqlSurface: async () => {
+      if (!fresh.checksFile) return { abs: '/x.sqlite', tabs: [] };
+      const tabs = describeWorkbook(fresh.checksFile).map((t) =>
+        t.name === 'Checks' && fresh.checkRowCount != null
+          ? { ...t, rowCount: fresh.checkRowCount }
+          : t,
+      );
+      return { abs: fresh.checksFile, tabs };
+    },
+  };
+});
 // The real keys, dwgTableEdited and dwgSourceSha: only the sidecar pass is
 // made up.
 vi.mock('@mantle/files/dwg', async (orig) => ({
@@ -136,8 +129,15 @@ vi.mock('@mantle/files/dwg', async (orig) => ({
 vi.mock('@mantle/files', () => ({
   readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
 }));
-vi.mock('@mantle/config', () => ({ envNum: () => 50 }));
+vi.mock('@mantle/config', async (orig) => {
+  const real = await orig<typeof import('@mantle/config')>();
+  return {
+    ...real,
+    envNum: (n: string) => (n === 'MANTLE_MAX_AUTO_TABLE_TABLES' ? 50 : real.envNum(n as never)),
+  };
+});
 
+import { writeDocFile } from '@mantle/tabledb/write';
 import {
   clampLimit,
   decide,
@@ -208,16 +208,55 @@ describe('the edited-table rule', () => {
   });
 });
 
+/** Workbook files this file writes, all under its own directory. */
+const dir = mkdtempSync(path.join(tmpdir(), 'mantle-dwgre-unit-'));
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+let fileNo = 0;
+type ChecksTab = Parameters<typeof writeDocFile>[1] extends infer W
+  ? W extends { tabs: (infer T)[] }
+    ? T
+    : never
+  : never;
+
+/** The table's workbook as the store writes it: a sidecar tab and the
+ *  Checks tab given. */
+function writeChecks(tab: Omit<ChecksTab, 'name' | 'aggregates' | 'views'> & Partial<ChecksTab>) {
+  const abs = path.join(dir, `t${++fileNo}.sqlite`);
+  writeDocFile(
+    abs,
+    {
+      tabs: [
+        {
+          name: 'Layers',
+          columns: [{ id: 'layer', name: 'Layer', type: 'text' }],
+          rows: [{ id: 'r0', cells: { layer: 'Circuit 1' } }],
+          aggregates: {},
+          views: [],
+        },
+        { aggregates: {}, views: [], ...tab, name: 'Checks' },
+      ],
+    },
+    { nodeId: 'n', ownerId: 'o' },
+  );
+  fresh.checksFile = abs;
+}
+
+/** Two text columns, one row per [key, answer]. */
+const plainChecks = (rows: [string, string][]) =>
+  writeChecks({
+    columns: [
+      { id: 'k', name: 'Key', type: 'text' },
+      { id: 'a', name: 'Answer', type: 'text' },
+    ],
+    rows: rows.map(([k, a], i) => ({ id: `r${i}`, cells: { k, a } })),
+  });
+
 describe('a rebuild keeps the table', () => {
   beforeEach(() => {
     calls.log = [];
-    fresh.checks = null;
+    fresh.checksFile = null;
     fresh.saved = [];
-    fresh.grids = [];
-    fresh.checkColumns = [
-      { name: 'Key', type: 'text' },
-      { name: 'Answer', type: 'text' },
-    ];
+    fresh.savedChecks = null;
     fresh.checkRowCount = null;
     fresh.row = { version: 1, draftRev: 7, hasDraft: false };
     fresh.duringBuild = null;
@@ -241,39 +280,101 @@ describe('a rebuild keeps the table', () => {
   });
 
   it("the image check's Checks tab is written back with the rebuilt tabs", async () => {
-    fresh.checks = [
+    plainChecks([
       ['join:pGap', 'yes'],
       ['end:A@20.0,0.0', 'no'],
-    ];
+    ]);
     const r = await rebuildOne(cand(), {});
     expect(r).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
     expect(fresh.saved).toEqual(['Layers:1', 'Segments:1', 'Checks:2']);
   });
 
-  it('keeps every row past one page and each column type the tab had (L5)', async () => {
-    fresh.checkColumns = [
-      { name: 'Key', type: 'text' },
-      { name: 'Node', type: 'number' },
-      { name: 'Checked at', type: 'datetime' },
-      { name: 'Reviewed', type: 'checkbox' },
-      { name: 'Total', type: 'formula' },
+  it('keeps every row and each column whole: type, options, format; two rebuilds give the same tab (L5, MED-1)', async () => {
+    const tags = [
+      { id: 'ok', label: 'ok' },
+      { id: 'rv', label: 'reviewed' },
+      { id: 'ab', label: 'a, b' },
     ];
-    fresh.checks = Array.from({ length: 2500 }, (_, i) => [`k${i}`, i, '2026-10-25', true, 1]);
+    const columns = [
+      { id: 'k', name: 'Key', type: 'text' as const, width: 220 },
+      { id: 'tags', name: 'Tags', type: 'multiselect' as const, options: tags },
+      {
+        id: 'v',
+        name: 'Verdict',
+        type: 'select' as const,
+        options: [
+          { id: 'y', label: 'yes', color: 'green' },
+          { id: 'n', label: 'no' },
+        ],
+      },
+      { id: 'len', name: 'Length', type: 'number' as const, format: { decimals: 2 } },
+      {
+        id: 'cost',
+        name: 'Cost',
+        type: 'currency' as const,
+        format: { currency: 'ZAR', decimals: 2 },
+      },
+      { id: 'on', name: 'Checked on', type: 'date' as const },
+      { id: 'at', name: 'Checked at', type: 'datetime' as const },
+      { id: 'rev', name: 'Reviewed', type: 'checkbox' as const },
+      { id: 'tot', name: 'Double', type: 'formula' as const, formula: '{Length} * 2' },
+      {
+        id: 'src',
+        name: 'Source',
+        type: 'reference' as const,
+        ref: { tabId: 'old-tab', columnId: 'old-col' },
+      },
+    ];
+    const tagsOf = (i: number) =>
+      i % 3 === 0 ? ['ok', 'reviewed'] : i % 3 === 1 ? ['a, b'] : ['ok'];
+    const rows = Array.from({ length: 2500 }, (_, i) => ({
+      id: `r${i}`,
+      cells: {
+        k: `k${i}`,
+        tags: tagsOf(i),
+        v: i % 2 ? 'no' : 'yes',
+        len: i + 0.25,
+        cost: 12.5,
+        on: '2026-10-25',
+        at: '2026-10-25T12:00:00',
+        rev: i % 2 === 0,
+        src: 'V-201',
+      },
+    }));
+    writeChecks({
+      columns,
+      rows,
+      aggregates: { len: 'sum' },
+      views: [{ id: 'view1', name: 'Longest', sort: [{ colId: 'len', dir: 'desc' }] }],
+    });
     const r = await rebuildOne(cand(), {});
     expect(r).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
     expect(fresh.saved).toEqual(['Layers:1', 'Segments:1', 'Checks:2500']);
-    // A formula's definition is not a value: it comes back as text.
-    expect(fresh.grids.at(-1)).toEqual([
-      'Key:text',
-      'Node:number',
-      'Checked at:datetime',
-      'Reviewed:checkbox',
-      'Total:text',
+    const first = fresh.savedChecks as unknown as ChecksTab;
+    // Every column whole; only the reference, whose tab the rebuild
+    // replaces, comes back as text holding its value.
+    expect(first.columns).toEqual([
+      ...columns.slice(0, -1),
+      { id: 'src', name: 'Source', type: 'text' },
     ]);
+    expect(first.rows).toHaveLength(2500);
+    expect(first.rows.slice(0, 3)).toEqual(rows.slice(0, 3));
+    expect(first.rows.map((x) => x.cells.tags)).toEqual(rows.map((x) => x.cells.tags));
+    expect(first.rows[1]!.cells.tags).toEqual(['a, b']);
+    expect(first.aggregates).toEqual({ len: 'sum' });
+    expect(first.views).toEqual([
+      { id: 'view1', name: 'Longest', sort: [{ colId: 'len', dir: 'desc' }] },
+    ]);
+
+    // The store writes what the rebuild saved; the next rebuild reads it
+    // back: the same tab, cell for cell (nothing nests or splits again).
+    writeChecks(first);
+    expect(await rebuildOne(cand(), {})).toMatchObject({ result: 'rebuilt' });
+    expect(fresh.savedChecks).toEqual(first);
   });
 
   it('a Checks tab past the cap is refused whole, nothing written (L5)', async () => {
-    fresh.checks = [['k', 'yes']];
+    plainChecks([['k', 'yes']]);
     fresh.checkRowCount = 100_001;
     const r = await rebuildOne(cand(), {});
     expect(r).toMatchObject({ result: 'refused' });
@@ -282,8 +383,8 @@ describe('a rebuild keeps the table', () => {
     );
     expect(calls.log).toEqual([]);
     // Rows the count did not show yet are caught by the read itself.
+    plainChecks(Array.from({ length: 100_001 }, (_, i): [string, string] => [`k${i}`, 'yes']));
     fresh.checkRowCount = 5;
-    fresh.checks = Array.from({ length: 100_001 }, (_, i) => [`k${i}`, 'yes']);
     expect(await rebuildOne(cand(), {})).toMatchObject({ result: 'refused' });
     expect(calls.log).toEqual([]);
   });

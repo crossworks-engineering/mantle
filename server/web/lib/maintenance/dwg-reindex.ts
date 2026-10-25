@@ -60,7 +60,7 @@ import {
   dwgTableEdited,
 } from '@mantle/files/dwg';
 import { tableSqlSurface } from '@mantle/content/table-storage';
-import { runTableSql } from '@mantle/tabledb';
+import { readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import { readFileById } from '@mantle/files';
 import { envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -236,9 +236,8 @@ export async function buildTabs(bytes: Buffer, filename: string) {
   return { tabs, description };
 }
 
-/** Rows of the Checks tab read back per page, and at most: a tab past
- *  CHECKS_MAX is refused whole (ChecksTabTooLarge), never cut. */
-const CHECKS_PAGE = 1000;
+/** The most rows a rebuild carries over in the Checks tab: a tab past it
+ *  is refused whole (ChecksTabTooLarge), never cut. */
 export const CHECKS_MAX = 100_000;
 
 /** A Checks tab with more rows than a rebuild carries over. */
@@ -249,53 +248,36 @@ export class ChecksTabTooLarge extends Error {
   }
 }
 
-/** Column types a value copy rebuilds as they were. A formula's or a
- *  reference's definition is not a value (a reference names a tab id the
- *  rebuild replaces), so those come back as text holding what they showed. */
-const KEPT_TYPE = new Set([
-  'text',
-  'number',
-  'currency',
-  'percent',
-  'date',
-  'datetime',
-  'checkbox',
-  'select',
-  'multiselect',
-  'url',
-]);
-
 /** The table's Checks tab (circuit_verify's answers) as a tab to write
- *  back, or null when it has none. Every column and row the tab holds is
- *  kept, with its column type; throws ChecksTabTooLarge past CHECKS_MAX
- *  rows rather than lose any. */
+ *  back, or null when it has none. Read through the store's own reader
+ *  (readDocFile): every column with its whole definition (type, options,
+ *  format, formula, width), every row in its order with its id, each cell
+ *  decoded as the store keeps it (a multiselect is its list, never its
+ *  JSON text split on commas), and the tab's views and footer totals. So
+ *  nothing is coerced a second time, and rebuilding a rebuilt table gives
+ *  the same tab. One type does not carry: a reference column names a tab
+ *  the rebuild replaces, so it comes back as text holding the value it
+ *  showed. Throws ChecksTabTooLarge past CHECKS_MAX rows rather than lose
+ *  any. */
 export async function checksTabOf(ownerId: string, tableId: string) {
   const surface = await tableSqlSurface(ownerId, tableId);
   const tab = surface?.tabs.find((t) => t.name === CHECKS_TAB);
   if (!surface || !tab) return null;
   if (tab.rowCount > CHECKS_MAX) throw new ChecksTabTooLarge(tab.rowCount);
-  const names = tab.columns.map((c) => c.name);
-  const ident = (n: string) => `"${n.replace(/"/g, '""')}"`;
-  const rows: (string | number | boolean | null)[][] = [];
-  for (let offset = 0; ; offset += CHECKS_PAGE) {
-    const r = await runTableSql(
-      surface.abs,
-      `SELECT ${names.map(ident).join(', ')} FROM ${ident(tab.viewName)} ORDER BY "_rid" LIMIT ${CHECKS_PAGE} OFFSET ${offset}`,
-      { cap: CHECKS_PAGE },
-    );
-    rows.push(...(r.rows as (string | number | boolean | null)[][]));
-    // Rows added since the count was read count too.
-    if (rows.length > CHECKS_MAX) throw new ChecksTabTooLarge(rows.length);
-    if (r.rows.length < CHECKS_PAGE) break;
+  let doc: ReturnType<typeof readDocFile>;
+  try {
+    // The reader counts again: rows added since the count above are judged too.
+    doc = readDocFile(surface.abs, { tabId: tab.tabId, maxRows: CHECKS_MAX });
+  } catch (err) {
+    if (err instanceof TableTooLargeError) throw new ChecksTabTooLarge(err.rowCount);
+    throw err;
   }
-  const typeOf = (n: string) => {
-    const t = tab.columns.find((c) => c.name === n)?.type;
-    return t && KEPT_TYPE.has(t) ? t : 'text';
-  };
   return {
-    ...tableDocFromGrid({
-      columns: names.map((n) => ({ name: n, type: typeOf(n) })),
-      rows,
+    ...doc,
+    columns: doc.columns.map((col) => {
+      if (col.type !== 'reference') return col;
+      const { ref: _ref, ...rest } = col;
+      return { ...rest, type: 'text' as const };
     }),
     name: CHECKS_TAB,
   };

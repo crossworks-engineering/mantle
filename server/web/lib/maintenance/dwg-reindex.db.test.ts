@@ -245,12 +245,56 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     // The image check's commit: a Checks tab with one row, then the mark
     // checks-store.ts writes on an unedited table.
     const tab = randomUUID();
-    const [k, a] = [randomUUID(), randomUUID()];
+    const [k, a, tg, vd, len, on] = Array.from({ length: 6 }, () => randomUUID());
+    // Beside the two text columns, the types a value copy used to garble:
+    // a multiselect (one item holds a comma), a select with its options, a
+    // formatted number, a date (MED-1).
+    const tagOptions = [
+      { id: 'ok', label: 'ok' },
+      { id: 'rv', label: 'reviewed' },
+      { id: 'ab', label: 'a, b' },
+    ];
+    const verdictOptions = [
+      { id: 'y', label: 'yes', color: 'green' },
+      { id: 'n', label: 'no' },
+    ];
     await c.applyTableOps(anchor, tChecked, [
       { op: 'tab_add', tabId: tab, name: 'Checks' },
       { op: 'column_add', tabId: tab, column: { id: k, name: 'Key', type: 'text' } },
       { op: 'column_add', tabId: tab, column: { id: a, name: 'Answer', type: 'text' } },
-      { op: 'row_add', tabId: tab, cells: { [k]: 'end:A1@1.0,0.0', [a]: 'yes' } },
+      {
+        op: 'column_add',
+        tabId: tab,
+        column: { id: tg, name: 'Tags', type: 'multiselect', options: tagOptions },
+      },
+      {
+        op: 'column_add',
+        tabId: tab,
+        column: { id: vd, name: 'Verdict', type: 'select', options: verdictOptions },
+      },
+      {
+        op: 'column_add',
+        tabId: tab,
+        column: { id: len, name: 'Length', type: 'number', format: { decimals: 2 } },
+      },
+      { op: 'column_add', tabId: tab, column: { id: on, name: 'Checked on', type: 'date' } },
+      {
+        op: 'row_add',
+        tabId: tab,
+        cells: {
+          [k]: 'end:A1@1.0,0.0',
+          [a]: 'yes',
+          [tg]: ['ok', 'reviewed'],
+          [vd]: 'yes',
+          [len]: 12.5,
+          [on]: '2026-10-25',
+        },
+      },
+      {
+        op: 'row_add',
+        tabId: tab,
+        cells: { [k]: 'join:pGap', [a]: 'no', [tg]: ['a, b'], [vd]: 'no', [len]: 3 },
+      },
     ]);
     await c.commitTable(anchor, tChecked, undefined, { noModelPass: true });
     const [v] = await admin`select version from tables where node_id = ${tChecked}`;
@@ -264,14 +308,27 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     expect(dwgTableEdited(cand!)).toBe(false);
     expect(r.decide(cand!, {})).toEqual({ action: 'rebuild', snapshotFirst: false });
     const before = await r.checksTabOf(anchor, tChecked);
-    expect(before?.rows).toHaveLength(1);
+    expect(before?.rows).toHaveLength(2);
     const out = await r.rebuildOne(cand!, {});
     expect(out).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
     const kept = await r.checksTabOf(anchor, tChecked);
-    expect(kept?.columns.map((x) => x.name)).toEqual(['Key', 'Answer']);
-    expect(kept?.rows.map((row) => kept.columns.map((col) => row.cells[col.id]))).toEqual([
-      ['end:A1@1.0,0.0', 'yes'],
+    expect(kept?.columns).toEqual([
+      { id: k, name: 'Key', type: 'text' },
+      { id: a, name: 'Answer', type: 'text' },
+      { id: tg, name: 'Tags', type: 'multiselect', options: tagOptions },
+      { id: vd, name: 'Verdict', type: 'select', options: verdictOptions },
+      { id: len, name: 'Length', type: 'number', format: { decimals: 2 } },
+      { id: on, name: 'Checked on', type: 'date' },
     ]);
+    expect(kept?.rows.map((row) => kept.columns.map((col) => row.cells[col.id] ?? null))).toEqual([
+      ['end:A1@1.0,0.0', 'yes', ['ok', 'reviewed'], 'yes', 12.5, '2026-10-25'],
+      ['join:pGap', 'no', ['a, b'], 'no', 3, null],
+    ]);
+    // A second rebuild of the rebuilt table gives the same tab, cell for
+    // cell: nothing nests or splits again.
+    const [again] = await r.findReindexCandidates({ fileIds: [fileChecked] }, 10, { again: true });
+    expect(await r.rebuildOne(again!, {})).toMatchObject({ result: 'rebuilt' });
+    expect(await r.checksTabOf(anchor, tChecked)).toEqual(kept);
     const [n] = await admin`select data from nodes where id = ${tChecked}`;
     expect((n!.data as Row)[DWG_SOURCE_SHA_KEY]).toBe(
       createHash('sha256').update(Buffer.from('AC1032 made-up')).digest('hex'),
