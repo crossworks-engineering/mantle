@@ -125,6 +125,8 @@ registerDecisionAdapter(openrouterDecisionAdapter);
   }
 }
 
+export { extractImages, multiImageProvider, type VisionImage } from './vision-images';
+
 export {
   findAdapterCatalogDrift,
   registerChatAdapter,

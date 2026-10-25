@@ -55,7 +55,13 @@ function recordChat(provider: string, opts: ChatOptions, r: ChatResult): void {
   }));
 }
 
-function recordVision(provider: string, opts: VisionExtractOptions, r: VisionExtractResult): void {
+/** One vision call's usage. Exported for ./vision-images.ts, whose
+ *  several-image call is not on a dispatcher. */
+export function recordVision(
+  provider: string,
+  opts: VisionExtractOptions,
+  r: VisionExtractResult,
+): void {
   record(() => ({
     capability: 'vision',
     provider,

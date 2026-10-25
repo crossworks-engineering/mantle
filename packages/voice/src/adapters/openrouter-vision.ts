@@ -137,6 +137,43 @@ function isImageReader(
   return outputs.includes('text') && !outputs.includes('image');
 }
 
+/**
+ * Several images in ONE request: a text block, then each image after its
+ * own short caption ("Image 3: ..."), so the model can answer per image.
+ * Used through `extractImages` (./vision-images.ts), which records spend.
+ */
+export async function openrouterExtractImages(
+  images: readonly { bytes: Buffer; mimeType: string; caption?: string }[],
+  opts: VisionExtractOptions,
+): Promise<VisionExtractResult> {
+  if (!opts.apiKey) throw new Error('openrouter-vision: apiKey required');
+  if (!images.length || images.some((i) => !i.bytes?.length)) {
+    throw new Error('openrouter-vision: an empty image buffer');
+  }
+  const model = opts.model || DEFAULT_MODEL;
+  const content: Record<string, unknown>[] = [{ type: 'text', text: opts.prompt }];
+  for (const img of images) {
+    if (img.caption) content.push({ type: 'text', text: img.caption });
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:${img.mimeType};base64,${img.bytes.toString('base64')}` },
+    });
+  }
+  const r = await post(
+    opts.apiKey,
+    {
+      model,
+      max_tokens: opts.maxTokens ?? 2000,
+      messages: [
+        ...(opts.systemPrompt?.trim() ? [{ role: 'system', content: opts.systemPrompt }] : []),
+        { role: 'user', content },
+      ],
+    },
+    PROVIDER_TIMEOUTS.vision,
+  );
+  return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+}
+
 export const openrouterVisionAdapter: VisionDispatcher = {
   providerId: 'openrouter',
   adapterName: 'openrouter-vision',
