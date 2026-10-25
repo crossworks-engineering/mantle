@@ -97,7 +97,7 @@ export type SheetInput = {
   checks?: StoredCheck[];
 };
 
-export type SourceState = 'current' | 'stale' | 'unstamped';
+export type SourceState = 'current' | 'stale' | 'unstamped' | 'unreadable';
 
 export type RegisterLine = { number: string; sheet?: string; deadleg?: boolean };
 export type RegisterInput = {

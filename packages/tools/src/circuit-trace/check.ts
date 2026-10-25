@@ -27,7 +27,7 @@
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
 import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
 import { endKey, joinKey, linkKey, valveKey } from './check-keys';
-import { sealHolds } from './check-seal';
+import { sealHolds, type SealedFields } from './check-seal';
 import type { ChainRole, PidChecks, Verdict } from './pid';
 import type { SegRow, SheetInput, SheetLink, TraceSheet } from './walk';
 
@@ -608,7 +608,9 @@ export const CHECK_COLUMNS = [
 ] as const;
 export type CheckColumn = (typeof CHECK_COLUMNS)[number];
 
-/** A stored check as the Checks tab holds it (one row per answer). */
+/** A stored check as the Checks tab holds it (one row per answer). The
+ *  fields past `trust` are optional only so a test may build a row by
+ *  hand; the read fills every one (storedCheckOf). */
 export type StoredCheck = {
   key: string;
   kind: string;
@@ -619,24 +621,70 @@ export type StoredCheck = {
   reason: string;
   question: string;
   trust: string;
+  circuit?: string;
+  node?: string;
+  handles?: string;
+  guess?: string;
+  file?: string;
+  /** The Crops cell: the overview's and the crops' file ids. */
+  crops?: string;
   /** circuit_verify's seal of the row (./check-seal.ts); '' when none. */
   seal?: string;
 };
 
+/** Each Checks column and the stored check's field it reads into: every
+ *  column is named (the type says so), so the read cannot leave one out
+ *  (a read that dropped Seal once made every stored answer unsealed). */
+export const CHECK_FIELD = {
+  Key: 'key',
+  Kind: 'kind',
+  Circuit: 'circuit',
+  Node: 'node',
+  Handles: 'handles',
+  Guess: 'guess',
+  Question: 'question',
+  Answer: 'answer',
+  Reason: 'reason',
+  Trust: 'trust',
+  Model: 'model',
+  'Checked at': 'checkedAt',
+  Revision: 'revision',
+  File: 'file',
+  Crops: 'crops',
+  Seal: 'seal',
+} as const satisfies Record<CheckColumn, keyof StoredCheck>;
+
+/** One Checks row (column name to value) as a stored check: every column
+ *  read as text, the answer lower-cased. */
+export function storedCheckOf(row: Readonly<Record<string, unknown>>): StoredCheck {
+  const out: Record<string, string> = {};
+  for (const c of CHECK_COLUMNS) {
+    const v = row[c];
+    out[CHECK_FIELD[c]] = v === null || v === undefined ? '' : String(v);
+  }
+  out.answer = out.answer!.toLowerCase();
+  return out as unknown as StoredCheck;
+}
+
+/** What the seal of a stored row covers (./check-seal.ts). */
+export function sealFieldsOf(tableId: string, r: StoredCheck): SealedFields {
+  return {
+    tableId,
+    key: r.key,
+    circuit: r.circuit ?? '',
+    question: r.question,
+    answer: r.answer,
+    reason: r.reason,
+    model: r.model,
+    revision: r.revision,
+    checkedAt: r.checkedAt,
+    crops: r.crops ?? '',
+  };
+}
+
 /** Whether a stored row is circuit_verify's own, unchanged (its seal). */
 export function sealedRow(tableId: string, r: StoredCheck): boolean {
-  return sealHolds(
-    {
-      tableId,
-      key: r.key,
-      question: r.question,
-      answer: r.answer,
-      model: r.model,
-      revision: r.revision,
-      checkedAt: r.checkedAt,
-    },
-    r.seal ?? '',
-  );
+  return sealHolds(sealFieldsOf(tableId, r), r.seal ?? '');
 }
 
 /**
@@ -698,7 +746,7 @@ export function latestBySheet(inputs: readonly SheetInput[]): {
       );
     if (unsealed)
       notes.push(
-        `${s.title}: ${unsealed} row${unsealed === 1 ? '' : 's'} in its Checks tab carry no valid circuit_verify seal (written or changed by hand): kept, never applied.`,
+        `${s.title}: ${unsealed} row${unsealed === 1 ? '' : 's'} in its Checks tab carry no circuit_verify seal under this brain's current or staged master key (written or changed by hand, or sealed under a key since rotated out): kept, never applied.`,
       );
   }
   return { latest, notes };

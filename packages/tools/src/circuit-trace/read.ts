@@ -28,7 +28,7 @@ import {
   type TextRow,
 } from './walk';
 import { DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
-import { CHECK_COLUMNS, CHECKS_TAB, type StoredCheck } from './check';
+import { CHECK_COLUMNS, CHECKS_TAB, storedCheckOf, type StoredCheck } from './check';
 
 /** Tables looked at per call (the newest first). */
 export const MAX_TABLES = 200;
@@ -56,7 +56,8 @@ export type CandidateTable = {
   sourceSha?: string | null;
   /** Whether the file still holds those bytes: `stale` when it was replaced
    *  in place since (the table keeps the old geometry until dwg-reindex),
-   *  `unstamped` when the table predates the stamp. */
+   *  `unstamped` when the table predates the stamp, `unreadable` when the
+   *  caller cannot read the source file (the revision is not checked). */
   source?: SourceState;
 };
 
@@ -69,10 +70,13 @@ export const MAX_CHECK_ROWS = 2000;
  *  data holds anything else names no file). */
 const UUID_SQL = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
-/** The stamp against the file's current bytes. */
+/** The stamp against the file's current bytes. No hash of the file (the
+ *  caller cannot read the source file, or it is gone) is `unreadable`: the
+ *  revision could not be checked, never read as current. */
 export function sourceStateOf(stamped: string | null, fileSha: string | null): SourceState {
   if (!stamped) return 'unstamped';
-  return fileSha && fileSha !== stamped ? 'stale' : 'current';
+  if (!fileSha) return 'unreadable';
+  return fileSha !== stamped ? 'stale' : 'current';
 }
 
 /** The DWG/DXF registry tables the caller's scope reads (auto-imported, the
@@ -535,18 +539,7 @@ export async function readSheet(
         `SELECT ${cols.map(ident).join(', ')} FROM ${ident(checksTab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})`,
         MAX_CHECK_ROWS,
       );
-      for (const o of asObjects(r))
-        checks.push({
-          key: text(o['Key']),
-          kind: text(o['Kind']),
-          answer: text(o['Answer']).toLowerCase(),
-          revision: text(o['Revision']),
-          checkedAt: text(o['Checked at']),
-          model: text(o['Model']),
-          reason: text(o['Reason']),
-          question: text(o['Question']),
-          trust: text(o['Trust']),
-        });
+      for (const o of asObjects(r)) checks.push(storedCheckOf(o));
       if (r.cut)
         limits.push(
           `more than ${MAX_CHECK_ROWS} image checks of this circuit; the rest were not read`,
