@@ -244,6 +244,16 @@ describe('the drawing set at its 40-page cap', () => {
     traceCircuit(C, [runs(8000)]);
     expect(performance.now() - t).toBeLessThan(3000);
   });
+
+  it('a branchy sheet of about 17000 chains traces in well under 10 seconds', () => {
+    // Each end's line numbers came from a scan of every chain of its run at
+    // every step back, and each end found its chain the same way (about 25 s
+    // here, cubic); now near linear (under 2 seconds on a laptop). Generous.
+    const t = performance.now();
+    const r = traceCircuit(C, [tree(90, 10, 20)]);
+    expect(performance.now() - t).toBeLessThan(10_000);
+    expect(r.sheets[0]!.runs.reduce((n, run) => n + run.chains.length, 0)).toBeGreaterThan(15_000);
+  }, 60_000);
 });
 
 type Linked = {

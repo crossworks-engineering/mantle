@@ -1639,12 +1639,19 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
     // A closed loop has no key node: walk it from its lowest node.
     for (const ei of runEdges) if (!used.has(ei)) walkFrom(edges[ei]!.a, ei);
 
+    // Each node's first chain, in chain order (a scan of every chain at
+    // every end is quadratic on a run with many deadlegs).
+    const firstChainAt = new Map<number, TraceChain>();
+    for (const c of chains) {
+      if (!firstChainAt.has(c.from)) firstChainAt.set(c.from, c);
+      if (!firstChainAt.has(c.to)) firstChainAt.set(c.to, c);
+    }
     const ends: TraceEnd[] = runNodes
       .filter((n) => degree(n) === 1)
       .map((n) => {
         const at = pointOf(n);
         const meets = meetsOf(n);
-        const chain = chains.find((c) => c.from === n || c.to === n);
+        const chain = firstChainAt.get(n);
         if (!byNode.has(n)) {
           limits.push(
             `${s.title}: end #${n} is not in the Nodes rows read (a capped tab); what it meets is unknown${at ? ', its place is its segment’s end' : ''}.`,
@@ -1820,10 +1827,22 @@ type EndRef = {
   inferred: boolean;
 };
 
+/** A run's chains at each node, in the run's chain order (built once per
+ *  run: a scan of every chain at every step is quadratic on a branchy
+ *  run). */
+function chainsAt(run: TraceRun): Map<number, TraceChain[]> {
+  const at = new Map<number, TraceChain[]>();
+  for (const c of run.chains) {
+    append(at, c.from, c);
+    if (c.to !== c.from) append(at, c.to, c);
+  }
+  return at;
+}
+
 /** The line numbers of the pipe at an end: its own chain's, else the
  *  nearest numbered main chain back along the run (fewest chains away; a
  *  line is labelled once, not at every tee). */
-function numbersFrom(run: TraceRun, node: number): string[] {
+function numbersFrom(at: Map<number, TraceChain[]>, node: number): string[] {
   const seen = new Set<TraceChain>();
   let frontier = [node];
   const visited = new Set(frontier);
@@ -1831,8 +1850,8 @@ function numbersFrom(run: TraceRun, node: number): string[] {
     const found: string[] = [];
     const next: number[] = [];
     for (const n of frontier) {
-      for (const c of run.chains) {
-        if (seen.has(c) || (c.from !== n && c.to !== n)) continue;
+      for (const c of at.get(n) ?? []) {
+        if (seen.has(c)) continue;
         seen.add(c);
         if (c.role === 'deadleg') continue;
         found.push(...c.lineNumbers.map((l) => norm(l.number)));
@@ -1852,6 +1871,7 @@ function numbersFrom(run: TraceRun, node: number): string[] {
 function linkCandidates(sheet: TraceSheet): EndRef[] {
   const out: EndRef[] = [];
   for (const run of sheet.runs) {
+    const at = chainsAt(run);
     for (const end of run.ends) {
       if (end.deadleg) continue;
       // Another circuit's layer is a known end; a non-circuit line touching
@@ -1859,7 +1879,7 @@ function linkCandidates(sheet: TraceSheet): EndRef[] {
       // an instrument tag near it.
       if (end.meets.kind === 'circuit' || end.meets.kind === 'unknown') continue;
       if (end.equipment.length || end.equipmentUnconfirmed) continue;
-      const chain = run.chains.find((c) => c.from === end.node || c.to === end.node);
+      const chain = at.get(end.node)?.[0];
       // A chain that runs through an inferred join supplies no own numbers:
       // a number past the join may sit on another pipe the join only guessed
       // is this one, and a certain link must rest on drawn fact alone.
@@ -1868,7 +1888,13 @@ function linkCandidates(sheet: TraceSheet): EndRef[] {
         chain && chain.role === 'main' && !inferred
           ? [...new Set(chain.lineNumbers.map((l) => norm(l.number)))]
           : [];
-      out.push({ sheet, end, numbers: numbersFrom(run, end.node), own, inferred });
+      out.push({
+        sheet,
+        end,
+        numbers: numbersFrom(at, end.node),
+        own,
+        inferred,
+      });
     }
   }
   return out;
