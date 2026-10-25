@@ -872,6 +872,178 @@ describe('register text echoed back is capped', () => {
       /the register differs in 165 places; the first 100 are listed, 65 more are not/,
     );
     expect(r.limits.filter((l) => /is on the register but not among/.test(l))).toHaveLength(10);
-    expect(lim).toMatch(/5 more register sheets are not among the traced drawings/);
+    expect(lim).toMatch(
+      /5 more register sheets are not among the traced drawings \(not listed anywhere: the register's differences stop at 100 before them\)/,
+    );
+  });
+
+  it('L3: the rest of the missing sheets says how many the capped differences list', () => {
+    // 86 line differences, then 15 sheets (at 86..100), then the deadleg
+    // count: the five sheets past the ten named sit at 96..100, four listed.
+    const lines = Array.from({ length: 86 }, (_, i) => ({ number: `Z${i}` }));
+    const sheets = Array.from({ length: 15 }, (_, i) => `SHEET-${i}`);
+    const r = traceCircuit(C, [sheet('PID-9562', [sg(M, 'A', 0, 0, 20, 0, 1, 2)], [])], {
+      lines,
+      sheets,
+      deadlegs: 5,
+    });
+    expect(r.register!.discrepancies).toHaveLength(MAX_DISCREPANCIES);
+    expect(r.limits.join('\n')).toMatch(
+      /5 more register sheets are not among the traced drawings \(the register's differences list 4 of them, 1 is not listed anywhere: the differences stop at 100\)/,
+    );
+    const all = traceCircuit(C, [sheet('PID-9563', [sg(M, 'A', 0, 0, 20, 0, 1, 2)], [])], {
+      sheets,
+    });
+    expect(all.limits.join('\n')).toMatch(
+      /5 more register sheets .*\(the register's differences list them\)/,
+    );
+  });
+});
+
+describe('round 3: a continuation label wins over a reading, readings ranked and said', () => {
+  const T = (text: string, x: number, y: number, layer = 'EQUIP'): TextRow => ({
+    text,
+    layer,
+    x,
+    y,
+  });
+  // PID-9571 E-101 ══ "CONT. ON PID-9572"; PID-9572 runs on to "CONT. ON
+  // PID-9573" with V-555 4.5 units off that end (near is 2); PID-9573 ends
+  // at E-301. N500-1 on 9571/9572, N500-2 on 9572/9573.
+  const three = (far: boolean) => [
+    sheet(
+      'PID-9571',
+      [sg(M, 'a1', 0, 0, 80, 0, 1, 2)],
+      [],
+      [T('E-101', -1, 0), T('CONT. ON PID-9572', 81, 1, 'T')],
+      [lineNo('L1', 60, 1, 'N500-1')],
+    ),
+    sheet(
+      'PID-9572',
+      [sg(M, 'b1', 0, 0, 60, 0, 1, 2)],
+      [],
+      [
+        T('CONT. FROM PID-9571', -1, 1, 'T'),
+        T('CONT. ON PID-9573', 61, 1, 'T'),
+        ...(far ? [T('V-555', 64, -2)] : []),
+      ],
+      [lineNo('L2', 20, 1, 'N500-1'), lineNo('L3', 45, 1, 'N500-2')],
+    ),
+    sheet(
+      'PID-9573',
+      [sg(M, 'c1', 0, 0, 50, 0, 1, 2)],
+      [],
+      [T('CONT. FROM PID-9572', -1, 1, 'T'), T('E-301', 51, 0)],
+      [lineNo('L4', 20, 1, 'N500-2')],
+    ),
+  ];
+
+  it('M1: a tag a few units off a labelled end takes no reading; both links stay certain', () => {
+    for (const far of [false, true]) {
+      const r = traceCircuit(C, three(far));
+      const end = r.sheets[1]!.runs[0]!.ends.find((e) => e.node === 2)!;
+      expect(end.equipmentUnconfirmed).toBeUndefined();
+      expect(end.labels).toContain('CONT. ON PID-9573');
+      expect(r.links.filter((l) => !l.guessed)).toHaveLength(2);
+      const pid = r.pid as Pid;
+      expect(pid.description).toMatch(/main line E-101 to E-301, .* across 3 sheets/);
+      expect(r.guesses.join(' ')).not.toMatch(/V-555/);
+    }
+  });
+
+  it('M1: a label finding no end says what each end there is', () => {
+    // PID-9575's one piece runs E-301 to E-302: no end is left to link.
+    const r = traceCircuit(C, [
+      sheet(
+        'PID-9574',
+        [sg(M, 'a1', 0, 0, 80, 0, 1, 2)],
+        [],
+        [T('E-101', -1, 0), T('CONT. ON PID-9575', 81, 1, 'T')],
+      ),
+      sheet(
+        'PID-9575',
+        [sg(M, 'b1', 0, 0, 60, 0, 1, 2)],
+        [],
+        [T('E-301', -1, 0), T('E-302', 61, 0)],
+      ),
+    ]);
+    const link = r.links.find((l) => l.from.sheet === 'PID-9574')!;
+    expect(link.to).toBeNull();
+    expect(link.note).toBe(
+      'the label names PID-9575, but no end there is matched: of its 2 ends, 2 at equipment',
+    );
+  });
+
+  // PID-9576 E-101 ══ "CONT. ON PID-9577"; PID-9577 tees into two arms,
+  // each ending short of a tag past the near distance.
+  const tee = (up: [number, number], down: [number, number]) => [
+    sheet(
+      'PID-9576',
+      [sg(M, 'a1', 0, 0, 80, 0, 1, 2)],
+      [],
+      [T('E-101', -1, 0), T('CONT. ON PID-9577', 81, 1, 'T')],
+      [lineNo('L1', 60, 1, 'N600-1')],
+    ),
+    sheet(
+      'PID-9577',
+      [
+        sg(M, 'b1', 0, 0, 30, 0, 1, 2),
+        sg(M, 'b2', 30, 0, 30, up[0], 2, 3),
+        sg(M, 'b3', 30, 0, 30, -down[0], 2, 4),
+      ],
+      [],
+      [
+        T('CONT. FROM PID-9576', -1, 1, 'T'),
+        T('V-901', 30, up[0] + up[1]),
+        T('V-902', 30, -down[0] - down[1]),
+      ],
+      [lineNo('L2', 15, 1, 'N600-1')],
+    ),
+  ];
+
+  it('L1: a tie between two readings is said, never dropped', () => {
+    const r = traceCircuit(C, tee([30, 4], [30, 4]));
+    const g = r.guesses.find((x) => x.startsWith('the main line runs'))!;
+    expect(g).toMatch(/near V-901 \(GUESS\)/);
+    expect(g).toMatch(/another pair scores the same \(a tie/);
+  });
+
+  it('L1: the closer tag ranks first, before the longer arm, and the rule is said', () => {
+    const r = traceCircuit(C, tee([30, 2.5], [31, 5.5]));
+    const g = r.guesses.find((x) => x.startsWith('the main line runs'))!;
+    expect(g).toMatch(/runs E-101 to near V-901 \(GUESS\)/);
+    expect(g).not.toMatch(/a tie/);
+    expect(g).toMatch(/only near V-901, 2\.5 drawing units off, past the 2 near distance/);
+    expect(g).toMatch(/the one whose tag is closer to its end ranks first, before length/);
+    expect(g).toMatch(
+      /across 2 sheets, each once, while no path that keeps off deadlegs joins two pieces of confirmed equipment/,
+    );
+  });
+
+  it('L2: a reading on a wide outline names the tags it holds', () => {
+    // A 40 by 40 box (wider than one piece at 32) holding E-201 and E-202.
+    const a = sg(M, 'A', 0, 0, 20, 0, 1, 2);
+    const box = [
+      sg('EQUIP', 'S', 20, 0, 20, 20, 2, 11, 0),
+      sg('EQUIP', 'S', 20, 20, 60, 20, 11, 12, 1),
+      sg('EQUIP', 'S', 60, 20, 60, -20, 12, 13, 2),
+      sg('EQUIP', 'S', 60, -20, 20, -20, 13, 14, 3),
+      sg('EQUIP', 'S', 20, -20, 20, 0, 14, 2, 4),
+    ];
+    const r = traceCircuit(C, [
+      sheet(
+        'PID-9578',
+        [a],
+        [...under([a]), ...box, sg(PIPE, 'far', 150, 150, 151, 151, 98, 99)],
+        [T('E-101', -1, 0), T('E-201', 30, 0), T('E-202', 50, 10)],
+      ),
+    ]);
+    const end = r.sheets[0]!.runs[0]!.ends.find((e) => e.node === 2)!;
+    expect(end.equipmentUnconfirmed).toBe('E-201');
+    expect(end.reading).toMatchObject({ kind: 'outline', count: 2, tags: ['E-201', 'E-202'] });
+    expect(end.equipmentBasis).toMatch(/holds 2 equipment tags \(E-201, E-202\), E-201 nearest/);
+    const g = r.guesses.join(' ');
+    expect(g).toMatch(/sits on an outline holding 2 equipment tags \(E-201, E-202\)/);
+    expect(g).not.toMatch(/past the near distance/);
   });
 });

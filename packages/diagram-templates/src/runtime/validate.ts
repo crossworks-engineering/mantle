@@ -76,13 +76,15 @@ export function checkKeys(o: Obj, allowed: readonly string[], path: string, issu
 
 type StrOpts = { required?: boolean; max?: number; pattern?: RegExp; patternText?: string };
 
-/** C0 and C1 control characters and DEL, but tab and newline: never drawn
- *  (a NUL makes the SVG invalid XML even escaped). */
+/** C0 and C1 control characters and DEL, but tab, newline and carriage
+ *  return: never drawn (a NUL makes the SVG invalid XML even escaped). A
+ *  carriage return is kept so stored text with CRLF line ends draws byte for
+ *  byte as it did. */
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
 
-/** A text field with its control characters taken out (tab and newline
- *  kept); text without any is returned as it is. */
+/** A text field with its control characters taken out (tab, newline and
+ *  carriage return kept); text without any is returned as it is. */
 export function cleanText(v: string): string {
   return v.replace(CONTROL, '');
 }

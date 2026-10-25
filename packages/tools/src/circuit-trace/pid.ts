@@ -242,12 +242,31 @@ export function buildPid(
    *  it carries the main line across more sheets (two at least) than
    *  confirmed equipment alone does. */
   const readingAt = new Map<string, string>();
+  /** How each reading was taken (walk.ts): its distance ranks readings. */
+  const readingOf = new Map<string, NonNullable<TraceEnd['reading']>>();
   for (const [k, tag] of unconfirmed) {
     const v = find(k);
     if (isEq(v) || !adj.has(v)) continue;
-    if ((endAt.get(k) ?? []).every(({ end }) => end.deadleg)) continue;
+    const at = endAt.get(k) ?? [];
+    if (at.every(({ end }) => end.deadleg)) continue;
     readingAt.set(v, tag);
+    const by = at.find(({ end }) => end.reading)?.end.reading;
+    if (by) readingOf.set(v, by);
   }
+  /** A reading in words: how far its tag is, or the outline it sits on. */
+  const readingWords = (v: string): string => {
+    const r = readingOf.get(v);
+    const tag = readingAt.get(v);
+    if (r?.kind === 'outline') {
+      const more = r.count > r.tags.length ? ', ...' : '';
+      return r.count > 1
+        ? `only on an outline too wide to be one piece of equipment that holds ${r.count} equipment tags (${r.tags.join(', ')}${more}), ${tag} nearest, ${r.distance} drawing units off`
+        : `only on an outline too wide to be one piece of equipment that holds ${tag}`;
+    }
+    return r
+      ? `only near ${tag}, ${r.distance} drawing units off, past the ${r.near} near distance`
+      : `only near ${tag}, past the near distance`;
+  };
   /** A vertex's name in the words the trace writes. */
   const vname = (v: string) =>
     isEq(v) ? eqTag(v) : readingAt.has(v) ? `near ${readingAt.get(v)} (GUESS)` : v;
@@ -281,7 +300,7 @@ export function buildPid(
   let main: Main | null = null;
   /** A pair joined only through a deadleg chain (no main line there). */
   let blocked: { a: string; b: string } | null = null;
-  const consider = (a: string, b: string) => {
+  const consider = (a: string, b: string, readingD?: number) => {
     const p = path(a, b);
     if (!p?.length) {
       // Kept to say why there is no main line: a path only through a deadleg.
@@ -295,6 +314,8 @@ export function buildPid(
       Number(new Set(order).size === order.length),
       new Set(order).size,
       -turnsOf(a, p),
+      // Between readings the closer tag ranks first, before length.
+      ...(readingD === undefined ? [] : [-readingD]),
       p.reduce((x, e) => x + e.length, 0),
     ];
     const cur = main as Main | null;
@@ -302,7 +323,14 @@ export function buildPid(
       main = { from: a, to: b, edges: p, score, tie: false };
     else if (!lexGreater(cur.score, score)) cur.tie = true;
   };
+  /** The sheets a main line crosses, each once (0 when it crosses one twice). */
+  const sheetsOf = (x: Main | null) => (x && x.score[0] === 1 ? x.score[1]! : 0);
   let mainBasis: string;
+  /** What the confirmed pairs reach, said when a reading takes the main
+   *  line: the sheets the best of them crosses (each once), 0 when it
+   *  crosses one twice, null when no confirmed pair is joined at all. */
+  let confirmedReach: number | null = null;
+  let pinnedEq: string | undefined;
   if (regFrom && regTo && regFrom !== regTo) {
     consider(regFrom, regTo);
     mainBasis = `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())}`;
@@ -313,6 +341,7 @@ export function buildPid(
     }
   } else {
     const pinned = regFrom ?? regTo;
+    pinnedEq = pinned;
     for (let i = 0; i < eqs.length; i++) {
       for (let k = i + 1; k < eqs.length; k++) {
         if (pinned && eqs[i] !== pinned && eqs[k] !== pinned) continue;
@@ -323,16 +352,17 @@ export function buildPid(
     // taken only when it crosses more sheets, each once, than the confirmed
     // pairs do, and at least two (on one sheet a reading is never a main end).
     const confirmed = main as Main | null;
-    const sheetsOf = (x: Main | null) => (x && x.score[0] === 1 ? x.score[1]! : 0);
     main = null;
     for (const v of eqs) {
       if (pinned && v !== pinned) continue;
-      for (const r of readingAt.keys()) consider(v, r);
+      for (const r of readingAt.keys()) consider(v, r, readingOf.get(r)?.distance ?? Infinity);
     }
     const reading = main as Main | null;
+    confirmedReach = confirmed ? sheetsOf(confirmed) : null;
+    // A tie between two readings is kept: the sentence says so.
     main =
       reading && sheetsOf(reading) >= 2 && sheetsOf(reading) > sheetsOf(confirmed)
-        ? { ...reading, tie: false }
+        ? reading
         : confirmed;
     mainBasis = '';
   }
@@ -370,7 +400,7 @@ export function buildPid(
         .filter((v) => !isEq(v))
         .map(
           (v) =>
-            `; its ${v === m.from ? 'from' : 'to'} end is only near ${readingAt.get(v)} (a reading past the near distance, drawn as a NEAR connector marked GUESS, never as the equipment), taken because it carries the main line across more sheets than any pair of confirmed equipment`,
+            `; its ${v === m.from ? 'from' : 'to'} end is ${readingWords(v)} (a reading, drawn as a NEAR connector marked GUESS, never as the equipment), taken because it carries the main line across ${sheetsOf(m)} sheets, each once, while ${confirmedReach === null ? (pinnedEq ? `no path that keeps off deadlegs joins ${vname(pinnedEq)} to other confirmed equipment` : 'no path that keeps off deadlegs joins two pieces of confirmed equipment') : confirmedReach === 0 ? 'the best path between confirmed equipment crosses a sheet twice' : `the best path between confirmed equipment crosses ${confirmedReach} sheet${confirmedReach === 1 ? '' : 's'}`}${readingAt.size > 1 ? '; between readings the one whose tag is closer to its end ranks first, before length' : ''}`,
         )
         .join('')}. Give the register's from and to to fix it.`,
     );

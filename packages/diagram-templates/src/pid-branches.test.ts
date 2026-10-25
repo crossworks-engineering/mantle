@@ -299,7 +299,23 @@ describe('free text never carries control characters', () => {
     const r = render('pid', d, estimateMeasurer);
     expect(r.ok).toBe(true);
     // eslint-disable-next-line no-control-regex
-    if (r.ok) expect(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(r.svg)).toBe(false);
+    const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+    if (r.ok) expect(control.test(r.svg)).toBe(false);
+  });
+
+  it('a carriage return is kept: CRLF text validates and draws as it did', () => {
+    const d = sheet();
+    d.lines[0] = { ...d.lines[0], note: 'GUESS\r\ncheck\tit' };
+    const v = validatePid(d);
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.data.lines[0]!.note).toBe('GUESS\r\ncheck\tit');
+    const withNul = sheet();
+    withNul.lines[0] = { ...withNul.lines[0], note: `GUESS\r\n${NUL}check\tit` };
+    const a = render('pid', d, estimateMeasurer);
+    const b = render('pid', withNul, estimateMeasurer);
+    expect(a.ok && b.ok).toBe(true);
+    // Only the NUL is taken out: the two draw the same bytes.
+    if (a.ok && b.ok) expect(b.svg).toBe(a.svg);
   });
 
   it('a field of control characters only is empty: required fields say so', () => {

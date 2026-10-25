@@ -126,6 +126,15 @@ export type TraceEnd = {
    *  when it carries the main line across more sheets (two at least) than
    *  confirmed equipment does (pid.ts). */
   equipmentUnconfirmed?: string;
+  /** How `equipmentUnconfirmed` was read: `far`, the nearest equipment tag
+   *  `distance` drawing units from an end that meets nothing drawn (past
+   *  the sheet's `near` distance); `outline`, the end sits on an outline too
+   *  wide to be one piece that holds `count` distinct tags, `tags` the
+   *  first of them nearest first, the nearest `distance` off. Never taken
+   *  at an end that carries a continuation label. */
+  reading?:
+    | { kind: 'far'; distance: number; near: number }
+    | { kind: 'outline'; distance: number; near: number; tags: string[]; count: number };
   /** Instrument tags near the end (PI-2001, FV-101): never equipment. */
   instruments: string[];
   labels: string[];
@@ -246,6 +255,8 @@ export const EDGE_REL = 0.4;
  *  on the sheets measured, where single pieces of equipment were at most
  *  14%) is wider, and is not one piece of equipment. */
 export const OUTLINE_REL = 0.16;
+/** The tags of a too-wide outline a reading names (the count says the rest). */
+const MAX_OUTLINE_TAGS = 5;
 /** An elongated outline wider than OUTLINE_REL is still one piece of
  *  equipment (a tall exchanger stack, a column, a long horizontal drum)
  *  when it holds exactly ONE distinct equipment tag, its long side is at
@@ -1403,7 +1414,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
     /** An outline that holds the tag but is wider than one piece of
      *  equipment (up to EDGE_REL): maybe one large piece, maybe a stack of
      *  several. */
-    wide?: { tag: string; layer: string; rel: number };
+    wide?: { tag: string; layer: string; rel: number; d: number; tags: string[] };
     edgeLabel?: string;
   };
   const endContext = (n: number, p: Pt): EndContext => {
@@ -1497,7 +1508,13 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
         };
       } else if (!out.wide) {
         const size = Math.hypot(maxX - minX, maxY - minY);
-        out.wide = { tag: inside[0]!.tag, layer: g.layer, rel: size / extentOf(s) };
+        out.wide = {
+          tag: inside[0]!.tag,
+          layer: g.layer,
+          rel: size / extentOf(s),
+          d: dist(inside[0]!.x, inside[0]!.y, p.x, p.y),
+          tags: distinctTags(inside),
+        };
       }
     }
     return out;
@@ -1607,24 +1624,44 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
         const near = at ? labelsNear(at.x, at.y) : { labels: [], equipment: [], instruments: [] };
         let equipmentBasis: string | undefined;
         let equipmentUnconfirmed: string | undefined;
+        let reading: TraceEnd['reading'];
         if (at && meets.kind !== 'circuit') {
           const ctx = endContext(n, at);
+          if (ctx.edgeLabel && !near.labels.includes(ctx.edgeLabel))
+            near.labels.push(ctx.edgeLabel);
+          // A continuation label is drawn fact naming where the line goes on:
+          // no reading is taken at such an end, so a tag a few units off
+          // never takes it out of the sheet links.
+          const labelled = near.labels.length > 0;
           if (ctx.outline) {
             near.equipment = [ctx.outline.tag];
             const long = ctx.outline.elongated;
             equipmentBasis = long
               ? `the end sits on an elongated outline on layer ${ctx.outline.layer} (${Math.round(long.w * 100)}% by ${Math.round(long.h * 100)}% of the sheet) that holds one equipment tag, ${ctx.outline.tag}: one tall or long piece of equipment`
               : `the end sits on an outline on layer ${ctx.outline.layer} that holds the tag ${ctx.outline.tag}`;
-          } else if (ctx.wide && !near.equipment.length) {
+          } else if (ctx.wide && !near.equipment.length && !labelled) {
             // Too wide to be sure it is one piece of equipment: a reading.
-            equipmentUnconfirmed = ctx.wide.tag;
-            equipmentBasis = `the end sits on an outline on layer ${ctx.wide.layer} that holds the tag ${ctx.wide.tag}, but the outline spans ${Math.round(ctx.wide.rel * 100)}% of the sheet (one piece of equipment is at most ${Math.round(OUTLINE_REL * 100)}%, or a tall or long outline holding exactly one tag): it may be several drawn joined; a reading, check it`;
+            const w = ctx.wide;
+            const named = w.tags.slice(0, MAX_OUTLINE_TAGS).join(', ');
+            const held =
+              w.tags.length === 1
+                ? `the tag ${w.tag}`
+                : `${w.tags.length} equipment tags (${named}${w.tags.length > MAX_OUTLINE_TAGS ? ', ...' : ''}), ${w.tag} nearest the end`;
+            equipmentUnconfirmed = w.tag;
+            reading = {
+              kind: 'outline',
+              distance: round(w.d),
+              near: round(s.near),
+              tags: w.tags.slice(0, MAX_OUTLINE_TAGS),
+              count: w.tags.length,
+            };
+            equipmentBasis = `the end sits on an outline on layer ${w.layer} that holds ${held}, but the outline spans ${Math.round(w.rel * 100)}% of the sheet (one piece of equipment is at most ${Math.round(OUTLINE_REL * 100)}%, or a tall or long outline holding exactly one tag): it may be several drawn joined; a reading, check it`;
             guesses.push(
-              `${s.title}: end #${n} sits on an outline holding ${ctx.wide.tag} that spans ${Math.round(ctx.wide.rel * 100)}% of the sheet, too wide to be sure it is one piece of equipment: drawn as an unconfirmed end marked GUESS. The register's from or to confirms it.`,
+              `${s.title}: end #${n} sits on an outline holding ${held} that spans ${Math.round(w.rel * 100)}% of the sheet, too wide to be sure it is one piece of equipment: drawn as an unconfirmed end marked GUESS. The register's from or to confirms it.`,
             );
           } else if (near.equipment.length) {
             equipmentBasis = `the nearest equipment tag to the end, within ${round(s.near)} drawing units; no outline joins them`;
-          } else if (meets.kind === 'open') {
+          } else if (meets.kind === 'open' && !labelled) {
             // An end that meets nothing drawn, short of a nozzle: the nearest
             // equipment tag a little further out, said as a reading.
             const far = tagPoints
@@ -1634,14 +1671,13 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
             if (far) {
               // A reading, never a fact: not drawn as the equipment.
               equipmentUnconfirmed = far.t.tag;
+              reading = { kind: 'far', distance: round(far.d), near: round(s.near) };
               equipmentBasis = `the nearest equipment tag, ${round(far.d)} drawing units from an end that meets nothing drawn (past the ${round(s.near)} near distance); a reading, check it`;
               guesses.push(
                 `${s.title}: end #${n} meets nothing drawn; the nearest equipment tag ${far.t.tag} is ${round(far.d)} drawing units off, past the near distance: drawn as an unconfirmed end marked GUESS, not as ${far.t.tag}. The register's from or to confirms it.`,
               );
             }
           }
-          if (ctx.edgeLabel && !near.labels.includes(ctx.edgeLabel))
-            near.labels.push(ctx.edgeLabel);
         }
         let beyond: string | undefined;
         if (meets.kind === 'block') {
@@ -1666,7 +1702,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
           ...(equipmentBasis && (near.equipment.length || equipmentUnconfirmed)
             ? { equipmentBasis }
             : {}),
-          ...(equipmentUnconfirmed ? { equipmentUnconfirmed } : {}),
+          ...(equipmentUnconfirmed ? { equipmentUnconfirmed, reading } : {}),
           instruments: near.instruments,
           labels: near.labels,
           ...(beyond ? { beyond } : {}),
@@ -1836,6 +1872,28 @@ export function linkSheets(sheets: TraceSheet[], limits: string[]): SheetLink[] 
       note,
     });
   };
+  /** What was checked at a sheet where a label found no end: its ends by
+   *  why each is not a candidate, or the candidates none of which matched. */
+  const unmatched = (t: TraceSheet, open: number, backs: number): string => {
+    if (open > 1) {
+      return `of ${open} open ends there, none shares a line number with this end without naming another sheet, and ${backs ? `${backs} name this sheet back, not one alone` : 'none names this sheet back'}`;
+    }
+    const why = new Map<string, number>();
+    const tick = (k: string) => why.set(k, (why.get(k) ?? 0) + 1);
+    for (const run of t.runs) {
+      for (const end of run.ends) {
+        if (end.deadleg) tick('on a deadleg');
+        else if (end.meets.kind === 'circuit') tick("at another circuit's layer");
+        else if (end.meets.kind === 'unknown') tick('not in the Nodes rows read');
+        else if (end.equipment.length) tick('at equipment');
+        else if (end.equipmentUnconfirmed) tick('only near an equipment tag (a reading)');
+        else if (linked.has(`${t.tableId}#${end.node}`)) tick('already linked');
+      }
+    }
+    const total = [...why.values()].reduce((a, c) => a + c, 0);
+    if (!total) return 'the circuit there has no ends';
+    return `of its ${total} end${total === 1 ? '' : 's'}, ${[...why].map(([k, c]) => `${c} ${k}`).join(', ')}`;
+  };
   // 1. A continuation label near an end that names another uploaded sheet:
   // the certain pairs first (so a guess never takes an end a certain link
   // needs), then the rest.
@@ -1881,7 +1939,7 @@ export function linkSheets(sheets: TraceSheet[], limits: string[]): SheetLink[] 
           b ?? null,
           'label',
           !b
-            ? `the label names ${target.title}, but no open end there could be matched`
+            ? `the label names ${target.title}, but no end there is matched: ${unmatched(target, there.length, backs.length)}`
             : certain
               ? `the label names ${target.title}, the label there names this sheet back, and the same line number sits on both ends' own chains`
               : strong.length > 1
@@ -2008,7 +2066,8 @@ export function compareRegister(
     }
   }
   const regSheets = new Set([...(reg.sheets ?? []), ...regLines.map((l) => l.sheet ?? '')]);
-  const missing: string[] = [];
+  /** Register sheets not traced, with where each sits in the differences. */
+  const missing: { name: string; at: number }[] = [];
   for (const name of regSheets) {
     if (!name.trim()) continue;
     if (!matchSheet(name)) {
@@ -2016,15 +2075,8 @@ export function compareRegister(
         kind: 'register_sheet_not_uploaded',
         detail: `register sheet ${clip(name)} has no uploaded drawing with this circuit that this caller can read`,
       });
-      missing.push(name);
+      missing.push({ name, at: out.length - 1 });
     }
-  }
-  for (const name of missing.slice(0, MAX_REGISTER_ECHO))
-    limits.push(`sheet ${clip(name)} is on the register but not among the traced drawings.`);
-  if (missing.length > MAX_REGISTER_ECHO) {
-    limits.push(
-      `${missing.length - MAX_REGISTER_ECHO} more register sheets are not among the traced drawings (the register's differences list them).`,
-    );
   }
   const geometryDeadlegs = walks.reduce((a, w) => a + w.sheet.deadlegRuns, 0);
   const regDeadlegs =
@@ -2037,6 +2089,22 @@ export function compareRegister(
       kind: 'deadleg_count',
       detail: `register has ${regDeadlegs} deadleg${regDeadlegs === 1 ? '' : 's'}; the drawings show ${geometryDeadlegs} deadleg run${geometryDeadlegs === 1 ? '' : 's'}`,
     });
+  }
+  for (const { name } of missing.slice(0, MAX_REGISTER_ECHO))
+    limits.push(`sheet ${clip(name)} is on the register but not among the traced drawings.`);
+  if (missing.length > MAX_REGISTER_ECHO) {
+    // The differences are capped: say how many of the rest they list.
+    const rest = missing.slice(MAX_REGISTER_ECHO);
+    const listed = rest.filter((m) => m.at < MAX_DISCREPANCIES).length;
+    limits.push(
+      `${rest.length} more register sheets are not among the traced drawings (${
+        listed === rest.length
+          ? "the register's differences list them"
+          : listed === 0
+            ? `not listed anywhere: the register's differences stop at ${MAX_DISCREPANCIES} before them`
+            : `the register's differences list ${listed} of them, ${rest.length - listed} ${rest.length - listed === 1 ? 'is' : 'are'} not listed anywhere: the differences stop at ${MAX_DISCREPANCIES}`
+      }).`,
+    );
   }
   if (out.length > MAX_DISCREPANCIES) {
     limits.push(
