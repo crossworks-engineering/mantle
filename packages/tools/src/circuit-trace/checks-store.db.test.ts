@@ -49,7 +49,7 @@ describe.skipIf(!URL)('the image check store', () => {
   let anchor = '';
   const tag = `ckst${randomUUID().slice(0, 6)}`;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-ckst-'));
-  const fileId = randomUUID();
+  let fileId = '';
   const wsId = randomUUID();
   const ids: string[] = [];
 
@@ -134,9 +134,21 @@ describe.skipIf(!URL)('the image check store', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin as never, process.env.MANTLE_MASTER_KEY);
     anchor = await ensureTestAnchor(admin as never);
-    await admin`insert into nodes (id, owner_id, type, title, path, data) values
-      (${fileId}, ${anchor}, 'file', ${`${tag}.dwg`}, 'files',
-       ${JSON.stringify({ filename: `${tag}.dwg`, sha256: SHA })}::jsonb)`;
+    // The drawing as an ordinary upload: a file the caller reads, its
+    // sha256 the stamp (a raw insert left it out of the caller's scope,
+    // so its hash read null).
+    const files = await import('@mantle/files');
+    fileId = (
+      await files.upsertFile({
+        ownerId: anchor,
+        parentPath: 'files',
+        filename: `${tag}.dwg`,
+        bytes: BYTES,
+        overwrite: false,
+      })
+    ).id;
+    const [f] = await admin`select data->>'sha256' as sha from nodes where id = ${fileId}`;
+    expect(f!.sha).toBe(SHA);
     await superuserExec(
       URL!,
       sqlTag`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`,
@@ -387,7 +399,7 @@ describe.skipIf(!URL)('the image check store', () => {
       now: () => new Date('2026-10-25T12:00:00.000Z'),
     };
     const first = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
-    expect(first.ok).toBe(true);
+    expect(first).toMatchObject({ ok: true });
     expect(asked).toBe(1);
     const out1 = (
       first as unknown as { output: { answers: { answer: string }[]; summary: string } }
@@ -397,7 +409,7 @@ describe.skipIf(!URL)('the image check store', () => {
 
     // circuit_trace reads it back through the real read and applies it.
     const traced = await builtins.circuitTraceHandler({ circuit }, anchor);
-    expect(traced.ok).toBe(true);
+    expect(traced).toMatchObject({ ok: true });
     const t = (
       traced as {
         output: { checks?: { items: { trust: string }[] }; pid: unknown; limits: string[] };
@@ -409,7 +421,7 @@ describe.skipIf(!URL)('the image check store', () => {
 
     // A second call does not pay for the answered question again.
     const second = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
-    expect(second.ok).toBe(true);
+    expect(second).toMatchObject({ ok: true });
     expect(asked).toBe(1);
     expect((second as unknown as { output: { summary: string } }).output.summary).toMatch(
       /no unanswered guess/,
