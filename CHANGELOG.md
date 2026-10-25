@@ -28,6 +28,15 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **Docs:** the table description says what each new tab holds and what it
   does not (curves are chords, SPLINE and ELLIPSE are left out, one drawing
   only), and says TRUNCATED for a tab cut by its budget.
+- **Fix (round-1 audit, sidecar):** a line drawn twice counts once on its
+  circuit; a line-number block that names a circuit is listed on that one
+  only; a DONUT tee dot or other small closed polyline is a symbol, not two
+  tees; a broken-line crossing is not a join; sheets tiled in one model space
+  keep their own tolerances; `-DLn` and `-Bnn` stay on their circuit,
+  `-IPn-DL` keeps its Parent, and a layer needs a circuit-name shape
+  ("Circuit Breakers" is not one); a work and time budget and a finite-number
+  guard turn a heavy or hostile drawing into `geometry_error` with the
+  registry and the render kept.
 - **Build:** the media image ships `dwg_bones.py` next to `app.py`; CI runs
   the sidecar's Python tests (synthetic DXF files, no client drawings).
 - Existing DWG tables gain the new tabs through `pnpm maintain dwg-reindex`
