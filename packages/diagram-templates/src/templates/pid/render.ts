@@ -609,6 +609,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const notes: { box: Box; svg: string; id: string }[] = [];
   const isH = (s: [Pt, Pt]) => Math.abs(s[0].y - s[1].y) < 0.01;
   const len = (s: [Pt, Pt]) => Math.abs(s[1].x - s[0].x) + Math.abs(s[1].y - s[0].y);
+  /** A line's runs; a line with no length (both ends on one point) is one
+   *  run of no length there, so a mark beside it still has a place. */
+  const runsOf = (id: string): [Pt, Pt][] => {
+    const pts = routed.get(id)!;
+    const segs = segments(pts);
+    return segs.length ? segs : [[pts[0]!, pts[0]!]];
+  };
 
   /**
    * A tee on the pipe already at `node`. Walking in from that end, the first
@@ -692,6 +699,12 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const placeItems = (l: Line) => {
     if (!l.inline.length) return;
     const segs = segments(routed.get(l.id)!);
+    if (!segs.length) {
+      warnings.push(
+        `layout: line '${l.id}' has no length on the drawing (both its ends landed on one point), so its ${l.inline.length === 1 ? 'valve is' : `${l.inline.length} valves are`} not drawn. Move one of its tees with near or at.`,
+      );
+      return;
+    }
     const room = itemsW(l) + 24;
     const withLabel = room + labelW(l) + 16;
     const seg =
@@ -818,7 +831,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   };
   /** Pick a tee's spot: the best-scoring clear grid point on the parent
    *  pipe that `accept` takes (a stub needs room beside it), else the best. */
-  const teeFor = (id: string, target?: Pt, spacing = 0, accept?: (c: TeePt) => boolean): TeePt => {
+  const teeFor = (
+    id: string,
+    target?: Pt,
+    spacing = 0,
+    accept?: (c: TeePt) => boolean,
+    avoid?: Pt,
+  ): TeePt => {
     const have = teePts.get(id);
     if (have) return have;
     const t = teeOf.get(id)!;
@@ -863,13 +882,42 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     let pick: TeePt | undefined = (accept && cands.find(accept)) || cands[0];
     if (!pick) {
       // No clear spot: the middle of the longest run, still on the line.
-      const sg = [...segments(pts)].sort((x, y) => len(y) - len(x))[0]!;
-      const d = { x: Math.sign(sg[1].x - sg[0].x), y: Math.sign(sg[1].y - sg[0].y) };
-      const at =
-        d.x !== 0
-          ? { x: snap((sg[0].x + sg[1].x) / 2), y: sg[0].y }
-          : { x: sg[0].x, y: snap((sg[0].y + sg[1].y) / 2) };
-      pick = { at, along: d };
+      const runs = segments(pts);
+      const sg = [...runs].sort((x, y) => len(y) - len(x))[0];
+      if (!sg) {
+        // A parent with no length (its own tees landed on one point): the
+        // tee sits on that point.
+        pick = { at: { ...pts[0]! }, along: { x: 1, y: 0 } };
+      } else {
+        const d = { x: Math.sign(sg[1].x - sg[0].x), y: Math.sign(sg[1].y - sg[0].y) };
+        const at =
+          d.x !== 0
+            ? { x: snap((sg[0].x + sg[1].x) / 2), y: sg[0].y }
+            : { x: sg[0].x, y: snap((sg[0].y + sg[1].y) / 2) };
+        pick = { at, along: d };
+        // Never on the tee a bypass leaves from: two ends on one point
+        // would draw a pipe of no length. The grid point inside the line
+        // nearest the middle that keeps 32px from the siblings, else the
+        // one that keeps farthest from them.
+        if (avoid && manhattan(avoid, at) < 8) {
+          const first = pts[0]!;
+          const last = pts[pts.length - 1]!;
+          let best: { at: Pt; along: Pt; gap: number; off: number } | undefined;
+          for (const [a, b] of runs) {
+            const L0 = len([a, b]);
+            const dd = { x: Math.sign(b.x - a.x), y: Math.sign(b.y - a.y) };
+            for (let k = 0; k <= L0; k += 8) {
+              const p = { x: a.x + dd.x * k, y: a.y + dd.y * k };
+              if (manhattan(p, first) < 0.01 || manhattan(p, last) < 0.01) continue;
+              const gap = Math.min(32, ...siblings.map((q) => manhattan(q, p)));
+              const off = manhattan(p, at);
+              if (!best || gap > best.gap || (gap === best.gap && off < best.off))
+                best = { at: p, along: dd, gap, off };
+            }
+          }
+          if (best && best.gap >= 8) pick = { at: best.at, along: best.along };
+        }
+      }
       warnings.push(
         `layout: no clear spot on line '${t.on}' for tee '${id}' (valves, corners or crossings in the way); it sits mid-run. Move it with near: 'from' or 'to', or give the line fewer valves.`,
       );
@@ -899,9 +947,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     const n = nodes.get(id)!;
     // Off a horizontal run: a step down (or up) and straight on into it.
     // Off a vertical run: level with the tee, on the sheet edge.
+    // On the sheet edge, and never on or behind the tee itself (a parent
+    // that runs past the edge would put the connector's port on the tee).
     const x =
       T.along.x === 0
-        ? edgeX(id, l)
+        ? n.opc!.direction === 'in'
+          ? Math.min(edgeX(id, l), snap(T.at.x - 48) - n.w)
+          : Math.max(edgeX(id, l), snap(T.at.x + 48))
         : n.opc!.direction === 'in'
           ? snap(T.at.x - 48) - n.w
           : snap(T.at.x + 48);
@@ -1056,7 +1108,8 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       fromDir = NORMAL[fe.side];
       head = [fe.at!];
     } else {
-      fromT = teeFor(l.from, te?.stub);
+      // A bypass whose far tee is already down keeps off that point.
+      fromT = teeFor(l.from, te?.stub, 0, undefined, toTee ? teePts.get(l.to!)?.at : undefined);
       fromPt = fromT.at;
       fromDir = { x: 0, y: 1 }; // set below, once the far end is known
     }
@@ -1071,7 +1124,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     } else {
       // Into a tee: a bypass back onto the same line keeps its length clear.
       const sameParent = fromT && teeOf.get(l.from)!.on === teeOf.get(l.to!)!.on;
-      const T = teeFor(l.to!, fromPt, sameParent ? Math.max(96, itemsW(l) + 48) : 0);
+      const T = teeFor(
+        l.to!,
+        fromPt,
+        sameParent ? Math.max(96, itemsW(l) + 48) : 0,
+        undefined,
+        fromT?.at,
+      );
       toPt = T.at;
       toDir = square(T.along, fromPt, T.at);
     }
@@ -1109,7 +1168,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   // A dead leg carries DL beside its far end.
   for (const l of data.lines) {
     if (!l.deadleg) continue;
-    const segs = segments(routed.get(l.id)!).reverse();
+    const segs = runsOf(l.id).reverse();
     const s = segs.find((x) => len(x) >= 24) ?? segs[0]!;
     const h = isH(s);
     const d = { x: Math.sign(s[1].x - s[0].x), y: Math.sign(s[1].y - s[0].y) };
@@ -1134,7 +1193,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   // A line's note (an honesty mark) beside the middle of its longest run.
   for (const l of data.lines) {
     if (!l.note) continue;
-    const segs = segments(routed.get(l.id)!);
+    const segs = runsOf(l.id);
     const s = [...segs].sort((a, b) => len(b) - len(a))[0]!;
     const h = isH(s);
     const c = { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 };
@@ -1159,7 +1218,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   // beside the line's longest run, clear of what is already down.
   for (const l of data.lines) {
     if (!l.more) continue;
-    const segs = segments(routed.get(l.id)!);
+    const segs = runsOf(l.id);
     const s = [...segs].sort((a, b) => len(b) - len(a))[0]!;
     const h = isH(s);
     const c = { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 };
@@ -1675,7 +1734,8 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     const dash = l.deadleg && P.symbols.deadleg === 'dashed' ? '8,4' : undefined;
     // No arrowhead where a line joins a tee, stops, or meets its bubble.
     const open = !isPlain(l) && !(l.to && nodeIds.has(l.to));
-    if (joined.has(l.id) || open) {
+    // A line with no length has no direction to point an arrow along.
+    if (joined.has(l.id) || open || simplify(pts).length < 2) {
       const cap = capEnds.get(l.id);
       L.pipes!.push(
         el('g', { 'data-line': l.id }, [

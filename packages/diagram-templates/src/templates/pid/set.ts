@@ -17,13 +17,16 @@
  * A link only ever switches the canvas's own page (browser.ts): nothing is
  * loaded and the window is never navigated.
  */
-import { slugify } from '../../runtime/export.ts';
+import { slugify, svgDocument } from '../../runtime/export.ts';
 import { pageRef, stackPages, type StackPage } from '../../runtime/pages.ts';
+import { el, textEl } from '../../runtime/svg.ts';
+import { PALETTE } from '../../runtime/style.ts';
 import {
   checkKeys,
   done,
   isObj,
   list,
+  messageOf,
   newIssues,
   objects,
   str,
@@ -32,7 +35,7 @@ import {
   type Obj,
 } from '../../runtime/validate.ts';
 import { clipText, type Measurer } from '../../runtime/text.ts';
-import type { RenderResult } from '../../types.ts';
+import type { PageFailure, RenderResult } from '../../types.ts';
 import { renderPid } from './render.ts';
 import {
   PAGE_ID,
@@ -228,14 +231,72 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
   });
 }
 
+/** A page that could not be drawn: a panel that says so, in place of the
+ *  drawing, so the other pages (and the page bar's numbering) still stand. */
+function failedPage(title: string, idPrefix: string, n: number, error: string): StackPage {
+  const width = 640;
+  const height = 180;
+  const lines = [
+    `Page ${n} could not be drawn.`,
+    clipText(`The drawing's layout failed: ${error}`, 90),
+    'The other pages are unaffected. This is a template bug; report it with the data.',
+  ];
+  const body = [
+    el('rect', {
+      x: 16,
+      y: 16,
+      width: width - 32,
+      height: height - 32,
+      rx: 6,
+      fill: PALETTE.white,
+      stroke: PALETTE.accent,
+      'stroke-width': 1.5,
+    }),
+    textEl('nodeName', 36, 56, clipText(title, 60), { fill: PALETTE.ink }),
+    ...lines.map((t, i) =>
+      textEl('sublabel', 36, 86 + i * 22, t, { fill: i === 0 ? PALETTE.accent : PALETTE.ink }),
+    ),
+  ].join('');
+  return {
+    id: '',
+    title,
+    width,
+    height,
+    svg: svgDocument({
+      width,
+      height,
+      title,
+      desc: `Page ${n} (${title}) could not be drawn: ${clipText(error, 200)}`,
+      idPrefix,
+      generator: `mantle-diagram pid@${PID_VERSION} set`,
+      body: el('g', { 'data-error': 'layout' }, body),
+    }),
+  };
+}
+
 /** Every page drawn on its own (what the canvas shows one at a time) and
- *  the whole set stacked (the static export). */
+ *  the whole set stacked (the static export). A page whose layout throws
+ *  becomes an error panel and is reported in `failed` and the warnings;
+ *  the other pages still draw. */
 export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
   const prefix = slugify(set.title);
   const warnings: string[] = [];
+  const failed: PageFailure[] = [];
   const stats: Record<string, number> = { pages: set.pages.length };
   const pages: StackPage[] = set.pages.map((p, i) => {
-    const r = renderPid(p.data, m, { idPrefix: `${prefix}-p${i + 1}` });
+    const idPrefix = `${prefix}-p${i + 1}`;
+    let r: RenderResult;
+    try {
+      r = renderPid(p.data, m, { idPrefix });
+    } catch (err) {
+      const error = messageOf(err);
+      const path = `pages[${i}].data`;
+      failed.push({ page: p.id, path, error });
+      warnings.push(
+        `${path}: page '${p.id}' could not be drawn (${error}); its page shows this error in place of the drawing. This is a template bug; report it with the data.`,
+      );
+      return { ...failedPage(p.title, idPrefix, i + 1, error), id: p.id };
+    }
     for (const w of r.warnings) warnings.push(`page '${p.id}': ${w}`);
     for (const [k, v] of Object.entries(r.stats)) stats[k] = (stats[k] ?? 0) + v;
     return { id: p.id, title: p.title, svg: r.svg, width: r.width, height: r.height };
@@ -257,6 +318,7 @@ export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
     warnings: [...new Set(warnings)],
     stats,
     pages,
+    ...(failed.length ? { failed } : {}),
   };
 }
 

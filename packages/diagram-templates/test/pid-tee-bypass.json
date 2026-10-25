@@ -1,0 +1,306 @@
+{
+ "legendNames": {
+  "main": "Main process line",
+  "secondary": "Process branch or deadleg"
+ },
+ "title": "Circuit 10000-001-01: PID-1001 (part 2 of 4)",
+ "description": "Sheet PID-1001 of circuit 10000-001-01: 20 lines drawn here. Guesses are marked GUESS (joins through process lines, ends only near equipment).",
+ "lines": [
+  {
+   "id": "L19",
+   "from": "OPC-1",
+   "end": "open",
+   "weight": "secondary",
+   "inline": [
+    {
+     "type": "gate"
+    }
+   ]
+  },
+  {
+   "id": "L20",
+   "from": "T-1",
+   "to": "OPC-2",
+   "weight": "secondary"
+  },
+  {
+   "id": "L21",
+   "note": "INFERRED JOIN (GUESS)",
+   "from": "T-1",
+   "end": "open",
+   "weight": "secondary",
+   "inline": [
+    {
+     "type": "gate"
+    }
+   ]
+  },
+  {
+   "id": "L24",
+   "note": "INFERRED JOIN (GUESS)",
+   "from": "T-2",
+   "end": "open",
+   "weight": "secondary",
+   "inline": [
+    {
+     "type": "gate"
+    }
+   ]
+  },
+  {
+   "id": "L25",
+   "from": "T-3",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L22",
+   "from": "T-4",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L23",
+   "from": "T-5",
+   "to": "T-6",
+   "weight": "secondary",
+   "inline": [
+    {
+     "type": "gate"
+    }
+   ]
+  },
+  {
+   "id": "L26",
+   "from": "OPC-3",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L27",
+   "from": "OPC-4",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L28",
+   "from": "OPC-5",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L29",
+   "from": "OPC-6",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L30",
+   "from": "OPC-7",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L31",
+   "from": "OPC-8",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L32",
+   "from": "OPC-9",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L33",
+   "note": "INFERRED JOIN (GUESS)",
+   "from": "T-7",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L34",
+   "from": "OPC-10",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L35",
+   "from": "OPC-11",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L36",
+   "from": "OPC-12",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L37",
+   "from": "OPC-13",
+   "end": "open",
+   "weight": "secondary"
+  },
+  {
+   "id": "L38",
+   "from": "OPC-14",
+   "end": "open",
+   "weight": "secondary"
+  }
+ ],
+ "equipment": [],
+ "offpage": [
+  {
+   "id": "OPC-1",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-2",
+   "direction": "out",
+   "sheet": "P-201",
+   "text": "NEAR P-201 (GUESS)"
+  },
+  {
+   "id": "OPC-3",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-4",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-5",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-6",
+   "direction": "in",
+   "sheet": "P-201",
+   "text": "NEAR P-201 (GUESS)"
+  },
+  {
+   "id": "OPC-7",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-8",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-9",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-10",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-11",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-12",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-13",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  },
+  {
+   "id": "OPC-14",
+   "direction": "in",
+   "sheet": "PID-1001",
+   "text": "OPEN END"
+  }
+ ],
+ "tees": [
+  {
+   "id": "T-1",
+   "on": "L19",
+   "at": 0.05
+  },
+  {
+   "id": "T-2",
+   "on": "L21",
+   "at": 0.19
+  },
+  {
+   "id": "T-3",
+   "on": "L24",
+   "at": 0.02
+  },
+  {
+   "id": "T-4",
+   "on": "L19",
+   "at": 0.42
+  },
+  {
+   "id": "T-5",
+   "on": "L19",
+   "at": 0.87
+  },
+  {
+   "id": "T-6",
+   "on": "L19",
+   "at": 0.97
+  },
+  {
+   "id": "T-7",
+   "on": "L32",
+   "at": 0.12
+  }
+ ],
+ "circuits": [
+  {
+   "id": "CIRCUIT-10000-001-01",
+   "label": "10000-001-01",
+   "lines": [
+    "L19",
+    "L20",
+    "L21",
+    "L24",
+    "L25",
+    "L22",
+    "L23",
+    "L26",
+    "L27",
+    "L28",
+    "L29",
+    "L30",
+    "L31",
+    "L32",
+    "L33",
+    "L34",
+    "L35",
+    "L36",
+    "L37",
+    "L38"
+   ],
+   "equipment": []
+  }
+ ]
+}

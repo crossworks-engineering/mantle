@@ -116,7 +116,7 @@ export { checkStaticSvg, svgDocument, slugify } from './runtime/export.ts';
 export { THEME_COLOURS, THEME_TEXT_COLOURS, THEME_ATTR } from './runtime/theme.ts';
 export { estimateMeasurer, domMeasurer, clipText, type Measurer } from './runtime/text.ts';
 export { buildCanvas, readCanvasData, replaceCanvasData, type CanvasMode } from './canvas.ts';
-export type { RenderResult } from './types.ts';
+export type { PageFailure, RenderResult } from './types.ts';
 export type { FlowData } from './templates/flow.ts';
 export type { PidData, PidSet, PidPage, PidInput, SiteProfile } from './templates/pid/index.ts';
 export { PID_LIMITS, SET_LIMITS } from './templates/pid/index.ts';
