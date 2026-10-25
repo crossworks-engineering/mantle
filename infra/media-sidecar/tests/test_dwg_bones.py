@@ -393,6 +393,36 @@ class RoundOneRegressionTests(unittest.TestCase):
             dwg_bones.build_network(segs, budget=dwg_bones._Budget(seconds=0.0))
         dwg_bones.build_network(segs)  # the default budget is ample here
 
+    def test_r2_low1_the_crossing_pair_loop_spends_its_pairs(self):
+        # star.py at a small scale: 20 fans of 40 lines end on one header,
+        # 800 segment ends at its split points. The broken-line crossing
+        # check looks at every pair of them (319,600), and spends them: at
+        # 1,000 fans it ran 75 to 100 s inside the default budget.
+        def star(fans, teeth=40):
+            segs = [seg(0, 0, 1000, 0)]
+            for i in range(fans):
+                x = 10 + i * 980.0 / fans
+                for k in range(teeth):
+                    side = 1 if k % 2 else -1
+                    segs.append(seg(x, 0, x + (k + 1) * 0.01, side * (5 + k * 0.1)))
+            return segs
+
+        ends = 20 * 40
+        budget = dwg_bones._Budget()
+        dwg_bones.build_network(star(20), budget=budget)
+        self.assertGreaterEqual(budget.units - budget.left, ends * (ends - 1) // 2)
+        # The rest of the pass costs under 60,000 units here; the pairs
+        # do not fit in 200,000.
+        with self.assertRaises(dwg_bones.GeometryBudgetExceeded):
+            dwg_bones.build_network(star(20), budget=dwg_bones._Budget(units=200_000))
+        # The clock is checked inside the loop, not only per spend call.
+        segs = star(1)
+        incident = [[(j, 0)] for j in range(1, len(segs))]
+        cands = [(0.01, n) for n in range(len(incident))]
+        with self.assertRaises(dwg_bones.GeometryBudgetExceeded):
+            dwg_bones._crossing_gap_nodes(segs[0], cands, incident, segs, 0.2,
+                                          dwg_bones._Budget(seconds=0.0))
+
     def test_low2_long_lines_across_a_dense_cluster_stay_cheap(self):
         # net_bench "longtail": a dense cluster crossed by lines from far
         # away. Each long line costs its length inside the cluster, not one

@@ -383,7 +383,13 @@ class _Budget:
                 " (a very dense or very large drawing): geometry not built"
             )
         self.calls += 1
-        if not self.calls & 255 and time.monotonic() > self.deadline:
+        if not self.calls & 255:
+            self.check_clock()
+
+    def check_clock(self) -> None:
+        """Stop past the wall clock, for a loop that spends its units up
+        front."""
+        if time.monotonic() > self.deadline:
             raise GeometryBudgetExceeded(
                 f"the network took more than {self.seconds:g} s: geometry not built"
             )
@@ -777,7 +783,7 @@ def build_network(segments: list, boxes: list | None = None, tol: float | None =
         if len(cands) < 2 and not any(len(incident[n]) > 1 for _t, n in cands):
             continue
         s = segments[i]
-        gapped = _crossing_gap_nodes(s, cands, incident, segments, min(tols[i], tol_max))
+        gapped = _crossing_gap_nodes(s, cands, incident, segments, min(tols[i], tol_max), budget)
         if not gapped:
             continue
         kept = [(t, n) for t, n in cands if n not in gapped]
@@ -914,14 +920,17 @@ def build_network(segments: list, boxes: list | None = None, tol: float | None =
     }
 
 
-def _crossing_gap_nodes(s: dict, cands: list, incident: list, segments: list, tol: float) -> dict:
+def _crossing_gap_nodes(s: dict, cands: list, incident: list, segments: list, tol: float,
+                        budget: _Budget) -> dict:
     """Of the end nodes `cands` ([(t, node)]) that would split straight
     segment `s`, the ones that are a broken-line crossing: {node: [nodes of
     its pair]}. A pair is two straight segment ends on opposite sides of s,
     each clearly off it (more than GAP_MIN_REL x tol), the two segments
     leaving s across it (at 20 degrees or more), antiparallel, and on one
     line. A node counts only when every segment end at it is in such a
-    pair."""
+    pair. The pair loop is quadratic in the segment ends at the split
+    points (many lines fanning out of one header): it spends every pair
+    from the budget before it starts and checks the clock as it goes."""
     sx, sy = s["x2"] - s["x1"], s["y2"] - s["y1"]
     slen = math.hypot(sx, sy)
     if slen == 0:
@@ -940,8 +949,11 @@ def _crossing_gap_nodes(s: dict, cands: list, incident: list, segments: list, to
                 continue
             side = ux * (py - s["y1"]) - uy * (px - s["x1"])
             off.append((n, j, side, px, py, (qx - px) / dl, (qy - py) / dl))
+    budget.spend(len(off) * (len(off) - 1) // 2 + 1)
     paired: dict = {}  # (node, segment) -> partner node
     for a in range(len(off)):
+        if not a & 63:
+            budget.check_clock()
         na, ja, sa, pax, pay, dax, day = off[a]
         for b in range(a + 1, len(off)):
             nb, jb, sb, pbx, pby, dbx, dby = off[b]

@@ -178,8 +178,10 @@ export type TraceResult = {
 /** The rules the sidecar's circuit pass (dwg_bones.py) uses too; both sides
  *  are held to packages/files/src/dwg-circuit-rules.golden.json. */
 const CIRCUIT_LAYER = /^\s*circuit\s+(.+?)\s*$/i;
-/** A circuit name: a number-like token (letters, digits, - . / _). */
-const CIRCUIT_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+/** A circuit name (dwg_bones._CIRCUIT_NAME): letters, digits and . _ / -
+ *  with no spaces, at most 64 characters, starting with a letter or digit,
+ *  and holding at least one digit ("25000-015-01", "C-101"). */
+const CIRCUIT_NAME = /^(?=\D*\d)[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/;
 /** A line-number attribute tag, and a circuit attribute tag. */
 export const LINE_TAG = /^LINE[\s_.-]*(NO|NUM|NUMBER)?\.?$/i;
 export const CIRCUIT_TAG = /^CIRCUIT([\s_.-]*(NO|NAME|ID))?$/i;
@@ -214,8 +216,9 @@ export function trimmedDiagonal(segs: readonly Pick<SegRow, 'x1' | 'y1' | 'x2' |
  * layer that circuit's deadleg; `-Bnn` is a branch of it (main); and a name
  * ending `-IPn` once those are off is an injection point, a circuit of its
  * own with `parent` set (so `X-IP1-DL` is the deadleg of injection point
- * X-IP1 of X). A name that is not circuit-number shaped (no digit, or a
- * space in it: "Circuit Breakers") is not a circuit.
+ * X-IP1 of X). A name that is not circuit-number shaped (no digit, a
+ * space in it: "Circuit Breakers", or more than 64 characters) is not a
+ * circuit, and neither is an injection point whose parent is not one.
  */
 export function parseCircuitLayer(layer: string): {
   circuit: string;
@@ -245,13 +248,16 @@ export function parseCircuitLayer(layer: string): {
       sub = br[2]!.toUpperCase();
     }
   }
-  if (!CIRCUIT_NAME.test(name) || !/\d/.test(name)) return null;
   const ip = /^(.+?)-(IP\d*)$/i.exec(name);
+  const parent = ip ? ip[1]! : '';
+  // The root (the circuit, or an injection point's parent) and the name
+  // itself must both be circuit-name shaped: `ABC-IP1` is not a circuit.
+  if (!CIRCUIT_NAME.test(parent || name) || !CIRCUIT_NAME.test(name)) return null;
   return {
     circuit: name,
     role,
     sub: sub || (ip ? ip[2]!.toUpperCase() : ''),
-    parent: ip ? ip[1]! : '',
+    parent,
     guessed: /^D\d+$/i.test(sub),
   };
 }

@@ -108,6 +108,46 @@
       "kind": "circuit",
       "parent": ""
     },
+    {
+      "layer": "Circuit A111111111111111111111111111111111111111111111111111111111111111",
+      "circuit": "A111111111111111111111111111111111111111111111111111111111111111",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 100-IP1-IP2",
+      "circuit": "100-IP1-IP2",
+      "role": "main",
+      "kind": "injection point",
+      "parent": "100-IP1"
+    },
+    {
+      "layer": "Circuit 100-ip3-dl2",
+      "circuit": "100-ip3",
+      "role": "deadleg",
+      "kind": "injection point",
+      "parent": "100"
+    },
+    {
+      "layer": "Circuit 100-B01-D03",
+      "circuit": "100-B01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    { "layer": "Circuit ABC-IP1", "circuit": null },
+    { "layer": "Circuit X-IP1-B01-DL", "circuit": null },
+    {
+      "layer": "Circuit A1111111111111111111111111111111111111111111111111111111111111111",
+      "circuit": null
+    },
+    {
+      "layer": "Circuit A123456789012345678901234567890123456789012345678901234567890123456789",
+      "circuit": null
+    },
+    { "layer": "Circuit -100", "circuit": null },
+    { "layer": "Circuit 100 -DL", "circuit": null },
     { "layer": "Circuit Breakers", "circuit": null },
     { "layer": "Circuit Diagram Notes", "circuit": null },
     { "layer": "Circuit", "circuit": null },
