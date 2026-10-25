@@ -69,6 +69,11 @@ export type CreateTableInput = {
    *  to the source. Ignored by the table renderer (the grid lives in
    *  `tables.data`). */
   sourceFileId?: string;
+  /** The sha256 of the source file's bytes the grid was built from, stamped
+   *  on `data.sourceSha256`: a drawing's table names the revision its
+   *  geometry came from, so a file replaced in place later (same node, new
+   *  bytes) is seen as newer than its table (the image check, circuit_verify). */
+  sourceSha256?: string;
   /**
    * A caveat or usage note the reader must see BEFORE they query.
    *
@@ -151,6 +156,7 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
                     visibility: 'private',
                     ...(input.icon ? { icon: input.icon } : {}),
                     ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+                    ...(input.sourceSha256 ? { sourceSha256: input.sourceSha256 } : {}),
                     ...(input.description?.trim() ? { description: input.description.trim() } : {}),
                     ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
                   },

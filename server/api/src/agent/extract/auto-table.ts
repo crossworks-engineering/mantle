@@ -85,6 +85,8 @@ export async function maybeAutoTableSpreadsheet(
   /** Caveat the reader needs before querying — set only where the grid is
    *  genuinely misleading read the obvious way. */
   let description: string | undefined;
+  /** A drawing's table names the bytes it was built from (its revision). */
+  let sourceSha256: string | undefined;
   try {
     if (fileExt === 'xml') {
       // Sniffed again, not redundantly: the early check is skipped when the head
@@ -129,8 +131,9 @@ export async function maybeAutoTableSpreadsheet(
       // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
       // memoised exchange with the text digest and the image pass. The
       // description says what each tab holds and what it does not.
-      const { cadRegistryWorkbook } = await import('@mantle/files/dwg');
+      const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
       const built = await cadRegistryWorkbook(loaded.bytes, fileExt);
+      sourceSha256 = dwgSourceSha(loaded.bytes);
       sheets = built.grids.sheets;
       description = built.description;
     } else {
@@ -189,6 +192,7 @@ export async function maybeAutoTableSpreadsheet(
         tabs,
         tags: ['auto-import'],
         sourceFileId: node.id,
+        ...(sourceSha256 ? { sourceSha256 } : {}),
         ...(description ? { description } : {}),
       });
       void recordIngest({

@@ -38,6 +38,7 @@ export {
   fileNameTaken,
   FileNameTakenError,
   callerSeesNode,
+  callerMayEditFolder,
 } from './ops/files';
 export { listRecentFiles, listFiles, folderById, folderByPath, fileById } from './ops/queries';
 export {

@@ -38,7 +38,9 @@
  *
  * The image check's Checks tab (circuit_verify) is kept: its rows are read
  * before the rebuild and written back as the same tab, so the answers, tied
- * to the drawing's revision, survive. A check commit (circuit_verify writes
+ * to the drawing's revision, survive. The table's `sourceSha256` is stamped
+ * with the bytes the rebuild read: a file replaced in place is the new
+ * revision from then on (its old answers stay in the tab, not applied). A check commit (circuit_verify writes
  * the tab, `dwgCheckedVersion`) on an unedited table is not an edit.
  *
  * Output is counts and ids only: safe on a client box.
@@ -53,6 +55,8 @@ import {
   DWG_CHECKED_VERSION_KEY as CHECKED_VERSION_KEY,
   DWG_CHECKS_TAB as CHECKS_TAB,
   DWG_REINDEXED_VERSION_KEY,
+  DWG_SOURCE_SHA_KEY,
+  dwgSourceSha,
   dwgTableEdited,
 } from '@mantle/files/dwg';
 import { tableSqlSurface } from '@mantle/content/table-storage';
@@ -417,6 +421,8 @@ export async function rebuildOne(
         .set({
           data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify({
             ...(description ? { description } : {}),
+            // The bytes the new tabs came from: the drawing's revision now.
+            [DWG_SOURCE_SHA_KEY]: dwgSourceSha(file.bytes),
             [REINDEXED_VERSION_KEY]: version,
             dwgReindexedAt: new Date().toISOString(),
           })}::jsonb`,

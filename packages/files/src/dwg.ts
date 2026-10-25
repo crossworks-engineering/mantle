@@ -43,6 +43,16 @@ export const DWG_CHECKS_TAB = 'Checks';
 export const DWG_CHECKED_VERSION_KEY = 'dwgCheckedVersion';
 /** Table node data key: the table version the last dwg-reindex committed. */
 export const DWG_REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
+/** Table node data key: the sha256 of the drawing bytes the table's tabs
+ *  were built from (the import, then each dwg-reindex). The image check
+ *  files its answers under this revision, and refuses a sheet whose file
+ *  now holds other bytes (replaced in place) until it is re-indexed. */
+export const DWG_SOURCE_SHA_KEY = 'sourceSha256';
+
+/** The sha256 of a drawing's bytes, as DWG_SOURCE_SHA_KEY holds it. */
+export function dwgSourceSha(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
 /** Whether a drawing's table was edited by someone since its import, its
  *  last re-index or its last image-check commit (neither of which is an

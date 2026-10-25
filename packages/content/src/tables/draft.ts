@@ -12,7 +12,7 @@
  * interleave into a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { InputError } from '@mantle/std';
+import { errorMessage, InputError } from '@mantle/std';
 import {
   assertAppRunWriteHome,
   assertItemRight,
@@ -153,6 +153,31 @@ function assertAppDraftCeiling(file: string, ops: readonly TableOp[]): void {
  * A legacy JSONB table migrates to file storage first. Null when the table
  * doesn't exist or the caller does not read it.
  */
+/**
+ * Whether the caller may write the grid of table `id` now, asked exactly as
+ * applyTableOps asks before it writes (the scoped read, the edit right, a
+ * writable table: not app-bound, not a snapshot copy; a team app's home):
+ * null when it may, else the refusal in words. For a caller that must know
+ * BEFORE it spends on a write that follows (circuit_verify asks it before
+ * any vision call). Refuses nothing itself; the write still asks.
+ */
+export async function tableWriteRefusal(ownerId: string, id: string): Promise<string | null> {
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
+    .limit(1);
+  if (!node) return 'the table is not one the caller reads';
+  try {
+    await assertItemRight(id, 'edit');
+    await assertTableWritable(id);
+    if (inAppRunWrite()) await assertAppRunWriteHome(id);
+  } catch (err) {
+    return errorMessage(err);
+  }
+  return null;
+}
+
 export async function applyTableOps(
   ownerId: string,
   id: string,
@@ -370,7 +395,11 @@ async function saveDraftFile(
 /** Throw away the working draft. Published grid + index untouched. The store
  *  broker (A3b): the row no longer points at a draft (the check, as the
  *  caller); the draft file is then the sweep's. */
-export async function discardTableDraft(ownerId: string, id: string): Promise<boolean> {
+export async function discardTableDraft(
+  ownerId: string,
+  id: string,
+  opts: { ifRev?: number } = {},
+): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })
     .from(nodes)
@@ -381,10 +410,13 @@ export async function discardTableDraft(ownerId: string, id: string): Promise<bo
   await assertItemRight(id, 'edit');
   await assertTableWritable(id);
   try {
-    await flipTable(id, undefined, { draftPath: null, draftData: null, draftUpdatedAt: null });
+    // With `ifRev`: only the draft at that revision (the caller's own,
+    // untouched since); one someone else wrote to is kept.
+    await flipTable(id, opts.ifRev, { draftPath: null, draftData: null, draftUpdatedAt: null });
     return true;
   } catch (err) {
     if (err instanceof StoreRefusedError) return false;
+    if (opts.ifRev !== undefined && err instanceof TableRevConflict) return false;
     throw err;
   }
 }
@@ -490,6 +522,17 @@ export async function commitTable(
      *  meaning is unchanged (the dwg-reindex task adding tabs to the same
      *  drawing), never for a user's edit. */
     keepSummary?: boolean;
+    /** Never start a model pass: with a summary the re-index is `cells`
+     *  (as keepSummary), without one no index work is asked at all (the
+     *  table keeps its index as it was; `cells` there would leave it with
+     *  no vector, `schema` would call the model). For an append of
+     *  evidence rows that must never spend (the image check's Checks tab,
+     *  circuit_verify), never for a user's edit. */
+    noModelPass?: boolean;
+    /** Publish the server draft only at this draft revision (the one the
+     *  caller's own write left): a draft someone else added to since is
+     *  refused (TableRevConflict), never published with it. */
+    ifRev?: number;
   } = {},
 ): Promise<TableDetail | null> {
   const [node] = await db
@@ -533,6 +576,9 @@ export async function commitTable(
     for (let attempt = 1; ; attempt++) {
       const row = await readTableRow(id);
       if (!row) return null; // gone, frozen in a personal space, or unreadable
+      if (opts.ifRev !== undefined && row.draftRev !== opts.ifRev) {
+        throw new TableRevConflict(row.draftRev);
+      }
       let draftAbs: string | null = null;
       if (!commitDoc) {
         // ── Promote path (P3): no doc posted: publish the SERVER draft. ──
@@ -655,9 +701,11 @@ export async function commitTable(
                   .returning();
                 const committed = oneRow('tables', updated ? [updated] : [], 'table');
                 const change =
-                  opts.keepSummary && hasSummary(committed.data)
+                  (opts.keepSummary || opts.noModelPass) && hasSummary(committed.data)
                     ? ('cells' as const)
-                    : committedChange(row.shapeHash, s.shapeHash, committed.data);
+                    : opts.noModelPass
+                      ? null
+                      : committedChange(row.shapeHash, s.shapeHash, committed.data);
                 // A team app's commit waits out a pass (MED-1): thrown here,
                 // the flip rolls back and its stage is removed.
                 const wait = appWrite ? appCommitWait(committed.data, change) : null;
@@ -665,7 +713,9 @@ export async function commitTable(
                 // Announced when this transaction commits (the kind
                 // registry's `indexed`).
                 const nodeRow =
-                  (await markContentChanged(tx, { id, type: 'table' }, [change])) ?? committed;
+                  (change
+                    ? await markContentChanged(tx, { id, type: 'table' }, [change])
+                    : null) ?? committed;
                 if (s.history) {
                   const [v] = await tx
                     .select({ version: tables.version })

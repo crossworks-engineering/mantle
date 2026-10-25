@@ -30,6 +30,7 @@ const PUBLIC_VALUE_EXPORTS = [
   'listTableTags',
   'listTables',
   'saveTableDraft',
+  'tableWriteRefusal',
   'updateTable',
 ];
 

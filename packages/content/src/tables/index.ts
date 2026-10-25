@@ -52,6 +52,7 @@ export {
 
 export {
   applyTableOps,
+  tableWriteRefusal,
   saveTableDraft,
   discardTableDraft,
   commitTable,

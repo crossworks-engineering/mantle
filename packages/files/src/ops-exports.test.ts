@@ -23,6 +23,7 @@ const PUBLIC = [
   // ops/files.ts
   'fileNameTaken',
   'callerSeesNode',
+  'callerMayEditFolder',
   'FileNameTakenError',
   'upsertFile',
   'readFileById',

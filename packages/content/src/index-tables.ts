@@ -27,6 +27,7 @@ export {
   commitTable,
   deleteTable,
   applyTableOps,
+  tableWriteRefusal,
   type ApplyTableOpsResult,
   type TableRow,
   type TableDetail,

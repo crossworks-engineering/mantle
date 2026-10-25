@@ -192,6 +192,7 @@ export {
   deleteFileByPath,
   fileNameTaken,
   FileNameTakenError,
+  callerMayEditFolder,
   type FolderRow,
   type FileRow,
 } from './ops';
