@@ -73,7 +73,7 @@ Routes (bearer auth on everything except /healthz):
                        (X-Crop-Spec-Length: the spec's byte length)
                        -> {ok, converter, crops:[{id, part, of, window,
                        width, height, text_px, png_base64}], overview,
-                       capped:[item ids]} — close-up crops of ONE sheet for
+                       capped:[item ids]}: close-up crops of ONE sheet for
                        the image check (dwg_crop.py): point and path items,
                        zoomed so the smallest text in the window reads at
                        about 14 px (long edge at most 2000 px), the trace

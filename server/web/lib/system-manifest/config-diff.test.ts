@@ -322,7 +322,7 @@ describe('diffConfig — operator extras', () => {
   });
 });
 
-describe('diffConfig — a job worker beside its kind default', () => {
+describe('diffConfig: a job worker beside its kind default', () => {
   const job = {
     kind: 'vision' as const,
     slug: 'drawing-check',
