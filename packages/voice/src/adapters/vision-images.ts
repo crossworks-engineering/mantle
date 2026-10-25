@@ -14,7 +14,7 @@ import {
   type ImagesRequestExtra,
   type ImagesResult,
 } from './openrouter-vision';
-import { recordVision } from './spend';
+import { isProviderTimeout, recordVision, recordVisionTimeout } from './spend';
 import type { VisionExtractOptions } from './types';
 
 export type { ImagesRequestExtra, ImagesResult };
@@ -29,9 +29,9 @@ export function multiImageProvider(provider: string): boolean {
 }
 
 /** Ask one question set over several images in one request. Throws for a
- *  provider `multiImageProvider` refuses, and on a timeout (the request may
- *  still be billed by the provider; no usage came back to record: the
- *  caller says so). */
+ *  provider `multiImageProvider` refuses, and on a timeout: the request may
+ *  still be billed by the provider and no usage came back, so the attempt
+ *  is recorded with no tokens, marked timed out, before the throw. */
 export async function extractImages(
   provider: string,
   images: readonly VisionImage[],
@@ -41,7 +41,13 @@ export async function extractImages(
   if (provider !== 'openrouter') {
     throw new Error(`vision: provider '${provider}' cannot take several images in one request`);
   }
-  const r = await openrouterExtractImages(images, opts, extra);
+  let r: ImagesResult;
+  try {
+    r = await openrouterExtractImages(images, opts, extra);
+  } catch (err) {
+    if (isProviderTimeout(err)) recordVisionTimeout(provider, opts);
+    throw err;
+  }
   recordVision(provider, opts, r);
   return r;
 }

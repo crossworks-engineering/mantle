@@ -125,6 +125,7 @@ registerDecisionAdapter(openrouterDecisionAdapter);
   }
 }
 
+export { isProviderTimeout } from './spend';
 export {
   extractImages,
   multiImageProvider,

@@ -73,6 +73,32 @@ export function recordVision(
   }));
 }
 
+/** A vision call that timed out: no usage came back, but the provider may
+ *  still bill it, so the attempt is recorded with no tokens and no cost,
+ *  marked timed out. Exported for ./vision-images.ts. */
+export function recordVisionTimeout(provider: string, opts: VisionExtractOptions): void {
+  record(() => ({
+    capability: 'vision',
+    provider,
+    model: opts.model ?? '',
+    priceAs: [opts.model],
+    inputTokens: 0,
+    outputTokens: 0,
+    timedOut: true,
+  }));
+}
+
+/** Whether a provider call failed by its deadline (providerFetch aborts
+ *  with a `TimeoutError`). */
+export function isProviderTimeout(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    ((err as { name?: unknown }).name === 'TimeoutError' ||
+      /timed out/i.test(String((err as { message?: unknown }).message ?? '')))
+  );
+}
+
 const wrapped = new WeakMap<object, object>();
 
 function once<T extends object>(adapter: T, wrap: (a: T) => T): T {

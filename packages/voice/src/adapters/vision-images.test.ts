@@ -2,13 +2,23 @@
  * Several images in one vision request: each image after its caption, in
  * order, in ONE user turn; and a provider that cannot is refused by name.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROVIDER_TIMEOUTS } from '@mantle/std';
 import { extractImages, multiImageProvider } from './vision-images';
+
+const recorded = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock('@mantle/tracing', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tracing')>()),
+  recordUsage: (u: Record<string, unknown>) => {
+    recorded.push(u);
+    return 0;
+  },
+}));
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
+  recorded.length = 0;
 });
 
 describe('extractImages', () => {
@@ -81,5 +91,43 @@ describe('extractImages', () => {
     expect(r.finishReason).toBe('length');
     expect(PROVIDER_TIMEOUTS.visionImages).toBeGreaterThanOrEqual(120_000);
     expect(PROVIDER_TIMEOUTS.visionImages).toBeGreaterThan(PROVIDER_TIMEOUTS.vision);
+  });
+
+  it('a timed-out request is recorded with no tokens, marked timed out, then thrown', async () => {
+    globalThis.fetch = (async () => {
+      throw new DOMException('provider call timed out after 4m', 'TimeoutError');
+    }) as typeof fetch;
+    await expect(
+      extractImages('openrouter', [{ bytes: Buffer.from('a'), mimeType: 'image/png' }], {
+        apiKey: 'k',
+        mimeType: 'image/png',
+        prompt: 'p',
+        model: 'm',
+      }),
+    ).rejects.toThrow(/timed out/);
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        capability: 'vision',
+        provider: 'openrouter',
+        model: 'm',
+        inputTokens: 0,
+        outputTokens: 0,
+        timedOut: true,
+      }),
+    ]);
+    // Any other failure records nothing (no attempt billed by its deadline).
+    globalThis.fetch = (async () => {
+      throw new Error('connection refused');
+    }) as typeof fetch;
+    recorded.length = 0;
+    await expect(
+      extractImages('openrouter', [{ bytes: Buffer.from('a'), mimeType: 'image/png' }], {
+        apiKey: 'k',
+        mimeType: 'image/png',
+        prompt: 'p',
+        model: 'm',
+      }),
+    ).rejects.toThrow();
+    expect(recorded).toEqual([]);
   });
 });

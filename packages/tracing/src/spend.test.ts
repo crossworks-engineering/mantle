@@ -114,6 +114,31 @@ describe('recordUsage', () => {
     });
   });
 
+  it('a timed-out call shows on the step with no tokens and no cost, counted', async () => {
+    await startTrace({ ownerId: 'o', kind: 'manual' }, () =>
+      step({ name: 's', kind: 'embed' }, async () => {
+        for (let i = 0; i < 2; i++)
+          recordUsage({
+            capability: 'vision',
+            provider: 'openrouter',
+            model: 'm',
+            inputTokens: 0,
+            outputTokens: 0,
+            timedOut: true,
+          });
+      }),
+    );
+    await flush();
+    expect(h.stepUpdates.at(-1)!.meta).toEqual({
+      model: 'm',
+      provider: 'openrouter',
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_micro_usd: 0,
+      timed_out: 2,
+    });
+  });
+
   it('sums a step with several calls; the last model names it', async () => {
     await startTrace({ ownerId: 'o', kind: 'manual' }, () =>
       step({ name: 's', kind: 'embed' }, async () => {

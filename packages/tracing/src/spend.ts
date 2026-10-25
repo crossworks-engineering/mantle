@@ -66,6 +66,10 @@ export type ProviderUsage = {
   units?: SpendUnits;
   /** USD the provider quoted for the call (OpenRouter `usage.cost`). */
   reportedCostUsd?: number;
+  /** The call timed out: no usage came back, yet the provider may still
+   *  bill it. Recorded with no tokens and no cost, so the attempt shows
+   *  (step meta `timed_out`, a count summed over the step's calls). */
+  timedOut?: boolean;
 };
 
 function num(v: unknown): number {
@@ -112,6 +116,7 @@ export function recordUsage(u: ProviderUsage): number {
     if (cacheWrite > 0) meta.cache_write = cacheWrite;
     if (u.units && num(u.units.count) > 0) meta[u.units.kind] = num(u.units.count);
     meta.cost_micro_usd = costMicroUsd;
+    if (u.timedOut) meta.timed_out = 1;
     // An embedding's tokens are not completion tokens: the member token
     // budget reads tokens in + out, never these (docs/spend-recording.md).
     const tokens =
