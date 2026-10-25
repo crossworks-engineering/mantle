@@ -70,6 +70,15 @@ export const MAX_CHECK_ROWS = 2000;
  *  data holds anything else names no file). */
 const UUID_SQL = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
+/** The listed table's own data column, qualified, for a subquery. */
+const OUTER_DATA = sql`${sql.identifier('nodes')}.${sql.identifier('data')}`;
+/** The hash of a listed table's source file now (null when the caller
+ *  cannot read it): a subquery of dwgTables' one-table select. */
+export const FILE_SHA = sql<string | null>`(select f.data->>'sha256' from ${nodes} f
+        where f.id = (case when ${OUTER_DATA}->>'sourceFileId' ~* ${UUID_SQL}
+                           then (${OUTER_DATA}->>'sourceFileId')::uuid end)
+        limit 1)`;
+
 /** The stamp against the file's current bytes. No hash of the file (the
  *  caller cannot read the source file, or it is gone) is `unreadable`: the
  *  revision could not be checked, never read as current. */
@@ -91,11 +100,11 @@ export async function dwgTables(
       data: nodes.data,
       // The source file's hash now, read in the caller's scope like the
       // table: by its primary key (a uuid compare, never a text cast of
-      // every row's id), and only when the stored id is a uuid.
-      fileSha: sql<string | null>`(select f.data->>'sha256' from ${nodes} f
-        where f.id = (case when ${nodes.data}->>'sourceFileId' ~* ${UUID_SQL}
-                           then (${nodes.data}->>'sourceFileId')::uuid end)
-        limit 1)`,
+      // every row's id), and only when the stored id is a uuid. The outer
+      // table's column is named in full (OUTER_DATA): drizzle writes a
+      // column of a one-table select unqualified, which inside this
+      // subquery would read the file's own data and never match.
+      fileSha: FILE_SHA,
     })
     .from(nodes)
     .where(

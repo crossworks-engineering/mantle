@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest';
 import type { WorkbookTabRef } from '@mantle/tabledb';
 import { CHECK_COLUMNS, CHECK_FIELD, sealedRow, sealFieldsOf, storedCheckOf } from './check';
 import { sealOf } from './check-seal';
-import { readSheet, type CandidateTable } from './read';
+import { FILE_SHA, readSheet, sourceStateOf, type CandidateTable } from './read';
+import { QueryBuilder } from 'drizzle-orm/pg-core';
+import { nodes } from '@mantle/db/schema';
 
 process.env.MANTLE_MASTER_KEY ??= 'circuit-verify-test-key';
 
@@ -113,5 +115,22 @@ describe('the Checks tab read', () => {
     // Every column was asked for.
     const ask = statements.find((s) => s.includes('"v_Checks"'))!;
     for (const c of CHECK_COLUMNS) expect(ask).toContain(`"${c}"`);
+  });
+});
+
+describe("the source file's hash read (dwgTables)", () => {
+  it("names the listed table's own data column inside the subquery", () => {
+    // A one-table select writes its columns unqualified; an unqualified
+    // `data` inside the subquery would be the file's own and never match.
+    const q = new QueryBuilder().select({ id: nodes.id, sha: FILE_SHA }).from(nodes).toSQL().sql;
+    expect(q).toContain(`"nodes"."data"->>'sourceFileId'`);
+    expect(q).not.toMatch(/case when "data"/);
+  });
+
+  it('no hash of the file is unreadable, never current', () => {
+    expect(sourceStateOf('a', null)).toBe('unreadable');
+    expect(sourceStateOf('a', 'a')).toBe('current');
+    expect(sourceStateOf('a', 'b')).toBe('stale');
+    expect(sourceStateOf(null, 'a')).toBe('unstamped');
   });
 });
