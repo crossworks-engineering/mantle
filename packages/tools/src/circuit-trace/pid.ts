@@ -173,7 +173,10 @@ export function buildPid(
   }
   // A certain link makes its two ends one point; a guessed one stays two
   // ends, each drawn as a connector marked GUESS.
-  const linkAt = new Map<string, { other: string; guessed: boolean }>();
+  // `checkAt`: where the image check's answer about the link is filed (the
+  // end the link was guessed from, ./check.ts asks there); the far end of
+  // the same link shows that answer too.
+  const linkAt = new Map<string, { other: string; guessed: boolean; checkAt: string }>();
   for (const l of links) {
     const a = sheetByTitle.get(l.from.sheet);
     if (!a) continue;
@@ -184,8 +187,10 @@ export function buildPid(
     }
     const other = l.to?.sheet ?? l.target;
     if (!other) continue;
-    linkAt.set(keyOf(a, l.from.node), { other, guessed: true });
-    if (b && l.to) linkAt.set(keyOf(b, l.to.node), { other: l.from.sheet, guessed: true });
+    const from = keyOf(a, l.from.node);
+    linkAt.set(from, { other, guessed: true, checkAt: from });
+    if (b && l.to)
+      linkAt.set(keyOf(b, l.to.node), { other: l.from.sheet, guessed: true, checkAt: from });
   }
   const edges: Edge[] = [];
   for (const s of sheets) {
@@ -744,7 +749,7 @@ export function buildPid(
     const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
     if (guessedLink) {
       const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
-      const v = verdictOf(input.checked?.link);
+      const v = verdictOf(input.checked?.link) ?? input.checked?.link?.get(guessedLink.checkAt);
       const mark = markOf(v);
       return {
         conn: head.slice(0, TEXT.connector - mark.length) + mark,
@@ -1246,7 +1251,9 @@ export function buildPid(
       );
       const inferred = verdicts.filter((v) => v !== 'yes').length;
       const confirmed = verdicts.length - inferred;
-      const contradicted = verdicts.some((v) => v === 'no');
+      // How many of the joins still marked GUESS the image said no to: the
+      // note counts them, never "N JOINS ... NO" when one of N got a no.
+      const contradicted = verdicts.filter((v) => v === 'no').length;
       if (inferred) marks.add('inferred');
       if (confirmed) marks.add('checked');
       // A valve type the image check answered: said in the line's note
@@ -1276,7 +1283,7 @@ export function buildPid(
               note: contradicted
                 ? inferred === 1
                   ? `INFERRED JOIN${MARK.no}`
-                  : `${inferred} JOINS${MARK.no}`
+                  : `${inferred} JOINS (GUESS; IMAGE: ${contradicted} NO)`
                 : inferred === 1
                   ? 'INFERRED JOIN (GUESS)'
                   : `${inferred} INFERRED JOINS (GUESS)`,
