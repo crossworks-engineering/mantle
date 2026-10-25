@@ -69,6 +69,17 @@ Routes (bearer auth on everything except /healthz):
                        parses the container itself and only the pixels come
                        from here.
 
+  POST /dwg/crop       <crop spec JSON><raw DWG or DXF bytes>
+                       (X-Crop-Spec-Length: the spec's byte length)
+                       -> {ok, converter, crops:[{id, part, of, window,
+                       width, height, text_px, png_base64}], overview,
+                       capped:[item ids]} — close-up crops of ONE sheet for
+                       the image check (dwg_crop.py): point and path items,
+                       zoomed so the smallest text in the window reads at
+                       about 14 px (long edge at most 2000 px), the trace
+                       overlaid in fixed colours, plus a sheet overview.
+                       Same --dwg-crop child discipline as /dwg/render.
+
 Error envelope on every non-2xx: {"ok":false,"error":{"code","message"}}.
 Codes: unauthorized, bad_request, blocked_url, no_captions,
 extraction_failed, duration_exceeded, size_exceeded, timeout, busy.
@@ -118,6 +129,13 @@ TIMEOUT_DWF_RENDER = 120
 # is the ezdwg-fallback worst case); 240s covers files an order of magnitude
 # bigger plus the fallback retry inside one child.
 TIMEOUT_DWG_RENDER = 240
+# DWG crops (the image check): the same conversion, one render pass and up
+# to dwg_crop.MAX_CROPS window saves. The child stops starting new crops at
+# CROP_BUDGET_S and says which items it cut; the kill is the backstop.
+TIMEOUT_DWG_CROP = 240
+CROP_BUDGET_S = 150
+# The crop spec rides ahead of the drawing bytes in the body.
+CROP_SPEC_CAP = 512 * 1024
 
 # ── CAD render page ──────────────────────────────────────────────────────
 # BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
@@ -649,6 +667,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._heavy(self._op_dwf_render)
             elif self.path == "/dwg/render":
                 self._heavy(self._op_dwg_render)
+            elif self.path == "/dwg/crop":
+                self._heavy(self._op_dwg_crop)
             else:
                 raise OpError(404, "bad_request", "unknown route")
         except OpError as err:
@@ -903,6 +923,68 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
 
+    def _op_dwg_crop(self):
+        """Crops of one drawing for the image check, in a group-killed
+        `--dwg-crop` child. The body is the crop spec (JSON, its length in
+        X-Crop-Spec-Length) followed by the drawing's bytes; the child reads
+        the drawing the way /dwg/render does (open_cad) and renders every
+        crop off one model-space draw (dwg_crop.py)."""
+        length = self._content_length(MAX_UPLOAD_BYTES)
+        spec_len = int_field(self.headers.get("X-Crop-Spec-Length"), 0, 1, CROP_SPEC_CAP,
+                             "X-Crop-Spec-Length")
+        if length <= spec_len:
+            raise OpError(400, "bad_request", "the body must hold the crop spec, then the drawing bytes")
+        raw_spec = self.rfile.read(spec_len)
+        if len(raw_spec) != spec_len:
+            raise OpError(400, "bad_request", "request body ended early")
+        try:
+            import dwg_crop  # noqa: PLC0415 - sits next to this file
+
+            dwg_crop.parse_spec(json.loads(raw_spec))
+        except (ValueError, json.JSONDecodeError) as err:
+            raise OpError(400, "bad_request", f"crop spec: {err}"[:300])
+        with tempfile.TemporaryDirectory() as tmp:
+            spec_path = os.path.join(tmp, "spec.json")
+            with open(spec_path, "wb") as f:
+                f.write(raw_spec)
+            src = os.path.join(tmp, "in.dwg")
+            remaining = length - spec_len
+            with open(src, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        raise OpError(400, "bad_request", "request body ended early")
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            outdir = os.path.join(tmp, "out")
+            os.makedirs(outdir)
+            try:
+                run(
+                    [sys.executable, os.path.abspath(__file__), "--dwg-crop", src, outdir, spec_path],
+                    TIMEOUT_DWG_CROP,
+                    fail_hint="No parseable DXF came out of this file, or the crops failed.",
+                )
+            except OpError as err:
+                if err.code == "extraction_failed":
+                    raise OpError(422, "extraction_failed", f"DWG crop worker failed: {err.message}")
+                raise
+            try:
+                with open(os.path.join(outdir, "index.json"), encoding="utf-8") as f:
+                    index = json.load(f)
+            except Exception:
+                raise OpError(422, "extraction_failed", "DWG crop worker produced no index")
+
+            def b64(name):
+                with open(os.path.join(outdir, name), "rb") as f:
+                    return base64.b64encode(f.read()).decode("ascii")
+
+            for c in index.get("crops", []):
+                c["png_base64"] = b64(c.pop("file"))
+            if index.get("overview"):
+                index["overview"]["png_base64"] = b64(index["overview"].pop("file"))
+            index["ok"] = True
+            self._send_json(200, index)
+
     def _op_extract_audio(self):
         length = self._content_length(MAX_UPLOAD_BYTES)
         if length <= 0:
@@ -1139,6 +1221,75 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
     return 0
 
 
+def _try_parse(path: str):
+    import ezdxf  # noqa: PLC0415 - child-only import
+
+    try:
+        return ezdxf.readfile(path)
+    except Exception:
+        return None
+
+
+def open_cad(src: str, outdir: str):
+    """`src` as an ezdxf document and the converter that made it, or
+    (None, None) with the reason on stderr. DWG magic takes the conversion
+    chain (dwg2dxf, then ezdwg), anything else is read as DXF. Shared by the
+    render and the crop children so both read a drawing the same way."""
+    doc = None
+    converter = None
+    with open(src, "rb") as f:
+        head = f.read(6)
+    if not re.match(rb"^AC1\d{3}$", head):
+        # Not DWG bytes — try native DXF. ezdxf.readfile handles both ASCII
+        # and binary DXF; recover.readfile mops up files a strict parse
+        # rejects (the common state of hand-edited or third-party exports).
+        doc = _try_parse(src)
+        if doc is None:
+            try:
+                from ezdxf import recover  # noqa: PLC0415 — child-only import
+
+                doc, _auditor = recover.readfile(src)
+            except Exception:
+                doc = None
+        if doc is None:
+            sys.stderr.write("not DWG bytes and not parseable DXF\n")
+            return None, None
+        converter = "none"
+    if doc is None:
+        dxf_a = os.path.join(outdir, "a.dxf")
+        # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
+        # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
+        # kill the child before the fallback ever runs.
+        try:
+            proc = subprocess.run(
+                ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
+            )
+            if proc.returncode == 0 and os.path.isfile(dxf_a):
+                doc = _try_parse(dxf_a)
+                if doc is not None:
+                    converter = "dwg2dxf"
+        except Exception:
+            pass  # tier 2 decides
+    if doc is None:
+        # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
+        # file) and export_dxf() can all raise — every failure takes the ONE
+        # curated exit instead of a raw traceback.
+        try:
+            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+
+            dxf_b = os.path.join(outdir, "b.dxf")
+            ezdwg.read(src).export_dxf(dxf_b)
+            doc = _try_parse(dxf_b)
+        except Exception:
+            doc = None
+        if doc is None:
+            sys.stderr.write("no converter produced a parseable DXF\n")
+            return None, None
+        converter = "ezdwg"
+
+    return doc, converter
+
+
 def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     """`--dwg-render` child entry: get `src` into ezdxf, extract the model-
     space registry, raster the model space, and write `index.json` + a
@@ -1179,63 +1330,9 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     max_pixels = 30_000_000
 
-    def try_parse(path: str):
-        try:
-            return ezdxf.readfile(path)
-        except Exception:
-            return None
-
-    doc = None
-    converter = None
-    with open(src, "rb") as f:
-        head = f.read(6)
-    if not re.match(rb"^AC1\d{3}$", head):
-        # Not DWG bytes — try native DXF. ezdxf.readfile handles both ASCII
-        # and binary DXF; recover.readfile mops up files a strict parse
-        # rejects (the common state of hand-edited or third-party exports).
-        doc = try_parse(src)
-        if doc is None:
-            try:
-                from ezdxf import recover  # noqa: PLC0415 — child-only import
-
-                doc, _auditor = recover.readfile(src)
-            except Exception:
-                doc = None
-        if doc is None:
-            sys.stderr.write("not DWG bytes and not parseable DXF\n")
-            return 1
-        converter = "none"
+    doc, converter = open_cad(src, outdir)
     if doc is None:
-        dxf_a = os.path.join(outdir, "a.dxf")
-        # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
-        # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
-        # kill the child before the fallback ever runs.
-        try:
-            proc = subprocess.run(
-                ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
-            )
-            if proc.returncode == 0 and os.path.isfile(dxf_a):
-                doc = try_parse(dxf_a)
-                if doc is not None:
-                    converter = "dwg2dxf"
-        except Exception:
-            pass  # tier 2 decides
-    if doc is None:
-        # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
-        # file) and export_dxf() can all raise — every failure takes the ONE
-        # curated exit instead of a raw traceback.
-        try:
-            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
-
-            dxf_b = os.path.join(outdir, "b.dxf")
-            ezdwg.read(src).export_dxf(dxf_b)
-            doc = try_parse(dxf_b)
-        except Exception:
-            doc = None
-        if doc is None:
-            sys.stderr.write("no converter produced a parseable DXF\n")
-            return 1
-        converter = "ezdwg"
+        return 1
 
     index = dwg_registry(doc, converter)
 
@@ -1336,7 +1433,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             dxf_b = os.path.join(outdir, "b.dxf")
             if not os.path.isfile(dxf_b):
                 ezdwg.read(src).export_dxf(dxf_b)
-            doc_b = try_parse(dxf_b)
+            doc_b = _try_parse(dxf_b)
             if doc_b is not None:
                 retry_error = render_png(doc_b)
                 if retry_error is None:
@@ -1351,6 +1448,30 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
+    return 0
+
+
+def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
+    """`--dwg-crop` child entry: read the drawing (open_cad), plan and render
+    the spec's crops (dwg_crop.py) and write `index.json` plus one PNG per
+    crop and the overview into `outdir`. Exits non-zero only when the
+    drawing cannot be read or the spec is malformed."""
+    import dwg_crop  # noqa: PLC0415 - child-only; sits next to this file
+
+    try:
+        with open(spec_path, encoding="utf-8") as f:
+            spec = dwg_crop.parse_spec(json.load(f))
+    except (ValueError, OSError) as err:
+        sys.stderr.write(f"crop spec: {err}\n")
+        return 1
+    started = time.time()
+    doc, converter = open_cad(src, outdir)
+    if doc is None:
+        return 1
+    index = dwg_crop.render(doc, spec, outdir, deadline=started + CROP_BUDGET_S)
+    index["converter"] = converter
+    with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f, allow_nan=False)
     return 0
 
 
@@ -1561,4 +1682,6 @@ if __name__ == "__main__":
         sys.exit(dwf_render_worker(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])))
     if len(sys.argv) >= 5 and sys.argv[1] == "--dwg-render":
         sys.exit(dwg_render_worker(sys.argv[2], sys.argv[3], int(sys.argv[4])))
+    if len(sys.argv) >= 5 and sys.argv[1] == "--dwg-crop":
+        sys.exit(dwg_crop_worker(sys.argv[2], sys.argv[3], sys.argv[4]))
     main()

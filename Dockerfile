@@ -180,6 +180,8 @@ COPY infra/media-sidecar/app.py /srv/app.py
 # The DWG bones (segments, network, circuits): imported by the --dwg-render
 # child from next to app.py.
 COPY infra/media-sidecar/dwg_bones.py /srv/dwg_bones.py
+# The image check's crops: imported by the --dwg-crop child the same way.
+COPY infra/media-sidecar/dwg_crop.py /srv/dwg_crop.py
 COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
 EXPOSE 8095
 ENTRYPOINT ["/bin/sh", "/srv/entrypoint.sh"]

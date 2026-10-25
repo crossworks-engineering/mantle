@@ -101,14 +101,16 @@ jobs:
 
       # The media sidecar's DWG bones (infra/media-sidecar/dwg_bones.py): the
       # network and circuit rules, and the registry on synthetic DXF files
-      # the test writes itself. Same ezdxf pin as the media image; the env
-      # makes a missing ezdxf a failure here instead of a skip. Seconds.
+      # the test writes itself; and the image check's crops (dwg_crop.py),
+      # rendered with matplotlib. Same ezdxf and matplotlib pins as the
+      # media image; the env makes a missing one a failure here instead of
+      # a skip. Seconds.
       - name: Media sidecar tests
         env:
           MEDIA_TESTS_REQUIRE_EZDXF: '1'
         run: |
           python3 -m venv /tmp/media-venv
-          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.5"
+          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.5" "matplotlib==3.11.2"
           /tmp/media-venv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
 
       # Boot every server process the way the image does (each compose
