@@ -173,6 +173,9 @@ RUN pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.7" /tmp/ezdwg-whe
     "matplotlib>=3.9,<4" "ezdxf==1.4.4"
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 COPY infra/media-sidecar/app.py /srv/app.py
+# The DWG bones (segments, network, circuits): imported by the --dwg-render
+# child from next to app.py.
+COPY infra/media-sidecar/dwg_bones.py /srv/dwg_bones.py
 COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
 EXPOSE 8095
 ENTRYPOINT ["/bin/sh", "/srv/entrypoint.sh"]

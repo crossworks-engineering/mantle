@@ -4,6 +4,35 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a DWG down to the bones
+
+- **Feature:** a DWG or DXF keeps its pipe geometry. The media sidecar's one
+  `/dwg/render` pass (same upload, same ezdxf parse) now also returns every
+  LINE, polyline vertex pair and ARC by its end points, every INSERT with its
+  box, a network of nodes snapped from the segment ends, and, on drawings
+  with `Circuit <name>` layers, one row per circuit. The registry workbook
+  gains four tabs after the existing ones: Segments, Nodes, Inserts and
+  Circuits. Layers, Texts, Blocks and Counts are unchanged.
+- **Feature:** the network rules. Ends within a tolerance of 2e-4 of the
+  drawing's extent diagonal are one node (about 0.2 mm on an A1 sheet drawn
+  1:1); an end on another segment's interior splits it into a tee; lines
+  that only cross are not joined; a small block (a valve, a reducer) touched
+  by two pipe ends joins them. A node is an end, joint, tee or block, and
+  connected segments share a run number.
+- **Feature:** circuits from the Circuitizer layer convention. `Circuit X`
+  is the main path, `-DL`, `-Bnn-DL` and `-Dnn` are its deadlegs, `-IPn` is
+  an injection point with its own row. Each row has segment count, length,
+  deadleg segments, runs, tees, ends and what each end meets, and the
+  line-number blocks that name the circuit or sit near it. A drawing without
+  such layers gets no Circuits tab. The digest lists one line per circuit.
+- **Docs:** the table description says what each new tab holds and what it
+  does not (curves are chords, SPLINE and ELLIPSE are left out, one drawing
+  only), and says TRUNCATED for a tab cut by its budget.
+- **Build:** the media image ships `dwg_bones.py` next to `app.py`; CI runs
+  the sidecar's Python tests (synthetic DXF files, no client drawings).
+- Existing DWG tables gain the new tabs only on a new import: delete the old
+  auto-imported table and re-queue the file.
+
 ## Unreleased: mini apps import the canvas libraries
 
 - **Feature:** a mini app may import `echarts`, `d3`, `three` (with

@@ -101,6 +101,15 @@ const MAX_BLOCK_ROWS = 20_000;
 const MAX_BLOCK_TAG_COLUMNS = 40;
 /** The Blocks tab's own columns; a tag with one of these names is renamed. */
 const BLOCK_FIXED_COLUMNS = ['Block', 'Layer', 'Handle', 'X', 'Y'];
+/** Row ceilings for the bones tabs. The sidecar's character budgets bind
+ *  first on any real drawing; these only guard the grid. */
+const MAX_SEGMENT_ROWS = 60_000;
+const MAX_NODE_ROWS = 60_000;
+const MAX_INSERT_ROWS = 40_000;
+const MAX_CIRCUIT_ROWS = 5_000;
+/** Character budget for the circuit lines in the digest. */
+const DIGEST_CIRCUIT_CHARS = 12_000;
+const DIGEST_CIRCUIT_LINE_CHARS = 600;
 
 /** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
  *  One dial for DWG and DXF — same sidecar route, same rasteriser.
@@ -254,7 +263,50 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
     }
     if (shown < ordered.length) out.push(`  … ${ordered.length - shown} more unique blocks`);
   }
+  out.push(...geometryDigest(r));
   return out.join('\n');
+}
+
+/** The network in a sentence, then one retrievable line per circuit, so
+ *  "how long is circuit X" or "which line numbers are on X" find the file. */
+function geometryDigest(r: DwgRender): string[] {
+  const g = r.geometry;
+  if (!g) return [];
+  const out: string[] = [];
+  const k = g.nodeKinds;
+  out.push(
+    '',
+    `Geometry: ${g.segments} segments, ${g.nodes} nodes (${k.end ?? 0} ends,` +
+      ` ${k.joint ?? 0} joints, ${k.tee ?? 0} tees, ${k.block ?? 0} block joins),` +
+      ` ${g.runs} runs, ${g.inserts} inserts.`,
+  );
+  if (!r.circuits.length) return out;
+  out.push('', `Circuits (${r.circuits.length}):`);
+  let spent = 0;
+  let shown = 0;
+  for (const c of r.circuits) {
+    const parts = [
+      `${c.segments} segments (${c.length ?? 0} long)`,
+      ...(c.deadlegSegments
+        ? [`${c.deadlegSegments} deadleg segments (${c.deadlegLength ?? 0})`]
+        : []),
+      `${c.runs} run${c.runs === 1 ? '' : 's'}`,
+      `${c.tees} tee${c.tees === 1 ? '' : 's'}`,
+      `${c.ends} end${c.ends === 1 ? '' : 's'}`,
+    ];
+    const parent = c.parent ? ` (${c.kind} of ${c.parent})` : '';
+    const numbers = c.lineNumbers ? `; line numbers ${c.lineNumbers}` : '';
+    const line = `  - Circuit ${c.circuit}${parent}: ${parts.join(', ')}${numbers}`.slice(
+      0,
+      DIGEST_CIRCUIT_LINE_CHARS,
+    );
+    if (spent + line.length > DIGEST_CIRCUIT_CHARS) break;
+    out.push(line);
+    spent += line.length;
+    shown++;
+  }
+  if (shown < r.circuits.length) out.push(`  … ${r.circuits.length - shown} more circuits`);
+  return out;
 }
 
 /**
@@ -282,6 +334,22 @@ export type DwgGrids = {
   /** True when the Blocks tab is incomplete: rows or tag columns cut. Kept
    *  apart from `capped`, which speaks for Texts. */
   blocksCapped?: boolean;
+  /** The bones tabs (Segments, Nodes, Inserts, Circuits), when the sidecar
+   *  sent geometry: how it was built and which tab is incomplete. Absent
+   *  from an older sidecar image; `error` set when the geometry pass failed
+   *  on a drawing whose registry is fine. */
+  geometry?: DwgGridsGeometry;
+};
+
+export type DwgGridsGeometry = {
+  snapTolerance: number | null;
+  nearDistance: number | null;
+  skipped: Record<string, number>;
+  segmentsCapped: boolean;
+  nodesCapped: boolean;
+  insertsCapped: boolean;
+  circuitsCapped: boolean;
+  error: string | null;
 };
 
 async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGrids> {
@@ -323,11 +391,249 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
       rows: countRows,
     });
   }
+  const geometry = bonesSheets(r, sheets);
   return {
     sheets,
     capped: r.capped || r.texts.length > MAX_TEXT_ROWS,
     blocksCapped: r.blocksCapped || blocks.capped,
+    ...(geometry ? { geometry } : {}),
   };
+}
+
+/**
+ * The bones tabs, appended after the registry tabs (whose names and columns
+ * never change: tables and agents depend on them). Segments is the network's
+ * edges, Nodes its vertices (Node 1 / Node 2 join them), Inserts every block
+ * reference (Handle joins Blocks), Circuits one row per `Circuit <name>`
+ * circuit and only on drawings that have such layers.
+ */
+function bonesSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsGeometry | null {
+  if (!r.geometry && !r.geometryError) return null;
+  if (r.segments.length) {
+    sheets.push({
+      name: 'Segments',
+      columns: [
+        { name: 'Layer', type: 'text' },
+        { name: 'Handle', type: 'text' },
+        { name: 'Type', type: 'text' },
+        { name: 'Part', type: 'number' },
+        { name: 'X1', type: 'number' },
+        { name: 'Y1', type: 'number' },
+        { name: 'X2', type: 'number' },
+        { name: 'Y2', type: 'number' },
+        { name: 'Length', type: 'number' },
+        { name: 'Node 1', type: 'number' },
+        { name: 'Node 2', type: 'number' },
+        { name: 'Run', type: 'number' },
+      ],
+      rows: r.segments
+        .slice(0, MAX_SEGMENT_ROWS)
+        .map((g) => [
+          g.layer,
+          g.handle,
+          g.type,
+          g.part,
+          g.x1,
+          g.y1,
+          g.x2,
+          g.y2,
+          g.length,
+          g.n1,
+          g.n2,
+          g.run,
+        ]),
+    });
+  }
+  if (r.nodes.length) {
+    sheets.push({
+      name: 'Nodes',
+      columns: [
+        { name: 'Node', type: 'number' },
+        { name: 'X', type: 'number' },
+        { name: 'Y', type: 'number' },
+        { name: 'Degree', type: 'number' },
+        { name: 'Kind', type: 'text' },
+        { name: 'Block', type: 'text' },
+        { name: 'Block handle', type: 'text' },
+        { name: 'Layers', type: 'text' },
+      ],
+      rows: r.nodes
+        .slice(0, MAX_NODE_ROWS)
+        .map((n) => [n.id, n.x, n.y, n.degree, n.kind, n.block, n.blockHandle, n.layers]),
+    });
+  }
+  if (r.inserts.length) {
+    sheets.push({
+      name: 'Inserts',
+      columns: [
+        { name: 'Block', type: 'text' },
+        { name: 'Layer', type: 'text' },
+        { name: 'Handle', type: 'text' },
+        { name: 'X', type: 'number' },
+        { name: 'Y', type: 'number' },
+        { name: 'Rotation', type: 'number' },
+        { name: 'Scale X', type: 'number' },
+        { name: 'Scale Y', type: 'number' },
+        { name: 'Min X', type: 'number' },
+        { name: 'Min Y', type: 'number' },
+        { name: 'Max X', type: 'number' },
+        { name: 'Max Y', type: 'number' },
+        { name: 'Attributes', type: 'number' },
+      ],
+      rows: r.inserts
+        .slice(0, MAX_INSERT_ROWS)
+        .map((i) => [
+          i.block,
+          i.layer,
+          i.handle,
+          i.x,
+          i.y,
+          i.rotation,
+          i.scaleX,
+          i.scaleY,
+          i.minX,
+          i.minY,
+          i.maxX,
+          i.maxY,
+          i.attribs,
+        ]),
+    });
+  }
+  if (r.circuits.length) {
+    sheets.push({
+      name: 'Circuits',
+      columns: [
+        { name: 'Circuit', type: 'text' },
+        { name: 'Parent', type: 'text' },
+        { name: 'Kind', type: 'text' },
+        { name: 'Layers', type: 'text' },
+        { name: 'Entities', type: 'number' },
+        { name: 'Segments', type: 'number' },
+        { name: 'Length', type: 'number' },
+        { name: 'Deadleg segments', type: 'number' },
+        { name: 'Deadleg length', type: 'number' },
+        { name: 'Runs', type: 'number' },
+        { name: 'Tees', type: 'number' },
+        { name: 'Ends', type: 'number' },
+        { name: 'End points', type: 'text' },
+        { name: 'Line numbers', type: 'text' },
+        { name: 'Nearby text', type: 'text' },
+      ],
+      rows: r.circuits
+        .slice(0, MAX_CIRCUIT_ROWS)
+        .map((c) => [
+          c.circuit,
+          c.parent,
+          c.kind,
+          c.layers,
+          c.entities,
+          c.segments,
+          c.length,
+          c.deadlegSegments,
+          c.deadlegLength,
+          c.runs,
+          c.tees,
+          c.ends,
+          c.endPoints,
+          c.lineNumbers,
+          c.nearbyText,
+        ]),
+    });
+  }
+  return {
+    snapTolerance: r.geometry?.snapTolerance ?? null,
+    nearDistance: r.geometry?.nearDistance ?? null,
+    skipped: r.geometry?.skipped ?? {},
+    segmentsCapped: r.segmentsCapped || r.segments.length > MAX_SEGMENT_ROWS,
+    nodesCapped: r.nodesCapped || r.nodes.length > MAX_NODE_ROWS,
+    insertsCapped: r.insertsCapped || r.inserts.length > MAX_INSERT_ROWS,
+    circuitsCapped: r.circuitsCapped || r.circuits.length > MAX_CIRCUIT_ROWS,
+    error: r.geometryError,
+  };
+}
+
+const TRUNCATED = ' (TRUNCATED at its cap: the drawing has more)';
+
+/**
+ * The auto-table description for a DWG/DXF registry workbook: what each tab
+ * holds and, as plainly, what it does not. A capped tab says TRUNCATED; a
+ * tab that is absent claims nothing.
+ */
+export function dwgTableDescription(ext: string, grids: DwgGrids): string {
+  const has = (name: string) => grids.sheets.some((s) => s.name === name);
+  // Honesty over confidence: a capped registry must not claim "every".
+  const textsClaim = grids.capped
+    ? `Texts holds the annotation strings the registry kept (TRUNCATED at` +
+      ` its cap: the drawing carries more)`
+    : `Texts is every annotation string`;
+  const blocksClaim = has('Blocks')
+    ? ` Blocks has one row per attribute-bearing block with one column per` +
+      ` attribute tag, so tags of the same block stay together (a LineNumber` +
+      ` block's LINENO and CIRCUIT are one row)` +
+      (grids.blocksCapped
+        ? ` (TRUNCATED: the drawing has more blocks or rarer tags than kept).`
+        : `.`)
+    : '';
+  const head =
+    `AutoCAD ${ext.toUpperCase()} model-space registry. Layers counts entities per layer;` +
+    ` ${textsClaim} with its layer and model-space X/Y` +
+    ` (drawing units); Counts totals entities by type.${blocksClaim}`;
+  const g = grids.geometry;
+  if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {
+    const why = g?.error ? ` (the geometry pass failed: ${g.error})` : '';
+    return `${head} Vector geometry beyond text and block positions is not in this table${why}.`;
+  }
+  const tol = g.snapTolerance ?? 0;
+  const parts: string[] = [];
+  if (has('Segments')) {
+    const skipped = Object.entries(g.skipped)
+      .filter(([type]) => type !== 'unreadable')
+      .map(([type, n]) => `${n} ${type}`);
+    parts.push(
+      ` Segments is the pipe geometry: every LINE, each vertex pair of a polyline, and each` +
+        ` ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units). A bulged` +
+        ` polyline segment or an ARC is recorded by its chord, with its true arc Length.` +
+        ` SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments` +
+        (skipped.length ? ` (this drawing has ${skipped.join(', ')} left out)` : '') +
+        `. A segment that another segment ends on is split there, so one handle can be` +
+        ` several rows. Node 1 and Node 2 are Nodes ids; Run numbers the connected runs` +
+        (g.segmentsCapped ? `${TRUNCATED}.` : `.`),
+    );
+  }
+  if (has('Nodes')) {
+    parts.push(
+      ` Nodes is where segment ends meet: ends within ${tol} drawing units are one node,` +
+        ` and lines that only cross, with no end at the crossing, are NOT joined. Degree` +
+        ` counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block` +
+        ` (a pipe end joined to another pipe end through a small block such as a valve or` +
+        ` reducer, named in Block; an end that touches one block keeps Kind end with the` +
+        ` block named)` +
+        (g.nodesCapped ? `${TRUNCATED}.` : `.`),
+    );
+  }
+  if (has('Inserts')) {
+    parts.push(
+      ` Inserts is every block reference, with or without attributes: insertion X/Y,` +
+        ` rotation, scale and the axis-aligned box of the block's own geometry (text left` +
+        ` out); Handle joins it to Blocks` +
+        (g.insertsCapped ? `${TRUNCATED}.` : `.`),
+    );
+  }
+  if (has('Circuits')) {
+    parts.push(
+      ` Circuits has one row per circuit drawn on "Circuit <name>" layers: the -DL,` +
+        ` -Bnn-DL and -Dnn layers are that circuit's deadlegs (Deadleg segments and` +
+        ` length), and -IPn is an injection point with its own row and its Parent. Segments` +
+        ` and Length cover the main layer; Runs, Tees and Ends cover the circuit with its` +
+        ` deadlegs; End points says what each end meets (another layer, a block, or open);` +
+        ` Line numbers are line-number blocks that name the circuit or sit within` +
+        ` ${g.nearDistance ?? 0} drawing units of it, with their handles; Nearby text is` +
+        ` every label that close. This is one drawing: a circuit that continues on another` +
+        ` sheet ends here` +
+        (g.circuitsCapped ? `${TRUNCATED}.` : `.`),
+    );
+  }
+  return head + parts.join('');
 }
 
 /**
@@ -387,8 +693,9 @@ function blocksSheet(r: DwgRender): { sheet: ParsedSheet | null; capped: boolean
 
 /**
  * Registry workbook tabs for the auto-table pass: Layers, Texts (with model
- * coordinates — the geometry phase's feed), Blocks (attribute tags kept
- * together per block), and entity-type Counts.
+ * coordinates), Blocks (attribute tags kept together per block), entity-type
+ * Counts, and the bones: Segments, Nodes, Inserts and (on circuitized
+ * drawings) Circuits.
  */
 export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
   return parseCadToGrids(bytes, 'DWG');

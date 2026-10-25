@@ -49,7 +49,9 @@ Routes (bearer auth on everything except /healthz):
   POST /dwg/render     <raw DWG or DXF bytes> (X-Dwg-Dpi?)
                        -> {ok, dpi, converter, version, entities, capped,
                        layers:[{name,count}], texts:[{text,layer,x,y}],
-                       counts:{TYPE:n}, png_base64} — ONE call parses AND
+                       blocks:[...], counts:{TYPE:n}, segments:[...],
+                       nodes:[...], inserts:[...], circuits:[...],
+                       geometry:{...}, png_base64} — ONE call parses AND
                        rasters an AutoCAD drawing's model space (--dwg-render
                        child, same group-kill discipline). The worker sniffs
                        the bytes: DWG magic (AC1xxx) takes the conversion
@@ -59,7 +61,10 @@ Routes (bearer auth on everything except /healthz):
                        anything else is tried as native DXF (ASCII or binary)
                        and reports converter "none". Everything downstream of
                        DXF is one ezdxf path. The registry half
-                       (layers/texts/counts) rides along because the app
+                       (layers/texts/blocks/counts, and the "bones" from
+                       dwg_bones.py: segments, a snapped network of nodes,
+                       every insert with its box, and per-circuit rows on
+                       `Circuit <name>` layers) rides along because the app
                        process has no DWG/DXF parser of its own — for DWF it
                        parses the container itself and only the pixels come
                        from here.
@@ -69,10 +74,11 @@ Codes: unauthorized, bad_request, blocked_url, no_captions,
 extraction_failed, duration_exceeded, size_exceeded, timeout, busy.
 """
 
+from __future__ import annotations
+
 import base64
 import ipaddress
 import json
-import math
 import hmac
 import os
 import re
@@ -1172,10 +1178,6 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
     max_pixels = 30_000_000
-    max_texts = 20_000
-    max_text_len = 512
-    max_layers = 1_000
-    max_blocks = 20_000
 
     def try_parse(path: str):
         try:
@@ -1235,113 +1237,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             return 1
         converter = "ezdwg"
 
-    msp = doc.modelspace()
-    layer_counts: dict = {}
-    type_counts: dict = {}
-    texts = []
-    blocks = []
-    entities = 0
-    texts_capped = False
-    blocks_capped = False
-    # Every attribute value is also in `texts`; this bounds what `blocks`
-    # adds to the reply, whatever the per-block tag count.
-    max_block_chars = 2_000_000
-    block_chars = 0
-
-    def coord(value):
-        """A model coordinate rounded for the reply, or None. A bare NaN in
-        index.json would make the whole reply unparseable on the app side."""
-        try:
-            v = float(value)
-        except Exception:
-            return None
-        return round(v, 1) if math.isfinite(v) else None
-
-    def add_text(entity, layer: str) -> None:
-        """Harvest one text-bearing entity into `texts` under the shared caps."""
-        nonlocal texts_capped
-        raw = entity.plain_text() if entity.dxftype() == "MTEXT" else entity.dxf.text
-        text = " ".join(str(raw).split())[:max_text_len]
-        if not text:
-            return
-        if len(texts) >= max_texts:
-            texts_capped = True
-            return
-        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
-        texts.append(
-            {
-                "text": text,
-                "layer": layer,
-                "x": coord(point[0]) if point is not None else None,
-                "y": coord(point[1]) if point is not None else None,
-            }
-        )
-
-    for e in msp:
-        entities += 1
-        etype = e.dxftype()
-        type_counts[etype] = type_counts.get(etype, 0) + 1
-        layer = str(getattr(e.dxf, "layer", "") or "")
-        layer_counts[layer] = layer_counts.get(layer, 0) + 1
-        if etype in ("TEXT", "MTEXT"):
-            try:
-                add_text(e, layer)
-            except Exception:
-                continue
-        elif etype == "INSERT":
-            # Block ATTRIBs carry the real content on attribute-driven
-            # drawings (title blocks, circuit/line-number tags) — a top-level
-            # TEXT/MTEXT sweep alone misses hundreds of values per file.
-            # Each attrib also lands in `blocks` keyed by its TAG, one record
-            # per INSERT: on circuitized P&IDs a LineNumber block holds
-            # LINENO and CIRCUIT side by side, and the flat Texts list loses
-            # that pairing (found on a client brain 2026-10-23).
-            attribs: dict = {}
-            for attrib in getattr(e, "attribs", None) or []:
-                try:
-                    type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
-                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
-                    tag = str(getattr(attrib.dxf, "tag", "") or "").strip()
-                    value = " ".join(str(attrib.dxf.text or "").split())[:max_text_len]
-                    if tag and not attribs.get(tag):
-                        attribs[tag] = value
-                except Exception:
-                    continue
-            if any(attribs.values()):
-                size = sum(len(k) + len(v) for k, v in attribs.items())
-                if len(blocks) >= max_blocks or block_chars + size > max_block_chars:
-                    blocks_capped = True
-                else:
-                    try:
-                        point = e.dxf.insert
-                    except Exception:
-                        point = None
-                    block_chars += size
-                    blocks.append(
-                        {
-                            "block": str(getattr(e.dxf, "name", "") or ""),
-                            "layer": layer,
-                            "handle": str(getattr(e.dxf, "handle", "") or ""),
-                            "x": coord(point[0]) if point is not None else None,
-                            "y": coord(point[1]) if point is not None else None,
-                            "attribs": attribs,
-                        }
-                    )
-
-    layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    index = {
-        "converter": converter,
-        "version": doc.dxfversion,
-        "entities": entities,
-        "capped": texts_capped or len(layers) > max_layers,
-        "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
-        "texts": texts,
-        "blocks": blocks,
-        # Its own bit: a blocks cap must not make the app call Texts truncated.
-        "blocks_capped": blocks_capped,
-        "counts": type_counts,
-        "render_error": None,
-    }
+    index = dwg_registry(doc, converter)
 
     png = os.path.join(outdir, "model.png")
 
@@ -1456,6 +1352,169 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
     return 0
+
+
+def dwg_registry(doc, converter) -> dict:
+    """The model-space registry of a parsed ezdxf document: layers, texts,
+    attribute blocks and entity counts, plus the bones (segments, nodes,
+    every insert, circuits; see dwg_bones.py) from the same entity pass.
+    Capped (texts/layers/text length, and a character budget per bones
+    list) so the reply stays a few MB whatever the drawing holds. Its own
+    function so the registry can be tested on a synthetic document without
+    a render."""
+    import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
+
+    max_texts = 20_000
+    max_text_len = 512
+    max_layers = 1_000
+    max_blocks = 20_000
+
+    msp = doc.modelspace()
+    layer_counts: dict = {}
+    type_counts: dict = {}
+    texts = []
+    blocks = []
+    entities = 0
+    texts_capped = False
+    blocks_capped = False
+    # Every attribute value is also in `texts`; this bounds what `blocks`
+    # adds to the reply, whatever the per-block tag count.
+    max_block_chars = 2_000_000
+    block_chars = 0
+
+    # The bones pass (segments, every insert) gathers in this same loop; the
+    # network is built after it. Best effort: a geometry failure is reported
+    # as geometry_error and never costs the registry above it.
+    coord = dwg_bones.coord
+    max_raw_segments = 400_000
+    max_raw_inserts = 200_000
+    seg_raw: list = []
+    insert_raw: list = []
+    box_cache: dict = {}
+    skipped: dict = {}
+    geometry_error = None
+
+    def gather(e, etype: str, layer: str) -> None:
+        nonlocal geometry_error
+        if geometry_error is not None:
+            return
+        try:
+            if etype in dwg_bones.SEGMENT_TYPES:
+                handle = str(getattr(e.dxf, "handle", "") or "")
+                for seg in dwg_bones.entity_segments(e):
+                    seg.update(layer=layer, handle=handle, type=etype)
+                    seg_raw.append(seg)
+            elif etype == "INSERT":
+                rec = dwg_bones.insert_record(e, doc, box_cache)
+                rec["layer"] = layer
+                insert_raw.append(rec)
+            elif etype in dwg_bones.SKIPPED_CURVES:
+                skipped[etype] = skipped.get(etype, 0) + 1
+        except Exception:  # one odd entity: count it, keep going
+            skipped["unreadable"] = skipped.get("unreadable", 0) + 1
+        if len(seg_raw) > max_raw_segments or len(insert_raw) > max_raw_inserts:
+            # A partial network would show open ends that are not there, so
+            # past this size there is no geometry at all, and it says why.
+            geometry_error = (
+                f"more than {max_raw_segments} segments or {max_raw_inserts} inserts:"
+                " geometry not built"
+            )
+            seg_raw.clear()
+            insert_raw.clear()
+
+    def add_text(entity, layer: str) -> None:
+        """Harvest one text-bearing entity into `texts` under the shared caps."""
+        nonlocal texts_capped
+        raw = entity.plain_text() if entity.dxftype() == "MTEXT" else entity.dxf.text
+        text = " ".join(str(raw).split())[:max_text_len]
+        if not text:
+            return
+        if len(texts) >= max_texts:
+            texts_capped = True
+            return
+        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
+        texts.append(
+            {
+                "text": text,
+                "layer": layer,
+                "x": coord(point[0]) if point is not None else None,
+                "y": coord(point[1]) if point is not None else None,
+            }
+        )
+
+    for e in msp:
+        entities += 1
+        etype = e.dxftype()
+        type_counts[etype] = type_counts.get(etype, 0) + 1
+        layer = str(getattr(e.dxf, "layer", "") or "")
+        layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        gather(e, etype, layer)
+        if etype in ("TEXT", "MTEXT"):
+            try:
+                add_text(e, layer)
+            except Exception:
+                continue
+        elif etype == "INSERT":
+            # Block ATTRIBs carry the real content on attribute-driven
+            # drawings (title blocks, circuit/line-number tags) — a top-level
+            # TEXT/MTEXT sweep alone misses hundreds of values per file.
+            # Each attrib also lands in `blocks` keyed by its TAG, one record
+            # per INSERT: on circuitized P&IDs a LineNumber block holds
+            # LINENO and CIRCUIT side by side, and the flat Texts list loses
+            # that pairing (found on a client brain 2026-10-23).
+            attribs: dict = {}
+            for attrib in getattr(e, "attribs", None) or []:
+                try:
+                    type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
+                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
+                    tag = str(getattr(attrib.dxf, "tag", "") or "").strip()
+                    value = " ".join(str(attrib.dxf.text or "").split())[:max_text_len]
+                    if tag and not attribs.get(tag):
+                        attribs[tag] = value
+                except Exception:
+                    continue
+            if any(attribs.values()):
+                size = sum(len(k) + len(v) for k, v in attribs.items())
+                if len(blocks) >= max_blocks or block_chars + size > max_block_chars:
+                    blocks_capped = True
+                else:
+                    try:
+                        point = e.dxf.insert
+                    except Exception:
+                        point = None
+                    block_chars += size
+                    blocks.append(
+                        {
+                            "block": str(getattr(e.dxf, "name", "") or ""),
+                            "layer": layer,
+                            "handle": str(getattr(e.dxf, "handle", "") or ""),
+                            "x": coord(point[0]) if point is not None else None,
+                            "y": coord(point[1]) if point is not None else None,
+                            "attribs": attribs,
+                        }
+                    )
+
+    layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    index = {
+        "converter": converter,
+        "version": doc.dxfversion,
+        "entities": entities,
+        "capped": texts_capped or len(layers) > max_layers,
+        "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
+        "texts": texts,
+        "blocks": blocks,
+        # Its own bit: a blocks cap must not make the app call Texts truncated.
+        "blocks_capped": blocks_capped,
+        "counts": type_counts,
+        "render_error": None,
+    }
+    if geometry_error is None:
+        try:
+            index.update(dwg_bones.geometry_index(seg_raw, insert_raw, texts, blocks, skipped))
+        except Exception as err:
+            geometry_error = f"{type(err).__name__}: {err}"[:500]
+    index["geometry_error"] = geometry_error
+    return index
 
 
 def pick_output(tmp: str, prefix: str) -> str | None:

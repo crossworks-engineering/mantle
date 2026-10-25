@@ -1,8 +1,9 @@
 # CI build-check — validate a change BEFORE it can reach a deploy.
 #
 # Runs typecheck + lint (ESLint) + format check (Prettier) + the architecture
-# counts + the full vitest suite (and the write-path cells again with the
-# actor check off, on, and with the edit check on) + the server/web PRODUCTION
+# counts + the media sidecar's Python tests + the full vitest suite (and the
+# write-path cells again with the actor check off, on, and with the edit
+# check on) + the server/web PRODUCTION
 # build (the edge-runtime / webpack gate that
 # tsc + vitest miss — see docs/deploy-preflight). This is the durable
 # replacement for building locally or on a worktree: the build runs OFF your
@@ -97,6 +98,18 @@ jobs:
       # its pin, fails. Static, a few seconds.
       - name: Architecture counts
         run: pnpm arch:check
+
+      # The media sidecar's DWG bones (infra/media-sidecar/dwg_bones.py): the
+      # network and circuit rules, and the registry on synthetic DXF files
+      # the test writes itself. Same ezdxf pin as the media image; the env
+      # makes a missing ezdxf a failure here instead of a skip. Seconds.
+      - name: Media sidecar tests
+        env:
+          MEDIA_TESTS_REQUIRE_EZDXF: '1'
+        run: |
+          python3 -m venv /tmp/media-venv
+          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.4"
+          /tmp/media-venv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
 
       # Boot every server process the way the image does (each compose
       # service's own command, through tsx) up to the point where its import

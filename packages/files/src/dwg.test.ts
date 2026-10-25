@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   dwgRenderDpi,
+  dwgTableDescription,
   explainDwgImageMiss,
   extractDwgImages,
   parseDwg,
@@ -328,6 +329,428 @@ describe('parseDwgToGrids', () => {
       const grids = await parseDwgToGrids(dwgFixture(7));
       expect(grids.capped).toBe(true);
       expect(grids.sheets.length).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+/** The bones half of a reply (dwg_bones.py), on the 90-xx decoy series. */
+function bonesReply(extra: Record<string, unknown> = {}) {
+  const main = 'Circuit 90000-030-01';
+  return {
+    ...sidecarReply(),
+    segments: [
+      {
+        layer: main,
+        handle: '7A1',
+        type: 'LINE',
+        part: 0,
+        x1: 0,
+        y1: 0,
+        x2: 40,
+        y2: 0,
+        length: 40,
+        n1: 1,
+        n2: 2,
+        run: 1,
+      },
+      {
+        layer: main,
+        handle: '7A1',
+        type: 'LINE',
+        part: 0,
+        x1: 40,
+        y1: 0,
+        x2: 100,
+        y2: 0,
+        length: 60,
+        n1: 2,
+        n2: 3,
+        run: 1,
+      },
+      {
+        layer: `${main}-DL`,
+        handle: '7A2',
+        type: 'LWPOLYLINE',
+        part: 1,
+        x1: 40,
+        y1: 0,
+        x2: 40,
+        y2: -30,
+        length: 30,
+        n1: 2,
+        n2: 4,
+        run: 1,
+      },
+    ],
+    nodes: [
+      { id: 1, x: 0, y: 0, degree: 1, kind: 'end', block: '', block_handle: '', layers: main },
+      {
+        id: 2,
+        x: 40,
+        y: 0,
+        degree: 3,
+        kind: 'tee',
+        block: '',
+        block_handle: '',
+        layers: `${main}; ${main}-DL`,
+      },
+      {
+        id: 3,
+        x: 100,
+        y: 0,
+        degree: 1,
+        kind: 'block',
+        block: 'GATE_VALVE',
+        block_handle: '7B1',
+        layers: main,
+      },
+      {
+        id: 4,
+        x: 40,
+        y: -30,
+        degree: 1,
+        kind: 'end',
+        block: '',
+        block_handle: '',
+        layers: `${main}-DL`,
+      },
+    ],
+    inserts: [
+      {
+        block: 'GATE_VALVE',
+        layer: 'VALVES',
+        handle: '7B1',
+        x: 100,
+        y: 0,
+        rotation: 0,
+        sx: 1,
+        sy: 1,
+        minx: 100,
+        miny: -1,
+        maxx: 102,
+        maxy: 1,
+        attribs: 0,
+      },
+      {
+        block: 'LineNumber',
+        layer: 'TAGS',
+        handle: '7B2',
+        x: 20,
+        y: 2,
+        rotation: 0,
+        sx: 1,
+        sy: 1,
+        minx: null,
+        miny: null,
+        maxx: null,
+        maxy: null,
+        attribs: 2,
+      },
+    ],
+    circuits: [
+      {
+        circuit: '90000-030-01',
+        parent: '',
+        kind: 'circuit',
+        layers: `${main}; ${main}-DL`,
+        entities: 1,
+        segments: 2,
+        length: 100,
+        deadleg_segments: 1,
+        deadleg_length: 30,
+        runs: 1,
+        tees: 1,
+        ends: 3,
+        end_points: '#1 (0.0, 0.0) open; #4 (40.0, -30.0) open',
+        line_numbers: 'N90030-10-6 [7B2]',
+        nearby_text: 'N90030-10-6; DN150',
+      },
+    ],
+    geometry: {
+      snap_tolerance: 0.0213,
+      near_distance: 1.06,
+      extent_diagonal: 106.3,
+      segments: 3,
+      nodes: 4,
+      node_kinds: { end: 2, tee: 1, block: 1 },
+      inserts: 2,
+      runs: 1,
+      circuits: 1,
+      skipped: { SPLINE: 2 },
+    },
+    segments_capped: false,
+    nodes_capped: false,
+    inserts_capped: false,
+    circuits_capped: false,
+    geometry_error: null,
+    ...extra,
+  };
+}
+
+describe('the bones tabs', () => {
+  it('adds Segments, Nodes, Inserts and Circuits after the registry tabs', async () => {
+    stubSidecar(bonesReply());
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(30));
+      // The registry tabs keep their names, order and columns.
+      expect(grids.sheets.map((g) => g.name)).toEqual([
+        'Layers',
+        'Texts',
+        'Counts',
+        'Segments',
+        'Nodes',
+        'Inserts',
+        'Circuits',
+      ]);
+      const texts = grids.sheets.find((g) => g.name === 'Texts')!;
+      expect(texts.columns.map((c) => c.name)).toEqual(['Text', 'Layer', 'X', 'Y']);
+
+      const segments = grids.sheets.find((g) => g.name === 'Segments')!;
+      expect(segments.columns.map((c) => c.name)).toEqual([
+        'Layer',
+        'Handle',
+        'Type',
+        'Part',
+        'X1',
+        'Y1',
+        'X2',
+        'Y2',
+        'Length',
+        'Node 1',
+        'Node 2',
+        'Run',
+      ]);
+      // A header split by a tee: two rows, one handle.
+      expect(segments.rows.filter((r) => r[1] === '7A1')).toHaveLength(2);
+      expect(segments.rows[2]).toEqual([
+        'Circuit 90000-030-01-DL',
+        '7A2',
+        'LWPOLYLINE',
+        1,
+        40,
+        0,
+        40,
+        -30,
+        30,
+        2,
+        4,
+        1,
+      ]);
+
+      const nodes = grids.sheets.find((g) => g.name === 'Nodes')!;
+      expect(nodes.columns.map((c) => c.name)).toEqual([
+        'Node',
+        'X',
+        'Y',
+        'Degree',
+        'Kind',
+        'Block',
+        'Block handle',
+        'Layers',
+      ]);
+      expect(nodes.rows[2]).toEqual([
+        3,
+        100,
+        0,
+        1,
+        'block',
+        'GATE_VALVE',
+        '7B1',
+        'Circuit 90000-030-01',
+      ]);
+
+      const inserts = grids.sheets.find((g) => g.name === 'Inserts')!;
+      expect(inserts.columns.map((c) => c.name)).toEqual([
+        'Block',
+        'Layer',
+        'Handle',
+        'X',
+        'Y',
+        'Rotation',
+        'Scale X',
+        'Scale Y',
+        'Min X',
+        'Min Y',
+        'Max X',
+        'Max Y',
+        'Attributes',
+      ]);
+      expect(inserts.rows[1]).toEqual([
+        'LineNumber',
+        'TAGS',
+        '7B2',
+        20,
+        2,
+        0,
+        1,
+        1,
+        null,
+        null,
+        null,
+        null,
+        2,
+      ]);
+
+      const circuits = grids.sheets.find((g) => g.name === 'Circuits')!;
+      expect(circuits.columns.map((c) => c.name)).toEqual([
+        'Circuit',
+        'Parent',
+        'Kind',
+        'Layers',
+        'Entities',
+        'Segments',
+        'Length',
+        'Deadleg segments',
+        'Deadleg length',
+        'Runs',
+        'Tees',
+        'Ends',
+        'End points',
+        'Line numbers',
+        'Nearby text',
+      ]);
+      expect(circuits.rows[0]!.slice(0, 12)).toEqual([
+        '90000-030-01',
+        '',
+        'circuit',
+        'Circuit 90000-030-01; Circuit 90000-030-01-DL',
+        1,
+        2,
+        100,
+        1,
+        30,
+        1,
+        1,
+        3,
+      ]);
+      expect(grids.geometry).toMatchObject({
+        snapTolerance: 0.0213,
+        segmentsCapped: false,
+        circuitsCapped: false,
+        error: null,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('says what each new tab holds and what it does not', async () => {
+    stubSidecar(bonesReply());
+    try {
+      const d = dwgTableDescription('dwg', await parseDwgToGrids(dwgFixture(31)));
+      expect(d).toMatch(/^AutoCAD DWG model-space registry\. Layers counts entities per layer;/);
+      expect(d).toContain('Segments is the pipe geometry');
+      expect(d).toContain('recorded by its chord, with its true arc Length');
+      expect(d).toContain(
+        'SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments',
+      );
+      expect(d).toContain('(this drawing has 2 SPLINE left out)');
+      expect(d).toContain('ends within 0.0213 drawing units are one node');
+      expect(d).toContain('lines that only cross, with no end at the crossing, are NOT joined');
+      expect(d).toContain('Inserts is every block reference, with or without attributes');
+      expect(d).toContain('the -DL, -Bnn-DL and -Dnn layers are that circuit');
+      expect(d).toContain('within 1.06 drawing units');
+      expect(d).not.toContain('TRUNCATED');
+      expect(d).not.toContain(
+        'Vector geometry beyond text and block positions is not in this table',
+      );
+      expect(d).not.toContain('\u2014');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('claims no Circuits on a drawing without circuit layers', async () => {
+    stubSidecar(bonesReply({ circuits: [] }));
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(32));
+      expect(grids.sheets.map((g) => g.name)).not.toContain('Circuits');
+      const d = dwgTableDescription('dxf', grids);
+      expect(d).not.toContain('Circuits has');
+      expect(d).toContain('Segments is the pipe geometry');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('marks only the capped tab TRUNCATED', async () => {
+    stubSidecar(bonesReply({ segments_capped: true }));
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(33));
+      expect(grids.geometry!.segmentsCapped).toBe(true);
+      expect(grids.geometry!.nodesCapped).toBe(false);
+      expect(grids.capped).toBe(false);
+      expect(grids.blocksCapped).toBe(false);
+      const d = dwgTableDescription('dwg', grids);
+      expect(d.match(/TRUNCATED/g)).toHaveLength(1);
+      expect(d).toContain('Run numbers the connected runs (TRUNCATED at its cap');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+    stubSidecar(bonesReply({ circuits_capped: true, nodes_capped: true }));
+    try {
+      const d = dwgTableDescription('dwg', await parseDwgToGrids(dwgFixture(34)));
+      expect(d.match(/TRUNCATED/g)).toHaveLength(2);
+      expect(d).toContain('sheet ends here (TRUNCATED');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps the old wording for a sidecar without geometry, and says why when it failed', async () => {
+    stubSidecar();
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(35));
+      expect(grids.geometry).toBeUndefined();
+      expect(dwgTableDescription('dwg', grids)).toBe(
+        'AutoCAD DWG model-space registry. Layers counts entities per layer; Texts is every' +
+          ' annotation string with its layer and model-space X/Y (drawing units); Counts totals' +
+          ' entities by type. Vector geometry beyond text and block positions is not in this table.',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+    stubSidecar({
+      ...sidecarReply(),
+      geometry_error: 'more than 400000 segments: geometry not built',
+    });
+    try {
+      const grids = await parseDwgToGrids(dwgFixture(36));
+      expect(grids.sheets.map((g) => g.name)).toEqual(['Layers', 'Texts', 'Counts']);
+      expect(dwgTableDescription('dwg', grids)).toContain(
+        'is not in this table (the geometry pass failed: more than 400000 segments',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reads a non-number coordinate as null and lists circuits in the digest', async () => {
+    const reply = bonesReply();
+    reply.segments[0] = { ...reply.segments[0]!, x1: 'NaN' as unknown as number };
+    stubSidecar(reply);
+    try {
+      const bytes = dwgFixture(37);
+      const grids = await parseDwgToGrids(bytes);
+      const segments = grids.sheets.find((g) => g.name === 'Segments')!;
+      expect(segments.rows[0]![4]).toBeNull();
+      const digest = await parseDwg(bytes);
+      expect(digest).toContain(
+        'Geometry: 3 segments, 4 nodes (2 ends, 0 joints, 1 tees, 1 block joins), 1 runs, 2 inserts.',
+      );
+      expect(digest).toContain(
+        'Circuit 90000-030-01: 2 segments (100 long), 1 deadleg segments (30), 1 run, 1 tee, 3 ends; line numbers N90030-10-6 [7B2]',
+      );
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();

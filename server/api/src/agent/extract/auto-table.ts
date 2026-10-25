@@ -124,11 +124,12 @@ export async function maybeAutoTableSpreadsheet(
           ` per row in Sheets for measurements.`;
       }
     } else if (fileExt === 'dwg' || fileExt === 'dxf') {
-      // DWG/DXF drawings: the registry workbook (Layers / Texts / Counts
-      // tabs) from @mantle/files/{dwg,dxf} — sidecar-parsed, so this pass
-      // shares the one memoised exchange with the text digest and the image
-      // pass. Texts keeps model coordinates: on drawings with no DIMENSION
-      // entities (the bake-off norm) the text layer IS the annotation data.
+      // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks /
+      // Counts, and the bones: Segments / Nodes / Inserts / Circuits) from
+      // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
+      // memoised exchange with the text digest and the image pass. The
+      // description says what each tab holds and what it does not.
+      const { dwgTableDescription } = await import('@mantle/files/dwg');
       let grids: import('@mantle/files/dwg').DwgGrids;
       if (fileExt === 'dwg') {
         const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
@@ -142,26 +143,7 @@ export async function maybeAutoTableSpreadsheet(
           : { sheets: [], capped: false };
       }
       sheets = grids.sheets;
-      if (sheets.length > 0) {
-        // Honesty over confidence: a capped registry must not claim "every".
-        const textsClaim = grids.capped
-          ? `Texts holds the annotation strings the registry kept (TRUNCATED at` +
-            ` its cap — the drawing carries more)`
-          : `Texts is every annotation string`;
-        const blocksClaim = sheets.some((s) => s.name === 'Blocks')
-          ? ` Blocks has one row per attribute-bearing block with one column per` +
-            ` attribute tag, so tags of the same block stay together (a LineNumber` +
-            ` block's LINENO and CIRCUIT are one row)` +
-            (grids.blocksCapped
-              ? ` (TRUNCATED: the drawing has more blocks or rarer tags than kept).`
-              : `.`)
-          : '';
-        description =
-          `AutoCAD ${fileExt.toUpperCase()} model-space registry. Layers counts entities per layer;` +
-          ` ${textsClaim} with its layer and model-space X/Y` +
-          ` (drawing units); Counts totals entities by type.${blocksClaim} Vector geometry` +
-          ` beyond text and block positions is not in this table.`;
-      }
+      if (sheets.length > 0) description = dwgTableDescription(fileExt, grids);
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
