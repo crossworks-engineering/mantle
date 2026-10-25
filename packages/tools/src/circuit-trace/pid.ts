@@ -26,12 +26,15 @@ export const PID_LINES = 20;
 const CIRCUIT_ID = 24;
 /** A page's name in the set: its sheet's name, kept short. */
 const PAGE_TITLE = 60;
-const clipTitle = (t: string) => (t.length > PAGE_TITLE ? `${t.slice(0, PAGE_TITLE - 3)}...` : t);
+const clipTitle = (t: string) => clipTo(t, PAGE_TITLE);
 
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 /** Register text echoed into limits and guesses is cut to this length. */
 const ECHO_MAX = 40;
-export const clip = (t: string) => (t.length > ECHO_MAX ? `${t.slice(0, ECHO_MAX - 3)}...` : t);
+/** Text cut to `max` characters, the cut said with three dots. */
+export const clipTo = (t: string, max: number) =>
+  t.length > max ? `${t.slice(0, max - 3)}...` : t;
+export const clip = (t: string) => clipTo(t, ECHO_MAX);
 /** The legend's names for the line weights: the main line, and every other
  *  line of the circuit (a branch or a deadleg of a process circuit is a
  *  process line, never a utility line). */
@@ -1231,7 +1234,7 @@ export function buildPid(
       },
       ...sheetData.map(({ page, title, sheet, data }) => ({
         id: page.key,
-        title,
+        title: clipTitle(title),
         data: {
           title: `${head}: ${title}`.slice(0, 80),
           description: (page.context

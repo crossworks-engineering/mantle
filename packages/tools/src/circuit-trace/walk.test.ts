@@ -768,6 +768,17 @@ describe('the drawing set: past the budget it splits, never cuts', () => {
     expect(r.limits.join(' ')).not.toMatch(/past six|left off|no page/);
   });
 
+  it('a long sheet name keeps every page title within the template', () => {
+    const s = valvedHeader(6, 7);
+    s.title = `PID-${'X'.repeat(80)}`;
+    const r = traceCircuit(C, [s]);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    expect(set.pages.length).toBeGreaterThan(2);
+    for (const p of set.pages) expect(p.title.length).toBeLessThanOrEqual(60);
+  });
+
   it('a busy sheet: every deadleg on exactly one page, each page in budget, the set valid', () => {
     const r = traceCircuit(C, [valvedHeader(6, 7)]);
     const v = validate('pid', r.pid);
