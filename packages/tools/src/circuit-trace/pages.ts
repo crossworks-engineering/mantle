@@ -26,7 +26,10 @@
  * leaves a line off its page, its marker goes; a detail page off it that
  * is still to be split takes the line as its own (the line is then on
  * that page, not left), one already split keeps it as context with no
- * origin (the line is drawn there only).
+ * origin (the line is drawn there only) and stays linked from the drawing:
+ * a marker on the nearest line above it that the page keeps, else on a
+ * free line of a page linked that way before it (a chain), focused on its
+ * line. Only when none is free is it reached from the page bar alone.
  *
  * A parent loop (a line that is, through its parents, its own parent) has
  * no root: each line on it is read as a root, so none drops out.
@@ -43,8 +46,9 @@ export type SplitPage<T> = {
   origin?: string;
 };
 
-/** A marker on `on`, on page `page`: `items` moved to page `to`. */
-export type SplitMarker<T> = { page: string; on: T; to: string; items: T[] };
+/** A marker on `on`, on page `page`: `items` moved to page `to`, where
+ *  `focus` (else `on`) is drawn. */
+export type SplitMarker<T> = { page: string; on: T; to: string; items: T[]; focus?: T };
 
 export type SplitRules<T> = {
   /** The item a line hangs off, if it hangs off one. */
@@ -171,6 +175,7 @@ export function splitPages<T>(
     /** Lines of this page now drawn on page `to` (or on none): their
      *  markers and the detail pages hanging off them follow. Returns the
      *  lines a detail page took as its own. */
+    const orphans: SplitPage<T>[] = [];
     const follow = (gone: Set<T>, to: string | undefined): Set<T> => {
       const taken = new Set<T>();
       for (let i = markers.length - 1; i >= 0; i--) {
@@ -189,7 +194,10 @@ export function splitPages<T>(
           delete d.context;
           delete d.origin;
           taken.add(line);
-        } else delete d.origin;
+        } else {
+          delete d.origin;
+          orphans.push(d);
+        }
       }
       return taken;
     };
@@ -333,6 +341,34 @@ export function splitPages<T>(
     page.items = page.items.filter((t) => kept.has(t));
     const taken = follow(new Set(gone), undefined);
     left.push(...gone.filter((t) => !taken.has(t)));
+    // A detail page already made off a line the cap left off: a marker
+    // still leads there, from the nearest line above it this page keeps,
+    // else from a free line of a page linked this way before it (a chain).
+    const hosts = new Set(page.items);
+    if (page.context !== undefined) hosts.add(page.context);
+    const busy = (k: string, t: T) => markers.some((mk) => mk.page === k && mk.on === t);
+    const chain: SplitPage<T>[] = [];
+    for (const d of orphans) {
+      const line = d.context!;
+      let host: { page: string; on: T } | undefined;
+      const seen = new Set<T>();
+      for (let up = rules.parentOf(line); up !== undefined && !seen.has(up);) {
+        seen.add(up);
+        if (hosts.has(up)) {
+          if (!busy(page.key, up)) host = { page: page.key, on: up };
+          break;
+        }
+        up = rules.parentOf(up);
+      }
+      for (let i = chain.length - 1; !host && i >= 0; i--) {
+        const c = chain[i]!;
+        const free = [c.context!, ...c.items].find((t) => !busy(c.key, t));
+        if (free !== undefined) host = { page: c.key, on: free };
+      }
+      if (!host) continue;
+      markers.push({ ...host, to: d.key, items: [line, ...d.items], focus: line });
+      chain.push(d);
+    }
     if (!page.items.length && !page.context) {
       // Nothing of it fits: no page, and nothing links to one.
       pages.pop();

@@ -876,7 +876,11 @@ export function buildPid(
       }
       for (const mk of split.markers) {
         const m = markersOn.get(mk.page) ?? new Map();
-        m.set(mk.on, { text: countText(mk.items, 0), page: mk.to, focus: mk.on.id });
+        m.set(mk.on, {
+          text: countText(mk.items, 0),
+          page: mk.to,
+          focus: (mk.focus ?? mk.on).id,
+        });
         markersOn.set(mk.page, m);
       }
     });
@@ -929,6 +933,18 @@ export function buildPid(
     said.add(text);
     limits.push(text);
   };
+  // A detail page no marker leads to (the page cap left its line on no
+  // page and no line above it free for one) is reached from the page bar
+  // only: said, so it is not taken for lost.
+  const linkedTo = new Set(
+    [...markersOn.values(), ovMarkers].flatMap((m) => [...m.values()].map((x) => x.page)),
+  );
+  for (const { page, title } of pages) {
+    if (page.context && !linkedTo.has(page.key))
+      once(
+        `${title}: at the page cap no line on the drawing links to this detail page; it is reached from the page bar.`,
+      );
+  }
   type Mark = 'link' | 'inferred' | 'near';
   /** The guess kinds drawn on each page, and on the whole set. */
   const marksOf = new Map<string, Set<Mark>>();

@@ -252,6 +252,32 @@ describe('splitPages', () => {
     everyOnce(r, items);
   });
 
+  it('at the cap, a detail page already made off a dropped line stays linked from the drawing', () => {
+    // A line X off a root, six lines off X, one line off each of those.
+    const r0 = line('R');
+    const x = line('X', r0);
+    const ks = [0, 1, 2, 3, 4, 5].map((i) => line(`k${i}`, x));
+    const items = [r0, x, ...ks.flatMap((k) => [k, line(`g${k.id.slice(1)}`, k)])];
+    const r = split(items, 3, 31, 3);
+    expect(r.capped).toBe(true);
+    // The detail pages of the lines the cap left off X's page still have
+    // a marker that leads to them, focused on their line.
+    const orphans = r.pages.filter((p) => p.context && p.origin === undefined);
+    expect(orphans.length).toBeGreaterThan(0);
+    for (const p of orphans) {
+      const mk = r.markers.find((m) => m.to === p.key);
+      expect(mk, p.key).toBeDefined();
+      expect(mk!.focus).toBe(p.context);
+    }
+    for (const p of r.pages.filter((q) => q.context))
+      expect(
+        r.markers.some((m) => m.to === p.key),
+        p.key,
+      ).toBe(true);
+    expect(linked(r)).toEqual([]);
+    everyOnce(r, items);
+  });
+
   it('fuzzed trees and budgets: every item once, every link holds, the cap holds', () => {
     let seed = 12345;
     const rnd = () => {
