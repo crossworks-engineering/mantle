@@ -119,7 +119,7 @@ const tree = (branches: number, sub: number, dl: number) => {
     }
   }
   const end = at((branches + 1) * 1000, 0, 'end', 1, [M]);
-  segments.push(sg(M, `H${h++}`, branches * 1000, 0, (branches + 1) * 1000, 0, prev, end));
+  segments.push(sg(M, `H${h}`, branches * 1000, 0, (branches + 1) * 1000, 0, prev, end));
   return sheet({
     circuitLayers: [M, DLL],
     segments,
