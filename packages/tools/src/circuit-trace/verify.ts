@@ -5,18 +5,30 @@
  * every answer with its evidence in the sheet's Checks tab
  * (./checks-store.ts).
  *
+ * Nothing is spent on what could not be kept: before the first vision
+ * request every sheet is asked whether its answers can be filed (the
+ * caller's edit right on its table, a writable table with no draft, a crop
+ * folder it may create in) and whether its table still matches the
+ * drawing's bytes (a file replaced in place keeps old geometry until
+ * dwg-reindex). A sheet that fails either is not asked, said in
+ * `not_asked`; a call where no sheet passes is refused.
+ *
  * Every outside effect comes through `deps`, so the test runs the whole
  * flow with a fake sidecar, model and store: no test ever calls a model.
  * Spends only when called: nothing here runs on its own.
  */
+import { createHash } from 'node:crypto';
 import type { DwgCrops, MediaResult } from '@mantle/files';
-import type { VisionExtractResult, VisionImage } from '@mantle/voice';
+import type { ImagesResult, VisionImage } from '@mantle/voice';
 import {
   batchesFor,
   cropSpecFor,
+  currentAnswer,
+  latestBySheet,
   promptFor,
   parseAnswers,
   questionsFor,
+  quoted,
   TRUST,
   VERIFY_MAX,
   type CheckKind,
@@ -30,8 +42,6 @@ export type VerifyWorker = {
   slug: string;
   provider: string;
   model: string;
-  /** The drawing-check worker was missing: the default vision worker ran. */
-  fellBack: boolean;
 };
 
 /** One answered question, with its evidence. */
@@ -54,13 +64,16 @@ export type VerifyDeps = {
     bytes: Buffer,
     spec: import('@mantle/files').DwgCropSpec,
   ) => Promise<MediaResult<DwgCrops>>;
-  /** The drawing-check worker (or the default vision worker). */
+  /** The owner's default vision worker. */
   worker: (
     ownerId: string,
   ) => Promise<
     { ok: true; worker: VerifyWorker; multiImage: boolean } | { ok: false; error: string }
   >;
-  ask: (images: VisionImage[], prompt: string) => Promise<VisionExtractResult>;
+  ask: (images: VisionImage[], prompt: string) => Promise<ImagesResult>;
+  /** Why this caller could not file answers about the sheet (null: it
+   *  can). Asked before any vision request. */
+  storable: (ownerId: string, sheet: SheetInput) => Promise<string | null>;
   /** File one sheet's answers (crops and Checks rows); the count stored,
    *  or why not. */
   store: (
@@ -80,9 +93,30 @@ export type VerifyInput = {
   kinds?: CheckKind[];
   maxQuestions?: number;
   dryRun?: boolean;
+  /** Ask again guesses already answered at the drawing's current revision. */
+  recheck?: boolean;
 };
 
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const plural = (n: number, w: string) =>
+  `${n} ${w}${n === 1 ? '' : /(s|sh|ch|x)$/.test(w) ? 'es' : 's'}`;
+const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+
+/** The command that rebuilds one drawing's table from its file now. */
+const reindexHint = (fileId: string | null) =>
+  `pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply`;
+
+/** Why a sheet's table no longer matches its drawing, or null. */
+function sourceRefusal(s: SheetInput): string | null {
+  if (s.source === 'stale')
+    return `its drawing file was replaced after its table was built, so the table's geometry is an older revision; an owner rebuilds it with \`${reindexHint(s.sourceFileId)}\` (no model pass), then call again`;
+  if (s.source !== 'current')
+    return `its table was imported before tables recorded which revision of the drawing they hold, so an answer could be filed under the wrong revision; an owner rebuilds it with \`${reindexHint(s.sourceFileId)}\` (no model pass), then call again`;
+  return null;
+}
+
+/** A thrown provider timeout (providerFetch's TimeoutError). */
+const isTimeout = (err: unknown) =>
+  err instanceof Error && (err.name === 'TimeoutError' || /timed out/i.test(err.message));
 
 export async function verifyCircuit(
   ownerId: string,
@@ -94,41 +128,85 @@ export async function verifyCircuit(
   const limits = [...read.limits];
   const roles = new Map<string, ChainRole>();
   const trace = traceCircuit(circuit, read.sheets, input.register, { roles });
-  const { questions, left } = questionsFor(trace.sheets, trace.links, read.sheets, {
+  // Guesses already answered (sealed, this revision, the same question)
+  // are not asked again unless `recheck`.
+  const { latest } = latestBySheet(read.sheets);
+  const {
+    questions: picked,
+    left,
+    answered,
+  } = questionsFor(trace.sheets, trace.links, read.sheets, {
     kinds: input.kinds,
     max: input.maxQuestions,
+    ...(input.recheck ? {} : { answered: (q) => currentAnswer(latest, q) !== undefined }),
   });
-  if (left) {
+  if (answered) {
     limits.push(
-      `${plural(left, 'more guess')} past max_questions were not asked; call again with kinds to pick which.`,
+      `${plural(answered, 'guess')} already answered at this revision of the drawing ${answered === 1 ? 'was' : 'were'} not asked again (circuit_trace shows the answers; recheck: true asks again).`,
     );
   }
-  const listed = questions.map((q) => ({
-    id: q.id,
-    sheet: q.sheet,
-    kind: q.kind,
-    ...(q.node !== null ? { node: q.node } : {}),
-    guess: q.guess,
-    question: q.question,
-  }));
-  if (!questions.length) {
+  if (left) {
+    limits.push(
+      `${plural(left, 'more guess')} past max_questions ${left === 1 ? 'was' : 'were'} not asked; call again (answered guesses are skipped, so the next call reaches them), or pick with kinds.`,
+    );
+  }
+  const listed = (qs: readonly CheckQuestion[]) =>
+    qs.map((q) => ({
+      id: q.id,
+      sheet: q.sheet,
+      kind: q.kind,
+      ...(q.node !== null ? { node: q.node } : {}),
+      guess: q.guess,
+      question: q.question,
+    }));
+  if (!picked.length) {
     return {
       ok: true,
       output: {
-        summary: `Circuit ${circuit}: no guess the image check asks about${trace.sheets.length ? '' : ' (no readable drawing has this circuit)'}; nothing was spent.`,
+        summary: `Circuit ${circuit}: no ${answered ? 'unanswered ' : ''}guess the image check asks about${trace.sheets.length ? '' : ' (no readable drawing has this circuit)'}; nothing was spent.`,
         questions: [],
         limits: [...limits, ...trace.limits],
       },
     };
   }
+
+  // Before any spend: can each sheet's answers be kept, and is its table
+  // still the drawing's current revision?
+  const inputOf = new Map(read.sheets.map((s) => [s.tableId, s]));
+  const notAsked: { id: string; why: string }[] = [];
+  const refused = new Map<string, string>();
+  for (const tableId of new Set(picked.map((q) => q.tableId))) {
+    const sin = inputOf.get(tableId)!;
+    const why =
+      sourceRefusal(sin) ??
+      (await deps.storable(ownerId, sin).catch(
+        (err: unknown) =>
+          `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
+      ));
+    if (why) refused.set(tableId, why);
+  }
+  for (const q of picked) {
+    const why = refused.get(q.tableId);
+    if (why) notAsked.push({ id: q.id, why });
+  }
+  const questions = picked.filter((q) => !refused.has(q.tableId));
+  const refusedLines = [...refused].map(([id, why]) => `${inputOf.get(id)!.title}: ${why}`);
+
   if (input.dryRun) {
     return {
       ok: true,
       output: {
-        summary: `Circuit ${circuit}: ${plural(questions.length, 'question')} would be asked on ${plural(new Set(questions.map((q) => q.tableId)).size, 'sheet')} (dry run: nothing cropped, nothing spent).`,
-        questions: listed,
+        summary: `Circuit ${circuit}: ${plural(questions.length, 'question')} would be asked on ${plural(new Set(questions.map((q) => q.tableId)).size, 'sheet')}${notAsked.length ? `; ${notAsked.length} could not be (see not_asked)` : ''} (dry run: nothing cropped, nothing spent).`,
+        questions: listed(picked),
+        ...(notAsked.length ? { not_asked: notAsked } : {}),
         limits,
       },
+    };
+  }
+  if (!questions.length) {
+    return {
+      ok: false,
+      error: `circuit_verify asked nothing and spent nothing: no sheet of circuit ${circuit} can be checked now. ${refusedLines.join(' ')} Use dry_run to list the questions.`,
     };
   }
 
@@ -138,24 +216,19 @@ export async function verifyCircuit(
   if (!resolved.multiImage) {
     return {
       ok: false,
-      error: `circuit_verify sends several crops in one request, which the '${worker.provider}' provider of vision worker '${worker.slug}' does not take here. Point the drawing-check worker (or the default vision worker) at an openrouter model in Settings > AI workers, then call again.`,
+      error: `circuit_verify sends several crops in one request, which the '${worker.provider}' provider of the default vision worker '${worker.slug}' does not take here. Point the default vision worker at an OpenRouter model in Settings > AI workers, then call again.`,
     };
-  }
-  if (worker.fellBack) {
-    limits.push(
-      `no enabled drawing-check worker: the default vision worker '${worker.slug}' (${worker.model}) answered; an owner can add the drawing-check worker from Settings > Config.`,
-    );
   }
 
   const answers: CheckAnswer[] = [];
-  const notAsked: { id: string; why: string }[] = [];
   const overviews = new Map<string, Buffer | null>();
   let cropsUsed = 0;
   let requests = 0;
+  let timedOut = 0;
+  let cutOff = 0;
   // What the replies said they used, for the result only (the spend itself
   // is recorded by the vision call, @mantle/voice vision-images.ts).
   const usage = { tokensIn: 0, tokensOut: 0 };
-  const inputOf = new Map(read.sheets.map((s) => [s.tableId, s]));
   const sheetOrder = [...new Set(questions.map((q) => q.tableId))];
 
   for (const tableId of sheetOrder) {
@@ -182,7 +255,21 @@ export async function verifyCircuit(
       skip('the drawing file could not be read');
       continue;
     }
-    const cropped = await deps.crop(bytes, cropSpecFor(sheet, sin, qs, roles));
+    // The bytes cropped must be the revision the table holds (a file
+    // replaced since the read is caught here, before any spend).
+    if (sin.sourceSha && sha256(bytes) !== sin.sourceSha) {
+      skip(
+        sourceRefusal({ ...sin, source: 'stale' }) ?? 'the drawing changed since its table was built',
+      );
+      continue;
+    }
+    const { spec, cut } = cropSpecFor(sheet, sin, qs, roles);
+    if (cut) {
+      limits.push(
+        `${sin.title}: ${plural(cut, 'segment')} of the traced circuit were left off the crops' overlay (the crop request's size cap, farthest from the questions first); the crops show the drawing there without the trace drawn over it.`,
+      );
+    }
+    const cropped = await deps.crop(bytes, spec);
     if (!cropped.ok) {
       const old = /unknown route/.test(cropped.message);
       skip(
@@ -229,7 +316,7 @@ export async function verifyCircuit(
         images.push({
           bytes: overview,
           mimeType: 'image/png',
-          caption: `Image 1: overview of sheet ${sheet.title}.`,
+          caption: `Image 1: overview of the sheet named ${quoted(sheet.title)}.`,
         });
       let k = images.length + 1;
       for (const { q } of batch.questions) {
@@ -245,22 +332,34 @@ export async function verifyCircuit(
       }
       const prompt = promptFor(batch, overview !== null);
       requests += 1;
-      let reply: VisionExtractResult;
+      let reply: ImagesResult;
       try {
         reply = await deps.ask(images, prompt);
       } catch (err) {
         const msg = err instanceof Error ? err.message.slice(0, 200) : 'error';
-        skip(
-          `the vision request failed (${msg})`,
-          batch.questions.map((b) => b.q),
-        );
+        if (isTimeout(err)) {
+          timedOut += 1;
+          skip(
+            `the vision request timed out (${msg}); the provider may still bill it, and no usage came back to record`,
+            batch.questions.map((b) => b.q),
+          );
+        } else {
+          skip(
+            `the vision request failed (${msg})`,
+            batch.questions.map((b) => b.q),
+          );
+        }
         continue;
       }
       usage.tokensIn += reply.tokensIn ?? 0;
       usage.tokensOut += reply.tokensOut ?? 0;
+      const truncated = reply.finishReason === 'length';
+      const empty = !reply.text.trim();
+      if (truncated || empty) cutOff += 1;
       const parsed = parseAnswers(
         reply.text,
         batch.questions.map((b) => b.q.id),
+        truncated ? 'cut' : empty ? 'empty' : undefined,
       );
       for (const { q } of batch.questions) {
         const a = parsed.get(q.id)!;
@@ -280,6 +379,16 @@ export async function verifyCircuit(
       }
     }
   }
+  if (timedOut) {
+    limits.push(
+      `${plural(timedOut, 'vision request')} timed out: the provider may still bill ${timedOut === 1 ? 'it' : 'them'}, and the brain recorded no spend for ${timedOut === 1 ? 'it' : 'them'} (no usage came back); ${timedOut === 1 ? 'its' : 'their'} questions are in not_asked.`,
+    );
+  }
+  if (cutOff) {
+    limits.push(
+      `${plural(cutOff, 'reply')} came back cut off or empty (the model's token cap): the questions it did not answer are unsure, "model answer cut off"; ask fewer at a time with max_questions.`,
+    );
+  }
 
   // File the answers, sheet by sheet: the evidence stays with the drawing.
   const checkedAt = deps.now().toISOString();
@@ -288,11 +397,6 @@ export async function verifyCircuit(
     const mine = answers.filter((a) => a.q.tableId === tableId);
     if (!mine.length) continue;
     const sin = inputOf.get(tableId)!;
-    if (!sin.revision) {
-      limits.push(
-        `${sin.title}: the drawing's revision could not be read, so its answers are stored but a later circuit_trace will not apply them.`,
-      );
-    }
     const r = await deps
       .store(ownerId, sin, circuit, mine, overviews.get(tableId) ?? null, checkedAt)
       .catch((err: unknown) => ({
@@ -313,7 +417,7 @@ export async function verifyCircuit(
         `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted, ${n('unsure')} unsure` +
         (notAsked.length ? `; ${notAsked.length} not asked (see not_asked)` : '') +
         `. ${stored ? `Stored in the Checks tab of each sheet's table, with the crops.` : 'Nothing was stored.'} A confirmed guess is CHECKED BY IMAGE, never certain.`,
-      worker: { slug: worker.slug, model: worker.model, fell_back: worker.fellBack },
+      worker: { slug: worker.slug, model: worker.model },
       answers: answers.map((a) => ({
         id: a.q.id,
         sheet: a.q.sheet,
@@ -327,7 +431,13 @@ export async function verifyCircuit(
         crops: a.crops.length,
       })),
       ...(notAsked.length ? { not_asked: notAsked } : {}),
-      usage: { requests, crops: cropsUsed, tokens_in: usage.tokensIn, tokens_out: usage.tokensOut },
+      usage: {
+        requests,
+        crops: cropsUsed,
+        tokens_in: usage.tokensIn,
+        tokens_out: usage.tokensOut,
+        ...(timedOut ? { timed_out: timedOut } : {}),
+      },
       limits,
       next: 'circuit_trace now marks these on the drawing: CHECKED BY IMAGE for a confirmed guess; a contradicted or unsure one stays GUESS.',
     },

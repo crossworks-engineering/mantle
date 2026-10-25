@@ -24,8 +24,10 @@ import {
   type NodeRow,
   type SegRow,
   type SheetInput,
+  type SourceState,
   type TextRow,
 } from './walk';
+import { DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
 import { CHECK_COLUMNS, CHECKS_TAB, type StoredCheck } from './check';
 
 /** Tables looked at per call (the newest first). */
@@ -45,15 +47,33 @@ export type CandidateTable = {
   title: string;
   description: string | null;
   sourceFileId: string | null;
-  /** The source file's content hash, cut to REVISION_CHARS: the drawing's
-   *  revision a stored check belongs to. Null when the file is not read. */
+  /** The sha256 of the drawing bytes the table's tabs were built from
+   *  (stamped at import and by dwg-reindex), cut to REVISION_CHARS: the
+   *  revision a stored check belongs to. Null for a table imported before
+   *  the stamp. */
   revision?: string | null;
+  /** The full stamped sha256 (the image check compares the bytes it crops). */
+  sourceSha?: string | null;
+  /** Whether the file still holds those bytes: `stale` when it was replaced
+   *  in place since (the table keeps the old geometry until dwg-reindex),
+   *  `unstamped` when the table predates the stamp. */
+  source?: SourceState;
 };
 
 /** Characters of the file's sha256 kept as its revision. */
 export const REVISION_CHARS = 16;
 /** Checks tab rows of one circuit read per sheet. */
 export const MAX_CHECK_ROWS = 2000;
+
+/** A uuid, as the source file id must be before it is cast (a table whose
+ *  data holds anything else names no file). */
+const UUID_SQL = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+/** The stamp against the file's current bytes. */
+export function sourceStateOf(stamped: string | null, fileSha: string | null): SourceState {
+  if (!stamped) return 'unstamped';
+  return fileSha && fileSha !== stamped ? 'stale' : 'current';
+}
 
 /** The DWG/DXF registry tables the caller's scope reads (auto-imported, the
  *  description the DWG pass writes), newest first. */
@@ -65,10 +85,13 @@ export async function dwgTables(
       id: nodes.id,
       title: nodes.title,
       data: nodes.data,
-      // The source file's hash, read in the caller's scope like the table.
-      sha: sql<
-        string | null
-      >`(select f.data->>'sha256' from ${nodes} f where f.id::text = ${nodes.data}->>'sourceFileId' limit 1)`,
+      // The source file's hash now, read in the caller's scope like the
+      // table: by its primary key (a uuid compare, never a text cast of
+      // every row's id), and only when the stored id is a uuid.
+      fileSha: sql<string | null>`(select f.data->>'sha256' from ${nodes} f
+        where f.id = (case when ${nodes.data}->>'sourceFileId' ~* ${UUID_SQL}
+                           then (${nodes.data}->>'sourceFileId')::uuid end)
+        limit 1)`,
     })
     .from(nodes)
     .where(
@@ -85,12 +108,19 @@ export async function dwgTables(
     more: rows.length > MAX_TABLES,
     tables: rows.slice(0, MAX_TABLES).map((r) => {
       const d = (r.data ?? {}) as Record<string, unknown>;
+      const stamped =
+        typeof d[DWG_SOURCE_SHA_KEY] === 'string' && d[DWG_SOURCE_SHA_KEY]
+          ? (d[DWG_SOURCE_SHA_KEY] as string)
+          : null;
+      const fileSha = typeof r.fileSha === 'string' && r.fileSha ? r.fileSha : null;
       return {
         id: r.id,
         title: r.title,
         description: typeof d.description === 'string' ? d.description : null,
         sourceFileId: typeof d.sourceFileId === 'string' ? d.sourceFileId : null,
-        revision: typeof r.sha === 'string' && r.sha ? r.sha.slice(0, REVISION_CHARS) : null,
+        revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
+        sourceSha: stamped,
+        source: sourceStateOf(stamped, fileSha),
       };
     }),
   };
@@ -530,6 +560,8 @@ export async function readSheet(
       title: t.title,
       sourceFileId: t.sourceFileId,
       revision: t.revision ?? null,
+      sourceSha: t.sourceSha ?? null,
+      source: t.source ?? 'unstamped',
       ...(checks.length ? { checks } : {}),
       url: nodeUrl(t.id),
       circuitLayers: layerNames,

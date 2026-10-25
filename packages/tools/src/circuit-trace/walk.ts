@@ -85,11 +85,19 @@ export type SheetInput = {
   network?: SegRow[];
   /** What the read could not see on this sheet (capped tabs, cut reads). */
   limits: string[];
-  /** The drawing's revision (its file's content hash, cut short), and the
-   *  image check's answers stored in the table's Checks tab (check.ts). */
+  /** The drawing's revision (the sha256 of the bytes its table was built
+   *  from, cut short; null for a table imported before that stamp), and
+   *  the image check's answers stored in the table's Checks tab (check.ts). */
   revision?: string | null;
+  /** The full stamped sha256 the revision is cut from. */
+  sourceSha?: string | null;
+  /** Whether the drawing file still holds the bytes the table was built
+   *  from (read.ts sourceStateOf): `stale` once it was replaced in place. */
+  source?: SourceState;
   checks?: StoredCheck[];
 };
+
+export type SourceState = 'current' | 'stale' | 'unstamped';
 
 export type RegisterLine = { number: string; sheet?: string; deadleg?: boolean };
 export type RegisterInput = {

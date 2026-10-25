@@ -27,9 +27,16 @@ export function endKey(handle: string, x: number, y: number): string {
   return `end:${handle || '?'}@${at(x)},${at(y)}`;
 }
 
-/** A guessed sheet link, keyed by the end it leaves from. */
-export function linkKey(handle: string, x: number, y: number): string {
-  return `link:${handle || '?'}@${at(x)},${at(y)}`;
+/** A guessed sheet link, keyed by the end it leaves from AND the sheet it
+ *  was guessed to continue on: an answer about one target never applies
+ *  after a later upload moves the guess to another sheet. */
+export function linkKey(handle: string, x: number, y: number, target: string): string {
+  const base = `link:${handle || '?'}@${at(x)},${at(y)}>`;
+  const t = target.trim().toUpperCase();
+  const key = base + t;
+  return key.length <= KEY_MAX
+    ? key
+    : `${base}#${createHash('sha1').update(t).digest('hex').slice(0, 20)}`;
 }
 
 /** A valve whose type was read from its block name. */

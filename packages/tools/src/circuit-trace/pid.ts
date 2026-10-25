@@ -25,7 +25,7 @@
 import type { SheetLink, TraceChain, TraceEnd, TraceSheet, TraceValve } from './walk';
 import { clipText, PID_LIMITS, SET_LIMITS } from '@mantle/diagram-templates';
 import { splitPages, type SplitPage } from './pages';
-import { joinKey } from './check-keys';
+import { joinKey, valveKey } from './check-keys';
 
 /** Lines drawn: the guide's budget is 12 labelled process lines; a traced
  *  circuit gets 20 so a few deadlegs fit beside the main run and branches. */
@@ -105,6 +105,8 @@ export type PidChecks = {
   near?: ReadonlyMap<string, Verdict>;
   link?: ReadonlyMap<string, Verdict>;
   joins?: ReadonlyMap<string, Verdict>;
+  /** Per `<tableId>:<valve key>` (check-keys.ts valveKey). */
+  valves?: ReadonlyMap<string, Verdict>;
 };
 export type ChainRole = 'main' | 'branch' | 'deadleg';
 
@@ -1247,6 +1249,23 @@ export function buildPid(
       const contradicted = verdicts.some((v) => v === 'no');
       if (inferred) marks.add('inferred');
       if (confirmed) marks.add('checked');
+      // A valve type the image check answered: said in the line's note
+      // when no join note holds it (a note is one short text; the trace's
+      // `checks` lists every answer either way).
+      const valveVerdicts = pc.edges.flatMap((e) =>
+        e.chain.valves
+          .filter((v) => v.guessed && v.handle)
+          .map((v) => input.checked?.valves?.get(`${e.sheet.tableId}:${valveKey(v.handle)}`))
+          .filter((v): v is Verdict => v === 'yes' || v === 'no'),
+      );
+      const valveNo = valveVerdicts.filter((v) => v === 'no').length;
+      const valveYes = valveVerdicts.length - valveNo;
+      const valveNote = valveNo
+        ? `${valveNo === 1 ? 'VALVE TYPE' : `${valveNo} VALVE TYPES`}${MARK.no}`
+        : valveYes
+          ? `${valveYes === 1 ? 'VALVE TYPE' : `${valveYes} VALVE TYPES`}${MARK.yes}`
+          : '';
+      if (valveYes && !inferred && !confirmed) marks.add('checked');
       const mk = markers.get(pc);
       drawn.push(pc);
       lines.push({
@@ -1267,7 +1286,9 @@ export function buildPid(
                 note:
                   confirmed === 1 ? `INFERRED JOIN${MARK.yes}` : `${confirmed} JOINS${MARK.yes}`,
               }
-            : {}),
+            : valveNote
+              ? { note: valveNote.slice(0, TEXT.note) }
+              : {}),
         from,
         ...(to ? { to } : {}),
         ...(!to && end ? { end } : {}),

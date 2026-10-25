@@ -20,9 +20,9 @@ import {
   type AppliedCheck,
   type CheckKind,
 } from './circuit-trace/check';
-import { storeChecks } from './circuit-trace/checks-store';
+import { storeChecks, storeRefusal } from './circuit-trace/checks-store';
 import { verifyCircuit } from './circuit-trace/verify';
-import { bumpWorkerUsage, getWorkerBySlug, type AiWorker } from '@mantle/db';
+import { bumpWorkerUsage, getDefaultWorker, type AiWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { mediaDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
@@ -121,12 +121,24 @@ export async function readCircuitSheets(
       `${title}: its table could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
     );
   }
+  for (const s of sheets) {
+    if (s.source === 'stale')
+      limits.push(
+        `${s.title}: its drawing file was replaced after its table was built, so this sheet's geometry is the older revision; an owner can rebuild it with ${reindexCommand(s.sourceFileId)}, then trace again.`,
+      );
+  }
   for (const title of preBones) {
     limits.push(
       `${title}: has the circuit's layers but its table predates the geometry tabs; an owner can rebuild it with the dwg-reindex maintenance task.`,
     );
   }
   return { sheets, tables, limits };
+}
+
+/** The maintenance command that rebuilds one drawing's table from its
+ *  file's bytes now (no model pass). */
+export function reindexCommand(fileId: string | null): string {
+  return `\`pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply\``;
 }
 
 /** The applied checks as circuit_trace reports them, with a count line. */
@@ -307,8 +319,15 @@ const circuit_trace: BuiltinToolDef = {
   handler: (input, ctx) => circuitTraceHandler(input, ctx.ownerId),
 };
 
-/** The drawing-check worker's slug (the manifest's job worker). */
-export const DRAWING_CHECK_WORKER = 'drawing-check';
+
+/** A flag the agent may send as a boolean or as its word. */
+export const verifyFlag = (v: unknown) =>
+  v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'true');
+
+/** The reply's token budget, and the part a reasoning model may think with
+ *  (OpenRouter `reasoning.max_tokens`): the answers for 16 questions take
+ *  about 1,500 tokens, so the rest is room for the model's thinking. */
+export const VERIFY_TOKENS = { max: 8000, reasoning: 4000 } as const;
 
 export async function circuitVerifyHandler(
   input: Record<string, unknown>,
@@ -323,12 +342,33 @@ export async function circuitVerifyHandler(
     };
   }
   const { register, cut } = registerOf(input.register);
-  const kinds = Array.isArray(input.kinds)
-    ? input.kinds.filter((k): k is CheckKind => CHECK_KINDS.includes(k as CheckKind))
-    : undefined;
-  const max = Number.isFinite(Number(input.max_questions))
-    ? Number(input.max_questions)
-    : VERIFY_DEFAULT_QUESTIONS;
+  let kinds: CheckKind[] | undefined;
+  if (input.kinds !== undefined && input.kinds !== null) {
+    const given = (Array.isArray(input.kinds) ? input.kinds : [input.kinds]).map((k) =>
+      str(k).trim().toLowerCase(),
+    );
+    kinds = given.filter((k): k is CheckKind => CHECK_KINDS.includes(k as CheckKind));
+    if (given.length && !kinds.length) {
+      return {
+        ok: false,
+        error: `kinds named no kind of guess (got ${given
+          .slice(0, 4)
+          .map((k) => `'${k.slice(0, 20)}'`)
+          .join(', ')}): use any of ${CHECK_KINDS.map((k) => `'${k}'`).join(', ')}, or leave kinds out for all.`,
+      };
+    }
+  }
+  let max = VERIFY_DEFAULT_QUESTIONS;
+  if (input.max_questions !== undefined && input.max_questions !== null) {
+    const n = Number(input.max_questions);
+    if (!Number.isFinite(n) || n < 1) {
+      return {
+        ok: false,
+        error: `max_questions must be a whole number from 1 to ${VERIFY_MAX.questions} (got ${JSON.stringify(input.max_questions).slice(0, 20)}); leave it out for ${VERIFY_DEFAULT_QUESTIONS}, or use dry_run to list the questions without asking.`,
+      };
+    }
+    max = Math.min(Math.floor(n), VERIFY_MAX.questions);
+  }
   // The resolved worker and its key, for the asks of this call only.
   let route: { worker: AiWorker; credential: ProviderCredential } | null = null;
   try {
@@ -339,7 +379,8 @@ export async function circuitVerifyHandler(
         ...(register ? { register } : {}),
         ...(kinds?.length ? { kinds } : {}),
         maxQuestions: max,
-        dryRun: input.dry_run === true,
+        dryRun: verifyFlag(input.dry_run),
+        recheck: verifyFlag(input.recheck),
       },
       {
         readSheets: readCircuitSheets,
@@ -347,53 +388,56 @@ export async function circuitVerifyHandler(
           (await readFileById({ ownerId: owner, fileId }))?.bytes ?? null,
         crop: mediaDwgCrop,
         worker: async (owner) => {
-          const found = await getWorkerBySlug(owner, 'vision', DRAWING_CHECK_WORKER);
-          if (!found) {
+          const w = await getDefaultWorker(owner, 'vision');
+          if (!w) {
             return {
               ok: false,
               error:
-                'No vision worker is set up: add the drawing-check worker from Settings > Config (or any vision worker in Settings > AI workers), then call again.',
+                'No vision worker is set up: add one in Settings > AI workers (an OpenRouter model that reads images), then call again.',
             };
           }
-          const w = found.worker;
           if (!w.apiKeyId) {
             return {
               ok: false,
-              error: `The vision worker '${w.slug}' has no API key attached; attach one in Settings > AI workers, then call again.`,
+              error: `The default vision worker '${w.slug}' has no API key attached; attach one in Settings > AI workers, then call again.`,
             };
           }
           const credential = await getApiKeyById(w.apiKeyId);
           if (!credential) {
             return {
               ok: false,
-              error: `The API key of vision worker '${w.slug}' could not be read; check it in Settings > API keys, then call again.`,
+              error: `The API key of the default vision worker '${w.slug}' could not be read; check it in Settings > API keys, then call again.`,
             };
           }
           route = { worker: w, credential };
           return {
             ok: true,
-            worker: {
-              slug: w.slug,
-              provider: w.provider,
-              model: w.model,
-              fellBack: found.fellBack,
-            },
+            worker: { slug: w.slug, provider: w.provider, model: w.model },
             multiImage: multiImageProvider(w.provider),
           };
         },
         ask: async (images, prompt) => {
           const { worker, credential } = route!;
-          const r = await extractImages(worker.provider, images, {
-            ...credential,
-            mimeType: 'image/png',
-            prompt,
-            ...(worker.systemPrompt ? { systemPrompt: worker.systemPrompt } : {}),
-            model: worker.model,
-            maxTokens: 4000,
-          });
+          // The prompt carries every instruction the check needs (the
+          // guard and the reply's JSON shape: promptFor); the worker's own
+          // system prompt, when it has one, only rides along.
+          const r = await extractImages(
+            worker.provider,
+            images,
+            {
+              ...credential,
+              mimeType: 'image/png',
+              prompt,
+              ...(worker.systemPrompt ? { systemPrompt: worker.systemPrompt } : {}),
+              model: worker.model,
+              maxTokens: VERIFY_TOKENS.max,
+            },
+            { reasoningMaxTokens: VERIFY_TOKENS.reasoning },
+          );
           void bumpWorkerUsage(worker.id);
           return r;
         },
+        storable: storeRefusal,
         store: storeChecks,
         now: () => new Date(),
       },
@@ -456,6 +500,11 @@ const circuit_verify: BuiltinToolDef = {
       dry_run: {
         type: 'boolean',
         description: 'List the questions only: no crops, no model call, nothing stored.',
+      },
+      recheck: {
+        type: 'boolean',
+        description:
+          'Ask again guesses already answered at the drawing\'s current revision (by default they are skipped and the next unanswered ones asked).',
       },
     },
     required: ['circuit'],

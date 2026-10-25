@@ -7,7 +7,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const listed = vi.hoisted(() => ({ rows: [] as { id: string; title: string; data: unknown }[] }));
+const listed = vi.hoisted(() => ({
+  rows: [] as { id: string; title: string; data: unknown; fileSha?: string }[],
+}));
 const surfaces = vi.hoisted(() => ({ readable: new Set<string>(), opened: [] as string[] }));
 const sqlCalls = vi.hoisted(() => ({ files: [] as string[] }));
 /** When set, the layout of the drawing's first page is made to fail, as a
@@ -88,7 +90,14 @@ vi.mock('@mantle/tabledb', () => ({
   },
 }));
 
-import { CIRCUIT_TOOLS, circuitTraceHandler, REGISTER_MAX, registerOf } from './builtins-circuits';
+import {
+  CIRCUIT_TOOLS,
+  circuitTraceHandler,
+  circuitVerifyHandler,
+  REGISTER_MAX,
+  registerOf,
+  verifyFlag,
+} from './builtins-circuits';
 import { policyUntrusted } from './tool-policy';
 import { readSheet } from './circuit-trace/read';
 
@@ -216,5 +225,76 @@ describe('the register input is capped and cleaned', () => {
     expect(reg.lines!.maxItems).toBe(REGISTER_MAX.lines);
     expect(reg.sheets!.maxItems).toBe(REGISTER_MAX.sheets);
     expect(reg.source!.maxLength).toBe(REGISTER_MAX.text);
+  });
+});
+
+describe('a drawing replaced after its table was built (circuit_trace)', () => {
+  beforeEach(() => {
+    surfaces.readable = new Set(['open']);
+    surfaces.opened = [];
+    sqlCalls.files = [];
+  });
+
+  it('says the sheet geometry is the older revision and how to rebuild it', async () => {
+    listed.rows = [
+      {
+        ...dwgRow('open', 'PID-1001'),
+        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
+        fileSha: 'b'.repeat(64),
+      },
+    ];
+    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
+    const limits = (r as { output: { limits: string[] } }).output.limits.join(' ');
+    expect(limits).toMatch(/PID-1001: its drawing file was replaced after its table was built/);
+    expect(limits).toMatch(/dwg-reindex --file=file-open --again --apply/);
+  });
+
+  it('a table that still matches its file says nothing', async () => {
+    listed.rows = [
+      {
+        ...dwgRow('open', 'PID-1001'),
+        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
+        fileSha: 'a'.repeat(64),
+      },
+    ];
+    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
+    expect((r as { output: { limits: string[] } }).output.limits.join(' ')).not.toMatch(
+      /replaced/,
+    );
+  });
+});
+
+describe('circuit_verify input (LOW-9)', () => {
+  it('kinds that name no kind are refused, naming the valid ones', async () => {
+    const r = await circuitVerifyHandler({ circuit: 'X-1', kinds: ['pipes', 'valves'] }, 'o');
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(
+      /kinds named no kind of guess \(got 'pipes', 'valves'\): use any of 'join', 'end', 'link', 'valve'/,
+    );
+  });
+
+  it('max_questions below 1 is refused with what to send instead', async () => {
+    for (const m of [0, -3, 'none']) {
+      const r = await circuitVerifyHandler({ circuit: 'X-1', max_questions: m }, 'o');
+      expect(r.ok).toBe(false);
+      expect((r as { error: string }).error).toMatch(/max_questions must be a whole number from 1/);
+    }
+  });
+
+  it('dry_run and recheck take true or the word', () => {
+    expect(verifyFlag(true)).toBe(true);
+    expect(verifyFlag('true')).toBe(true);
+    expect(verifyFlag(' TRUE ')).toBe(true);
+    expect(verifyFlag('false')).toBe(false);
+    expect(verifyFlag(1)).toBe(false);
+    expect(verifyFlag(undefined)).toBe(false);
+  });
+
+  it('the schema holds max_questions to at least 1', () => {
+    const def = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_verify')!;
+    const props = (def.inputSchema as { properties: Record<string, { minimum?: number }> })
+      .properties;
+    expect(props.max_questions!.minimum).toBe(1);
+    expect(props.recheck).toBeDefined();
   });
 });
