@@ -1,0 +1,110 @@
+{
+  "template": "pid",
+  "title": "Circuit 10000-001-01",
+  "description": "A made-up circuit across two sheets: an overview and one page per sheet.",
+  "legendNames": { "main": "Main process line", "secondary": "Process branch or deadleg" },
+  "pages": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "data": {
+        "title": "Circuit 10000-001-01",
+        "description": "The main line E-101 to V-201 and its branch to P-301.",
+        "equipment": [
+          { "id": "E-101", "type": "shell-tube-exchanger" },
+          { "id": "V-201", "type": "vertical-vessel" },
+          { "id": "P-301", "type": "centrifugal-pump" }
+        ],
+        "lines": [
+          {
+            "id": "L1",
+            "number": "4\"-P-0001-A1",
+            "from": "E-101",
+            "to": "V-201",
+            "inline": [{ "type": "gate" }],
+            "more": { "text": "+3 DEADLEGS", "link": "sheet-1", "focus": "L1-1" }
+          },
+          {
+            "id": "L2",
+            "number": "2\"-P-0002-A1",
+            "from": "T-1",
+            "to": "P-301",
+            "weight": "secondary",
+            "note": "INFERRED JOIN (GUESS)"
+          }
+        ],
+        "tees": [{ "id": "T-1", "on": "L1", "at": 0.7 }]
+      }
+    },
+    {
+      "id": "sheet-1",
+      "title": "PID-1001",
+      "data": {
+        "title": "Circuit 10000-001-01: PID-1001",
+        "description": "Sheet PID-1001: the main line from E-101 and its deadlegs.",
+        "equipment": [{ "id": "E-101", "type": "shell-tube-exchanger" }],
+        "offpage": [
+          {
+            "id": "OPC-1",
+            "direction": "out",
+            "sheet": "PID-1002",
+            "text": "TO PID-1002",
+            "link": "sheet-2",
+            "focus": "L1-2"
+          }
+        ],
+        "lines": [
+          {
+            "id": "L1-1",
+            "number": "4\"-P-0001-A1",
+            "from": "E-101",
+            "to": "OPC-1",
+            "inline": [{ "type": "gate" }]
+          },
+          { "id": "DL-1", "from": "T-1", "deadleg": true, "weight": "secondary" },
+          { "id": "DL-2", "from": "T-2", "deadleg": true, "weight": "secondary" },
+          { "id": "DL-3", "from": "T-3", "deadleg": true, "weight": "secondary" }
+        ],
+        "tees": [
+          { "id": "T-1", "on": "L1-1", "at": 0.3 },
+          { "id": "T-2", "on": "L1-1", "at": 0.5 },
+          { "id": "T-3", "on": "L1-1", "at": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "sheet-2",
+      "title": "PID-1002",
+      "data": {
+        "title": "Circuit 10000-001-01: PID-1002",
+        "description": "Sheet PID-1002: the main line on to V-201 and the branch to P-301.",
+        "equipment": [
+          { "id": "V-201", "type": "vertical-vessel" },
+          { "id": "P-301", "type": "centrifugal-pump" }
+        ],
+        "offpage": [
+          {
+            "id": "OPC-1",
+            "direction": "in",
+            "sheet": "PID-1001",
+            "text": "FROM PID-1001",
+            "link": "sheet-1",
+            "focus": "L1-1"
+          }
+        ],
+        "lines": [
+          { "id": "L1-2", "number": "4\"-P-0001-A1", "from": "OPC-1", "to": "V-201" },
+          {
+            "id": "L2",
+            "number": "2\"-P-0002-A1",
+            "from": "T-1",
+            "to": "P-301",
+            "weight": "secondary",
+            "note": "INFERRED JOIN (GUESS)"
+          }
+        ],
+        "tees": [{ "id": "T-1", "on": "L1-2", "at": 0.5 }]
+      }
+    }
+  ]
+}

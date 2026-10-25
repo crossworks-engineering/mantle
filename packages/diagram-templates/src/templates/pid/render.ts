@@ -236,7 +236,12 @@ function miniBubble(kind: Pick<Instrument, 'location' | 'display'>) {
   };
 }
 
-export function renderPid(data: PidData, m: Measurer): RenderResult {
+export type RenderPidOptions = {
+  /** The prefix of the drawing's ids; a set gives each page its own. */
+  idPrefix?: string;
+};
+
+export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {}): RenderResult {
   const P = data.profile;
   const warnings: string[] = [];
 
@@ -1150,6 +1155,68 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
       svg: textEl('sublabel', box.x + 2, box.y + 9, l.note, { fill: PALETTE.ink }),
     });
   }
+  // A "more here" marker (what this page leaves to another, a set's link)
+  // beside the line's longest run, clear of what is already down.
+  for (const l of data.lines) {
+    if (!l.more) continue;
+    const segs = segments(routed.get(l.id)!);
+    const s = [...segs].sort((a, b) => len(b) - len(a))[0]!;
+    const h = isH(s);
+    const c = { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 };
+    const ref = l.more.link?.ref;
+    const w =
+      Math.max(measure(m, l.more.text, 'sublabel'), ref ? measure(m, ref, 'eyebrow') : 0) + 10;
+    const bh = ref ? 26 : 14;
+    const cands: Box[] = (
+      h
+        ? [
+            [0, 10],
+            [0, -10 - bh],
+            [w / 2 + 16, 10],
+            [-w / 2 - 16, 10],
+            [w / 2 + 16, -10 - bh],
+            [-w / 2 - 16, -10 - bh],
+            [0, 22 + bh],
+            [0, -22 - 2 * bh],
+          ].map(([dx, dy]) => ({ x: c.x - w / 2 + dx!, y: c.y + dy!, w, h: bh }))
+        : [
+            [10, 0],
+            [-10 - w, 0],
+            [10, bh + 12],
+            [-10 - w, bh + 12],
+            [10, -bh - 12],
+            [-10 - w, -bh - 12],
+          ].map(([dx, dy]) => ({ x: c.x + dx!, y: c.y - bh / 2 + dy!, w, h: bh }))
+    ).map((b) => ({ ...b, x: snap(b.x), y: snap(b.y) }));
+    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
+    const tone = l.more.link ? PALETTE.link : PALETTE.muted;
+    notes.push({
+      id: `${l.id} more`,
+      box,
+      svg: el(
+        'g',
+        {
+          'data-more': l.id,
+          'data-link': l.more.link?.page,
+          'data-focus': l.more.link?.focus,
+        },
+        [
+          el('rect', {
+            x: box.x,
+            y: box.y,
+            width: box.w,
+            height: box.h,
+            rx: 3,
+            fill: PALETTE.white,
+            stroke: tone,
+            'stroke-width': 1,
+          }),
+          textEl('sublabel', box.x + 5, box.y + 10, l.more.text, { fill: tone }),
+          ref ? textEl('eyebrow', box.x + 5, box.y + 21, ref, { fill: PALETTE.muted }) : '',
+        ],
+      ),
+    });
+  }
   // The junction dot is the tee: it must sit on its parent pipe.
   for (const t of usedTees) {
     const at = teePts.get(t.id)!.at;
@@ -1715,7 +1782,35 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   for (const l of lineLabels) L.labels!.push(l.svg);
   for (const o of data.offpage) {
     const n = nodes.get(o.id)!;
-    L.offpage!.push(el('g', { 'data-offpage': o.id }, drawOffPage(n.box, o.sheet)));
+    L.offpage!.push(
+      el(
+        'g',
+        { 'data-offpage': o.id, 'data-link': o.link?.page, 'data-focus': o.link?.focus },
+        drawOffPage(n.box, o.sheet),
+      ),
+    );
+    if (o.link?.ref) {
+      // A set's link, printed as the page it goes on: the static copy says
+      // where the line continues; the canvas also jumps there.
+      const right = o.direction === 'out';
+      const y = n.box.y + n.box.h + (o.text ? 24 : 12);
+      L.labels!.push(
+        el(
+          'g',
+          { 'data-link': o.link.page, 'data-focus': o.link.focus },
+          textEl('eyebrow', right ? n.box.x : n.box.x + n.box.w, y, o.link.ref, {
+            'text-anchor': right ? 'start' : 'end',
+            fill: PALETTE.link,
+          }),
+        ),
+      );
+      const tw = measure(m, o.link.ref, 'eyebrow');
+      notes.push({
+        id: `${o.id} link`,
+        box: { x: right ? n.box.x : n.box.x + n.box.w - tw, y: y - 8, w: tw, h: 10 },
+        svg: '',
+      });
+    }
     if (o.text) {
       const right = o.direction === 'out';
       L.labels!.push(
@@ -1972,7 +2067,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     height,
     title: data.title,
     desc,
-    idPrefix: slugify(data.title),
+    idPrefix: opts.idPrefix ?? slugify(data.title),
     generator: `mantle-diagram pid@${PID_VERSION}`,
     body,
   });

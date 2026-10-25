@@ -11,7 +11,7 @@
  * Node, `estimateMeasurer` (good enough for tests, not for the final picture).
  */
 import { validateFlow, renderFlow, FLOW_VERSION } from './templates/flow.ts';
-import { validatePid, renderPid, PID_VERSION } from './templates/pid/index.ts';
+import { validatePidInput, renderPidInput, PID_VERSION } from './templates/pid/index.ts';
 import { messageOf, type Checked } from './runtime/validate.ts';
 import type { Measurer } from './runtime/text.ts';
 import type { RenderResult } from './types.ts';
@@ -40,10 +40,10 @@ export const TEMPLATES = {
     name: 'pid',
     version: PID_VERSION,
     summary:
-      'P&ID first draft: equipment, process lines with line numbers, valves, ISA-5.1 instruments, signals, circuits, off-page connectors, a site profile.',
-    validate: validatePid,
-    render: renderPid,
-  } satisfies Template<ReturnType<typeof validatePid> extends Checked<infer T> ? T : never>,
+      'P&ID first draft: equipment, process lines with line numbers, valves, ISA-5.1 instruments, signals, circuits, off-page connectors, a site profile; or a linked set of such pages.',
+    validate: validatePidInput,
+    render: renderPidInput,
+  } satisfies Template<ReturnType<typeof validatePidInput> extends Checked<infer T> ? T : never>,
 } as const;
 
 export function isTemplateName(v: unknown): v is TemplateName {
@@ -118,4 +118,5 @@ export { estimateMeasurer, domMeasurer, type Measurer } from './runtime/text.ts'
 export { buildCanvas, readCanvasData, replaceCanvasData, type CanvasMode } from './canvas.ts';
 export type { RenderResult } from './types.ts';
 export type { FlowData } from './templates/flow.ts';
-export type { PidData, SiteProfile } from './templates/pid/index.ts';
+export type { PidData, PidSet, PidPage, PidInput, SiteProfile } from './templates/pid/index.ts';
+export { pageRef, stackPages, type StackPage } from './runtime/pages.ts';

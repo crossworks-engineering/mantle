@@ -89,7 +89,21 @@ export type Equipment = {
   column?: number;
   row?: 'base' | 'below';
 };
-export type OffPage = { id: string; direction: 'in' | 'out'; sheet: string; text?: string };
+/** A jump to another page of a drawing set (pages), and the element to
+ *  show there. `ref` is the page reference the drawing prints ("see page
+ *  3: <title>"), filled in by the set's check (set.ts). */
+export type PageLink = { page: string; focus?: string; ref?: string };
+export type OffPage = {
+  id: string;
+  direction: 'in' | 'out';
+  sheet: string;
+  text?: string;
+  /** Inside a set only: the page this connector continues on. */
+  link?: PageLink;
+};
+/** A "more here" marker beside a line: what the page leaves to another
+ *  ("+7 DEADLEGS"), with the page that holds it inside a set. */
+export type More = { text: string; link?: PageLink };
 export type InlineItem = {
   type: ValveType;
   tag?: string;
@@ -126,6 +140,8 @@ export type Line = {
   /** A short note drawn beside the line, such as an honesty mark
    *  ("INFERRED JOIN (GUESS)"). */
   note?: string;
+  /** A "more here" marker beside the line. */
+  more?: More;
 };
 export type Instrument = {
   tag: string;
@@ -390,7 +406,38 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
   return out;
 }
 
-export function validatePid(input: unknown): Checked<PidData> {
+/** A page id in a drawing set: a short tag. */
+export const PAGE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/;
+
+/** A link read while checking one page of a set, for the set to resolve. */
+export type LinkSite = { path: string; link: PageLink };
+/** `links` present: the data is one page of a set (set.ts), and every
+ *  `link` it holds is collected there. Absent: a single drawing, where a
+ *  link has nowhere to go. */
+export type PidCheckOptions = { links?: LinkSite[] };
+
+function linkOf(o: Obj, p: string, issues: Issues, opts: PidCheckOptions): PageLink | undefined {
+  const page = str(o, 'link', p, issues, {
+    max: 32,
+    pattern: PAGE_ID,
+    patternText: 'a page id (letters, digits, - . _)',
+  });
+  const focus = str(o, 'focus', p, issues, { max: 40 });
+  if (focus && !page)
+    issues.errors.push(`${p}.focus: only with 'link' (the page to show '${focus}' on).`);
+  if (!page) return undefined;
+  if (!opts.links) {
+    issues.errors.push(
+      `${p}.link: '${page}' is another page, and this drawing has no pages. Put the drawings in a set ({ title, pages: [{ id, title, data }] }) or drop 'link'.`,
+    );
+    return undefined;
+  }
+  const link: PageLink = { page, ...(focus ? { focus } : {}) };
+  opts.links.push({ path: `${p}.link`, link });
+  return link;
+}
+
+export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked<PidData> {
   const issues = newIssues();
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
   const d = input as Obj;
@@ -479,16 +526,23 @@ export function validatePid(input: unknown): Checked<PidData> {
 
   const offpage: OffPage[] = [];
   for (const [p, o] of objects(list(d, 'offpage', '', issues, { max: 20 }), 'offpage', issues)) {
-    checkKeys(o, ['id', 'direction', 'sheet', 'text'], p, issues);
+    checkKeys(o, ['id', 'direction', 'sheet', 'text', 'link', 'focus'], p, issues);
     const id = str(o, 'id', p, issues, tagRule);
     const direction = oneOf(o, 'direction', ['in', 'out'] as const, p, issues);
     if (o.direction === undefined)
       issues.errors.push(`${p}.direction: required, 'in' (comes from another sheet) or 'out'.`);
     const sheetNo = str(o, 'sheet', p, issues, { required: true, max: 12 });
     const text = str(o, 'text', p, issues, { max: 40 });
+    const link = linkOf(o, p, issues, opts);
     if (id) claim(id, p);
     if (id && direction && sheetNo)
-      offpage.push({ id, direction, sheet: sheetNo, ...(text ? { text } : {}) });
+      offpage.push({
+        id,
+        direction,
+        sheet: sheetNo,
+        ...(text ? { text } : {}),
+        ...(link ? { link } : {}),
+      });
   }
   // Tees: junctions on a line, where branches start or end. Read before the
   // lines (a line may start at one) and checked against them after.
@@ -549,6 +603,7 @@ export function validatePid(input: unknown): Checked<PidData> {
           'deadleg',
           'toward',
           'note',
+          'more',
         ],
         p,
         issues,
@@ -608,6 +663,20 @@ export function validatePid(input: unknown): Checked<PidData> {
       });
       const weight = oneOf(l, 'weight', ['main', 'secondary'] as const, p, issues) ?? 'main';
       const note = str(l, 'note', p, issues, { max: 32 });
+      let more: More | undefined;
+      if (l.more !== undefined) {
+        const mp = `${p}.more`;
+        if (!isObj(l.more))
+          issues.errors.push(
+            `${mp}: must be { text, link?, focus? }, e.g. { "text": "+7 DEADLEGS" }.`,
+          );
+        else {
+          checkKeys(l.more, ['text', 'link', 'focus'], mp, issues);
+          const text = str(l.more, 'text', mp, issues, { required: true, max: 32 });
+          const link = linkOf(l.more, mp, issues, opts);
+          if (text) more = { text, ...(link ? { link } : {}) };
+        }
+      }
       const focal = bool(l, 'focal', p, issues) ?? false;
       if (number) {
         const parts = parseLineNumber(profile, number);
@@ -671,6 +740,7 @@ export function validatePid(input: unknown): Checked<PidData> {
           ...(toPort ? { toPort } : {}),
           ...(service ? { service } : {}),
           ...(note ? { note } : {}),
+          ...(more ? { more } : {}),
         });
       }
     },
