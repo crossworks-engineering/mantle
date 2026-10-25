@@ -37,6 +37,14 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   template's limits and the chains on no page are counted per sheet in
   `limits`. A circuit that fits one page is one plain drawing, not a set.
   Save it with `present_create` as one canvas.
+- **Fix:** every detail page is reached by a `+N` marker on the page that
+  draws its line, and its `SEE` connectors name that page; at the cap a
+  line cut from its page goes to its own detail page, or the detail page
+  says the line is drawn only there. A description keeps its GUESS note
+  whole. `present_render` `slide: n` waits for a set to mount, and its
+  report names the page shown.
+- **Performance:** `circuit_trace` on a sheet of thousands of runs or
+  deadlegs is near linear (8000 runs: 13 s to 0.15 s); output unchanged.
 
 ## Unreleased: a DWG down to the bones
 
