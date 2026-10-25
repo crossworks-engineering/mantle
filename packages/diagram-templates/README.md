@@ -32,6 +32,8 @@ pnpm -C packages/diagram-templates test
 
 - `build` bundles the browser runtime into `dist/` and writes the blank
   templates `templates/flow.canvas.html` and `templates/pid.canvas.html`.
+  They are committed; `src/canvas-fresh.test.ts` fails when they are older
+  than the source, so rebuild and commit them with a source change.
 - `render` opens each `samples/*.json` in headless Chromium and writes
   `samples/out/<name>.svg`, `.png` and `.report.json`. Exit 1 on a data
   error, a console error, any network request, or a non-static export.
@@ -242,7 +244,10 @@ page stacked under a `PAGE n OF m: <title>` header (the static export,
 `present_export`); `window.diagram.exportPageSvg(id?)` one page;
 `window.diagram.pages`, `.page` and `.show(id, focus?)` drive it. Single
 drawings are untouched: the pin in `src/unchanged-output.test.ts` holds, and
-`src/pid-set.test.ts` pins the set.
+`src/pid-set.test.ts` pins the set. A page whose layout throws (a template
+bug) draws as an error panel naming the page and the problem; the render
+result lists it in `failed` (`{ page, path, error }`) and the warnings, and
+the other pages draw.
 
 ### Site profile
 
