@@ -126,7 +126,9 @@ export function buildPid(
     for (const run of s.runs) {
       for (const end of run.ends) {
         const k = keyOf(s, end.node);
-        endAt.set(k, [...(endAt.get(k) ?? []), { sheet: s, end }]);
+        const list = endAt.get(k);
+        if (list) list.push({ sheet: s, end });
+        else endAt.set(k, [{ sheet: s, end }]);
         if (end.equipment.length) join(k, `EQ:${end.equipment[0]!}`);
         else if (end.equipmentUnconfirmed) {
           if (registerTags.includes(baseTag(end.equipmentUnconfirmed))) {
@@ -424,6 +426,8 @@ export function buildPid(
 
   // ------------------------------------------------------ lines and tees
   const used = new Set<Edge>();
+  /** Unused edges with an equipment end. */
+  let eqLeft = edges.filter((e) => isEq(e.a) || isEq(e.b)).length;
   const plans: Plan[] = [];
   /** Where a vertex sits on a planned line (its fraction along it). */
   const placed = new Map<string, { line: string; at: number }>();
@@ -443,7 +447,10 @@ export function buildPid(
     depth: number,
     attach?: { line: string; at: number },
   ): Plan => {
-    for (const e of es) used.add(e);
+    for (const e of es) {
+      if (!used.has(e) && (isEq(e.a) || isEq(e.b))) eqLeft -= 1;
+      used.add(e);
+    }
     n += 1;
     const id = `L${n}`;
     const verts = vertsOf(start, es);
@@ -500,10 +507,14 @@ export function buildPid(
   };
   const queue: Plan[] = [];
   if (m) queue.push(plan(m.from, m.edges, 0));
+  /** Vertices whose every edge is used (the drain grew them all). */
+  const drained = new Set<string>();
+  let taken = 0;
   const drain = () => {
-    while (queue.length) {
-      const p = queue.shift()!;
+    while (taken < queue.length) {
+      const p = queue[taken++]!;
       for (const v of p.verts) {
+        if (drained.has(v)) continue;
         const there = isEq(v) ? undefined : placed.get(v);
         if (!isEq(v) && !there) continue;
         // Main-layer branches first, the longest first; deadlegs after.
@@ -515,22 +526,37 @@ export function buildPid(
           const es = grow(v, e);
           queue.push(plan(v, es, p.depth + 1, there));
         }
+        drained.add(v);
       }
     }
   };
   drain();
   // Whatever is not joined to the main line: from its equipment end, else
-  // from an end that leaves the sheet, else from any end.
+  // from an end that leaves the sheet, else from any end. In the order of
+  // the unused edges and their ends: the first equipment end, else the
+  // first end of one unused edge that is no deadleg, else the first end of
+  // one, else the first end. Each read stops at its first find, from the
+  // first unused edge; the equipment read only while such an edge is left.
+  let lo = 0;
+  const deg = (v: string) => (adj.get(v) ?? []).filter((e) => !used.has(e)).length;
+  const firstEnd = (ok: (v: string, e: Edge) => boolean): string | undefined => {
+    for (let i = lo; i < edges.length; i++) {
+      const e = edges[i]!;
+      if (used.has(e)) continue;
+      if (ok(e.a, e)) return e.a;
+      if (ok(e.b, e)) return e.b;
+    }
+    return undefined;
+  };
   for (;;) {
-    const rest = edges.filter((e) => !used.has(e));
-    if (!rest.length) break;
-    const verts = [...new Set(rest.flatMap((e) => [e.a, e.b]))];
-    const deg = (v: string) => (adj.get(v) ?? []).filter((e) => !used.has(e)).length;
+    while (lo < edges.length && used.has(edges[lo]!)) lo++;
+    if (lo === edges.length) break;
+    // An end with one unused edge: that edge is the first it is on.
     const start =
-      verts.find(isEq) ??
-      verts.find((v) => deg(v) === 1 && !rest.find((e) => e.a === v || e.b === v)!.deadleg) ??
-      verts.find((v) => deg(v) === 1) ??
-      verts[0]!;
+      (eqLeft > 0 ? firstEnd(isEq) : undefined) ??
+      firstEnd((v, e) => !e.deadleg && deg(v) === 1) ??
+      firstEnd((v) => deg(v) === 1) ??
+      edges[lo]!.a;
     const first = (adj.get(start) ?? [])
       .filter((e) => !used.has(e))
       .sort((x, y) => Number(x.deadleg) - Number(y.deadleg) || y.length - x.length)[0]!;

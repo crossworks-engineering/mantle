@@ -463,6 +463,14 @@ export function readTag(
   return { tag: t, kind: 'instrument' };
 }
 
+/** Adds `v` to the list at `k`, in place (a copy per add is quadratic on a
+ *  node many lines meet). */
+function append<K, V>(m: Map<K, V[]>, k: K, v: V): void {
+  const list = m.get(k);
+  if (list) list.push(v);
+  else m.set(k, [v]);
+}
+
 function dist(ax: number, ay: number, bx: number, by: number) {
   return Math.hypot(ax - bx, ay - by);
 }
@@ -701,7 +709,7 @@ function outlinesOf(
   const byHandle = new Map<string, number[]>();
   for (const i of onPipe) {
     const h = net[i]!.handle;
-    if (h) byHandle.set(h, [...(byHandle.get(h) ?? []), i]);
+    if (h) append(byHandle, h, i);
   }
   for (const idx of byHandle.values()) {
     if (idx.length < 3) continue;
@@ -743,7 +751,7 @@ function outlinesOf(
     if (local.length < 3) continue;
     const at = new Map<number, number[]>();
     for (const i of local) {
-      for (const n of [net[i]!.n1, net[i]!.n2]) at.set(n, [...(at.get(n) ?? []), i]);
+      for (const n of [net[i]!.n1, net[i]!.n2]) append(at, n, i);
     }
     for (const first of local) {
       if (segs.has(first)) continue;
@@ -907,8 +915,8 @@ function joinPieces(
   const cap = extentOf(s) * BRIDGE_REL;
   const at = new Map<number, Edge[]>();
   for (const e of edges) {
-    at.set(e.a, [...(at.get(e.a) ?? []), e]);
-    at.set(e.b, [...(at.get(e.b) ?? []), e]);
+    append(at, e.a, e);
+    append(at, e.b, e);
   }
   const own = new Set(at.keys());
   const uf = new Union();
@@ -919,8 +927,8 @@ function joinPieces(
     roleAt(a) === 'main' && roleAt(b) === 'main' ? 'main' : 'deadleg';
   const add = (j: TraceJoin, role: 'main' | 'deadleg') => {
     edges.push({ a: j.from, b: j.to, role, join: j });
-    at.set(j.from, [...(at.get(j.from) ?? []), edges[edges.length - 1]!]);
-    at.set(j.to, [...(at.get(j.to) ?? []), edges[edges.length - 1]!]);
+    append(at, j.from, edges[edges.length - 1]!);
+    append(at, j.to, edges[edges.length - 1]!);
     uf.join(j.from, j.to);
     out.push(j);
   };
@@ -941,8 +949,23 @@ function joinPieces(
     });
     const pairs: { a: End; b: End; gap: number }[] = [];
     const cos = Math.cos((DASH_DEG * Math.PI) / 180);
+    // Ends in cells twice `near` across: a pair (a gap of at most `near`)
+    // is at most one cell apart. The pairs come in the order a loop over
+    // every pair gives (i, then k); an end off the plane pairs with none.
+    const cell = (v: number) => Math.floor(v / (2 * near));
+    const grid = new Map<string, number[]>();
+    ends.forEach((e, i) => append(grid, `${cell(e.x)},${cell(e.y)}`, i));
     for (let i = 0; i < ends.length; i++) {
-      for (let k = i + 1; k < ends.length; k++) {
+      const cx = cell(ends[i]!.x);
+      const cy = cell(ends[i]!.y);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+      const ks = new Set<number>();
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (const k of grid.get(`${cx + ox},${cy + oy}`) ?? []) if (k > i) ks.add(k);
+        }
+      }
+      for (const k of [...ks].sort((x, y) => x - y)) {
         const a = ends[i]!;
         const b = ends[k]!;
         if (a.g.layer !== b.g.layer) continue;
@@ -1030,8 +1053,8 @@ function joinPieces(
     if (parseCircuitLayer(g.layer) || !pipeLayers.has(g.layer)) return;
     if (otherPairs.has(pairKey(g.n1, g.n2)) || foreign.has(i) || ctx.outlines.segs.has(i)) return;
     if ((straight.get(`${g.handle}#${g.part ?? 0}`) ?? 0) > cap) return;
-    adj.set(g.n1, [...(adj.get(g.n1) ?? []), i]);
-    adj.set(g.n2, [...(adj.get(g.n2) ?? []), i]);
+    append(adj, g.n1, i);
+    append(adj, g.n2, i);
   });
   type Cand = { from: number; to: number; cost: number; path: number[] };
   const cands: Cand[] = [];
@@ -1159,7 +1182,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
   for (const id of ownNodes) {
     const n = byNode.get(id);
     if (n?.kind === 'block' && n.blockHandle) {
-      bridgeGroups.set(n.blockHandle, [...(bridgeGroups.get(n.blockHandle) ?? []), id]);
+      append(bridgeGroups, n.blockHandle, id);
     }
   }
   for (const [handle, group] of bridgeGroups) {
@@ -1231,8 +1254,8 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
 
   const adj = new Map<number, number[]>();
   edges.forEach((e, i) => {
-    adj.set(e.a, [...(adj.get(e.a) ?? []), i]);
-    adj.set(e.b, [...(adj.get(e.b) ?? []), i]);
+    append(adj, e.a, i);
+    append(adj, e.b, i);
   });
   const degree = (n: number) => adj.get(n)?.length ?? 0;
   /** Main and deadleg edges meet here: a chain ends, so neither changes role. */
@@ -1392,8 +1415,8 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
   const netAt = new Map<number, number[]>();
   const straightLen = new Map<string, number>();
   net.forEach((g, i) => {
-    netAt.set(g.n1, [...(netAt.get(g.n1) ?? []), i]);
-    netAt.set(g.n2, [...(netAt.get(g.n2) ?? []), i]);
+    append(netAt, g.n1, i);
+    append(netAt, g.n2, i);
     const k = `${g.handle}#${g.part ?? 0}`;
     straightLen.set(k, (straightLen.get(k) ?? 0) + g.length);
   });
@@ -1524,9 +1547,15 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
   const blocksOnPath: TraceValve[] = [];
   const dirs = new Map<string, { from: Pt; to: Pt }>();
   let chainNo = 0;
+  // Each run's nodes and edges, grouped in one pass (a pass per run is
+  // quadratic on a sheet of many runs).
+  const nodesOf = new Map<number, number[]>();
+  for (const n of ownNodes) append(nodesOf, uf.find(n), n);
+  const edgesOf = new Map<number, number[]>();
+  edges.forEach((e, i) => append(edgesOf, uf.find(e.a), i));
   runRoots.forEach((root, ri) => {
-    const runNodes = [...ownNodes].filter((n) => uf.find(n) === root).sort((a, b) => a - b);
-    const runEdges = edges.map((_, i) => i).filter((i) => uf.find(edges[i]!.a) === root);
+    const runNodes = (nodesOf.get(root) ?? []).sort((a, b) => a - b);
+    const runEdges = edgesOf.get(root) ?? [];
     const used = new Set<number>();
     const chains: TraceChain[] = [];
     const walkFrom = (start: number, first: number) => {

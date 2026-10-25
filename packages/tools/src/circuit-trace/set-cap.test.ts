@@ -235,6 +235,15 @@ describe('the drawing set at its 40-page cap', () => {
     traceCircuit(C, ss);
     expect(performance.now() - t).toBeLessThan(3000);
   });
+
+  it('8000 separate runs trace in well under 3 seconds', () => {
+    // The walk grouped each run by a pass over the whole sheet, and the
+    // drawing found each next start the same way (about 13 s here); now
+    // near linear (under a fifth of a second on a laptop). Generous bound.
+    const t = performance.now();
+    traceCircuit(C, [runs(8000)]);
+    expect(performance.now() - t).toBeLessThan(3000);
+  });
 });
 
 type Linked = {
