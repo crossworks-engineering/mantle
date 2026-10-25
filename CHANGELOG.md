@@ -43,8 +43,17 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   says the line is drawn only there. A description keeps its GUESS note
   whole. `present_render` `slide: n` waits for a set to mount, and its
   report names the page shown.
+- **Fix:** `pid` data that passes the check draws: a bypass from tee to tee
+  on one line no longer puts both tees on one point, and a connector
+  reached through a tee is never placed on the tee (both threw before). A
+  set page whose layout still fails draws as an error panel naming the page,
+  reported in the result's `failed` list and its warnings, and the other
+  pages draw; `circuit_trace`'s `pid_check` lays every page out, so such a
+  page is a check error with its path. At the page cap a detail page
+  already made stays linked from the drawing.
 - **Performance:** `circuit_trace` on a sheet of thousands of runs or
-  deadlegs is near linear (8000 runs: 13 s to 0.15 s); output unchanged.
+  deadlegs is near linear (8000 runs: 13 s to 0.15 s; a branchy sheet of
+  23,000 chains: 60 s to 2.5 s); output unchanged.
 
 ## Unreleased: a DWG down to the bones
 
