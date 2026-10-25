@@ -260,6 +260,7 @@ const HTTP_SURFACE = [
   'diagram_types',
   'diagram_guide',
   'circuit_trace',
+  'circuit_verify',
   'diagram_render',
   'present_list',
   'present_get',

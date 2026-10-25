@@ -290,6 +290,10 @@ const WORKSPACE_TURN_NO_ITEMS: ReadonlyMap<string, string> = new Map([
   ],
   ['app_undelete', "a deleted app: its home's Moderators only, in the handler (app-trash)"],
   ['invoke_agent', "hands item ids to a child turn that runs in the caller's scope"],
+  [
+    'circuit_verify',
+    'names a circuit, not an item: it writes only the Checks tab of a drawing table the caller may edit (applyTableOps asks) and crop files in Auto-filed',
+  ],
   ['route_map', 'draws a map for the reply; it changes no item'],
   ['show_image', 'reads the image it shows'],
   ['synthesize_speech', 'makes audio for the reply; it changes no item'],

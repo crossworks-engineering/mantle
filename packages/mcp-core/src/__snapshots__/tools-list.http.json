@@ -7482,6 +7482,109 @@
   }
  },
  {
+  "name": "circuit_verify",
+  "description": "Check the guesses `circuit_trace` made on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name becomes a yes/no question on a close-up crop of the drawing, the trace drawn over it in colour. Returns per-guess answers (yes, no or unsure, a reason, the model). **Spends the owner's vision key**: call only when asked to check a trace; `dry_run` lists the questions for free. Stores each answer with its crops in the Checks tab of the drawing's table; `circuit_trace` then marks a confirmed guess CHECKED BY IMAGE, never certain. To trace without checking use `circuit_trace`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "circuit": {
+     "type": "string",
+     "description": "The circuit's name exactly as the layer writes it after 'Circuit ', e.g. '10000-001-01'."
+    },
+    "register": {
+     "type": "object",
+     "properties": {
+      "source": {
+       "type": "string",
+       "maxLength": 120,
+       "description": "Where it came from, e.g. 'site register tool'."
+      },
+      "from": {
+       "type": "string",
+       "maxLength": 120,
+       "description": "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start."
+      },
+      "to": {
+       "type": "string",
+       "maxLength": 120,
+       "description": "The circuit's downstream end, an equipment tag, e.g. 'V-201'."
+      },
+      "lines": {
+       "maxItems": 2000,
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "number": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "A line number, e.g. '2\"-P-0001-A1'."
+         },
+         "sheet": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "The drawing it is on, e.g. a sheet number."
+         },
+         "deadleg": {
+          "type": "boolean",
+          "description": "The register marks it a deadleg."
+         }
+        },
+        "required": [
+         "number"
+        ]
+       },
+       "description": "The line numbers on the circuit."
+      },
+      "sheets": {
+       "maxItems": 200,
+       "type": "array",
+       "items": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "description": "Drawings the register lists for the circuit."
+      },
+      "deadlegs": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 9007199254740991,
+       "description": "How many deadlegs the register lists."
+      }
+     },
+     "description": "What an outside register says belongs to the circuit, from a site register tool when the brain has one; the trace reports every difference. Leave it out when there is none."
+    },
+    "kinds": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "join",
+       "end",
+       "link",
+       "valve"
+      ]
+     },
+     "description": "Which guesses to ask about: 'join' (inferred joins), 'end' (ends only near equipment), 'link' (guessed sheet links), 'valve' (valve types read from block names). Leave it out for all."
+    },
+    "max_questions": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 40,
+     "description": "Questions to ask in this call; the rest are counted in `limits`."
+    },
+    "dry_run": {
+     "type": "boolean",
+     "description": "List the questions only: no crops, no model call, nothing stored."
+    }
+   },
+   "required": [
+    "circuit"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
   "name": "diagram_render",
   "description": "Lay out and draw a diagram template's data (`flow`: boxes and arrows; `pid`: a P&ID first draft) and return the picture, the data errors and the layout warnings. Saves nothing: the look while you compose. When it is right, save it with `present_create` (same `template` and `data`) and export it for a page with `present_export`. For a hand-drawn diagram type use `diagram_guide`.",
   "inputSchema": {

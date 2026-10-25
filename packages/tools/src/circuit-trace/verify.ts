@@ -152,7 +152,9 @@ export async function verifyCircuit(
   const overviews = new Map<string, Buffer | null>();
   let cropsUsed = 0;
   let requests = 0;
-  const tokens = { in: 0, out: 0 };
+  // What the replies said they used, for the result only (the spend itself
+  // is recorded by the vision call, @mantle/voice vision-images.ts).
+  const usage = { tokensIn: 0, tokensOut: 0 };
   const inputOf = new Map(read.sheets.map((s) => [s.tableId, s]));
   const sheetOrder = [...new Set(questions.map((q) => q.tableId))];
 
@@ -254,8 +256,8 @@ export async function verifyCircuit(
         );
         continue;
       }
-      tokens.in += reply.tokensIn ?? 0;
-      tokens.out += reply.tokensOut ?? 0;
+      usage.tokensIn += reply.tokensIn ?? 0;
+      usage.tokensOut += reply.tokensOut ?? 0;
       const parsed = parseAnswers(
         reply.text,
         batch.questions.map((b) => b.q.id),
@@ -325,7 +327,7 @@ export async function verifyCircuit(
         crops: a.crops.length,
       })),
       ...(notAsked.length ? { not_asked: notAsked } : {}),
-      usage: { requests, crops: cropsUsed, tokens_in: tokens.in, tokens_out: tokens.out },
+      usage: { requests, crops: cropsUsed, tokens_in: usage.tokensIn, tokens_out: usage.tokensOut },
       limits,
       next: 'circuit_trace now marks these on the drawing: CHECKED BY IMAGE for a confirmed guess; a contradicted or unsure one stays GUESS.',
     },

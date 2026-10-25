@@ -30,6 +30,7 @@ const REFUSED = [
   'search_chunks',
   'summarize_text',
   'extract_from_image',
+  'circuit_verify',
   'team_request_create',
 ];
 

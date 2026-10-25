@@ -283,6 +283,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   location_save: creates(),
   content_supersede: onNodes('node_id', 'superseded_by'),
   process_extraction: onNodes('node_id'),
+  // The image check: new since main's table; it spends the owner's vision
+  // key, so a client-sourced turn waits for the owner.
+  circuit_verify: always("spends the owner's vision key and writes check rows"),
 
   // ── Runs, sandboxes, the terminal: targets the input does not name ────────
   run_plan: always(LATER),

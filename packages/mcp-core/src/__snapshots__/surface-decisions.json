@@ -1003,6 +1003,24 @@
    "peerRisky": false
   }
  },
+ "circuit_verify": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": true,
+  "keyArea": "tables",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "ownerKey",
+   "creates": false,
+   "keyArea": "tables",
+   "peerRisky": true
+  }
+ },
  "contact_create": {
   "readOnly": false,
   "peerRisky": true,

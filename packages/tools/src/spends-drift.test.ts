@@ -25,6 +25,8 @@ const SPEND_CALLS = [
   /\bnew OpenRouter\(/,
   // A delegated agent turn (invoke_agent's child runs its own model).
   /\bgetAgentInvoker\(/,
+  // Several images in one vision request (circuit_verify).
+  /\bextractImages\(/,
 ];
 
 type Segment = { file: string; name: string | null; slug: string | null; text: string };

@@ -327,8 +327,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   // One ranking edge per pair of pieces, either way round, its weight the
   // sum of the pipes between them: several pipes joining the same two
   // pieces made dagre fail ("Not possible to find intersection").
-  const pairEdge = (a: string, b: string) =>
-    g.outEdges(a, b)?.[0] ?? g.outEdges(b, a)?.[0];
+  const pairEdge = (a: string, b: string) => g.outEdges(a, b)?.[0] ?? g.outEdges(b, a)?.[0];
   for (const l of plain) {
     if (l.weight === 'secondary' && (!nodes.get(l.from)!.eq || !nodes.get(l.to)!.eq)) continue;
     const w = l.weight === 'main' ? 2 : 1;
