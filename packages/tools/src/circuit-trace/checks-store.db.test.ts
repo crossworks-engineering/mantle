@@ -234,6 +234,16 @@ describe.skipIf(!URL)('the image check store', () => {
       () => s.storeRefusal(anchor, sheetOf(t)),
     );
     expect(why).toMatch(/may not edit its table|Auto-filed/);
+    // Under row security the scope still reads the table's own stamp (the
+    // revision its checks are filed under); a table it is not granted is
+    // not listed at all.
+    const listed = await m.withScope(
+      { kind: 'assistant', loginId: null, ws: [wsId], modWs: [] },
+      () => readMod.dwgTables(anchor),
+    );
+    const mine = listed.tables.filter((x) => ids.includes(x.id));
+    expect(mine.map((x) => x.id)).toEqual([t]);
+    expect(mine[0]).toMatchObject({ revision: SHA.slice(0, 16), sourceSha: SHA });
   });
 
   it("a user who writes to the draft before the commit keeps it; nothing is published", async () => {
