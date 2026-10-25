@@ -43,6 +43,7 @@ import { JOURNAL_TOOLS } from './builtins-journal';
 import { FORMULA_TOOLS } from './builtins-formulas';
 import { CALCULATE_TOOLS } from './builtins-calculate';
 import { DIAGRAM_TOOLS } from './builtins-diagrams';
+import { CIRCUIT_TOOLS } from './builtins-circuits';
 import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
 import { CANVAS_LIBRARY_TOOLS } from './builtins-canvas-library';
 import { PEER_TOOLS } from './builtins-peers';
@@ -222,6 +223,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Diagram guides: the design system's type list and per-type drawing
   // instructions, read from the guide files baked into the image.
   ...DIAGRAM_TOOLS,
+  // A piping circuit traced across the uploaded DWG drawings' bones tabs,
+  // in the caller's scope; read only.
+  ...CIRCUIT_TOOLS,
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,
   ...CANVAS_LIBRARY_TOOLS,

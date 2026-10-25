@@ -40,6 +40,7 @@ import {
   APP_TOOLS,
   APP_GUIDE_TOOLS,
   DIAGRAM_TOOLS,
+  CIRCUIT_TOOLS,
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
   CANVAS_LIBRARY_TOOLS,
@@ -364,6 +365,9 @@ export function registerMantleTools(
   // read from the guide files in the image, so an outside agent draws to the
   // same rules as the Draftsman. Static reads, no spend.
   registerBuiltinTools(DIAGRAM_TOOLS);
+  // A piping circuit traced across the uploaded DWG drawings, in the
+  // caller's scope (the table reads of table_sql). Read only, no spend.
+  registerBuiltinTools(CIRCUIT_TOOLS);
   // Present canvases and the template look. The pictures need the browser
   // sidecar's renderer, which the host process registers (the web process,
   // and server/mcp for stdio): a host without it still lands a save and

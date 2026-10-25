@@ -480,7 +480,17 @@ export async function commitTable(
   ownerId: string,
   id: string,
   data?: TableDoc | WorkbookDoc,
-  opts: { appSync?: boolean; actor?: AppHistoryActor; note?: string | null } = {},
+  opts: {
+    appSync?: boolean;
+    actor?: AppHistoryActor;
+    note?: string | null;
+    /** Keep the committed summary and entities even though the shape
+     *  changed: the re-index is `cells` (the vector and the profile again,
+     *  no model pass) when the table has a summary. For a rebuild whose
+     *  meaning is unchanged (the dwg-reindex task adding tabs to the same
+     *  drawing), never for a user's edit. */
+    keepSummary?: boolean;
+  } = {},
 ): Promise<TableDetail | null> {
   const [node] = await db
     .select()
@@ -644,7 +654,10 @@ export async function commitTable(
                   .where(eq(nodes.id, id))
                   .returning();
                 const committed = oneRow('tables', updated ? [updated] : [], 'table');
-                const change = committedChange(row.shapeHash, s.shapeHash, committed.data);
+                const change =
+                  opts.keepSummary && hasSummary(committed.data)
+                    ? ('cells' as const)
+                    : committedChange(row.shapeHash, s.shapeHash, committed.data);
                 // A team app's commit waits out a pass (MED-1): thrown here,
                 // the flip rolls back and its stage is removed.
                 const wait = appWrite ? appCommitWait(committed.data, change) : null;

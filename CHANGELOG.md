@@ -30,8 +30,49 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   only), and says TRUNCATED for a tab cut by its budget.
 - **Build:** the media image ships `dwg_bones.py` next to `app.py`; CI runs
   the sidecar's Python tests (synthetic DXF files, no client drawings).
-- Existing DWG tables gain the new tabs only on a new import: delete the old
-  auto-imported table and re-queue the file.
+- Existing DWG tables gain the new tabs through `pnpm maintain dwg-reindex`
+  (below), in place.
+
+## Unreleased: trace a circuit across the drawings; rebuild old DWG tables
+
+- **Feature:** `circuit_trace(circuit, register?)`, a read-only tool in a new
+  `circuits` tool group (granted to the Draftsman and the Presenter, and on
+  the MCP surface). It finds every DWG/DXF auto-import table the CALLER may
+  read whose layers carry `Circuit <name>` (with the phase 1 suffix rules),
+  reads that circuit's rows from Segments, Nodes, Inserts, Blocks, Texts and
+  Circuits, and returns per sheet the runs as ordered chains, tees, ends and
+  what each end meets (a block, another circuit's layer, nothing), deadleg
+  runs, valves on the path, line numbers with their DWG handles and
+  equipment tags near the ends; links between sheets (a continuation label
+  naming the other sheet, else the same line number or the only open ends,
+  each marked `guessed`); a ready `pid` template input drawn from the real
+  geometry (trunk, tees, branches, deadlegs, off-page connectors; a guessed
+  link's connector says GUESS) with the template's own check of it; and,
+  given `register` (line numbers, sheets, deadlegs from a site register
+  tool), every difference both ways. Honest limits in `limits` (a capped
+  tab, a sheet that is not uploaded, a table from before the bones tabs),
+  guesses in `guesses`.
+- **Rights:** the tool reads through the caller's own scope: the table list
+  is a `nodes` query under row level security, each workbook opens through
+  `tableSqlSurface` (the table_sql path), and a table the scope does not read
+  is never opened.
+- **Skills:** the Draftsman's `diagram_design` and the Presenter's
+  `canvas_authoring` skills start a circuit drawn from uploaded P&IDs at
+  `circuit_trace`, fill `register` from a site register tool when one
+  exists, and keep every guessed link labelled; the persona's routing line
+  sends such a request to the Draftsman.
+- **Maintenance:** `pnpm maintain dwg-reindex --file=<id>[,<id>] |
+--folder=<id> [--apply] [--limit=n] [--keep-edits] [--resummarize]`
+  rebuilds the auto-import workbook of DWG/DXF files in place: the same
+  table node keeps its id, grants, placement, title and tags; only the tabs
+  and the description are rebuilt from a fresh sidecar pass (the import's
+  own builder, `cadRegistryWorkbook`). Manual only: no cron, no trigger, a
+  scope is required, dry run by default, at most 50 tables a run (default
+  10). The summary is kept (`commitTable`'s new `keepSummary`: the vector
+  and profile again, no model pass) unless `--resummarize`. A table edited
+  after its import is refused unless `--keep-edits` (a snapshot of the
+  edited version first); a table with an unsaved draft is always refused.
+  It never deletes a file or a table.
 
 ## Unreleased: P&ID tees and branches
 

@@ -129,21 +129,10 @@ export async function maybeAutoTableSpreadsheet(
       // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
       // memoised exchange with the text digest and the image pass. The
       // description says what each tab holds and what it does not.
-      const { dwgTableDescription } = await import('@mantle/files/dwg');
-      let grids: import('@mantle/files/dwg').DwgGrids;
-      if (fileExt === 'dwg') {
-        const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
-        grids = sniffDwg(loaded.bytes)
-          ? await parseDwgToGrids(loaded.bytes)
-          : { sheets: [], capped: false };
-      } else {
-        const { sniffDxf, parseDxfToGrids } = await import('@mantle/files/dxf');
-        grids = sniffDxf(loaded.bytes)
-          ? await parseDxfToGrids(loaded.bytes)
-          : { sheets: [], capped: false };
-      }
-      sheets = grids.sheets;
-      if (sheets.length > 0) description = dwgTableDescription(fileExt, grids);
+      const { cadRegistryWorkbook } = await import('@mantle/files/dwg');
+      const built = await cadRegistryWorkbook(loaded.bytes, fileExt);
+      sheets = built.grids.sheets;
+      description = built.description;
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }

@@ -160,6 +160,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'brain_capacity',
   'calculate',
   'canvas_library',
+  'circuit_trace',
   'contact_find',
   'contact_get',
   'contact_list',

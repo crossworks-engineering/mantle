@@ -259,6 +259,7 @@ const HTTP_SURFACE = [
   'formula_delete',
   'diagram_types',
   'diagram_guide',
+  'circuit_trace',
   'diagram_render',
   'present_list',
   'present_get',

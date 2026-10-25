@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "6104daa28dbf268fac3dc340bee4cb1f5750ee787b2f0960fd63b645808ceb23",
+  "sha256": "6aaf77304e39fe027c069a63c9d3b77685655200600f0db97e38d72aa8a9292a",
   "names": [
    "tree_list",
    "search",
@@ -176,6 +176,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -200,7 +201,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2847dcf8a7676fddc38f725009ab9df583cff2e56ba997cbbb95143eb14ac403",
+  "sha256": "a5cc49e8833d9efa5d0a3f38a792daaf9f566e05139bda8da2e6e4d06d78be0a",
   "names": [
    "tree_list",
    "search",
@@ -433,6 +434,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -502,7 +504,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "a700a7e6a67eb98ae602045a28a8903b76caa89aaf5a1e4dd0a4c5717fbb4f66",
+  "sha256": "12b9233cf445615a24cd43dbbb0d36aee32f759f446c6ccede1fbf1fd6917e73",
   "names": [
    "tree_list",
    "search",
@@ -717,6 +719,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -767,7 +770,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "523cf585149a3265c637f931cd0f65580a32c112dab52c372a0542ace77a990d",
+  "sha256": "2dcab57bd593050f4f6862e9db112c02ef77ca376664294daf43304719dbdbc5",
   "names": [
    "tree_list",
    "search",
@@ -969,6 +972,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1015,7 +1019,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -1161,6 +1165,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1182,7 +1187,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f4770b6d64a7af48928bef924f0b609372b6c1656d9ed8cae0c0ab3300766f46",
+  "sha256": "ecdfcf5852f69bbe425c90a597ec0caf2535148e9b051adaf4632e51bac651a2",
   "names": [
    "tree_list",
    "search",
@@ -1348,6 +1353,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1390,7 +1396,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "e5394115e527517f1c13f6172a06d3a347bee6240f93e0eb3ae4384072e401b5",
+  "sha256": "2630c8ba0357f376ada5a421e5878807c7e3006ea3476dc0f9c5f5a7eef5f8b1",
   "names": [
    "tree_list",
    "search",
@@ -1552,6 +1558,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1588,7 +1595,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "77168690e591ef151e604edcff8d42dcba2f022ebf39efaa01767f3ae7213009",
+  "sha256": "d27f1d2edb9fa4d0de3a33b70a5c4f44756108699f295a768aa8eb9742667fb8",
   "names": [
    "tree_list",
    "search",
@@ -1749,6 +1756,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -1959,7 +1967,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -2105,6 +2113,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2126,7 +2135,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f4770b6d64a7af48928bef924f0b609372b6c1656d9ed8cae0c0ab3300766f46",
+  "sha256": "ecdfcf5852f69bbe425c90a597ec0caf2535148e9b051adaf4632e51bac651a2",
   "names": [
    "tree_list",
    "search",
@@ -2292,6 +2301,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2334,7 +2344,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "e5394115e527517f1c13f6172a06d3a347bee6240f93e0eb3ae4384072e401b5",
+  "sha256": "2630c8ba0357f376ada5a421e5878807c7e3006ea3476dc0f9c5f5a7eef5f8b1",
   "names": [
    "tree_list",
    "search",
@@ -2496,6 +2506,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2532,7 +2543,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "77168690e591ef151e604edcff8d42dcba2f022ebf39efaa01767f3ae7213009",
+  "sha256": "d27f1d2edb9fa4d0de3a33b70a5c4f44756108699f295a768aa8eb9742667fb8",
   "names": [
    "tree_list",
    "search",
@@ -2693,6 +2704,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2727,7 +2739,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -2873,6 +2885,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -2894,7 +2907,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d375a7a82697d1bc3d28e466d2e1ea61b675678b0237b8904ca10c82e2d4f9a0",
+  "sha256": "74aa111f6e277a937b224ca79ce11d13186d6323066ff45bb482c72802327ea5",
   "names": [
    "tree_list",
    "search",
@@ -3062,6 +3075,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3105,7 +3119,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "bf3aea57e6892cf52fff9f092a897a49a776dc2a0d399d7a6fc249fb1d8c7ed2",
+  "sha256": "f29aa2b23ba49e457cfaca11ee5a876173b584764c05b690b928945f050d4377",
   "names": [
    "tree_list",
    "search",
@@ -3267,6 +3281,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3304,7 +3319,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "6244858704e903f85b4f0e1a8f90e3ed00a48461dd541a13d01c490b0f6b7061",
+  "sha256": "777cd20b9325e00ed6e17521e377a60830b1ee0ad83648a45de94efe224b5dd7",
   "names": [
    "tree_list",
    "search",
@@ -3465,6 +3480,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3500,7 +3516,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "751413fb8633ba9167650319be16b3c2b2dba3ed2468a3f6fa41c95b43c55bda",
+  "sha256": "5f0112dd55d90e7ec56727f20a5435edea284ed06813d80a385a1d0165d4b3db",
   "names": [
    "tree_list",
    "search",
@@ -3566,6 +3582,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3580,7 +3597,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "84068a18648d74f22d6ad9aa9aa6e114c420c6fdb2b308724ba6b576308fa590",
+  "sha256": "b78c1ca9d6baa789a99994f64db2e5a2aa536985afdd83dfa45042b4059006f1",
   "names": [
    "tree_list",
    "search",
@@ -3667,6 +3684,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3690,7 +3708,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "199e54bc28cefbb7ff4852164eb45914d0410eec8d0bccda2b96ff6cb7da87ea",
+  "sha256": "bebae0c7a628ea2e9183f85071439f5ab556ed38fbbc9d405e57b3bdc8ca428e",
   "names": [
    "tree_list",
    "search",
@@ -3768,6 +3786,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3785,7 +3804,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "99092e012e847ae45443a3fc3b88350c07c8a641bffeb73800ceda26dd90befd",
+  "sha256": "354a8a4be3a0799dc70074a78f294eda0069cad86f7b9a691897070afab8cfd5",
   "names": [
    "tree_list",
    "search",
@@ -3859,6 +3878,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3876,7 +3896,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -3941,6 +3961,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -3955,7 +3976,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -4030,6 +4051,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4053,7 +4075,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -4125,6 +4147,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4142,7 +4165,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -4213,6 +4236,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4338,7 +4362,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -4403,6 +4427,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4417,7 +4442,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -4492,6 +4517,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4515,7 +4541,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -4587,6 +4613,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4604,7 +4631,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -4675,6 +4702,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4692,7 +4720,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -4757,6 +4785,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4771,7 +4800,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -4846,6 +4875,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4869,7 +4899,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -4941,6 +4971,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -4958,7 +4989,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -5029,6 +5060,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5046,7 +5078,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "6104daa28dbf268fac3dc340bee4cb1f5750ee787b2f0960fd63b645808ceb23",
+  "sha256": "6aaf77304e39fe027c069a63c9d3b77685655200600f0db97e38d72aa8a9292a",
   "names": [
    "tree_list",
    "search",
@@ -5222,6 +5254,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5246,7 +5279,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "2847dcf8a7676fddc38f725009ab9df583cff2e56ba997cbbb95143eb14ac403",
+  "sha256": "a5cc49e8833d9efa5d0a3f38a792daaf9f566e05139bda8da2e6e4d06d78be0a",
   "names": [
    "tree_list",
    "search",
@@ -5479,6 +5512,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5548,7 +5582,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "a700a7e6a67eb98ae602045a28a8903b76caa89aaf5a1e4dd0a4c5717fbb4f66",
+  "sha256": "12b9233cf445615a24cd43dbbb0d36aee32f759f446c6ccede1fbf1fd6917e73",
   "names": [
    "tree_list",
    "search",
@@ -5763,6 +5797,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -5813,7 +5848,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "523cf585149a3265c637f931cd0f65580a32c112dab52c372a0542ace77a990d",
+  "sha256": "2dcab57bd593050f4f6862e9db112c02ef77ca376664294daf43304719dbdbc5",
   "names": [
    "tree_list",
    "search",
@@ -6015,6 +6050,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6061,7 +6097,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -6207,6 +6243,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6228,7 +6265,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f4770b6d64a7af48928bef924f0b609372b6c1656d9ed8cae0c0ab3300766f46",
+  "sha256": "ecdfcf5852f69bbe425c90a597ec0caf2535148e9b051adaf4632e51bac651a2",
   "names": [
    "tree_list",
    "search",
@@ -6394,6 +6431,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6436,7 +6474,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "e5394115e527517f1c13f6172a06d3a347bee6240f93e0eb3ae4384072e401b5",
+  "sha256": "2630c8ba0357f376ada5a421e5878807c7e3006ea3476dc0f9c5f5a7eef5f8b1",
   "names": [
    "tree_list",
    "search",
@@ -6598,6 +6636,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -6634,7 +6673,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "77168690e591ef151e604edcff8d42dcba2f022ebf39efaa01767f3ae7213009",
+  "sha256": "d27f1d2edb9fa4d0de3a33b70a5c4f44756108699f295a768aa8eb9742667fb8",
   "names": [
    "tree_list",
    "search",
@@ -6795,6 +6834,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7005,7 +7045,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -7151,6 +7191,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7172,7 +7213,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f4770b6d64a7af48928bef924f0b609372b6c1656d9ed8cae0c0ab3300766f46",
+  "sha256": "ecdfcf5852f69bbe425c90a597ec0caf2535148e9b051adaf4632e51bac651a2",
   "names": [
    "tree_list",
    "search",
@@ -7338,6 +7379,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7380,7 +7422,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "e5394115e527517f1c13f6172a06d3a347bee6240f93e0eb3ae4384072e401b5",
+  "sha256": "2630c8ba0357f376ada5a421e5878807c7e3006ea3476dc0f9c5f5a7eef5f8b1",
   "names": [
    "tree_list",
    "search",
@@ -7542,6 +7584,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7578,7 +7621,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "77168690e591ef151e604edcff8d42dcba2f022ebf39efaa01767f3ae7213009",
+  "sha256": "d27f1d2edb9fa4d0de3a33b70a5c4f44756108699f295a768aa8eb9742667fb8",
   "names": [
    "tree_list",
    "search",
@@ -7739,6 +7782,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7773,7 +7817,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "80d8db4bb3d379a4a4b7b72d61a1eee94c2915a35b161d4ceb9ddf5b9a361100",
+  "sha256": "25ccdf074c654910cfe85270e883ef847c0e7fda6f064dab93a4ace25b4f9cc3",
   "names": [
    "tree_list",
    "search",
@@ -7919,6 +7963,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -7940,7 +7985,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d375a7a82697d1bc3d28e466d2e1ea61b675678b0237b8904ca10c82e2d4f9a0",
+  "sha256": "74aa111f6e277a937b224ca79ce11d13186d6323066ff45bb482c72802327ea5",
   "names": [
    "tree_list",
    "search",
@@ -8108,6 +8153,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8151,7 +8197,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "bf3aea57e6892cf52fff9f092a897a49a776dc2a0d399d7a6fc249fb1d8c7ed2",
+  "sha256": "f29aa2b23ba49e457cfaca11ee5a876173b584764c05b690b928945f050d4377",
   "names": [
    "tree_list",
    "search",
@@ -8313,6 +8359,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8350,7 +8397,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "6244858704e903f85b4f0e1a8f90e3ed00a48461dd541a13d01c490b0f6b7061",
+  "sha256": "777cd20b9325e00ed6e17521e377a60830b1ee0ad83648a45de94efe224b5dd7",
   "names": [
    "tree_list",
    "search",
@@ -8511,6 +8558,7 @@
    "formula_delete",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8546,7 +8594,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "751413fb8633ba9167650319be16b3c2b2dba3ed2468a3f6fa41c95b43c55bda",
+  "sha256": "5f0112dd55d90e7ec56727f20a5435edea284ed06813d80a385a1d0165d4b3db",
   "names": [
    "tree_list",
    "search",
@@ -8612,6 +8660,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8626,7 +8675,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "84068a18648d74f22d6ad9aa9aa6e114c420c6fdb2b308724ba6b576308fa590",
+  "sha256": "b78c1ca9d6baa789a99994f64db2e5a2aa536985afdd83dfa45042b4059006f1",
   "names": [
    "tree_list",
    "search",
@@ -8713,6 +8762,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8736,7 +8786,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "199e54bc28cefbb7ff4852164eb45914d0410eec8d0bccda2b96ff6cb7da87ea",
+  "sha256": "bebae0c7a628ea2e9183f85071439f5ab556ed38fbbc9d405e57b3bdc8ca428e",
   "names": [
    "tree_list",
    "search",
@@ -8814,6 +8864,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8831,7 +8882,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "99092e012e847ae45443a3fc3b88350c07c8a641bffeb73800ceda26dd90befd",
+  "sha256": "354a8a4be3a0799dc70074a78f294eda0069cad86f7b9a691897070afab8cfd5",
   "names": [
    "tree_list",
    "search",
@@ -8905,6 +8956,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -8922,7 +8974,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -8987,6 +9039,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9001,7 +9054,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -9076,6 +9129,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9099,7 +9153,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -9171,6 +9225,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9188,7 +9243,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -9259,6 +9314,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9384,7 +9440,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -9449,6 +9505,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9463,7 +9520,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -9538,6 +9595,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9561,7 +9619,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -9633,6 +9691,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9650,7 +9709,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -9721,6 +9780,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9738,7 +9798,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "7281cca63452dda65367a69ce51f7b0412c702dfee580b65f839f80dc57533f8",
+  "sha256": "8e753907c371ef72573c5b13fef0d988c08f876fa986d2ac3e78acaaa0612217",
   "names": [
    "tree_list",
    "search",
@@ -9803,6 +9863,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9817,7 +9878,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "62ad771e7a15732b930f1dc11f363a396d9ad42ebee96bba6bcd246603ba9321",
+  "sha256": "5c16da6e6c0e94b857c2044a3e6a7100c610b5543d82f9ded261d71d61cbc776",
   "names": [
    "tree_list",
    "search",
@@ -9892,6 +9953,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -9915,7 +9977,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "33a52c598ac049079470338551df04d256f1ab604885d2099789496a6a81a9ab",
+  "sha256": "003b19ea96712f5554d39cad426b04a6b8aa9c56b4726db04e5968daf107a729",
   "names": [
    "tree_list",
    "search",
@@ -9987,6 +10049,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",
@@ -10004,7 +10067,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "3003f21d93406e0d881fdd3fe6e79a15d40402e48730342464400083f293633e",
+  "sha256": "eb8bb31bd2c78a09eb1dce925e36ae70292420791835ffe8f5612015d43700c6",
   "names": [
    "tree_list",
    "search",
@@ -10075,6 +10138,7 @@
    "formula_evaluate",
    "diagram_types",
    "diagram_guide",
+   "circuit_trace",
    "diagram_render",
    "present_list",
    "present_get",

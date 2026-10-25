@@ -37,6 +37,7 @@ import {
   FORMULA_AUTO_GRANT_SLUGS,
   CALCULATE_TOOL_SLUGS,
   DIAGRAM_TOOL_SLUGS,
+  CIRCUIT_TOOL_SLUGS,
   PRESENT_READ_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
@@ -986,6 +987,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...DIAGRAM_TOOL_SLUGS, 'diagram_render'],
   },
   {
+    slug: 'circuits',
+    name: 'Piping circuits',
+    description:
+      'Trace one piping circuit across the uploaded DWG/DXF drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one. Read only, no spend.',
+    toolSlugs: [...CIRCUIT_TOOL_SLUGS],
+  },
+  {
     slug: 'present-read',
     name: 'Present (read)',
     description:
@@ -1582,7 +1590,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // page-admin/page-share: deletes and sharing stay deliberate human acts.
     // `present`: a P&ID or a process flow is template data saved as
     // a canvas (the editable source) and exported as the page's SVG.
-    toolGroupSlugs: ['diagram', 'present', 'pages', 'files', 'memory-core'],
+    // `circuits`: a circuit drawn from the uploaded P&IDs starts at
+    // circuit_trace, whose pid input is the template data.
+    toolGroupSlugs: ['diagram', 'circuits', 'present', 'pages', 'files', 'memory-core'],
     skillSlugs: ['diagram_design', 'page_editing', 'writing_style'],
     isDelegate: true,
     // A single hand-drawn SVG easily runs thousands of tokens; match the
@@ -1605,8 +1615,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // `present` to author and look (no delete: present-admin stays
     // deliberate), `diagram` for the guides, site profiles and the template
     // look (a P&ID is template data), `files` for source reads and the
-    // export, `memory-core` for the data a canvas shows.
-    toolGroupSlugs: ['present', 'diagram', 'files', 'memory-core'],
+    // export, `memory-core` for the data a canvas shows, `circuits` for a
+    // circuit traced from the uploaded drawings.
+    toolGroupSlugs: ['present', 'diagram', 'circuits', 'files', 'memory-core'],
     skillSlugs: ['canvas_authoring', 'writing_style'],
     isDelegate: true,
     // A whole canvas is thousands of tokens of HTML, like a hand-drawn SVG.

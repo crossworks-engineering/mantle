@@ -985,6 +985,24 @@
    "peerRisky": false
   }
  },
+ "circuit_trace": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "tables",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "tables",
+   "peerRisky": false
+  }
+ },
  "contact_create": {
   "readOnly": false,
   "peerRisky": true,

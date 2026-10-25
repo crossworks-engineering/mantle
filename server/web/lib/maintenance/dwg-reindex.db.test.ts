@@ -1,0 +1,189 @@
+/**
+ * dwg-reindex on a real, migrated Postgres (lib/maintenance/dwg-reindex.ts):
+ * the scope (file ids, a folder) and the cap pick exactly the DWG auto-import
+ * tables named; a rebuild keeps the SAME table id, its grant and its title,
+ * replaces only the tabs and the description and records the version; a
+ * table edited after its import is refused, then snapshotted first with
+ * keepEdits; a user's own table is never a candidate. The sidecar and the
+ * file bytes are stubbed (made-up drawing); no agent runs, no model is
+ * reached.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/maintenance/dwg-reindex.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ensureTestAnchor, superuserExec } from '@mantle/db/test-support';
+
+vi.mock('@mantle/files/dwg', async (orig) => ({
+  ...(await orig<typeof import('@mantle/files/dwg')>()),
+  cadRegistryWorkbook: async () => ({
+    grids: {
+      sheets: [
+        {
+          name: 'Layers',
+          columns: [{ name: 'Layer', type: 'text' }],
+          rows: [['Circuit 90000-001-01']],
+        },
+        {
+          name: 'Segments',
+          columns: [
+            { name: 'Layer', type: 'text' },
+            { name: 'Length', type: 'number' },
+          ],
+          rows: [['Circuit 90000-001-01', 10]],
+        },
+      ],
+      capped: false,
+    },
+    description: 'AutoCAD DWG model-space registry. Segments is the pipe geometry (rebuilt).',
+  }),
+}));
+vi.mock('@mantle/files', async (orig) => ({
+  ...(await orig<typeof import('@mantle/files')>()),
+  readFileById: async () => ({ bytes: Buffer.from('AC1032 made-up'), row: {}, path: null }),
+}));
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+type Row = Record<string, unknown>;
+
+describe.skipIf(!URL)('dwg-reindex', () => {
+  let m: typeof import('@mantle/db');
+  let c: typeof import('@mantle/content');
+  let r: typeof import('./dwg-reindex');
+  let admin: (strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>;
+  let sqlTag: typeof import('drizzle-orm').sql;
+  let anchor = '';
+  const tag = `dwgre${randomUUID().slice(0, 6)}`;
+  const root = mkdtempSync(path.join(tmpdir(), 'mantle-dwgre-'));
+  const folder = randomUUID();
+  const fileIn = randomUUID();
+  const fileOut = randomUUID();
+  const fileEdited = randomUUID();
+  const wsId = randomUUID();
+  const tableIds: string[] = [];
+  let tIn = '';
+  let tOut = '';
+  let tEdited = '';
+  let tUser = '';
+
+  const importTable = async (fileId: string, title: string) => {
+    const t = await c.createTable(anchor, {
+      title,
+      tags: ['auto-import'],
+      sourceFileId: fileId,
+      description: 'AutoCAD DWG model-space registry. (old, no geometry tabs)',
+      tabs: [
+        {
+          ...c.tableDocFromGrid({
+            columns: [{ name: 'Layer', type: 'text' }],
+            rows: [['Circuit 90000-001-01']],
+          }),
+          name: 'Layers',
+        },
+      ],
+    });
+    tableIds.push(t.id);
+    return t.id;
+  };
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL = URL;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    process.env.TABLE_DB_DIR = path.join(root, 'table-dbs');
+    process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
+    m = await import('@mantle/db');
+    c = await import('@mantle/content');
+    r = await import('./dwg-reindex');
+    sqlTag = (await import('drizzle-orm')).sql;
+    admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
+    await m.ensureViewerRoles(admin as never, process.env.MANTLE_MASTER_KEY);
+    anchor = await ensureTestAnchor(admin as never);
+    const fpath = `files.${tag}`;
+    await admin`insert into nodes (id, owner_id, type, title, path, data) values
+      (${folder}, ${anchor}, 'branch', ${tag}, ${fpath}, '{}'::jsonb)`;
+    const file = (id: string, name: string, p: string) =>
+      admin`insert into nodes (id, owner_id, type, title, path, data) values
+        (${id}, ${anchor}, 'file', ${name}, ${p}, ${JSON.stringify({ filename: name })}::jsonb)`;
+    await file(fileIn, `${tag}-in.dwg`, fpath);
+    await file(fileOut, `${tag}-out.dwg`, 'files');
+    await file(fileEdited, `${tag}-edited.dxf`, fpath);
+    tIn = await importTable(fileIn, `${tag} in`);
+    tOut = await importTable(fileOut, `${tag} out`);
+    tEdited = await importTable(fileEdited, `${tag} edited`);
+    // A user's own table that names the file but was not imported by the pass.
+    const own = await c.createTable(anchor, {
+      title: `${tag} user`,
+      sourceFileId: fileIn,
+      data: { columns: [{ id: 'a', name: 'A', type: 'text' }], rows: [] },
+    });
+    tUser = own.id;
+    tableIds.push(own.id);
+    // The edited table: a commit after the import moves its version on.
+    await c.applyTableOps(anchor, tEdited, [{ op: 'row_add', cells: {} }]);
+    await c.commitTable(anchor, tEdited);
+    // A grant that must survive the rebuild.
+    await superuserExec(
+      URL!,
+      sqlTag`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`,
+    );
+    await m.withHeads([tIn], 'update', (tx) =>
+      tx.execute(sqlTag`insert into item_grants (node_id, workspace_id) values (${tIn}, ${wsId})`),
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    if (!admin) return;
+    await admin`delete from item_grants where node_id = any(${tableIds}::uuid[])`;
+    await admin`delete from table_snapshots where table_id = any(${tableIds}::uuid[])`.catch(
+      () => [],
+    );
+    await admin`delete from nodes where id = any(${[...tableIds, fileIn, fileOut, fileEdited, folder]}::uuid[])`;
+    await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
+    await m.closeDb();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('scopes by file id and by folder, and never picks a user table', async () => {
+    const byFile = await r.findReindexCandidates({ fileIds: [fileIn] }, 10);
+    expect(byFile.map((x) => x.tableId)).toEqual([tIn]);
+    const byFolder = await r.findReindexCandidates({ folderId: folder }, 10);
+    expect(byFolder.map((x) => x.tableId).sort()).toEqual([tIn, tEdited].sort());
+    expect(byFolder.map((x) => x.tableId)).not.toContain(tOut);
+    expect(byFolder.map((x) => x.tableId)).not.toContain(tUser);
+  });
+
+  it('the cap returns one more than the limit so the run can say it was cut', async () => {
+    const capped = await r.findReindexCandidates({ folderId: folder }, 1);
+    expect(capped).toHaveLength(2);
+  });
+
+  it('rebuilds in place: same id, grant and title, new tabs and description', async () => {
+    const [cand] = await r.findReindexCandidates({ fileIds: [fileIn] }, 10);
+    const out = await r.rebuildOne(cand!, {});
+    expect(out).toMatchObject({ tableId: tIn, result: 'rebuilt', tabs: ['Layers', 'Segments'] });
+    const t = await c.getTable(anchor, tIn);
+    expect(t?.id).toBe(tIn);
+    expect(t?.title).toBe(`${tag} in`);
+    expect(t?.tabs?.map((x) => x.name)).toEqual(['Layers', 'Segments']);
+    expect(t?.description).toMatch(/rebuilt/);
+    const [g] = await admin`select count(*)::int as n from item_grants where node_id = ${tIn}`;
+    expect(g!.n).toBe(1);
+    // A second run sees its own version, not an edit.
+    const [again] = await r.findReindexCandidates({ fileIds: [fileIn] }, 10);
+    expect(r.decide(again!, {})).toEqual({ action: 'rebuild', snapshotFirst: false });
+  });
+
+  it('an edited table is refused, then snapshotted first with keepEdits', async () => {
+    const [cand] = await r.findReindexCandidates({ fileIds: [fileEdited] }, 10);
+    expect(await r.rebuildOne(cand!, {})).toMatchObject({ result: 'refused' });
+    const before = await c.getTable(anchor, tEdited);
+    expect(before?.tabs?.map((x) => x.name) ?? ['Layers']).not.toContain('Segments');
+    const out = await r.rebuildOne(cand!, { keepEdits: true });
+    expect(out).toMatchObject({ result: 'rebuilt' });
+    expect((out as { snapshot: string | null }).snapshot).toBeTruthy();
+    const after = await c.getTable(anchor, tEdited);
+    expect(after?.id).toBe(tEdited);
+  });
+});

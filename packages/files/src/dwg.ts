@@ -706,6 +706,32 @@ export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
   return parseCadToGrids(bytes, 'DXF');
 }
 
+/**
+ * The registry workbook of a DWG or DXF file, as the auto-import pass and
+ * the dwg-reindex maintenance task both build it: the sniff for the
+ * format, the tabs (one sidecar exchange) and the table description. No
+ * tabs when the bytes are not that format. One code path for the first
+ * import and every rebuild, so a rebuilt table is the table a fresh upload
+ * would get.
+ */
+export async function cadRegistryWorkbook(
+  bytes: Buffer,
+  ext: 'dwg' | 'dxf',
+): Promise<{ grids: DwgGrids; description: string | undefined }> {
+  const grids =
+    ext === 'dwg'
+      ? sniffDwg(bytes)
+        ? await parseDwgToGrids(bytes)
+        : { sheets: [], capped: false }
+      : sniffDxf(bytes)
+        ? await parseDxfToGrids(bytes)
+        : { sheets: [], capped: false };
+  return {
+    grids,
+    description: grids.sheets.length > 0 ? dwgTableDescription(ext, grids) : undefined,
+  };
+}
+
 /* ------------------------------------------------------------------ images */
 
 async function explainCadImageMiss(bytes: Buffer, format: CadFormat): Promise<string> {

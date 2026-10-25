@@ -385,6 +385,29 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the agent (server/api) running. Start with --apply --limit=3. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
+    slug: 'dwg-reindex',
+    title: 'Rebuild DWG/DXF auto-import tables in place',
+    description:
+      'A DWG or DXF imported before the geometry tabs keeps its old table. This rebuilds the auto-import workbook of the files you name (--file=<id>[,<id>] or --folder=<id>, required) from a fresh sidecar pass: the SAME table node keeps its id, links, grants, placement, title and tags; only its tabs and description change. Dry run (default) lists each table and what would happen. --apply rebuilds at most --limit tables (default 10, at most 50). A table edited after its import is refused unless --keep-edits (a snapshot of the edited version first); a table with an unsaved draft is always refused. Never deletes a file or a table. Prints ids and counts only.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'embedding',
+    schedulable: false,
+    cliOnly: 'needs --file=<file id> or --folder=<folder id>, which only a terminal can pass',
+    script: 'scripts/dwg-reindex.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: [
+      '--file=<id>[,<id>]',
+      '--folder=<id>',
+      '--limit=<n>',
+      '--keep-edits',
+      '--resummarize',
+    ],
+    notes:
+      'Keeps each table summary by default (the re-index rebuilds the vector and profile, no model pass); --resummarize lets the commit run the extractor (one model call per table). Needs the media sidecar and the agent (server/api) running. Start with one --file. The old version stays in the table history when history is kept.',
+  },
+  {
     slug: 'doc-reindex',
     title: 'Re-index documentation nodes with no summary or embedding',
     description:
