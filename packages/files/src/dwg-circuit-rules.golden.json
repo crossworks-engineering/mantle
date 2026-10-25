@@ -1,0 +1,152 @@
+{
+  "about": "The circuit rules the DWG sidecar (infra/media-sidecar/dwg_bones.py) and circuit_trace (packages/tools/src/circuit-trace/walk.ts) both apply. Each side has a test that runs its own rules over these cases: infra/media-sidecar/tests/test_rules_golden.py and packages/tools/src/circuit-trace/rules-golden.test.ts. Change a rule here and on both sides together. Names are made up.",
+  "nearRel": 0.01,
+  "extentTrim": 0.005,
+  "layers": [
+    {
+      "layer": "Circuit 10000-001-01",
+      "circuit": "10000-001-01",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "  circuit   10000-001-01  ",
+      "circuit": "10000-001-01",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "CIRCUIT 10000-001-01",
+      "circuit": "10000-001-01",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-DL",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-DL1",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-dl2",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-B01-DL",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-B02-DL1",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-D03",
+      "circuit": "10000-001-01",
+      "role": "deadleg",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-B01",
+      "circuit": "10000-001-01",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    {
+      "layer": "Circuit 10000-001-01-IP1",
+      "circuit": "10000-001-01-IP1",
+      "role": "main",
+      "kind": "injection point",
+      "parent": "10000-001-01"
+    },
+    {
+      "layer": "Circuit 10000-001-01-IP",
+      "circuit": "10000-001-01-IP",
+      "role": "main",
+      "kind": "injection point",
+      "parent": "10000-001-01"
+    },
+    {
+      "layer": "Circuit 10000-001-01-IP1-DL",
+      "circuit": "10000-001-01-IP1",
+      "role": "deadleg",
+      "kind": "injection point",
+      "parent": "10000-001-01"
+    },
+    {
+      "layer": "Circuit 10000-001-01-IP2-B01",
+      "circuit": "10000-001-01-IP2",
+      "role": "main",
+      "kind": "injection point",
+      "parent": "10000-001-01"
+    },
+    {
+      "layer": "Circuit 25000-015-01",
+      "circuit": "25000-015-01",
+      "role": "main",
+      "kind": "circuit",
+      "parent": ""
+    },
+    { "layer": "Circuit Breakers", "circuit": null },
+    { "layer": "Circuit Diagram Notes", "circuit": null },
+    { "layer": "Circuit", "circuit": null },
+    { "layer": "Circuits 10000-001-01", "circuit": null },
+    { "layer": "PIPING", "circuit": null },
+    { "layer": "", "circuit": null }
+  ],
+  "lineTags": {
+    "match": [
+      "LINE",
+      "LINENO",
+      "LINE_NO",
+      "LINE NO",
+      "LINE NO.",
+      "LINE-NUM",
+      "LINE.NUMBER",
+      "line_number",
+      "LineNo"
+    ],
+    "noMatch": ["LINE_SIZE", "PIPELINE", "LINE_SPEC", "NUMBER", "LINES"]
+  },
+  "circuitTags": {
+    "match": ["CIRCUIT", "CIRCUIT_NO", "CIRCUIT NAME", "CIRCUIT-ID", "CircuitNo", "circuit.name"],
+    "noMatch": ["CIRCUIT_FROM", "CIRCUIT_TO", "CIRCUITS", "SUBCIRCUIT"]
+  },
+  "extent": [
+    {
+      "about": "few points: the box of every end point",
+      "segments": [
+        [0, 0, 100, 0],
+        [100, 0, 100, 50]
+      ],
+      "diag": 111.80339887498948
+    },
+    {
+      "about": "one stray line far off among 200 pipes: trimmed away",
+      "segmentsGenerated": { "count": 200, "dx": 1, "length": 10 },
+      "stray": [100000, 100000, 100001, 100001],
+      "diag": 198.25236442474022
+    }
+  ]
+}
