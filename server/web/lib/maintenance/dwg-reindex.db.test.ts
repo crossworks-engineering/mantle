@@ -4,12 +4,15 @@
  * tables named; a rebuild keeps the SAME table id, its grant and its title,
  * replaces only the tabs and the description and records the version; a
  * table edited after its import is refused, then snapshotted first with
- * keepEdits; a user's own table is never a candidate. The sidecar and the
+ * keepEdits; a user's own table is never a candidate; a table carrying the
+ * image check's Checks tab (an image-check commit, which the real
+ * dwgTableEdited does not count as an edit) is rebuilt with that tab and
+ * its rows kept, and stamped with the bytes it was rebuilt from. The sidecar and the
  * file bytes are stubbed (made-up drawing); no agent runs, no model is
  * reached.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/maintenance/dwg-reindex.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,6 +70,8 @@ describe.skipIf(!URL)('dwg-reindex', () => {
   const fileIn = randomUUID();
   const fileOut = randomUUID();
   const fileEdited = randomUUID();
+  const fileChecked = randomUUID();
+  let tChecked = '';
   const wsId = randomUUID();
   const tableIds: string[] = [];
   let tIn = '';
@@ -115,9 +120,11 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     await file(fileIn, `${tag}-in.dwg`, fpath);
     await file(fileOut, `${tag}-out.dwg`, 'files');
     await file(fileEdited, `${tag}-edited.dxf`, fpath);
+    await file(fileChecked, `${tag}-checked.dwg`, 'files');
     tIn = await importTable(fileIn, `${tag} in`);
     tOut = await importTable(fileOut, `${tag} out`);
     tEdited = await importTable(fileEdited, `${tag} edited`);
+    tChecked = await importTable(fileChecked, `${tag} checked`);
     // A user's own table that names the file but was not imported by the pass.
     const own = await c.createTable(anchor, {
       title: `${tag} user`,
@@ -145,7 +152,7 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     await admin`delete from table_snapshots where table_id = any(${tableIds}::uuid[])`.catch(
       () => [],
     );
-    await admin`delete from nodes where id = any(${[...tableIds, fileIn, fileOut, fileEdited, folder]}::uuid[])`;
+    await admin`delete from nodes where id = any(${[...tableIds, fileIn, fileOut, fileEdited, fileChecked, folder]}::uuid[])`;
     await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
@@ -220,5 +227,44 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     expect((out as { snapshot: string | null }).snapshot).toBeTruthy();
     const after = await c.getTable(anchor, tEdited);
     expect(after?.id).toBe(tEdited);
+  });
+
+  it('keeps the Checks tab and its rows; an image-check commit is not an edit; stamps the bytes', async () => {
+    const { dwgTableEdited, DWG_CHECKED_VERSION_KEY, DWG_SOURCE_SHA_KEY } =
+      await import('@mantle/files/dwg');
+    // The image check's commit: a Checks tab with one row, then the mark
+    // checks-store.ts writes on an unedited table.
+    const tab = randomUUID();
+    const [k, a] = [randomUUID(), randomUUID()];
+    await c.applyTableOps(anchor, tChecked, [
+      { op: 'tab_add', tabId: tab, name: 'Checks' },
+      { op: 'column_add', tabId: tab, column: { id: k, name: 'Key', type: 'text' } },
+      { op: 'column_add', tabId: tab, column: { id: a, name: 'Answer', type: 'text' } },
+      { op: 'row_add', tabId: tab, cells: { [k]: 'end:A1@1.0,0.0', [a]: 'yes' } },
+    ]);
+    await c.commitTable(anchor, tChecked, undefined, { noModelPass: true });
+    const [v] = await admin`select version from tables where node_id = ${tChecked}`;
+    await m.withHeads([tChecked], 'update', (tx) =>
+      tx.execute(
+        sqlTag`update nodes set data = data || ${JSON.stringify({ [DWG_CHECKED_VERSION_KEY]: Number(v!.version) })}::jsonb where id = ${tChecked}`,
+      ),
+    );
+    const [cand] = await r.findReindexCandidates({ fileIds: [fileChecked] }, 10);
+    expect(cand?.checkedVersion).toBe(Number(v!.version));
+    expect(dwgTableEdited(cand!)).toBe(false);
+    expect(r.decide(cand!, {})).toEqual({ action: 'rebuild', snapshotFirst: false });
+    const before = await r.checksTabOf(anchor, tChecked);
+    expect(before?.rows).toHaveLength(1);
+    const out = await r.rebuildOne(cand!, {});
+    expect(out).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
+    const kept = await r.checksTabOf(anchor, tChecked);
+    expect(kept?.columns.map((x) => x.name)).toEqual(['Key', 'Answer']);
+    expect(kept?.rows.map((row) => kept.columns.map((col) => row.cells[col.id]))).toEqual([
+      ['end:A1@1.0,0.0', 'yes'],
+    ]);
+    const [n] = await admin`select data from nodes where id = ${tChecked}`;
+    expect((n!.data as Row)[DWG_SOURCE_SHA_KEY]).toBe(
+      createHash('sha256').update(Buffer.from('AC1032 made-up')).digest('hex'),
+    );
   });
 });
