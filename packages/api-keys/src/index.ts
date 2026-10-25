@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { db, onFullSystemRoute, systemDb, apiKeys, type ApiKey } from '@mantle/db';
+import {
+  db,
+  getDefaultWorker,
+  onFullSystemRoute,
+  systemDb,
+  apiKeys,
+  type AiWorker,
+  type AiWorkerKind,
+  type ApiKey,
+} from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { InputError } from '@mantle/std';
 import { normalizeAnthropicWorkspaceId, type ProviderCredential } from '@mantle/voice-client';
@@ -343,4 +352,34 @@ export async function deleteApiKey(userId: string, id: string): Promise<boolean>
     .returning({ id: apiKeys.id });
   return rows.length > 0;
 }
+/** The owner's default worker of a kind with its key opened, or why not:
+ *  `none` (no worker of the kind), `no_key` (it names no key),
+ *  `unusable` (the caller's `usable` check refused it, asked before the key
+ *  is opened, so a worker the caller cannot run never touches its key),
+ *  `unreadable_key` (the key could not be opened). */
+export type WorkerRoute =
+  | { ok: true; worker: AiWorker; credential: ProviderCredential }
+  | { ok: false; why: 'none'; worker: null }
+  | { ok: false; why: 'no_key' | 'unusable' | 'unreadable_key'; worker: AiWorker };
+
+/**
+ * The one resolution of an owner's default worker and its key, shared by
+ * every caller that runs the worker itself (runtime's runVisionWorker, the
+ * image check in @mantle/tools), so each refuses the same cases in the same
+ * order: the worker, its key reference, the caller's check, the key.
+ */
+export async function resolveDefaultWorker(
+  ownerId: string,
+  kind: AiWorkerKind,
+  usable?: (worker: AiWorker) => boolean,
+): Promise<WorkerRoute> {
+  const worker = await getDefaultWorker(ownerId, kind);
+  if (!worker) return { ok: false, why: 'none', worker: null };
+  if (!worker.apiKeyId) return { ok: false, why: 'no_key', worker };
+  if (usable && !usable(worker)) return { ok: false, why: 'unusable', worker };
+  const credential = await getApiKeyById(worker.apiKeyId);
+  if (!credential) return { ok: false, why: 'unreadable_key', worker };
+  return { ok: true, worker, credential };
+}
+
 export * from './services';

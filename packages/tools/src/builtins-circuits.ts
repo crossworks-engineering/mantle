@@ -23,8 +23,8 @@ import {
 } from './circuit-trace/check';
 import { storeChecks, storeRefusal } from './circuit-trace/checks-store';
 import { verifyCircuit } from './circuit-trace/verify';
-import { bumpWorkerUsage, getDefaultWorker, type AiWorker } from '@mantle/db';
-import { getApiKeyById } from '@mantle/api-keys';
+import { bumpWorkerUsage, type AiWorker } from '@mantle/db';
+import { resolveDefaultWorker } from '@mantle/api-keys';
 import { mediaDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
 import { CS } from './client-sourced-rule';
@@ -388,32 +388,36 @@ export async function circuitVerifyHandler(
           (await readFileById({ ownerId: owner, fileId }))?.bytes ?? null,
         crop: mediaDwgCrop,
         worker: async (owner) => {
-          const w = await getDefaultWorker(owner, 'vision');
-          if (!w) {
+          // The one resolution (@mantle/api-keys, as runVisionWorker); a
+          // provider that cannot take several images is refused by verify
+          // before its key is opened.
+          const r = await resolveDefaultWorker(owner, 'vision', (w) =>
+            multiImageProvider(w.provider),
+          );
+          if (!r.ok) {
+            if (r.why === 'unusable') {
+              const w = r.worker;
+              return {
+                ok: true,
+                worker: { slug: w.slug, provider: w.provider, model: w.model },
+                multiImage: false,
+              };
+            }
             return {
               ok: false,
               error:
-                'No vision worker is set up: add one in Settings > AI workers (an OpenRouter model that reads images), then call again.',
+                r.why === 'none'
+                  ? 'No vision worker is set up: add one in Settings > AI workers (an OpenRouter model that reads images), then call again.'
+                  : r.why === 'no_key'
+                    ? `The default vision worker '${r.worker.slug}' has no API key attached; attach one in Settings > AI workers, then call again.`
+                    : `The API key of the default vision worker '${r.worker.slug}' could not be read; check it in Settings > API keys, then call again.`,
             };
           }
-          if (!w.apiKeyId) {
-            return {
-              ok: false,
-              error: `The default vision worker '${w.slug}' has no API key attached; attach one in Settings > AI workers, then call again.`,
-            };
-          }
-          const credential = await getApiKeyById(w.apiKeyId);
-          if (!credential) {
-            return {
-              ok: false,
-              error: `The API key of the default vision worker '${w.slug}' could not be read; check it in Settings > API keys, then call again.`,
-            };
-          }
-          route = { worker: w, credential };
+          route = { worker: r.worker, credential: r.credential };
           return {
             ok: true,
-            worker: { slug: w.slug, provider: w.provider, model: w.model },
-            multiImage: multiImageProvider(w.provider),
+            worker: { slug: r.worker.slug, provider: r.worker.provider, model: r.worker.model },
+            multiImage: true,
           };
         },
         ask: async (images, prompt) => {

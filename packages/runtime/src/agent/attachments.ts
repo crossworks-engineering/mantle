@@ -18,7 +18,7 @@
  * cycle.
  */
 
-import { getApiKeyById } from '@mantle/api-keys';
+import { getApiKeyById, resolveDefaultWorker } from '@mantle/api-keys';
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import {
   extOf,
@@ -71,28 +71,29 @@ export async function runVisionWorker(opts: {
   prompt?: string;
   maxTokens?: number;
 }): Promise<VisionResult> {
-  const worker = await getDefaultWorker(opts.ownerId, 'vision');
-  if (!worker?.apiKeyId) {
-    return { ran: false, text: '', note: 'No default vision worker configured.', model: null };
-  }
-  const adapter = getVisionAdapter(worker.provider);
-  if (!adapter) {
+  // The one resolution (@mantle/api-keys): the worker, its key reference,
+  // a wired adapter (checked before the key is opened), the key.
+  const route = await resolveDefaultWorker(
+    opts.ownerId,
+    'vision',
+    (w) => getVisionAdapter(w.provider) !== null,
+  );
+  if (!route.ok) {
+    if (route.why === 'none' || route.why === 'no_key') {
+      return { ran: false, text: '', note: 'No default vision worker configured.', model: null };
+    }
     return {
       ran: false,
       text: '',
-      note: `Vision provider '${worker.provider}' isn't wired.`,
-      model: worker.model,
+      note:
+        route.why === 'unusable'
+          ? `Vision provider '${route.worker.provider}' isn't wired.`
+          : `Vision worker '${route.worker.slug}' api_key could not be decrypted.`,
+      model: route.worker.model,
     };
   }
-  const credential = await getApiKeyById(worker.apiKeyId);
-  if (!credential) {
-    return {
-      ran: false,
-      text: '',
-      note: `Vision worker '${worker.slug}' api_key could not be decrypted.`,
-      model: worker.model,
-    };
-  }
+  const { worker, credential } = route;
+  const adapter = getVisionAdapter(worker.provider)!;
 
   const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
