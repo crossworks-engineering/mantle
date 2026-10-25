@@ -532,7 +532,7 @@ const present_render: BuiltinToolDef = {
         type: 'integer',
         minimum: 1,
         maximum: 60,
-        description: 'A deck: the slide to show, e.g. 3.',
+        description: 'A deck: the slide to show, e.g. 3. A drawing set: the page.',
       },
       theme: {
         type: 'string',

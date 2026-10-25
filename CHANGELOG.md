@@ -13,8 +13,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   on and the element to show there), and a line takes a `more` marker
   (`+7 DEADLEGS`). Every link is checked and printed as a page reference
   (`SEE PAGE 3: <title>`).
-- **Feature:** the canvas shows a set one page at a time with page buttons,
-  Back and Overview; a link jumps to its page and outlines its element; the
+- **Feature:** the canvas shows a set one page at a time with page buttons
+  (one row that scrolls sideways), Back and Overview; a link jumps to its page and outlines its element; the
   arrow keys step through the pages (`present_render` `slide: n` shows page
   n). A link only switches the canvas's own page: nothing is loaded and the
   window is never navigated.
@@ -31,9 +31,12 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   branch, to a detail page that draws the line again; separate pieces go to
   parts; a line with more than six valves goes on through a `CONTINUES`
   pair. Sheet connectors link to the neighbour sheet's page. Every chain is
-  owned by one page; GUESS marks stay on every page that draws them, and a
-  guessed link gets no page link. Save it with `present_create` as one
-  canvas.
+  owned by one page; GUESS marks stay on every page that draws them (each
+  page's description names only its own), and a guessed link gets no page
+  link. A set holds 40 pages: past that, every page stays within the
+  template's limits and the chains on no page are counted per sheet in
+  `limits`. A circuit that fits one page is one plain drawing, not a set.
+  Save it with `present_create` as one canvas.
 
 ## Unreleased: a DWG down to the bones
 

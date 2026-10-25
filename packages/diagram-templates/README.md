@@ -214,7 +214,8 @@ loops, 12 lines, 4 line types, 2 accents. Over budget: split the sheet.
 
 A `pid` input with `pages` is a set: several sheets in one canvas that link
 to each other (`src/templates/pid/set.ts`). A traced circuit
-(`circuit_trace`) is one: an overview, then a page per sheet.
+(`circuit_trace`) is one, an overview and then a page per sheet, unless one
+page holds the whole circuit.
 
 | Field                                           | Notes                                                                                                                        |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -230,7 +231,8 @@ with its path. Each link is printed as a page reference (`SEE PAGE 3:
 <title>`) under its connector or in its marker, so a static copy still says
 where every line goes.
 
-The canvas shows one page at a time under a row of page buttons, with Back
+The canvas shows one page at a time under one row of page buttons (it scrolls
+sideways when they do not fit; a host keeps `SET_NAV_HEIGHT` for it), with Back
 and Overview; a click (or Enter) on a linked connector or marker shows its
 page and outlines the `focus` element; the arrow keys and Page Up/Down step
 through the pages (so `present_render` with `slide: n` shows page n). A link
