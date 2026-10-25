@@ -18,6 +18,7 @@ import {
   PATH_POINTS_MAX,
   parseAnswers,
   promptFor,
+  sealFieldsOf,
   questionsFor,
   simplifyPath,
   SPEC_BYTES_MAX,
@@ -260,9 +261,7 @@ describe('a valve type read from a block name', () => {
         question: q.question,
         trust: '',
       };
-      const s = [
-        { ...generic, checks: [{ ...row, seal: sealOf({ tableId: q.tableId, ...row }) }] },
-      ];
+      const s = [{ ...generic, checks: [{ ...row, seal: sealOf(sealFieldsOf(q.tableId, row)) }] }];
       const applied: AppliedCheck[] = [];
       const r = traceCircuit(CIRCUIT, s, undefined, {
         checks: (sheets, links) => appliedChecks(sheets, links, s, applied, []),
@@ -337,7 +336,11 @@ const stored = (
     trust: '',
     ...over,
   };
-  return { ...row, seal: sealOf({ tableId, ...row }), ...(over.seal ? { seal: over.seal } : {}) };
+  return {
+    ...row,
+    seal: sealOf(sealFieldsOf(tableId, row)),
+    ...(over.seal ? { seal: over.seal } : {}),
+  };
 };
 
 describe('the trace shows the checks', () => {
@@ -407,7 +410,9 @@ describe('the trace shows the checks', () => {
     expect(applied).toHaveLength(0);
     expect(pid.offpage.map((o) => o.text)).toContain('NEAR V-201 (GUESS)');
     expect(pid.lines.map((l) => l.note)).toContain('INFERRED JOIN (GUESS)');
-    expect(limits.join(' ')).toMatch(/no valid circuit_verify seal/);
+    expect(limits.join(' ')).toMatch(
+      /no circuit_verify seal under this brain's current or staged master key/,
+    );
   });
 
   it('an answer to a question that reads differently now is not applied', () => {
@@ -415,7 +420,7 @@ describe('the trace shows the checks', () => {
       question: 'The trace guessed the pipe end belongs to "V-999".',
     });
     const { tableId } = questionOf(endKey('A', 20, 0));
-    const resealed = { ...old, seal: sealOf({ tableId, ...old }) };
+    const resealed = { ...old, seal: sealOf(sealFieldsOf(tableId, old)) };
     const { applied, limits } = traced([resealed]);
     expect(applied).toHaveLength(0);
     expect(limits.join(' ')).toMatch(/reads differently now/);
@@ -743,7 +748,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
                 question: a.q.question,
                 trust: '',
               };
-              return { ...row, seal: sealOf({ tableId: x.tableId, ...row }) };
+              return { ...row, seal: sealOf(sealFieldsOf(x.tableId, row)) };
             }),
           ),
       }));
@@ -781,7 +786,9 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     const out = outOf(await verifyCircuit('o', { circuit: C }, d));
     expect(out.answers).toHaveLength(0);
     expect(out.not_asked?.[0]?.why).toMatch(/timed out.*may still bill it/);
-    expect(out.limits.join(' ')).toMatch(/recorded no spend/);
+    expect(out.limits.join(' ')).toMatch(
+      /records each attempt with no tokens and no cost, marked timed out/,
+    );
     expect((out.usage as unknown as { timed_out: number }).timed_out).toBe(2);
   });
 
@@ -808,6 +815,82 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     expect(cut.get('q2')!.reason).toMatch(/model answer cut off/);
   });
 
+  it('a question the sidecar cut partway along is not asked on part of its path', async () => {
+    const { d, calls, filed } = deps({
+      crop: async (_b, spec) => {
+        calls.crop.push(spec);
+        const path = spec.items.find((it) => it.kind === 'path');
+        return {
+          ok: true,
+          value: {
+            converter: 'none',
+            // One of the path's two crops came, then the budget ran out.
+            crops: spec.items.map((it) => ({
+              id: it.id,
+              part: 0,
+              of: it.kind === 'path' ? 2 : 1,
+              window: [0, 0, 1, 1] as [number, number, number, number],
+              width: 100,
+              height: 100,
+              textPx: 14,
+              png,
+            })),
+            overview: { window: [0, 0, 1, 1], png },
+            capped: path ? [path.id] : [],
+          },
+        };
+      },
+    });
+    const out = outOf(await verifyCircuit('o', { circuit: C }, d));
+    const cut = out.not_asked?.find((n) => /ran out partway along it/.test(n.why));
+    expect(cut).toBeDefined();
+    expect(filed.map((a) => a.q.kind)).toEqual(['end']);
+    expect(calls.ask.every((a) => !a.prompt.includes(`${cut!.id} (`))).toBe(true);
+  });
+
+  it('a dry run asks the store check read-only; a real call lets it make the folder', async () => {
+    const seen: boolean[] = [];
+    const { d } = deps({
+      storable: async (_o, _s, opts) => {
+        seen.push(opts.dryRun);
+        return null;
+      },
+    });
+    await verifyCircuit('o', { circuit: C, dryRun: true }, d);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((x) => x === true)).toBe(true);
+    seen.length = 0;
+    await verifyCircuit('o', { circuit: C }, d);
+    expect(seen.every((x) => x === false)).toBe(true);
+  });
+
+  it('rows left in a draft someone else wrote to are said to publish with it', async () => {
+    const { d } = deps({
+      store: async (_o, _s, _c, answers) => ({
+        stored: 0,
+        pending: answers.length,
+        note: 'someone wrote to the table draft; the row waits in that draft',
+      }),
+    });
+    const out = outOf(await verifyCircuit('o', { circuit: C }, d));
+    expect(out.summary).toMatch(/2 answers wait in a table draft someone else is editing/);
+    expect(out.summary).not.toMatch(/Nothing was stored/);
+    expect(out.limits.join(' ')).toMatch(/PID-9201: someone wrote to the table draft/);
+  });
+
+  it('a sheet whose source file the caller cannot read is not asked', async () => {
+    const { d, calls } = deps({
+      readSheets: async () => ({
+        sheets: both().map((x) => ({ ...x, source: 'unreadable' as const })),
+        limits: [],
+      }),
+    });
+    const r = await verifyCircuit('o', { circuit: C }, d);
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/you cannot read its drawing file/);
+    expect(calls.crop).toHaveLength(0);
+  });
+
   it('the overlay cut is said in limits (LOW-10)', async () => {
     const { d } = deps({
       readSheets: async () => {
@@ -822,5 +905,98 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     });
     const out = outOf(await verifyCircuit('o', { circuit: C }, d));
     expect(out.limits.join(' ')).toMatch(/left off the crops' overlay/);
+  });
+});
+
+describe('the drawing words each answer it shows', () => {
+  /** A row circuit_verify would file for `key` on `sheets`, sealed. */
+  const answered = (sheets: SheetInput[], key: string, answer: string): StoredCheck => {
+    const r = traceCircuit(C, sheets);
+    const q = questionsFor(r.sheets, r.links, sheets, { max: Infinity }).questions.find(
+      (x) => x.key === key,
+    );
+    if (!q) throw new Error(`no question for ${key}`);
+    const row: StoredCheck = {
+      key,
+      kind: q.kind,
+      answer,
+      revision: 'rev1',
+      checkedAt: '2026-10-25T10:00:00.000Z',
+      model: 'm',
+      reason: 'r',
+      question: q.question,
+      trust: '',
+      circuit: C,
+      crops: 'c1',
+    };
+    return { ...row, seal: sealOf(sealFieldsOf(q.tableId, row)) };
+  };
+  const drawn = (sheets: SheetInput[], rows: StoredCheck[]) => {
+    const s = sheets.map((x) => ({ ...x, checks: rows }));
+    const r = traceCircuit(C, s, undefined, {
+      checks: (w, links) => appliedChecks(w, links, s, [], []),
+    });
+    expect(validate('pid', r.pid).ok).toBe(true);
+    return JSON.stringify(r.pid);
+  };
+
+  it('one no among several joins on a line is counted, not said of all', () => {
+    const s = sheet(
+      'PID-9601',
+      [
+        sg(M, 'A', 0, 0, 20, 0, 1, 2),
+        sg(M, 'B', 30, 0, 50, 0, 3, 4),
+        sg(M, 'D', 60, 0, 80, 0, 5, 6),
+      ],
+      [
+        sg(PIPE, 'pA', 0, 0, 20, 0, 1, 2),
+        sg(PIPE, 'g1', 20, 0, 30, 0, 2, 3),
+        sg(PIPE, 'pB', 30, 0, 50, 0, 3, 4),
+        sg(PIPE, 'g2', 50, 0, 60, 0, 4, 5),
+        sg(PIPE, 'pD', 60, 0, 80, 0, 5, 6),
+      ],
+      [],
+      [lineNo('LA', 10, 1, 'N100-1'), lineNo('LB', 40, 1, 'N100-1'), lineNo('LD', 70, 1, 'N100-1')],
+    );
+    const base = drawn([s], []);
+    expect(base).toContain('2 INFERRED JOINS (GUESS)');
+    const one = drawn([s], [answered([s], joinKey(['g1']), 'no')]);
+    expect(one).toContain('2 JOINS (GUESS; IMAGE: 1 NO)');
+    expect(one).not.toContain('2 JOINS (GUESS, IMAGE: NO)');
+    const both = drawn(
+      [s],
+      [answered([s], joinKey(['g1']), 'no'), answered([s], joinKey(['g2']), 'no')],
+    );
+    expect(both).toContain('2 JOINS (GUESS; IMAGE: 2 NO)');
+  });
+
+  it("a guessed link's check shows on both of its ends", () => {
+    const segs = [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(M, 'B', 30, 0, 50, 0, 3, 4)];
+    const s1 = sheet(
+      'PID-9611',
+      segs,
+      [
+        ...segs.map((g) => ({ ...g, layer: PIPE, handle: `p${g.handle}` })),
+        sg(PIPE, 'gap', 20, 0, 30, 0, 2, 3),
+      ],
+      [
+        { text: 'CONT. ON PID-9612', layer: 'T', x: 51, y: 1 },
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+      ],
+      [{ ...lineNo('L1', 10, 1, 'N300-2'), attribs: { LINENO: 'N300-2', CIRCUIT: C } }],
+    );
+    const s2 = sheet(
+      'PID-9612',
+      [sg(M, 'X', 0, 0, 30, 0, 1, 2)],
+      [],
+      [{ text: 'CONT. FROM PID-9611', layer: 'T', x: -1, y: 1 }],
+      [{ ...lineNo('L3', 15, 1, 'N300-2'), attribs: { LINENO: 'N300-2', CIRCUIT: C } }],
+    );
+    const sheets = [s1, s2];
+    expect(traceCircuit(C, sheets).links[0]!.guessed).toBe(true);
+    const out = drawn(sheets, [answered(sheets, linkKey('B', 50, 0, 'PID-9612'), 'yes')]);
+    expect(out).toContain('TO PID-9612 (CHECKED BY IMAGE)');
+    expect(out).toContain('FROM PID-9611 (CHECKED BY IMAGE)');
+    expect(out).not.toMatch(/PID-961[12] \(GUESS\)/);
   });
 });

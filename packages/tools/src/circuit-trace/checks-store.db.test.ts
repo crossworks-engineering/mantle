@@ -43,7 +43,7 @@ describe.skipIf(!URL)('the image check store', () => {
   let c: typeof import('@mantle/content');
   let s: typeof import('./checks-store');
   let readMod: typeof import('./read');
-  let seal: typeof import('./check-seal');
+  let check: typeof import('./check');
   let admin: (strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>;
   let sqlTag: typeof import('drizzle-orm').sql;
   let anchor = '';
@@ -129,7 +129,7 @@ describe.skipIf(!URL)('the image check store', () => {
     c = await import('@mantle/content');
     s = await import('./checks-store');
     readMod = await import('./read');
-    seal = await import('./check-seal');
+    check = await import('./check');
     sqlTag = (await import('drizzle-orm')).sql;
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin as never, process.env.MANTLE_MASTER_KEY);
@@ -174,20 +174,9 @@ describe.skipIf(!URL)('the image check store', () => {
       Revision: SHA.slice(0, 16),
       File: fileId,
     });
-    expect(
-      seal.sealHolds(
-        {
-          tableId: t,
-          key: String(row.Key),
-          question: String(row.Question),
-          answer: String(row.Answer),
-          model: String(row.Model),
-          revision: String(row.Revision),
-          checkedAt: String(row['Checked at']),
-        },
-        String(row.Seal),
-      ),
-    ).toBe(true);
+    // The row as the read maps it holds its seal (every field it covers).
+    expect(check.sealedRow(t, check.storedCheckOf(row))).toBe(true);
+    expect(check.sealedRow(t, check.storedCheckOf({ ...row, Reason: 'typed' }))).toBe(false);
     const cropIds = String(row.Crops).split(' ');
     const crops = await admin`select data from nodes where id = any(${cropIds}::uuid[])`;
     expect(crops).toHaveLength(1);
@@ -243,7 +232,7 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(mine[0]).toMatchObject({ revision: SHA.slice(0, 16), sourceSha: SHA });
   });
 
-  it('a user who writes to the draft before the commit keeps it; nothing is published', async () => {
+  it('a user who writes to the draft before the commit keeps it, our rows and crops with it', async () => {
     const t = await makeTable(`${tag} race`);
     const before = await s.tableState(t);
     midStore.hook = async () => {
@@ -255,14 +244,176 @@ describe.skipIf(!URL)('the image check store', () => {
     } finally {
       midStore.hook = null;
     }
-    expect(r).toMatchObject({ error: expect.stringMatching(/kept/) });
+    // Not committed here: the rows wait in the user's draft and publish
+    // with it, so the crops (their evidence) are kept.
+    expect(r).toMatchObject({ stored: 0, pending: 1, note: expect.stringMatching(/publish/) });
     const now = await s.tableState(t);
     expect(now).toMatchObject({ version: before!.version, hasDraft: true });
-    // The crops of the failed write are gone.
     const left = await admin`select count(*)::int as n from nodes
       where data->>'sourceTableId' = ${t} and type = 'file'`;
-    expect(left[0]!.n).toBe(0);
+    expect(left[0]!.n).toBe(1);
     expect(await c.discardTableDraft(anchor, t)).toBe(true);
+  });
+
+  it("a dry run's store check makes no folder; the real one makes it at the same path", async () => {
+    const t = await makeTable(`${tag} dry`);
+    const sheet = { ...sheetOf(t), sourceFileId: randomUUID(), title: `${tag} dry drawing` };
+    const files = await import('@mantle/files');
+    const path = files.autoFiledFolderPath('drawing-checks', {
+      document: { slug: sheet.sourceFileId },
+    });
+    const count = async () =>
+      (
+        await admin`select count(*)::int as n from nodes
+          where owner_id = ${anchor} and type = 'branch'`
+      )[0]!.n as number;
+    const was = await count();
+    expect(await s.storeRefusal(anchor, sheet, { dryRun: true })).toBeNull();
+    expect(await count()).toBe(was);
+    expect(await files.folderByPath({ ownerId: anchor, path })).toBeNull();
+    expect(await s.storeRefusal(anchor, sheet)).toBeNull();
+    expect(await files.folderByPath({ ownerId: anchor, path })).not.toBeNull();
+    await admin`delete from nodes where owner_id = ${anchor} and type = 'branch'
+      and path::text = ${path}`;
+  });
+
+  it('end to end: an answer filed by circuit_verify applies in circuit_trace and is not asked again', async () => {
+    const circuit = `${tag}-E2E`;
+    const layer = `Circuit ${circuit}`;
+    const num = (name: string) => ({ name, type: 'number' as const });
+    const txt = (name: string) => ({ name, type: 'text' as const });
+    const grid = (
+      name: string,
+      columns: { name: string; type: 'text' | 'number' }[],
+      rows: unknown[][],
+    ) => ({
+      ...c.tableDocFromGrid({ columns, rows: rows as never }),
+      name,
+    });
+    const made = await c.createTable(anchor, {
+      title: `${tag} PID-E2E`,
+      tags: ['auto-import'],
+      sourceFileId: fileId,
+      sourceSha256: SHA,
+      description: 'AutoCAD DWG model-space registry. ... within 2 drawing units of it ... (test)',
+      tabs: [
+        grid('Layers', [txt('Layer')], [[layer], ['EQUIP']]),
+        grid(
+          'Segments',
+          [
+            txt('Layer'),
+            txt('Handle'),
+            num('X1'),
+            num('Y1'),
+            num('X2'),
+            num('Y2'),
+            num('Length'),
+            num('Node 1'),
+            num('Node 2'),
+            num('Part'),
+          ],
+          [[layer, 'A', 0, 0, 20, 0, 20, 1, 2, 0]],
+        ),
+        grid(
+          'Nodes',
+          [
+            num('Node'),
+            num('X'),
+            num('Y'),
+            num('Degree'),
+            txt('Kind'),
+            txt('Block'),
+            txt('Block handle'),
+            txt('Layers'),
+          ],
+          [
+            [1, 0, 0, 1, 'end', '', '', layer],
+            [2, 20, 0, 1, 'end', '', '', layer],
+          ],
+        ),
+        grid(
+          'Texts',
+          [txt('Text'), txt('Layer'), num('X'), num('Y')],
+          [
+            ['E-101', 'EQUIP', -1, 0],
+            ['V-201', 'EQUIP', 25, 0],
+          ],
+        ),
+      ],
+    });
+    ids.push(made.id);
+    const builtins = await import('../builtins-circuits');
+    const { verifyCircuit } = await import('./verify');
+    const png = Buffer.from('png');
+    let asked = 0;
+    const deps: import('./verify').VerifyDeps = {
+      readSheets: builtins.readCircuitSheets,
+      fileBytes: async () => BYTES,
+      crop: async (_b, spec) => ({
+        ok: true,
+        value: {
+          converter: 'none',
+          crops: spec.items.map((it) => ({
+            id: it.id,
+            part: 0,
+            of: 1,
+            window: [0, 0, 1, 1] as [number, number, number, number],
+            width: 100,
+            height: 100,
+            textPx: 14,
+            png,
+          })),
+          overview: { window: [0, 0, 1, 1], png },
+          capped: [],
+        },
+      }),
+      worker: async () => ({
+        ok: true,
+        worker: { slug: 'vision-test', provider: 'openrouter', model: 'test/vision-model' },
+        multiImage: true,
+      }),
+      ask: async (_images, prompt) => {
+        asked += 1;
+        const qids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]);
+        return {
+          text: JSON.stringify({
+            answers: qids.map((id) => ({ id, answer: 'yes', reason: 'into its nozzle' })),
+          }),
+          model: 'test/vision-model',
+        };
+      },
+      storable: s.storeRefusal,
+      store: s.storeChecks,
+      now: () => new Date('2026-10-25T12:00:00.000Z'),
+    };
+    const first = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
+    expect(first.ok).toBe(true);
+    expect(asked).toBe(1);
+    const out1 = (
+      first as unknown as { output: { answers: { answer: string }[]; summary: string } }
+    ).output;
+    expect(out1.answers.map((a) => a.answer)).toEqual(['yes']);
+    expect(out1.summary).toMatch(/Stored in the Checks tab/);
+
+    // circuit_trace reads it back through the real read and applies it.
+    const traced = await builtins.circuitTraceHandler({ circuit }, anchor);
+    expect(traced.ok).toBe(true);
+    const t = (
+      traced as {
+        output: { checks?: { items: { trust: string }[] }; pid: unknown; limits: string[] };
+      }
+    ).output;
+    expect(t.checks?.items.map((x) => x.trust)).toEqual(['CHECKED BY IMAGE']);
+    expect(JSON.stringify(t.pid)).toContain('NEAR V-201 (CHECKED BY IMAGE)');
+    expect(t.limits.join(' ')).not.toMatch(/no circuit_verify seal/);
+
+    // A second call does not pay for the answered question again.
+    const second = await verifyCircuit(anchor, { circuit, kinds: ['end'] }, deps);
+    expect(second.ok).toBe(true);
+    expect(asked).toBe(1);
+    expect((second as unknown as { output: { summary: string } }).output.summary).toMatch(
+      /no unanswered guess/,
+    );
   });
 
   it('the revision is the stamp; a file replaced in place reads stale', async () => {

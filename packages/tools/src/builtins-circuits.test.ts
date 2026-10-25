@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listed = vi.hoisted(() => ({
-  rows: [] as { id: string; title: string; data: unknown; fileSha?: string }[],
+  rows: [] as { id: string; title: string; data: unknown; fileSha?: string | null }[],
 }));
 const surfaces = vi.hoisted(() => ({ readable: new Set<string>(), opened: [] as string[] }));
 const sqlCalls = vi.hoisted(() => ({ files: [] as string[] }));
@@ -259,6 +259,22 @@ describe('a drawing replaced after its table was built (circuit_trace)', () => {
     ];
     const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
     expect((r as { output: { limits: string[] } }).output.limits.join(' ')).not.toMatch(/replaced/);
+  });
+
+  it('a source file the caller cannot read: the revision is unchecked, never current', async () => {
+    listed.rows = [
+      {
+        ...dwgRow('open', 'PID-1001'),
+        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
+        fileSha: null,
+      },
+    ];
+    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
+    const limits = (r as { output: { limits: string[] } }).output.limits.join(' ');
+    expect(limits).toMatch(
+      /PID-1001: whether its table still matches its drawing file could not be checked \(you cannot read the source file/,
+    );
+    expect(limits).not.toMatch(/replaced/);
   });
 });
 
