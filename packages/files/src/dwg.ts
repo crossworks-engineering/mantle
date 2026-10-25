@@ -344,6 +344,7 @@ export type DwgGrids = {
 export type DwgGridsGeometry = {
   snapTolerance: number | null;
   nearDistance: number | null;
+  sheets: number;
   skipped: Record<string, number>;
   segmentsCapped: boolean;
   nodesCapped: boolean;
@@ -543,6 +544,7 @@ function bonesSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsGeometry | nu
   return {
     snapTolerance: r.geometry?.snapTolerance ?? null,
     nearDistance: r.geometry?.nearDistance ?? null,
+    sheets: r.geometry?.sheets ?? 0,
     skipped: r.geometry?.skipped ?? {},
     segmentsCapped: r.segmentsCapped || r.segments.length > MAX_SEGMENT_ROWS,
     nodesCapped: r.nodesCapped || r.nodes.length > MAX_NODE_ROWS,
@@ -603,7 +605,11 @@ export function dwgTableDescription(ext: string, grids: DwgGrids): string {
   }
   if (has('Nodes')) {
     parts.push(
-      ` Nodes is where segment ends meet: ends within ${tol} drawing units are one node,` +
+      ` Nodes is where segment ends meet: ends within ${tol} drawing units are one node` +
+        (g.sheets > 1
+          ? ` (this model space holds ${g.sheets} sheets and each sheet scales its own` +
+            ` tolerance; ${tol} is the largest sheet's),`
+          : `,`) +
         ` and lines that only cross, with no end at the crossing, are NOT joined. Degree` +
         ` counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block` +
         ` (a pipe end joined to another pipe end through a small block such as a valve or` +

@@ -612,6 +612,9 @@ export type DwgGeometry = {
   snapTolerance: number | null;
   nearDistance: number | null;
   extentDiagonal: number | null;
+  /** Sheets tiled in one model space; above 1 each sheet scales its own
+   *  tolerances and snapTolerance is the largest sheet's. */
+  sheets: number;
   segments: number;
   nodes: number;
   nodeKinds: Record<string, number>;
@@ -792,6 +795,7 @@ function readBones(body: Record<string, unknown>) {
         snapTolerance: finite(g.snap_tolerance),
         nearDistance: finite(g.near_distance),
         extentDiagonal: finite(g.extent_diagonal),
+        sheets: count(g.sheets),
         segments: count(g.segments),
         nodes: count(g.nodes),
         nodeKinds: tally(g.node_kinds),

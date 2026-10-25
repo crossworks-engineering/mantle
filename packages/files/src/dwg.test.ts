@@ -638,6 +638,21 @@ describe('the bones tabs', () => {
     }
   });
 
+  it('says the tolerance is per sheet when the model space tiles several sheets', async () => {
+    const base = bonesReply();
+    stubSidecar({ ...base, geometry: { ...base.geometry, sheets: 3 } });
+    try {
+      const d = dwgTableDescription('dwg', await parseDwgToGrids(dwgFixture(93)));
+      expect(d).toContain(
+        'ends within 0.0213 drawing units are one node (this model space holds 3 sheets and' +
+          " each sheet scales its own tolerance; 0.0213 is the largest sheet's),",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('says what each new tab holds and what it does not', async () => {
     stubSidecar(bonesReply());
     try {
