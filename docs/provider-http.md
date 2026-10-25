@@ -180,6 +180,7 @@ after which a stream's idle guard (120 s between chunks) bounds it.
 | Decisions judge                                                              | 1.5 s (or the caller's)                    | the same (`decision`)                           |
 | Vision (one image)                                                           | 60 s                                       | 60 s (`vision`)                                 |
 | Vision (Anthropic PDF)                                                       | 120 s                                      | 120 s (`visionDocument`)                        |
+| Vision (several images, the drawing check, OpenRouter)                       | none (new)                                 | **240 s** (`visionImages`, new)                 |
 | Image generation (OpenAI, xAI, Google, OpenRouter)                           | 120 s                                      | 120 s (`image`)                                 |
 | Image generation (Hugging Face)                                              | 180 s                                      | 180 s (`imageCold`)                             |
 | OpenAI returned-image fetch                                                  | undici                                     | **120 s** exchange (`image`, new)               |

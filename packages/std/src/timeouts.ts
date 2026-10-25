@@ -39,6 +39,10 @@ export const PROVIDER_TIMEOUTS = {
   vision: 60_000,
   /** A whole PDF to text (Anthropic document input). */
   visionDocument: 120_000,
+  /** Several images in one request (the drawing check: up to 16 crops of
+   *  up to 2000 px, answered by a reasoning model such as Gemini Pro, which
+   *  thinks before it answers): one image's minute is far too short. */
+  visionImages: 240_000,
   /** Text to speech. */
   speech: 60_000,
   /** Image generation. */

@@ -34,7 +34,7 @@ const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
 type OrChatResponse = {
   model?: string;
-  choices?: Array<{ message?: { content?: unknown } }>;
+  choices?: Array<{ message?: { content?: unknown }; finish_reason?: string | null }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
@@ -69,7 +69,7 @@ async function post(
   apiKey: string,
   body: Record<string, unknown>,
   timeoutMs: number,
-): Promise<VisionExtractResult & { _model: string }> {
+): Promise<VisionExtractResult & { _model: string; finishReason?: string }> {
   const res = await providerFetch(
     `${OPENROUTER_BASE_URL}/chat/completions`,
     {
@@ -91,12 +91,14 @@ async function post(
   const parsed = (await res.json()) as OrChatResponse;
   const text = replyText(parsed.choices?.[0]?.message?.content).trim();
   const model = parsed.model || String(body.model);
+  const finish = parsed.choices?.[0]?.finish_reason;
   return {
     text,
     model,
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     _model: model,
+    ...(typeof finish === 'string' && finish ? { finishReason: finish } : {}),
   };
 }
 
@@ -137,6 +139,15 @@ function isImageReader(
   return outputs.includes('text') && !outputs.includes('image');
 }
 
+/** What a several-image request may add: a cap on the model's reasoning
+ *  tokens (OpenRouter's `reasoning.max_tokens`, so a thinking model leaves
+ *  room in `maxTokens` for the answer itself). */
+export type ImagesRequestExtra = { reasoningMaxTokens?: number };
+
+/** A several-image reply, with why the model stopped (`length`: cut off at
+ *  the token cap) when the provider says. */
+export type ImagesResult = VisionExtractResult & { finishReason?: string };
+
 /**
  * Several images in ONE request: a text block, then each image after its
  * own short caption ("Image 3: ..."), so the model can answer per image.
@@ -145,7 +156,8 @@ function isImageReader(
 export async function openrouterExtractImages(
   images: readonly { bytes: Buffer; mimeType: string; caption?: string }[],
   opts: VisionExtractOptions,
-): Promise<VisionExtractResult> {
+  extra: ImagesRequestExtra = {},
+): Promise<ImagesResult> {
   if (!opts.apiKey) throw new Error('openrouter-vision: apiKey required');
   if (!images.length || images.some((i) => !i.bytes?.length)) {
     throw new Error('openrouter-vision: an empty image buffer');
@@ -164,14 +176,21 @@ export async function openrouterExtractImages(
     {
       model,
       max_tokens: opts.maxTokens ?? 2000,
+      ...(extra.reasoningMaxTokens ? { reasoning: { max_tokens: extra.reasoningMaxTokens } } : {}),
       messages: [
         ...(opts.systemPrompt?.trim() ? [{ role: 'system', content: opts.systemPrompt }] : []),
         { role: 'user', content },
       ],
     },
-    PROVIDER_TIMEOUTS.vision,
+    PROVIDER_TIMEOUTS.visionImages,
   );
-  return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+  return {
+    text: r.text,
+    model: r.model,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    ...(r.finishReason ? { finishReason: r.finishReason } : {}),
+  };
 }
 
 export const openrouterVisionAdapter: VisionDispatcher = {

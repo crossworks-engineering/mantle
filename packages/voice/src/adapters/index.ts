@@ -125,7 +125,13 @@ registerDecisionAdapter(openrouterDecisionAdapter);
   }
 }
 
-export { extractImages, multiImageProvider, type VisionImage } from './vision-images';
+export {
+  extractImages,
+  multiImageProvider,
+  type ImagesRequestExtra,
+  type ImagesResult,
+  type VisionImage,
+} from './vision-images';
 
 export {
   findAdapterCatalogDrift,

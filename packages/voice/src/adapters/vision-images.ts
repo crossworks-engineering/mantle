@@ -9,9 +9,15 @@
  * the caller says so instead of guessing. Spend is recorded like every
  * other vision call (./spend.ts).
  */
-import { openrouterExtractImages } from './openrouter-vision';
+import {
+  openrouterExtractImages,
+  type ImagesRequestExtra,
+  type ImagesResult,
+} from './openrouter-vision';
 import { recordVision } from './spend';
-import type { VisionExtractOptions, VisionExtractResult } from './types';
+import type { VisionExtractOptions } from './types';
+
+export type { ImagesRequestExtra, ImagesResult };
 
 export type VisionImage = { bytes: Buffer; mimeType: string; caption?: string };
 
@@ -23,16 +29,19 @@ export function multiImageProvider(provider: string): boolean {
 }
 
 /** Ask one question set over several images in one request. Throws for a
- *  provider `multiImageProvider` refuses. */
+ *  provider `multiImageProvider` refuses, and on a timeout (the request may
+ *  still be billed by the provider; no usage came back to record: the
+ *  caller says so). */
 export async function extractImages(
   provider: string,
   images: readonly VisionImage[],
   opts: VisionExtractOptions,
-): Promise<VisionExtractResult> {
+  extra: ImagesRequestExtra = {},
+): Promise<ImagesResult> {
   if (provider !== 'openrouter') {
     throw new Error(`vision: provider '${provider}' cannot take several images in one request`);
   }
-  const r = await openrouterExtractImages(images, opts);
+  const r = await openrouterExtractImages(images, opts, extra);
   recordVision(provider, opts, r);
   return r;
 }
