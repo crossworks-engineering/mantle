@@ -365,19 +365,30 @@ export type WorkerRoute =
 /**
  * The one resolution of an owner's default worker and its key, shared by
  * every caller that runs the worker itself (runtime's runVisionWorker, the
- * image check in @mantle/tools), so each refuses the same cases in the same
- * order: the worker, its key reference, the caller's check, the key.
+ * image check in @mantle/tools, the worker tools through their wording
+ * defaultWorkerOrError), so each refuses the same cases in the same order:
+ * the worker, its key reference, the caller's check, the key.
  */
 export async function resolveDefaultWorker(
   ownerId: string,
   kind: AiWorkerKind,
   usable?: (worker: AiWorker) => boolean,
 ): Promise<WorkerRoute> {
-  const worker = await getDefaultWorker(ownerId, kind);
+  return workerRoute(await getDefaultWorker(ownerId, kind), usable, getApiKeyById);
+}
+
+/** resolveDefaultWorker's order over a worker already read, with the key
+ *  opener passed in: the same refusals for a test that stubs the key read
+ *  (a module mock cannot reach this module's own call). */
+export async function workerRoute(
+  worker: AiWorker | null,
+  usable: ((worker: AiWorker) => boolean) | undefined,
+  openKey: (id: string) => Promise<ProviderCredential | null>,
+): Promise<WorkerRoute> {
   if (!worker) return { ok: false, why: 'none', worker: null };
   if (!worker.apiKeyId) return { ok: false, why: 'no_key', worker };
   if (usable && !usable(worker)) return { ok: false, why: 'unusable', worker };
-  const credential = await getApiKeyById(worker.apiKeyId);
+  const credential = await openKey(worker.apiKeyId);
   if (!credential) return { ok: false, why: 'unreadable_key', worker };
   return { ok: true, worker, credential };
 }

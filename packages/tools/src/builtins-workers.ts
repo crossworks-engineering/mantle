@@ -12,7 +12,7 @@
  *    photo I sent yesterday again", "give me a TLDR of that note".
  *
  * 2. Each tool resolves the OWNER'S DEFAULT worker for its capability
- *    via getDefaultWorker(ownerId, kind). If no default exists or
+ *    via defaultWorkerOrError(ownerId, kind). If no default exists or
  *    the worker is misconfigured, the tool returns a structured
  *    `{ok: false, error: '...'}` rather than throwing — the LLM sees
  *    the error and tells the user conversationally ("I'd love to,
@@ -29,8 +29,8 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
-import { getApiKeyById } from '@mantle/api-keys';
+import { db, nodes, getDefaultWorker, type AiWorker, type AiWorkerKind } from '@mantle/db';
+import { resolveDefaultWorker } from '@mantle/api-keys';
 import { accountForSurface, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { ensureAutoFiledFolder, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
@@ -63,43 +63,37 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
 ];
 
 /**
- * Resolve `{worker, credential}` for a default worker of the given kind,
- * or return a structured error the tool can pass straight back to the
- * LLM. Centralised so every worker tool reports the same shape of
- * "not configured" message.
+ * The owner's default worker of a kind with its key opened, or the
+ * sentence a worker tool hands straight back to the model. The resolution
+ * itself is @mantle/api-keys `resolveDefaultWorker` (the one every caller
+ * that runs a worker shares); this only words its refusals, so every worker
+ * tool reports "not configured" the same way.
  */
-export async function resolveDefaultWorker(
+export async function defaultWorkerOrError(
   ownerId: string,
   kind: AiWorkerKind,
 ): Promise<
-  | {
-      ok: true;
-      worker: NonNullable<Awaited<ReturnType<typeof getDefaultWorker>>>;
-      credential: ProviderCredential;
-    }
-  | { ok: false; error: string }
+  { ok: true; worker: AiWorker; credential: ProviderCredential } | { ok: false; error: string }
 > {
-  const worker = await getDefaultWorker(ownerId, kind);
-  if (!worker) {
+  const r = await resolveDefaultWorker(ownerId, kind);
+  if (r.ok) return { ok: true, worker: r.worker, credential: r.credential };
+  if (r.why === 'none') {
     return {
       ok: false,
       error: `No default ${kind} worker configured. Create one at /settings/ai-workers and mark it default.`,
     };
   }
-  if (!worker.apiKeyId) {
+  if (r.why === 'no_key') {
     return {
       ok: false,
-      error: `The default ${kind} worker '${worker.slug}' has no api_key attached. Edit it at /settings/ai-workers.`,
+      error: `The default ${kind} worker '${r.worker.slug}' has no api_key attached. Edit it at /settings/ai-workers.`,
     };
   }
-  const credential = await getApiKeyById(worker.apiKeyId);
-  if (!credential) {
-    return {
-      ok: false,
-      error: `The api_key for ${kind} worker '${worker.slug}' could not be decrypted. Check /settings/api-keys.`,
-    };
-  }
-  return { ok: true, worker, credential };
+  // 'unreadable_key' ('unusable' needs a check, and none is passed here).
+  return {
+    ok: false,
+    error: `The api_key for ${kind} worker '${r.worker.slug}' could not be decrypted. Check /settings/api-keys.`,
+  };
 }
 
 // ─── synthesize_speech ─────────────────────────────────────────────
@@ -147,7 +141,7 @@ const synthesize_speech: BuiltinToolDef = {
           "synthesize_speech needs a delivery surface (Telegram chat or web /assistant). Background callers (reflector/extractor) shouldn't invoke this.",
       };
     }
-    const resolved = await resolveDefaultWorker(ctx.ownerId, 'tts');
+    const resolved = await defaultWorkerOrError(ctx.ownerId, 'tts');
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { worker, credential } = resolved;
 
@@ -343,7 +337,7 @@ const extract_from_image: BuiltinToolDef = {
       return { ok: false, error: 'Provide only one of node_id / telegram_file_id, not both.' };
     }
 
-    const resolved = await resolveDefaultWorker(ctx.ownerId, 'vision');
+    const resolved = await defaultWorkerOrError(ctx.ownerId, 'vision');
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { worker, credential } = resolved;
     const adapter = getVisionAdapter(worker.provider);
@@ -528,7 +522,7 @@ const summarize_text: BuiltinToolDef = {
       source = inlineText!;
     }
 
-    const resolved = await resolveDefaultWorker(ctx.ownerId, 'summarizer');
+    const resolved = await defaultWorkerOrError(ctx.ownerId, 'summarizer');
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { worker, credential } = resolved;
     // Summarizer is chat-shaped — invoke through the chat adapter for
@@ -685,7 +679,7 @@ const generate_image: BuiltinToolDef = {
     const prompt = str(input.prompt).trim();
     if (!prompt) return { ok: false, error: 'prompt required' };
 
-    const resolved = await resolveDefaultWorker(ctx.ownerId, 'image_gen');
+    const resolved = await defaultWorkerOrError(ctx.ownerId, 'image_gen');
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { worker, credential } = resolved;
     const adapter = getImageGenAdapter(worker.provider);

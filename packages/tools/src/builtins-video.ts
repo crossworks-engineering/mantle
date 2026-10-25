@@ -49,7 +49,7 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { EgressRefusedError, egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 import { notFound } from './errors';
-import { resolveDefaultWorker } from './builtins-workers';
+import { defaultWorkerOrError } from './builtins-workers';
 import { str } from './coerce';
 import {
   buildTranscriptMarkdown,
@@ -361,7 +361,7 @@ const video_ingest: BuiltinToolDef = {
         }
         // Resolve the STT worker BEFORE fetching audio — never download for
         // a transcription that can't run.
-        const stt = await resolveDefaultWorker(ctx.ownerId, 'stt');
+        const stt = await defaultWorkerOrError(ctx.ownerId, 'stt');
         if (!stt.ok) {
           return {
             ok: false,
@@ -506,7 +506,7 @@ const video_ingest: BuiltinToolDef = {
     }
     const loaded = await readFileById({ ownerId: ctx.ownerId, fileId: fileNodeId });
     if (!loaded) return notFound('file', fileNodeId, 'file_list / search_nodes');
-    const stt = await resolveDefaultWorker(ctx.ownerId, 'stt');
+    const stt = await defaultWorkerOrError(ctx.ownerId, 'stt');
     if (!stt.ok) return { ok: false, error: stt.error };
     const adapter = getSttAdapter(stt.worker.provider);
     if (!adapter) {

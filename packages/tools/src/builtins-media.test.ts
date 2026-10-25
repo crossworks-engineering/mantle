@@ -70,7 +70,18 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/api-keys', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/api-keys')>();
-  return { ...actual, getApiKeyById: vi.fn() };
+  const { getDefaultWorker } = await import('@mantle/db');
+  const getApiKeyById = vi.fn();
+  return {
+    ...actual,
+    getApiKeyById,
+    // The one resolution's own order, over this file's stubbed reads.
+    resolveDefaultWorker: async (
+      ownerId: string,
+      kind: Parameters<typeof getDefaultWorker>[1],
+      usable?: Parameters<typeof actual.workerRoute>[1],
+    ) => actual.workerRoute(await getDefaultWorker(ownerId, kind), usable, getApiKeyById),
+  };
 });
 vi.mock('@mantle/telegram', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/telegram')>();
