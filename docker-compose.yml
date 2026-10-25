@@ -604,7 +604,7 @@ services:
     # a single buffer (<=64 MB) — bounded, but the one RAM-shaped payload
     # this container now carries. ezdwf's PARSER is the real ceiling: stock
     # 0.0.3 peaked at ~1.3 GB transient RSS on a 630 KB real plot set; the
-    # lazy-read fix (upstream since 0.0.5, pinned 0.0.7) brings that to
+    # lazy-read fix (upstream since 0.0.5, pinned 0.0.9) brings that to
     # ~0.54 GB. A bigger set can still exceed 1g: the child dies cleanly and
     # the brain falls back to thumbnails. MEDIA_MEM_LIMIT raises it per box.
     mem_limit: ${MEDIA_MEM_LIMIT:-1g}

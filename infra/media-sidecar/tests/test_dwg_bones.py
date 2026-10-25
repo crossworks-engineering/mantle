@@ -3,7 +3,7 @@ registry on synthetic DXF files this test builds with ezdxf (never a real
 drawing: the repo is public).
 
 Run (stdlib unittest; the ezdxf cases skip when ezdxf is not installed):
-    python3 -m venv /tmp/dwgvenv && /tmp/dwgvenv/bin/pip install "ezdxf==1.4.4"
+    python3 -m venv /tmp/dwgvenv && /tmp/dwgvenv/bin/pip install "ezdxf==1.4.5"
     /tmp/dwgvenv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
 """
 

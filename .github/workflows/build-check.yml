@@ -108,7 +108,7 @@ jobs:
           MEDIA_TESTS_REQUIRE_EZDXF: '1'
         run: |
           python3 -m venv /tmp/media-venv
-          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.4"
+          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.5"
           /tmp/media-venv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
 
       # Boot every server process the way the image does (each compose

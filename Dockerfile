@@ -105,12 +105,14 @@ COPY . .
 # manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
 # checksum-locked like the LibreDWG tarball.
 FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
-ADD --checksum=sha256:9466ef859824b372410a8f0866b07e3063cf9b37d8fe1b40519bf90b131a83d7 \
-  https://files.pythonhosted.org/packages/78/3f/ea21db9368bcb70aa009290cf59c227226d33a1b32de31acd4782edfa64d/ezdwg-0.12.12.tar.gz /tmp/ezdwg-sdist.tar.gz
+ADD --checksum=sha256:e802447b528b0341e4715fa8bdb2722183ba3456d49a4feab66d0690c5d96be0 \
+  https://files.pythonhosted.org/packages/42/91/fb24addea0c5e4572a11dcd874d0cb4ce924058978ea7d59ffd29efde387/ezdwg-0.17.0.tar.gz /tmp/ezdwg-sdist.tar.gz
 RUN mkdir /tmp/ezdwg \
   && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
 WORKDIR /tmp/ezdwg
-RUN maturin build --release --interpreter python3.13 --out /wheels
+# The wheel is abi3 (pyo3 abi3-py310), so the interpreter only drives the
+# build; it matches the media stage's Python anyway.
+RUN maturin build --release --interpreter python3.15 --out /wheels
 
 # ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
 # Debian ships no libredwg package, so the converter is built from the pinned
@@ -123,7 +125,7 @@ RUN maturin build --release --interpreter python3.13 --out /wheels
 # ftp.gnu.org: the primary timed out for whole release runs (v0.239.15).
 # The checksum pins the exact bytes, so the mirror cannot change what we
 # build.
-FROM python:3.13-slim AS libredwg-build
+FROM python:3.15-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config xz-utils \
   && rm -rf /var/lib/apt/lists/*
@@ -145,7 +147,7 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
 # yt-dlp is baked in for offline boots, then refreshed from PyPI at start and
 # daily by the entrypoint (see entrypoint.sh for why "always latest" is a hard
 # requirement for this one dependency).
-FROM python:3.13-slim AS media
+FROM python:3.15-slim AS media
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg \
   && rm -rf /var/lib/apt/lists/*
@@ -162,6 +164,8 @@ RUN pip install --no-cache-dir yt-dlp
 # 0.0.7: our lazy-read memory fix (peak RSS ~1.27 GB -> ~0.54 GB on a 630 KB
 # plot set) merged upstream in 0.0.5, which retired the patched-wheel stage.
 # PyPI ships abi3 manylinux wheels for both amd64 and arm64.
+# matplotlib is pinned exactly for the same reason: its version decides the
+# rendered pixels, and a range let each rebuild pick up whatever was newest.
 ENV MPLBACKEND=Agg
 # DWG tier (v0.232.99): ezdxf parses + renders the converted DXF (the one
 # code path downstream of conversion); ezdwg is the MIT fallback converter
@@ -169,8 +173,8 @@ ENV MPLBACKEND=Agg
 # ezdwg installs from the ezdwg-build stage's wheel, never PyPI: PyPI has no
 # arm64 wheel and this stage has no compiler (the v0.232.100 arm64 failure).
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
-RUN pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.7" /tmp/ezdwg-wheels/ezdwg-*.whl \
-    "matplotlib>=3.9,<4" "ezdxf==1.4.4"
+RUN pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" /tmp/ezdwg-wheels/ezdwg-*.whl \
+    "matplotlib==3.11.2" "ezdxf==1.4.5"
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 COPY infra/media-sidecar/app.py /srv/app.py
 # The DWG bones (segments, network, circuits): imported by the --dwg-render
