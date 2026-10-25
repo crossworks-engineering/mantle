@@ -40,6 +40,14 @@ def seg(x1, y1, x2, y2, layer="PIPE", handle="", curved=False, length=None):
     }
 
 
+def border(w=841.0, h=594.0, x0=0.0, layer="BORDER"):
+    """An A1 sheet frame (or any rectangle), so the extent is realistic."""
+    return [
+        seg(x0, 0, x0 + w, 0, layer=layer), seg(x0 + w, 0, x0 + w, h, layer=layer),
+        seg(x0 + w, h, x0, h, layer=layer), seg(x0, h, x0, 0, layer=layer),
+    ]
+
+
 def kinds(net):
     out = {}
     for n in net["nodes"]:
@@ -214,6 +222,211 @@ class CircuitTests(unittest.TestCase):
         self.assertEqual(out["geometry"]["circuits"], 0)
 
 
+class RoundOneRegressionTests(unittest.TestCase):
+    """One case per round-1 audit finding (inputs from the auditors' probes)."""
+
+    def test_med1_a_circuit_line_drawn_twice_counts_once(self):
+        # Probe A: the same LINE copied in place (a new handle) on a circuit.
+        layer = "Circuit 25000-015-01"
+        segs = border() + [
+            seg(100, 300, 200, 300, layer=layer, handle="A1"),
+            seg(100, 300, 200, 300, layer=layer, handle="A2"),
+            seg(200, 300, 300, 300, layer=layer, handle="A3"),
+        ]
+        net = dwg_bones.build_network(segs)
+        (row,) = dwg_bones.circuit_rows(segs, net)
+        self.assertEqual((row["tees"], row["ends"], row["length"]), (0, 2, 200.0))
+        self.assertEqual(row["segments"], 2)
+        self.assertEqual(row["runs"], 1)
+        # The Segments rows keep both copies, marked.
+        self.assertEqual(sum(p["duplicate"] for p in net["pieces"]), 1)
+
+    def test_med2_a_line_number_naming_another_circuit_stays_off_this_one(self):
+        # Probe 2: a LineNumber block sits on circuit X but names circuit Y.
+        x, y = "90000-010-01", "90000-011-01"
+        segs = border(1000, 1000) + [
+            seg(0, 0, 100, 0, layer=f"Circuit {x}"),
+            seg(100, 0, 200, 0, layer=f"Circuit {y}"),
+            seg(300, 300, 400, 300, layer=f"Circuit {x}-IP1"),
+        ]
+        net = dwg_bones.build_network(segs)
+        blocks = [
+            {"block": "LineNumber", "handle": "L1", "x": 98.0, "y": 3.0,
+             "attribs": {"LINENO": "6-P-200-A1", "CIRCUIT": y}},
+            # Names a circuit that is not on this drawing: on no row here.
+            {"block": "LineNumber", "handle": "L2", "x": 50.0, "y": 2.0,
+             "attribs": {"LINENO": "6-P-201-A1", "CIRCUIT": "90000-099-01"}},
+            # An injection point's own number, on its own row only.
+            {"block": "LineNumber", "handle": "L3", "x": 350.0, "y": 302.0,
+             "attribs": {"LINENO": "1-P-300-A1", "CIRCUIT": f"Circuit {x}-IP1"}},
+            # A deadleg layer name in the attribute means its circuit.
+            {"block": "LineNumber", "handle": "L4", "x": 900.0, "y": 900.0,
+             "attribs": {"LINENO": "6-P-202-A1", "CIRCUIT": f"Circuit {x}-DL"}},
+            # No circuit named: by nearness, as before.
+            {"block": "LineNumber", "handle": "L5", "x": 20.0, "y": 2.0,
+             "attribs": {"LINENO": "6-P-203-A1"}},
+        ]
+        rows = {r["circuit"]: r for r in dwg_bones.circuit_rows(segs, net, [], blocks)}
+        self.assertEqual(rows[x]["line_numbers"], "6-P-202-A1 [L4]; 6-P-203-A1 [L5]")
+        self.assertEqual(rows[y]["line_numbers"], "6-P-200-A1 [L1]")
+        self.assertEqual(rows[f"{x}-IP1"]["line_numbers"], "1-P-300-A1 [L3]")
+
+    def test_med8_a_donut_tee_dot_is_a_symbol_not_two_tees(self):
+        # Probe B: a DONUT (closed two-vertex LWPOLYLINE, bulge 1, width)
+        # drawn over a header at a branch.
+        segs = border() + [seg(100, 300, 300, 300), seg(200, 300, 200, 400)]
+        r = 0.75
+        dot = [
+            dict(seg(200 - r, 300, 200 + r, 300, curved=True, length=math.pi * r), part=0),
+            dict(seg(200 + r, 300, 200 - r, 300, curved=True, length=math.pi * r), part=1),
+        ]
+        for d in dot:
+            d["span"] = (200 - r, 300 - r, 200 + r, 300 + r)
+            d["handle"] = "DOT"
+        net = dwg_bones.build_network(segs + dot)
+        tees = [n for n in net["nodes"] if n["kind"] == "tee"]
+        self.assertEqual(len(tees), 1)
+        self.assertAlmostEqual((tees[0]["x"], tees[0]["y"])[0], 200.0)
+        self.assertEqual(net["symbols"], 1)
+        self.assertNotIn(len(segs), [p["seg"] for p in net["pieces"]])
+        out = dwg_bones.geometry_index(segs + dot, [], [], [])
+        self.assertEqual(out["geometry"]["skipped"], {"small closed polyline": 1})
+
+    def test_med8_a_small_closed_polyline_valve_bridges_like_a_block(self):
+        # A valve drawn as a closed polyline box between two pipe ends.
+        segs = border() + [seg(100, 300, 198, 300), seg(202, 300, 300, 300)]
+        box = [seg(198, 298, 202, 298), seg(202, 298, 202, 302),
+               seg(202, 302, 198, 302), seg(198, 302, 198, 298)]
+        for b in box:
+            b["span"], b["handle"] = (198, 298, 202, 302), "PV"
+        net = dwg_bones.build_network(segs + box)
+        self.assertEqual(kinds(net).get("block"), 2)
+        self.assertEqual(net["boxes"][net["nodes"][node_at(net, 198, 300)[0]]["block"]]["handle"], "PV")
+
+    def test_low_circuit_layer_suffixes_and_name_shape(self):
+        p = dwg_bones.parse_circuit_layer
+        c = "25000-015-01"
+        self.assertEqual(p(f"Circuit {c}-DL1"), (c, "deadleg", "DL1", ""))
+        self.assertEqual(p(f"Circuit {c}-B01-DL2"), (c, "deadleg", "B01-DL2", ""))
+        self.assertEqual(p(f"Circuit {c}-B01"), (c, "main", "B01", ""))
+        self.assertEqual(p(f"Circuit {c}-IP1-DL"), (f"{c}-IP1", "deadleg", "DL", c))
+        self.assertIsNone(p("Circuit Breakers"))
+        self.assertIsNone(p("Circuit Lighting Panel 2"))  # spaces: not a name
+        self.assertIsNone(p("CIRCUIT-1"))
+        self.assertEqual(p("Circuit C-101")[0], "C-101")
+        # Probe K: the injection point's deadleg is read first.
+        segs = border() + [
+            seg(100, 300, 150, 300, layer=f"Circuit {c}-IP1-DL"),
+            seg(150, 300, 250, 300, layer=f"Circuit {c}-IP1"),
+        ]
+        (row,) = dwg_bones.circuit_rows(segs, dwg_bones.build_network(segs))
+        self.assertEqual((row["circuit"], row["kind"], row["parent"]), (f"{c}-IP1", "injection point", c))
+        self.assertEqual((row["segments"], row["deadleg_segments"]), (1, 1))
+        # Probe L: -DL1 and -B01 stay on the main circuit's row.
+        segs = border() + [
+            seg(100, 300, 150, 300, layer=f"Circuit {c}"),
+            seg(150, 300, 150, 350, layer=f"Circuit {c}-DL1"),
+            seg(150, 300, 150, 250, layer=f"Circuit {c}-B01"),
+        ]
+        (row,) = dwg_bones.circuit_rows(segs, dwg_bones.build_network(segs))
+        self.assertEqual((row["circuit"], row["segments"], row["deadleg_segments"]), (c, 2, 1))
+        self.assertEqual(row["tees"], 1)
+
+    def test_low_tiled_sheets_keep_their_own_tolerances(self):
+        # Three A1 sheets side by side in one model space, 100 apart: the
+        # whole layout's diagonal (~2790) would make tol 0.56 and let a 60
+        # box bridge; one sheet's (~1030) makes them 0.21 and 51.5.
+        segs = []
+        for k in range(3):
+            segs += border(x0=k * 941.0)
+        x = 941.0 + 100
+        segs += [seg(x, 300, x + 100, 300), seg(x + 100.3, 300, x + 200, 300)]  # 0.3 gap
+        segs += [seg(x, 100, x + 100, 100), seg(x + 160, 100, x + 260, 100)]  # 60 apart
+        valve = {"minx": x + 100, "miny": 95, "maxx": x + 160, "maxy": 105, "block": "PUMP", "handle": "P"}
+        net = dwg_bones.build_network(segs, [valve])
+        self.assertEqual(net["sheets"], 3)
+        self.assertAlmostEqual(net["tol"], math.hypot(841, 594) * dwg_bones.SNAP_REL, places=3)
+        self.assertEqual(net["bridges"], [])
+        self.assertEqual(node_at(net, x + 100, 300)[1]["kind"], "end")
+        # One sheet alone in model space keeps the extent rule.
+        alone = dwg_bones.build_network(border())
+        self.assertEqual(alone["sheets"], 1)
+
+    def test_low_a_broken_line_crossing_is_not_two_tees(self):
+        # Probe C2: line A is broken 0.15 each side of line B (tol ~0.21).
+        segs = border() + [
+            seg(100, 300, 199.85, 300, layer="A"), seg(200.15, 300, 300, 300, layer="A"),
+            seg(200, 200, 200, 400, layer="B"),
+        ]
+        net = dwg_bones.build_network(segs)
+        self.assertNotIn("tee", kinds(net))
+        b_pieces = [p for p in net["pieces"] if segments_layer(segs, p) == "B"]
+        self.assertEqual(len(b_pieces), 1)  # B is not split
+        a_runs = {p["run"] for p in net["pieces"] if segments_layer(segs, p) == "A"}
+        self.assertEqual(len(a_runs), 1)  # A goes on across the gap
+        self.assertNotEqual(a_runs, {b_pieces[0]["run"]})
+        # A real tee, and a 4-way cross drawn to the line, still join.
+        tee = dwg_bones.build_network(border() + [seg(100, 300, 300, 300), seg(200, 300, 200, 400)])
+        self.assertEqual(kinds(tee).get("tee"), 1)
+        cross = dwg_bones.build_network(border() + [
+            seg(100, 300, 300, 300), seg(200, 300, 200, 400), seg(200, 300, 200, 200)])
+        self.assertEqual(kinds(cross).get("tee"), 1)
+
+    def test_low1_a_non_finite_extent_is_a_clean_error(self):
+        # inf_test2: lines at +-8.5e307 overflow the extent to Infinity.
+        a = 8.5e307
+        segs = [dict(seg(0, 0, 1, 0), x1=-a, y1=-a, x2=-a + 1e300, y2=-a, length=1e300),
+                dict(seg(0, 0, 1, 0), x1=a, y1=a, x2=a - 1e300, y2=a, length=1e300)]
+        with self.assertRaises(ValueError):
+            dwg_bones.geometry_index(segs, [], [{"text": "x", "layer": "0", "x": 0.0, "y": 0.0}], [], {})
+
+    def test_low2_the_work_budget_cuts_a_heavy_network(self):
+        # net_bench "cross": random full-sheet lines, at a small budget.
+        import random  # noqa: PLC0415
+
+        rnd = random.Random(1)
+        segs = [seg(rnd.random() * 1000, rnd.random() * 1000, rnd.random() * 1000, rnd.random() * 1000)
+                for _ in range(500)]
+        with self.assertRaises(dwg_bones.GeometryBudgetExceeded):
+            dwg_bones.build_network(segs, budget=dwg_bones._Budget(units=10_000))
+        with self.assertRaises(dwg_bones.GeometryBudgetExceeded):
+            dwg_bones.build_network(segs, budget=dwg_bones._Budget(seconds=0.0))
+        dwg_bones.build_network(segs)  # the default budget is ample here
+
+    def test_low2_long_lines_across_a_dense_cluster_stay_cheap(self):
+        # net_bench "longtail": a dense cluster crossed by lines from far
+        # away. Each long line costs its length inside the cluster, not one
+        # check on every node.
+        import random  # noqa: PLC0415
+
+        rnd = random.Random(1)
+        segs = []
+        for _ in range(9_950):
+            x, y = rnd.random(), rnd.random()
+            segs.append(seg(x, y, x + 0.001, y))
+        for _ in range(50):
+            segs.append(seg(-1e6, rnd.random(), 1e6, rnd.random()))
+        budget = dwg_bones._Budget()
+        dwg_bones.build_network(segs, budget=budget)
+        self.assertLess(budget.units - budget.left, 3_000_000)
+
+    def test_low2_nearby_text_is_not_quadratic(self):
+        # 30,000 distinct labels along one circuit run: a list membership
+        # test per label took about 7 s; a set takes a small part of one.
+        segs = border(1000, 1000) + [seg(0, 500, 1000, 500, layer="Circuit 90000-010-01")]
+        texts = [{"text": f"T{i}", "layer": "T", "x": (i % 1000) * 1.0, "y": 500.5}
+                 for i in range(30_000)]
+        net = dwg_bones.build_network(segs)
+        started = time.monotonic()
+        (row,) = dwg_bones.circuit_rows(segs, net, texts)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertTrue(row["nearby_text"].endswith("more"))
+
+
+def segments_layer(segs, piece):
+    return segs[piece["seg"]]["layer"]
+
+
 class CapTests(unittest.TestCase):
     def test_each_list_has_its_own_cap_bit(self):
         segs = [seg(i, 0, i, 10, handle=f"H{i}") for i in range(200)]
@@ -345,6 +558,59 @@ class RegistryTests(unittest.TestCase):
         self.assertAlmostEqual(m["x1"], -1.0)  # OCS (0,0,-1) mirrors X
         self.assertEqual([s["part"] for s in dwg_bones.entity_segments(closed)], [0, 1, 2])
         self.assertEqual(dwg_bones.entity_segments(msp.add_circle((0, 0), 1)), [])
+
+    def test_med8_donut_through_the_registry(self):
+        # Probe B through ezdxf: the closing half of a two-vertex closed
+        # polyline is kept, and the dot is a symbol, not two tees.
+        doc = ezdxf.new("R2018")
+        msp = doc.modelspace()
+        msp.add_lwpolyline([(0, 0), (841, 0), (841, 594), (0, 594)], close=True,
+                           dxfattribs={"layer": "BORDER"})
+        msp.add_line((100, 300), (300, 300), dxfattribs={"layer": "PIPE"})
+        msp.add_line((200, 300), (200, 400), dxfattribs={"layer": "PIPE"})
+        r = 0.75
+        dot = msp.add_lwpolyline([(200 - r, 300, 0, 0, 1), (200 + r, 300, 0, 0, 1)],
+                                 format="xyseb", close=True,
+                                 dxfattribs={"layer": "PIPE", "const_width": 1.5})
+        halves = dwg_bones.entity_segments(dot)
+        self.assertEqual(len(halves), 2)
+        self.assertAlmostEqual(sum(h["length"] for h in halves), 2 * math.pi * r)
+        straight = msp.add_lwpolyline([(0, 0), (5, 0)], close=True)
+        self.assertEqual(len(dwg_bones.entity_segments(straight)), 1)
+        msp.delete_entity(straight)
+        index = self.app.dwg_registry(self.roundtrip(doc), "none")
+        self.assertEqual(index["geometry"]["node_kinds"].get("tee"), 1)
+        self.assertEqual(index["geometry"]["skipped"].get("small closed polyline"), 1)
+
+    def test_low1_huge_coordinates_keep_the_registry(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        a = 8.5e307
+        msp.add_line((-a, -a), (-a + 1e300, -a), dxfattribs={"layer": "Circuit 1-1"})
+        msp.add_line((a, a), (a - 1e300, a), dxfattribs={"layer": "Circuit 1-1"})
+        msp.add_text("KEEP ME", dxfattribs={"insert": (0, 0), "height": 1})
+        index = self.app.dwg_registry(doc, "none")
+        self.assertIn("not a finite number", index["geometry_error"])
+        self.assertNotIn("segments", index)
+        self.assertEqual([t["text"] for t in index["texts"]], ["KEEP ME"])
+        json.dumps(index, allow_nan=False)
+
+    def test_low2_a_heavy_drawing_keeps_the_registry(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        for i in range(200):
+            msp.add_line((i, 0), (200 - i, 200), dxfattribs={"layer": "PIPE"})
+        msp.add_text("KEEP ME", dxfattribs={"insert": (0, 0), "height": 1})
+        saved = dwg_bones.MAX_WORK_UNITS
+        dwg_bones.MAX_WORK_UNITS = 1_000
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            dwg_bones.MAX_WORK_UNITS = saved
+        self.assertIn("work units", index["geometry_error"])
+        self.assertNotIn("segments", index)
+        self.assertEqual(index["counts"].get("LINE"), 200)
+        self.assertEqual([t["text"] for t in index["texts"]], ["KEEP ME"])
 
     def test_a_drawing_without_circuit_layers_gets_no_circuits(self):
         doc = ezdxf.new("R2013")

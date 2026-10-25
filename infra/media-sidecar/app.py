@@ -1510,7 +1510,16 @@ def dwg_registry(doc, converter) -> dict:
     }
     if geometry_error is None:
         try:
-            index.update(dwg_bones.geometry_index(seg_raw, insert_raw, texts, blocks, skipped))
+            geo = dwg_bones.geometry_index(seg_raw, insert_raw, texts, blocks, skipped)
+            try:
+                # A NaN or Infinity would make index.json unparseable app
+                # side and lose the whole import, registry included.
+                json.dumps(geo, allow_nan=False)
+            except ValueError:
+                raise ValueError("a number in the geometry is not finite: geometry not built")
+            index.update(geo)
+        except (dwg_bones.GeometryBudgetExceeded, ValueError) as err:
+            geometry_error = str(err)[:500]
         except Exception as err:
             geometry_error = f"{type(err).__name__}: {err}"[:500]
     index["geometry_error"] = geometry_error
