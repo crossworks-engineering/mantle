@@ -13,7 +13,8 @@
  * capped tab, a sheet that is not uploaded) in `limits`.
  */
 
-import { buildPid, clip } from './pid';
+import { buildPid, clip, type ChainRole, type PidChecks } from './pid';
+import type { StoredCheck } from './check';
 
 /* ------------------------------------------------------------------ input */
 
@@ -84,6 +85,10 @@ export type SheetInput = {
   network?: SegRow[];
   /** What the read could not see on this sheet (capped tabs, cut reads). */
   limits: string[];
+  /** The drawing's revision (its file's content hash, cut short), and the
+   *  image check's answers stored in the table's Checks tab (check.ts). */
+  revision?: string | null;
+  checks?: StoredCheck[];
 };
 
 export type RegisterLine = { number: string; sheet?: string; deadleg?: boolean };
@@ -2172,10 +2177,19 @@ export function compareRegister(
 
 /* ------------------------------------------------------------------ trace */
 
+export type TraceOptions = {
+  /** The image check's answers for this trace's guesses, built from the
+   *  walked sheets and links before the drawing is made (check.ts). */
+  checks?: (sheets: TraceSheet[], links: SheetLink[]) => PidChecks | undefined;
+  /** Filled with each chain's role on the drawing (pid.ts PidInput.roles). */
+  roles?: Map<string, ChainRole>;
+};
+
 export function traceCircuit(
   circuit: string,
   inputs: SheetInput[],
   register?: RegisterInput,
+  opts: TraceOptions = {},
 ): TraceResult {
   const guesses: string[] = [];
   const limits: string[] = inputs.flatMap((s) => s.limits.map((l) => `${s.title}: ${l}`));
@@ -2210,12 +2224,15 @@ export function traceCircuit(
       );
     }
   }
+  const checked = opts.checks?.(sheets, links);
   const pid = buildPid(
     {
       circuit,
       sheets,
       links,
       register,
+      ...(checked ? { checked } : {}),
+      ...(opts.roles ? { roles: opts.roles } : {}),
       dirs: new Map(
         walks.flatMap((w) =>
           [...w.dirs].map(([id, d]) => [`${w.sheet.tableId}:${id}`, d] as const),

@@ -26,6 +26,7 @@ import {
   type SheetInput,
   type TextRow,
 } from './walk';
+import { CHECK_COLUMNS, CHECKS_TAB, type StoredCheck } from './check';
 
 /** Tables looked at per call (the newest first). */
 export const MAX_TABLES = 200;
@@ -44,7 +45,15 @@ export type CandidateTable = {
   title: string;
   description: string | null;
   sourceFileId: string | null;
+  /** The source file's content hash, cut to REVISION_CHARS: the drawing's
+   *  revision a stored check belongs to. Null when the file is not read. */
+  revision?: string | null;
 };
+
+/** Characters of the file's sha256 kept as its revision. */
+export const REVISION_CHARS = 16;
+/** Checks tab rows of one circuit read per sheet. */
+export const MAX_CHECK_ROWS = 2000;
 
 /** The DWG/DXF registry tables the caller's scope reads (auto-imported, the
  *  description the DWG pass writes), newest first. */
@@ -52,7 +61,15 @@ export async function dwgTables(
   ownerId: string,
 ): Promise<{ tables: CandidateTable[]; more: boolean }> {
   const rows = await db
-    .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+    .select({
+      id: nodes.id,
+      title: nodes.title,
+      data: nodes.data,
+      // The source file's hash, read in the caller's scope like the table.
+      sha: sql<
+        string | null
+      >`(select f.data->>'sha256' from ${nodes} f where f.id::text = ${nodes.data}->>'sourceFileId' limit 1)`,
+    })
     .from(nodes)
     .where(
       and(
@@ -73,6 +90,7 @@ export async function dwgTables(
         title: r.title,
         description: typeof d.description === 'string' ? d.description : null,
         sourceFileId: typeof d.sourceFileId === 'string' ? d.sourceFileId : null,
+        revision: typeof r.sha === 'string' && r.sha ? r.sha.slice(0, REVISION_CHARS) : null,
       };
     }),
   };
@@ -478,12 +496,41 @@ export async function readSheet(
         );
     });
 
+  const checks: StoredCheck[] = [];
+  const checksTab = tab(CHECKS_TAB);
+  if (checksTab)
+    await optional('the image checks (Checks)', async () => {
+      const cols = CHECK_COLUMNS.filter((c) => hasColumn(checksTab, c));
+      const r = await paged(
+        `SELECT ${cols.map(ident).join(', ')} FROM ${ident(checksTab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})`,
+        MAX_CHECK_ROWS,
+      );
+      for (const o of asObjects(r))
+        checks.push({
+          key: text(o['Key']),
+          kind: text(o['Kind']),
+          answer: text(o['Answer']).toLowerCase(),
+          revision: text(o['Revision']),
+          checkedAt: text(o['Checked at']),
+          model: text(o['Model']),
+          reason: text(o['Reason']),
+          question: text(o['Question']),
+          trust: text(o['Trust']),
+        });
+      if (r.cut)
+        limits.push(
+          `more than ${MAX_CHECK_ROWS} image checks of this circuit; the rest were not read`,
+        );
+    });
+
   return {
     kind: 'sheet',
     sheet: {
       tableId: t.id,
       title: t.title,
       sourceFileId: t.sourceFileId,
+      revision: t.revision ?? null,
+      ...(checks.length ? { checks } : {}),
       url: nodeUrl(t.id),
       circuitLayers: layerNames,
       circuitRows,

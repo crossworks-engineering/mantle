@@ -1009,10 +1009,7 @@ function windowOf(v: unknown): [number, number, number, number] | null {
  * of the drawing's bytes (X-Crop-Spec-Length), one call per sheet for all
  * its items. Never throws; same contract as the rest of this module.
  */
-export async function mediaDwgCrop(
-  dwg: Buffer,
-  spec: DwgCropSpec,
-): Promise<MediaResult<DwgCrops>> {
+export async function mediaDwgCrop(dwg: Buffer, spec: DwgCropSpec): Promise<MediaResult<DwgCrops>> {
   const head = Buffer.from(JSON.stringify(spec), 'utf8');
   return exchange(
     '/dwg/crop',
@@ -1032,7 +1029,11 @@ export async function mediaDwgCrop(
       try {
         body = JSON.parse(raw.value.toString('utf8')) as Record<string, unknown>;
       } catch {
-        return { ok: false, code: 'extraction_failed', message: 'sidecar returned non-JSON on a 200' };
+        return {
+          ok: false,
+          code: 'extraction_failed',
+          message: 'sidecar returned non-JSON on a 200',
+        };
       }
       const crops: DwgCrop[] = [];
       for (const c of Array.isArray(body.crops) ? body.crops : []) {

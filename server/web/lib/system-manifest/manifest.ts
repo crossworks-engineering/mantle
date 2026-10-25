@@ -995,7 +995,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'circuits',
     name: 'Piping circuits',
     description:
-      'Trace one piping circuit across the uploaded DWG/DXF drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one. Read only, no spend.',
+      "Trace one piping circuit across the uploaded DWG/DXF drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one (read only, no spend). And check the trace's guesses with an image model on close-up crops (circuit_verify: spends the owner's vision key, only when called; answers stored in the drawing table's Checks tab).",
     toolSlugs: [...CIRCUIT_TOOL_SLUGS],
   },
   {

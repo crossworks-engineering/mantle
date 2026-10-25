@@ -35,6 +35,9 @@ type SourceSpec = {
   /** How the source's folder is split: a folder per month, per document, or
    *  none. */
   by: 'month' | 'document' | 'none';
+  /** A document folder's description, before the document's title
+   *  (default: 'Images extracted from'). */
+  perDocument?: string;
 };
 
 export const AUTO_FILED_SOURCES = {
@@ -68,6 +71,13 @@ export const AUTO_FILED_SOURCES = {
     description:
       'Pictures pulled out of documents (diagrams, screenshots and charts the text cannot convey), a folder per document.',
     by: 'document',
+  },
+  'drawing-checks': {
+    name: 'Drawing checks',
+    description:
+      "Close-up crops of drawings the image check (circuit_verify) asked a vision model about, a folder per drawing: the evidence behind each answer in its table's Checks tab. Stored by name only, never read into the brain.",
+    by: 'document',
+    perDocument: 'Image-check crops of',
   },
   'sandbox-exports': {
     name: 'Sandbox exports',
@@ -166,7 +176,8 @@ export async function ensureAutoFiledFolder(
     if (!doc) throw new Error(`auto-filed: ${source} files by document; name the document`);
     const docSlug = slugifyFolder(doc.slug) ?? 'document';
     const name = doc.title.trim().slice(0, 60) || docSlug;
-    return ensureSystemFolder(ownerId, top, docSlug, name, `Images extracted from ${doc.title}.`);
+    const lead = (spec as SourceSpec).perDocument ?? 'Images extracted from';
+    return ensureSystemFolder(ownerId, top, docSlug, name, `${lead} ${doc.title}.`);
   }
   return top;
 }

@@ -12,7 +12,21 @@
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
-import { dwgTables, readSheet } from './circuit-trace/read';
+import { dwgTables, readSheet, type CandidateTable } from './circuit-trace/read';
+import {
+  appliedChecks,
+  CHECK_KINDS,
+  VERIFY_MAX,
+  type AppliedCheck,
+  type CheckKind,
+} from './circuit-trace/check';
+import { storeChecks } from './circuit-trace/checks-store';
+import { verifyCircuit } from './circuit-trace/verify';
+import { bumpWorkerUsage, getWorkerBySlug, type AiWorker } from '@mantle/db';
+import { getApiKeyById } from '@mantle/api-keys';
+import { mediaDwgCrop, readFileById } from '@mantle/files';
+import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
+import { CS } from './client-sourced-rule';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
 
 /** The register's size, held both in the schema and here (a schema in
@@ -76,6 +90,63 @@ export function registerOf(raw: unknown): { register?: RegisterInput; cut: strin
   };
 }
 
+/**
+ * The sheets of one circuit the caller reads, with what the read could not
+ * do said in `limits`: one table that cannot be opened (its workbook file
+ * missing, a store refusal) is skipped and named, never the end of the
+ * whole trace. Shared by circuit_trace and circuit_verify.
+ */
+export async function readCircuitSheets(
+  ownerId: string,
+  circuit: string,
+): Promise<{ sheets: SheetInput[]; tables: CandidateTable[]; limits: string[] }> {
+  const { tables, more } = await dwgTables(ownerId);
+  const sheets: SheetInput[] = [];
+  const limits: string[] = [];
+  const preBones: string[] = [];
+  const unreadable: string[] = [];
+  for (const t of tables) {
+    const r = await readSheet(ownerId, t, circuit).catch(() => null);
+    if (!r) unreadable.push(t.title);
+    else if (r.kind === 'sheet') sheets.push(r.sheet);
+    else if (r.kind === 'no-bones') preBones.push(r.title);
+  }
+  if (more) {
+    limits.push(
+      `only the ${tables.length} most recently changed drawing tables were looked at; older sheets of this circuit may be missing.`,
+    );
+  }
+  for (const title of unreadable) {
+    limits.push(
+      `${title}: its table could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
+    );
+  }
+  for (const title of preBones) {
+    limits.push(
+      `${title}: has the circuit's layers but its table predates the geometry tabs; an owner can rebuild it with the dwg-reindex maintenance task.`,
+    );
+  }
+  return { sheets, tables, limits };
+}
+
+/** The applied checks as circuit_trace reports them, with a count line. */
+function checksSummary(applied: AppliedCheck[]) {
+  const n = (v: string) => applied.filter((c) => c.answer === v).length;
+  return {
+    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE, still not certain), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess).`,
+    items: applied.map((c) => ({
+      sheet: c.sheet,
+      kind: c.kind,
+      ...(c.node !== null ? { node: c.node } : {}),
+      guess: c.guess,
+      trust: c.trust,
+      reason: c.reason,
+      model: c.model,
+      checked_at: c.checkedAt,
+    })),
+  };
+}
+
 export async function circuitTraceHandler(
   input: Record<string, unknown>,
   ownerId: string,
@@ -90,35 +161,16 @@ export async function circuitTraceHandler(
   }
   const { register, cut } = registerOf(input.register);
   try {
-    const { tables, more } = await dwgTables(ownerId);
-    const sheets: SheetInput[] = [];
-    const preBones: string[] = [];
-    const unreadable: string[] = [];
-    for (const t of tables) {
-      // One table that cannot be opened (its workbook file missing, a store
-      // refusal) is skipped and named, never the end of the whole trace.
-      const r = await readSheet(ownerId, t, circuit).catch(() => null);
-      if (!r) unreadable.push(t.title);
-      else if (r.kind === 'sheet') sheets.push(r.sheet);
-      else if (r.kind === 'no-bones') preBones.push(r.title);
-    }
-    const result = traceCircuit(circuit, sheets, register);
-    result.limits.push(...cut);
-    if (more) {
-      result.limits.push(
-        `only the ${tables.length} most recently changed drawing tables were looked at; older sheets of this circuit may be missing.`,
-      );
-    }
-    for (const title of unreadable) {
-      result.limits.push(
-        `${title}: its table could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
-      );
-    }
-    for (const title of preBones) {
-      result.limits.push(
-        `${title}: has the circuit's layers but its table predates the geometry tabs; an owner can rebuild it with the dwg-reindex maintenance task.`,
-      );
-    }
+    const read = await readCircuitSheets(ownerId, circuit);
+    const { sheets } = read;
+    // The image check's stored answers (circuit_verify): matched to this
+    // trace's guesses before the drawing is made.
+    const applied: AppliedCheck[] = [];
+    const checkLimits: string[] = [];
+    const result = traceCircuit(circuit, sheets, register, {
+      checks: (walked, links) => appliedChecks(walked, links, sheets, applied, checkLimits),
+    });
+    result.limits.push(...cut, ...read.limits, ...checkLimits);
     const { estimateMeasurer, render, validate } = await import('@mantle/diagram-templates');
     const checked = validate('pid', result.pid);
     // The data check, then the layout of every page with the estimate
@@ -148,6 +200,7 @@ export async function circuitTraceHandler(
         },
         ...(result.register ? { register: result.register } : {}),
         guesses: result.guesses,
+        ...(applied.length ? { checks: checksSummary(applied) } : {}),
         limits: result.limits,
         ...(result.sheets.every((x) => x.runs.length === 0)
           ? {
@@ -165,6 +218,66 @@ export async function circuitTraceHandler(
     return { ok: false, error: `circuit_trace failed: ${errorMessage(err)}` };
   }
 }
+
+/** The register input, shared by circuit_trace and circuit_verify. */
+const REGISTER_SCHEMA = {
+  type: 'object',
+  description:
+    'What an outside register says belongs to the circuit, from a site register tool when the brain has one; the trace reports every difference. Leave it out when there is none.',
+  properties: {
+    source: {
+      type: 'string',
+      maxLength: REGISTER_MAX.text,
+      description: "Where it came from, e.g. 'site register tool'.",
+    },
+    from: {
+      type: 'string',
+      maxLength: REGISTER_MAX.text,
+      description:
+        "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start.",
+    },
+    to: {
+      type: 'string',
+      maxLength: REGISTER_MAX.text,
+      description: "The circuit's downstream end, an equipment tag, e.g. 'V-201'.",
+    },
+    lines: {
+      type: 'array',
+      maxItems: REGISTER_MAX.lines,
+      description: 'The line numbers on the circuit.',
+      items: {
+        type: 'object',
+        properties: {
+          number: {
+            type: 'string',
+            maxLength: REGISTER_MAX.text,
+            description: "A line number, e.g. '2\"-P-0001-A1'.",
+          },
+          sheet: {
+            type: 'string',
+            maxLength: REGISTER_MAX.text,
+            description: 'The drawing it is on, e.g. a sheet number.',
+          },
+          deadleg: { type: 'boolean', description: 'The register marks it a deadleg.' },
+        },
+        required: ['number'],
+        additionalProperties: false,
+      },
+    },
+    sheets: {
+      type: 'array',
+      maxItems: REGISTER_MAX.sheets,
+      items: { type: 'string', maxLength: REGISTER_MAX.text },
+      description: 'Drawings the register lists for the circuit.',
+    },
+    deadlegs: {
+      type: 'integer',
+      minimum: 0,
+      description: 'How many deadlegs the register lists.',
+    },
+  },
+  additionalProperties: false,
+} as const;
 
 const circuit_trace: BuiltinToolDef = {
   slug: 'circuit_trace',
@@ -187,69 +300,168 @@ const circuit_trace: BuiltinToolDef = {
         description:
           "The circuit's name exactly as the layer writes it after 'Circuit ', e.g. '10000-001-01'.",
       },
-      register: {
-        type: 'object',
-        description:
-          'What an outside register says belongs to the circuit, from a site register tool when the brain has one; the trace reports every difference. Leave it out when there is none.',
-        properties: {
-          source: {
-            type: 'string',
-            maxLength: REGISTER_MAX.text,
-            description: "Where it came from, e.g. 'site register tool'.",
-          },
-          from: {
-            type: 'string',
-            maxLength: REGISTER_MAX.text,
-            description:
-              "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start.",
-          },
-          to: {
-            type: 'string',
-            maxLength: REGISTER_MAX.text,
-            description: "The circuit's downstream end, an equipment tag, e.g. 'V-201'.",
-          },
-          lines: {
-            type: 'array',
-            maxItems: REGISTER_MAX.lines,
-            description: 'The line numbers on the circuit.',
-            items: {
-              type: 'object',
-              properties: {
-                number: {
-                  type: 'string',
-                  maxLength: REGISTER_MAX.text,
-                  description: "A line number, e.g. '2\"-P-0001-A1'.",
-                },
-                sheet: {
-                  type: 'string',
-                  maxLength: REGISTER_MAX.text,
-                  description: 'The drawing it is on, e.g. a sheet number.',
-                },
-                deadleg: { type: 'boolean', description: 'The register marks it a deadleg.' },
-              },
-              required: ['number'],
-              additionalProperties: false,
-            },
-          },
-          sheets: {
-            type: 'array',
-            maxItems: REGISTER_MAX.sheets,
-            items: { type: 'string', maxLength: REGISTER_MAX.text },
-            description: 'Drawings the register lists for the circuit.',
-          },
-          deadlegs: {
-            type: 'integer',
-            minimum: 0,
-            description: 'How many deadlegs the register lists.',
-          },
-        },
-        additionalProperties: false,
-      },
+      register: REGISTER_SCHEMA,
     },
     required: ['circuit'],
   },
   handler: (input, ctx) => circuitTraceHandler(input, ctx.ownerId),
 };
 
-export const CIRCUIT_TOOLS: BuiltinToolDef[] = [circuit_trace];
+/** The drawing-check worker's slug (the manifest's job worker). */
+export const DRAWING_CHECK_WORKER = 'drawing-check';
+
+export async function circuitVerifyHandler(
+  input: Record<string, unknown>,
+  ownerId: string,
+): Promise<{ ok: true; output: unknown } | { ok: false; error: string }> {
+  const circuit = str(input.circuit).trim();
+  if (!circuit) {
+    return {
+      ok: false,
+      error:
+        "circuit is required: the circuit's name as the drawings write it, e.g. '10000-001-01' (the part after 'Circuit ' in the layer name).",
+    };
+  }
+  const { register, cut } = registerOf(input.register);
+  const kinds = Array.isArray(input.kinds)
+    ? input.kinds.filter((k): k is CheckKind => CHECK_KINDS.includes(k as CheckKind))
+    : undefined;
+  const max = Number.isFinite(Number(input.max_questions))
+    ? Number(input.max_questions)
+    : VERIFY_DEFAULT_QUESTIONS;
+  // The resolved worker and its key, for the asks of this call only.
+  let route: { worker: AiWorker; credential: ProviderCredential } | null = null;
+  try {
+    const r = await verifyCircuit(
+      ownerId,
+      {
+        circuit,
+        ...(register ? { register } : {}),
+        ...(kinds?.length ? { kinds } : {}),
+        maxQuestions: max,
+        dryRun: input.dry_run === true,
+      },
+      {
+        readSheets: readCircuitSheets,
+        fileBytes: async (owner, fileId) =>
+          (await readFileById({ ownerId: owner, fileId }))?.bytes ?? null,
+        crop: mediaDwgCrop,
+        worker: async (owner) => {
+          const found = await getWorkerBySlug(owner, 'vision', DRAWING_CHECK_WORKER);
+          if (!found) {
+            return {
+              ok: false,
+              error:
+                'No vision worker is set up: add the drawing-check worker from Settings > Config (or any vision worker in Settings > AI workers), then call again.',
+            };
+          }
+          const w = found.worker;
+          if (!w.apiKeyId) {
+            return {
+              ok: false,
+              error: `The vision worker '${w.slug}' has no API key attached; attach one in Settings > AI workers, then call again.`,
+            };
+          }
+          const credential = await getApiKeyById(w.apiKeyId);
+          if (!credential) {
+            return {
+              ok: false,
+              error: `The API key of vision worker '${w.slug}' could not be read; check it in Settings > API keys, then call again.`,
+            };
+          }
+          route = { worker: w, credential };
+          return {
+            ok: true,
+            worker: {
+              slug: w.slug,
+              provider: w.provider,
+              model: w.model,
+              fellBack: found.fellBack,
+            },
+            multiImage: multiImageProvider(w.provider),
+          };
+        },
+        ask: async (images, prompt) => {
+          const { worker, credential } = route!;
+          const r = await extractImages(worker.provider, images, {
+            ...credential,
+            mimeType: 'image/png',
+            prompt,
+            ...(worker.systemPrompt ? { systemPrompt: worker.systemPrompt } : {}),
+            model: worker.model,
+            maxTokens: 4000,
+          });
+          void bumpWorkerUsage(worker.id);
+          return r;
+        },
+        store: storeChecks,
+        now: () => new Date(),
+      },
+    );
+    if (r.ok && cut.length) (r.output.limits as string[] | undefined)?.push(...cut);
+    return r;
+  } catch (err) {
+    return { ok: false, error: `circuit_verify failed: ${errorMessage(err)}` };
+  }
+}
+
+/** Questions asked when the call does not say. */
+export const VERIFY_DEFAULT_QUESTIONS = 20;
+
+const circuit_verify: BuiltinToolDef = {
+  slug: 'circuit_verify',
+  policy: {
+    effect: 'write',
+    matrix: {
+      none: 'checks one circuit across every drawing table the caller reads; writes only the Checks tab of a table it may edit, and crop files',
+    },
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    keyArea: 'tables',
+    // Drawing text reaches the result as in circuit_trace: fenced as data.
+    outside: { untrusted: true },
+    peerRisky: true,
+    memberApp: 'refused',
+    // Explicit calls only: never a recipe step or a run item.
+    recipe: { step: 'forbidden', runItem: 'banned' },
+    clientSourced: CS.always("spends the owner's vision key and writes check rows"),
+  },
+  name: 'Check a traced circuit with an image model',
+  description:
+    "Check the guesses `circuit_trace` made on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name becomes a yes/no question on a close-up crop of the drawing, the trace drawn over it in colour. Returns per-guess answers (yes, no or unsure, a reason, the model). **Spends the owner's vision key**: call only when asked to check a trace; `dry_run` lists the questions for free. Stores each answer with its crops in the Checks tab of the drawing's table; `circuit_trace` then marks a confirmed guess CHECKED BY IMAGE, never certain. To trace without checking use `circuit_trace`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      circuit: {
+        type: 'string',
+        description:
+          "The circuit's name exactly as the layer writes it after 'Circuit ', e.g. '10000-001-01'.",
+      },
+      register: REGISTER_SCHEMA,
+      kinds: {
+        type: 'array',
+        items: { type: 'string', enum: [...CHECK_KINDS] },
+        uniqueItems: true,
+        description:
+          "Which guesses to ask about: 'join' (inferred joins), 'end' (ends only near equipment), 'link' (guessed sheet links), 'valve' (valve types read from block names). Leave it out for all.",
+      },
+      max_questions: {
+        type: 'integer',
+        minimum: 1,
+        maximum: VERIFY_MAX.questions,
+        default: VERIFY_DEFAULT_QUESTIONS,
+        description: 'Questions to ask in this call; the rest are counted in `limits`.',
+      },
+      dry_run: {
+        type: 'boolean',
+        description: 'List the questions only: no crops, no model call, nothing stored.',
+      },
+    },
+    required: ['circuit'],
+  },
+  handler: (input, ctx) => circuitVerifyHandler(input, ctx.ownerId),
+};
+
+export const CIRCUIT_TOOLS: BuiltinToolDef[] = [circuit_trace, circuit_verify];
 export const CIRCUIT_TOOL_SLUGS: readonly string[] = CIRCUIT_TOOLS.map((t) => t.slug);

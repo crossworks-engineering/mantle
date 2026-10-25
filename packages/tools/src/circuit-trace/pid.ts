@@ -25,6 +25,7 @@
 import type { SheetLink, TraceChain, TraceEnd, TraceSheet, TraceValve } from './walk';
 import { clipText, PID_LIMITS, SET_LIMITS } from '@mantle/diagram-templates';
 import { splitPages, type SplitPage } from './pages';
+import { joinKey } from './check-keys';
 
 /** Lines drawn: the guide's budget is 12 labelled process lines; a traced
  *  circuit gets 20 so a few deadlegs fit beside the main run and branches. */
@@ -88,7 +89,34 @@ export type PidInput = {
    *  `from` node into it, and leaving its `to` node into it. */
   dirs?: Map<string, { from: Pt; to: Pt }>;
   register?: { from?: string; to?: string; sheets?: string[] };
+  /** What the image check (circuit_verify, ./check.ts) answered about the
+   *  guesses: `near` and `link` per `<tableId>:<node>` of an end, `joins`
+   *  per `<tableId>:<join key>` (check-keys.ts joinKey). A yes marks the guess CHECKED BY
+   *  IMAGE (never certain); a no keeps GUESS and says the image disagreed;
+   *  unsure, or no check, keeps GUESS as before. */
+  checked?: PidChecks;
+  /** Filled when given: each chain's role on the drawing, per
+   *  `<tableId>:<chain id>` (the image check colours its crops by it). */
+  roles?: Map<string, ChainRole>;
 };
+
+export type Verdict = 'yes' | 'no' | 'unsure';
+export type PidChecks = {
+  near?: ReadonlyMap<string, Verdict>;
+  link?: ReadonlyMap<string, Verdict>;
+  joins?: ReadonlyMap<string, Verdict>;
+};
+export type ChainRole = 'main' | 'branch' | 'deadleg';
+
+/** The trust marks a drawing shows, by verdict: a confirmed guess is
+ *  CHECKED BY IMAGE, never certain. */
+export const MARK = {
+  guess: ' (GUESS)',
+  yes: ' (CHECKED BY IMAGE)',
+  no: ' (GUESS, IMAGE: NO)',
+} as const;
+const markOf = (v: Verdict | undefined) =>
+  v === 'yes' ? MARK.yes : v === 'no' ? MARK.no : MARK.guess;
 
 export function buildPid(
   input: PidInput,
@@ -563,6 +591,12 @@ export function buildPid(
     queue.push(plan(start, grow(start, first), 1));
     drain();
   }
+  if (input.roles) {
+    for (const p of plans) {
+      const role: ChainRole = p.deadleg ? 'deadleg' : p.depth === 0 ? 'main' : 'branch';
+      for (const e of p.edges) input.roles.set(`${e.sheet.tableId}:${e.chain.id}`, role);
+    }
+  }
 
   // -------------------------------------------------------------- pieces
   /** A line as one page draws it: a whole planned line on the overview; on
@@ -671,7 +705,7 @@ export function buildPid(
    *  direction, sheet), or a stop. The one rule for every page. */
   type EndPlan =
     | { eq: string }
-    | { conn: string; dir: 'in' | 'out'; sheet: string; guess?: 'link' | 'near' }
+    | { conn: string; dir: 'in' | 'out'; sheet: string; guess?: 'link' | 'near' | 'checked' }
     | { stop: 'open' | 'deadleg' };
   /** The ends joined into each vertex (read once: the graph is built). */
   const endKeys = new Map<string, string[]>();
@@ -692,24 +726,29 @@ export function buildPid(
     const keys = endAt.has(v) ? [v] : (endKeys.get(v) ?? []);
     const at = keys.flatMap((k) => endAt.get(k) ?? []);
     const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
-    const mark = ' (GUESS)';
+    const verdictOf = (m: ReadonlyMap<string, Verdict> | undefined) =>
+      m ? keys.map((k) => m.get(k)).find(Boolean) : undefined;
     // Off-page style: an end that is not drawn as the equipment it is near.
     if (near) {
+      const v = verdictOf(input.checked?.near);
+      const mark = markOf(v);
       return {
         conn: `NEAR ${near}`.slice(0, TEXT.connector - mark.length) + mark,
         dir,
         sheet: near,
-        guess: 'near',
+        guess: v === 'yes' ? 'checked' : 'near',
       };
     }
     const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
     if (guessedLink) {
       const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
+      const v = verdictOf(input.checked?.link);
+      const mark = markOf(v);
       return {
         conn: head.slice(0, TEXT.connector - mark.length) + mark,
         dir,
         sheet: guessedLink.other,
-        guess: 'link',
+        guess: v === 'yes' ? 'checked' : 'link',
       };
     }
     for (const { sheet, end } of at) {
@@ -947,7 +986,7 @@ export function buildPid(
         `${title}: at the page cap no line on the drawing links to this detail page; it is reached from the page bar.`,
       );
   }
-  type Mark = 'link' | 'inferred' | 'near';
+  type Mark = 'link' | 'inferred' | 'near' | 'checked';
   /** The guess kinds drawn on each page, and on the whole set. */
   const marksOf = new Map<string, Set<Mark>>();
   const allMarks = new Set<Mark>();
@@ -1196,11 +1235,18 @@ export function buildPid(
       const number = numberFor(pc);
       // A process-line join on the line is an inference: marked on every
       // page that draws it.
-      const inferred = pc.edges.reduce(
-        (x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length,
-        0,
+      // The image check: a confirmed join is no longer a GUESS on the line
+      // (CHECKED BY IMAGE), a contradicted one says so.
+      const verdicts = pc.edges.flatMap((e) =>
+        (e.chain.joins ?? [])
+          .filter((j) => j.inferred)
+          .map((j) => input.checked?.joins?.get(`${e.sheet.tableId}:${joinKey(j.handles)}`)),
       );
+      const inferred = verdicts.filter((v) => v !== 'yes').length;
+      const confirmed = verdicts.length - inferred;
+      const contradicted = verdicts.some((v) => v === 'no');
       if (inferred) marks.add('inferred');
+      if (confirmed) marks.add('checked');
       const mk = markers.get(pc);
       drawn.push(pc);
       lines.push({
@@ -1208,9 +1254,20 @@ export function buildPid(
         ...(number ? { number } : {}),
         ...(inferred
           ? {
-              note: inferred === 1 ? 'INFERRED JOIN (GUESS)' : `${inferred} INFERRED JOINS (GUESS)`,
+              note: contradicted
+                ? inferred === 1
+                  ? `INFERRED JOIN${MARK.no}`
+                  : `${inferred} JOINS${MARK.no}`
+                : inferred === 1
+                  ? 'INFERRED JOIN (GUESS)'
+                  : `${inferred} INFERRED JOINS (GUESS)`,
             }
-          : {}),
+          : confirmed
+            ? {
+                note:
+                  confirmed === 1 ? `INFERRED JOIN${MARK.yes}` : `${confirmed} JOINS${MARK.yes}`,
+              }
+            : {}),
         from,
         ...(to ? { to } : {}),
         ...(!to && end ? { end } : {}),
@@ -1338,7 +1395,12 @@ export function buildPid(
       ms.has('inferred') ? 'joins through process lines' : '',
       ms.has('near') ? 'ends only near equipment' : '',
     ].filter(Boolean);
-    return words.length ? ` Guesses are marked GUESS (${words.join(', ')}).` : '';
+    return (
+      (words.length ? ` Guesses are marked GUESS (${words.join(', ')}).` : '') +
+      (ms.has('checked')
+        ? ' CHECKED BY IMAGE: a vision model saw the guess in the drawing; still not certain.'
+        : '')
+    );
   };
   const total = plans.length;
   const rest = lost
