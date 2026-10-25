@@ -275,23 +275,23 @@ describe('a valve type read from a block name', () => {
 });
 
 describe('answers', () => {
-  it('parse yes, no and unsure; anything else is unsure and says why', () => {
+  it('parse yes, no and unsure; anything the model did not give is missing, with why', () => {
     const text =
-      'Here: {"answers":[{"id":"q1","answer":"Yes","reason":"one line"},{"id":"q2","answer":"no","reason":"two pipes"},{"id":"q3","answer":"maybe"},{"id":"zz","answer":"yes"}]}';
-    const a = parseAnswers(text, ['q1', 'q2', 'q3', 'q4']);
+      'Here: {"answers":[{"id":"q1","answer":"Yes","reason":"one line"},{"id":"q2","answer":"no","reason":"two pipes"},{"id":"q3","answer":"maybe"},{"id":"q5","answer":"Unsure","reason":"too faint"},{"id":"zz","answer":"yes"}]}';
+    const { answers: a, missing } = parseAnswers(text, ['q1', 'q2', 'q3', 'q4', 'q5']);
     expect(a.get('q1')).toEqual({ verdict: 'yes', reason: 'one line' });
     expect(a.get('q2')).toEqual({ verdict: 'no', reason: 'two pipes' });
-    expect(a.get('q3')!.verdict).toBe('unsure');
-    expect(a.get('q3')!.reason).toMatch(/not yes, no or unsure \(maybe\)/);
-    expect(a.get('q4')).toEqual({
-      verdict: 'unsure',
-      reason: 'the reply gave no answer to this question',
-    });
+    // A genuine unsure is an answer.
+    expect(a.get('q5')).toEqual({ verdict: 'unsure', reason: 'too faint' });
+    // A word that is none of the three, or a skipped id, is no answer.
+    expect(a.has('q3')).toBe(false);
+    expect(missing.get('q3')).toMatch(/no answer came back.*"maybe", not yes, no or unsure/);
+    expect(missing.get('q4')).toMatch(/no answer came back: the reply skipped this question/);
     expect(a.has('zz')).toBe(false);
-    expect(parseAnswers('not json', ['q1']).get('q1')).toEqual({
-      verdict: 'unsure',
-      reason: 'the reply did not parse',
-    });
+    expect(missing.has('zz')).toBe(false);
+    const bad = parseAnswers('not json', ['q1']);
+    expect(bad.answers.size).toBe(0);
+    expect(bad.missing.get('q1')).toMatch(/the reply did not parse; call again/);
   });
 
   it('batches keep a question whole and count the overview once per request', () => {
@@ -635,13 +635,17 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     expect(single.calls.crop).toHaveLength(0);
   });
 
-  it('an unparseable reply is unsure for every question in it', async () => {
-    const { d } = deps({
+  it('an unparseable reply files nothing: every question in it is in not_asked (MED-1)', async () => {
+    const { d, filed } = deps({
       ask: async () => ({ text: 'I think so', model: 'gm' }),
     });
     const r = await verifyCircuit('o', { circuit: C }, d);
     const out = outOf(r);
-    expect(out.answers.every((a) => a.answer === 'unsure')).toBe(true);
+    expect(out.answers).toHaveLength(0);
+    expect(filed).toHaveLength(0);
+    expect(out.not_asked).toHaveLength(2);
+    expect(out.not_asked?.every((n) => /did not parse; call again/.test(n.why))).toBe(true);
+    expect(out.limits.join(' ')).toMatch(/2 questions got no answer.*asks them again/);
   });
 
   it('a store that fails keeps the answers in the result and says so', async () => {
@@ -792,7 +796,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     expect((out.usage as unknown as { timed_out: number }).timed_out).toBe(2);
   });
 
-  it('a reply cut off at its token cap keeps whole answers; the rest say so (MED-6)', async () => {
+  it('a reply cut off at its token cap keeps whole answers; the rest are not stored (MED-6, MED-1)', async () => {
     const { d } = deps({
       ask: async (_images, prompt) => {
         const ids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]);
@@ -802,17 +806,153 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     });
     const out = outOf(await verifyCircuit('o', { circuit: C }, d));
     expect(out.answers[0]!.answer).toBe('yes');
-    const empty = deps({ ask: async () => ({ text: '', model: 'gm' }) });
+    const empty = deps({ ask: async () => ({ text: '', model: 'gm', tokensIn: 700 }) });
     const e = outOf(await verifyCircuit('o', { circuit: C }, empty.d));
-    expect(e.answers.every((a) => a.answer === 'unsure')).toBe(true);
-    expect(e.limits.join(' ')).toMatch(/cut off or empty/);
+    expect(e.answers).toHaveLength(0);
+    expect(empty.filed).toHaveLength(0);
+    expect(e.not_asked?.every((n) => /empty reply; call again/.test(n.why))).toBe(true);
+    expect(e.limits.join(' ')).toMatch(/cut off or empty.*not stored and are in not_asked/);
+    // What the replies reported is still counted (the ledger records them).
+    expect(e.usage).toMatchObject({ requests: 2, tokens_in: 1400 });
     const cut = parseAnswers(
       '{"answers":[{"id":"q1","answer":"no","reason":"gap"},{"id":"q2"',
       ['q1', 'q2'],
       'cut',
     );
-    expect(cut.get('q1')).toEqual({ verdict: 'no', reason: 'gap' });
-    expect(cut.get('q2')!.reason).toMatch(/model answer cut off/);
+    expect(cut.answers.get('q1')).toEqual({ verdict: 'no', reason: 'gap' });
+    expect(cut.answers.has('q2')).toBe(false);
+    expect(cut.missing.get('q2')).toMatch(/reached its token cap before this answer; call again/);
+  });
+
+  it('a batch cut off after q4 stores q1 to q4 only; the next call asks the rest (MED-1)', async () => {
+    // One sheet, nine pieces of one line joined through eight gaps: eight
+    // join questions of two crops each, seven to a 16-image request.
+    const pieces = 9;
+    const segs = Array.from({ length: pieces }, (_, i) =>
+      sg(M, `P${i}`, i * 30, 0, i * 30 + 20, 0, i * 2 + 1, i * 2 + 2),
+    );
+    const net = [
+      ...segs.map((g) => ({ ...g, layer: PIPE, handle: `p${g.handle}` })),
+      ...Array.from({ length: pieces - 1 }, (_, i) =>
+        sg(PIPE, `g${i}`, i * 30 + 20, 0, i * 30 + 30, 0, i * 2 + 2, i * 2 + 3),
+      ),
+    ];
+    const base = sheet(
+      'PID-9701',
+      segs,
+      net,
+      [],
+      segs.map((g, i) => lineNo(`L${i}`, g.x1 + 10, 1, 'N700-1')),
+    );
+    const filed: CheckAnswer[] = [];
+    const rows = () =>
+      filed.map((a) => {
+        const row = {
+          key: a.q.key,
+          kind: a.q.kind,
+          answer: a.verdict,
+          revision: 'rev1',
+          checkedAt: '2026-10-25T12:00:00.000Z',
+          model: a.model,
+          reason: a.reason,
+          question: a.q.question,
+          trust: '',
+        };
+        return { ...row, seal: sealOf(sealFieldsOf(base.tableId, row)) };
+      });
+    const prompts: string[] = [];
+    let cutNext = true;
+    const { d } = deps({
+      readSheets: async () => ({ sheets: [{ ...base, checks: rows() }], limits: [] }),
+      ask: async (_images, prompt) => {
+        prompts.push(prompt);
+        const ids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]!);
+        const given = cutNext ? ids.slice(0, 4) : ids;
+        const whole = given.map((id) => `{"id":"${id}","answer":"yes","reason":"one pipe"}`);
+        const cut = cutNext && ids.length > 4;
+        cutNext = false;
+        return {
+          text: `{"answers":[${whole.join(',')}${cut ? `,{"id":"${ids[4]}","answer":"y` : ']}'}`,
+          model: 'gm',
+          tokensIn: 3000,
+          tokensOut: 8000,
+          ...(cut ? { finishReason: 'length' } : {}),
+        };
+      },
+      store: async (_o, _s, _c, answers) => {
+        filed.push(...answers);
+        return { stored: answers.length };
+      },
+    });
+    const first = outOf(await verifyCircuit('o', { circuit: C, kinds: ['join'] }, d));
+    // q1..q7 in the first request, q8 in the second.
+    expect(prompts).toHaveLength(2);
+    expect(first.answers).toHaveLength(5);
+    const firstKeys = new Set(filed.map((a) => a.q.key));
+    expect(firstKeys.size).toBe(5);
+    const missed = first.not_asked ?? [];
+    expect(missed.map((n) => n.id)).toEqual(['q5', 'q6', 'q7']);
+    expect(missed.every((n) => /token cap before this answer; call again/.test(n.why))).toBe(true);
+    expect(first.limits.join(' ')).toMatch(/1 reply came back cut off/);
+    expect(first.usage).toMatchObject({ requests: 2, tokens_in: 6000 });
+    // The next call skips the five answered and asks the three left.
+    prompts.length = 0;
+    const second = outOf(await verifyCircuit('o', { circuit: C, kinds: ['join'] }, d));
+    expect(second.limits.join(' ')).toMatch(/5 guesses already answered/);
+    expect(second.answers).toHaveLength(3);
+    expect(prompts).toHaveLength(1);
+    expect(new Set(filed.map((a) => a.q.key)).size).toBe(8);
+    expect(filed.slice(5).every((a) => !firstKeys.has(a.q.key))).toBe(true);
+  });
+
+  it('a genuine unsure is stored and not asked again (MED-1)', async () => {
+    const filed: CheckAnswer[] = [];
+    let asked = 0;
+    const s = nearSheet();
+    const { d } = deps({
+      readSheets: async () => ({
+        sheets: [
+          {
+            ...s,
+            checks: filed.map((a) => {
+              const row = {
+                key: a.q.key,
+                kind: a.q.kind,
+                answer: a.verdict,
+                revision: 'rev1',
+                checkedAt: '2026-10-25T12:00:00.000Z',
+                model: a.model,
+                reason: a.reason,
+                question: a.q.question,
+                trust: '',
+              };
+              return { ...row, seal: sealOf(sealFieldsOf(s.tableId, row)) };
+            }),
+          },
+        ],
+        limits: [],
+      }),
+      ask: async (_i, prompt) => {
+        asked += 1;
+        const ids = [...prompt.matchAll(/^(q\d+) \(/gm)].map((m) => m[1]);
+        return {
+          text: JSON.stringify({
+            answers: ids.map((id) => ({ id, answer: 'unsure', reason: 'the tag is too faint' })),
+          }),
+          model: 'gm',
+        };
+      },
+      store: async (_o, _s, _c, answers) => {
+        filed.push(...answers);
+        return { stored: answers.length };
+      },
+    });
+    const first = outOf(await verifyCircuit('o', { circuit: C }, d));
+    expect(first.answers.map((a) => a.answer)).toEqual(['unsure']);
+    expect(filed.map((a) => [a.verdict, a.reason])).toEqual([['unsure', 'the tag is too faint']]);
+    const second = outOf(await verifyCircuit('o', { circuit: C }, d));
+    expect(asked).toBe(1);
+    expect(second.summary).toMatch(/no unanswered guess/);
   });
 
   it('a question the sidecar cut partway along is not asked on part of its path', async () => {
@@ -861,7 +1001,84 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     expect(seen.every((x) => x === true)).toBe(true);
     seen.length = 0;
     await verifyCircuit('o', { circuit: C }, d);
-    expect(seen.every((x) => x === false)).toBe(true);
+    // A real call: the read-only pass for every sheet, then, once the
+    // worker can answer, the pass that may make the folder.
+    expect(seen).toEqual([true, true, false, false]);
+  });
+
+  it('a worker that refuses makes nothing: no crop folder before the worker is resolved (L3)', async () => {
+    for (const worker of [
+      async () => ({ ok: false as const, error: 'No vision worker is set up' }),
+      async () => ({
+        ok: true as const,
+        worker: { slug: 'v', provider: 'anthropic', model: 'x' },
+        multiImage: false,
+      }),
+    ]) {
+      const seen: boolean[] = [];
+      const { d, calls } = deps({
+        worker,
+        storable: async (_o, _s, opts) => {
+          seen.push(opts.dryRun);
+          return null;
+        },
+      });
+      const r = await verifyCircuit('o', { circuit: C }, d);
+      expect(r.ok).toBe(false);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((x) => x === true)).toBe(true);
+      expect(calls.crop).toHaveLength(0);
+    }
+  });
+
+  it('a question whose crops came back with a hole is not asked (L1)', async () => {
+    const { d, calls } = deps({
+      crop: async (_b, spec) => {
+        calls.crop.push(spec);
+        return {
+          ok: true,
+          value: {
+            converter: 'none',
+            // The path's crop 2 of 3 was dropped as malformed: 0 and 2 came.
+            crops: spec.items.flatMap((it) =>
+              (it.kind === 'path' ? [0, 2] : [0]).map((part) => ({
+                id: it.id,
+                part,
+                of: it.kind === 'path' ? 3 : 1,
+                window: [0, 0, 1, 1] as [number, number, number, number],
+                width: 100,
+                height: 100,
+                textPx: 14,
+                png,
+              })),
+            ),
+            overview: { window: [0, 0, 1, 1], png },
+            capped: [],
+          },
+        };
+      },
+    });
+    const out = outOf(await verifyCircuit('o', { circuit: C }, d));
+    const hole = out.not_asked?.find((n) => /2 usable crops of the 3 along it/.test(n.why));
+    expect(hole).toBeDefined();
+    expect(calls.ask.every((a) => !a.prompt.includes(`${hole!.id} (`))).toBe(true);
+    expect(out.answers).toHaveLength(1);
+  });
+
+  it("the trace's own limits reach a dry run and a real call (L4)", async () => {
+    const note = 'Segments: TRUNCATED at 200000 rows; the trace may be partial';
+    const { d } = deps({
+      readSheets: async () => ({
+        sheets: both().map((x) => ({ ...x, limits: [note, note] })),
+        limits: [],
+      }),
+    });
+    for (const dryRun of [true, false]) {
+      const out = outOf(await verifyCircuit('o', { circuit: C, dryRun }, d));
+      const hits = out.limits.filter((l) => l.includes('TRUNCATED'));
+      // One per sheet, said once each.
+      expect(hits).toEqual([`PID-9201: ${note}`, `PID-9401: ${note}`]);
+    }
   });
 
   it('rows left in a draft someone else wrote to are said to publish with it', async () => {

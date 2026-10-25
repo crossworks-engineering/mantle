@@ -11,7 +11,12 @@
  * folder it may create in) and whether its table still matches the
  * drawing's bytes (a file replaced in place keeps old geometry until
  * dwg-reindex). A sheet that fails either is not asked, said in
- * `not_asked`; a call where no sheet passes is refused.
+ * `not_asked`; a call where no sheet passes is refused. The worker is
+ * resolved after that read-only pass and before anything is made (the
+ * crop folders), so a call the worker refuses leaves nothing behind.
+ *
+ * Only an answer the model gave is filed: a question its reply skipped,
+ * cut off or garbled is listed in `not_asked` and asked again next call.
  *
  * Every outside effect comes through `deps`, so the test runs the whole
  * flow with a fake sidecar, model and store: no test ever calls a model.
@@ -19,7 +24,8 @@
  */
 import { dwgReindexCommand as reindexCommand, dwgSourceSha } from '@mantle/files/dwg';
 import type { DwgCrops, MediaResult } from '@mantle/files';
-import { isProviderTimeout, type ImagesResult, type VisionImage } from '@mantle/voice';
+import { classifyProviderError } from '@mantle/std';
+import type { ImagesResult, VisionImage } from '@mantle/voice';
 import {
   batchesFor,
   cropSpecFor,
@@ -77,8 +83,9 @@ export type VerifyDeps = {
   >;
   ask: (images: VisionImage[], prompt: string) => Promise<ImagesResult>;
   /** Why this caller could not file answers about the sheet (null: it
-   *  can). Asked before any vision request; with `dryRun` it makes
-   *  nothing (no crop folder), so a dry run writes nothing. */
+   *  can). Asked before any vision request: first with `dryRun` (it makes
+   *  nothing, no crop folder) for every sheet, then, once the worker is
+   *  resolved, without it on a real call (it may make the crop folder). */
   storable: (
     ownerId: string,
     sheet: SheetInput,
@@ -106,6 +113,26 @@ export type VerifyInput = {
   recheck?: boolean;
 };
 
+/** The trace's own limits (a sheet's capped tab, a partial read, a
+ *  missing column) as the result carries them: each once, each clipped,
+ *  at most LIMITS_MAX with the rest counted. */
+const LIMITS_MAX = 30;
+const LIMIT_CHARS = 300;
+export function traceLimits(lines: readonly string[]): string[] {
+  const seen = [
+    ...new Set(lines.map((l) => (l.length > LIMIT_CHARS ? `${l.slice(0, LIMIT_CHARS - 1)}…` : l))),
+  ];
+  if (seen.length <= LIMITS_MAX) return seen;
+  return [
+    ...seen.slice(0, LIMITS_MAX),
+    `${seen.length - LIMITS_MAX} more limits of the trace; circuit_trace lists them all.`,
+  ];
+}
+
+/** Whether a provider call failed by its deadline (@mantle/std's one
+ *  classifier, as the spend record's timeout mark reads it). */
+const timedOutErr = (err: unknown) => classifyProviderError(err)?.code === 'timeout';
+
 const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? '' : /(s|sh|ch|x)$/.test(w) ? 'es' : 's'}`;
 /** Why a sheet's table may not match its drawing, or null. */
@@ -117,6 +144,16 @@ function sourceRefusal(s: SheetInput): string | null {
   if (s.source !== 'current')
     return `its table was imported before tables recorded which revision of the drawing they hold, so an answer could be filed under the wrong revision; an owner rebuilds it with ${reindexCommand(s.sourceFileId)} (no model pass), then call again`;
   return null;
+}
+
+/** Why a question's crops are not its whole path (null: they are): the
+ *  same `of` on each, parts 0 to of-1 each once. */
+export function cropGap(list: readonly { part: number; of: number }[]): string | null {
+  const of = list[0]?.of ?? 0;
+  const whole = list.length === of && list.every((c, i) => c.of === of && c.part === i);
+  return whole
+    ? null
+    : `the sidecar returned ${list.length} usable ${list.length === 1 ? 'crop' : 'crops'} of the ${of} along it (one came back malformed or twice), so it was not asked on part of its path; call again`;
 }
 
 export async function verifyCircuit(
@@ -166,7 +203,7 @@ export async function verifyCircuit(
       output: {
         summary: `Circuit ${circuit}: no ${answered ? 'unanswered ' : ''}guess the image check asks about${trace.sheets.length ? '' : ' (no readable drawing has this circuit)'}; nothing was spent.`,
         questions: [],
-        limits: [...limits, ...trace.limits],
+        limits: [...limits, ...traceLimits(trace.limits)],
       },
     };
   }
@@ -181,7 +218,7 @@ export async function verifyCircuit(
     const why =
       sourceRefusal(sin) ??
       (await deps
-        .storable(ownerId, sin, { dryRun: input.dryRun === true })
+        .storable(ownerId, sin, { dryRun: true })
         .catch(
           (err: unknown) =>
             `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
@@ -202,7 +239,7 @@ export async function verifyCircuit(
         summary: `Circuit ${circuit}: ${plural(questions.length, 'question')} would be asked on ${plural(new Set(questions.map((q) => q.tableId)).size, 'sheet')}${notAsked.length ? `; ${notAsked.length} could not be (see not_asked)` : ''} (dry run: nothing cropped, nothing spent).`,
         questions: listed(picked),
         ...(notAsked.length ? { not_asked: notAsked } : {}),
-        limits,
+        limits: [...limits, ...traceLimits(trace.limits)],
       },
     };
   }
@@ -222,6 +259,28 @@ export async function verifyCircuit(
       error: `circuit_verify sends several crops in one request, which the '${worker.provider}' provider of the default vision worker '${worker.slug}' does not take here. Point the default vision worker at an OpenRouter model in Settings > AI workers, then call again.`,
     };
   }
+  // The worker can answer: now the store check may make what filing needs
+  // (the crop folders), still before any spend.
+  for (const tableId of new Set(questions.map((q) => q.tableId))) {
+    const sin = inputOf.get(tableId)!;
+    const why = await deps
+      .storable(ownerId, sin, { dryRun: false })
+      .catch(
+        (err: unknown) =>
+          `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
+      );
+    if (why) {
+      refused.set(tableId, why);
+      for (const q of questions) if (q.tableId === tableId) notAsked.push({ id: q.id, why });
+    }
+  }
+  const asking = questions.filter((q) => !refused.has(q.tableId));
+  if (!asking.length) {
+    return {
+      ok: false,
+      error: `circuit_verify asked nothing and spent nothing: no sheet of circuit ${circuit} can be checked now. ${[...refused].map(([id, why]) => `${inputOf.get(id)!.title}: ${why}`).join(' ')} Use dry_run to list the questions.`,
+    };
+  }
 
   const answers: CheckAnswer[] = [];
   const overviews = new Map<string, Buffer | null>();
@@ -233,12 +292,13 @@ export async function verifyCircuit(
   // a timed-out attempt included, is recorded by the vision call,
   // @mantle/voice vision-images.ts).
   const usage = { tokensIn: 0, tokensOut: 0 };
-  const sheetOrder = [...new Set(questions.map((q) => q.tableId))];
+  let unanswered = 0;
+  const sheetOrder = [...new Set(asking.map((q) => q.tableId))];
 
   for (const tableId of sheetOrder) {
     const sheet = trace.sheets.find((s) => s.tableId === tableId)!;
     const sin = inputOf.get(tableId)!;
-    const qs = questions.filter((q) => q.tableId === tableId);
+    const qs = asking.filter((q) => q.tableId === tableId);
     const skip = (why: string, list = qs) => {
       for (const q of list) notAsked.push({ id: q.id, why });
     };
@@ -290,6 +350,7 @@ export async function verifyCircuit(
       if (l) l.push(c);
       else cropsOf.set(c.id, [c]);
     }
+    for (const l of cropsOf.values()) l.sort((a, b) => a.part - b.part);
     // A question the sidecar's per-sheet crop budget cut is not asked, even
     // when some of its crops came: a path is never asked about in part.
     const capped = new Set(cropped.value.capped);
@@ -310,6 +371,13 @@ export async function verifyCircuit(
       if (capped.has(q.id)) continue;
       if (!n) {
         skip('the sidecar returned no crop for it', [q]);
+        continue;
+      }
+      // Asked only on its whole path: every crop of `of`, each once (one
+      // the sidecar's reply dropped as malformed would leave a hole).
+      const gap = cropGap(cropsOf.get(q.id)!);
+      if (gap) {
+        skip(gap, [q]);
         continue;
       }
       if (cropsUsed + n > VERIFY_MAX.crops) {
@@ -353,7 +421,7 @@ export async function verifyCircuit(
         reply = await deps.ask(images, prompt);
       } catch (err) {
         const msg = err instanceof Error ? err.message.slice(0, 200) : 'error';
-        if (isProviderTimeout(err)) {
+        if (timedOutErr(err)) {
           timedOut += 1;
           skip(
             `the vision request timed out (${msg}); the provider may still bill it, and no usage came back (the spend ledger shows the attempt with no tokens, marked timed out)`,
@@ -378,7 +446,14 @@ export async function verifyCircuit(
         truncated ? 'cut' : empty ? 'empty' : undefined,
       );
       for (const { q } of batch.questions) {
-        const a = parsed.get(q.id)!;
+        const a = parsed.answers.get(q.id);
+        // No answer given: never filed (it would read as answered and never
+        // be asked again); the next call asks it.
+        if (!a) {
+          unanswered += 1;
+          skip(parsed.missing.get(q.id) ?? 'no answer came back; call again to ask it', [q]);
+          continue;
+        }
         answers.push({
           q,
           verdict: a.verdict,
@@ -402,7 +477,12 @@ export async function verifyCircuit(
   }
   if (cutOff) {
     limits.push(
-      `${plural(cutOff, 'reply')} came back cut off or empty (the model's token cap): the questions it did not answer are unsure, "model answer cut off"; ask fewer at a time with max_questions.`,
+      `${plural(cutOff, 'reply')} came back cut off or empty (the model's token cap): the questions ${cutOff === 1 ? 'it' : 'they'} did not answer were not stored and are in not_asked; call again to ask them (fewer at a time with max_questions if it repeats). The spend ledger records ${cutOff === 1 ? 'the request' : 'each request'} with the tokens the reply reported.`,
+    );
+  }
+  if (unanswered) {
+    limits.push(
+      `${plural(unanswered, 'question')} got no answer from the model (see not_asked for why); nothing was stored for ${unanswered === 1 ? 'it' : 'them'}, so the next call asks ${unanswered === 1 ? 'it' : 'them'} again.`,
     );
   }
 
@@ -468,7 +548,7 @@ export async function verifyCircuit(
         tokens_out: usage.tokensOut,
         ...(timedOut ? { timed_out: timedOut } : {}),
       },
-      limits,
+      limits: [...limits, ...traceLimits(trace.limits)],
       next: 'circuit_trace now marks these on the drawing: CHECKED BY IMAGE for a confirmed guess; a contradicted or unsure one stays GUESS.',
     },
   };

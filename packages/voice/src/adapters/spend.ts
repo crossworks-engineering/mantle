@@ -88,17 +88,6 @@ export function recordVisionTimeout(provider: string, opts: VisionExtractOptions
   }));
 }
 
-/** Whether a provider call failed by its deadline (providerFetch aborts
- *  with a `TimeoutError`). */
-export function isProviderTimeout(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    ((err as { name?: unknown }).name === 'TimeoutError' ||
-      /timed out/i.test(String((err as { message?: unknown }).message ?? '')))
-  );
-}
-
 const wrapped = new WeakMap<object, object>();
 
 function once<T extends object>(adapter: T, wrap: (a: T) => T): T {

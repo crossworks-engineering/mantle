@@ -89,6 +89,17 @@ describe('extractImages', () => {
     );
     expect(bodies[0]).toMatchObject({ max_tokens: 8000, reasoning: { max_tokens: 4000 } });
     expect(r.finishReason).toBe('length');
+    // A reply cut off at its token cap was still paid for: its spend is
+    // recorded with the tokens it reported (circuit_verify asks its
+    // unanswered questions again, never for free).
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        capability: 'vision',
+        provider: 'openrouter',
+        inputTokens: 900,
+        outputTokens: 8000,
+      }),
+    ]);
     expect(PROVIDER_TIMEOUTS.visionImages).toBeGreaterThanOrEqual(120_000);
     expect(PROVIDER_TIMEOUTS.visionImages).toBeGreaterThan(PROVIDER_TIMEOUTS.vision);
   });

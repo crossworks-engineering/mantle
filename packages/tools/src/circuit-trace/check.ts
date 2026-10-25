@@ -516,17 +516,29 @@ export function promptFor(batch: CheckBatch, overview = true): string {
 
 export type ParsedAnswer = { verdict: Verdict; reason: string };
 
-/** The answers in a model's reply, per question id. Anything that does not
- *  parse, an id it did not answer, or an answer that is not yes/no is
- *  unsure, with the reason saying so. A reply cut off at the token cap
+/** What a reply held: the answers the model gave (`answers`, a genuine
+ *  "unsure" among them), and why each other question has none (`missing`).
+ *  A question with no answer is never filed (the store would read it as
+ *  answered and never ask it again): circuit_verify lists it in not_asked,
+ *  and the next call asks it. */
+export type ParsedReply = {
+  answers: Map<string, ParsedAnswer>;
+  missing: Map<string, string>;
+};
+
+/** The answers in a model's reply, per question id. Only a yes, no or
+ *  unsure the model wrote for an id it was asked is an answer; anything
+ *  else (an id it skipped, a word that is none of the three, a reply that
+ *  does not parse) is `missing`, with why. A reply cut off at the token cap
  *  (`stopped: 'cut'`) or empty keeps every whole answer it holds; the rest
- *  are unsure, "model answer cut off" (or "empty"), never a silent gap. */
+ *  are missing, "no answer came back", never a silent gap. */
 export function parseAnswers(
   text: string,
   ids: readonly string[],
   stopped?: 'cut' | 'empty',
-): Map<string, ParsedAnswer> {
-  const out = new Map<string, ParsedAnswer>();
+): ParsedReply {
+  const answers = new Map<string, ParsedAnswer>();
+  const missing = new Map<string, string>();
   let list: unknown[] = [];
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -549,40 +561,40 @@ export function parseAnswers(
       }
     }
   }
+  const again = 'call again to ask it';
   for (const a of list) {
     if (!a || typeof a !== 'object') continue;
     const o = a as Record<string, unknown>;
     const id = typeof o.id === 'string' ? o.id.trim() : '';
-    if (!ids.includes(id) || out.has(id)) continue;
+    if (!ids.includes(id) || answers.has(id) || missing.has(id)) continue;
     const said = typeof o.answer === 'string' ? o.answer.trim().toLowerCase() : '';
-    const verdict: Verdict = said === 'yes' || said === 'no' ? said : 'unsure';
+    if (said !== 'yes' && said !== 'no' && said !== 'unsure') {
+      missing.set(
+        id,
+        `no answer came back: the reply said ${JSON.stringify(said.slice(0, 20) || '')}, not yes, no or unsure; ${again}`,
+      );
+      continue;
+    }
     const reason = (typeof o.reason === 'string' ? o.reason : '')
       // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u001f\u007f]+/g, ' ')
       .trim()
       .slice(0, 300);
-    out.set(id, {
-      verdict,
-      reason:
-        verdict === 'unsure' && said !== 'unsure'
-          ? `the answer was not yes, no or unsure (${said.slice(0, 20) || 'empty'})${reason ? `: ${reason}` : ''}`
-          : reason,
-    });
+    answers.set(id, { verdict: said, reason });
   }
   for (const id of ids)
-    if (!out.has(id))
-      out.set(id, {
-        verdict: 'unsure',
-        reason:
-          stopped === 'cut'
-            ? 'model answer cut off (the reply reached its token cap before this answer)'
-            : stopped === 'empty'
-              ? 'the model returned an empty answer'
-              : list.length
-                ? 'the reply gave no answer to this question'
-                : 'the reply did not parse',
-      });
-  return out;
+    if (!answers.has(id) && !missing.has(id))
+      missing.set(
+        id,
+        stopped === 'cut'
+          ? `no answer came back: the reply reached its token cap before this answer; ${again} (fewer at a time with max_questions if it repeats)`
+          : stopped === 'empty'
+            ? `no answer came back: the model returned an empty reply; ${again}`
+            : list.length
+              ? `no answer came back: the reply skipped this question; ${again}`
+              : `no answer came back: the reply did not parse; ${again}`,
+      );
+  return { answers, missing };
 }
 
 /** The Checks tab a DWG's table gains: one row per answer, the evidence

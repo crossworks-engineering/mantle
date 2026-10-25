@@ -14,7 +14,8 @@ import {
   type ImagesRequestExtra,
   type ImagesResult,
 } from './openrouter-vision';
-import { isProviderTimeout, recordVision, recordVisionTimeout } from './spend';
+import { classifyProviderError } from '@mantle/std';
+import { recordVision, recordVisionTimeout } from './spend';
 import type { VisionExtractOptions } from './types';
 
 export type { ImagesRequestExtra, ImagesResult };
@@ -45,7 +46,7 @@ export async function extractImages(
   try {
     r = await openrouterExtractImages(images, opts, extra);
   } catch (err) {
-    if (isProviderTimeout(err)) recordVisionTimeout(provider, opts);
+    if (classifyProviderError(err)?.code === 'timeout') recordVisionTimeout(provider, opts);
     throw err;
   }
   recordVision(provider, opts, r);
