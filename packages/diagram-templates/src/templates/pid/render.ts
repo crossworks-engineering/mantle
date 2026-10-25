@@ -1126,6 +1126,30 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
       svg: textEl('sublabel', box.x + 2, box.y + 9, 'DL', { fill: PALETTE.ink }),
     });
   }
+  // A line's note (an honesty mark) beside the middle of its longest run.
+  for (const l of data.lines) {
+    if (!l.note) continue;
+    const segs = segments(routed.get(l.id)!);
+    const s = [...segs].sort((a, b) => len(b) - len(a))[0]!;
+    const h = isH(s);
+    const c = { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 };
+    const tw = measure(m, l.note, 'sublabel') + 4;
+    const cands: Box[] = h
+      ? [
+          { x: c.x - tw / 2, y: c.y + 8, w: tw, h: 12 },
+          { x: c.x - tw / 2, y: c.y - 20, w: tw, h: 12 },
+        ]
+      : [
+          { x: c.x + 8, y: c.y - 6, w: tw, h: 12 },
+          { x: c.x - 8 - tw, y: c.y - 6, w: tw, h: 12 },
+        ];
+    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
+    notes.push({
+      id: `${l.id} note`,
+      box,
+      svg: textEl('sublabel', box.x + 2, box.y + 9, l.note, { fill: PALETTE.ink }),
+    });
+  }
   // The junction dot is the tee: it must sit on its parent pipe.
   for (const t of usedTees) {
     const at = teePts.get(t.id)!.at;
@@ -1795,9 +1819,15 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     // Colour by service names the lines by service instead: a weight entry
     // beside them said "Process" twice.
     if (weights.has('main') && !P.colourByService)
-      entries.push({ label: 'Process line', swatch: lineSwatch(PALETTE.ink, 2) });
+      entries.push({
+        label: data.legendNames?.main ?? 'Process line',
+        swatch: lineSwatch(PALETTE.ink, 2),
+      });
     if (weights.has('secondary') && !P.colourByService)
-      entries.push({ label: 'Utility line', swatch: lineSwatch(PALETTE.ink, 1.2) });
+      entries.push({
+        label: data.legendNames?.secondary ?? 'Utility line',
+        swatch: lineSwatch(PALETTE.ink, 1.2),
+      });
     if (connections.length)
       entries.push({ label: 'Instrument connection', swatch: lineSwatch(PALETTE.muted, 1) });
     const names: Record<SignalType, string> = {

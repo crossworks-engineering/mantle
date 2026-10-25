@@ -106,7 +106,7 @@ export async function circuitTraceHandler(
         ...(result.register ? { register: result.register } : {}),
         guesses: result.guesses,
         limits: result.limits,
-        ...(result.sheets.length === 0
+        ...(result.sheets.every((x) => x.runs.length === 0)
           ? {
               hint: `No readable drawing has geometry on 'Circuit ${circuit}' layers. Check the name with table_sql on a DWG table's Circuits tab, or search_nodes for the drawing.`,
             }
@@ -132,7 +132,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends and what each end meets, deadlegs, valves on the path, line numbers with their DWG handles and equipment tags near the ends; links between sheets (certain only when a continuation label and the same line number agree; else `guessed`); a ready `pid` template input with the main line equipment to equipment first to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment go in `guesses`, marked GUESS on the drawing; a ready `pid` template input with the main line equipment to equipment first to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",
   inputSchema: {
     type: 'object',
     properties: {

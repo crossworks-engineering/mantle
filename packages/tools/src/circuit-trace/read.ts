@@ -79,6 +79,10 @@ export async function dwgTables(
 }
 
 const ident = (s: string) => `"${s.replace(/"/g, '""')}"`;
+/** A stable row order for LIMIT/OFFSET pages: the row id every tab's view
+ *  carries (hidden from its column list), so no row is read twice or
+ *  skipped between pages. */
+const ORDER = ` ORDER BY ${ident('_rid')}`;
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? NaN));
 const text = (v: unknown) => (v === null || v === undefined ? '' : String(v));
@@ -131,6 +135,24 @@ export async function readSheet(
     return { columns: r.columns, rows: r.rows, truncated: r.truncated };
   };
   const limits: string[] = [];
+  /** Whether a tab has a column (an older table may lack a newer one). */
+  const hasColumn = (t: WorkbookTabRef, name: string) =>
+    !t.columns || t.columns.some((c) => c.name === name);
+  /** Whether a query has a row past the first `n` (exactly `n` rows is
+   *  not "more than n"). */
+  const morePast = async (statement: string, n: number) =>
+    (await q(`${statement} LIMIT 1 OFFSET ${n}`)).rows.length > 0;
+  /** A part of the read the trace can do without (the network, the labels
+   *  around it): a failure is said in limits, the sheet is still listed. */
+  const optional = async (what: string, read: () => Promise<void>) => {
+    try {
+      await read();
+    } catch (err) {
+      limits.push(
+        `${what} could not be read (${err instanceof Error ? err.message.slice(0, 120) : 'error'}); the trace goes on without it`,
+      );
+    }
+  };
 
   const layersTab = tab('Layers');
   const circuitsTab = tab('Circuits');
@@ -144,10 +166,15 @@ export async function readSheet(
   }
   let circuitRows: Record<string, unknown>[] = [];
   if (circuitsTab) {
-    const r = await q(
-      `SELECT * FROM ${ident(circuitsTab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())}) OR lower(trim(${ident('Parent')})) = lower(${lit(circuit.trim())})`,
-    );
-    circuitRows = asObjects(r);
+    await optional("the circuit's Circuits row", async () => {
+      const parent = hasColumn(circuitsTab, 'Parent')
+        ? ` OR lower(trim(${ident('Parent')})) = lower(${lit(circuit.trim())})`
+        : '';
+      const r = await q(
+        `SELECT * FROM ${ident(circuitsTab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})${parent}`,
+      );
+      circuitRows = asObjects(r);
+    });
   }
   const own = layersOf(circuit, layerNames);
   const ownLayers = [...own.main, ...own.deadleg];
@@ -177,10 +204,9 @@ export async function readSheet(
   const segments: SegRow[] = [];
   if (ownLayers.length) {
     const inList = ownLayers.map(lit).join(', ');
+    const own = `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} IN (${inList})${ORDER}`;
     for (let offset = 0; offset < MAX_SEGMENTS; offset += PAGE) {
-      const r = await q(
-        `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} IN (${inList}) LIMIT ${PAGE} OFFSET ${offset}`,
-      );
+      const r = await q(`${own} LIMIT ${PAGE} OFFSET ${offset}`);
       for (const row of r.rows) {
         segments.push({
           layer: text(row[0]),
@@ -195,7 +221,7 @@ export async function readSheet(
         });
       }
       if (r.rows.length < PAGE) break;
-      if (offset + PAGE >= MAX_SEGMENTS) {
+      if (offset + PAGE >= MAX_SEGMENTS && (await morePast(own, MAX_SEGMENTS))) {
         limits.push(
           `the circuit has more than ${MAX_SEGMENTS} segments; the trace read the first ${MAX_SEGMENTS}`,
         );
@@ -299,14 +325,16 @@ export async function readSheet(
   };
   const inBox = `${ident('X')} BETWEEN ${wide.minX} AND ${wide.maxX} AND ${ident('Y')} BETWEEN ${wide.minY} AND ${wide.maxY}`;
   const network: SegRow[] = [];
-  {
+  await optional('the network around the circuit (other layers)', async () => {
     const notOwn = ownLayers.map(lit).join(', ');
     const [X1, X2, Y1, Y2] = ['X1', 'X2', 'Y1', 'Y2'].map(ident);
     const overlaps = `min(${X1}, ${X2}) <= ${wide.maxX} AND max(${X1}, ${X2}) >= ${wide.minX} AND min(${Y1}, ${Y2}) <= ${wide.maxY} AND max(${Y1}, ${Y2}) >= ${wide.minY}`;
+    // Part (the polyline vertex pair) came in after the first bones
+    // tables: an older table reads 0.
+    const part = hasColumn(segTab, 'Part') ? ident('Part') : '0';
+    const around = `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')}, ${part} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps}${ORDER}`;
     for (let offset = 0; offset < MAX_NETWORK; offset += PAGE) {
-      const r = await q(
-        `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2', 'Part'].map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps} LIMIT ${PAGE} OFFSET ${offset}`,
-      );
+      const r = await q(`${around} LIMIT ${PAGE} OFFSET ${offset}`);
       for (const row of r.rows) {
         network.push({
           layer: text(row[0]),
@@ -322,107 +350,114 @@ export async function readSheet(
         });
       }
       if (r.rows.length < PAGE) break;
-      if (offset + PAGE >= MAX_NETWORK) {
+      if (offset + PAGE >= MAX_NETWORK && (await morePast(around, MAX_NETWORK))) {
         limits.push(
           `more than ${MAX_NETWORK} segments on other layers around the circuit; pieces may stay unjoined where the rest would have joined them`,
         );
       }
     }
-  }
+  });
 
-  /** Every row of a SELECT, a page at a time, up to `max`; `cut` when more. */
+  /** Every row of a SELECT, a page at a time in a stable order, up to
+   *  `max`; `cut` only when a row lies past `max`. */
   const paged = async (statement: string, max: number) => {
     const rows: unknown[][] = [];
     let columns: string[] = [];
+    const ordered = `${statement}${ORDER}`;
     for (let offset = 0; offset < max; offset += PAGE) {
-      const r = await q(`${statement} LIMIT ${PAGE} OFFSET ${offset}`);
+      const r = await q(`${ordered} LIMIT ${PAGE} OFFSET ${offset}`);
       columns = r.columns;
       rows.push(...r.rows);
       if (r.rows.length < PAGE) return { columns, rows, cut: false };
     }
-    return { columns, rows, cut: true };
+    return { columns, rows, cut: await morePast(ordered, max) };
   };
   const inserts: InsertRow[] = [];
   const insTab = tab('Inserts');
-  if (insTab) {
-    const handles = bridgeHandles.length
-      ? ` OR ${ident('Handle')} IN (${bridgeHandles.map(lit).join(', ')})`
-      : '';
-    const r = await paged(
-      `SELECT ${['Block', 'Layer', 'Handle', 'X', 'Y', 'Min X', 'Min Y', 'Max X', 'Max Y'].map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles}`,
-      MAX_NEAR_ROWS,
-    );
-    for (const row of r.rows) {
-      const opt = (v: unknown) => (v === null || v === '' || v === undefined ? null : num(v));
-      inserts.push({
-        block: text(row[0]),
-        layer: text(row[1]),
-        handle: text(row[2]),
-        x: num(row[3]),
-        y: num(row[4]),
-        minX: opt(row[5]),
-        minY: opt(row[6]),
-        maxX: opt(row[7]),
-        maxY: opt(row[8]),
-      });
-    }
-    if (r.cut)
-      limits.push(
-        `more than ${MAX_NEAR_ROWS} blocks around the circuit; the rest were not looked at`,
+  if (insTab)
+    await optional('the blocks around the circuit (Inserts)', async () => {
+      const handles = bridgeHandles.length
+        ? ` OR ${ident('Handle')} IN (${bridgeHandles.map(lit).join(', ')})`
+        : '';
+      const r = await paged(
+        `SELECT ${['Block', 'Layer', 'Handle', 'X', 'Y', 'Min X', 'Min Y', 'Max X', 'Max Y'].map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles}`,
+        MAX_NEAR_ROWS,
       );
-  }
+      for (const row of r.rows) {
+        const opt = (v: unknown) => (v === null || v === '' || v === undefined ? null : num(v));
+        inserts.push({
+          block: text(row[0]),
+          layer: text(row[1]),
+          handle: text(row[2]),
+          x: num(row[3]),
+          y: num(row[4]),
+          minX: opt(row[5]),
+          minY: opt(row[6]),
+          maxX: opt(row[7]),
+          maxY: opt(row[8]),
+        });
+      }
+      if (r.cut)
+        limits.push(
+          `more than ${MAX_NEAR_ROWS} blocks around the circuit; the rest were not looked at`,
+        );
+    });
   const texts: TextRow[] = [];
   const textTab = tab('Texts');
-  if (textTab) {
-    const r = await paged(
-      `SELECT ${['Text', 'Layer', 'X', 'Y'].map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox}`,
-      MAX_NEAR_ROWS,
-    );
-    for (const row of r.rows)
-      texts.push({ text: text(row[0]), layer: text(row[1]), x: num(row[2]), y: num(row[3]) });
-    if (r.cut)
-      limits.push(
-        `more than ${MAX_NEAR_ROWS} labels around the circuit; the rest were not looked at`,
+  if (textTab)
+    await optional('the labels around the circuit (Texts)', async () => {
+      const r = await paged(
+        `SELECT ${['Text', 'Layer', 'X', 'Y'].map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox}`,
+        MAX_NEAR_ROWS,
       );
-  }
+      for (const row of r.rows)
+        texts.push({ text: text(row[0]), layer: text(row[1]), x: num(row[2]), y: num(row[3]) });
+      if (r.cut)
+        limits.push(
+          `more than ${MAX_NEAR_ROWS} labels around the circuit; the rest were not looked at`,
+        );
+    });
   const blocks: BlockRow[] = [];
   const blockTab = tab('Blocks');
-  if (blockTab) {
-    // The Blocks tab's X/Y is the insert's OCS point; the inserts read above
-    // are by their WCS point, so their handles are asked for too (a mirrored
-    // block's OCS point can sit outside the box). The walk places each
-    // block at its Inserts point.
-    const named = [
-      ...circuitRows.flatMap((row) =>
-        [...text(row['Line numbers']).matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]!),
-      ),
-      ...inserts.map((i) => i.handle).filter(Boolean),
-    ];
-    const byHandle = named.length ? ` OR ${ident('Handle')} IN (${named.map(lit).join(', ')})` : '';
-    const r = await paged(
-      `SELECT * FROM ${ident(blockTab.viewName)} WHERE (${inBox})${byHandle}`,
-      MAX_NEAR_ROWS,
-    );
-    for (const o of asObjects(r)) {
-      const attribs: Record<string, string> = {};
-      for (const [k, v] of Object.entries(o)) {
-        if (['Block', 'Layer', 'Handle', 'X', 'Y'].includes(k) || k.startsWith('_')) continue;
-        if (v !== null && v !== '') attribs[k.replace(/ \(attribute( \d+)?\)$/, '')] = text(v);
-      }
-      blocks.push({
-        block: text(o['Block']),
-        layer: text(o['Layer']),
-        handle: text(o['Handle']),
-        x: num(o['X']),
-        y: num(o['Y']),
-        attribs,
-      });
-    }
-    if (r.cut)
-      limits.push(
-        `more than ${MAX_NEAR_ROWS} attribute blocks around the circuit; the rest were not looked at`,
+  if (blockTab)
+    await optional('the attribute blocks around the circuit (Blocks)', async () => {
+      // The Blocks tab's X/Y is the insert's OCS point; the inserts read above
+      // are by their WCS point, so their handles are asked for too (a mirrored
+      // block's OCS point can sit outside the box). The walk places each
+      // block at its Inserts point.
+      const named = [
+        ...circuitRows.flatMap((row) =>
+          [...text(row['Line numbers']).matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]!),
+        ),
+        ...inserts.map((i) => i.handle).filter(Boolean),
+      ];
+      const byHandle = named.length
+        ? ` OR ${ident('Handle')} IN (${named.map(lit).join(', ')})`
+        : '';
+      const r = await paged(
+        `SELECT * FROM ${ident(blockTab.viewName)} WHERE (${inBox})${byHandle}`,
+        MAX_NEAR_ROWS,
       );
-  }
+      for (const o of asObjects(r)) {
+        const attribs: Record<string, string> = {};
+        for (const [k, v] of Object.entries(o)) {
+          if (['Block', 'Layer', 'Handle', 'X', 'Y'].includes(k) || k.startsWith('_')) continue;
+          if (v !== null && v !== '') attribs[k.replace(/ \(attribute( \d+)?\)$/, '')] = text(v);
+        }
+        blocks.push({
+          block: text(o['Block']),
+          layer: text(o['Layer']),
+          handle: text(o['Handle']),
+          x: num(o['X']),
+          y: num(o['Y']),
+          attribs,
+        });
+      }
+      if (r.cut)
+        limits.push(
+          `more than ${MAX_NEAR_ROWS} attribute blocks around the circuit; the rest were not looked at`,
+        );
+    });
 
   return {
     kind: 'sheet',

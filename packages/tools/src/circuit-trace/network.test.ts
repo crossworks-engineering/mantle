@@ -84,7 +84,7 @@ function box(
  * ══ is the circuit overlay with the process line under it; 2 ── 3 is a
  * stretch of process line nobody overlaid; ╤ are `stubs` deadleg stubs.
  */
-function sheetA(stubs = 3): SheetInput {
+function sheetA(stubs = 3, endNumber = true): SheetInput {
   const segments: SegRow[] = [
     sg(M, 'A', 0, 0, 20, 0, 1, 2),
     sg(M, 'B', 30, 0, 60, 0, 3, 4),
@@ -150,7 +150,9 @@ function sheetA(stubs = 3): SheetInput {
       { text: 'E-301/R1', layer: EQ, x: -10, y: 0 },
       { text: 'COD PID-2002', layer: BORDER, x: 101, y: 30 },
     ],
-    blocks: [lineNo('LA', 45, -1)],
+    // The line number on the main piece, and again by the border end (on
+    // that end's own chain: a certain link needs it there).
+    blocks: endNumber ? [lineNo('LA', 45, -1), lineNo('LA2', 99, -1)] : [lineNo('LA', 45, -1)],
     near: 2,
     network,
     limits: [],
@@ -178,7 +180,7 @@ function sheetB(): SheetInput {
       sg(PIPE, 'pA', 0, 0, 50, 0, 1, 2),
       sg(BORDER, 'BRD', 0, -100, 0, 0, 200, 1),
       sg(BORDER, 'BRD', 0, 0, 0, 100, 1, 201),
-      ...box('K', [50, -20, 70, 20], [100, 101, 102, 103], [3, 2, 50, 0]),
+      ...box('K', [50, -10, 70, 10], [100, 101, 102, 103], [3, 2, 50, 0]),
     ],
     limits: [],
   };
@@ -223,7 +225,7 @@ describe('pieces of the overlay are joined through the process line', () => {
 
   it('the line number is the full tag as written (LINENO over LINE)', () => {
     expect(lineNumberOf({ LINE: 'N100', LINENO: NUMBER })).toBe(NUMBER);
-    expect(s.lineNumbers.map((l) => l.number)).toEqual([NUMBER]);
+    expect([...new Set(s.lineNumbers.map((l) => l.number))]).toEqual([NUMBER]);
   });
 
   it('an end on a sheet border takes the continuation label along it', () => {

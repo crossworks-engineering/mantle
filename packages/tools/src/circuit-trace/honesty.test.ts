@@ -1,0 +1,537 @@
+/**
+ * circuit_trace honesty: an inference never reaches the result or the
+ * drawing as fact. Made-up drawings (every tag, number and sheet name here
+ * is invented), one per audit probe:
+ *
+ *   P1   a vessel on the PROCESS layer: no join runs round its outline
+ *   P5a  a stretch carrying another line number: never joined through
+ *        (and a process join that is made is said as an inferred join)
+ *   P6   a deadleg piece joined to a main piece stays a deadleg
+ *   P7   a tag past the near distance is an unconfirmed end, not equipment
+ *   P9   a certain link needs the line number on both ends' own chains
+ *   P11  a process circuit's branches are never called utility lines
+ *
+ * and the reads: a sheet with the circuit but nothing to draw is listed, an
+ * older table without the Part column still reads, pages are stable and
+ * exactly N rows is not "more than N".
+ */
+import { describe, expect, it } from 'vitest';
+import { estimateMeasurer, render, validate } from '@mantle/diagram-templates';
+import type { WorkbookTabRef } from '@mantle/tabledb';
+import { readSheet } from './read';
+import { traceCircuit } from './walk';
+import type { BlockRow, NodeRow, SegRow, SheetInput, TextRow } from './walk';
+
+const C = '40000-001-01';
+const M = `Circuit ${C}`;
+const DL = `Circuit ${C}-DL`;
+const PIPE = 'PROCESS';
+
+const sg = (
+  layer: string,
+  handle: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  n1: number,
+  n2: number,
+  part = 0,
+): SegRow => ({
+  layer,
+  handle,
+  x1,
+  y1,
+  x2,
+  y2,
+  length: Math.hypot(x2 - x1, y2 - y1),
+  n1,
+  n2,
+  part,
+});
+
+/** Nodes for every end point, degree and layers counted over all pieces. */
+function nodesOf(segs: SegRow[]): NodeRow[] {
+  const at = new Map<number, NodeRow>();
+  for (const g of segs) {
+    for (const [n, x, y] of [
+      [g.n1, g.x1, g.y1],
+      [g.n2, g.x2, g.y2],
+    ] as const) {
+      const row = at.get(n) ?? {
+        id: n,
+        x,
+        y,
+        degree: 0,
+        kind: 'end',
+        block: '',
+        blockHandle: '',
+        layers: [],
+      };
+      row.degree += 1;
+      if (!row.layers.includes(g.layer)) row.layers.push(g.layer);
+      at.set(n, row);
+    }
+  }
+  for (const r of at.values()) r.kind = r.degree === 1 ? 'end' : r.degree === 2 ? 'joint' : 'tee';
+  return [...at.values()];
+}
+
+const lineNo = (
+  handle: string,
+  x: number,
+  y: number,
+  number: string,
+  circuit?: string,
+): BlockRow => ({
+  block: 'LineNumber',
+  layer: 'LINENO',
+  handle,
+  x,
+  y,
+  attribs: { LINENO: number, ...(circuit ? { CIRCUIT: circuit } : {}) },
+});
+
+function sheet(
+  title: string,
+  segments: SegRow[],
+  network: SegRow[],
+  texts: TextRow[] = [],
+  blocks: BlockRow[] = [],
+): SheetInput {
+  return {
+    tableId: `t-${title}`,
+    title,
+    sourceFileId: null,
+    circuitLayers: [...new Set(segments.map((g) => g.layer))],
+    circuitRows: [],
+    segments,
+    nodes: nodesOf([...segments, ...network]),
+    inserts: [],
+    texts,
+    blocks,
+    // An extent of 200: joins up to 30 units, outlines up to 32 across.
+    near: 2,
+    network,
+    limits: [],
+  };
+}
+
+type Pid = {
+  description: string;
+  equipment: { id: string }[];
+  offpage: { text?: string }[];
+  lines: Record<string, unknown>[];
+};
+
+/** Two pieces either side of a vessel at x 20..30 drawn on PROCESS. */
+function vesselSheet(closed: boolean): SheetInput {
+  const segments = [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(M, 'B', 30, 0, 50, 0, 3, 4)];
+  const corners: [number, number, number][] = [
+    [10, 20, -5],
+    [11, 30, -5],
+    [12, 30, 5],
+    [13, 20, 5],
+  ];
+  // The outline, each side split where a pipe meets it (2 on the left, 3
+  // on the right): one closed polyline (handle V, parts 0..3) or four LINEs.
+  const sides: [number, number, number?][] = [
+    [10, 11],
+    [11, 12, 3],
+    [12, 13],
+    [13, 10, 2],
+  ];
+  const pt = (n: number) =>
+    n === 2 ? [20, 0] : n === 3 ? [30, 0] : corners.find((c) => c[0] === n)!.slice(1);
+  const vessel: SegRow[] = [];
+  sides.forEach(([a, b, split], i) => {
+    const h = closed ? 'V' : `V${i}`;
+    const legs = split
+      ? [
+          [a, split],
+          [split, b],
+        ]
+      : [[a, b]];
+    for (const [u, v] of legs) {
+      const [x1, y1] = pt(u!);
+      const [x2, y2] = pt(v!);
+      vessel.push(sg(PIPE, h, x1!, y1!, x2!, y2!, u!, v!, i));
+    }
+  });
+  return sheet(
+    'PID-9101',
+    segments,
+    [sg(PIPE, 'pA', 0, 0, 20, 0, 1, 2), sg(PIPE, 'pB', 30, 0, 50, 0, 3, 4), ...vessel],
+    [{ text: 'V-101', layer: 'EQUIP', x: 25, y: 0 }],
+  );
+}
+
+describe('P1: never joined round a vessel drawn on a pipe layer', () => {
+  for (const closed of [true, false]) {
+    it(`a vessel drawn as ${closed ? 'one closed polyline' : 'four LINEs'}: two runs, each at the vessel`, () => {
+      const r = traceCircuit(C, [vesselSheet(closed)]);
+      const s = r.sheets[0]!;
+      expect(s.joins).toEqual([]);
+      expect(s.runs).toHaveLength(2);
+      const ends = s.runs.flatMap((x) => x.ends);
+      expect(ends.find((e) => e.node === 2)!.equipment).toEqual(['V-101']);
+      expect(ends.find((e) => e.node === 3)!.equipment).toEqual(['V-101']);
+    });
+  }
+});
+
+/** A stretch of process line between two pieces, a line-number block on it. */
+function gapSheet(onGap: string): SheetInput {
+  return sheet(
+    'PID-9201',
+    [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(M, 'B', 30, 0, 50, 0, 3, 4)],
+    [
+      sg(PIPE, 'pA', 0, 0, 20, 0, 1, 2),
+      sg(PIPE, 'pGap', 20, 0, 30, 0, 2, 3),
+      sg(PIPE, 'pB', 30, 0, 50, 0, 3, 4),
+    ],
+    [],
+    [lineNo('LA', 10, 1, 'N100-1'), lineNo('LG', 25, 1, onGap)],
+  );
+}
+
+describe('P5a: a process join is an inference, and never across another line number', () => {
+  it('a stretch labelled with another line number (no CIRCUIT attribute) is not joined', () => {
+    const s = traceCircuit(C, [gapSheet('N200-1')]).sheets[0]!;
+    expect(s.joins).toEqual([]);
+    expect(s.runs).toHaveLength(2);
+  });
+
+  it('labelled with its own number it is joined, said as an inferred join and marked GUESS', () => {
+    const r = traceCircuit(C, [gapSheet('N100-1')]);
+    const s = r.sheets[0]!;
+    expect(s.joins).toEqual([
+      expect.objectContaining({ kind: 'process', inferred: true, length: 10, handles: ['pGap'] }),
+    ]);
+    expect(r.guesses.join(' ')).toMatch(
+      /pieces #2 and #3 of the circuit are joined through 1 process-line segment on PROCESS, 10 drawing units \(handles pGap\): an inferred join/,
+    );
+    const pid = r.pid as Pid;
+    expect(pid.lines.filter((l) => l.note === 'INFERRED JOIN (GUESS)')).toHaveLength(1);
+    expect(validate('pid', pid).ok).toBe(true);
+    const svg = render('pid', pid, estimateMeasurer);
+    expect(svg.ok && svg.svg).toContain('INFERRED JOIN (GUESS)');
+  });
+});
+
+describe('P6: a join never changes a piece role', () => {
+  // E-101 1 ══ main ══ 2 ·· process join ·· 3 ── deadleg ── 4 V-201
+  const s = () =>
+    sheet(
+      'PID-9301',
+      [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(DL, 'D', 22, 0, 40, 0, 3, 4)],
+      [
+        sg(PIPE, 'pA', 0, 0, 20, 0, 1, 2),
+        sg(PIPE, 'pGap', 20, 0, 22, 0, 2, 3),
+        sg(PIPE, 'pD', 22, 0, 40, 0, 3, 4),
+      ],
+      [
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+        { text: 'V-201', layer: 'EQUIP', x: 41, y: 0 },
+        { text: 'CONT. ON PID-9302', layer: 'TEXT', x: 40, y: 1 },
+      ],
+    );
+
+  it('the deadleg piece stays a deadleg chain; its end is a deadleg end', () => {
+    const r = traceCircuit(C, [s()]);
+    const run = r.sheets[0]!.runs[0]!;
+    expect(r.sheets[0]!.runs).toHaveLength(1);
+    expect(run.chains.find((c) => c.handles.includes('A'))!.role).toBe('main');
+    expect(run.chains.find((c) => c.handles.includes('D'))!.role).toBe('deadleg');
+    expect(run.ends.find((e) => e.node === 4)!.deadleg).toBe(true);
+    expect(run.ends.find((e) => e.node === 1)!.deadleg).toBe(false);
+  });
+
+  it('its end is never a main-line end nor a sheet link', () => {
+    const other = sheet(
+      'PID-9302',
+      [sg(M, 'X', 0, 0, 30, 0, 1, 2)],
+      [],
+      [{ text: 'CONT. FROM PID-9301', layer: 'TEXT', x: -1, y: 1 }],
+    );
+    const r = traceCircuit(C, [s(), other]);
+    expect(r.links.some((l) => l.from.node === 4 || l.to?.node === 4)).toBe(false);
+    expect((r.pid as Pid).description).toMatch(/no main line/);
+  });
+});
+
+describe('P7: a tag past the near distance is a reading, never equipment', () => {
+  // E-101 sits by end 1 (1 unit); V-201 is 5 units past end 2 (near is 2).
+  const s = () =>
+    sheet(
+      'PID-9401',
+      [sg(M, 'A', 0, 0, 20, 0, 1, 2)],
+      [],
+      [
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+        { text: 'V-201', layer: 'EQUIP', x: 25, y: 0 },
+      ],
+    );
+
+  it('an unconfirmed end, said in guesses, drawn as a marked connector', () => {
+    const r = traceCircuit(C, [s()]);
+    const end = r.sheets[0]!.runs[0]!.ends.find((e) => e.node === 2)!;
+    expect(end.equipment).toEqual([]);
+    expect(end.equipmentUnconfirmed).toBe('V-201');
+    expect(r.guesses.join(' ')).toMatch(
+      /end #2 meets nothing drawn; the nearest equipment tag V-201/,
+    );
+    const pid = r.pid as Pid;
+    expect(pid.equipment.map((e) => e.id)).toEqual(['E-101']);
+    expect(pid.offpage.map((o) => o.text)).toContain('NEAR V-201 (GUESS)');
+    expect(pid.description).toMatch(/no main line/);
+  });
+
+  it("the register's to confirms it: then the main line ends there", () => {
+    const r = traceCircuit(C, [s()], { from: 'E-101', to: 'V-201' });
+    const pid = r.pid as Pid;
+    expect(pid.equipment.map((e) => e.id).sort()).toEqual(['E-101', 'V-201']);
+    expect(pid.lines[0]).toMatchObject({ from: 'E-101', to: 'V-201' });
+  });
+});
+
+describe('P9: a certain link needs the line number on both ends own chains', () => {
+  // PID-9501: 1 ══ 2 (tee) ══ 3 "CONT. ON PID-9502", a branch 2 ── 4.
+  // N300 sits on 1-2 only; 2-3 inherits it.
+  const s1 = (onEndChain: boolean) =>
+    sheet(
+      'PID-9501',
+      [
+        sg(M, 'A', 0, 0, 20, 0, 1, 2),
+        sg(M, 'B', 20, 0, 40, 0, 2, 3),
+        sg(M, 'T', 20, 0, 20, 20, 2, 4),
+      ],
+      [],
+      [{ text: 'CONT. ON PID-9502', layer: 'TEXT', x: 41, y: 1 }],
+      [lineNo('L1', 10, 1, 'N300-2', C), ...(onEndChain ? [lineNo('L2', 30, 1, 'N300-2', C)] : [])],
+    );
+  const s2 = () =>
+    sheet(
+      'PID-9502',
+      [sg(M, 'X', 0, 0, 30, 0, 1, 2)],
+      [],
+      [{ text: 'CONT. FROM PID-9501', layer: 'TEXT', x: -1, y: 1 }],
+      [lineNo('L3', 15, 1, 'N300-2', C)],
+    );
+
+  it('inherited from further along the run: a guess', () => {
+    const r = traceCircuit(C, [s1(false), s2()]);
+    const l = r.links.find((x) => x.from.node === 3 || x.to?.node === 3)!;
+    expect(l).toMatchObject({ basis: 'label', guessed: true });
+    expect(l.note).toMatch(/not on both ends' own chains/);
+  });
+
+  it('on both ends own chains, with labels naming each other: certain', () => {
+    const r = traceCircuit(C, [s1(true), s2()]);
+    expect(r.links.find((x) => x.from.node === 3)).toMatchObject({
+      to: { sheet: 'PID-9502', node: 1 },
+      basis: 'label',
+      guessed: false,
+    });
+  });
+});
+
+describe('P11: the branches of a process circuit are process lines', () => {
+  it('the legend names them as the circuit lines, never utility lines', () => {
+    const r = traceCircuit(C, [
+      sheet(
+        'PID-9601',
+        [
+          sg(M, 'A', 0, 0, 20, 0, 1, 2),
+          sg(M, 'B', 20, 0, 40, 0, 2, 3),
+          sg(DL, 'T', 20, 0, 20, 15, 2, 4),
+        ],
+        [],
+        [
+          { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+          { text: 'V-201', layer: 'EQUIP', x: 41, y: 0 },
+        ],
+      ),
+    ]);
+    const pid = r.pid as Pid & { legendNames: Record<string, string> };
+    expect(pid.lines.some((l) => l.weight === 'secondary')).toBe(true);
+    const out = render('pid', pid, estimateMeasurer);
+    expect(out.ok).toBe(true);
+    const svg = out.ok ? out.svg : '';
+    expect(svg).toMatch(/Process branch or deadleg/i);
+    expect(svg).toMatch(/Main process line/i);
+    expect(svg).not.toMatch(/Utility line/i);
+  });
+});
+
+describe('the main line: ties and the register', () => {
+  // Two separate runs of the same length, each between two pieces of equipment.
+  const twin = () =>
+    sheet(
+      'PID-9701',
+      [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(M, 'B', 0, 50, 20, 50, 3, 4)],
+      [],
+      [
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+        { text: 'V-101', layer: 'EQUIP', x: 21, y: 0 },
+        { text: 'E-102', layer: 'EQUIP', x: -1, y: 50 },
+        { text: 'V-102', layer: 'EQUIP', x: 21, y: 50 },
+      ],
+    );
+
+  it('a tie between two pairs is said', () => {
+    const r = traceCircuit(C, [twin()]);
+    expect(r.guesses.join(' ')).toMatch(/a tie, broken by the order/);
+  });
+
+  it("the register's from and to with no path between them: a limit", () => {
+    const r = traceCircuit(C, [twin()], { from: 'E-101', to: 'V-102' });
+    expect(r.limits.join(' ')).toMatch(/no path on main layers joins them/);
+    expect((r.pid as Pid).description).toMatch(/no main line/);
+  });
+
+  it("the register's text echoed in limits is cut short", () => {
+    const long = `Z-${'9'.repeat(300)}`;
+    const r = traceCircuit(C, [twin()], { from: long });
+    const l = r.limits.find((x) => x.includes("register's circuit from"))!;
+    expect(l).toBeDefined();
+    expect(l.length).toBeLessThan(200);
+  });
+});
+
+/* ------------------------------------------------------------------ reads */
+
+type Tab = { name: string; columns: string[]; rows: unknown[][] };
+
+/** A fake table_sql over in-memory tabs: honours the FROM tab and the last
+ *  LIMIT/OFFSET, and throws on a column the tab has not got (as SQLite does). */
+function fakeTables(tabs: Tab[], log: string[] = []) {
+  const refs = tabs.map(
+    (t) =>
+      ({
+        tabId: t.name,
+        name: t.name,
+        viewName: t.name,
+        physicalTable: t.name,
+        ftsTable: null,
+        rowCount: t.rows.length,
+        columns: t.columns.map((c) => ({ colId: c, name: c, physical: c, type: 'text' })),
+      }) as unknown as WorkbookTabRef,
+  );
+  const run = async (_abs: string, q: string) => {
+    log.push(q);
+    const from = /FROM "([^"]+)"/.exec(q)?.[1];
+    const tab = tabs.find((t) => t.name === from);
+    if (!tab) throw new Error(`no such table: ${from}`);
+    for (const m of q.matchAll(/"([^"]+)"/g)) {
+      const name = m[1]!;
+      if (
+        name !== tab.name &&
+        name !== '_rid' &&
+        !tab.columns.includes(name) &&
+        !tabs.some((t) => t.name === name)
+      )
+        throw new Error(`no such column: ${name}`);
+    }
+    let rows = tab.rows;
+    // The circuit's own segments, or every other layer's (the network).
+    if (tab.name === 'Segments')
+      rows = /NOT IN/.test(q)
+        ? rows.filter((r) => !String(r[0]).startsWith('Circuit'))
+        : rows.filter((r) => String(r[0]).startsWith('Circuit'));
+    const lim = /LIMIT (\d+) OFFSET (\d+)\s*$/.exec(q);
+    if (lim) rows = rows.slice(Number(lim[2]), Number(lim[2]) + Number(lim[1]));
+    return { columns: tab.columns, rows, truncated: false } as never;
+  };
+  return { surface: async () => ({ abs: '/fake', tabs: refs }), run };
+}
+
+const SEG_COLS = ['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'];
+const NODE_COLS = ['Node', 'X', 'Y', 'Degree', 'Kind', 'Block', 'Block handle', 'Layers'];
+const table = {
+  id: 'tbl-1',
+  title: 'PID-9801',
+  description: 'AutoCAD DWG model-space registry ... within 2 drawing units of it ... (test)',
+  sourceFileId: null,
+};
+const plainSheet = (extra: Tab[] = [], segCols = SEG_COLS) => [
+  { name: 'Layers', columns: ['Layer', 'Entities'], rows: [[M, 1]] },
+  {
+    name: 'Segments',
+    columns: segCols,
+    rows: [
+      [M, 'H1', 0, 0, 10, 0, 10, 1, 2, ...(segCols.includes('Part') ? [0] : [])],
+      ['PROCESS', 'P1', 10, 0, 20, 0, 10, 2, 3, ...(segCols.includes('Part') ? [0] : [])],
+    ],
+  },
+  {
+    name: 'Nodes',
+    columns: NODE_COLS,
+    rows: [
+      [1, 0, 0, 1, 'end', '', '', M],
+      [2, 10, 0, 2, 'joint', '', '', `${M}; PROCESS`],
+    ],
+  },
+  ...extra,
+];
+
+describe('a sheet with the circuit is always listed', () => {
+  it('one segment, two plain ends, no equipment, a Segments tab with no Part column', async () => {
+    const r = await readSheet('owner', table, C, fakeTables(plainSheet()));
+    expect(r.kind).toBe('sheet');
+    if (r.kind !== 'sheet') return;
+    expect(r.sheet.segments).toHaveLength(1);
+    expect((r.sheet.network ?? []).map((g) => g.handle)).toEqual(['P1']);
+    const t = traceCircuit(C, [r.sheet]);
+    expect(t.sheets.map((s) => s.title)).toEqual(['PID-9801']);
+    expect((t.pid as Pid).equipment).toEqual([]);
+  });
+
+  it('a neighbourhood tab that cannot be read is a limit, not a missing sheet', async () => {
+    const r = await readSheet(
+      'owner',
+      table,
+      C,
+      fakeTables(plainSheet([{ name: 'Texts', columns: ['Text', 'Layer'], rows: [] }])),
+    );
+    expect(r.kind).toBe('sheet');
+    if (r.kind !== 'sheet') return;
+    expect(r.sheet.limits.join(' ')).toMatch(
+      /the labels around the circuit \(Texts\) could not be read/,
+    );
+    expect(traceCircuit(C, [r.sheet]).sheets).toHaveLength(1);
+  });
+
+  it('a sheet named for the circuit with no segment read is listed too', () => {
+    const t = traceCircuit(C, [{ ...sheet('PID-9802', [], []), circuitLayers: [M] }]);
+    expect(t.sheets.map((s) => s.title)).toEqual(['PID-9802']);
+    expect(t.limits.join(' ')).toMatch(/no segment on its layers was read/);
+  });
+});
+
+describe('paged reads', () => {
+  const texts = (n: number): Tab => ({
+    name: 'Texts',
+    columns: ['Text', 'Layer', 'X', 'Y'],
+    rows: Array.from({ length: n }, (_, i) => [`T${i}`, 'TEXT', 1, 1]),
+  });
+
+  it('exactly the cap is not "more than"; one more is', async () => {
+    const at = async (n: number) => {
+      const r = await readSheet('owner', table, C, fakeTables(plainSheet([texts(n)])));
+      return r.kind === 'sheet' ? r.sheet : null;
+    };
+    const exact = (await at(3000))!;
+    expect(exact.texts).toHaveLength(3000);
+    expect(exact.limits.join(' ')).not.toMatch(/more than 3000 labels/);
+    expect((await at(3001))!.limits.join(' ')).toMatch(/more than 3000 labels/);
+  });
+
+  it('every page is in a stable order', async () => {
+    const log: string[] = [];
+    await readSheet('owner', table, C, fakeTables(plainSheet([texts(5)]), log));
+    const pages = log.filter((q) => /LIMIT \d+ OFFSET \d+$/.test(q));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const q of pages) expect(q).toMatch(/ORDER BY "_rid" LIMIT/);
+  });
+});

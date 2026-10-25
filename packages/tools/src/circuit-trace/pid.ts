@@ -23,6 +23,13 @@ export const PID_LINES = 20;
 const CIRCUIT_ID = 24;
 
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
+/** Register text echoed into limits and guesses is cut to this length. */
+const ECHO_MAX = 40;
+const clip = (t: string) => (t.length > ECHO_MAX ? `${t.slice(0, ECHO_MAX - 3)}...` : t);
+/** The legend's names for the line weights: the main line, and every other
+ *  line of the circuit (a branch or a deadleg of a process circuit is a
+ *  process line, never a utility line). */
+export const LEGEND_NAMES = { main: 'Main process line', secondary: 'Process branch or deadleg' };
 
 export function tagId(raw: string, fallback: string, max = 32): string {
   const t = raw
@@ -96,12 +103,26 @@ export function buildPid(
   const keyOf = (sheet: TraceSheet, node: number) => `${sheet.tableId}:${node}`;
   const sheetByTitle = new Map(sheets.map((s) => [s.title, s]));
   const endAt = new Map<string, { sheet: TraceSheet; end: TraceEnd }[]>();
+  // An unconfirmed tag (a reading past the near distance) is equipment only
+  // when the register's from or to names it; else its end is a marked guess.
+  const registerTags = [input.register?.from, input.register?.to]
+    .filter((t): t is string => !!t?.trim())
+    .map((t) => baseTag(t.trim()));
+  const unconfirmed = new Map<string, string>();
   for (const s of sheets) {
     for (const run of s.runs) {
       for (const end of run.ends) {
         const k = keyOf(s, end.node);
         endAt.set(k, [...(endAt.get(k) ?? []), { sheet: s, end }]);
         if (end.equipment.length) join(k, `EQ:${end.equipment[0]!}`);
+        else if (end.equipmentUnconfirmed) {
+          if (registerTags.includes(baseTag(end.equipmentUnconfirmed))) {
+            join(k, `EQ:${end.equipmentUnconfirmed}`);
+            guesses.push(
+              `${s.title}: end #${end.node} is drawn at ${end.equipmentUnconfirmed}: the tag is past the near distance, and the register's from or to names it.`,
+            );
+          } else unconfirmed.set(k, end.equipmentUnconfirmed);
+        }
       }
     }
   }
@@ -227,7 +248,7 @@ export function buildPid(
   ] as const) {
     if (name?.trim() && !hit) {
       limits.push(
-        `the register's circuit ${side} ${name} is not at any end of the traced geometry; the main line is read from the drawing alone.`,
+        `the register's circuit ${side} ${clip(name.trim())} is not at any end of the traced geometry; the main line is read from the drawing alone.`,
       );
     }
   }
@@ -238,11 +259,13 @@ export function buildPid(
     );
     return i >= 0 ? i : order.length + sheets.indexOf(s);
   };
-  type Main = { from: string; to: string; edges: Edge[]; score: number[] };
+  type Main = { from: string; to: string; edges: Edge[]; score: number[]; tie: boolean };
   let main: Main | null = null;
   const consider = (a: string, b: string) => {
     const p = path(a, b);
     if (!p?.length) return;
+    // A deadleg's end is never a main-line end.
+    if (p[0]!.deadleg || p[p.length - 1]!.deadleg) return;
     // A main run crosses each sheet once: a path that leaves a sheet and
     // comes back to it is a loop through other lines, not the run.
     const order = p.map((e) => e.sheet.tableId).filter((t, i, a) => i === 0 || a[i - 1] !== t);
@@ -253,13 +276,20 @@ export function buildPid(
       -turnsOf(a, p),
       p.reduce((x, e) => x + e.length, 0),
     ];
-    const better = !main || lexGreater(score, main.score);
-    if (better) main = { from: a, to: b, edges: p, score };
+    const cur = main as Main | null;
+    if (!cur || lexGreater(score, cur.score))
+      main = { from: a, to: b, edges: p, score, tie: false };
+    else if (!lexGreater(cur.score, score)) cur.tie = true;
   };
   let mainBasis: string;
   if (regFrom && regTo && regFrom !== regTo) {
     consider(regFrom, regTo);
-    mainBasis = `the register's circuit from ${input.register!.from} and to ${input.register!.to}`;
+    mainBasis = `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())}`;
+    if (!main) {
+      limits.push(
+        `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())} are both at ends of the traced geometry, but no path on main layers joins them (an unjoined piece, a deadleg, or other equipment between); no main line is drawn.`,
+      );
+    }
   } else {
     const pinned = regFrom ?? regTo;
     for (let i = 0; i < eqs.length; i++) {
@@ -287,7 +317,7 @@ export function buildPid(
     mainBasis =
       regFrom || regTo ? `the register's circuit ${regFrom ? 'from' : 'to'} and the drawing` : '';
     guesses.push(
-      `the main line runs ${eqTag(m.from)} to ${eqTag(m.to)}: the pair of equipment ends whose path crosses the most sheets, each once, on main layers, and goes straightest through its tees${regFrom || regTo ? `, one end fixed by the register` : ''}; its direction is read from the ${input.register?.sheets?.length ? "register's sheet order" : 'upload order of the sheets'}, not from flow arrows. Give the register's from and to to fix it.`,
+      `the main line runs ${eqTag(m.from)} to ${eqTag(m.to)}: the pair of equipment ends whose path crosses the most sheets, each once, on main layers, and goes straightest through its tees${regFrom || regTo ? `, one end fixed by the register` : ''}${m.tie ? `; another pair scores the same (a tie, broken by the order the equipment was found)` : ''}; its direction is read from the ${input.register?.sheets?.length ? "register's sheet order" : 'upload order of the sheets'}, not from flow arrows. Give the register's from and to to fix it.`,
     );
   }
 
@@ -514,9 +544,19 @@ export function buildPid(
       return id ? { id } : { stop: 'open' };
     }
     const at = endAt.get(v) ?? [...endAt].find(([k]) => find(k) === v)?.[1] ?? [];
-    const guessedLink = (endAt.has(v) ? [v] : [...endAt.keys()].filter((k) => find(k) === v))
-      .map((k) => linkAt.get(k))
-      .find(Boolean);
+    const keys = endAt.has(v) ? [v] : [...endAt.keys()].filter((k) => find(k) === v);
+    const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
+    if (near) {
+      // Off-page style: an end that is not drawn as the equipment it is near.
+      const mark = ' (GUESS)';
+      const id = connector(
+        `NEAR ${near}`.slice(0, 40 - mark.length) + mark,
+        side === 'from' ? 'in' : 'out',
+        near,
+      );
+      if (id) return { id };
+    }
+    const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
     if (guessedLink) {
       const mark = ' (GUESS)';
       const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
@@ -577,6 +617,7 @@ export function buildPid(
     return out;
   };
   let inlineCut = 0;
+  let marked = 0;
   for (const p of plans) {
     if (!chosen.has(p.id)) continue;
     const start = p.verts[0]!;
@@ -627,9 +668,18 @@ export function buildPid(
     inlineCut += valves.length - keep.size;
     const inline = valves.filter((_, i) => keep.has(i)).map((v) => ({ type: v.type }));
     const number = numberFor(p);
+    // A process-line join on the line is an inference: marked on the drawing.
+    const inferred = p.edges.reduce(
+      (x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length,
+      0,
+    );
+    if (inferred) marked += 1;
     lines.push({
       id: p.id,
       ...(number ? { number } : {}),
+      ...(inferred
+        ? { note: inferred === 1 ? 'INFERRED JOIN (GUESS)' : `${inferred} INFERRED JOINS (GUESS)` }
+        : {}),
       from,
       ...(to ? { to } : {}),
       ...(!to && end ? { end } : {}),
@@ -649,16 +699,24 @@ export function buildPid(
     );
   }
   if (!lines.length) limits.push('nothing on the circuit could be drawn.');
+  const nearEnds = offpage.filter((o) => o.text?.startsWith('NEAR ')).length;
+  const marks = [
+    linkAt.size ? 'sheet links' : '',
+    marked ? 'joins through process lines' : '',
+    nearEnds ? 'ends only near equipment' : '',
+  ].filter(Boolean);
+  const guessNote = marks.length ? ` Guesses are marked GUESS (${marks.join(', ')}).` : '';
 
   const crossings = m ? new Set(m.edges.map((e) => e.sheet.title)).size - 1 : 0;
   const description = m
-    ? `Circuit ${circuit}: main line ${eqTag(m.from)} to ${eqTag(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}, ${lines.length} lines drawn, deadlegs on caps.${linkAt.size ? ' Some sheet links are guesses, marked GUESS.' : ''}`
-    : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.`;
+    ? `Circuit ${circuit}: main line ${eqTag(m.from)} to ${eqTag(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}, ${lines.length} lines drawn, deadlegs on caps.${guessNote}`
+    : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${guessNote}`;
   const drawnLines = new Set(lines.map((l) => l.id as string));
   return {
     template: 'pid',
     title: `Circuit ${circuit}`.slice(0, 80),
     description: description.slice(0, 300),
+    legendNames: LEGEND_NAMES,
     equipment: [...equipment.values()],
     offpage,
     lines,

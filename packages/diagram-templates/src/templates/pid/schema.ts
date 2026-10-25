@@ -123,6 +123,9 @@ export type Line = {
   weight: 'main' | 'secondary';
   inline: InlineItem[];
   focal: boolean;
+  /** A short note drawn beside the line, such as an honesty mark
+   *  ("INFERRED JOIN (GUESS)"). */
+  note?: string;
 };
 export type Instrument = {
   tag: string;
@@ -163,6 +166,10 @@ export type PidData = {
   profile: ResolvedProfile;
   showTitle: boolean;
   legend: boolean;
+  /** The legend's names for the two line weights, when the sheet's lines
+   *  are not process and utility lines (a traced circuit's main line and
+   *  its branches). Absent: "Process line" and "Utility line". */
+  legendNames?: { main?: string; secondary?: string };
   equipment: Equipment[];
   offpage: OffPage[];
   lines: Line[];
@@ -197,6 +204,7 @@ const TOP_KEYS = [
   'profile',
   'showTitle',
   'legend',
+  'legendNames',
   'equipment',
   'offpage',
   'lines',
@@ -400,6 +408,17 @@ export function validatePid(input: unknown): Checked<PidData> {
     );
   const showTitle = bool(d, 'showTitle', '', issues) ?? true;
   const legend = bool(d, 'legend', '', issues) ?? true;
+  let legendNames: PidData['legendNames'];
+  if (d.legendNames !== undefined) {
+    if (!isObj(d.legendNames))
+      issues.errors.push('legendNames: must be { main?, secondary? }, the legend text per weight.');
+    else {
+      checkKeys(d.legendNames, ['main', 'secondary'], 'legendNames', issues);
+      const main = str(d.legendNames, 'main', 'legendNames', issues, { max: 32 });
+      const secondary = str(d.legendNames, 'secondary', 'legendNames', issues, { max: 32 });
+      legendNames = { ...(main ? { main } : {}), ...(secondary ? { secondary } : {}) };
+    }
+  }
   let sheet: PidData['sheet'];
   if (d.sheet !== undefined) {
     if (!isObj(d.sheet)) issues.errors.push('sheet: must be { number?, revision? }.');
@@ -529,6 +548,7 @@ export function validatePid(input: unknown): Checked<PidData> {
           'end',
           'deadleg',
           'toward',
+          'note',
         ],
         p,
         issues,
@@ -587,6 +607,7 @@ export function validatePid(input: unknown): Checked<PidData> {
         patternText: 'a service code in capitals (P, ST, CW)',
       });
       const weight = oneOf(l, 'weight', ['main', 'secondary'] as const, p, issues) ?? 'main';
+      const note = str(l, 'note', p, issues, { max: 32 });
       const focal = bool(l, 'focal', p, issues) ?? false;
       if (number) {
         const parts = parseLineNumber(profile, number);
@@ -649,6 +670,7 @@ export function validatePid(input: unknown): Checked<PidData> {
           ...(fromPort ? { fromPort } : {}),
           ...(toPort ? { toPort } : {}),
           ...(service ? { service } : {}),
+          ...(note ? { note } : {}),
         });
       }
     },
@@ -888,5 +910,6 @@ export function validatePid(input: unknown): Checked<PidData> {
     circuits,
     ...(description ? { description } : {}),
     ...(sheet ? { sheet } : {}),
+    ...(legendNames ? { legendNames } : {}),
   });
 }

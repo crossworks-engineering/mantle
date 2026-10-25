@@ -256,3 +256,27 @@ describe('pid tees: drawing', () => {
     expect(b.warnings.filter((w) => /line '(BYP|VENT)'/.test(w))).toEqual([]);
   });
 });
+
+describe('a line note and the legend names (traced circuits)', () => {
+  it('a note is drawn beside its line; the legend takes the names given', () => {
+    const d = sheet();
+    d.lines[1] = { ...d.lines[1]!, note: 'INFERRED JOIN (GUESS)' };
+    const b = draw({
+      ...d,
+      legendNames: { main: 'Main process line', secondary: 'Process branch' },
+    });
+    expect(b.svg).toContain('INFERRED JOIN (GUESS)');
+    expect(b.svg).toMatch(/Process branch/i);
+    expect(b.svg).not.toMatch(/Utility line/i);
+    expect(checkStaticSvg(b.svg)).toEqual([]);
+  });
+
+  it('without them the legend is as before', () => {
+    expect(draw(sheet()).svg).toMatch(/Utility line/i);
+  });
+
+  it('legendNames takes only main and secondary', () => {
+    expect(errorsOf({ ...sheet(), legendNames: { branch: 'x' } })).toMatch(/legendNames/);
+    expect(errorsOf({ ...sheet(), legendNames: 'x' })).toMatch(/legendNames: must be/);
+  });
+});
