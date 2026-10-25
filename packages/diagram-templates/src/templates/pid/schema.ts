@@ -144,6 +144,9 @@ export type Tee = {
   /** Which end of the parent the tee keeps to; by default it sits where its
    *  branch leaves most directly. */
   near?: 'from' | 'to';
+  /** Where along the parent the tee sits, 0 at its `from` end to 1 at its
+   *  `to` end (a traced drawing's order of branches); wins over `near`. */
+  at?: number;
 };
 export type Circuit = {
   id: string;
@@ -470,15 +473,22 @@ export function validatePid(input: unknown): Checked<PidData> {
   }
   // Tees: junctions on a line, where branches start or end. Read before the
   // lines (a line may start at one) and checked against them after.
-  const teeRaw: { p: string; id: string; on?: string; near?: 'from' | 'to' }[] = [];
+  const teeRaw: { p: string; id: string; on?: string; near?: 'from' | 'to'; at?: number }[] = [];
   for (const [p, t] of objects(list(d, 'tees', '', issues, { max: 30 }), 'tees', issues)) {
-    checkKeys(t, ['id', 'on', 'near'], p, issues);
+    checkKeys(t, ['id', 'on', 'near', 'at'], p, issues);
     const id = str(t, 'id', p, issues, tagRule);
     const on = str(t, 'on', p, issues, { required: true, max: 40 });
     const near = oneOf(t, 'near', ['from', 'to'] as const, p, issues);
+    const at = number(t, 'at', p, issues, { min: 0, max: 1 });
     if (id) {
       claim(id, p);
-      teeRaw.push({ p, id, ...(on ? { on } : {}), ...(near ? { near } : {}) });
+      teeRaw.push({
+        p,
+        id,
+        ...(on ? { on } : {}),
+        ...(near ? { near } : {}),
+        ...(at !== undefined ? { at } : {}),
+      });
     }
   }
   const teeIds = new Set(teeRaw.map((t) => t.id));
@@ -729,7 +739,12 @@ export function validatePid(input: unknown): Checked<PidData> {
       continue;
     }
     teeParent.set(t.id, t.on);
-    tees.push({ id: t.id, on: t.on, ...(t.near ? { near: t.near } : {}) });
+    tees.push({
+      id: t.id,
+      on: t.on,
+      ...(t.near ? { near: t.near } : {}),
+      ...(t.at !== undefined ? { at: t.at } : {}),
+    });
   }
   const lineById = new Map(lines.map((l) => [l.id, l]));
   // Every tee a line hangs from, directly or through its parent's tees.

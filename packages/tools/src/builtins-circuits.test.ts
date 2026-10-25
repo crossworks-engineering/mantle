@@ -48,6 +48,8 @@ vi.mock('@mantle/content/table-storage', () => ({
 vi.mock('@mantle/tabledb', () => ({
   runTableSql: async (file: string, q: string) => {
     sqlCalls.files.push(file);
+    // A table whose workbook file is not there (another box's, a lost file).
+    if (file.includes('broken')) throw new Error('SQLITE_CANTOPEN: unable to open database file');
     if (q.includes('FROM "Layers"'))
       return { columns: ['l'], rows: [['Circuit 10000-001-01']], truncated: false };
     if (q.includes('FROM "Segments"') && q.includes('IN (')) {
@@ -71,7 +73,8 @@ vi.mock('@mantle/tabledb', () => ({
   },
 }));
 
-import { circuitTraceHandler } from './builtins-circuits';
+import { CIRCUIT_TOOLS, circuitTraceHandler } from './builtins-circuits';
+import { policyUntrusted } from './tool-policy';
 import { readSheet } from './circuit-trace/read';
 
 const dwgRow = (id: string, title: string) => ({
@@ -118,6 +121,24 @@ describe('circuit_trace reads only what the caller may read', () => {
     surfaces.readable = new Set(['open', 'unlisted']);
     await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
     expect(surfaces.opened).toEqual(['open']);
+  });
+
+  it('a table that cannot be opened is skipped and named in limits, not the end of the trace', async () => {
+    listed.rows = [dwgRow('broken', 'PID-LOST'), dwgRow('open', 'PID-1001')];
+    surfaces.readable = new Set(['open', 'broken']);
+    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
+    expect(r.ok).toBe(true);
+    const out = (r as { output: { limits: string[]; sheets: { title: string }[] } }).output;
+    expect(out.sheets.map((x) => x.title)).toEqual(['PID-1001']);
+    expect(out.limits.some((l) => /PID-LOST: its table could not be opened/.test(l))).toBe(true);
+    expect(JSON.stringify(out)).not.toContain('SQLITE_CANTOPEN');
+  });
+
+  it('its results are fenced as data: drawing text is the uploader’s (security LOW-5)', () => {
+    const def = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_trace')!;
+    expect(policyUntrusted(def.policy)).toBe(true);
+    // The rights are unchanged: a read in the caller's own scope.
+    expect(def.policy).toMatchObject({ effect: 'read', scope: 'any', keyArea: 'tables' });
   });
 
   it('asks for the circuit name when it is missing', async () => {

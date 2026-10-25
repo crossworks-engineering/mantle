@@ -126,11 +126,16 @@ describe.skipIf(!URL)('circuit_trace never reads a table the caller cannot', () 
 
   it('the brain reads both sheets; the workspace scope only its own', async () => {
     const { circuitTraceHandler } = await import('./builtins-circuits');
+    // Other test files' DWG tables share this brain (another TABLE_DB_DIR,
+    // so their workbooks do not open here): those are skipped and named in
+    // limits, and only this file's own sheets, by its random circuit and
+    // tag, are asserted on.
     const all = await circuitTraceHandler({ circuit: CIRCUIT }, anchor);
     expect(all.ok).toBe(true);
-    const allText = JSON.stringify((all as { output: unknown }).output);
-    expect(allText).toContain('PID-OPEN');
-    expect(allText).toContain('PID-HIDDEN');
+    const allOut = (all as { output: { sheets: { title: string }[] } }).output;
+    expect(allOut.sheets.map((x) => x.title).sort()).toEqual(
+      [`${tag} PID-HIDDEN`, `${tag} PID-OPEN`].sort(),
+    );
 
     const scoped = await m.withScope(
       { kind: 'assistant', loginId: null, ws: [wsId], modWs: [] },

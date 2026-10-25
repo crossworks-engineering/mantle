@@ -590,8 +590,9 @@ export function dwgTableDescription(ext: string, grids: DwgGrids): string {
       .filter(([type]) => type !== 'unreadable')
       .map(([type, n]) => `${n} ${type}`);
     parts.push(
-      ` Segments is the pipe geometry: every LINE, each vertex pair of a polyline, and each` +
-        ` ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units). A bulged` +
+      ` Segments is every LINE on every layer (pipe, leader, border and all), each vertex` +
+        ` pair of a polyline, and each ARC, by its two end points in model space (X1 Y1 X2` +
+        ` Y2, drawing units); its Layer says which are a circuit's pipe. A bulged` +
         ` polyline segment or an ARC is recorded by its chord, with its true arc Length.` +
         ` SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments` +
         (skipped.length ? ` (this drawing has ${skipped.join(', ')} left out)` : '') +
@@ -621,9 +622,11 @@ export function dwgTableDescription(ext: string, grids: DwgGrids): string {
   }
   if (has('Circuits')) {
     parts.push(
-      ` Circuits has one row per circuit drawn on "Circuit <name>" layers: the -DL,` +
-        ` -Bnn-DL and -Dnn layers are that circuit's deadlegs (Deadleg segments and` +
-        ` length), and -IPn is an injection point with its own row and its Parent. Segments` +
+      ` Circuits has one row per circuit drawn on "Circuit <name>" layers: the -DL (-DLn)` +
+        ` and -Bnn-DL layers are that circuit's deadlegs (Deadleg segments and length), a` +
+        ` -Dnn layer is read as a deadleg too but that is a GUESS from its suffix, -Bnn is` +
+        ` a branch of the circuit, and -IPn is an injection point with its own row and its` +
+        ` Parent. Segments` +
         ` and Length cover the main layer; Runs, Tees and Ends cover the circuit with its` +
         ` deadlegs; End points says what each end meets (another layer, a block, or open);` +
         ` Line numbers are line-number blocks that name the circuit or sit within` +

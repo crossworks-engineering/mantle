@@ -643,7 +643,7 @@ describe('the bones tabs', () => {
     try {
       const d = dwgTableDescription('dwg', await parseDwgToGrids(dwgFixture(31)));
       expect(d).toMatch(/^AutoCAD DWG model-space registry\. Layers counts entities per layer;/);
-      expect(d).toContain('Segments is the pipe geometry');
+      expect(d).toContain('Segments is every LINE on every layer');
       expect(d).toContain('recorded by its chord, with its true arc Length');
       expect(d).toContain(
         'SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments',
@@ -652,7 +652,9 @@ describe('the bones tabs', () => {
       expect(d).toContain('ends within 0.0213 drawing units are one node');
       expect(d).toContain('lines that only cross, with no end at the crossing, are NOT joined');
       expect(d).toContain('Inserts is every block reference, with or without attributes');
-      expect(d).toContain('the -DL, -Bnn-DL and -Dnn layers are that circuit');
+      expect(d).toContain("the -DL (-DLn) and -Bnn-DL layers are that circuit's deadlegs");
+      expect(d).toContain('a -Dnn layer is read as a deadleg too but that is a GUESS');
+      expect(d).toContain('Segments is every LINE on every layer (pipe, leader, border and all)');
       expect(d).toContain('within 1.06 drawing units');
       expect(d).not.toContain('TRUNCATED');
       expect(d).not.toContain(
@@ -672,7 +674,7 @@ describe('the bones tabs', () => {
       expect(grids.sheets.map((g) => g.name)).not.toContain('Circuits');
       const d = dwgTableDescription('dxf', grids);
       expect(d).not.toContain('Circuits has');
-      expect(d).toContain('Segments is the pipe geometry');
+      expect(d).toContain('Segments is every LINE on every layer');
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();

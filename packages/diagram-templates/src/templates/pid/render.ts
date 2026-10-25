@@ -835,15 +835,17 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
         if (others.some(([u, v]) => segmentHitsBox(u, v, inflate(dot, 4), 0))) continue;
         const along = walked + manhattan(a, p);
         const score =
-          t.near === 'from'
-            ? along
-            : t.near === 'to'
-              ? total - along
-              : spacing && siblings.length
-                ? Math.min(...siblings.map((q) => Math.abs(manhattan(q, p) - spacing)))
-                : target
-                  ? manhattan(p, target)
-                  : Math.abs(along - total / 2);
+          t.at !== undefined
+            ? Math.abs(along - t.at * total)
+            : t.near === 'from'
+              ? along
+              : t.near === 'to'
+                ? total - along
+                : spacing && siblings.length
+                  ? Math.min(...siblings.map((q) => Math.abs(manhattan(q, p) - spacing)))
+                  : target
+                    ? manhattan(p, target)
+                    : Math.abs(along - total / 2);
         cands.push({ at: p, along: d, score });
       }
       walked += L0;

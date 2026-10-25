@@ -3,6 +3,11 @@
  * from their bones tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits).
  * Read-only. The walk is ./circuit-trace/walk.ts (pure), the read
  * ./circuit-trace/read.ts (the caller's own scope, table by table).
+ *
+ * The output carries drawing text (labels, attribute values, layer names)
+ * that whoever uploaded the drawing wrote, so the policy marks it
+ * `outside.untrusted`: the tool loop fences every result as data before a
+ * model reads it, as it does a web page's. The rights are the read's own.
  */
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef } from './types';
@@ -56,15 +61,24 @@ export async function circuitTraceHandler(
     const { tables, more } = await dwgTables(ownerId);
     const sheets: SheetInput[] = [];
     const preBones: string[] = [];
+    const unreadable: string[] = [];
     for (const t of tables) {
-      const r = await readSheet(ownerId, t, circuit);
-      if (r.kind === 'sheet') sheets.push(r.sheet);
+      // One table that cannot be opened (its workbook file missing, a store
+      // refusal) is skipped and named, never the end of the whole trace.
+      const r = await readSheet(ownerId, t, circuit).catch(() => null);
+      if (!r) unreadable.push(t.title);
+      else if (r.kind === 'sheet') sheets.push(r.sheet);
       else if (r.kind === 'no-bones') preBones.push(r.title);
     }
     const result = traceCircuit(circuit, sheets, register);
     if (more) {
       result.limits.push(
         `only the ${tables.length} most recently changed drawing tables were looked at; older sheets of this circuit may be missing.`,
+      );
+    }
+    for (const title of unreadable) {
+      result.limits.push(
+        `${title}: its table could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
       );
     }
     for (const title of preBones) {
@@ -106,7 +120,14 @@ export async function circuitTraceHandler(
 
 const circuit_trace: BuiltinToolDef = {
   slug: 'circuit_trace',
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+    // Drawing text is the uploader's: fenced as data (the header says why).
+    outside: { untrusted: true },
+  },
   name: 'Trace a piping circuit',
   description:
     "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends and what each end meets, deadlegs, valves on the path, line numbers with their DWG handles and equipment tags near the ends; links between sheets (a guess is marked `guessed`); a ready `pid` template input to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",

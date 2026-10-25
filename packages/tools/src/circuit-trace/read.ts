@@ -16,6 +16,8 @@ import { tableSqlSurface } from '@mantle/content/table-storage';
 import { runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
 import {
   layersOf,
+  NEAR_REL,
+  trimBounds,
   type BlockRow,
   type InsertRow,
   type NodeRow,
@@ -245,12 +247,26 @@ export async function readSheet(
   const ys = segments.flatMap((g) => [g.y1, g.y2]).filter(Number.isFinite);
   let near = nearFromDescription(t.description);
   if (!near) {
-    const r = await q(
-      `SELECT min(${ident('X1')}), max(${ident('X1')}), min(${ident('Y1')}), max(${ident('Y1')}) FROM ${ident(segTab.viewName)}`,
-    );
-    const [a, b, c, d] = (r.rows[0] ?? []).map(num);
-    const diag = Math.hypot((b ?? 0) - (a ?? 0), (d ?? 0) - (c ?? 0));
-    near = Math.max(diag * 0.01, 1e-6);
+    // The sidecar's own rule (dwg_bones.extent_diagonal): the box of the
+    // middle 99% of every segment end point, so a stray entity far off
+    // does not loosen it.
+    const counted = await q(`SELECT count(*) FROM ${ident(segTab.viewName)}`);
+    const n = 2 * num(counted.rows[0]?.[0] ?? 0);
+    const [lo, hi] = trimBounds(n);
+    const at = async (a: string, b: string, k: number) => {
+      const r = await q(
+        `SELECT v FROM (SELECT ${ident(a)} AS v FROM ${ident(segTab.viewName)} UNION ALL SELECT ${ident(b)} FROM ${ident(segTab.viewName)}) ORDER BY v LIMIT 1 OFFSET ${Math.max(0, Math.floor(k))}`,
+      );
+      return num(r.rows[0]?.[0] ?? 0);
+    };
+    const diag =
+      n > 0
+        ? Math.hypot(
+            (await at('X1', 'X2', hi)) - (await at('X1', 'X2', lo)),
+            (await at('Y1', 'Y2', hi)) - (await at('Y1', 'Y2', lo)),
+          )
+        : 0;
+    near = Math.max((Number.isFinite(diag) ? diag : 0) * NEAR_REL, 1e-6);
   }
   const box = {
     minX: Math.min(...xs) - near,
@@ -304,9 +320,16 @@ export async function readSheet(
   const blocks: BlockRow[] = [];
   const blockTab = tab('Blocks');
   if (blockTab) {
-    const named = circuitRows.flatMap((row) =>
-      [...text(row['Line numbers']).matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]!),
-    );
+    // The Blocks tab's X/Y is the insert's OCS point; the inserts read above
+    // are by their WCS point, so their handles are asked for too (a mirrored
+    // block's OCS point can sit outside the box). The walk places each
+    // block at its Inserts point.
+    const named = [
+      ...circuitRows.flatMap((row) =>
+        [...text(row['Line numbers']).matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]!),
+      ),
+      ...inserts.map((i) => i.handle).filter(Boolean),
+    ];
     const byHandle = named.length ? ` OR ${ident('Handle')} IN (${named.map(lit).join(', ')})` : '';
     const r = await q(
       `SELECT * FROM ${ident(blockTab.viewName)} WHERE (${inBox})${byHandle} LIMIT ${MAX_NEAR_ROWS}`,
