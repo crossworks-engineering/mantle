@@ -313,6 +313,8 @@ describe.skipIf(!URL)('dwg-reindex', () => {
       near: 1,
       limits: [],
     };
+    // The crops go under Auto-filed: the Files root a box has.
+    await (await import('@mantle/files')).ensureFilesRootBranch(anchor);
     const key = 'end:A1@1.0,0.0';
     const question = 'Does the pipe end connect to "V-201"?';
     const filed = await store.storeChecks(

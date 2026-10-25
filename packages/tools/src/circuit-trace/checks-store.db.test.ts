@@ -138,6 +138,9 @@ describe.skipIf(!URL)('the image check store', () => {
     // sha256 the stamp (a raw insert left it out of the caller's scope,
     // so its hash read null).
     const files = await import('@mantle/files');
+    // A fresh database has no Files root yet: make it, as an upload would
+    // find it on a box.
+    await files.ensureFilesRootBranch(anchor);
     fileId = (
       await files.upsertFile({
         ownerId: anchor,
@@ -157,9 +160,12 @@ describe.skipIf(!URL)('the image check store', () => {
 
   afterAll(async () => {
     if (!admin) return;
-    const crops = await admin`select id from nodes where owner_id = ${anchor}
-      and type = 'file' and data->>'sourceTableId' = any(${ids}::text[])`;
-    const all = [...ids, ...crops.map((r) => String(r.id)), fileId];
+    // Only what this file made (a setup that stopped early made less).
+    const crops = anchor
+      ? await admin`select id from nodes where owner_id = ${anchor}
+      and type = 'file' and data->>'sourceTableId' = any(${ids}::text[])`
+      : [];
+    const all = [...ids, ...crops.map((r) => String(r.id)), ...(fileId ? [fileId] : [])];
     await admin`delete from item_grants where node_id = any(${all}::uuid[])`;
     await admin`delete from nodes where id = any(${all}::uuid[])`;
     await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
