@@ -30,9 +30,10 @@ import { splitPages, type SplitPage } from './pages';
  *  circuit gets 20 so a few deadlegs fit beside the main run and branches. */
 export const PID_LINES = 20;
 const CIRCUIT_ID = 24;
+/** The template's text limits, in characters. */
+const TEXT = PID_LIMITS.text;
 /** A page's name in the set: its sheet's name, kept short. */
-const PAGE_TITLE = 60;
-const clipTitle = (t: string) => clipText(t, PAGE_TITLE);
+const clipTitle = (t: string) => clipText(t, SET_LIMITS.pageTitle);
 
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 /** Register text echoed into limits and guesses is cut to this length. */
@@ -669,7 +670,7 @@ export function buildPid(
     // Off-page style: an end that is not drawn as the equipment it is near.
     if (near) {
       return {
-        conn: `NEAR ${near}`.slice(0, 40 - mark.length) + mark,
+        conn: `NEAR ${near}`.slice(0, TEXT.connector - mark.length) + mark,
         dir,
         sheet: near,
         guess: 'near',
@@ -679,7 +680,7 @@ export function buildPid(
     if (guessedLink) {
       const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
       return {
-        conn: head.slice(0, 40 - mark.length) + mark,
+        conn: head.slice(0, TEXT.connector - mark.length) + mark,
         dir,
         sheet: guessedLink.other,
         guess: 'link',
@@ -984,7 +985,7 @@ export function buildPid(
         id,
         direction: dir,
         sheet: shortSheet(sheet),
-        text: text.slice(0, 40),
+        text: text.slice(0, TEXT.connector),
         ...(home && to ? { link: home, focus: to.id } : {}),
       });
       return id;
@@ -1030,9 +1031,11 @@ export function buildPid(
       const pick = ranked.find(([k]) => !usedNumbers.has(k));
       if (!pick) return undefined;
       usedNumbers.add(pick[0]);
-      return pick[1].number.slice(0, 40);
+      return pick[1].number.slice(0, TEXT.lineNumber);
     };
-    const originTitle = pg.origin ? (titleOf.get(pg.origin) ?? pg.origin) : '';
+    /** The page that owns the context line (none: the cap left it off). */
+    const contextHome = pg.context ? homeOf.get(pg.context) : undefined;
+    const homeTitle = contextHome ? (titleOf.get(contextHome) ?? contextHome) : '';
     let inlineCut = 0;
     for (const pc of all) {
       const start = pc.verts[0]!;
@@ -1044,10 +1047,12 @@ export function buildPid(
       let deadleg = pc.plan.deadleg;
       if (isContext) {
         // The line its children hang off, drawn again here: its ends lead
-        // back to the page it belongs to.
+        // back to the page that draws it, or say no other page does.
         const back = (v: string, dir: 'in' | 'out') =>
           (isEq(v) ? equipmentOf(v) : null) ??
-          connector(`SEE ${originTitle}`, dir, originTitle, pc) ??
+          (contextHome
+            ? connector(`SEE ${homeTitle}`, dir, homeTitle, pc)
+            : connector('ON NO OTHER PAGE', dir, pc.sheet?.title ?? '?')) ??
           undefined;
         from = back(start, 'in');
         to = back(stop, 'out');
@@ -1187,7 +1192,7 @@ export function buildPid(
         circuits: [
           {
             id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', CIRCUIT_ID),
-            label: circuit.slice(0, 40),
+            label: circuit.slice(0, TEXT.circuitLabel),
             lines: lines.map((l) => l.id as string),
             equipment: [...equipment.keys()],
           },
@@ -1301,12 +1306,15 @@ export function buildPid(
     ? ` ${pages.length + 1} pages: the overview draws ${ovLines} of ${plural(total, 'line')}; the sheet pages draw ${rest}.`
     : '';
   const crossings = m ? new Set(m.edges.map((e) => e.sheet.title)).size - 1 : 0;
+  // The first sentence is cut to fit, never the set's count or the guesses.
   const about = (note: string) =>
-    (m
-      ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}.${setNote}${note}`
-      : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${setNote}${note}`
-    ).slice(0, 300);
-  const head = `Circuit ${circuit}`.slice(0, 80);
+    noted(
+      m
+        ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}.`
+        : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.`,
+      setNote + note,
+    );
+  const head = `Circuit ${circuit}`.slice(0, TEXT.title);
   // One page holds it all: one plain drawing, no set around it.
   if (!needSheets) {
     return {
@@ -1345,17 +1353,25 @@ export function buildPid(
           id: page.key,
           title: clipTitle(title),
           data: {
-            title: `${head}: ${title}`.slice(0, 80),
-            description: (page.context
-              ? `Detail of ${sheet?.title ?? title}: the lines off ${nameOf(page.context)}, drawn again here.${note}`
-              : `Sheet ${sheet?.title ?? title} of circuit ${circuit}: ${plural(n, 'line')} drawn here${more ? '; a +N marker links to the page that holds what a line leaves out' : ''}${lostHere ? `; ${plural(lostHere, 'chain')} of this sheet ${lostHere === 1 ? 'is' : 'are'} on no page (see limits)` : ''}.${note}`
-            ).slice(0, 300),
+            title: `${head}: ${title}`.slice(0, TEXT.title),
+            description: noted(
+              page.context
+                ? `Detail of ${sheet?.title ?? title}: the lines off ${nameOf(page.context)}, ${homeOf.has(page.context) ? 'drawn again here' : 'drawn only here: at the page cap it is on no other page'}.`
+                : `Sheet ${sheet?.title ?? title} of circuit ${circuit}: ${plural(n, 'line')} drawn here${more ? '; a +N marker links to the page that holds what a line leaves out' : ''}${lostHere ? `; ${plural(lostHere, 'chain')} of this sheet ${lostHere === 1 ? 'is' : 'are'} on no page (see limits)` : ''}.`,
+              note,
+            ),
             ...data,
           },
         };
       }),
     ],
   };
+
+  /** A description within the template's limit: `text` is cut to fit,
+   *  `rest` (the guess note last) never is. */
+  function noted(text: string, rest: string): string {
+    return clipText(text, TEXT.description - rest.length) + rest;
+  }
 
   /** A count of what moved: "+3 LINES, 5 DEADLEGS", and valves past six. */
   function countText(items: Piece[], valves: number): string {
@@ -1372,7 +1388,7 @@ export function buildPid(
     const short = [ln ? `${ln} LN` : '', dl ? `${dl} DL` : '', valves ? `${valves} VLV` : '']
       .filter(Boolean)
       .join(', ');
-    return `+${long}`.length <= 32 ? `+${long}` : `+${short}`.slice(0, 32);
+    return `+${long}`.length <= TEXT.marker ? `+${long}` : `+${short}`.slice(0, TEXT.marker);
   }
 
   function lineName(p: Plan): string {

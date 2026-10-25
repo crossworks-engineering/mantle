@@ -851,6 +851,35 @@ describe('a drawing set marks every guess on every page that draws it', () => {
       set.pages.flatMap((p) => p.data.offpage).filter((o) => /GUESS/.test(o.text ?? '')).length,
     ).toBeGreaterThanOrEqual(2);
   });
+
+  it('a long description keeps its guess note whole: the text before it is cut', () => {
+    // All three guess kinds and the register's long from and to as the
+    // basis: the main line E-101 to V-201 over a certain link; the branch
+    // through an inferred join, on by a guessed link (the same line number,
+    // no label) to PID-9203, whose far end is only near V-301.
+    const third = sheet(
+      'PID-9203',
+      [sg(M, 'Z', 0, 0, 20, 0, 1, 2)],
+      [],
+      [{ text: 'V-301', layer: 'EQUIP', x: 25, y: 0 }],
+      [lineNo('LZ', 10, 1, 'N100-1', C)],
+    );
+    const long = (tag: string) => `${tag}/REVISION-${'X'.repeat(60)}`;
+    const r = traceCircuit(C, [...two(), third], { from: long('E-101'), to: long('V-201') });
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const note =
+      ' Guesses are marked GUESS (sheet links, joins through process lines, ends only near equipment).';
+    const set = r.pid as unknown as SetOf & { description: string };
+    for (const d of [set.description, set.pages[0]!.data.description]) {
+      expect(d.length).toBeLessThanOrEqual(300);
+      expect(d.endsWith(note)).toBe(true);
+      // The register basis is said, cut short to make room; the page count
+      // stays.
+      expect(d).toMatch(/^Circuit .*: main line E-101 to V-201 \(the register's circuit from /);
+      expect(d).toMatch(/\.\.\. 4 pages: the overview draws 3 of 3 lines; /);
+    }
+  });
 });
 
 describe('outlines on the pipe layers keep to the size and one-tag rule', () => {

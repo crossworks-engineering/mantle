@@ -87,6 +87,50 @@ const runs = (n: number) => {
   return sheet({ segments, nodes });
 };
 
+/** V-100 to E-999 along a header; off it `branches` branch lines, each of
+ *  `sub` stretches, `dl` deadlegs off every tee on a branch but its end. */
+const tree = (branches: number, sub: number, dl: number) => {
+  const segments: SegRow[] = [];
+  const nodes: NodeRow[] = [];
+  let id = 1;
+  let h = 0;
+  const at = (x: number, y: number, kind: string, deg: number, layers: string[]) => {
+    nodes.push(nd(id, x, y, deg, kind, layers));
+    return id++;
+  };
+  let prev = at(0, 0, 'end', 1, [M]);
+  for (let i = 0; i < branches; i++) {
+    const x = (i + 1) * 1000;
+    const t = at(x, 0, 'tee', 3, [M]);
+    segments.push(sg(M, `H${h++}`, x - 1000, 0, x, 0, prev, t));
+    prev = t;
+    let bp = t;
+    for (let j = 0; j < sub; j++) {
+      const y = (j + 1) * 100;
+      const last = j === sub - 1;
+      const bt = at(x, y, last ? 'end' : 'tee', last ? 1 : 2 + dl, last ? [M] : [M, DLL]);
+      segments.push(sg(M, `H${h++}`, x, y - 100, x, y, bp, bt));
+      bp = bt;
+      if (last) break;
+      for (let k = 0; k < dl; k++) {
+        const e = at(x + 30 + k * 3, y + k * 2, 'end', 1, [DLL]);
+        segments.push(sg(DLL, `H${h++}`, x, y, x + 30 + k * 3, y + k * 2, bt, e));
+      }
+    }
+  }
+  const end = at((branches + 1) * 1000, 0, 'end', 1, [M]);
+  segments.push(sg(M, `H${h++}`, branches * 1000, 0, (branches + 1) * 1000, 0, prev, end));
+  return sheet({
+    circuitLayers: [M, DLL],
+    segments,
+    nodes,
+    texts: [
+      { text: 'V-100', layer: 'T', x: -2, y: 2 },
+      { text: 'E-999', layer: 'T', x: (branches + 1) * 1000 + 2, y: 2 },
+    ],
+  });
+};
+
 type Page = {
   id: string;
   title: string;
@@ -190,6 +234,64 @@ describe('the drawing set at its 40-page cap', () => {
     const t = performance.now();
     traceCircuit(C, ss);
     expect(performance.now() - t).toBeLessThan(3000);
+  });
+});
+
+type Linked = {
+  id: string;
+  data: {
+    description: string;
+    lines: { id: string; more?: { link?: string; focus?: string } }[];
+    offpage: { text?: string; link?: string; focus?: string }[];
+  };
+};
+/** Every detail page is reached by a +N marker on a page that draws its
+ *  line, and its SEE connectors lead to a page that draws the line (or say
+ *  no other page does). */
+const reachable = (r: ReturnType<typeof traceCircuit>) => {
+  const pages = (r.pid as unknown as { pages: Linked[] }).pages;
+  const at = new Map(pages.map((p) => [p.id, p]));
+  const bad: string[] = [];
+  for (const p of pages.filter((x) => /^Detail of/.test(x.data.description))) {
+    const line = p.data.lines[0]!.id;
+    const draws = (k: string | undefined) =>
+      !!at.get(k ?? '')?.data.lines.some((l) => l.id === line);
+    const inbound = pages.filter((q) =>
+      q.data.lines.some((l) => l.more?.link === p.id && l.id === line),
+    );
+    const only = /drawn only here/.test(p.data.description);
+    if (!inbound.length && !only) bad.push(`${p.id}: no marker leads here`);
+    for (const o of p.data.offpage) {
+      if (/^SEE /.test(o.text ?? '') && (!draws(o.link) || o.focus !== line))
+        bad.push(`${p.id}: ${o.text} leads to ${o.link}, which does not draw ${line}`);
+      if (o.text === 'ON NO OTHER PAGE' && !only) bad.push(`${p.id}: ON NO OTHER PAGE, not said`);
+    }
+  }
+  return bad;
+};
+
+describe('every detail page is reached from the page that draws its line', () => {
+  it('30 branches of 3 stretches, 3 deadlegs a tee: no detail page lost', () => {
+    const r = traceCircuit(C, [tree(30, 3, 3)]);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const pages = pagesOf(r) as unknown as Linked[];
+    expect(pages.filter((p) => /^Detail of/.test(p.data.description)).length).toBeGreaterThan(30);
+    expect(reachable(r)).toEqual([]);
+  });
+
+  it('past the cap too: a SEE connector names a page that draws the line', () => {
+    for (const [b, s, d] of [
+      [25, 2, 2],
+      [40, 4, 2],
+      [22, 6, 8],
+      [30, 6, 8],
+    ] as const) {
+      const r = traceCircuit(C, [tree(b, s, d)]);
+      const v = validate('pid', r.pid);
+      expect(v.ok ? [] : v.errors).toEqual([]);
+      expect(reachable(r), `tree ${b}x${s}x${d}`).toEqual([]);
+    }
   });
 });
 

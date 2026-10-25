@@ -204,6 +204,21 @@ export const PID_LIMITS = {
   tees: 30,
   /** Valves and reducers drawn on one line. */
   inline: 6,
+  /** The longest text a field takes, in characters. */
+  text: {
+    title: 80,
+    description: 300,
+    /** An off-page connector's text. */
+    connector: 40,
+    /** A line's "+N" marker. */
+    marker: 32,
+    /** A line's number. */
+    lineNumber: 40,
+    /** A line's note. */
+    note: 32,
+    /** A circuit's label. */
+    circuitLabel: 40,
+  },
   budget: {
     equipment: 8,
     instruments: 16,
@@ -451,8 +466,10 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       `template: this is the 'pid' template, the data says '${String(d.template)}'.`,
     );
   }
-  const title = str(d, 'title', '', issues, { required: true, max: 80 }) ?? '';
-  const description = str(d, 'description', '', issues, { max: 300 });
+  const title = str(d, 'title', '', issues, { required: true, max: PID_LIMITS.text.title }) ?? '';
+  const description = str(d, 'description', '', issues, {
+    max: PID_LIMITS.text.description,
+  });
   if (!description)
     issues.warnings.push(
       'description: add one sentence on what the sheet shows (screen readers read it).',
@@ -540,7 +557,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     if (o.direction === undefined)
       issues.errors.push(`${p}.direction: required, 'in' (comes from another sheet) or 'out'.`);
     const sheetNo = str(o, 'sheet', p, issues, { required: true, max: 12 });
-    const text = str(o, 'text', p, issues, { max: 40 });
+    const text = str(o, 'text', p, issues, { max: PID_LIMITS.text.connector });
     const link = linkOf(o, p, issues, opts);
     if (id) claim(id, p);
     if (id && direction && sheetNo)
@@ -620,7 +637,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         p,
         issues,
       );
-      const number = str(l, 'number', p, issues, { max: 40 });
+      const number = str(l, 'number', p, issues, { max: PID_LIMITS.text.lineNumber });
       const id = str(l, 'id', p, issues, { max: 40 }) ?? number ?? `L${i + 1}`;
       if (lineIds.has(id) && l.id !== undefined)
         issues.errors.push(`${p}.id: line id '${id}' is already used by ${lineIds.get(id)}.`);
@@ -674,7 +691,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         patternText: 'a service code in capitals (P, ST, CW)',
       });
       const weight = oneOf(l, 'weight', ['main', 'secondary'] as const, p, issues) ?? 'main';
-      const note = str(l, 'note', p, issues, { max: 32 });
+      const note = str(l, 'note', p, issues, { max: PID_LIMITS.text.note });
       let more: More | undefined;
       if (l.more !== undefined) {
         const mp = `${p}.more`;
@@ -684,7 +701,10 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
           );
         else {
           checkKeys(l.more, ['text', 'link', 'focus'], mp, issues);
-          const text = str(l.more, 'text', mp, issues, { required: true, max: 32 });
+          const text = str(l.more, 'text', mp, issues, {
+            required: true,
+            max: PID_LIMITS.text.marker,
+          });
           const link = linkOf(l.more, mp, issues, opts);
           if (text) more = { text, ...(link ? { link } : {}) };
         }
@@ -908,7 +928,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   for (const [p, c] of objects(list(d, 'circuits', '', issues, { max: 12 }), 'circuits', issues)) {
     checkKeys(c, ['id', 'label', 'lines', 'equipment', 'colour'], p, issues);
     const id = str(c, 'id', p, issues, { required: true, max: 24 });
-    const label = str(c, 'label', p, issues, { max: 40 });
+    const label = str(c, 'label', p, issues, { max: PID_LIMITS.text.circuitLabel });
     const colour = str(c, 'colour', p, issues);
     if (colour && !isColour(colour))
       issues.errors.push(

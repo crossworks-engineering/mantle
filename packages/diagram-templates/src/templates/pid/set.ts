@@ -34,14 +34,22 @@ import {
 import { clipText, type Measurer } from '../../runtime/text.ts';
 import type { RenderResult } from '../../types.ts';
 import { renderPid } from './render.ts';
-import { PAGE_ID, PID_VERSION, validatePid, type LinkSite, type PidData } from './schema.ts';
+import {
+  PAGE_ID,
+  PID_LIMITS,
+  PID_VERSION,
+  validatePid,
+  type LinkSite,
+  type PidData,
+} from './schema.ts';
 
 export type PidPage = { id: string; title: string; data: PidData };
 export type PidSet = { set: true; title: string; description?: string; pages: PidPage[] };
 /** What the `pid` template takes: one drawing, or a set of them. */
 export type PidInput = PidData | PidSet;
 
-export const SET_LIMITS = { pages: 40 } as const;
+/** The pages a set holds, and the longest page title (the page bar's). */
+export const SET_LIMITS = { pages: 40, pageTitle: 60 } as const;
 
 /** The set's own fields; the four after `description` are page defaults. */
 const SET_KEYS = [
@@ -97,8 +105,10 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       `template: this is the 'pid' template, the data says '${String(d.template)}'.`,
     );
   }
-  const title = str(d, 'title', '', issues, { required: true, max: 80 }) ?? '';
-  const description = str(d, 'description', '', issues, { max: 300 });
+  const title = str(d, 'title', '', issues, { required: true, max: PID_LIMITS.text.title }) ?? '';
+  const description = str(d, 'description', '', issues, {
+    max: PID_LIMITS.text.description,
+  });
   if (!description)
     issues.warnings.push(
       'description: add one sentence on what the set shows (screen readers read it).',
@@ -164,10 +174,12 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       const m = place(w);
       if (m) issues.warnings.push(m);
     }
-    const pageTitle = str(page, 'title', p, issues, { max: 60 });
+    const pageTitle = str(page, 'title', p, issues, { max: SET_LIMITS.pageTitle });
     const title =
       pageTitle ??
-      (typeof own.title === 'string' && own.title ? own.title.slice(0, 60) : (id ?? p));
+      (typeof own.title === 'string' && own.title
+        ? own.title.slice(0, SET_LIMITS.pageTitle)
+        : (id ?? p));
     if (id) read.push({ p, id, title, sites, ...(checked.ok ? { data: checked.data } : {}) });
   }
 
