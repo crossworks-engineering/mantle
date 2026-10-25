@@ -18,6 +18,14 @@ const fresh = vi.hoisted(() => ({
   checks: null as null | unknown[][],
   /** The tabs the last draft save wrote. */
   saved: [] as string[],
+  /** The column types each grid was built with, by its first column. */
+  grids: [] as string[][],
+  /** The Checks tab's own column types and row count, as the store reads them. */
+  checkColumns: [
+    { name: 'Key', type: 'text' },
+    { name: 'Answer', type: 'text' },
+  ] as { name: string; type: string }[],
+  checkRowCount: null as null | number,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -41,10 +49,13 @@ vi.mock('@mantle/db', () => ({
   },
 }));
 vi.mock('@mantle/content', () => ({
-  tableDocFromGrid: (g: { columns: { name: string }[]; rows: unknown[][] }) => ({
-    columns: g.columns.map((c) => ({ id: c.name, name: c.name, type: 'text' })),
-    rows: g.rows.map((r, i) => ({ id: String(i), cells: { v: r[0] } })),
-  }),
+  tableDocFromGrid: (g: { columns: { name: string; type?: string }[]; rows: unknown[][] }) => {
+    fresh.grids.push(g.columns.map((c) => `${c.name}:${c.type ?? ''}`));
+    return {
+      columns: g.columns.map((c) => ({ id: c.name, name: c.name, type: c.type ?? 'text' })),
+      rows: g.rows.map((r, i) => ({ id: String(i), cells: { v: r[0] } })),
+    };
+  },
   saveTableDraft: async (
     _o: string,
     id: string,
@@ -86,21 +97,22 @@ vi.mock('@mantle/content/table-storage', () => ({
           {
             name: 'Checks',
             viewName: 'Checks',
-            columns: [
-              { name: 'Key', type: 'text' },
-              { name: 'Answer', type: 'text' },
-            ],
+            rowCount: fresh.checkRowCount ?? fresh.checks.length,
+            columns: fresh.checkColumns,
           },
         ]
       : [],
   }),
 }));
 vi.mock('@mantle/tabledb', () => ({
-  runTableSql: async (_abs: string, q: string) => ({
-    columns: ['Key', 'Answer'],
-    rows: / OFFSET 0$/.test(q) ? (fresh.checks ?? []) : [],
-    truncated: false,
-  }),
+  runTableSql: async (_abs: string, q: string) => {
+    const [, limit, offset] = / LIMIT (\d+) OFFSET (\d+)$/.exec(q) ?? [];
+    return {
+      columns: fresh.checkColumns.map((c) => c.name),
+      rows: (fresh.checks ?? []).slice(Number(offset), Number(offset) + Number(limit)),
+      truncated: false,
+    };
+  },
 }));
 // The real keys, dwgTableEdited and dwgSourceSha: only the sidecar pass is
 // made up.
@@ -201,6 +213,12 @@ describe('a rebuild keeps the table', () => {
     calls.log = [];
     fresh.checks = null;
     fresh.saved = [];
+    fresh.grids = [];
+    fresh.checkColumns = [
+      { name: 'Key', type: 'text' },
+      { name: 'Answer', type: 'text' },
+    ];
+    fresh.checkRowCount = null;
     fresh.row = { version: 1, draftRev: 7, hasDraft: false };
     fresh.duringBuild = null;
     fresh.commit = 'ok';
@@ -230,6 +248,44 @@ describe('a rebuild keeps the table', () => {
     const r = await rebuildOne(cand(), {});
     expect(r).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
     expect(fresh.saved).toEqual(['Layers:1', 'Segments:1', 'Checks:2']);
+  });
+
+  it('keeps every row past one page and each column type the tab had (L5)', async () => {
+    fresh.checkColumns = [
+      { name: 'Key', type: 'text' },
+      { name: 'Node', type: 'number' },
+      { name: 'Checked at', type: 'datetime' },
+      { name: 'Reviewed', type: 'checkbox' },
+      { name: 'Total', type: 'formula' },
+    ];
+    fresh.checks = Array.from({ length: 2500 }, (_, i) => [`k${i}`, i, '2026-10-25', true, 1]);
+    const r = await rebuildOne(cand(), {});
+    expect(r).toMatchObject({ result: 'rebuilt', tabs: ['Layers', 'Segments', 'Checks'] });
+    expect(fresh.saved).toEqual(['Layers:1', 'Segments:1', 'Checks:2500']);
+    // A formula's definition is not a value: it comes back as text.
+    expect(fresh.grids.at(-1)).toEqual([
+      'Key:text',
+      'Node:number',
+      'Checked at:datetime',
+      'Reviewed:checkbox',
+      'Total:text',
+    ]);
+  });
+
+  it('a Checks tab past the cap is refused whole, nothing written (L5)', async () => {
+    fresh.checks = [['k', 'yes']];
+    fresh.checkRowCount = 100_001;
+    const r = await rebuildOne(cand(), {});
+    expect(r).toMatchObject({ result: 'refused' });
+    expect((r as { reason: string }).reason).toMatch(
+      /more than 100,000 rows.*nothing was rebuilt.*then run again/,
+    );
+    expect(calls.log).toEqual([]);
+    // Rows the count did not show yet are caught by the read itself.
+    fresh.checkRowCount = 5;
+    fresh.checks = Array.from({ length: 100_001 }, (_, i) => [`k${i}`, 'yes']);
+    expect(await rebuildOne(cand(), {})).toMatchObject({ result: 'refused' });
+    expect(calls.log).toEqual([]);
   });
 
   it('a draft opened during the sidecar pass is never overwritten (security MED-1)', async () => {

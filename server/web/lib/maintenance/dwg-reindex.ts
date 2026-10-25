@@ -236,30 +236,62 @@ export async function buildTabs(bytes: Buffer, filename: string) {
   return { tabs, description };
 }
 
-/** Rows of the Checks tab read back per page, and at most. */
+/** Rows of the Checks tab read back per page, and at most: a tab past
+ *  CHECKS_MAX is refused whole (ChecksTabTooLarge), never cut. */
 const CHECKS_PAGE = 1000;
-const CHECKS_MAX = 100_000;
+export const CHECKS_MAX = 100_000;
+
+/** A Checks tab with more rows than a rebuild carries over. */
+export class ChecksTabTooLarge extends Error {
+  constructor(readonly rows: number) {
+    super(`its Checks tab holds more than ${CHECKS_MAX.toLocaleString('en-US')} rows`);
+    this.name = 'ChecksTabTooLarge';
+  }
+}
+
+/** Column types a value copy rebuilds as they were. A formula's or a
+ *  reference's definition is not a value (a reference names a tab id the
+ *  rebuild replaces), so those come back as text holding what they showed. */
+const KEPT_TYPE = new Set([
+  'text',
+  'number',
+  'currency',
+  'percent',
+  'date',
+  'datetime',
+  'checkbox',
+  'select',
+  'multiselect',
+  'url',
+]);
 
 /** The table's Checks tab (circuit_verify's answers) as a tab to write
- *  back, or null when it has none. Every column the tab holds is kept. */
+ *  back, or null when it has none. Every column and row the tab holds is
+ *  kept, with its column type; throws ChecksTabTooLarge past CHECKS_MAX
+ *  rows rather than lose any. */
 export async function checksTabOf(ownerId: string, tableId: string) {
   const surface = await tableSqlSurface(ownerId, tableId);
   const tab = surface?.tabs.find((t) => t.name === CHECKS_TAB);
   if (!surface || !tab) return null;
+  if (tab.rowCount > CHECKS_MAX) throw new ChecksTabTooLarge(tab.rowCount);
   const names = tab.columns.map((c) => c.name);
   const ident = (n: string) => `"${n.replace(/"/g, '""')}"`;
   const rows: (string | number | boolean | null)[][] = [];
-  for (let offset = 0; offset < CHECKS_MAX; offset += CHECKS_PAGE) {
+  for (let offset = 0; ; offset += CHECKS_PAGE) {
     const r = await runTableSql(
       surface.abs,
       `SELECT ${names.map(ident).join(', ')} FROM ${ident(tab.viewName)} ORDER BY "_rid" LIMIT ${CHECKS_PAGE} OFFSET ${offset}`,
       { cap: CHECKS_PAGE },
     );
     rows.push(...(r.rows as (string | number | boolean | null)[][]));
+    // Rows added since the count was read count too.
+    if (rows.length > CHECKS_MAX) throw new ChecksTabTooLarge(rows.length);
     if (r.rows.length < CHECKS_PAGE) break;
   }
-  const typeOf = (n: string) =>
-    tab.columns.find((c) => c.name === n)?.type === 'number' ? 'number' : 'text';
+  const typeOf = (n: string) => {
+    const t = tab.columns.find((c) => c.name === n)?.type;
+    return t && KEPT_TYPE.has(t) ? t : 'text';
+  };
   return {
     ...tableDocFromGrid({
       columns: names.map((n) => ({ name: n, type: typeOf(n) })),
@@ -325,7 +357,17 @@ export async function rebuildOne(
     const { tabs, description } = await buildTabs(file.bytes, c.filename);
     // The image check's answers stay with the drawing (same bytes, same
     // revision): read before the rebuild replaces the tabs.
-    const checks = tabs.length ? await checksTabOf(c.ownerId, c.tableId) : null;
+    let checks: Awaited<ReturnType<typeof checksTabOf>> = null;
+    try {
+      checks = tabs.length ? await checksTabOf(c.ownerId, c.tableId) : null;
+    } catch (err) {
+      if (!(err instanceof ChecksTabTooLarge)) throw err;
+      return {
+        tableId: c.tableId,
+        result: 'refused',
+        reason: `${err.message}, more than a rebuild carries over, so nothing was rebuilt (no answer is dropped): export the tab or delete the rows of older revisions (they no longer apply), then run again`,
+      };
+    }
     if (checks && !tabs.some((t) => t.name === CHECKS_TAB)) tabs.push(checks);
     if (tabs.length === 0) {
       return {
