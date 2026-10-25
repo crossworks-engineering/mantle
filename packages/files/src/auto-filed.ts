@@ -105,6 +105,22 @@ export function autoFiledSourcePath(source: AutoFiledSource): string {
   return `${AUTO_FILED_PATH}.${dashToLtree(source)}`;
 }
 
+/**
+ * The path `ensureAutoFiledFolder` files a source into, without making
+ * anything: what a read-only check (a dry run) asks about.
+ */
+export function autoFiledFolderPath(
+  source: AutoFiledSource,
+  opts: { date?: Date; document?: { slug: string } } = {},
+): string {
+  const spec: SourceSpec = AUTO_FILED_SOURCES[source];
+  const top = `${AUTO_FILED_PATH}.${dashToLtree(slugifyFolder(source) ?? source)}`;
+  const under = (slug: string) => `${top}.${dashToLtree(slugifyFolder(slug) ?? slug)}`;
+  if (spec.by === 'month') return under(autoFiledMonth(opts.date));
+  if (spec.by === 'document') return under(slugifyFolder(opts.document?.slug ?? '') ?? 'document');
+  return top;
+}
+
 async function branchExists(ownerId: string, path: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })

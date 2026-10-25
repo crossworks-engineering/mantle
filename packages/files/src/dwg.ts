@@ -49,6 +49,12 @@ export const DWG_REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
  *  now holds other bytes (replaced in place) until it is re-indexed. */
 export const DWG_SOURCE_SHA_KEY = 'sourceSha256';
 
+/** The maintenance command that rebuilds one drawing's table from its
+ *  file's bytes now (no model pass), quoted as a tool result shows it. */
+export function dwgReindexCommand(fileId: string | null): string {
+  return `\`pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply\``;
+}
+
 /** The sha256 of a drawing's bytes, as DWG_SOURCE_SHA_KEY holds it. */
 export function dwgSourceSha(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');

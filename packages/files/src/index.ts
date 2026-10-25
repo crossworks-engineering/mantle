@@ -144,6 +144,7 @@ export {
   AUTO_FILED_PATH,
   AUTO_FILED_SLUG,
   AUTO_FILED_SOURCES,
+  autoFiledFolderPath,
   autoFiledMonth,
   autoFiledSourcePath,
   ensureAutoFiledFolder,
