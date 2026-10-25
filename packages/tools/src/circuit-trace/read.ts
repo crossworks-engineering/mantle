@@ -325,6 +325,14 @@ export async function readSheet(
   };
   const inBox = `${ident('X')} BETWEEN ${wide.minX} AND ${wide.maxX} AND ${ident('Y')} BETWEEN ${wide.minY} AND ${wide.maxY}`;
   const network: SegRow[] = [];
+  if (!hasColumn(segTab, 'Part')) {
+    // An older bones table: every polyline reads as one straight piece, so
+    // a polyline vessel is one long "line" (no outline), and a process line
+    // drawn as one polyline is longer than a join may run along.
+    limits.push(
+      `its Segments tab has no Part column (a table indexed before it came in), so each polyline reads as one straight piece: equipment outlines and joins through polylines are mostly missed, and ends that would sit at equipment or links that would be certain read as open or guessed. An owner can rebuild the table to read it fully: pnpm maintain dwg-reindex --file=${t.sourceFileId ?? '<file id>'} --again (a dry run; add --apply to rebuild)`,
+    );
+  }
   await optional('the network around the circuit (other layers)', async () => {
     const notOwn = ownLayers.map(lit).join(', ');
     const [X1, X2, Y1, Y2] = ['X1', 'X2', 'Y1', 'Y2'].map(ident);
@@ -334,7 +342,18 @@ export async function readSheet(
     const part = hasColumn(segTab, 'Part') ? ident('Part') : '0';
     const around = `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')}, ${part} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps}${ORDER}`;
     for (let offset = 0; offset < MAX_NETWORK; offset += PAGE) {
-      const r = await q(`${around} LIMIT ${PAGE} OFFSET ${offset}`);
+      let r: Awaited<ReturnType<Sql>>;
+      try {
+        r = await q(`${around} LIMIT ${PAGE} OFFSET ${offset}`);
+      } catch (err) {
+        // A page past the first fails: the rows read are real geometry and
+        // are kept; the limit says the network is partial.
+        if (!network.length) throw err;
+        limits.push(
+          `the network around the circuit (other layers) could only be read in part: the first ${network.length} segments, then a page failed (${err instanceof Error ? err.message.slice(0, 120) : 'error'}); the trace goes on with those, and pieces may stay unjoined where the rest would have joined them`,
+        );
+        return;
+      }
       for (const row of r.rows) {
         network.push({
           layer: text(row[0]),

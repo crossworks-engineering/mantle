@@ -7416,27 +7416,33 @@
      "properties": {
       "source": {
        "type": "string",
+       "maxLength": 120,
        "description": "Where it came from, e.g. 'site register tool'."
       },
       "from": {
        "type": "string",
+       "maxLength": 120,
        "description": "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start."
       },
       "to": {
        "type": "string",
+       "maxLength": 120,
        "description": "The circuit's downstream end, an equipment tag, e.g. 'V-201'."
       },
       "lines": {
+       "maxItems": 2000,
        "type": "array",
        "items": {
         "type": "object",
         "properties": {
          "number": {
           "type": "string",
+          "maxLength": 120,
           "description": "A line number, e.g. '2\"-P-0001-A1'."
          },
          "sheet": {
           "type": "string",
+          "maxLength": 120,
           "description": "The drawing it is on, e.g. a sheet number."
          },
          "deadleg": {
@@ -7451,9 +7457,11 @@
        "description": "The line numbers on the circuit."
       },
       "sheets": {
+       "maxItems": 200,
        "type": "array",
        "items": {
-        "type": "string"
+        "type": "string",
+        "maxLength": 120
        },
        "description": "Drawings the register lists for the circuit."
       },

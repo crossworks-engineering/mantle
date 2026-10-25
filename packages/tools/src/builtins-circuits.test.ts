@@ -73,7 +73,7 @@ vi.mock('@mantle/tabledb', () => ({
   },
 }));
 
-import { CIRCUIT_TOOLS, circuitTraceHandler } from './builtins-circuits';
+import { CIRCUIT_TOOLS, circuitTraceHandler, REGISTER_MAX, registerOf } from './builtins-circuits';
 import { policyUntrusted } from './tool-policy';
 import { readSheet } from './circuit-trace/read';
 
@@ -145,5 +145,36 @@ describe('circuit_trace reads only what the caller may read', () => {
     const r = await circuitTraceHandler({}, 'owner');
     expect(r).toMatchObject({ ok: false });
     expect((r as { error: string }).error).toMatch(/circuit is required/);
+  });
+});
+
+describe('the register input is capped and cleaned', () => {
+  it('lines and sheets past the caps are cut and said; text is cleaned and cut', () => {
+    const NUL = String.fromCharCode(0);
+    const { register, cut } = registerOf({
+      source: `site${NUL} register ${'s'.repeat(300)}`,
+      from: `E-101${NUL}`,
+      lines: Array.from({ length: REGISTER_MAX.lines + 5 }, (_, i) => ({ number: `N${i}` })),
+      sheets: Array.from({ length: REGISTER_MAX.sheets + 1 }, (_, i) => `S-${i}`),
+    });
+    expect(register!.lines).toHaveLength(REGISTER_MAX.lines);
+    expect(register!.sheets).toHaveLength(REGISTER_MAX.sheets);
+    expect(register!.from).toBe('E-101');
+    expect(register!.source!.startsWith('site  register')).toBe(true);
+    expect(register!.source!.length).toBeLessThanOrEqual(REGISTER_MAX.text);
+    expect(cut.join(' ')).toMatch(/the register gave 2005 lines; the first 2000 were compared/);
+    expect(cut.join(' ')).toMatch(/the register gave 201 sheets; the first 200 were compared/);
+  });
+
+  it('the schema holds the same caps', () => {
+    const schema = CIRCUIT_TOOLS[0]!.inputSchema as {
+      properties: {
+        register: { properties: Record<string, { maxItems?: number; maxLength?: number }> };
+      };
+    };
+    const reg = schema.properties.register.properties;
+    expect(reg.lines!.maxItems).toBe(REGISTER_MAX.lines);
+    expect(reg.sheets!.maxItems).toBe(REGISTER_MAX.sheets);
+    expect(reg.source!.maxLength).toBe(REGISTER_MAX.text);
   });
 });

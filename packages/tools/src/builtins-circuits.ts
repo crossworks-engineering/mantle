@@ -15,34 +15,64 @@ import { str } from './coerce';
 import { dwgTables, readSheet } from './circuit-trace/read';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
 
-/** The register input, read loosely: the agent fills it from a site tool. */
-function registerOf(raw: unknown): RegisterInput | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+/** The register's size, held both in the schema and here (a schema in
+ *  warn mode lets more through): lines and sheets read, and the longest
+ *  text kept per field. */
+export const REGISTER_MAX = { lines: 2000, sheets: 200, text: 120 } as const;
+
+/** A register field as text: control characters out, trimmed, capped. */
+const field = (v: unknown) =>
+  str(v)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .trim()
+    .slice(0, REGISTER_MAX.text)
+    .trim();
+
+/** The register input, read loosely: the agent fills it from a site tool.
+ *  `cut` says what was past the caps. */
+export function registerOf(raw: unknown): { register?: RegisterInput; cut: string[] } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { cut: [] };
   const r = raw as Record<string, unknown>;
-  const lines = Array.isArray(r.lines)
-    ? r.lines
-        .map((l) => {
-          if (typeof l === 'string') return { number: l };
-          if (!l || typeof l !== 'object') return null;
-          const o = l as Record<string, unknown>;
-          const number = str(o.number).trim();
-          if (!number) return null;
-          return {
-            number,
-            ...(str(o.sheet).trim() ? { sheet: str(o.sheet).trim() } : {}),
-            ...(typeof o.deadleg === 'boolean' ? { deadleg: o.deadleg } : {}),
-          };
-        })
-        .filter((l): l is NonNullable<typeof l> => l !== null)
-    : [];
-  const sheets = Array.isArray(r.sheets) ? r.sheets.map((s) => str(s).trim()).filter(Boolean) : [];
+  const cut: string[] = [];
+  const rawLines = Array.isArray(r.lines) ? r.lines : [];
+  if (rawLines.length > REGISTER_MAX.lines)
+    cut.push(
+      `the register gave ${rawLines.length} lines; the first ${REGISTER_MAX.lines} were compared`,
+    );
+  const lines = rawLines
+    .slice(0, REGISTER_MAX.lines)
+    .map((l) => {
+      if (typeof l === 'string') return field(l) ? { number: field(l) } : null;
+      if (!l || typeof l !== 'object') return null;
+      const o = l as Record<string, unknown>;
+      const number = field(o.number);
+      if (!number) return null;
+      return {
+        number,
+        ...(field(o.sheet) ? { sheet: field(o.sheet) } : {}),
+        ...(typeof o.deadleg === 'boolean' ? { deadleg: o.deadleg } : {}),
+      };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null);
+  const rawSheets = Array.isArray(r.sheets) ? r.sheets : [];
+  if (rawSheets.length > REGISTER_MAX.sheets)
+    cut.push(
+      `the register gave ${rawSheets.length} sheets; the first ${REGISTER_MAX.sheets} were compared`,
+    );
+  const sheets = rawSheets.slice(0, REGISTER_MAX.sheets).map(field).filter(Boolean);
   return {
-    ...(str(r.source).trim() ? { source: str(r.source).trim() } : {}),
-    ...(str(r.from).trim() ? { from: str(r.from).trim() } : {}),
-    ...(str(r.to).trim() ? { to: str(r.to).trim() } : {}),
-    lines,
-    sheets,
-    ...(typeof r.deadlegs === 'number' ? { deadlegs: r.deadlegs } : {}),
+    register: {
+      ...(field(r.source) ? { source: field(r.source) } : {}),
+      ...(field(r.from) ? { from: field(r.from) } : {}),
+      ...(field(r.to) ? { to: field(r.to) } : {}),
+      lines,
+      sheets,
+      ...(typeof r.deadlegs === 'number' && Number.isFinite(r.deadlegs)
+        ? { deadlegs: r.deadlegs }
+        : {}),
+    },
+    cut,
   };
 }
 
@@ -58,7 +88,7 @@ export async function circuitTraceHandler(
         "circuit is required: the circuit's name as the drawings write it, e.g. '10000-001-01' (the part after 'Circuit ' in the layer name).",
     };
   }
-  const register = registerOf(input.register);
+  const { register, cut } = registerOf(input.register);
   try {
     const { tables, more } = await dwgTables(ownerId);
     const sheets: SheetInput[] = [];
@@ -73,6 +103,7 @@ export async function circuitTraceHandler(
       else if (r.kind === 'no-bones') preBones.push(r.title);
     }
     const result = traceCircuit(circuit, sheets, register);
+    result.limits.push(...cut);
     if (more) {
       result.limits.push(
         `only the ${tables.length} most recently changed drawing tables were looked at; older sheets of this circuit may be missing.`,
@@ -146,25 +177,37 @@ const circuit_trace: BuiltinToolDef = {
         description:
           'What an outside register says belongs to the circuit, from a site register tool when the brain has one; the trace reports every difference. Leave it out when there is none.',
         properties: {
-          source: { type: 'string', description: "Where it came from, e.g. 'site register tool'." },
+          source: {
+            type: 'string',
+            maxLength: REGISTER_MAX.text,
+            description: "Where it came from, e.g. 'site register tool'.",
+          },
           from: {
             type: 'string',
+            maxLength: REGISTER_MAX.text,
             description:
               "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start.",
           },
           to: {
             type: 'string',
+            maxLength: REGISTER_MAX.text,
             description: "The circuit's downstream end, an equipment tag, e.g. 'V-201'.",
           },
           lines: {
             type: 'array',
+            maxItems: REGISTER_MAX.lines,
             description: 'The line numbers on the circuit.',
             items: {
               type: 'object',
               properties: {
-                number: { type: 'string', description: "A line number, e.g. '2\"-P-0001-A1'." },
+                number: {
+                  type: 'string',
+                  maxLength: REGISTER_MAX.text,
+                  description: "A line number, e.g. '2\"-P-0001-A1'.",
+                },
                 sheet: {
                   type: 'string',
+                  maxLength: REGISTER_MAX.text,
                   description: 'The drawing it is on, e.g. a sheet number.',
                 },
                 deadleg: { type: 'boolean', description: 'The register marks it a deadleg.' },
@@ -175,7 +218,8 @@ const circuit_trace: BuiltinToolDef = {
           },
           sheets: {
             type: 'array',
-            items: { type: 'string' },
+            maxItems: REGISTER_MAX.sheets,
+            items: { type: 'string', maxLength: REGISTER_MAX.text },
             description: 'Drawings the register lists for the circuit.',
           },
           deadlegs: {

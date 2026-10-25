@@ -280,3 +280,33 @@ describe('a line note and the legend names (traced circuits)', () => {
     expect(errorsOf({ ...sheet(), legendNames: 'x' })).toMatch(/legendNames: must be/);
   });
 });
+
+describe('free text never carries control characters', () => {
+  const NUL = String.fromCharCode(0);
+  const BEL = String.fromCharCode(7);
+  const C1 = String.fromCharCode(0x85);
+  it('legend names, notes and the title come out clean; tab and newline stay', () => {
+    const d = sheet();
+    d.title = `Header${NUL} with branches`;
+    d.legendNames = { main: `Main${BEL} line`, secondary: `Branch${C1}` };
+    d.lines[0] = { ...d.lines[0], note: `GUESS${NUL}\tcheck` };
+    const v = validatePid(d);
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.data.title).toBe('Header with branches');
+    expect(v.data.legendNames).toEqual({ main: 'Main line', secondary: 'Branch' });
+    expect(v.data.lines[0]!.note).toBe('GUESS\tcheck');
+    const r = render('pid', d, estimateMeasurer);
+    expect(r.ok).toBe(true);
+    // eslint-disable-next-line no-control-regex
+    if (r.ok) expect(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(r.svg)).toBe(false);
+  });
+
+  it('a field of control characters only is empty: required fields say so', () => {
+    const d = sheet();
+    d.title = `${NUL}${BEL}`;
+    const v = validate('pid', d);
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.errors.join(' ')).toMatch(/title: required/);
+  });
+});

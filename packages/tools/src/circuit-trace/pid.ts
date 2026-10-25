@@ -5,7 +5,9 @@
  * point there, and every end at a piece of equipment is that equipment. The
  * main line is the path along the real flow from the upstream equipment to
  * the downstream one (the register's from and to when it names them, else
- * the pair whose path crosses the most sheets on main layers); then the
+ * the pair whose path crosses the most sheets), never through a deadleg
+ * chain (when the only path does, no main line is drawn and that is said in
+ * `limits`; the deadleg stays a deadleg); then the
  * branches hang off it on tees, then lines from the equipment on it, and the
  * deadlegs last. The template's line budget goes to them in that order:
  * deadlegs are grouped per parent line, the longest drawn first, and what
@@ -25,7 +27,7 @@ const CIRCUIT_ID = 24;
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 /** Register text echoed into limits and guesses is cut to this length. */
 const ECHO_MAX = 40;
-const clip = (t: string) => (t.length > ECHO_MAX ? `${t.slice(0, ECHO_MAX - 3)}...` : t);
+export const clip = (t: string) => (t.length > ECHO_MAX ? `${t.slice(0, ECHO_MAX - 3)}...` : t);
 /** The legend's names for the line weights: the main line, and every other
  *  line of the circuit (a branch or a deadleg of a process circuit is a
  *  process line, never a utility line). */
@@ -167,9 +169,10 @@ export function buildPid(
   const eqTag = (v: string) => v.slice(3);
 
   // ------------------------------------------------------------ main path
-  /** The cheapest path between two vertices that passes no other equipment;
-   *  a deadleg chain costs twenty times its length. */
-  const path = (from: string, to: string): Edge[] | null => {
+  /** The cheapest path between two vertices that passes no other equipment
+   *  and, unless `deadlegs`, no deadleg chain (a main line never runs
+   *  through one). */
+  const path = (from: string, to: string, deadlegs = false): Edge[] | null => {
     const cost = new Map<string, number>([[from, 0]]);
     const via = new Map<string, Edge>();
     const open = new Set([from]);
@@ -187,8 +190,9 @@ export function buildPid(
       if (v === to) break;
       if (v !== from && isEq(v)) continue;
       for (const e of adj.get(v) ?? []) {
+        if (e.deadleg && !deadlegs) continue;
         const w = far(e, v);
-        const nc = best + e.length * (e.deadleg ? 20 : 1) + 1e-6;
+        const nc = best + e.length + 1e-6;
         if (nc < (cost.get(w) ?? Infinity)) {
           cost.set(w, nc);
           via.set(w, e);
@@ -233,6 +237,20 @@ export function buildPid(
     return turns;
   };
   const eqs = [...new Set(edges.flatMap((e) => [e.a, e.b]).filter(isEq))];
+  /** Main-layer ends that are only NEAR an equipment tag (a reading past the
+   *  near distance): a main-line end only as a marked guess, and only when
+   *  it carries the main line across more sheets (two at least) than
+   *  confirmed equipment alone does. */
+  const readingAt = new Map<string, string>();
+  for (const [k, tag] of unconfirmed) {
+    const v = find(k);
+    if (isEq(v) || !adj.has(v)) continue;
+    if ((endAt.get(k) ?? []).every(({ end }) => end.deadleg)) continue;
+    readingAt.set(v, tag);
+  }
+  /** A vertex's name in the words the trace writes. */
+  const vname = (v: string) =>
+    isEq(v) ? eqTag(v) : readingAt.has(v) ? `near ${readingAt.get(v)} (GUESS)` : v;
   const matchEq = (name?: string) => {
     if (!name?.trim()) return undefined;
     const n = baseTag(name.trim());
@@ -261,18 +279,21 @@ export function buildPid(
   };
   type Main = { from: string; to: string; edges: Edge[]; score: number[]; tie: boolean };
   let main: Main | null = null;
+  /** A pair joined only through a deadleg chain (no main line there). */
+  let blocked: { a: string; b: string } | null = null;
   const consider = (a: string, b: string) => {
     const p = path(a, b);
-    if (!p?.length) return;
-    // A deadleg's end is never a main-line end.
-    if (p[0]!.deadleg || p[p.length - 1]!.deadleg) return;
+    if (!p?.length) {
+      // Kept to say why there is no main line: a path only through a deadleg.
+      if (!blocked && isEq(a) && isEq(b) && path(a, b, true)?.length) blocked = { a, b };
+      return;
+    }
     // A main run crosses each sheet once: a path that leaves a sheet and
     // comes back to it is a loop through other lines, not the run.
     const order = p.map((e) => e.sheet.tableId).filter((t, i, a) => i === 0 || a[i - 1] !== t);
     const score = [
       Number(new Set(order).size === order.length),
       new Set(order).size,
-      -p.filter((e) => e.deadleg).length,
       -turnsOf(a, p),
       p.reduce((x, e) => x + e.length, 0),
     ];
@@ -287,7 +308,7 @@ export function buildPid(
     mainBasis = `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())}`;
     if (!main) {
       limits.push(
-        `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())} are both at ends of the traced geometry, but no path on main layers joins them (an unjoined piece, a deadleg, or other equipment between); no main line is drawn.`,
+        `the register's circuit from ${clip(input.register!.from!.trim())} and to ${clip(input.register!.to!.trim())} are both at ends of the traced geometry, but no path that keeps off deadlegs joins them (${blocked ? 'the only path runs through a deadleg chain, and a main line never does: the deadleg is drawn as a deadleg' : 'an unjoined piece, or other equipment between'}); no main line is drawn.`,
       );
     }
   } else {
@@ -298,9 +319,34 @@ export function buildPid(
         consider(eqs[i]!, eqs[k]!);
       }
     }
+    // One end a reading, the other confirmed equipment (never two readings):
+    // taken only when it crosses more sheets, each once, than the confirmed
+    // pairs do, and at least two (on one sheet a reading is never a main end).
+    const confirmed = main as Main | null;
+    const sheetsOf = (x: Main | null) => (x && x.score[0] === 1 ? x.score[1]! : 0);
+    main = null;
+    for (const v of eqs) {
+      if (pinned && v !== pinned) continue;
+      for (const r of readingAt.keys()) consider(v, r);
+    }
+    const reading = main as Main | null;
+    main =
+      reading && sheetsOf(reading) >= 2 && sheetsOf(reading) > sheetsOf(confirmed)
+        ? { ...reading, tie: false }
+        : confirmed;
     mainBasis = '';
   }
   const m = main as Main | null;
+  const cut = blocked as { a: string; b: string } | null;
+  if (!m && cut && !(regFrom && regTo && regFrom !== regTo)) {
+    limits.push(
+      `${vname(cut.a)} and ${vname(cut.b)} are joined only through a deadleg chain; a main line never runs through a deadleg, so no main line is drawn and the deadleg is drawn as a deadleg.`,
+    );
+  }
+  /** Inferred joins on the main line's chains. */
+  const mainInferred = m
+    ? m.edges.reduce((x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length, 0)
+    : 0;
   if (m && !(regFrom && regTo)) {
     // Which end is upstream: the register's, else the one on the sheet the
     // register (or the upload order) lists first.
@@ -317,7 +363,16 @@ export function buildPid(
     mainBasis =
       regFrom || regTo ? `the register's circuit ${regFrom ? 'from' : 'to'} and the drawing` : '';
     guesses.push(
-      `the main line runs ${eqTag(m.from)} to ${eqTag(m.to)}: the pair of equipment ends whose path crosses the most sheets, each once, on main layers, and goes straightest through its tees${regFrom || regTo ? `, one end fixed by the register` : ''}${m.tie ? `; another pair scores the same (a tie, broken by the order the equipment was found)` : ''}; its direction is read from the ${input.register?.sheets?.length ? "register's sheet order" : 'upload order of the sheets'}, not from flow arrows. Give the register's from and to to fix it.`,
+      `the main line runs ${vname(m.from)} to ${vname(m.to)}: the pair of equipment ends whose path crosses the most sheets, each once, never through a deadleg${mainInferred ? ` (${mainInferred} inferred join${mainInferred === 1 ? '' : 's'} through process lines on it)` : ''}, and goes straightest through its tees${regFrom || regTo ? `, one end fixed by the register` : ''}${m.tie ? `; another pair scores the same (a tie, broken by the order the equipment was found)` : ''}; its direction is read from the ${input.register?.sheets?.length ? "register's sheet order" : 'upload order of the sheets'}, not from flow arrows${[
+        m.from,
+        m.to,
+      ]
+        .filter((v) => !isEq(v))
+        .map(
+          (v) =>
+            `; its ${v === m.from ? 'from' : 'to'} end is only near ${readingAt.get(v)} (a reading past the near distance, drawn as a NEAR connector marked GUESS, never as the equipment), taken because it carries the main line across more sheets than any pair of confirmed equipment`,
+        )
+        .join('')}. Give the register's from and to to fix it.`,
     );
   }
 
@@ -367,8 +422,8 @@ export function buildPid(
     return p;
   };
   const numbersOf = (e: Edge) => e.chain.lineNumbers.map((l) => norm(l.number));
-  /** A branch from `v` along `first`: on through the next chain that keeps
-   *  its line number, else the main-layer one, else the longest. */
+  /** A branch from `v` along `first`: on through the next chain of the same
+   *  role that keeps its line number, else the longest. */
   const grow = (v: string, first: Edge): Edge[] => {
     const es = [first];
     const seen = new Set([v]);
@@ -378,14 +433,17 @@ export function buildPid(
       if (isEq(at) || placed.has(at)) break;
       const last = es[es.length - 1]!;
       const nums = numbersOf(last);
+      // A line keeps its role: a deadleg is its own line, never part of a
+      // main-layer one, and the other way round.
       const next = (adj.get(at) ?? [])
-        .filter((e) => !used.has(e) && !es.includes(e) && !seen.has(far(e, at)))
+        .filter(
+          (e) =>
+            !used.has(e) && !es.includes(e) && !seen.has(far(e, at)) && e.deadleg === first.deadleg,
+        )
         .sort(
           (x, y) =>
             Number(numbersOf(y).some((k) => nums.includes(k))) -
-              Number(numbersOf(x).some((k) => nums.includes(k))) ||
-            Number(x.deadleg) - Number(y.deadleg) ||
-            y.length - x.length,
+              Number(numbersOf(x).some((k) => nums.includes(k))) || y.length - x.length,
         )[0];
       if (!next) break;
       es.push(next);
@@ -468,6 +526,12 @@ export function buildPid(
       took = true;
     }
     if (!took) break;
+  }
+  // A line hanging off a deadleg line (the far side of a deadleg between two
+  // main-layer pieces), once its parent is drawn.
+  for (const p of plans) {
+    if (chosen.size >= PID_LINES) break;
+    if (!p.deadleg && !chosen.has(p.id) && parentOk(p)) chosen.add(p.id);
   }
   const leftBranches = plans.filter((p) => !p.deadleg && !chosen.has(p.id));
   if (leftBranches.length) {
@@ -709,7 +773,7 @@ export function buildPid(
 
   const crossings = m ? new Set(m.edges.map((e) => e.sheet.title)).size - 1 : 0;
   const description = m
-    ? `Circuit ${circuit}: main line ${eqTag(m.from)} to ${eqTag(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}, ${lines.length} lines drawn, deadlegs on caps.${guessNote}`
+    ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}, ${lines.length} lines drawn, deadlegs on caps.${guessNote}`
     : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${guessNote}`;
   const drawnLines = new Set(lines.map((l) => l.id as string));
   return {

@@ -76,6 +76,23 @@ export function checkKeys(o: Obj, allowed: readonly string[], path: string, issu
 
 type StrOpts = { required?: boolean; max?: number; pattern?: RegExp; patternText?: string };
 
+/** C0 and C1 control characters and DEL, but tab and newline: never drawn
+ *  (a NUL makes the SVG invalid XML even escaped). */
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/** A text field with its control characters taken out (tab and newline
+ *  kept); text without any is returned as it is. */
+export function cleanText(v: string): string {
+  return v.replace(CONTROL, '');
+}
+
+/**
+ * A string field: every free text a template takes (titles, labels, notes,
+ * legend names) comes through here, so control characters are taken out
+ * once, before the length and pattern checks; text without them is the
+ * same string (stored drawings draw byte for byte as they did).
+ */
 export function str(
   o: Obj,
   key: string,
@@ -83,8 +100,9 @@ export function str(
   issues: Issues,
   opts: StrOpts = {},
 ): string | undefined {
-  const v = o[key];
+  const raw = o[key];
   const p = at(path, key);
+  const v = typeof raw === 'string' ? cleanText(raw) : raw;
   if (v === undefined || v === null || v === '') {
     if (opts.required) issues.errors.push(`${p}: required, a non-empty string.`);
     return undefined;
