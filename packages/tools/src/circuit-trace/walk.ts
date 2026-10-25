@@ -13,6 +13,8 @@
  * capped tab, a sheet that is not uploaded) in `limits`.
  */
 
+import { buildPid } from './pid';
+
 /* ------------------------------------------------------------------ input */
 
 export type SegRow = {
@@ -25,6 +27,9 @@ export type SegRow = {
   length: number;
   n1: number;
   n2: number;
+  /** The polyline vertex pair (0 for a LINE): with the handle, one straight
+   *  piece of the drawn entity. */
+  part?: number;
 };
 export type NodeRow = {
   id: number;
@@ -74,6 +79,9 @@ export type SheetInput = {
   blocks: BlockRow[];
   /** Labels nearer than this to a run belong to it (drawing units). */
   near: number;
+  /** Segments on every other layer around the circuit (process lines,
+   *  symbols, borders, other circuits): what its pieces are joined through. */
+  network?: SegRow[];
   /** What the read could not see on this sheet (capped tabs, cut reads). */
   limits: string[];
 };
@@ -81,6 +89,9 @@ export type SheetInput = {
 export type RegisterLine = { number: string; sheet?: string; deadleg?: boolean };
 export type RegisterInput = {
   source?: string;
+  /** The circuit's from and to as the register writes them (equipment tags). */
+  from?: string;
+  to?: string;
   lines?: RegisterLine[];
   sheets?: string[];
   deadlegs?: number;
@@ -104,6 +115,9 @@ export type TraceEnd = {
   meets: EndMeets;
   deadleg: boolean;
   equipment: string[];
+  /** How the equipment was found: the end sits on an outline that holds the
+   *  tag (`outline`, with the layer), or the tag is the nearest label. */
+  equipmentBasis?: string;
   /** Instrument tags near the end (PI-2001, FV-101): never equipment. */
   instruments: string[];
   labels: string[];
@@ -112,6 +126,21 @@ export type TraceEnd = {
   beyond?: string;
 };
 export type TraceValve = { block: string; handle: string; type: string; guessed: boolean };
+/** Two pieces of the circuit joined where its layer breaks: through the
+ *  process line it is drawn over (`process`, with the path's handles), or
+ *  across a short gap in one straight line (`gap`: a dash, a break where
+ *  another line crosses, a valve drawn in the gap). A geometric fact, not a
+ *  guess. */
+export type TraceJoin = {
+  kind: 'process' | 'gap';
+  from: number;
+  to: number;
+  length: number;
+  handles: string[];
+  layers: string[];
+  /** The path crosses a symbol drawn as plain lines (diagonal strokes). */
+  symbol?: boolean;
+};
 export type TraceChain = {
   id: string;
   from: number;
@@ -121,6 +150,8 @@ export type TraceChain = {
   handles: string[];
   valves: TraceValve[];
   lineNumbers: { number: string; handle: string }[];
+  /** Where the chain is joined through a process line or a dash gap. */
+  joins?: TraceJoin[];
 };
 export type TraceRun = {
   run: number;
@@ -142,6 +173,8 @@ export type TraceSheet = {
   deadlegRuns: number;
   lineNumbers: { number: string; handle: string }[];
   blocksOnPath: TraceValve[];
+  /** The pieces joined through the network (process lines, dash gaps). */
+  joins: TraceJoin[];
 };
 export type SheetLink = {
   from: { sheet: string; node: number };
@@ -187,6 +220,14 @@ export const LINE_TAG = /^LINE[\s_.-]*(NO|NUM|NUMBER)?\.?$/i;
 export const CIRCUIT_TAG = /^CIRCUIT([\s_.-]*(NO|NAME|ID))?$/i;
 /** Labels within this share of the trimmed extent diagonal are near. */
 export const NEAR_REL = 1e-2;
+/** A join between two pieces of one circuit through the network is at most
+ *  this share of the trimmed extent diagonal long; so is any one straight
+ *  piece it may run along (a sheet border is longer). */
+export const BRIDGE_REL = 0.15;
+/** A straight piece longer than this share of the extent is a border or a
+ *  match line (never an equipment outline), and an outline whose box is
+ *  wider than it is not one piece of equipment. */
+export const EDGE_REL = 0.4;
 /** The extent ignores this share of end points at each side. */
 export const EXTENT_TRIM = 0.005;
 
@@ -282,6 +323,9 @@ export function layersOf(
 
 /* --------------------------------------------------------------- reading */
 
+/** The pid symbol an equipment tag letter reads as. F is a fired heater
+ *  (furnace): the template has no furnace, so it takes the generic heater
+ *  symbol (`exchanger`), said where it is used. */
 const EQUIPMENT_LETTERS: Readonly<Record<string, string>> = {
   E: 'shell-tube-exchanger',
   P: 'centrifugal-pump',
@@ -290,16 +334,33 @@ const EQUIPMENT_LETTERS: Readonly<Record<string, string>> = {
   T: 'tank',
   C: 'column',
   K: 'compressor',
-  F: 'filter',
+  F: 'exchanger',
   A: 'air-cooler',
+};
+/** What a tag letter names, for the words the trace writes. */
+export const EQUIPMENT_KIND: Readonly<Record<string, string>> = {
+  E: 'exchanger',
+  P: 'pump',
+  V: 'vessel',
+  D: 'drum',
+  T: 'tank',
+  C: 'column or vessel',
+  K: 'compressor',
+  F: 'furnace (fired heater)',
+  A: 'air cooler',
 };
 /** Two-letter equipment prefixes (any other two to four letters before
  *  the number read as an instrument: PI, FV, TT, LT, PSV, FIC). */
 const EQUIPMENT_PAIRS: Readonly<Record<string, string>> = { TK: 'tank', EA: 'air-cooler' };
-/** A tag: one to four letters, then the number (E-101, P-2001A, PI-2001). */
-const TAG = /^([A-Z]{1,4})-?(\d{2,6}[A-Z]?)$/;
+const EQUIPMENT_PAIR_KIND: Readonly<Record<string, string>> = { TK: 'tank', EA: 'air cooler' };
+/** A tag: one to four letters, then the number (E-101, P-2001A, PI-2001),
+ *  and a revision or train suffix after a slash as drawings write it
+ *  (E-101/R1, C-205/ 02). */
+const TAG = /^([A-Z]{1,4})-?(\d{2,6}[A-Z]?)(\s*\/\s*[A-Z0-9]{1,4})?$/;
+/** A continuation label: CONT, CONTINUED, COD (continued on drawing), SEE
+ *  DWG, TO/FROM SHEET, MATCH LINE. */
 const CONTINUATION_TEXT =
-  /\b(CONT(INUED|INUATION|'?D)?\.?|SEE\s+(DWG|DRG|SHT|SHEET)|(TO|FROM)\s+(DWG|DRG|SHT|SHEET)|MATCH\s*LINE)\b/i;
+  /\b(CONT(INUED|INUATION|'?D)?\.?|COD|SEE\s+(DWG|DRG|SHT|SHEET)|(TO|FROM)\s+(DWG|DRG|SHT|SHEET)|MATCH\s*LINE)\b/i;
 /** A continuation block name. CONT is not CONTROL (a control valve), nor
  *  CONTAINER / CONTACT / CONTENT; a name that reads as a valve is never one. */
 const CONTINUATION_BLOCK =
@@ -310,7 +371,11 @@ export function isContinuationBlock(block: string): boolean {
   return CONTINUATION_BLOCK.test(block) && !valveOf(block);
 }
 
+/** Block names, in order: the first that matches says what the block is.
+ *  Reducers first (REDU, RED, REDUCER, CONC, ECC): a reducer is never a
+ *  valve, though the template draws it inline like one. */
 const VALVE_NAMES: readonly [RegExp, string][] = [
+  [/REDU|REDUCER|^RED(?![A-Z])|\bRED\b|CONC|ECC/i, 'reducer'],
   [/3.?WAY|THREE.?WAY/i, 'three-way'],
   [/BUTTERFLY|BFV/i, 'butterfly'],
   [/GLOBE/i, 'globe'],
@@ -319,7 +384,8 @@ const VALVE_NAMES: readonly [RegExp, string][] = [
   [/CHECK|CHK|NRV/i, 'check'],
   [/RELIEF|PSV|PRV|SRV/i, 'relief'],
   [/CONTROL|\bCV\b|CTRL/i, 'control'],
-  [/REDUCER|\bRED\b|CONC|ECC/i, 'reducer'],
+  [/PLUG/i, 'gate'],
+  [/NEEDLE/i, 'globe'],
   [/BLIND|SPADE|SPECT|SPEC.?BL/i, 'blind'],
   [/ORIFICE|\bRO\b/i, 'orifice'],
   [/VALVE|VLV|\bVA?\b/i, 'gate'],
@@ -329,7 +395,8 @@ const VALVE_NAMES: readonly [RegExp, string][] = [
  *  says it is a valve; null when the name does not read as a valve. */
 export function valveOf(block: string): { type: string; guessed: boolean } | null {
   for (const [re, type] of VALVE_NAMES) {
-    if (re.test(block)) return { type, guessed: re.source.startsWith('VALVE') };
+    if (re.test(block))
+      return { type, guessed: re.source.startsWith('VALVE') || /PLUG|NEEDLE/.test(re.source) };
   }
   return null;
 }
@@ -340,7 +407,10 @@ export function valveOf(block: string): { type: string; guessed: boolean } | nul
 export function readTag(
   text: string,
 ): { tag: string; kind: 'equipment'; type: string } | { tag: string; kind: 'instrument' } | null {
-  const t = text.trim().toUpperCase();
+  const t = text
+    .trim()
+    .toUpperCase()
+    .replace(/\s*\/\s*/, '/');
   const m = TAG.exec(t);
   if (!m) return null;
   const letters = m[1]!;
@@ -393,7 +463,14 @@ class Union {
   }
 }
 
-type Edge = { a: number; b: number; seg?: SegRow; role: 'main' | 'deadleg'; bridge?: InsertRow };
+type Edge = {
+  a: number;
+  b: number;
+  seg?: SegRow;
+  role: 'main' | 'deadleg';
+  bridge?: InsertRow;
+  join?: TraceJoin;
+};
 
 type Pt = { x: number; y: number };
 type SheetWalk = {
@@ -406,6 +483,317 @@ type SheetWalk = {
 };
 
 const MAX_CHAIN_HANDLES = 60;
+/** A gap in one straight line: it runs on along both pieces within this
+ *  many degrees. */
+const DASH_DEG = 3;
+/** Handles kept per join (the path's own segments). */
+const MAX_JOIN_HANDLES = 40;
+
+/** A line-number block's number: the longest value among its line-number
+ *  attributes (LINE `N100` and LINENO `N100-39-6"`: the full tag). */
+export function lineNumberOf(attribs: Record<string, string>): string | undefined {
+  let best: string | undefined;
+  for (const [k, v] of Object.entries(attribs)) {
+    const t = v?.trim();
+    if (!t || !LINE_TAG.test(k)) continue;
+    if (!best || t.length > best.length) best = t;
+  }
+  return best;
+}
+
+/** A stroke at least 15 degrees off both axes (a bowtie's side, an arrow's). */
+function diagonal(g: SegRow): boolean {
+  const ax = Math.abs(g.x2 - g.x1);
+  const ay = Math.abs(g.y2 - g.y1);
+  return Math.min(ax, ay) > Math.tan((15 * Math.PI) / 180) * Math.max(ax, ay);
+}
+
+const pairKey = (a: number, b: number) => `${Math.min(a, b)}:${Math.max(a, b)}`;
+
+/** The pipe layers of a sheet: the layers its circuit overlays lie on (a
+ *  circuit segment and a segment of that layer between the same two nodes),
+ *  each carrying at least a tenth of what the busiest one does. */
+function pipeLayersOf(s: SheetInput): Set<string> {
+  const net = s.network ?? [];
+  const circuitPairs = new Set<string>(
+    [...s.segments, ...net]
+      .filter((g) => parseCircuitLayer(g.layer))
+      .map((g) => pairKey(g.n1, g.n2)),
+  );
+  const overlays = new Map<string, number>();
+  for (const g of net) {
+    if (!parseCircuitLayer(g.layer) && circuitPairs.has(pairKey(g.n1, g.n2)))
+      overlays.set(g.layer, (overlays.get(g.layer) ?? 0) + 1);
+  }
+  const most = Math.max(0, ...overlays.values());
+  return new Set([...overlays].filter(([, n]) => n >= most / 10).map(([l]) => l));
+}
+
+/** The trimmed extent diagonal a sheet's `near` was taken from. */
+const extentOf = (s: SheetInput) => s.near / NEAR_REL;
+
+/** Small binary heap on [cost, node]. */
+class Heap {
+  private h: [number, number][] = [];
+  get size() {
+    return this.h.length;
+  }
+  push(v: [number, number]) {
+    const h = this.h;
+    h.push(v);
+    let i = h.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (h[p]![0] <= h[i]![0]) break;
+      [h[p], h[i]] = [h[i]!, h[p]!];
+      i = p;
+    }
+  }
+  pop(): [number, number] | undefined {
+    const h = this.h;
+    const top = h[0];
+    const last = h.pop();
+    if (h.length && last) {
+      h[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < h.length && h[l]![0] < h[m]![0]) m = l;
+        if (r < h.length && h[r]![0] < h[m]![0]) m = r;
+        if (m === i) break;
+        [h[m], h[i]] = [h[i]!, h[m]!];
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
+/**
+ * Join the pieces of one circuit on one sheet where its layer breaks. The
+ * `Circuit <name>` layer is an overlay drawn in pieces over the process
+ * lines: between two pieces the pipe goes on, on the process layers, past a
+ * valve drawn as lines, a flow arrow or a stretch nobody overlaid.
+ *
+ * 1. Gaps: two ends of one layer that face each other along the same
+ *    straight line, closer than `near` and than twice the longer piece, are
+ *    one line (a dashed line, a break where another line crosses, a valve
+ *    drawn in the gap: a diagonal stroke of the network in the gap says a
+ *    symbol sits there).
+ * 2. Process lines: from every end, the shortest path over the PIPE layers
+ *    (the layers circuits on this sheet are drawn over: one that carries at
+ *    least a tenth of those overlays) to a piece not yet joined to it, at
+ *    most BRIDGE_REL of the sheet long. Never through an equipment outline
+ *    or a symbol layer, so two runs that meet only at a vessel stay apart.
+ *    The path never runs on another circuit's layer, a segment another circuit
+ *    is drawn over, a node another circuit touches, the segment a
+ *    line-number block naming another circuit sits on, or a straight piece
+ *    longer than the cap (a sheet border, a match line); and never through
+ *    another piece of this circuit. Shortest first, each pair of pieces
+ *    joined once.
+ *
+ * The joins are pushed onto `edges` and returned. A piece no path reaches
+ * stays apart.
+ */
+function joinPieces(circuit: string, s: SheetInput, edges: Edge[], guesses: string[]): TraceJoin[] {
+  const out: TraceJoin[] = [];
+  const near = s.near;
+  if (!(near > 0)) return out;
+  const cap = extentOf(s) * BRIDGE_REL;
+  const at = new Map<number, Edge[]>();
+  for (const e of edges) {
+    at.set(e.a, [...(at.get(e.a) ?? []), e]);
+    at.set(e.b, [...(at.get(e.b) ?? []), e]);
+  }
+  const own = new Set(at.keys());
+  const uf = new Union();
+  for (const e of edges) uf.join(e.a, e.b);
+  const roleAt = (n: number): 'main' | 'deadleg' =>
+    (at.get(n) ?? []).some((e) => e.role === 'main') ? 'main' : 'deadleg';
+  const add = (j: TraceJoin, role: 'main' | 'deadleg') => {
+    edges.push({ a: j.from, b: j.to, role, join: j });
+    at.set(j.from, [...(at.get(j.from) ?? []), edges[edges.length - 1]!]);
+    at.set(j.to, [...(at.get(j.to) ?? []), edges[edges.length - 1]!]);
+    uf.join(j.from, j.to);
+    out.push(j);
+  };
+  const endsNow = () =>
+    [...own].filter((n) => (at.get(n) ?? []).length === 1 && at.get(n)![0]!.seg);
+
+  // 1. Dash gaps.
+  {
+    type End = { n: number; x: number; y: number; dx: number; dy: number; len: number; g: SegRow };
+    const ends: End[] = endsNow().map((n) => {
+      const g = at.get(n)![0]!.seg!;
+      const fwd = g.n1 === n;
+      const x = fwd ? g.x1 : g.x2;
+      const y = fwd ? g.y1 : g.y2;
+      // Pointing out of the dash, past this end.
+      const d = unit(fwd ? g.x1 - g.x2 : g.x2 - g.x1, fwd ? g.y1 - g.y2 : g.y2 - g.y1);
+      return { n, x, y, dx: d.x, dy: d.y, len: g.length, g };
+    });
+    const pairs: { a: End; b: End; gap: number }[] = [];
+    const cos = Math.cos((DASH_DEG * Math.PI) / 180);
+    for (let i = 0; i < ends.length; i++) {
+      for (let k = i + 1; k < ends.length; k++) {
+        const a = ends[i]!;
+        const b = ends[k]!;
+        if (a.g.layer !== b.g.layer) continue;
+        const gap = dist(a.x, a.y, b.x, b.y);
+        if (!(gap > 0) || gap > near || gap > 2 * Math.max(a.len, b.len)) continue;
+        const u = unit(b.x - a.x, b.y - a.y);
+        if (a.dx * u.x + a.dy * u.y < cos || -(b.dx * u.x + b.dy * u.y) < cos) continue;
+        pairs.push({ a, b, gap });
+      }
+    }
+    pairs.sort((p, q) => p.gap - q.gap);
+    const usedEnd = new Set<number>();
+    for (const { a, b, gap } of pairs) {
+      if (usedEnd.has(a.n) || usedEnd.has(b.n) || uf.find(a.n) === uf.find(b.n)) continue;
+      usedEnd.add(a.n);
+      usedEnd.add(b.n);
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const strokes = (s.network ?? []).filter(
+        (g) =>
+          !parseCircuitLayer(g.layer) &&
+          diagonal(g) &&
+          dist((g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2, mx, my) <= gap / 2,
+      );
+      add(
+        {
+          kind: 'gap',
+          from: a.n,
+          to: b.n,
+          length: round(gap),
+          handles: strokes.map((g) => g.handle).slice(0, MAX_JOIN_HANDLES),
+          layers: [a.g.layer],
+          ...(strokes.length >= 2 ? { symbol: true } : {}),
+        },
+        roleAt(a.n) === 'deadleg' && roleAt(b.n) === 'deadleg' ? 'deadleg' : 'main',
+      );
+    }
+  }
+
+  // 2. Through the process lines.
+  const net = s.network ?? [];
+  if (!net.length) return out;
+  const otherNodes = new Set<number>();
+  const otherPairs = new Set<string>();
+  const straight = new Map<string, number>();
+  const pipeLayers = pipeLayersOf(s);
+  for (const g of net) {
+    const p = parseCircuitLayer(g.layer);
+    if (p && !same(p.circuit, circuit)) {
+      otherNodes.add(g.n1);
+      otherNodes.add(g.n2);
+      otherPairs.add(pairKey(g.n1, g.n2));
+    }
+    const k = `${g.handle}#${g.part ?? 0}`;
+    straight.set(k, (straight.get(k) ?? 0) + g.length);
+  }
+  // The segment a line-number block of another circuit sits on.
+  const foreign = new Set<number>();
+  const isThis = (v: string) => same(v, circuit) || same(v.replace(/^circuit\s+/i, ''), circuit);
+  const insertAt = new Map(s.inserts.map((i) => [i.handle, i]));
+  for (const b of s.blocks) {
+    if (!lineNumberOf(b.attribs)) continue;
+    const named = Object.entries(b.attribs)
+      .filter(([k, v]) => CIRCUIT_TAG.test(k) && v.trim())
+      .map(([, v]) => v);
+    if (!named.length || named.some(isThis)) continue;
+    const ins = insertAt.get(b.handle);
+    const x = ins && Number.isFinite(ins.x) ? ins.x : b.x;
+    const y = ins && Number.isFinite(ins.y) ? ins.y : b.y;
+    let best = -1;
+    let bestD = Infinity;
+    net.forEach((g, i) => {
+      if (parseCircuitLayer(g.layer)) return;
+      const d = pointSegment(x, y, g);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best >= 0 && bestD <= near) foreign.add(best);
+  }
+  const adj = new Map<number, number[]>();
+  net.forEach((g, i) => {
+    if (!Number.isFinite(g.n1) || !Number.isFinite(g.n2) || g.n1 === g.n2) return;
+    if (parseCircuitLayer(g.layer) || !pipeLayers.has(g.layer)) return;
+    if (otherPairs.has(pairKey(g.n1, g.n2)) || foreign.has(i)) return;
+    if ((straight.get(`${g.handle}#${g.part ?? 0}`) ?? 0) > cap) return;
+    adj.set(g.n1, [...(adj.get(g.n1) ?? []), i]);
+    adj.set(g.n2, [...(adj.get(g.n2) ?? []), i]);
+  });
+  type Cand = { from: number; to: number; cost: number; path: number[] };
+  const cands: Cand[] = [];
+  for (const start of endsNow()) {
+    if (otherNodes.has(start)) continue;
+    const root = uf.find(start);
+    const cost = new Map<number, number>([[start, 0]]);
+    const via = new Map<number, number>();
+    const heap = new Heap();
+    heap.push([0, start]);
+    while (heap.size) {
+      const [c, n] = heap.pop()!;
+      if (c > (cost.get(n) ?? Infinity)) continue;
+      if (n !== start && own.has(n)) {
+        if (uf.find(n) !== root) {
+          const path: number[] = [];
+          for (let m = n; m !== start;) {
+            const i = via.get(m)!;
+            path.unshift(i);
+            m = net[i]!.n1 === m ? net[i]!.n2 : net[i]!.n1;
+          }
+          cands.push({ from: start, to: n, cost: c, path });
+        }
+        if (uf.find(n) !== root) break;
+        continue;
+      }
+      for (const i of adj.get(n) ?? []) {
+        const g = net[i]!;
+        const m = g.n1 === n ? g.n2 : g.n1;
+        if (otherNodes.has(m)) continue;
+        // Never back along this piece (its own overlay's process line).
+        if (own.has(m) && uf.find(m) === root) continue;
+        const nc = c + g.length;
+        if (nc > cap || nc >= (cost.get(m) ?? Infinity)) continue;
+        cost.set(m, nc);
+        via.set(m, i);
+        heap.push([nc, m]);
+      }
+    }
+  }
+  cands.sort((a, b) => a.cost - b.cost);
+  for (const c of cands) {
+    if (uf.find(c.from) === uf.find(c.to)) continue;
+    const segs = c.path.map((i) => net[i]!);
+    // A diagonal stroke on the way: the path crosses a symbol drawn as
+    // plain lines (a valve's bowtie, most often).
+    const symbol = segs.some(diagonal);
+    add(
+      {
+        kind: 'process',
+        from: c.from,
+        to: c.to,
+        length: round(c.cost),
+        handles: [...new Set(segs.map((g) => g.handle))].slice(0, MAX_JOIN_HANDLES),
+        layers: [...new Set(segs.map((g) => g.layer))],
+        ...(symbol ? { symbol: true } : {}),
+      },
+      roleAt(c.from) === 'deadleg' || roleAt(c.to) === 'deadleg' ? 'deadleg' : 'main',
+    );
+  }
+  if (out.some((j) => j.symbol)) {
+    guesses.push(
+      `${s.title}: ${out.filter((j) => j.symbol).length} join${out.filter((j) => j.symbol).length === 1 ? '' : 's'} between pieces of the circuit cross a symbol drawn as plain lines (diagonal strokes, most often a valve's bowtie); each is drawn as a gate valve, and which valve it is is a guess.`,
+    );
+  }
+  return out;
+}
 
 function unit(dx: number, dy: number): Pt {
   const l = Math.hypot(dx, dy);
@@ -484,6 +872,8 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
     }
   }
 
+  const joins = joinPieces(circuit, s, edges, guesses);
+
   const adj = new Map<number, number[]>();
   edges.forEach((e, i) => {
     adj.set(e.a, [...(adj.get(e.a) ?? []), i]);
@@ -550,7 +940,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
   }
   const blockByHandle = new Map(blocks.map((b) => [b.handle, b]));
   for (const b of blocks) {
-    const number = Object.entries(b.attribs).find(([k, v]) => LINE_TAG.test(k) && v)?.[1];
+    const number = lineNumberOf(b.attribs);
     if (!number) continue;
     const named = Object.entries(b.attribs)
       .filter(([k, v]) => CIRCUIT_TAG.test(k) && v.trim())
@@ -644,6 +1034,122 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
     return { labels, equipment, instruments };
   };
 
+  // What an end sits on, from the network: an equipment outline (the
+  // connected strokes of one non-pipe layer at the end, small enough to be
+  // a symbol, whose box holds an equipment tag), or a long straight line
+  // (a sheet border, a match line) with a continuation label along it.
+  const net = s.network ?? [];
+  const pipe = pipeLayersOf(s);
+  const netAt = new Map<number, number[]>();
+  const straightLen = new Map<string, number>();
+  net.forEach((g, i) => {
+    netAt.set(g.n1, [...(netAt.get(g.n1) ?? []), i]);
+    netAt.set(g.n2, [...(netAt.get(g.n2) ?? []), i]);
+    const k = `${g.handle}#${g.part ?? 0}`;
+    straightLen.set(k, (straightLen.get(k) ?? 0) + g.length);
+  });
+  const edge = extentOf(s) * EDGE_REL;
+  const tagPoints: { tag: string; x: number; y: number }[] = [];
+  for (const t of s.texts) {
+    const r = readTag(t.text);
+    if (r?.kind === 'equipment') tagPoints.push({ tag: r.tag, x: t.x, y: t.y });
+  }
+  for (const b of blocks) {
+    for (const v of Object.values(b.attribs)) {
+      const r = v ? readTag(v) : null;
+      if (r?.kind === 'equipment') tagPoints.push({ tag: r.tag, x: b.x, y: b.y });
+    }
+  }
+  const contTexts = [
+    ...s.texts.filter((t) => CONTINUATION_TEXT.test(t.text)),
+    ...blocks.flatMap((b) =>
+      Object.values(b.attribs)
+        .filter((v) => v && CONTINUATION_TEXT.test(v))
+        .map((v) => ({ text: v, layer: b.layer, x: b.x, y: b.y })),
+    ),
+  ];
+  const endContext = (
+    n: number,
+    p: Pt,
+  ): { outline?: { tag: string; layer: string }; edgeLabel?: string } => {
+    const out: { outline?: { tag: string; layer: string }; edgeLabel?: string } = {};
+    for (const i of netAt.get(n) ?? []) {
+      const g = net[i]!;
+      if (parseCircuitLayer(g.layer) || pipe.has(g.layer)) continue;
+      const key = `${g.handle}#${g.part ?? 0}`;
+      if ((straightLen.get(key) ?? 0) > edge) {
+        // A border: the continuation label along it nearest the end.
+        if (out.edgeLabel) continue;
+        const line = net.filter((h) => `${h.handle}#${h.part ?? 0}` === key);
+        let best: string | undefined;
+        let bestD = Infinity;
+        for (const t of contTexts) {
+          if (!line.some((h) => pointSegment(t.x, t.y, h) <= s.near)) continue;
+          const d = dist(t.x, t.y, p.x, p.y);
+          if (d <= edge && d < bestD) {
+            bestD = d;
+            best = t.text;
+          }
+        }
+        if (best) out.edgeLabel = best;
+        continue;
+      }
+      if (out.outline) continue;
+      // The outline: strokes of this layer connected to the end; a nozzle
+      // drawn apart from its shell (a gap under `near`) is taken in once.
+      const seen = new Set<number>([i]);
+      const queue = [i];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let ok = true;
+      const pad = s.near;
+      const grow = () => {
+        while (queue.length && ok) {
+          const h = net[queue.pop()!]!;
+          minX = Math.min(minX, h.x1, h.x2);
+          maxX = Math.max(maxX, h.x1, h.x2);
+          minY = Math.min(minY, h.y1, h.y2);
+          maxY = Math.max(maxY, h.y1, h.y2);
+          if (Math.hypot(maxX - minX, maxY - minY) > edge || seen.size > 400) ok = false;
+          for (const m of [h.n1, h.n2]) {
+            for (const j of netAt.get(m) ?? []) {
+              if (seen.has(j) || net[j]!.layer !== g.layer) continue;
+              seen.add(j);
+              queue.push(j);
+            }
+          }
+        }
+      };
+      const tagsIn = () =>
+        tagPoints
+          .filter(
+            (t) => t.x >= minX - pad && t.x <= maxX + pad && t.y >= minY - pad && t.y <= maxY + pad,
+          )
+          .sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y));
+      grow();
+      if (!ok) continue;
+      let inside = tagsIn();
+      if (!inside.length) {
+        net.forEach((h, j) => {
+          if (seen.has(j) || h.layer !== g.layer) return;
+          const cx = Math.max(minX, Math.min(maxX, (h.x1 + h.x2) / 2));
+          const cy = Math.max(minY, Math.min(maxY, (h.y1 + h.y2) / 2));
+          if (pointSegment(cx, cy, h) <= 2 * pad) {
+            seen.add(j);
+            queue.push(j);
+          }
+        });
+        grow();
+        if (!ok) continue;
+        inside = tagsIn();
+      }
+      if (inside.length) out.outline = { tag: inside[0]!.tag, layer: g.layer };
+    }
+    return out;
+  };
+
   const runs: TraceRun[] = [];
   const blocksOnPath: TraceValve[] = [];
   const dirs = new Map<string, { from: Pt; to: Pt }>();
@@ -657,6 +1163,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
       const handles: string[] = [];
       const valves: TraceValve[] = [];
       const lns: { number: string; handle: string }[] = [];
+      const joinsOn: TraceJoin[] = [];
       let length = 0;
       let deadleg = 0;
       let main = 0;
@@ -673,6 +1180,21 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
           length += e.seg.length;
           if (e.role === 'deadleg') deadleg += e.seg.length;
           else main += e.seg.length;
+        }
+        if (e.join) {
+          length += e.join.length;
+          joinsOn.push(e.join);
+          for (const h of e.join.handles) {
+            if (handles.length < MAX_CHAIN_HANDLES && !handles.includes(h)) handles.push(h);
+          }
+          if (e.join.symbol) {
+            valves.push({
+              block: '(drawn as lines)',
+              handle: e.join.handles[0] ?? '',
+              type: 'gate',
+              guessed: true,
+            });
+          }
         }
         if (e.bridge) {
           const v = valveOf(e.bridge.block);
@@ -702,6 +1224,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
         handles,
         valves,
         lineNumbers: lns,
+        ...(joinsOn.length ? { joins: joinsOn } : {}),
       });
     };
     for (const n of runNodes.filter(isKey)) {
@@ -722,6 +1245,29 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
           );
         }
         const near = at ? labelsNear(at.x, at.y) : { labels: [], equipment: [], instruments: [] };
+        let equipmentBasis: string | undefined;
+        if (at && meets.kind !== 'circuit') {
+          const ctx = endContext(n, at);
+          if (ctx.outline) {
+            near.equipment = [ctx.outline.tag];
+            equipmentBasis = `the end sits on an outline on layer ${ctx.outline.layer} that holds the tag ${ctx.outline.tag}`;
+          } else if (near.equipment.length) {
+            equipmentBasis = `the nearest equipment tag to the end, within ${round(s.near)} drawing units; no outline joins them`;
+          } else if (meets.kind === 'open') {
+            // An end that meets nothing drawn, short of a nozzle: the nearest
+            // equipment tag a little further out, said as a reading.
+            const far = tagPoints
+              .map((t) => ({ t, d: dist(t.x, t.y, at.x, at.y) }))
+              .filter((x) => x.d <= 3 * s.near)
+              .sort((a, b) => a.d - b.d)[0];
+            if (far) {
+              near.equipment = [far.t.tag];
+              equipmentBasis = `the nearest equipment tag, ${round(far.d)} drawing units from an end that meets nothing drawn; a reading, check it`;
+            }
+          }
+          if (ctx.edgeLabel && !near.labels.includes(ctx.edgeLabel))
+            near.labels.push(ctx.edgeLabel);
+        }
         let beyond: string | undefined;
         if (meets.kind === 'block') {
           // The circuit's layers stop at a block (a valve): keep the valve on
@@ -742,6 +1288,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
           meets,
           deadleg: chain?.role === 'deadleg',
           equipment: near.equipment,
+          ...(equipmentBasis && near.equipment.length ? { equipmentBasis } : {}),
           instruments: near.instruments,
           labels: near.labels,
           ...(beyond ? { beyond } : {}),
@@ -763,14 +1310,15 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
   const dl = new Union();
   const dlNodes = new Set<number>();
   for (const e of edges) {
-    if (e.role !== 'deadleg' || !e.seg) continue;
+    if (e.role !== 'deadleg' || !(e.seg || e.join)) continue;
     dl.join(e.a, e.b);
     dlNodes.add(e.a);
     dlNodes.add(e.b);
   }
   const deadlegRuns = new Set([...dlNodes].map((n) => dl.find(n))).size;
   for (const v of blocksOnPath) {
-    if (v.guessed) {
+    // A symbol drawn as lines is said once per sheet by joinPieces.
+    if (v.guessed && v.block !== '(drawn as lines)') {
       guesses.push(
         `${s.title}: block ${v.block || '(unnamed)'} [${v.handle}] on the path is drawn as a ${v.type} valve; its name does not say which valve it is.`,
       );
@@ -791,6 +1339,7 @@ function walkSheet(circuit: string, s: SheetInput, guesses: string[], limits: st
       deadlegRuns,
       lineNumbers: [...numbers.values()].map(({ number, handle }) => ({ number, handle })),
       blocksOnPath,
+      joins,
     },
   };
 }
@@ -804,15 +1353,47 @@ function round(v: number) {
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 
 /** The words of a sheet's title another drawing would name it by: the whole
- *  title and every token with a digit in it, four characters or more. */
+ *  title, the title without its revision (`10-20-30-rev-4` is named
+ *  `10-20-30`), and every token with a digit in it, four characters or more. */
 function sheetKeys(title: string): string[] {
   const keys = new Set<string>([norm(title)]);
+  const bare = title.replace(/[\s_-]*rev(ision)?[\s_.-]*[A-Z0-9]{1,4}\s*$/i, '');
+  if (bare !== title) keys.add(norm(bare));
   for (const tok of title.split(/[\s_]+/))
     if (/\d/.test(tok) && tok.length >= 4) keys.add(norm(tok));
   return [...keys].filter((k) => k.length >= 4);
 }
 
 type EndRef = { sheet: TraceSheet; end: TraceEnd; numbers: string[] };
+
+/** The line numbers of the pipe at an end: its own chain's, else the
+ *  nearest numbered main chain back along the run (fewest chains away; a
+ *  line is labelled once, not at every tee). */
+function numbersFrom(run: TraceRun, node: number): string[] {
+  const seen = new Set<TraceChain>();
+  let frontier = [node];
+  const visited = new Set(frontier);
+  while (frontier.length) {
+    const found: string[] = [];
+    const next: number[] = [];
+    for (const n of frontier) {
+      for (const c of run.chains) {
+        if (seen.has(c) || (c.from !== n && c.to !== n)) continue;
+        seen.add(c);
+        if (c.role === 'deadleg') continue;
+        found.push(...c.lineNumbers.map((l) => norm(l.number)));
+        const o = c.from === n ? c.to : c.from;
+        if (!visited.has(o)) {
+          visited.add(o);
+          next.push(o);
+        }
+      }
+    }
+    if (found.length) return [...new Set(found)];
+    frontier = next;
+  }
+  return [];
+}
 
 function linkCandidates(sheet: TraceSheet): EndRef[] {
   const out: EndRef[] = [];
@@ -824,8 +1405,7 @@ function linkCandidates(sheet: TraceSheet): EndRef[] {
       // an instrument tag near it.
       if (end.meets.kind === 'circuit' || end.meets.kind === 'unknown') continue;
       if (end.equipment.length) continue;
-      const chain = run.chains.find((c) => c.from === end.node || c.to === end.node);
-      out.push({ sheet, end, numbers: (chain?.lineNumbers ?? []).map((l) => norm(l.number)) });
+      out.push({ sheet, end, numbers: numbersFrom(run, end.node) });
     }
   }
   return out;
@@ -857,45 +1437,57 @@ export function linkSheets(sheets: TraceSheet[], limits: string[]): SheetLink[] 
       note,
     });
   };
-  // 1. A continuation label near an end that names another uploaded sheet.
-  for (const s of sheets) {
-    for (const a of cands.get(s.tableId) ?? []) {
-      if (linked.has(key(a)) || a.end.labels.length === 0) continue;
-      const said = norm(a.end.labels.join(' '));
-      const target = sheets.find(
-        (o) => o.tableId !== s.tableId && sheetKeys(o.title).some((k) => said.includes(k)),
-      );
-      if (!target) {
-        limits.push(
-          `${s.title}: end #${a.end.node} has a continuation label (${a.end.labels.join(' | ')}) that names no uploaded sheet this caller can read; the sheet it continues on may not be uploaded.`,
+  // 1. A continuation label near an end that names another uploaded sheet:
+  // the certain pairs first (so a guess never takes an end a certain link
+  // needs), then the rest.
+  for (const pass of ['certain', 'rest'] as const)
+    for (const s of sheets) {
+      for (const a of cands.get(s.tableId) ?? []) {
+        if (linked.has(key(a)) || a.end.labels.length === 0) continue;
+        const said = norm(a.end.labels.join(' '));
+        const target = sheets.find(
+          (o) => o.tableId !== s.tableId && sheetKeys(o.title).some((k) => said.includes(k)),
         );
-        continue;
+        if (!target) {
+          if (pass === 'certain') continue;
+          limits.push(
+            `${s.title}: end #${a.end.node} has a continuation label (${a.end.labels.join(' | ')}) that names no uploaded sheet this caller can read; the sheet it continues on may not be uploaded.`,
+          );
+          continue;
+        }
+        const there = (cands.get(target.tableId) ?? []).filter((b) => !linked.has(key(b)));
+        const namesBack = (b: EndRef) =>
+          sheetKeys(s.title).some((k) => norm(b.end.labels.join(' ')).includes(k));
+        const sharesNumber = (b: EndRef) => b.numbers.some((n) => a.numbers.includes(n));
+        // A label at the far end that names some third sheet.
+        const namesOther = (b: EndRef) => b.end.labels.length > 0 && !namesBack(b);
+        const byNumber = there.filter((b) => sharesNumber(b) && !namesOther(b));
+        const both = byNumber.filter(namesBack);
+        const backs = there.filter(namesBack);
+        const only = there.length === 1 ? there[0]! : null;
+        const b = both[0] ?? byNumber[0] ?? (backs.length === 1 ? backs[0] : undefined) ?? only;
+        // Certain: the label names the other sheet AND the same line number
+        // sits at exactly one end there, whose own label names no third sheet.
+        const certain = !!b && byNumber.length === 1 && sharesNumber(b) && !namesOther(b);
+        if (pass === 'certain' && !certain) continue;
+        add(
+          a,
+          b ?? null,
+          'label',
+          !b
+            ? `the label names ${target.title}, but no open end there could be matched`
+            : certain
+              ? `the label names ${target.title} and the same line number sits at the end there${namesBack(b) ? ', whose label names this sheet back' : ''}`
+              : byNumber.length > 1
+                ? `the label names ${target.title}; ${byNumber.length} ends there carry the same line number, the one matched is a guess`
+                : sharesNumber(b)
+                  ? `the label names ${target.title} and the line number matches, but the end there is labelled for another sheet; a guess`
+                  : `the label names ${target.title}; the end there is a guess (${namesBack(b) ? 'its label names this sheet back, no line number confirms it' : 'its only open end'})`,
+          certain,
+          target.title,
+        );
       }
-      const there = (cands.get(target.tableId) ?? []).filter((b) => !linked.has(key(b)));
-      const backs = there.filter((b) =>
-        sheetKeys(s.title).some((k) => norm(b.end.labels.join(' ')).includes(k)),
-      );
-      const sharesNumber = (b: EndRef) => b.numbers.some((n) => a.numbers.includes(n));
-      const back = backs.length === 1 ? backs[0]! : (backs.find(sharesNumber) ?? backs[0]);
-      const byNumber = there.find(sharesNumber);
-      const only = there.length === 1 ? there[0]! : null;
-      const b = back ?? byNumber ?? only;
-      add(
-        a,
-        b ?? null,
-        'label',
-        back
-          ? backs.length === 1
-            ? `labels on both sheets name each other`
-            : `labels on both sheets name each other, but ${backs.length} ends there name this sheet; the one matched is a guess`
-          : b
-            ? `the label names ${target.title}; the end there is a guess (${byNumber ? 'same line number' : 'its only open end'})`
-            : `the label names ${target.title}, but no open end there could be matched`,
-        !!back && backs.length === 1,
-        target.title,
-      );
     }
-  }
   // 2. The same line number at an open end on two sheets.
   for (const s of sheets) {
     for (const a of cands.get(s.tableId) ?? []) {
@@ -924,421 +1516,6 @@ export function linkSheets(sheets: TraceSheet[], limits: string[]): SheetLink[] 
 }
 
 /* ------------------------------------------------------------------- pid */
-
-const PID_MAX = { lines: 60, tees: 30, equipment: 30, offpage: 20, inline: 6, circuitId: 24 };
-/** A turn under this many degrees at a tee is straight on. */
-const STRAIGHT_DEG = 20;
-
-function tagId(raw: string, fallback: string, max = 32): string {
-  const t = raw
-    .replace(/[^A-Za-z0-9_./-]+/g, '-')
-    .replace(/^[^A-Za-z0-9]+/, '')
-    .slice(0, max);
-  return t || fallback;
-}
-
-/** Degrees between arriving along `arrive` and leaving along `out`. */
-function turnDeg(arrive: Pt, out: Pt): number {
-  if ((!arrive.x && !arrive.y) || (!out.x && !out.y)) return 0;
-  const dot = arrive.x * out.x + arrive.y * out.y;
-  return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
-}
-
-/**
- * The `pid` template input: every run of every sheet as lines, a run's
- * trunk as one line, every other chain as a branch on a tee that carries
- * its place along the parent (`at`, from the parent's `from`). The trunk
- * is the end-to-end path that goes straightest through its tees (a header
- * runs straight on; a branch turns off it), the longest of those; that is
- * a reading of the geometry and said in `guesses`. Ends become equipment
- * (an equipment tag near the end; an instrument tag never is), off-page
- * connectors (a sheet link, another circuit) or stops (open, deadleg).
- * The output always fits the template's own limits: whatever does not fit
- * is cut, and every cut is said in `limits`.
- */
-export function buildPid(
-  circuit: string,
-  walks: SheetWalk[],
-  links: SheetLink[],
-  guesses: string[],
-  limits: string[],
-): Record<string, unknown> {
-  const equipment = new Map<string, { id: string; type: string; service?: string }>();
-  const eqByTag = new Map<string, string>();
-  const offpage: { id: string; direction: 'in' | 'out'; sheet: string; text?: string }[] = [];
-  const lines: Record<string, unknown>[] = [];
-  const tees: { id: string; on: string; at?: number }[] = [];
-  const taken = new Set<string>();
-  const unique = (base: string) => {
-    let id = base;
-    for (let n = 2; taken.has(id); n++) id = `${base.slice(0, 28)}-${n}`;
-    taken.add(id);
-    return id;
-  };
-  const usedNumbers = new Set<string>();
-  const short = (title: string) => title.replace(/\s+/g, '').slice(0, 12) || '?';
-  const cuts = new Set<string>();
-  const room = () => offpage.length < PID_MAX.offpage;
-  /** A connector's text, its (GUESS) mark kept inside the 40 characters. */
-  const connectorText = (head: string, guessed: boolean) => {
-    const mark = guessed ? ' (GUESS)' : '';
-    return head.slice(0, 40 - mark.length) + mark;
-  };
-
-  walks.forEach(({ sheet, dirs }, si) => {
-    const linkOf = (node: number) =>
-      links.find(
-        (l) =>
-          (l.from.sheet === sheet.title && l.from.node === node) ||
-          (l.to?.sheet === sheet.title && l.to.node === node),
-      );
-    /** What an end becomes: an equipment or connector id, or a stop. */
-    const endpoint = (
-      end: TraceEnd,
-      side: 'from' | 'to',
-    ): { id: string } | { stop: 'open' | 'deadleg' } => {
-      if (end.equipment.length) {
-        const tag = end.equipment[0]!;
-        const known = eqByTag.get(tag);
-        if (known) return { id: known };
-        if (equipment.size < PID_MAX.equipment) {
-          const id = tagId(tag, `EQ-${equipment.size + 1}`);
-          const eid = taken.has(id) ? unique(id) : (taken.add(id), id);
-          eqByTag.set(tag, eid);
-          const read = readTag(tag);
-          const type = read?.kind === 'equipment' ? read.type : 'vertical-vessel';
-          equipment.set(eid, { id: eid, type });
-          guesses.push(
-            `${sheet.title}: ${tag} near end #${end.node} is drawn as a ${type} from its tag letter; check its type.`,
-          );
-          return { id: eid };
-        }
-        cuts.add(`equipment past ${PID_MAX.equipment}: an end drawn without its equipment`);
-      }
-      const link = linkOf(end.node);
-      if (link) {
-        const otherSheet =
-          link.from.sheet === sheet.title && link.from.node === end.node
-            ? (link.to?.sheet ?? link.target)
-            : link.from.sheet;
-        if (otherSheet) {
-          if (room()) {
-            const id = unique(`OPC-${offpage.length + 1}`);
-            offpage.push({
-              id,
-              direction: side === 'from' ? 'in' : 'out',
-              sheet: short(otherSheet),
-              text: connectorText(`${side === 'from' ? 'FROM' : 'TO'} ${otherSheet}`, link.guessed),
-            });
-            return { id };
-          }
-          cuts.add(`connectors past ${PID_MAX.offpage}: a sheet link drawn as an open end`);
-        }
-      }
-      if (end.meets.kind === 'circuit') {
-        if (room()) {
-          const id = unique(`OPC-${offpage.length + 1}`);
-          offpage.push({
-            id,
-            direction: side === 'from' ? 'in' : 'out',
-            sheet: short(sheet.title),
-            text: `CIRCUIT ${end.meets.circuit}`.slice(0, 40),
-          });
-          return { id };
-        }
-        cuts.add(`connectors past ${PID_MAX.offpage}: another circuit's end drawn open`);
-      }
-      if (end.deadleg) return { stop: 'deadleg' };
-      // Never a cap the drawing does not show: an end at a block keeps the
-      // valve inline and is open past it (said in limits by the walk).
-      return { stop: 'open' };
-    };
-
-    for (const run of sheet.runs) {
-      const chainsAt = new Map<number, TraceChain[]>();
-      for (const c of run.chains) {
-        chainsAt.set(c.from, [...(chainsAt.get(c.from) ?? []), c]);
-        if (c.to !== c.from) chainsAt.set(c.to, [...(chainsAt.get(c.to) ?? []), c]);
-      }
-      const endBy = new Map(run.ends.map((e) => [e.node, e]));
-      const far = (c: TraceChain, n: number) => (c.from === n ? c.to : c.from);
-      const dirAt = (c: TraceChain, n: number): Pt => {
-        const d = dirs.get(c.id);
-        if (!d) return { x: 0, y: 0 };
-        return c.from === n ? d.from : d.to;
-      };
-      // The trunk: from each end, straight on at every key node; the path
-      // that turns least, then the longest.
-      const straightFrom = (e: number, allowDeadleg: boolean) => {
-        const path: TraceChain[] = [];
-        const seenNodes = new Set([e]);
-        let at = e;
-        let turns = 0;
-        let length = 0;
-        let arrive: Pt | null = null;
-        for (;;) {
-          const opts = (chainsAt.get(at) ?? []).filter(
-            (c) =>
-              !path.includes(c) &&
-              (allowDeadleg || c.role !== 'deadleg') &&
-              !seenNodes.has(far(c, at)),
-          );
-          if (!opts.length) break;
-          let best = opts[0]!;
-          let bestT = Infinity;
-          for (const c of opts) {
-            const t = arrive ? turnDeg(arrive, dirAt(c, at)) : 0;
-            if (t < bestT - 1e-9 || (Math.abs(t - bestT) <= 1e-9 && c.length > best.length)) {
-              best = c;
-              bestT = t;
-            }
-          }
-          if (arrive && bestT >= STRAIGHT_DEG) turns += bestT;
-          path.push(best);
-          length += best.length;
-          const next = far(best, at);
-          const back = dirAt(best, next);
-          arrive = { x: -back.x, y: -back.y };
-          at = next;
-          seenNodes.add(at);
-          if (endBy.has(at)) break;
-        }
-        return path.length && at !== e && endBy.has(at)
-          ? { chains: path, start: e, end: at, turns, length }
-          : null;
-      };
-      const pickTrunk = (allowDeadleg: boolean) => {
-        let best: ReturnType<typeof straightFrom> = null;
-        for (const e of run.ends) {
-          const p = straightFrom(e.node, allowDeadleg);
-          if (!p) continue;
-          if (
-            !best ||
-            p.turns < best.turns - 1e-9 ||
-            (Math.abs(p.turns - best.turns) <= 1e-9 && p.length > best.length)
-          )
-            best = p;
-        }
-        return best;
-      };
-      const trunk = pickTrunk(false) ?? pickTrunk(true);
-      if (trunk && run.tees.length) {
-        guesses.push(
-          `${sheet.title} run ${run.run}: the main line is drawn along the end-to-end path that goes straightest through its tees; which pipe is the header is read from the geometry, check it.`,
-        );
-      }
-      const used = new Set<TraceChain>();
-      const nodeLine = new Map<number, string>();
-      const along = new Map<string, { pos: Map<number, number>; total: number }>();
-      const teeAt = new Map<number, string>();
-      const teeOn = (node: number) => {
-        const known = teeAt.get(node);
-        if (known) return known;
-        const line = nodeLine.get(node);
-        if (!line) return null;
-        if (tees.length >= PID_MAX.tees) {
-          cuts.add(`tees past ${PID_MAX.tees}: branches left off`);
-          return null;
-        }
-        const id = unique(`T-${tees.length + 1}`);
-        const a = along.get(line);
-        const pos = a?.pos.get(node);
-        const at =
-          a && a.total > 0 && pos !== undefined
-            ? Math.round(Math.max(0, Math.min(1, pos / a.total)) * 100) / 100
-            : undefined;
-        tees.push({ id, on: line, ...(at !== undefined ? { at } : {}) });
-        teeAt.set(node, id);
-        return id;
-      };
-      const numberOf = (cs: TraceChain[]) => {
-        for (const c of cs) {
-          for (const ln of c.lineNumbers) {
-            const n = ln.number.slice(0, 40);
-            if (!usedNumbers.has(norm(n))) {
-              usedNumbers.add(norm(n));
-              return n;
-            }
-          }
-        }
-        return undefined;
-      };
-      const emit = (
-        cs: TraceChain[],
-        start: number,
-        stop: number,
-        fromTee: string | null,
-        branch: boolean,
-      ) => {
-        if (lines.length >= PID_MAX.lines) {
-          cuts.add(`lines past ${PID_MAX.lines}`);
-          return null;
-        }
-        let from: string | undefined = fromTee ?? undefined;
-        let to: string | undefined;
-        let endKind: 'open' | undefined;
-        let deadleg = cs.every((c) => c.role === 'deadleg');
-        if (!from) {
-          const startEnd = endBy.get(start);
-          const ep = startEnd ? endpoint(startEnd, 'from') : null;
-          if (ep && 'id' in ep) from = ep.id;
-          else if (room()) {
-            from = unique(`END-${si + 1}-${start}`);
-            offpage.push({
-              id: from,
-              direction: 'in',
-              sheet: short(sheet.title),
-              text: 'OPEN END',
-            });
-            limits.push(
-              `${sheet.title}: end #${start} meets nothing drawn; the pid input starts it at a connector marked OPEN END.`,
-            );
-          } else {
-            cuts.add(`connectors past ${PID_MAX.offpage}: runs that start at an open end left off`);
-            return null;
-          }
-        }
-        const id = unique(`S${si + 1}-R${run.run}-L${lines.length + 1}`);
-        const stopEnd = endBy.get(stop);
-        if (stopEnd) {
-          const ep = endpoint(stopEnd, 'to');
-          if ('id' in ep) to = ep.id;
-          else if (ep.stop === 'deadleg') deadleg = true;
-          else endKind = ep.stop;
-        } else {
-          const t = teeOn(stop);
-          if (t) to = t;
-          else endKind = 'open';
-        }
-        if (to && to === from) {
-          // A loop back onto the tee it left: the template draws no line
-          // from a point to itself.
-          to = undefined;
-          endKind = 'open';
-          limits.push(
-            `${sheet.title}: a loop that leaves and rejoins one point is drawn open at its far end in the pid input.`,
-          );
-        }
-        const valves = cs.flatMap((c) => c.valves);
-        if (valves.length > PID_MAX.inline) cuts.add(`valves past ${PID_MAX.inline} on one line`);
-        const inline = valves.slice(0, PID_MAX.inline).map((v) => ({ type: v.type }));
-        const number = numberOf(cs);
-        lines.push({
-          id,
-          ...(number ? { number } : {}),
-          from,
-          ...(to ? { to } : {}),
-          ...(!to && endKind ? { end: endKind } : {}),
-          ...(deadleg ? { deadleg: true } : {}),
-          ...(branch ? { weight: 'secondary' } : {}),
-          ...(inline.length ? { inline } : {}),
-        });
-        const pos = new Map<number, number>([[start, 0]]);
-        let cum = 0;
-        let at = start;
-        for (const c of cs) {
-          used.add(c);
-          if (!nodeLine.has(c.from)) nodeLine.set(c.from, id);
-          if (!nodeLine.has(c.to)) nodeLine.set(c.to, id);
-          cum += c.length;
-          at = far(c, at);
-          if (!pos.has(at)) pos.set(at, cum);
-        }
-        along.set(id, { pos, total: cum });
-        return id;
-      };
-      // A branch from `node` along `first`, extended through key nodes
-      // straight on where it can; the rest hang off it as branches in turn.
-      const grow = (node: number, first: TraceChain): TraceChain[] => {
-        const path = [first];
-        let at = far(first, node);
-        const seenNodes = new Set([node, at]);
-        let back = dirAt(first, at);
-        for (;;) {
-          if (endBy.has(at)) break;
-          const arrive = { x: -back.x, y: -back.y };
-          const next = (chainsAt.get(at) ?? [])
-            .filter((c) => !used.has(c) && !path.includes(c) && !seenNodes.has(far(c, at)))
-            .map((c) => ({ c, t: turnDeg(arrive, dirAt(c, at)) }))
-            .sort((a, b) => a.t - b.t || b.c.length - a.c.length)[0]?.c;
-          if (!next) break;
-          path.push(next);
-          const n2 = far(next, at);
-          back = dirAt(next, n2);
-          at = n2;
-          seenNodes.add(at);
-        }
-        return path;
-      };
-      const pathNodes = (start: number, cs: TraceChain[]) => {
-        const out = [start];
-        let at = start;
-        for (const c of cs) {
-          at = far(c, at);
-          out.push(at);
-        }
-        return out;
-      };
-      const branchOff = (nodes: number[]) => {
-        for (const n of nodes) {
-          for (const c of chainsAt.get(n) ?? []) {
-            if (used.has(c)) continue;
-            const tee = teeOn(n);
-            if (!tee) continue;
-            const cs = grow(n, c);
-            const ns = pathNodes(n, cs);
-            if (emit(cs, n, ns[ns.length - 1]!, tee, true)) branchOff(ns.slice(1));
-          }
-        }
-      };
-      if (trunk && trunk.chains.length) {
-        // Start the trunk where an equipment or a connector is, if one end has one.
-        const s0 = endBy.get(trunk.start);
-        const s1 = endBy.get(trunk.end);
-        const anchored = (e?: TraceEnd) =>
-          !!e && (e.equipment.length > 0 || e.meets.kind === 'circuit' || !!linkOf(e.node));
-        const flip = !anchored(s0) && anchored(s1);
-        const cs = flip ? [...trunk.chains].reverse() : trunk.chains;
-        const start = flip ? trunk.end : trunk.start;
-        const stop = flip ? trunk.start : trunk.end;
-        if (emit(cs, start, stop, null, false)) branchOff(pathNodes(start, cs));
-      }
-      // Whatever a closed loop left: draw it from its first node.
-      for (const c of run.chains) {
-        if (used.has(c)) continue;
-        if (nodeLine.has(c.from)) branchOff([c.from]);
-        else if (emit([c], c.from, c.to, null, false)) branchOff([c.to]);
-      }
-    }
-  });
-  if (cuts.size)
-    limits.push(
-      `the pid input is cut at the template limits (${[...cuts].join('; ')}); the trace JSON has every chain.`,
-    );
-  // A tee no line starts or ends at is noise for the template.
-  const usedTees = new Set(lines.flatMap((l) => [l.from, l.to]).filter(Boolean) as string[]);
-  return {
-    template: 'pid',
-    title: `Circuit ${circuit}`.slice(0, 80),
-    description:
-      `Circuit ${circuit} traced from ${walks.length} uploaded drawing${walks.length === 1 ? '' : 's'}: every run, tee, deadleg and valve on its layers.`.slice(
-        0,
-        300,
-      ),
-    equipment: [...equipment.values()],
-    offpage,
-    lines,
-    tees: tees.filter((t) => usedTees.has(t.id)),
-    circuits: [
-      {
-        id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', PID_MAX.circuitId),
-        label: circuit.slice(0, 40),
-        lines: lines.map((l) => l.id as string),
-        equipment: [...equipment.keys()],
-      },
-    ],
-  };
-}
 
 /* -------------------------------------------------------------- register */
 
@@ -1465,7 +1642,30 @@ export function traceCircuit(
       );
     }
   }
-  const pid = buildPid(circuit, walks, links, guesses, limits);
+  const pid = buildPid(
+    {
+      circuit,
+      sheets,
+      links,
+      register,
+      dirs: new Map(
+        walks.flatMap((w) =>
+          [...w.dirs].map(([id, d]) => [`${w.sheet.tableId}:${id}`, d] as const),
+        ),
+      ),
+      equipmentType: (tag) => {
+        const read = readTag(tag);
+        const type = read?.kind === 'equipment' ? read.type : 'vertical-vessel';
+        const letter = /^([A-Z]+)/.exec(tag.toUpperCase())?.[1] ?? '';
+        guesses.push(
+          `${tag} is drawn as a ${type}: its tag letter ${letter} reads as ${EQUIPMENT_KIND[letter] ?? EQUIPMENT_PAIR_KIND[letter] ?? 'equipment'}; check its type.`,
+        );
+        return type;
+      },
+    },
+    guesses,
+    limits,
+  );
   const discrepancies = register ? compareRegister(register, walks, limits) : undefined;
   const runs = sheets.reduce((a, s) => a + s.runs.length, 0);
   const tees = sheets.reduce((a, s) => a + s.runs.reduce((b, r) => b + r.tees.length, 0), 0);

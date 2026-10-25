@@ -329,6 +329,10 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     const b = anchorNode(l.to, 'to');
     if (!a || !b || a === b || !g.hasNode(a) || !g.hasNode(b)) continue;
     if (l.weight === 'secondary' && (!nodes.get(a)!.eq || !nodes.get(b)!.eq)) continue;
+    // One ranking edge per pair (either way round): a branch only says what
+    // it reaches lies downstream, and dagre fails on some of the cycles
+    // repeated pairs make ("Not possible to find intersection").
+    if (g.outEdges(a, b)?.length || g.outEdges(b, a)?.length) continue;
     g.setEdge(a, b, { minlen: 1, weight: 1 }, l.id);
   }
   dagre.layout(g);

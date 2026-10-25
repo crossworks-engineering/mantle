@@ -38,6 +38,8 @@ function registerOf(raw: unknown): RegisterInput | undefined {
   const sheets = Array.isArray(r.sheets) ? r.sheets.map((s) => str(s).trim()).filter(Boolean) : [];
   return {
     ...(str(r.source).trim() ? { source: str(r.source).trim() } : {}),
+    ...(str(r.from).trim() ? { from: str(r.from).trim() } : {}),
+    ...(str(r.to).trim() ? { to: str(r.to).trim() } : {}),
     lines,
     sheets,
     ...(typeof r.deadlegs === 'number' ? { deadlegs: r.deadlegs } : {}),
@@ -130,7 +132,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends and what each end meets, deadlegs, valves on the path, line numbers with their DWG handles and equipment tags near the ends; links between sheets (a guess is marked `guessed`); a ready `pid` template input to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends and what each end meets, deadlegs, valves on the path, line numbers with their DWG handles and equipment tags near the ends; links between sheets (certain only when a continuation label and the same line number agree; else `guessed`); a ready `pid` template input with the main line equipment to equipment first to draw with `diagram_render`; and, with `register`, every difference against that register. Reads only. For one drawing's raw tabs use `table_sql` instead.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -145,6 +147,15 @@ const circuit_trace: BuiltinToolDef = {
           'What an outside register says belongs to the circuit, from a site register tool when the brain has one; the trace reports every difference. Leave it out when there is none.',
         properties: {
           source: { type: 'string', description: "Where it came from, e.g. 'site register tool'." },
+          from: {
+            type: 'string',
+            description:
+              "The circuit's upstream end as the register names it, an equipment tag, e.g. 'E-101'. Fixes the main line's start.",
+          },
+          to: {
+            type: 'string',
+            description: "The circuit's downstream end, an equipment tag, e.g. 'V-201'.",
+          },
           lines: {
             type: 'array',
             description: 'The line numbers on the circuit.',

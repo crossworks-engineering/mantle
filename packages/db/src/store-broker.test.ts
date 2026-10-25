@@ -308,6 +308,24 @@ describe('sweepOrphans', () => {
   });
   const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => {});
 
+  it('a committed draft (its row names the promoted copy, no draft) goes a grace period later, as any old revision', async () => {
+    // A commit (commitTable, and so dwg-reindex's rebuild through it) promotes
+    // the draft by copy and clears draft_path: the draft file it leaves is an
+    // old revision the sweep removes, never a spared legacy draft.
+    root = path.join(dir, 'store-draft');
+    const published = put('o/d.r-2.sqlite', 3 * HOUR);
+    const draft = put('o/d.r-1.draft.sqlite', 3 * HOUR);
+    const rows = [{ node: 'd', files: ['o/d.r-2.sqlite'] }];
+    const now = Date.now();
+    const first = await sweepOrphans(spec(rows), { now });
+    expect(first.removed).toEqual([]);
+    expect(first.legacy).toEqual([]);
+    const later = await sweepOrphans(spec(rows), { now: now + HOUR });
+    expect(later.removed).toEqual(['o/d.r-1.draft.sqlite']);
+    expect(existsSync(draft)).toBe(false);
+    expect(existsSync(published)).toBe(true);
+  });
+
   it('removes an old revision only on a run a grace period after it first saw it', async () => {
     root = path.join(dir, 'store-1');
     const live = put('o/a.r-1.sqlite', 3 * HOUR);

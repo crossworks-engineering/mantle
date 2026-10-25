@@ -16,6 +16,7 @@ import { tableSqlSurface } from '@mantle/content/table-storage';
 import { runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
 import {
   layersOf,
+  BRIDGE_REL,
   NEAR_REL,
   trimBounds,
   type BlockRow,
@@ -33,7 +34,10 @@ export const MAX_SEGMENTS = 6000;
 /** Rows per query (table_sql's own ceiling). */
 const PAGE = 1000;
 /** Neighbourhood rows (texts, inserts, blocks) per sheet. */
-const MAX_NEAR_ROWS = 1000;
+const MAX_NEAR_ROWS = 3000;
+/** Segment rows on other layers read per sheet (the network the circuit's
+ *  pieces are joined through). */
+export const MAX_NETWORK = 12000;
 
 export type CandidateTable = {
   id: string;
@@ -107,10 +111,18 @@ export async function readSheet(
   ownerId: string,
   t: CandidateTable,
   circuit: string,
-  run: (abs: string, q: string, cap: number) => ReturnType<typeof runTableSql> = (abs, q, cap) =>
-    runTableSql(abs, q, { cap }),
+  deps: {
+    /** The table_sql run (a test passes its own). */
+    run?: (abs: string, q: string, cap: number) => ReturnType<typeof runTableSql>;
+    /** The table_sql surface, null for a table the caller cannot read. */
+    surface?: (
+      ownerId: string,
+      id: string,
+    ) => Promise<{ abs: string; tabs: WorkbookTabRef[] } | null>;
+  } = {},
 ): Promise<SheetRead> {
-  const surface = await tableSqlSurface(ownerId, t.id);
+  const run = deps.run ?? ((abs: string, q: string, cap: number) => runTableSql(abs, q, { cap }));
+  const surface = await (deps.surface ?? tableSqlSurface)(ownerId, t.id);
   if (!surface) return { kind: 'skip' };
   const tab = (name: string): WorkbookTabRef | undefined =>
     surface.tabs.find((x) => x.name === name);
@@ -274,16 +286,71 @@ export async function readSheet(
     minY: Math.min(...ys) - near,
     maxY: Math.max(...ys) + near,
   };
-  const inBox = `${ident('X')} BETWEEN ${box.minX} AND ${box.maxX} AND ${ident('Y')} BETWEEN ${box.minY} AND ${box.maxY}`;
+  // The network around it: every other layer's segments within a bridge's
+  // reach of the circuit (pieces of one circuit are joined through them),
+  // and the labels and blocks that far out (equipment tags sit inside the
+  // outline a run ends on, often further than `near` from the end).
+  const reach = (near / NEAR_REL) * BRIDGE_REL;
+  const wide = {
+    minX: box.minX - reach,
+    maxX: box.maxX + reach,
+    minY: box.minY - reach,
+    maxY: box.maxY + reach,
+  };
+  const inBox = `${ident('X')} BETWEEN ${wide.minX} AND ${wide.maxX} AND ${ident('Y')} BETWEEN ${wide.minY} AND ${wide.maxY}`;
+  const network: SegRow[] = [];
+  {
+    const notOwn = ownLayers.map(lit).join(', ');
+    const [X1, X2, Y1, Y2] = ['X1', 'X2', 'Y1', 'Y2'].map(ident);
+    const overlaps = `min(${X1}, ${X2}) <= ${wide.maxX} AND max(${X1}, ${X2}) >= ${wide.minX} AND min(${Y1}, ${Y2}) <= ${wide.maxY} AND max(${Y1}, ${Y2}) >= ${wide.minY}`;
+    for (let offset = 0; offset < MAX_NETWORK; offset += PAGE) {
+      const r = await q(
+        `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2', 'Part'].map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps} LIMIT ${PAGE} OFFSET ${offset}`,
+      );
+      for (const row of r.rows) {
+        network.push({
+          layer: text(row[0]),
+          handle: text(row[1]),
+          x1: num(row[2]),
+          y1: num(row[3]),
+          x2: num(row[4]),
+          y2: num(row[5]),
+          length: num(row[6]),
+          n1: num(row[7]),
+          n2: num(row[8]),
+          part: num(row[9]),
+        });
+      }
+      if (r.rows.length < PAGE) break;
+      if (offset + PAGE >= MAX_NETWORK) {
+        limits.push(
+          `more than ${MAX_NETWORK} segments on other layers around the circuit; pieces may stay unjoined where the rest would have joined them`,
+        );
+      }
+    }
+  }
 
+  /** Every row of a SELECT, a page at a time, up to `max`; `cut` when more. */
+  const paged = async (statement: string, max: number) => {
+    const rows: unknown[][] = [];
+    let columns: string[] = [];
+    for (let offset = 0; offset < max; offset += PAGE) {
+      const r = await q(`${statement} LIMIT ${PAGE} OFFSET ${offset}`);
+      columns = r.columns;
+      rows.push(...r.rows);
+      if (r.rows.length < PAGE) return { columns, rows, cut: false };
+    }
+    return { columns, rows, cut: true };
+  };
   const inserts: InsertRow[] = [];
   const insTab = tab('Inserts');
   if (insTab) {
     const handles = bridgeHandles.length
       ? ` OR ${ident('Handle')} IN (${bridgeHandles.map(lit).join(', ')})`
       : '';
-    const r = await q(
-      `SELECT ${['Block', 'Layer', 'Handle', 'X', 'Y', 'Min X', 'Min Y', 'Max X', 'Max Y'].map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles} LIMIT ${MAX_NEAR_ROWS}`,
+    const r = await paged(
+      `SELECT ${['Block', 'Layer', 'Handle', 'X', 'Y', 'Min X', 'Min Y', 'Max X', 'Max Y'].map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles}`,
+      MAX_NEAR_ROWS,
     );
     for (const row of r.rows) {
       const opt = (v: unknown) => (v === null || v === '' || v === undefined ? null : num(v));
@@ -299,7 +366,7 @@ export async function readSheet(
         maxY: opt(row[8]),
       });
     }
-    if (r.truncated)
+    if (r.cut)
       limits.push(
         `more than ${MAX_NEAR_ROWS} blocks around the circuit; the rest were not looked at`,
       );
@@ -307,12 +374,13 @@ export async function readSheet(
   const texts: TextRow[] = [];
   const textTab = tab('Texts');
   if (textTab) {
-    const r = await q(
-      `SELECT ${['Text', 'Layer', 'X', 'Y'].map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox} LIMIT ${MAX_NEAR_ROWS}`,
+    const r = await paged(
+      `SELECT ${['Text', 'Layer', 'X', 'Y'].map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox}`,
+      MAX_NEAR_ROWS,
     );
     for (const row of r.rows)
       texts.push({ text: text(row[0]), layer: text(row[1]), x: num(row[2]), y: num(row[3]) });
-    if (r.truncated)
+    if (r.cut)
       limits.push(
         `more than ${MAX_NEAR_ROWS} labels around the circuit; the rest were not looked at`,
       );
@@ -331,8 +399,9 @@ export async function readSheet(
       ...inserts.map((i) => i.handle).filter(Boolean),
     ];
     const byHandle = named.length ? ` OR ${ident('Handle')} IN (${named.map(lit).join(', ')})` : '';
-    const r = await q(
-      `SELECT * FROM ${ident(blockTab.viewName)} WHERE (${inBox})${byHandle} LIMIT ${MAX_NEAR_ROWS}`,
+    const r = await paged(
+      `SELECT * FROM ${ident(blockTab.viewName)} WHERE (${inBox})${byHandle}`,
+      MAX_NEAR_ROWS,
     );
     for (const o of asObjects(r)) {
       const attribs: Record<string, string> = {};
@@ -349,7 +418,7 @@ export async function readSheet(
         attribs,
       });
     }
-    if (r.truncated)
+    if (r.cut)
       limits.push(
         `more than ${MAX_NEAR_ROWS} attribute blocks around the circuit; the rest were not looked at`,
       );
@@ -370,6 +439,7 @@ export async function readSheet(
       texts,
       blocks,
       near,
+      network,
       limits,
     },
   };

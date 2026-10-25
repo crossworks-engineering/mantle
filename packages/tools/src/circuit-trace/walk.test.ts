@@ -152,23 +152,25 @@ describe('the pid template input', () => {
     expect(checked.ok ? [] : checked.errors).toEqual([]);
   });
 
-  it('draws the trunk from the equipment to the next sheet, the deadleg on a tee', () => {
+  it('draws the trunk from the equipment across the certain sheet link, the deadleg on a tee', () => {
     expect(pid.equipment).toEqual([{ id: 'E-101', type: 'shell-tube-exchanger' }]);
     const trunk = pid.lines.find((l) => l.from === 'E-101')!;
+    // Labels on both sheets and the same line number: one point, no break.
     const out = pid.offpage.find((o) => o.id === trunk.to)!;
-    expect(out).toMatchObject({ direction: 'out', text: 'TO PID-1002' });
+    expect(out).toMatchObject({ direction: 'out', text: 'CIRCUIT 10000-002-01' });
     expect(trunk.inline).toEqual([{ type: 'gate' }]);
-    expect(pid.tees).toEqual([{ id: pid.tees[0]!.id, on: trunk.id, at: 0.49 }]);
+    // 48 of the 138 units from E-101 (20 + 28 on this sheet, 50 + 40 on).
+    expect(pid.tees).toEqual([{ id: pid.tees[0]!.id, on: trunk.id, at: 0.35 }]);
     const dl = pid.lines.find((l) => l.deadleg === true)!;
     expect(dl.from).toBe(pid.tees[0]!.id);
     expect(dl.to).toBeUndefined();
     expect(dl.number).toBe('1"-P-0003-A1');
   });
 
-  it('the second sheet comes in from the first and goes to the other circuit', () => {
+  it('a certain link draws no connector pair: the line runs on to the other circuit', () => {
     const texts = pid.offpage.map((o) => o.text);
-    expect(texts).toContain('FROM PID-1001');
-    expect(texts).toContain('CIRCUIT 10000-002-01');
+    expect(texts).toEqual(['CIRCUIT 10000-002-01']);
+    expect(r.links).toEqual([expect.objectContaining({ basis: 'label', guessed: false })]);
   });
 
   it('a guessed link is labelled GUESS on its connector', () => {
@@ -427,10 +429,11 @@ describe('round 1: the walk', () => {
     expect(ends.find((e) => e.node === 2)!.instruments).toEqual(['PI-2001']);
     expect(ends.find((e) => e.node === 1)!.instruments).toEqual(['FV-101']);
     const label = r.links.find((l) => l.basis === 'label')!;
+    // Labels alone, no line number on both ends: matched, but a guess.
     expect(label).toMatchObject({
       from: { sheet: 'PID-1001', node: 2 },
       to: { sheet: 'PID-1002', node: 1 },
-      guessed: false,
+      guessed: true,
     });
     expect(readTag('TT-501')).toEqual({ tag: 'TT-501', kind: 'instrument' });
     expect(readTag('LT-20')).toMatchObject({ kind: 'instrument' });
@@ -476,7 +479,7 @@ describe('round 1: the walk', () => {
     expect(r.links.find((l) => l.basis === 'label')).toMatchObject({
       from: { sheet: 'PID-1001', node: 2 },
       to: { sheet: 'PID-1002', node: 1 },
-      guessed: false,
+      guessed: true,
     });
   });
 
@@ -547,8 +550,10 @@ describe('round 1: sheet links', () => {
     expect(r.links).toEqual([expect.objectContaining({ basis: 'label', guessed: true })]);
     expect(r.summary).toMatch(/1 sheet link \(1 guessed\)/);
     const texts = pidOf(r).offpage.map((o) => o.text);
+    // Both ends stay ends, each a connector marked GUESS (the line runs
+    // from its equipment, so each reads TO the other sheet).
     expect(texts).toContain('TO PID-1002 (GUESS)');
-    expect(texts).toContain('FROM PID-1001 (GUESS)');
+    expect(texts).toContain('TO PID-1001 (GUESS)');
   });
 
   it('a label naming a sheet with no end to match still gets its connector, as a guess', () => {
@@ -564,7 +569,7 @@ describe('round 1: sheet links', () => {
     });
     const r = traceCircuit(C, [one, two]);
     expect(r.links[0]).toMatchObject({ to: null, guessed: true, target: 'PID-1002' });
-    expect(pidOf(r).offpage.map((o) => o.text)).toContain('FROM PID-1002 (GUESS)');
+    expect(pidOf(r).offpage.map((o) => o.text)).toContain('TO PID-1002 (GUESS)');
     expect(valid(r)).toEqual([]);
   });
 });
@@ -583,7 +588,8 @@ describe('round 1: the pid input always passes the template check (MED-6)', () =
     const r = traceCircuit(C, [sheet({ segments, nodes })]);
     expect(valid(r)).toEqual([]);
     expect(pidOf(r).offpage.length).toBeLessThanOrEqual(20);
-    expect(r.limits.join(' ')).toMatch(/cut at the template limits \(connectors past 20/);
+    // The line budget comes first: 20 drawn, the other 5 counted.
+    expect(r.limits.join(' ')).toMatch(/the drawing holds 20 lines: 5 more lines/);
   });
 
   it('a long circuit name keeps the circuit id within the schema', () => {
