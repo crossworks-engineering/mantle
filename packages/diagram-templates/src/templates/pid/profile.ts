@@ -16,6 +16,9 @@ export type SymbolVariants = {
   corners?: 'square' | 'round';
   /** Where lines cross without joining: a semicircle hop or a 6px gap. */
   crossing?: 'hop' | 'gap';
+  /** A deadleg branch: a cap and a DL tag (default), or the pipe dashed as
+   *  well, where the site's drawings dash dead legs. */
+  deadleg?: 'cap' | 'dashed';
 };
 
 export type CustomSymbol = {
@@ -160,6 +163,7 @@ export function resolveProfile(p: SiteProfile | undefined): ResolvedProfile {
       checkValve: p?.symbols?.checkValve ?? 'filled',
       corners: p?.symbols?.corners ?? 'square',
       crossing: p?.symbols?.crossing ?? 'hop',
+      deadleg: p?.symbols?.deadleg ?? 'cap',
     },
     customSymbols: p?.customSymbols ?? {},
   };

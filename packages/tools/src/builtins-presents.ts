@@ -376,7 +376,7 @@ function applyEdits(source: string, raw: unknown): string | { error: string } {
  *  where the whole contract is. */
 const CONTRACT_FIELDS: Readonly<Record<string, string>> = {
   flow: 'title, description, direction, nodes[], edges[], groups[], legend, showTitle',
-  pid: 'title, description, sheet, equipment[], offpage[], lines[], instruments[], signals[], circuits[], legend, showTitle, profile',
+  pid: 'title, description, sheet, equipment[], offpage[], lines[], tees[], instruments[], signals[], circuits[], legend, showTitle, profile',
 };
 
 /** The data with this brain's site profile for the template filled in,

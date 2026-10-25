@@ -940,7 +940,7 @@ Keep the spec minimal and human-readable: it is documentation first, your render
 
 Two types have a layout template: \`pid\` (a P&ID first draft) and \`flow\` (boxes and arrows: a process flow, a flowchart, a data flow). For these, write DATA, not SVG. The template places, routes and labels it, the same way every time.
 
-1. \`diagram_guide\` for the type: for \`flow\` and \`pid\` it returns the template's data contract with a complete example, and this brain's site profile (its \`json profile\` block is filled in as the data's \`profile\` for you).
+1. \`diagram_guide\` for the type: for \`flow\` and \`pid\` it returns the template's data contract with a complete example, and this brain's site profile (its \`json profile\` block is filled in as the data's \`profile\` for you). On a P&ID, a line that leaves another line mid-run (a header take-off, a drain, a vent, a dead leg, a gauge tapping, a bypass) is a branch off a \`tees[]\` entry: draw it, never leave it out.
 2. \`diagram_render\` with \`template\` and \`data\`: data that does not fit the template comes back as the tool's error, every problem at once, each naming the fix; fix them all and call again. Data that fits is drawn in a real browser: the reply has the picture and \`render.diagram.warnings\` (layout and budget notes). Look at the picture, fix the data, render again. Saves nothing.
 3. \`present_create\` with the same \`template\` and \`data\`: the drawing becomes a Present canvas, the editable source.
 4. \`present_export\` with the canvas id and a stable filename like <topic-slug>-<diagram-slug>.svg: it writes the static SVG into \`files/diagrams\` and returns \`embed\`.
@@ -1080,7 +1080,7 @@ Lay each slide out on the 1920x1080 stage: no text under 24px, at most six lines
 
 For a P&ID first draft or a boxes-and-arrows process flow, do NOT hand-write SVG. Write DATA and let the template lay it out:
 
-1. \`diagram_guide\` for the type (\`pid\` or \`flow\`) gives the template's data contract with a complete example, and this brain's site profile (filled in as the data's \`profile\` for you).
+1. \`diagram_guide\` for the type (\`pid\` or \`flow\`) gives the template's data contract with a complete example, and this brain's site profile (filled in as the data's \`profile\` for you). A P&ID branch off a line mid-run (a drain, a dead leg, a bypass) goes on a \`tees[]\` entry: never leave one out.
 2. \`diagram_render\` with \`template\` and \`data\` draws it without saving. Data that does not fit comes back as the tool's error, every problem at once: fix them all. Data that fits comes back drawn: read \`render.diagram.warnings\`, look at the picture, fix the data.
 3. \`present_create\` with the same \`template\` and \`data\` saves the canvas. Change it later with \`present_update\` \`data\` (the whole new data); never edit a template canvas's source.
 

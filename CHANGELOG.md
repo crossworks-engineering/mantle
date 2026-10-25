@@ -4,6 +4,33 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: P&ID tees and branches
+
+- **Feature:** the `pid` diagram template draws a line that leaves another
+  line mid-run. `tees[]` declares a junction on a parent line (`id`, `on`,
+  optional `near: 'from' | 'to'`); a line may start or end at a tee. A
+  branch ends at equipment, a connector, another tee (a bypass), an
+  instrument (the bubble sits at the branch end), or nowhere: `end: 'open'`
+  is a stub, `end: 'cap'` a capped end, `deadleg: true` a dead leg (a cap
+  and a DL tag; the site profile's `symbols.deadleg: 'dashed'` dashes it
+  too). `toward` picks the way a stub leaves. A deadleg and three stubs on a
+  real sheet had to be left out before ("template has no tee yet").
+- **Layout:** a tee is a grid point on its parent's routed pipe, picked after
+  the parent and its valves are placed (clear of valves, corners, crossings
+  and other tees), so the junction dot cannot leave the line; a self-check
+  warns if it ever did. Branches are routed after their parents on the same
+  grid, with equipment, labels and valves blocked, square to the parent. A
+  connector reached only through a tee is placed beside it.
+- **Errors:** a branch that names a missing tee, a tee on a missing line
+  (with a "did you mean"), a tee on its own branch, `end` with `to`,
+  `toward` on a routed line, a port on a tee, and an instrument that is both
+  `on` something and a branch end each name the fix.
+- **Unchanged:** data with no tees takes none of the new path. Every sample
+  and the all-parts test sheet draw byte for byte as before, plain and
+  themed, and a test pins their hashes. The `diagram_guide` pid contract,
+  the package README and the Draftsman and Presenter skills describe the
+  new fields.
+
 ## Unreleased: mini apps import the canvas libraries
 
 - **Feature:** a mini app may import `echarts`, `d3`, `three` (with

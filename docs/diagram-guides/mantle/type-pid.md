@@ -293,26 +293,57 @@ what to fix; `present_create` saves it as a canvas; `present_export` writes
 the SVG for a page. The template does the layout this guide describes
 (baseline, routing, hops, valve and label placement, ISA letters).
 
-| Field                 | What it is                                                                                                                                                                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `title`               | required, up to 80 characters                                                                                                                                                                                                                                |
-| `description`         | one sentence on what the sheet shows (a warning when missing)                                                                                                                                                                                                |
-| `sheet`               | `{ "number": "PID-0001", "revision": "A" }`, top right                                                                                                                                                                                                       |
-| `equipment[]`         | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                   |
-| `equipment[].type`    | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                             |
-| `offpage[]`           | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`)                                                                                                                                                                                                |
-| `lines[]`             | `number` (the user's line number, exactly), `from`, `to` (an equipment or off-page id), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`                                              |
-| `lines[].inline[]`    | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed`, `focal`                         |
-| `instruments[]`       | `tag` (ISA-5.1 letters then the loop number, `LIC-101`), `on` (an equipment id or a line number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal` |
-| `signals[]`           | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                      |
-| `circuits[]`          | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                     |
-| `legend`, `showTitle` | `false` to leave the legend strip or the title out                                                                                                                                                                                                           |
-| `profile`             | the site profile; filled in for you from this brain's profile (below) when you leave it out                                                                                                                                                                  |
+| Field                 | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`               | required, up to 80 characters                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `description`         | one sentence on what the sheet shows (a warning when missing)                                                                                                                                                                                                                                                                                                                                                                                       |
+| `sheet`               | `{ "number": "PID-0001", "revision": "A" }`, top right                                                                                                                                                                                                                                                                                                                                                                                              |
+| `equipment[]`         | `id` (the tag, `V-101`), `type`, `service` (`FEED SURGE DRUM`), `focal`, layout hints `column` (0 is leftmost) and `row` (`base`, `below`)                                                                                                                                                                                                                                                                                                          |
+| `equipment[].type`    | `vertical-vessel`, `horizontal-drum`, `column`, `tank`, `centrifugal-pump`, `pd-pump`, `compressor`, `shell-tube-exchanger`, `exchanger`, `air-cooler`, `filter`                                                                                                                                                                                                                                                                                    |
+| `offpage[]`           | `id`, `direction` (`in`, `out`), `sheet`, `text` (`TO E-201`)                                                                                                                                                                                                                                                                                                                                                                                       |
+| `lines[]`             | `number` (the user's line number, exactly), `from` (an equipment, off-page or tee id), `to` (an equipment, off-page or tee id, or an instrument tag), `fromPort`, `toPort` (`top`, `bottom`, `left`, `right`), `service`, `weight` (`main`, `secondary`), `inline[]`, `focal`, `end` (`open`, `cap`: the line stops, no `to`), `deadleg` (`true`: a cap and a DL tag), `toward` (`up`, `down`, `left`, `right`: which way a line that stops leaves) |
+| `tees[]`              | `id` (a tag, `T-1`), `on` (the parent line's id or number), `near` (`from`, `to`: which end of the parent it keeps to). A line that starts or ends at a tee is a branch                                                                                                                                                                                                                                                                             |
+| `lines[].inline[]`    | `type` (`gate`, `globe`, `ball`, `butterfly`, `check`, `three-way`, `control`, `relief`, `reducer`, `blind`, `orifice`), `tag` (`LV-101`), `actuator` (`diaphragm`, `piston`, `motor`), `fail` (`FO`, `FC`, `FL`), `closed`, `focal`                                                                                                                                                                                                                |
+| `instruments[]`       | `tag` (ISA-5.1 letters then the loop number, `LIC-101`), `on` (an equipment id or a line number), `location` (`field`, `control-room`, `local-panel`, `behind-panel`), `display` (`discrete`, `shared`, `computer`, `plc`, `interlock`), `setpoint`, `focal`                                                                                                                                                                                        |
+| `signals[]`           | `from`, `to` (instrument tags or tagged inline items), `type` (`electric`, `pneumatic`, `data`, `capillary`, `hydraulic`, `connection`)                                                                                                                                                                                                                                                                                                             |
+| `circuits[]`          | `id`, `label`, `lines[]`, `equipment[]`, `colour` (`series-1` to `series-5` or `#rrggbb`); a line belongs to one circuit                                                                                                                                                                                                                                                                                                                            |
+| `legend`, `showTitle` | `false` to leave the legend strip or the title out                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `profile`             | the site profile; filled in for you from this brain's profile (below) when you leave it out                                                                                                                                                                                                                                                                                                                                                         |
 
 Unknown fields are errors, and so are dangling ids, a tag whose letters are
 not ISA-5.1, and a line number outside the profile's format when the profile
 enforces it. Every error names the field and the fix; the tool returns them
 all at once.
+
+**Tees and branches.** A line that leaves another line mid-run (a pump's
+suction off a header, a drain, a vent, a dead leg, a gauge tapping, a
+bypass) is a branch: declare a tee on the parent line and start (or end)
+the branch at the tee. The template puts the tee on the parent pipe, clear
+of its valves and corners, and draws the join dot there; the branch leaves
+square to the pipe. A branch ends at equipment, a connector, another tee
+(a bypass: two tees on one line), an instrument (the bubble sits at the
+branch end; that instrument has no `on`), or nowhere: `end: "open"` is a
+stub, `end: "cap"` a capped end, and `deadleg: true` marks a dead leg (a
+cap unless it ends elsewhere, and a DL tag). Never leave a branch out
+because it does not run between two pieces of equipment. A tee on a line
+that does not exist, or a branch naming a tee that does not, is an error.
+
+A fragment (the rest of the sheet as in the example below):
+
+```text
+"lines": [
+  { "id": "SUCT", "number": "4\"-P-1002-CS150", "from": "V-101", "to": "P-101A" },
+  { "number": "4\"-P-1012-CS150", "from": "T-1", "to": "P-101B" },
+  { "id": "DRAIN", "from": "T-2", "end": "open", "inline": [{ "type": "gate", "closed": true }] },
+  { "id": "DL-1", "from": "T-3", "deadleg": true },
+  { "id": "PG", "from": "T-3", "to": "PI-104" }
+],
+"tees": [
+  { "id": "T-1", "on": "SUCT" },
+  { "id": "T-2", "on": "SUCT", "near": "from" },
+  { "id": "T-3", "on": "4\"-P-1012-CS150" }
+]
+```
 
 A complete example (it draws as it stands):
 
@@ -488,7 +519,8 @@ so the next drawing gets it right:
    Conventions the template applies itself go in ONE fenced block with the
    info string `json profile` (the template's site profile: `lineNumber`
    with a `pattern`, `example` and `enforce`, `colourByService`,
-   `serviceColours`, `instrumentFirstLetters`, `symbols`). The template
+   `serviceColours`, `instrumentFirstLetters`, `symbols`, where
+   `symbols.deadleg: "dashed"` dashes dead legs as well). The template
    tools read that block and pass it as the data's `profile`. Everything
    else in the file is notes for the drawing.
 2. Add the convention under the matching heading, keeping everything that

@@ -33,7 +33,16 @@ import {
   type Box,
   type QaItem,
 } from '../../runtime/geom.ts';
-import { el, endDir, arrowHead, orthoPath, simplify, textEl, type Pt } from '../../runtime/svg.ts';
+import {
+  el,
+  endDir,
+  arrowHead,
+  num,
+  orthoPath,
+  simplify,
+  textEl,
+  type Pt,
+} from '../../runtime/svg.ts';
 import { PALETTE, SPACE, gridUp, resolveColour } from '../../runtime/style.ts';
 import { measure, type Measurer } from '../../runtime/text.ts';
 import { legendStrip, lineSwatch, boxSwatch, type LegendEntry } from '../../runtime/legend.ts';
@@ -58,6 +67,7 @@ import {
 import {
   PID_VERSION,
   type Equipment,
+  type Toward,
   type InlineItem,
   type Instrument,
   type Line,
@@ -171,7 +181,7 @@ function bandOf(e: Equipment): 'vessel' | 'machine' | 'inline' {
   return BAND[e.type];
 }
 
-function defaultSide(nodes: Map<string, Node>, l: Line, end: 'from' | 'to'): Port {
+function defaultSide(nodes: Map<string, Node>, l: Line & { to: string }, end: 'from' | 'to'): Port {
   const me = nodes.get(end === 'from' ? l.from : l.to)!;
   const other = nodes.get(end === 'from' ? l.to : l.from)!;
   if (end === 'from' && l.fromPort) return l.fromPort;
@@ -183,6 +193,33 @@ function defaultSide(nodes: Map<string, Node>, l: Line, end: 'from' | 'to'): Por
     return 'right';
   }
   return 'left';
+}
+
+const TOWARD_VEC: Record<Toward, Pt> = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
+const TOWARD_SIDE: Record<Toward, Port> = {
+  up: 'top',
+  down: 'bottom',
+  left: 'left',
+  right: 'right',
+};
+
+/** A pipe cap: the D at the end of a line that stops, bulging along `dir`. */
+function drawCap(tip: Pt, dir: Pt, stroke: string, width: number): string {
+  const across = { x: -dir.y, y: dir.x };
+  const a = { x: tip.x + across.x * 6, y: tip.y + across.y * 6 };
+  const b = { x: tip.x - across.x * 6, y: tip.y - across.y * 6 };
+  return el('path', {
+    d: `M${num(a.x)} ${num(a.y)}L${num(b.x)} ${num(b.y)}A6 6 0 0 1 ${num(a.x)} ${num(a.y)}`,
+    fill: 'none',
+    stroke,
+    'stroke-width': width,
+    'data-part': 'cap',
+  });
 }
 
 /** A bubble shrunk into a legend slot, without letters. */
@@ -203,6 +240,44 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   const P = data.profile;
   const warnings: string[] = [];
 
+  // Plain lines run between two nodes (equipment, connectors). A branch has
+  // a tee, an instrument or a free end at one end: it is routed after the
+  // lines it hangs from, so data without tees takes the plain path only.
+  const teeOf = new Map(data.tees.map((t) => [t.id, t]));
+  const nodeIds = new Set([...data.equipment.map((e) => e.id), ...data.offpage.map((o) => o.id)]);
+  const isPlain = (l: Line): l is Line & { to: string } =>
+    !!l.to && nodeIds.has(l.from) && nodeIds.has(l.to);
+  const plain = data.lines.filter(isPlain);
+  const branches = data.lines.filter((l) => !isPlain(l));
+  const lineOf = new Map(data.lines.map((l) => [l.id, l]));
+  /** The node a branch end stands in for, for the column layout: upstream of
+   *  a tee is its parent's start, downstream its parent's end. */
+  const anchorNode = (
+    id: string | undefined,
+    role: 'from' | 'to',
+    depth = 0,
+  ): string | undefined => {
+    if (!id || depth > 30) return undefined;
+    if (nodeIds.has(id)) return id;
+    const t = teeOf.get(id);
+    if (!t) return undefined;
+    const parent = lineOf.get(t.on)!;
+    if (role === 'to' && parent.to) return anchorNode(parent.to, 'to', depth + 1);
+    return anchorNode(parent.from, 'from', depth + 1);
+  };
+  // Connectors reached only through tees are placed once their tee is.
+  const deferred = new Set(
+    data.offpage
+      .filter((o) => {
+        const ls = data.lines.filter((l) => l.from === o.id || l.to === o.id);
+        return (
+          ls.length > 0 &&
+          ls.every((l) => !isPlain(l) && teeOf.has((l.from === o.id ? l.to : l.from) ?? ''))
+        );
+      })
+      .map((o) => o.id),
+  );
+
   // ---------------------------------------------------------- 1. columns
   const nodes = new Map<string, Node>();
   for (const e of data.equipment) {
@@ -221,10 +296,13 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   const labelW = (l: Line) => (l.number ? gridUp(measure(m, l.number, 'sublabel') + 8) : 0);
   const itemsW = (l: Line) => l.inline.reduce((s, it) => s + 2 * inlineExtent(it).half + 24, 0);
   // A pipe that another one tees into needs room for the tee between its valves.
-  const shared = (id: string) =>
+  const shared = (id: string | undefined) =>
     data.offpage.some((o) => o.id === id) &&
     data.lines.filter((x) => x.from === id || x.to === id).length > 1;
-  const need = (l: Line) => labelW(l) + itemsW(l) + 72 + (shared(l.to) || shared(l.from) ? 56 : 0);
+  // Each tee on a pipe takes a stretch of it too.
+  const teeRoom = (l: Line) => 24 * data.tees.filter((t) => t.on === l.id).length;
+  const need = (l: Line) =>
+    labelW(l) + itemsW(l) + 72 + (shared(l.to) || shared(l.from) ? 56 : 0) + teeRoom(l);
   const ranksep = Math.min(480, Math.max(152, ...data.lines.map(need)));
   const g = new dagre.graphlib.Graph({ multigraph: true });
   g.setGraph({ rankdir: 'LR', nodesep: 96, ranksep, marginx: 0, marginy: 0 });
@@ -241,9 +319,17 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   );
   for (const n of nodes.values())
     if (!utilityOpc.has(n.id)) g.setNode(n.id, { width: n.w, height: n.h });
-  for (const l of data.lines) {
+  for (const l of plain) {
     if (l.weight === 'secondary' && (!nodes.get(l.from)!.eq || !nodes.get(l.to)!.eq)) continue;
     g.setEdge(l.from, l.to, { minlen: 1, weight: l.weight === 'main' ? 2 : 1 }, l.id);
+  }
+  // A branch ranks what it reaches after the start of the line it leaves.
+  for (const l of branches) {
+    const a = anchorNode(l.from, 'from');
+    const b = anchorNode(l.to, 'to');
+    if (!a || !b || a === b || !g.hasNode(a) || !g.hasNode(b)) continue;
+    if (l.weight === 'secondary' && (!nodes.get(a)!.eq || !nodes.get(b)!.eq)) continue;
+    g.setEdge(a, b, { minlen: 1, weight: 1 }, l.id);
   }
   dagre.layout(g);
 
@@ -279,14 +365,14 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   }
   // Exchangers, coolers and filters sit at the height of the pipes they
   // join: a condenser up by the column top, a reboiler down by its bottom.
-  const sideOf = (l: Line, end: 'from' | 'to') => defaultSide(nodes, l, end);
+  const sideOf = (l: Line & { to: string }, end: 'from' | 'to') => defaultSide(nodes, l, end);
   const portY = (n: Node, side: Port) =>
     side === 'top' ? n.box.y : side === 'bottom' ? n.box.y + n.box.h : sideRange(n, side).anchor;
   const fixed = new Set(data.equipment.filter((e) => bandOf(e) !== 'inline').map((e) => e.id));
   for (const e of data.equipment.filter((x) => bandOf(x) === 'inline')) {
     const n = nodes.get(e.id)!;
     const ys: number[] = [];
-    for (const l of data.lines) {
+    for (const l of plain) {
       if (l.from === e.id && fixed.has(l.to)) ys.push(portY(nodes.get(l.to)!, sideOf(l, 'to')));
       if (l.to === e.id && fixed.has(l.from)) ys.push(portY(nodes.get(l.from)!, sideOf(l, 'from')));
     }
@@ -316,7 +402,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
 
   // ---------------------------------------------------------- 3. ports
   const ends: End[] = [];
-  for (const l of data.lines) {
+  for (const l of plain) {
     ends.push({ line: l, end: 'from', node: l.from, side: defaultSide(nodes, l, 'from') });
     ends.push({ line: l, end: 'to', node: l.to, side: defaultSide(nodes, l, 'to') });
   }
@@ -328,16 +414,41 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
       .slice(1)
       .forEach((e) => (e.join = true));
   }
+  // A branch's end at a node gets a port like any pipe (never a join).
+  for (const l of branches) {
+    for (const end of ['from', 'to'] as const) {
+      const id = end === 'from' ? l.from : l.to;
+      if (!id || !nodeIds.has(id)) continue;
+      const n = nodes.get(id)!;
+      const port = end === 'from' ? l.fromPort : l.toPort;
+      const side: Port =
+        port ??
+        (end === 'from' && l.toward && !l.to
+          ? TOWARD_SIDE[l.toward]
+          : n.opc
+            ? n.opc.direction === 'in'
+              ? 'right'
+              : 'left'
+            : end === 'from'
+              ? 'right'
+              : 'left');
+      ends.push({ line: l, end, node: id, side });
+    }
+  }
   const otherCentre = (e: End): Pt => {
-    const o = nodes.get(e.end === 'from' ? e.line.to : e.line.from)!.box;
+    const other = e.end === 'from' ? e.line.to : e.line.from;
+    const id =
+      other && nodes.has(other) ? other : anchorNode(other, e.end === 'from' ? 'to' : 'from');
+    const o = id ? nodes.get(id)!.box : nodes.get(e.node)!.box;
     return { x: o.x + o.w / 2, y: o.y + o.h / 2 };
   };
-  const placePorts = (onlyEquipment: boolean) => {
+  const placePorts = (onlyEquipment: boolean, only?: string) => {
     const bySide = new Map<string, End[]>();
     for (const e of ends) {
       const n = nodes.get(e.node)!;
       if (onlyEquipment ? !n.eq : !n.opc) continue;
       if (e.join) continue;
+      if (only !== undefined ? e.node !== only : deferred.has(e.node)) continue;
       bySide.set(`${e.node}|${e.side}`, [...(bySide.get(`${e.node}|${e.side}`) ?? []), e]);
     }
     for (const [k, list] of bySide) {
@@ -410,6 +521,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   const eqExtent = union(eqBoxes.length ? eqBoxes : [{ x: 0, y: 0, w: 0, h: 0 }]);
   const usedOpc: Box[] = [];
   for (const o of data.offpage) {
+    if (deferred.has(o.id)) continue;
     const n = nodes.get(o.id)!;
     const e = ends.find((x) => x.node === o.id);
     const partner = e ? ends.find((x) => x.line === e.line && x !== e) : undefined;
@@ -471,10 +583,14 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   placePorts(false);
 
   // ---------------------------------------------------------- 5. pipes
-  const allBoxes = [...nodes.values()].map((n) => n.box);
-  const world = inflate(union([...allBoxes, ...tagLabels.map((t) => t.box)]), 240);
+  let allBoxes = [...nodes.values()].filter((n) => !deferred.has(n.id)).map((n) => n.box);
+  // Branches may reach past the drawing (a stub, a connector off a tee).
+  const world = inflate(
+    union([...allBoxes, ...tagLabels.map((t) => t.box)]),
+    branches.length ? 480 : 240,
+  );
   const pipes = new GridRouter(world);
-  for (const n of nodes.values()) pipes.block(inflate(n.box, 8));
+  for (const n of nodes.values()) if (!deferred.has(n.id)) pipes.block(inflate(n.box, 8));
   for (const t of tagLabels) pipes.block(inflate(t.box, 4));
   const routed = new Map<string, Pt[]>();
   const joins: Pt[] = [];
@@ -661,11 +777,358 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   // the pipes that join them, so a tee can keep clear of those valves.
   const isJoin = (l: Line) => ends.some((e) => e.line === l && e.join);
   const byWeight = (a: Line, b: Line) => (a.weight === b.weight ? 0 : a.weight === 'main' ? -1 : 1);
-  for (const l of data.lines.filter((x) => !isJoin(x)).sort(byWeight)) routeLine(l);
-  for (const l of data.lines.filter((x) => !isJoin(x))) placeItems(l);
-  for (const l of data.lines.filter(isJoin).sort(byWeight)) {
+  for (const l of plain.filter((x) => !isJoin(x)).sort(byWeight)) routeLine(l);
+  for (const l of plain.filter((x) => !isJoin(x))) placeItems(l);
+  for (const l of plain.filter(isJoin).sort(byWeight)) {
     routeLine(l);
     placeItems(l);
+  }
+
+  // ---------------------------------------------------------- 6b. tees and branches
+  // A tee is a grid point ON its parent's routed pipe, chosen after the
+  // parent and its valves are down, so the junction dot can only sit on the
+  // line. Branches are routed in depth order (a branch off a branch after
+  // its parent) on the same grid, so they keep out of equipment, labels and
+  // other pipes like any pipe.
+  type TeePt = { at: Pt; along: Pt };
+  const teePts = new Map<string, TeePt>();
+  const tipBubbles = new Map<string, Pt>();
+  const capEnds = new Map<string, { tip: Pt; d: Pt }>();
+  const manhattan = (a: Pt, b: Pt) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const branchDepth = new Map<string, number>();
+  const depthOf = (l: Line, guard = 0): number => {
+    const known = branchDepth.get(l.id);
+    if (known !== undefined) return known;
+    let d = 0;
+    for (const e of [l.from, l.to]) {
+      const t = e ? teeOf.get(e) : undefined;
+      if (t && guard < 30) d = Math.max(d, depthOf(lineOf.get(t.on)!, guard + 1) + 1);
+    }
+    branchDepth.set(l.id, d);
+    return d;
+  };
+  /** Pick a tee's spot: the best-scoring clear grid point on the parent
+   *  pipe that `accept` takes (a stub needs room beside it), else the best. */
+  const teeFor = (id: string, target?: Pt, spacing = 0, accept?: (c: TeePt) => boolean): TeePt => {
+    const have = teePts.get(id);
+    if (have) return have;
+    const t = teeOf.get(id)!;
+    const pts = routed.get(t.on)!;
+    const items = placed.filter((p) => p.line === t.on);
+    const siblings = [...teePts].filter(([k]) => teeOf.get(k)!.on === t.on).map(([, v]) => v.at);
+    const others = [...routed].filter(([k]) => k !== t.on).flatMap(([, p]) => segments(p));
+    const total = segments(pts).reduce((s, sg) => s + len(sg), 0);
+    const cands: { at: Pt; along: Pt; score: number }[] = [];
+    let walked = 0;
+    for (const sg of segments(pts)) {
+      const [a, b] = sg;
+      const L0 = len(sg);
+      const d = { x: Math.sign(b.x - a.x), y: Math.sign(b.y - a.y) };
+      // Clear of the corners at both ends of the run.
+      for (let k = 24; k <= L0 - 24; k += 8) {
+        const p =
+          d.x !== 0 ? { x: snap(a.x + d.x * k), y: a.y } : { x: a.x, y: snap(a.y + d.y * k) };
+        const dot = { x: p.x - 4, y: p.y - 4, w: 8, h: 8 };
+        if (items.some((it) => overlaps(inflate(it.box, 6), dot))) continue;
+        if (siblings.some((q) => manhattan(q, p) < 32)) continue;
+        if (pipes.isBlocked(p)) continue;
+        if (others.some(([u, v]) => segmentHitsBox(u, v, inflate(dot, 4), 0))) continue;
+        const along = walked + manhattan(a, p);
+        const score =
+          t.near === 'from'
+            ? along
+            : t.near === 'to'
+              ? total - along
+              : spacing && siblings.length
+                ? Math.min(...siblings.map((q) => Math.abs(manhattan(q, p) - spacing)))
+                : target
+                  ? manhattan(p, target)
+                  : Math.abs(along - total / 2);
+        cands.push({ at: p, along: d, score });
+      }
+      walked += L0;
+    }
+    cands.sort((x, y) => x.score - y.score);
+    let pick: TeePt | undefined = (accept && cands.find(accept)) || cands[0];
+    if (!pick) {
+      // No clear spot: the middle of the longest run, still on the line.
+      const sg = [...segments(pts)].sort((x, y) => len(y) - len(x))[0]!;
+      const d = { x: Math.sign(sg[1].x - sg[0].x), y: Math.sign(sg[1].y - sg[0].y) };
+      const at =
+        d.x !== 0
+          ? { x: snap((sg[0].x + sg[1].x) / 2), y: sg[0].y }
+          : { x: sg[0].x, y: snap((sg[0].y + sg[1].y) / 2) };
+      pick = { at, along: d };
+      warnings.push(
+        `layout: no clear spot on line '${t.on}' for tee '${id}' (valves, corners or crossings in the way); it sits mid-run. Move it with near: 'from' or 'to', or give the line fewer valves.`,
+      );
+    }
+    const out = { at: pick.at, along: pick.along };
+    teePts.set(id, out);
+    return out;
+  };
+  const square = (along: Pt, from: Pt, to: Pt): Pt =>
+    along.x !== 0
+      ? { x: 0, y: Math.sign(to.y - from.y) || 1 }
+      : { x: Math.sign(to.x - from.x) || 1, y: 0 };
+  /** A connector reached only through a tee: on the sheet edge, level with
+   *  the tee (or a step off a horizontal parent). */
+  const placedLate = new Set<string>();
+  /** Where a connector reached through a tee stands: the sheet edge. */
+  const edgeX = (id: string, l: Line) => {
+    const n = nodes.get(id)!;
+    const gap = Math.max(160, need(l));
+    return n.opc!.direction === 'in'
+      ? snap(eqExtent.x - gap) - n.w
+      : snap(eqExtent.x + eqExtent.w + gap);
+  };
+  const placeDeferred = (id: string, T: TeePt, l: Line) => {
+    if (!deferred.has(id) || placedLate.has(id)) return;
+    placedLate.add(id);
+    const n = nodes.get(id)!;
+    // Off a horizontal run: a step down (or up) and straight on into it.
+    // Off a vertical run: level with the tee, on the sheet edge.
+    const x =
+      T.along.x === 0
+        ? edgeX(id, l)
+        : n.opc!.direction === 'in'
+          ? snap(T.at.x - 48) - n.w
+          : snap(T.at.x + 48);
+    const ys =
+      T.along.x !== 0 ? [56, -56, 104, -104, 152, -152].map((dy) => T.at.y + dy) : [T.at.y];
+    const fits = (b: Box) =>
+      !usedOpc.some((u) => overlaps(inflate(u, 8), b)) &&
+      ![...nodes.values()].some((x) => x.eq && overlaps(inflate(x.box, 16), b));
+    const at = (y: number): Box => ({ x, y: snap(y) - n.h / 2, w: n.w, h: n.h });
+    let box = ys.map(at).find(fits) ?? at(ys[0]!);
+    for (let k = 0; k < 40 && !fits(box); k++) box = { ...box, y: box.y + 48 };
+    n.box = box;
+    usedOpc.push(box);
+    pipes.block(inflate(box, 8));
+    placePorts(false, id);
+  };
+  /** Is a straight run from `from` (leaving it) to `tip` clear of symbols,
+   *  labels, valves and every pipe? */
+  const runClear = (from: Pt, tip: Pt): boolean => {
+    const d = { x: Math.sign(tip.x - from.x), y: Math.sign(tip.y - from.y) };
+    const n = manhattan(from, tip) / STEP;
+    for (let k = 1; k <= n; k++) {
+      if (pipes.isBlocked({ x: from.x + d.x * k * STEP, y: from.y + d.y * k * STEP })) return false;
+    }
+    const a = { x: from.x + d.x * 8, y: from.y + d.y * 8 };
+    const run = {
+      x: Math.min(a.x, tip.x) - 3,
+      y: Math.min(a.y, tip.y) - 3,
+      w: Math.abs(a.x - tip.x) + 6,
+      h: Math.abs(a.y - tip.y) + 6,
+    };
+    if (
+      [...routed.values()].some((p) => segments(p).some(([u, v]) => segmentHitsBox(u, v, run, 0)))
+    )
+      return false;
+    return ![...placed, ...notes].some((p) => overlaps(p.box, run, 0));
+  };
+  const endFree = (b: Box): boolean =>
+    ![...nodes.values()].some(
+      (x) => (!deferred.has(x.id) || placedLate.has(x.id)) && overlaps(inflate(x.box, 8), b),
+    ) &&
+    !tagLabels.some((t) => overlaps(t.box, b)) &&
+    ![...placed, ...notes].some((p) => overlaps(p.box, b)) &&
+    ![...tipBubbles.values()].some((c) => overlaps(inflate(boxAround(c, BUBBLE_R), 4), b)) &&
+    ![...routed.values()].some((p) => segments(p).some(([u, v]) => segmentHitsBox(u, v, b, 0)));
+  const boxAround = (c: Pt, r: number): Box => ({ x: c.x - r, y: c.y - r, w: 2 * r, h: 2 * r });
+
+  /** A line that stops (a stub, a cap, a dead leg) or ends at a bubble: a
+   *  straight run square off its tee (or out of its port), on the first
+   *  side with room. */
+  const routeStub = (l: Line, fe: End | undefined) => {
+    const inst = l.to && !nodeIds.has(l.to) && !teeOf.has(l.to) ? l.to : undefined;
+    const lengthFor = (d: Pt) =>
+      gridUp(Math.max(48, itemsW(l) + 32, d.y === 0 && l.number ? labelW(l) + 40 : 0));
+    const endBox = (tip: Pt, d: Pt): Box =>
+      inst
+        ? boxAround({ x: tip.x + d.x * BUBBLE_R, y: tip.y + d.y * BUBBLE_R }, BUBBLE_R + 4)
+        : boxAround(tip, 8);
+    const fit = (S: Pt, dirs: Pt[]): { tip: Pt; d: Pt } | undefined => {
+      for (const d of dirs) {
+        for (const extra of [0, 24, 48, 96]) {
+          const L0 = lengthFor(d) + extra;
+          const tip = { x: S.x + d.x * L0, y: S.y + d.y * L0 };
+          if (runClear(S, tip) && endFree(endBox(tip, d))) return { tip, d };
+        }
+      }
+      return undefined;
+    };
+    // Off a tee: square to the parent run, the way `toward` says, else the
+    // first side with room.
+    // `toward` along the parent run cannot be drawn: square to it instead.
+    const alongParent = (T: TeePt) =>
+      !!l.toward && (TOWARD_VEC[l.toward].x !== 0) === (T.along.x !== 0);
+    const dirsAt = (T: TeePt): Pt[] => {
+      const both =
+        T.along.x !== 0 ? [TOWARD_VEC.up, TOWARD_VEC.down] : [TOWARD_VEC.right, TOWARD_VEC.left];
+      return !l.toward || alongParent(T) ? both : [TOWARD_VEC[l.toward]];
+    };
+    let S: Pt;
+    let head: Pt[] = [];
+    let dirs: Pt[];
+    if (fe) {
+      S = fe.stub!;
+      head = [fe.at!];
+      dirs = [NORMAL[fe.side]];
+    } else {
+      const T = teeFor(l.from, undefined, 0, (c) => !!fit(c.at, dirsAt(c)));
+      S = T.at;
+      dirs = dirsAt(T);
+      if (alongParent(T))
+        warnings.push(
+          `layout: line '${l.id}' cannot leave tee '${l.from}' ${l.toward}, along its parent line; it leaves square to it. Use ${dirs[0]!.y !== 0 ? "'up' or 'down'" : "'left' or 'right'"}.`,
+        );
+    }
+    let chosen = fit(S, dirs);
+    if (!chosen && l.toward && !fe) {
+      // No room the way the data asks: the other side, said aloud.
+      const v = TOWARD_VEC[l.toward];
+      chosen = fit(
+        S,
+        [TOWARD_VEC.up, TOWARD_VEC.down, TOWARD_VEC.left, TOWARD_VEC.right].filter(
+          (d) => d.x === -v.x && d.y === -v.y,
+        ),
+      );
+      if (chosen)
+        warnings.push(
+          `layout: no room for line '${l.id}' ${l.toward} of tee '${l.from}'; it leaves the other way.`,
+        );
+    }
+    if (!chosen) {
+      const d = dirs[0]!;
+      const L0 = lengthFor(d);
+      chosen = { tip: { x: S.x + d.x * L0, y: S.y + d.y * L0 }, d };
+      warnings.push(
+        `layout: no clear room for line '${l.id}' off '${l.from}'; it is drawn ${l.toward ?? 'square to its parent'} anyway. Try another toward, or move the tee with near.`,
+      );
+    }
+    const pts = simplify([...head, S, chosen.tip]);
+    pipes.occupy(pts);
+    routed.set(l.id, pts);
+    if (inst) {
+      const c = {
+        x: chosen.tip.x + chosen.d.x * BUBBLE_R,
+        y: chosen.tip.y + chosen.d.y * BUBBLE_R,
+      };
+      tipBubbles.set(inst, c);
+      pipes.block(boxAround(c, BUBBLE_R + 4));
+    } else {
+      if (l.end === 'cap') capEnds.set(l.id, chosen);
+      pipes.block(boxAround(chosen.tip, 8));
+    }
+  };
+
+  /** A branch to equipment, a connector or another tee: routed on the grid
+   *  from its tee, leaving (and joining) square to the parent pipe. */
+  const routeBranch = (l: Line) => {
+    const fe = ends.find((e) => e.line === l && e.end === 'from');
+    const te = ends.find((e) => e.line === l && e.end === 'to');
+    const toTee = !!l.to && teeOf.has(l.to);
+    if (!te && !toTee) return routeStub(l, fe);
+    // A connector reached through a tee is placed by the tee first.
+    if (te && deferred.has(te.node) && teeOf.has(l.from))
+      placeDeferred(te.node, teeFor(l.from, { x: edgeX(te.node, l), y: BASE }), l);
+    if (fe && deferred.has(fe.node) && toTee)
+      placeDeferred(fe.node, teeFor(l.to!, { x: edgeX(fe.node, l), y: BASE }), l);
+    let fromPt: Pt;
+    let fromDir: Pt;
+    let head: Pt[] = [];
+    let fromT: TeePt | undefined;
+    if (fe) {
+      fromPt = fe.stub!;
+      fromDir = NORMAL[fe.side];
+      head = [fe.at!];
+    } else {
+      fromT = teeFor(l.from, te?.stub);
+      fromPt = fromT.at;
+      fromDir = { x: 0, y: 1 }; // set below, once the far end is known
+    }
+    let toPt: Pt;
+    let toDir: Pt;
+    let tail: Pt[] = [];
+    if (te) {
+      toPt = te.stub!;
+      const into = NORMAL[te.side];
+      toDir = { x: -into.x, y: -into.y };
+      tail = [te.at!];
+    } else {
+      // Into a tee: a bypass back onto the same line keeps its length clear.
+      const sameParent = fromT && teeOf.get(l.from)!.on === teeOf.get(l.to!)!.on;
+      const T = teeFor(l.to!, fromPt, sameParent ? Math.max(96, itemsW(l) + 48) : 0);
+      toPt = T.at;
+      toDir = square(T.along, fromPt, T.at);
+    }
+    if (fromT) fromDir = square(fromT.along, fromT.at, toPt);
+    // Leaving and joining on one side of a line: down off it, up back into it.
+    if (!te && fromT && Math.sign(toPt.y - fromPt.y) === 0 && fromDir.y !== 0)
+      toDir = { x: 0, y: -fromDir.y };
+    if (!te && fromT && Math.sign(toPt.x - fromPt.x) === 0 && fromDir.x !== 0)
+      toDir = { x: -fromDir.x, y: 0 };
+    const path = pipes.route(fromPt, fromDir, toPt, toDir);
+    let pts: Pt[];
+    if (path) pts = simplify([...head, ...path, ...tail]);
+    else {
+      warnings.push(
+        `layout: no clear route for line '${l.id}'; drawn direct. Try other ports, move its tee with near, or split the sheet.`,
+      );
+      pts = simplify([...head, fromPt, { x: toPt.x, y: fromPt.y }, toPt, ...tail]);
+    }
+    if (toTee) joined.add(l.id);
+    pipes.occupy(pts);
+    routed.set(l.id, pts);
+  };
+
+  // Branches keep off the valves and their notes, as well as the symbols.
+  if (branches.length) for (const b of [...placed, ...notes]) pipes.block(b.box);
+  for (const l of [...branches].sort((a, b) => depthOf(a) - depthOf(b) || byWeight(a, b))) {
+    const before = placed.length;
+    routeBranch(l);
+    placeItems(l);
+    for (const it of placed.slice(before)) pipes.block(it.box);
+  }
+  const usedTees = data.tees.filter((t) => teePts.has(t.id));
+  if (placedLate.size) allBoxes = [...nodes.values()].map((n) => n.box);
+
+  // A dead leg carries DL beside its far end.
+  for (const l of data.lines) {
+    if (!l.deadleg) continue;
+    const segs = segments(routed.get(l.id)!).reverse();
+    const s = segs.find((x) => len(x) >= 24) ?? segs[0]!;
+    const h = isH(s);
+    const d = { x: Math.sign(s[1].x - s[0].x), y: Math.sign(s[1].y - s[0].y) };
+    const c = { x: s[1].x - d.x * 16, y: s[1].y - d.y * 16 };
+    const tw = measure(m, 'DL', 'sublabel') + 4;
+    const cands: Box[] = h
+      ? [
+          { x: c.x - tw / 2, y: c.y - 20, w: tw, h: 12 },
+          { x: c.x - tw / 2, y: c.y + 8, w: tw, h: 12 },
+        ]
+      : [
+          { x: c.x + 8, y: c.y - 6, w: tw, h: 12 },
+          { x: c.x - 8 - tw, y: c.y - 6, w: tw, h: 12 },
+        ];
+    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
+    notes.push({
+      id: `${l.id} DL`,
+      box,
+      svg: textEl('sublabel', box.x + 2, box.y + 9, 'DL', { fill: PALETTE.ink }),
+    });
+  }
+  // The junction dot is the tee: it must sit on its parent pipe.
+  for (const t of usedTees) {
+    const at = teePts.get(t.id)!.at;
+    const on = segments(routed.get(t.on)!).some(([a, b]) =>
+      Math.abs(a.y - b.y) < 0.01
+        ? Math.abs(at.y - a.y) < 0.5 && at.x >= Math.min(a.x, b.x) && at.x <= Math.max(a.x, b.x)
+        : Math.abs(at.x - a.x) < 0.5 && at.y >= Math.min(a.y, b.y) && at.y <= Math.max(a.y, b.y),
+    );
+    if (!on) warnings.push(`layout: tee '${t.id}' is off its line '${t.on}'.`);
   }
 
   // ---------------------------------------------------------- line numbers
@@ -749,7 +1212,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   }
 
   // ---------------------------------------------------------- 7. instruments
-  const bubbles = new Map<string, Pt>();
+  const bubbles = new Map<string, Pt>(tipBubbles);
   const connections: { id: string; pts: Pt[]; ends: string[] }[] = [];
   const bubbleBox = (c: Pt) => ({
     x: c.x - BUBBLE_R - 4,
@@ -1111,18 +1574,23 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
     const pts = routed.get(l.id)!;
     const colour = lineColour(l);
     const width = l.weight === 'main' ? 2 : 1.2;
-    if (joined.has(l.id)) {
+    // A dead leg is dashed only where the site's profile says so.
+    const dash = l.deadleg && P.symbols.deadleg === 'dashed' ? '8,4' : undefined;
+    // No arrowhead where a line joins a tee, stops, or meets its bubble.
+    const open = !isPlain(l) && !(l.to && nodeIds.has(l.to));
+    if (joined.has(l.id) || open) {
+      const cap = capEnds.get(l.id);
       L.pipes!.push(
-        el(
-          'g',
-          { 'data-line': l.id },
+        el('g', { 'data-line': l.id }, [
           el('path', {
             d: orthoPath(pts, radius, hops[i], 6, hopStyle),
             fill: 'none',
             stroke: colour,
             'stroke-width': width,
+            'stroke-dasharray': dash,
           }),
-        ),
+          cap ? drawCap(cap.tip, cap.d, colour, width) : '',
+        ]),
       );
       return;
     }
@@ -1136,6 +1604,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
           fill: 'none',
           stroke: colour,
           'stroke-width': width,
+          'stroke-dasharray': dash,
         }),
         arrowHead(tip, dir, colour, l.weight === 'main' ? 9 : 8),
       ]),
@@ -1144,6 +1613,10 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
   // A join is a filled dot.
   for (const j of joins)
     L.pipes!.push(el('circle', { cx: j.x, cy: j.y, r: 3.5, fill: PALETTE.ink }));
+  for (const t of usedTees) {
+    const j = teePts.get(t.id)!.at;
+    L.pipes!.push(el('circle', { cx: j.x, cy: j.y, r: 3.5, fill: PALETTE.ink, 'data-tee': t.id }));
+  }
   const base = data.lines.length;
   connections.forEach((c, i) => {
     L.signals!.push(
@@ -1273,7 +1746,7 @@ export function renderPid(data: PidData, m: Measurer): RenderResult {
       ...data.lines.map((l) => ({
         id: l.id,
         points: routed.get(l.id)!,
-        ends: [l.from, l.to, ...inlineIds(l.id)],
+        ends: [l.from, ...(l.to ? [l.to] : []), ...inlineIds(l.id)],
       })),
       ...connections.map((c) => ({ id: c.id, points: c.pts, ends: c.ends })),
       ...signalLines.map((s) => ({ id: s.id, points: s.pts, ends: s.ends })),

@@ -98,11 +98,25 @@ export type InlineItem = {
   closed: boolean;
   focal: boolean;
 };
+export const LINE_ENDS = ['open', 'cap'] as const;
+export const TOWARD = ['up', 'down', 'left', 'right'] as const;
+export type Toward = (typeof TOWARD)[number];
+
 export type Line = {
   id: string;
   number?: string;
+  /** Equipment, an off-page connector, or a tee (a branch off another line). */
   from: string;
-  to: string;
+  /** Equipment, an off-page connector, a tee, or an instrument tag (the
+   *  bubble sits at the end of the branch). Absent when the line stops
+   *  (`end`). */
+  to?: string;
+  /** The line stops short: an open end (a stub) or a cap. */
+  end?: (typeof LINE_ENDS)[number];
+  /** A dead leg: drawn with a cap (unless it ends elsewhere) and a DL tag. */
+  deadleg?: true;
+  /** Which way a line that stops (or ends at an instrument) leaves. */
+  toward?: Toward;
   fromPort?: Port;
   toPort?: Port;
   service?: string;
@@ -122,6 +136,15 @@ export type Instrument = {
   focal: boolean;
 };
 export type Signal = { from: string; to: string; type: SignalType };
+/** A junction on a line: branches start or end at it. */
+export type Tee = {
+  id: string;
+  /** The parent line's id. */
+  on: string;
+  /** Which end of the parent the tee keeps to; by default it sits where its
+   *  branch leaves most directly. */
+  near?: 'from' | 'to';
+};
 export type Circuit = {
   id: string;
   label: string;
@@ -140,6 +163,7 @@ export type PidData = {
   equipment: Equipment[];
   offpage: OffPage[];
   lines: Line[];
+  tees: Tee[];
   instruments: Instrument[];
   signals: Signal[];
   circuits: Circuit[];
@@ -173,6 +197,7 @@ const TOP_KEYS = [
   'equipment',
   'offpage',
   'lines',
+  'tees',
   'instruments',
   'signals',
   'circuits',
@@ -287,7 +312,7 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
     else {
       checkKeys(
         raw.symbols,
-        ['normallyClosed', 'checkValve', 'corners', 'crossing'],
+        ['normallyClosed', 'checkValve', 'corners', 'crossing', 'deadleg'],
         'profile.symbols',
         issues,
       );
@@ -296,11 +321,13 @@ function checkProfile(raw: unknown, issues: Issues): SiteProfile | undefined {
       const cv = oneOf(s, 'checkValve', ['filled', 'arrow'] as const, 'profile.symbols', issues);
       const co = oneOf(s, 'corners', ['square', 'round'] as const, 'profile.symbols', issues);
       const cr = oneOf(s, 'crossing', ['hop', 'gap'] as const, 'profile.symbols', issues);
+      const dl = oneOf(s, 'deadleg', ['cap', 'dashed'] as const, 'profile.symbols', issues);
       out.symbols = {
         ...(nc ? { normallyClosed: nc } : {}),
         ...(cv ? { checkValve: cv } : {}),
         ...(co ? { corners: co } : {}),
         ...(cr ? { crossing: cr } : {}),
+        ...(dl ? { deadleg: dl } : {}),
       };
     }
   }
@@ -441,9 +468,33 @@ export function validatePid(input: unknown): Checked<PidData> {
     if (id && direction && sheetNo)
       offpage.push({ id, direction, sheet: sheetNo, ...(text ? { text } : {}) });
   }
+  // Tees: junctions on a line, where branches start or end. Read before the
+  // lines (a line may start at one) and checked against them after.
+  const teeRaw: { p: string; id: string; on?: string; near?: 'from' | 'to' }[] = [];
+  for (const [p, t] of objects(list(d, 'tees', '', issues, { max: 30 }), 'tees', issues)) {
+    checkKeys(t, ['id', 'on', 'near'], p, issues);
+    const id = str(t, 'id', p, issues, tagRule);
+    const on = str(t, 'on', p, issues, { required: true, max: 40 });
+    const near = oneOf(t, 'near', ['from', 'to'] as const, p, issues);
+    if (id) {
+      claim(id, p);
+      teeRaw.push({ p, id, ...(on ? { on } : {}), ...(near ? { near } : {}) });
+    }
+  }
+  const teeIds = new Set(teeRaw.map((t) => t.id));
+  // A branch may end at a bubble; the instruments are checked further down.
+  const instrumentTags = new Set(
+    (Array.isArray(d.instruments) ? d.instruments : [])
+      .filter(isObj)
+      .map((i) => i.tag)
+      .filter((t): t is string => typeof t === 'string'),
+  );
   const ends = new Set([...equipment.map((e) => e.id), ...offpage.map((o) => o.id)]);
-  const endHint = (v: string) => {
-    const s = suggest(v, [...ends]);
+  const endNoun = teeIds.size
+    ? 'equipment, off-page connector or tee'
+    : 'equipment or off-page connector';
+  const endHint = (v: string, more: string[] = []) => {
+    const s = suggest(v, [...ends, ...teeIds, ...more]);
     return s ? ` (did you mean '${s}'?)` : '';
   };
 
@@ -465,6 +516,9 @@ export function validatePid(input: unknown): Checked<PidData> {
           'weight',
           'inline',
           'focal',
+          'end',
+          'deadleg',
+          'toward',
         ],
         p,
         issues,
@@ -473,18 +527,50 @@ export function validatePid(input: unknown): Checked<PidData> {
       const id = str(l, 'id', p, issues, { max: 40 }) ?? number ?? `L${i + 1}`;
       if (lineIds.has(id) && l.id !== undefined)
         issues.errors.push(`${p}.id: line id '${id}' is already used by ${lineIds.get(id)}.`);
+      // A line that stops short (`end`, or a dead leg with no `to`) has no `to`.
+      const stops = l.end !== undefined || (l.deadleg === true && l.to === undefined);
       const from = str(l, 'from', p, issues, { required: true });
-      const to = str(l, 'to', p, issues, { required: true });
-      if (from && !ends.has(from))
+      const to = str(l, 'to', p, issues, { required: !stops });
+      const fromOk = !!from && (ends.has(from) || teeIds.has(from));
+      const toKind = !to
+        ? undefined
+        : ends.has(to)
+          ? 'node'
+          : teeIds.has(to)
+            ? 'tee'
+            : instrumentTags.has(to)
+              ? 'instrument'
+              : undefined;
+      if (from && !fromOk)
         issues.errors.push(
-          `${p}.from: no equipment or off-page connector '${from}'${endHint(from)}.`,
+          `${p}.from: no ${endNoun} '${from}'${endHint(from)}.${instrumentTags.has(from) ? ' A line cannot start at an instrument: start it at a tee or equipment and end it at the bubble.' : ''}`,
         );
-      if (to && !ends.has(to))
-        issues.errors.push(`${p}.to: no equipment or off-page connector '${to}'${endHint(to)}.`);
+      if (to && !toKind)
+        issues.errors.push(`${p}.to: no ${endNoun} '${to}'${endHint(to, [...instrumentTags])}.`);
       if (from && to && from === to)
         issues.errors.push(`${p}: a line from '${from}' back to itself is not drawn.`);
+      const end = oneOf(l, 'end', LINE_ENDS, p, issues);
+      const deadleg = bool(l, 'deadleg', p, issues) ?? false;
+      const toward = oneOf(l, 'toward', TOWARD, p, issues);
+      if (to && end)
+        issues.errors.push(
+          `${p}.end: a line with 'end' stops short and has no 'to'; drop 'to' for a stub or a cap, or drop 'end' to run it to '${to}'.`,
+        );
+      const stub = !to || toKind === 'instrument';
+      if (toward && !stub)
+        issues.errors.push(
+          `${p}.toward: only for a line that stops ('end') or ends at an instrument; a line to '${to}' is routed (set fromPort or toPort instead).`,
+        );
       const fromPort = oneOf(l, 'fromPort', PORTS, p, issues);
       const toPort = oneOf(l, 'toPort', PORTS, p, issues);
+      if (fromPort && from && teeIds.has(from))
+        issues.errors.push(
+          `${p}.fromPort: '${from}' is a tee; a branch leaves its parent line square, so drop fromPort (use toward on a stub).`,
+        );
+      if (toPort && (stub || toKind === 'tee'))
+        issues.errors.push(
+          `${p}.toPort: only for a line that ends at equipment or a connector; drop it${stub ? ' (use toward to pick the way the line leaves)' : ''}.`,
+        );
       let service = str(l, 'service', p, issues, {
         max: 6,
         pattern: /^[A-Z]{1,6}$/,
@@ -536,15 +622,19 @@ export function validatePid(input: unknown): Checked<PidData> {
             ...(fail ? { fail } : {}),
           });
       }
-      if (from && to && ends.has(from) && ends.has(to) && from !== to) {
+      if (fromOk && (to ? toKind : stops || end) && from !== to) {
         lineIds.set(id, p);
+        const endAs = to ? undefined : (end ?? 'cap');
         lines.push({
           id,
-          from,
-          to,
+          from: from!,
           weight,
           inline,
           focal,
+          ...(to ? { to } : {}),
+          ...(endAs ? { end: endAs } : {}),
+          ...(deadleg ? { deadleg: true as const } : {}),
+          ...(toward ? { toward } : {}),
           ...(number ? { number } : {}),
           ...(fromPort ? { fromPort } : {}),
           ...(toPort ? { toPort } : {}),
@@ -604,6 +694,73 @@ export function validatePid(input: unknown): Checked<PidData> {
       ...(on ? { on } : {}),
       ...(setpoint ? { setpoint } : {}),
     });
+  }
+
+  // A branch that ends at a bubble: the bubble sits at the end of the
+  // branch, so it is not also `on` something, and it ends one line only.
+  const endsAtBubble = new Map<string, string>(); // tag -> line path
+  for (const l of lines) {
+    if (!l.to || !instrumentTags.has(l.to) || ends.has(l.to) || teeIds.has(l.to)) continue;
+    const lp = lineIds.get(l.id)!;
+    const inst = instruments.find((x) => x.tag === l.to);
+    if (!inst) continue; // its own error is above
+    if (inst.on)
+      issues.errors.push(
+        `${lp}.to: instrument '${inst.tag}' also has 'on' ('${inst.on.id}'). A bubble at the end of a branch is drawn there; drop its 'on', or end the line elsewhere.`,
+      );
+    if (endsAtBubble.has(inst.tag))
+      issues.errors.push(
+        `${lp}.to: instrument '${inst.tag}' already ends ${endsAtBubble.get(inst.tag)}; a bubble ends one line. Tee off that line instead.`,
+      );
+    else endsAtBubble.set(inst.tag, lp);
+  }
+
+  // The tees, now that the lines are known: each sits on a line, and no
+  // branch may (through other tees) sit on itself.
+  const tees: Tee[] = [];
+  const teeParent = new Map<string, string>();
+  for (const t of teeRaw) {
+    if (!t.on) continue;
+    if (!lineIds.has(t.on)) {
+      const sg = suggest(t.on, [...lineIds.keys()]);
+      issues.errors.push(
+        `${t.p}.on: no line '${t.on}'${sg ? ` (did you mean '${sg}'?)` : ''}. A tee sits on a line: give that line's id, or its number exactly.`,
+      );
+      continue;
+    }
+    teeParent.set(t.id, t.on);
+    tees.push({ id: t.id, on: t.on, ...(t.near ? { near: t.near } : {}) });
+  }
+  const lineById = new Map(lines.map((l) => [l.id, l]));
+  // Every tee a line hangs from, directly or through its parent's tees.
+  const ancestors = (lineId: string, seen = new Set<string>()): Set<string> => {
+    const l = lineById.get(lineId);
+    if (!l || seen.has(lineId)) return new Set();
+    seen.add(lineId);
+    const out = new Set<string>();
+    for (const e of [l.from, l.to]) {
+      if (!e || !teeParent.has(e)) continue;
+      out.add(e);
+      for (const a of ancestors(teeParent.get(e)!, seen)) out.add(a);
+    }
+    return out;
+  };
+  for (const t of tees) {
+    const tp = teeRaw.find((x) => x.id === t.id)!.p;
+    if (ancestors(t.on).has(t.id))
+      issues.errors.push(
+        `${tp}.on: tee '${t.id}' sits on line '${t.on}', which itself starts or ends at '${t.id}' (directly or through other tees). Put the tee on the line its branch leaves.`,
+      );
+    if (!lines.some((l) => l.from === t.id || l.to === t.id))
+      issues.warnings.push(
+        `${tp}: tee '${t.id}' has no branch (no line starts or ends at it), so it is not drawn.`,
+      );
+  }
+  // A line that names a tee whose own entry failed is dropped with it.
+  const goodTee = (e?: string) => !e || !teeIds.has(e) || teeParent.has(e);
+  for (let k = lines.length - 1; k >= 0; k--) {
+    const l = lines[k]!;
+    if (!goodTee(l.from) || !goodTee(l.to)) lines.splice(k, 1);
   }
 
   const signalEnds = new Set([...instruments.map((i) => i.tag), ...inlineTags.keys()]);
@@ -691,7 +848,11 @@ export function validatePid(input: unknown): Checked<PidData> {
     lines.reduce((s, l) => s + l.inline.filter((v) => v.focal).length, 0);
   over('accent elements', accents, b.accents);
   for (const i of instruments) {
-    if (!i.on && !signals.some((s) => s.from === i.tag || s.to === i.tag)) {
+    if (
+      !i.on &&
+      !endsAtBubble.has(i.tag) &&
+      !signals.some((s) => s.from === i.tag || s.to === i.tag)
+    ) {
       issues.warnings.push(
         `instruments '${i.tag}': connected to nothing (no 'on' and no signal); a bubble should not float.`,
       );
@@ -706,6 +867,7 @@ export function validatePid(input: unknown): Checked<PidData> {
     equipment,
     offpage,
     lines,
+    tees,
     instruments,
     signals,
     circuits,
