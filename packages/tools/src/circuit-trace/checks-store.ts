@@ -157,7 +157,12 @@ export async function storeChecks(
     for (const fileId of made)
       await deleteFileById({ ownerId, fileId, deleteDerived: true }).catch(() => null);
   };
-  const save = async (name: string, bytes: Buffer, title: string, data: Record<string, unknown>) => {
+  const save = async (
+    name: string,
+    bytes: Buffer,
+    title: string,
+    data: Record<string, unknown>,
+  ) => {
     const id = (
       await upsertFile({
         ownerId,

@@ -179,10 +179,12 @@ export async function verifyCircuit(
     const sin = inputOf.get(tableId)!;
     const why =
       sourceRefusal(sin) ??
-      (await deps.storable(ownerId, sin).catch(
-        (err: unknown) =>
-          `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
-      ));
+      (await deps
+        .storable(ownerId, sin)
+        .catch(
+          (err: unknown) =>
+            `could not be checked for storing (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`,
+        ));
     if (why) refused.set(tableId, why);
   }
   for (const q of picked) {
@@ -259,7 +261,8 @@ export async function verifyCircuit(
     // replaced since the read is caught here, before any spend).
     if (sin.sourceSha && sha256(bytes) !== sin.sourceSha) {
       skip(
-        sourceRefusal({ ...sin, source: 'stale' }) ?? 'the drawing changed since its table was built',
+        sourceRefusal({ ...sin, source: 'stale' }) ??
+          'the drawing changed since its table was built',
       );
       continue;
     }

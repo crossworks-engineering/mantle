@@ -258,9 +258,7 @@ describe('a drawing replaced after its table was built (circuit_trace)', () => {
       },
     ];
     const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    expect((r as { output: { limits: string[] } }).output.limits.join(' ')).not.toMatch(
-      /replaced/,
-    );
+    expect((r as { output: { limits: string[] } }).output.limits.join(' ')).not.toMatch(/replaced/);
   });
 });
 

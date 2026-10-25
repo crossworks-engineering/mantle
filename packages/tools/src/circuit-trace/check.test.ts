@@ -260,7 +260,9 @@ describe('a valve type read from a block name', () => {
         question: q.question,
         trust: '',
       };
-      const s = [{ ...generic, checks: [{ ...row, seal: sealOf({ tableId: q.tableId, ...row }) }] }];
+      const s = [
+        { ...generic, checks: [{ ...row, seal: sealOf({ tableId: q.tableId, ...row }) }] },
+      ];
       const applied: AppliedCheck[] = [];
       const r = traceCircuit(CIRCUIT, s, undefined, {
         checks: (sheets, links) => appliedChecks(sheets, links, s, applied, []),
@@ -385,7 +387,9 @@ describe('the trace shows the checks', () => {
   });
 
   it("an older revision's checks are kept but not applied; the latest of a key wins", () => {
-    const later = stored(joinKey(['pGap']), 'no', 'rev1', { checkedAt: '2026-10-26T00:00:00.000Z' });
+    const later = stored(joinKey(['pGap']), 'no', 'rev1', {
+      checkedAt: '2026-10-26T00:00:00.000Z',
+    });
     const { pid, limits } = traced([
       stored(endKey('A', 20, 0), 'yes', 'rev0'),
       stored(joinKey(['pGap']), 'yes'),
@@ -690,7 +694,9 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     });
     const r = await verifyCircuit('o', { circuit: C }, stale.d);
     expect(r.ok).toBe(false);
-    expect((r as { error: string }).error).toMatch(/replaced after its table was built.*dwg-reindex --file=f-PID-9201 --again --apply/s);
+    expect((r as { error: string }).error).toMatch(
+      /replaced after its table was built.*dwg-reindex --file=f-PID-9201 --again --apply/s,
+    );
     expect(stale.calls.ask).toHaveLength(0);
     const unstamped = deps({
       readSheets: async () => ({
@@ -700,7 +706,9 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     });
     const u = await verifyCircuit('o', { circuit: C }, unstamped.d);
     expect(u.ok).toBe(false);
-    expect((u as { error: string }).error).toMatch(/imported before tables recorded which revision/);
+    expect((u as { error: string }).error).toMatch(
+      /imported before tables recorded which revision/,
+    );
     // Bytes that changed after the read: caught before the crop.
     const swapped = deps({ fileBytes: async () => Buffer.from('other bytes') });
     const sw = await verifyCircuit('o', { circuit: C }, swapped.d);
@@ -791,10 +799,11 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     const e = outOf(await verifyCircuit('o', { circuit: C }, empty.d));
     expect(e.answers.every((a) => a.answer === 'unsure')).toBe(true);
     expect(e.limits.join(' ')).toMatch(/cut off or empty/);
-    const cut = parseAnswers('{"answers":[{"id":"q1","answer":"no","reason":"gap"},{"id":"q2"', [
-      'q1',
-      'q2',
-    ], 'cut');
+    const cut = parseAnswers(
+      '{"answers":[{"id":"q1","answer":"no","reason":"gap"},{"id":"q2"',
+      ['q1', 'q2'],
+      'cut',
+    );
     expect(cut.get('q1')).toEqual({ verdict: 'no', reason: 'gap' });
     expect(cut.get('q2')!.reason).toMatch(/model answer cut off/);
   });

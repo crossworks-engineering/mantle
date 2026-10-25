@@ -713,9 +713,8 @@ export async function commitTable(
                 // Announced when this transaction commits (the kind
                 // registry's `indexed`).
                 const nodeRow =
-                  (change
-                    ? await markContentChanged(tx, { id, type: 'table' }, [change])
-                    : null) ?? committed;
+                  (change ? await markContentChanged(tx, { id, type: 'table' }, [change]) : null) ??
+                  committed;
                 if (s.history) {
                   const [v] = await tx
                     .select({ version: tables.version })

@@ -89,9 +89,7 @@ describe.skipIf(!URL)('the image check store', () => {
     verdict: 'yes' as const,
     reason: 'into its nozzle',
     model: 'test/vision-model',
-    crops: [
-      { png: Buffer.from('png-1'), part: 0, of: 1, window: [0, 0, 2, 2], textPx: 14 },
-    ],
+    crops: [{ png: Buffer.from('png-1'), part: 0, of: 1, window: [0, 0, 2, 2], textPx: 14 }],
   });
 
   const makeTable = async (title: string) => {
@@ -229,9 +227,8 @@ describe.skipIf(!URL)('the image check store', () => {
         sqlTag`insert into item_grants (node_id, workspace_id, write) values (${t}, ${wsId}, false)`,
       ),
     );
-    const why = await m.withScope(
-      { kind: 'assistant', loginId: null, ws: [wsId], modWs: [] },
-      () => s.storeRefusal(anchor, sheetOf(t)),
+    const why = await m.withScope({ kind: 'assistant', loginId: null, ws: [wsId], modWs: [] }, () =>
+      s.storeRefusal(anchor, sheetOf(t)),
     );
     expect(why).toMatch(/may not edit its table|Auto-filed/);
     // Under row security the scope still reads the table's own stamp (the
@@ -246,7 +243,7 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(mine[0]).toMatchObject({ revision: SHA.slice(0, 16), sourceSha: SHA });
   });
 
-  it("a user who writes to the draft before the commit keeps it; nothing is published", async () => {
+  it('a user who writes to the draft before the commit keeps it; nothing is published', async () => {
     const t = await makeTable(`${tag} race`);
     const before = await s.tableState(t);
     midStore.hook = async () => {
@@ -270,8 +267,7 @@ describe.skipIf(!URL)('the image check store', () => {
 
   it('the revision is the stamp; a file replaced in place reads stale', async () => {
     const t = await makeTable(`${tag} revision`);
-    const find = async () =>
-      (await readMod.dwgTables(anchor)).tables.find((x) => x.id === t);
+    const find = async () => (await readMod.dwgTables(anchor)).tables.find((x) => x.id === t);
     expect(await find()).toMatchObject({
       revision: SHA.slice(0, 16),
       sourceSha: SHA,

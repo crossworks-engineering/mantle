@@ -319,7 +319,6 @@ const circuit_trace: BuiltinToolDef = {
   handler: (input, ctx) => circuitTraceHandler(input, ctx.ownerId),
 };
 
-
 /** A flag the agent may send as a boolean or as its word. */
 export const verifyFlag = (v: unknown) =>
   v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'true');
@@ -354,7 +353,9 @@ export async function circuitVerifyHandler(
         error: `kinds named no kind of guess (got ${given
           .slice(0, 4)
           .map((k) => `'${k.slice(0, 20)}'`)
-          .join(', ')}): use any of ${CHECK_KINDS.map((k) => `'${k}'`).join(', ')}, or leave kinds out for all.`,
+          .join(
+            ', ',
+          )}): use any of ${CHECK_KINDS.map((k) => `'${k}'`).join(', ')}, or leave kinds out for all.`,
       };
     }
   }
@@ -504,7 +505,7 @@ const circuit_verify: BuiltinToolDef = {
       recheck: {
         type: 'boolean',
         description:
-          'Ask again guesses already answered at the drawing\'s current revision (by default they are skipped and the next unanswered ones asked).',
+          "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked).",
       },
     },
     required: ['circuit'],
