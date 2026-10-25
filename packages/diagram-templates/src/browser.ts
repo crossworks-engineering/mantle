@@ -14,8 +14,8 @@
  *   window.diagram.show(id, focus?)   show a page, highlight one element
  *   window.diagram.exportPageSvg(id?) one page's static SVG
  *
- * A drawing set (data with `pages`) shows one page at a time under a row
- * of page buttons, with Back and Overview; a connector or marker that
+ * A drawing set (data with `pages`) shows one page at a time under one
+ * row of page buttons (it scrolls sideways when they do not fit), with Back and Overview; a connector or marker that
  * carries a link jumps to its page and highlights the element it names;
  * the arrow keys step through the pages. A link only ever switches the
  * canvas's own page: nothing is fetched, no URL is opened, and the window
@@ -56,8 +56,12 @@ const FOCUS_ATTRS = ['data-line', 'data-equipment', 'data-offpage', 'data-tee', 
 const HISTORY_MAX = 50;
 
 const SET_CSS = `
-#diagram-pages{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;max-width:100%;margin:0 0 12px;font:12px/1.3 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-#diagram-pages button{font:inherit;color:${PALETTE.ink};background:${PALETTE.white};border:1px solid ${PALETTE.ruleSolid};border-radius:6px;padding:4px 10px;cursor:pointer;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#diagram-pages{display:flex;flex-wrap:nowrap;gap:6px;align-items:center;box-sizing:border-box;width:100%;max-width:100%;overflow-x:auto;scrollbar-width:thin;padding:0 0 4px;margin:0 0 8px;font:12px/1.3 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+#diagram-pages::-webkit-scrollbar{height:6px}
+#diagram-pages::-webkit-scrollbar-thumb{background:${PALETTE.ruleSolid};border-radius:3px}
+#diagram-pages>:first-child{margin-left:auto}
+#diagram-pages>:last-child{margin-right:auto}
+#diagram-pages button{font:inherit;color:${PALETTE.ink};background:${PALETTE.white};border:1px solid ${PALETTE.ruleSolid};border-radius:6px;padding:4px 10px;cursor:pointer;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #diagram-pages button[aria-current="page"]{background:${PALETTE.ink};color:${PALETTE.white};border-color:${PALETTE.ink}}
 #diagram-pages button:disabled{opacity:.45;cursor:default}
 #diagram-pages .sep{width:1px;height:18px;background:${PALETTE.ruleSolid};margin:0 4px}
@@ -105,9 +109,12 @@ function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: Diagra
   const highlight = (focus: string) => {
     const svg = target.querySelector('svg');
     if (!svg) return;
-    const esc = (v: string) => (win?.CSS?.escape ? win.CSS.escape(v) : v.replace(/["\\]/g, ''));
-    const sel = FOCUS_ATTRS.map((a) => `[${a}="${esc(focus)}"]`).join(',');
-    const hit = svg.querySelector(sel) as SVGGraphicsElement | null;
+    // Compared as text, never put into a selector: whatever the id holds
+    // (quotes, a newline), it can only match or not.
+    const sel = FOCUS_ATTRS.map((a) => `[${a}]`).join(',');
+    const hit = ([...svg.querySelectorAll(sel)].find((el) =>
+      FOCUS_ATTRS.some((a) => el.getAttribute(a) === focus),
+    ) ?? null) as SVGGraphicsElement | null;
     if (!hit || typeof hit.getBBox !== 'function') return;
     const b = hit.getBBox();
     const r = doc.createElementNS(SVG_NS, 'rect');
@@ -140,8 +147,18 @@ function mountSet(doc: Document, target: HTMLElement, pages: Page[], api: Diagra
     target.innerHTML = hit.p.svg;
     api.page = id;
     pageButtons.forEach((b, i) => {
-      if (pages[i]!.id === id) b.setAttribute('aria-current', 'page');
-      else b.removeAttribute('aria-current');
+      if (pages[i]!.id !== id) {
+        b.removeAttribute('aria-current');
+        return;
+      }
+      b.setAttribute('aria-current', 'page');
+      // The bar is one row that scrolls sideways: its own scroll brings the
+      // page's button into view (never the window's, never a parent's).
+      if (
+        b.offsetLeft < nav.scrollLeft ||
+        b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth
+      )
+        nav.scrollLeft = Math.max(0, b.offsetLeft - (nav.clientWidth - b.offsetWidth) / 2);
     });
     back.disabled = history.length === 0;
     home.disabled = hit.n === 1;

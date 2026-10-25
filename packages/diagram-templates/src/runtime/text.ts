@@ -109,3 +109,8 @@ export function wrap(
   const width = Math.max(0, ...lines.map((l) => measure(m, l, role)));
   return { lines, width, overflow, truncated };
 }
+
+/** Text cut to `max` characters, the cut said with three dots. */
+export function clipText(t: string, max: number): string {
+  return t.length > max ? `${t.slice(0, Math.max(0, max - 3))}...` : t;
+}

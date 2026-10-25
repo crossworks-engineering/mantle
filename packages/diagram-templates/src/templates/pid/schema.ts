@@ -200,6 +200,10 @@ export const PID_LIMITS = {
   equipment: 30,
   lines: 60,
   instruments: 60,
+  offpage: 20,
+  tees: 30,
+  /** Valves and reducers drawn on one line. */
+  inline: 6,
   budget: {
     equipment: 8,
     instruments: 16,
@@ -525,7 +529,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   }
 
   const offpage: OffPage[] = [];
-  for (const [p, o] of objects(list(d, 'offpage', '', issues, { max: 20 }), 'offpage', issues)) {
+  for (const [p, o] of objects(
+    list(d, 'offpage', '', issues, { max: PID_LIMITS.offpage }),
+    'offpage',
+    issues,
+  )) {
     checkKeys(o, ['id', 'direction', 'sheet', 'text', 'link', 'focus'], p, issues);
     const id = str(o, 'id', p, issues, tagRule);
     const direction = oneOf(o, 'direction', ['in', 'out'] as const, p, issues);
@@ -547,7 +555,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   // Tees: junctions on a line, where branches start or end. Read before the
   // lines (a line may start at one) and checked against them after.
   const teeRaw: { p: string; id: string; on?: string; near?: 'from' | 'to'; at?: number }[] = [];
-  for (const [p, t] of objects(list(d, 'tees', '', issues, { max: 30 }), 'tees', issues)) {
+  for (const [p, t] of objects(
+    list(d, 'tees', '', issues, { max: PID_LIMITS.tees }),
+    'tees',
+    issues,
+  )) {
     checkKeys(t, ['id', 'on', 'near', 'at'], p, issues);
     const id = str(t, 'id', p, issues, tagRule);
     const on = str(t, 'on', p, issues, { required: true, max: 40 });
@@ -687,7 +699,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
       }
       const inline: InlineItem[] = [];
       for (const [ip, it] of objects(
-        list(l, 'inline', p, issues, { max: 6 }),
+        list(l, 'inline', p, issues, { max: PID_LIMITS.inline }),
         `${p}.inline`,
         issues,
       )) {

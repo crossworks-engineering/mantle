@@ -13,8 +13,14 @@
 import { el, num, textEl } from './svg.ts';
 import { svgDocument } from './export.ts';
 import { PALETTE } from './style.ts';
+import { clipText } from './text.ts';
 
 export type StackPage = { id: string; title: string; svg: string; width: number; height: number };
+
+/** The height a canvas keeps for a set's page bar (browser.ts): one row of
+ *  buttons that scrolls sideways, however many pages, with its margin and a
+ *  thin scrollbar. */
+export const SET_NAV_HEIGHT = 56;
 
 /** The header band above each page. */
 const HEAD = 32;
@@ -24,8 +30,7 @@ const GAP = 24;
 /** The page reference a set prints for a link: "see page 3: <title>". */
 export function pageRef(n: number, title: string, max = 40): string {
   const head = `see page ${n}: `;
-  const room = Math.max(4, max - head.length);
-  return head + (title.length > room ? `${title.slice(0, room - 3)}...` : title);
+  return head + clipText(title, Math.max(4, max - head.length));
 }
 
 export function stackPages(input: {

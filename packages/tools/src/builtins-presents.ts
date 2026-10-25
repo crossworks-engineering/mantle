@@ -47,6 +47,7 @@ import {
   readCanvasData,
   render as renderTemplate,
   replaceCanvasData,
+  SET_NAV_HEIGHT,
   slugify,
   validate as validateTemplate,
   TEMPLATES,
@@ -163,10 +164,11 @@ async function cssOf(source: string): Promise<string> {
 function diagramViewport(template: string, data: unknown): { width: number; height: number } {
   const est = renderTemplate(template, data, estimateMeasurer);
   if (!est.ok) return { width: 1600, height: 900 };
-  // A drawing set shows one page at a time under its page buttons: the
-  // window fits the largest page, not the stacked export.
+  // A drawing set shows one page at a time under its page bar (one row,
+  // however many pages): the window fits the largest page and the bar, not
+  // the stacked export.
   const w = est.pages ? Math.max(...est.pages.map((p) => p.width)) : est.width;
-  const h = est.pages ? Math.max(...est.pages.map((p) => p.height)) + 56 : est.height;
+  const h = est.pages ? Math.max(...est.pages.map((p) => p.height)) + SET_NAV_HEIGHT : est.height;
   const k = Math.min(1, DIAGRAM_MAX_EDGE / Math.max(w + 32, h + 32));
   return {
     width: Math.max(400, Math.round((w + 32) * k)),

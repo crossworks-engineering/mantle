@@ -31,7 +31,7 @@ import {
   type Checked,
   type Obj,
 } from '../../runtime/validate.ts';
-import type { Measurer } from '../../runtime/text.ts';
+import { clipText, type Measurer } from '../../runtime/text.ts';
 import type { RenderResult } from '../../types.ts';
 import { renderPid } from './render.ts';
 import { PAGE_ID, PID_VERSION, validatePid, type LinkSite, type PidData } from './schema.ts';
@@ -233,7 +233,7 @@ export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
     title: set.title,
     desc:
       set.description ??
-      `${set.title}: ${set.pages.length} page${set.pages.length === 1 ? '' : 's'} (${names.length > 200 ? `${names.slice(0, 197)}...` : names}).`,
+      `${set.title}: ${set.pages.length} page${set.pages.length === 1 ? '' : 's'} (${clipText(names, 200)}).`,
     idPrefix: prefix,
     generator: `mantle-diagram pid@${PID_VERSION} set`,
     pages,

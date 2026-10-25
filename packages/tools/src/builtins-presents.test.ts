@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { estimateMeasurer, render } from '@mantle/diagram-templates';
+import { estimateMeasurer, render, SET_NAV_HEIGHT, validate } from '@mantle/diagram-templates';
 
 const h = vi.hoisted(() => ({
   getPresent: vi.fn(),
@@ -376,6 +376,29 @@ describe('a pid drawing set', () => {
     expect(svg).toContain('SEE PAGE 2: PID-1001');
     // The window is sized for one page under the page buttons, not the stack.
     expect(renders[0]!.height).toBeLessThan(drawn.height);
+  });
+
+  it('sizes the window for one row of page buttons, however many pages', async () => {
+    // 40 pages: the bar is one row that scrolls sideways (browser.ts), so the
+    // window is the tallest page and the bar, as for three pages.
+    const many = structuredClone(SET) as { pages: { id: string; title: string }[] };
+    const extra = many.pages[1]!;
+    for (let i = many.pages.length; i < 40; i++)
+      many.pages.push({ ...structuredClone(extra), id: `copy-${i}`, title: `PID-${2000 + i}` });
+    const v = validate('pid', many);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    withRenderer();
+    for (const data of [SET, many]) {
+      const out = await tool('present_create').handler({ template: 'pid', data }, ctx);
+      expect(out.ok, JSON.stringify(out)).toBe(true);
+    }
+    expect(renders).toHaveLength(2);
+    expect(renders[1]!.height).toBe(renders[0]!.height);
+    const pages = render('pid', many, estimateMeasurer);
+    expect(pages.ok && pages.pages).toHaveLength(40);
+    if (!pages.ok) return;
+    const tallest = Math.max(...pages.pages!.map((p) => p.height));
+    expect(renders[1]!.height).toBe(Math.max(300, Math.round(tallest + SET_NAV_HEIGHT + 32)));
   });
 
   it('a bad link is refused with its path, nothing saved', async () => {
