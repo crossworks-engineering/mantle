@@ -58,7 +58,6 @@ export async function computeConfigDiff(ownerId: string): Promise<ConfigDiffRepo
     toolGroups: toolGroupRows,
     workers: workers.map((w) => ({
       kind: w.kind,
-      slug: w.slug,
       name: w.name,
       enabled: w.enabled,
       isDefault: w.isDefault ?? false,

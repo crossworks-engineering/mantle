@@ -31,7 +31,6 @@ import {
   WORKER_SYSTEM_PROMPT,
   WORKER_TOOL_GROUP_SLUGS,
 } from '@mantle/runs';
-import { DEDICATED_WORKER_SLUGS } from '@mantle/db';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -56,18 +55,8 @@ describe('system manifest integrity', () => {
   it('has no duplicate slugs', () => {
     expect(MANIFEST_SKILLS.length).toBe(skillSlugs.size);
     expect(MANIFEST_AGENTS.length).toBe(agentSlugs.size);
-    // One default per kind, plus job workers keyed by their own slug.
-    const workerKeys = MANIFEST_WORKERS.map((w) => w.slug ?? w.kind);
-    expect(new Set(workerKeys).size).toBe(workerKeys.length);
-    const defaults = MANIFEST_WORKERS.filter((w) => !w.slug).map((w) => w.kind);
-    expect(new Set(defaults).size).toBe(defaults.length);
-    // A job worker is never required and is listed as dedicated, so no
-    // kind ever falls back to it.
-    for (const w of MANIFEST_WORKERS.filter((x) => x.slug)) {
-      expect(w.required, w.slug).toBe(false);
-      expect(DEDICATED_WORKER_SLUGS, w.slug).toContain(w.slug);
-      expect(defaults, w.slug).toContain(w.kind);
-    }
+    const workerKinds = MANIFEST_WORKERS.map((w) => w.kind);
+    expect(new Set(workerKinds).size).toBe(workerKinds.length);
   });
 
   it('every heartbeat references a real skill, a real tool group, and is uniquely slugged', () => {

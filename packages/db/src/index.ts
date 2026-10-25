@@ -274,13 +274,7 @@ export { narrowNeedsSpot } from './narrow-writes';
 export { NARROW_TABLE_SPOTS, narrowSpotFor, onNarrowSpots } from './narrow-spots';
 export { onLoginHoldSpot } from './login-hold';
 export { clientHeldFromNarrow, loginHeldFromNarrow } from './gateway/scope-answers';
-export {
-  getDefaultWorker,
-  getWorkerBySlug,
-  getAgentTtsWorker,
-  bumpWorkerUsage,
-  DEDICATED_WORKER_SLUGS,
-} from './ai-workers-resolve';
+export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export {
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
   PROVIDER_SUBJECTS,

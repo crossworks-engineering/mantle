@@ -119,36 +119,30 @@ export async function seedManifestWorkers(
 ): Promise<SeedWorkersResult> {
   const [keys, existing] = await Promise.all([keyIdByService(ownerId), listAiWorkers(ownerId)]);
   const keyServices = new Set(Object.keys(keys));
-  // A job worker (a manifest `slug`) is its own entry: it never stands in
-  // for its kind's default, and the default never stands in for it.
-  const jobSlugs = new Set(MANIFEST_WORKERS.flatMap((w) => (w.slug ? [w.slug] : [])));
-  const haveKind = new Set(existing.filter((w) => !jobSlugs.has(w.slug)).map((w) => w.kind));
-  const haveSlug = new Set(existing.map((w) => w.slug));
+  const haveKind = new Set(existing.map((w) => w.kind));
   const created: SeedWorkersResult['created'] = [];
   const skipped: string[] = [];
   for (const w of MANIFEST_WORKERS) {
-    if (w.slug ? haveSlug.has(w.slug) : haveKind.has(w.kind)) continue;
+    if (haveKind.has(w.kind)) continue;
     if (opts.requiredOnly && !w.required) continue;
     const route = resolveWorkerRoute(w, keyServices);
     if (!route) {
-      skipped.push(`${w.slug ?? w.kind} (no ${w.provider} key)`);
+      skipped.push(`${w.kind} (no ${w.provider} key)`);
       continue;
     }
     await createAiWorker({
       ownerId,
       kind: w.kind,
-      ...(w.slug ? { slug: w.slug } : {}),
       name: w.name,
       provider: route.provider,
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
       enabled: w.enabled ?? true,
-      isDefault: !w.slug,
+      isDefault: true,
     });
     created.push({ kind: w.kind, name: w.name, provider: route.provider, model: route.model });
-    if (w.slug) haveSlug.add(w.slug);
-    else haveKind.add(w.kind);
+    haveKind.add(w.kind);
   }
   return { created, skipped };
 }
@@ -750,12 +744,10 @@ async function adoptPersonaStructure(ownerId: string): Promise<void> {
   await syncPersonaSkills(ownerId, 'overwrite', persona.slug);
 }
 
-/** Create the missing worker, or re-model an existing one to its manifest
- *  route. `key` is a job worker's slug, else the kind. */
-async function adoptWorker(ownerId: string, key: string): Promise<void> {
-  const w = MANIFEST_WORKERS.find((x) => (x.slug ?? x.kind) === key);
-  if (!w) throw new InputError(`Unknown manifest worker '${key}'.`);
-  const kind: AiWorkerKind = w.kind;
+/** Create the missing worker, or re-model an existing one to its manifest route. */
+async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
+  const w = MANIFEST_WORKERS.find((x) => x.kind === kind);
+  if (!w) throw new InputError(`Unknown manifest worker '${kind}'.`);
   const keys = await keyIdByService(ownerId);
   const route = resolveWorkerRoute(w, new Set(Object.keys(keys)));
   if (!route) {
@@ -763,10 +755,7 @@ async function adoptWorker(ownerId: string, key: string): Promise<void> {
       `Can't adopt the '${kind}' worker — no API key for ${w.provider}. Add one at /settings/keys.`,
     );
   }
-  const jobSlugs = new Set(MANIFEST_WORKERS.flatMap((x) => (x.slug ? [x.slug] : [])));
-  const existing = (await listAiWorkers(ownerId)).find((x) =>
-    w.slug ? x.slug === w.slug : x.kind === kind && !jobSlugs.has(x.slug),
-  );
+  const existing = (await listAiWorkers(ownerId)).find((x) => x.kind === kind);
   if (existing) {
     await updateAiWorker(ownerId, existing.id, {
       provider: route.provider,
@@ -781,14 +770,13 @@ async function adoptWorker(ownerId: string, key: string): Promise<void> {
     await createAiWorker({
       ownerId,
       kind: w.kind,
-      ...(w.slug ? { slug: w.slug } : {}),
       name: w.name,
       provider: route.provider,
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
       enabled: w.enabled ?? true,
-      isDefault: !w.slug,
+      isDefault: true,
     });
   }
 }
@@ -833,7 +821,7 @@ async function adoptManifestItemHere(
       await adoptPersonaStructure(ownerId);
       return;
     case 'worker':
-      await adoptWorker(ownerId, slug);
+      await adoptWorker(ownerId, slug as AiWorkerKind);
       return;
   }
 }

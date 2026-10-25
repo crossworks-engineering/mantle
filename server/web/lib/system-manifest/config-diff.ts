@@ -76,8 +76,6 @@ export type LiveToolGroupRow = {
 
 export type LiveWorkerRow = {
   kind: string;
-  /** The row's slug: a job worker (a manifest `slug`) is matched by it. */
-  slug?: string | null;
   name?: string | null;
   enabled: boolean;
   isDefault?: boolean | null;
@@ -318,15 +316,10 @@ function diffToolGroup(g: ManifestToolGroup, live: LiveConfig): EntityDiffCore {
 }
 
 function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiffCore {
-  // A kind is "present" when it has a default + enabled worker (what the
-  // runtime uses); a job worker when its own slug's row is enabled.
-  const def = w.slug
-    ? live.workers.find((r) => r.slug === w.slug && r.kind === w.kind && r.enabled)
-    : live.workers.find((r) => r.kind === w.kind && r.enabled && r.isDefault);
-  const anyRow = w.slug
-    ? live.workers.find((r) => r.slug === w.slug)
-    : live.workers.find((r) => r.kind === w.kind);
-  const base = { kind: 'worker' as const, slug: w.slug ?? w.kind, name: anyRow?.name || w.name };
+  // A kind is "present" when it has a default + enabled worker (what the runtime uses).
+  const def = live.workers.find((r) => r.kind === w.kind && r.enabled && r.isDefault);
+  const anyRow = live.workers.find((r) => r.kind === w.kind);
+  const base = { kind: 'worker' as const, slug: w.kind, name: anyRow?.name || w.name };
   if (!def) {
     return {
       ...base,
@@ -335,11 +328,7 @@ function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiffCore {
       // (Not every required worker indexes — the narrator falls back to the
       // summarizer — so keep the message generic, not "indexing degraded".)
       severity: w.required ? 'high' : 'low',
-      summary: w.required
-        ? 'no default+enabled worker'
-        : w.slug
-          ? 'not provisioned (optional; when absent its job uses the default worker)'
-          : 'not provisioned (optional)',
+      summary: w.required ? 'no default+enabled worker' : 'not provisioned (optional)',
       fields: [],
     };
   }
