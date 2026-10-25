@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { validate } from '@mantle/diagram-templates';
+import { overviewOf } from './fixtures';
 import { lineNumberOf, readTag, traceCircuit, valveOf } from './walk';
 import type { BlockRow, InsertRow, NodeRow, SegRow, SheetInput } from './walk';
 
@@ -188,7 +189,7 @@ function sheetB(): SheetInput {
 
 type Pid = {
   equipment: { id: string; type: string }[];
-  offpage: { text?: string }[];
+  offpage: { text?: string; link?: string; focus?: string }[];
   lines: Record<string, unknown>[];
 };
 
@@ -244,7 +245,7 @@ describe('the main line along the flow, across a certain sheet link', () => {
         guessed: false,
       }),
     ]);
-    const pid = r.pid as Pid;
+    const pid = overviewOf(r.pid) as Pid;
     expect(validate('pid', pid).ok).toBe(true);
     expect(pid.equipment).toEqual([
       { id: 'E-301/R1', type: 'shell-tube-exchanger' },
@@ -259,22 +260,52 @@ describe('the main line along the flow, across a certain sheet link', () => {
 
   it("the register's from and to fix the direction", () => {
     const r = traceCircuit(C, [sheetA(), sheetB()], { from: 'C-401', to: 'E-301' });
-    const main = (r.pid as Pid).lines[0]!;
+    const main = (overviewOf(r.pid) as Pid).lines[0]!;
     expect(main).toMatchObject({ from: 'C-401', to: 'E-301/R1' });
-    expect((r.pid as { description: string }).description).toMatch(/register's circuit from C-401/);
+    expect((overviewOf(r.pid) as { description: string }).description).toMatch(
+      /register's circuit from C-401/,
+    );
   });
 });
 
-describe('deadlegs come after the main run on the line budget', () => {
-  it('24 stubs: the main run first, the stubs drawn to the budget, the rest counted', () => {
+describe('past the line budget the drawing splits into pages, never cuts', () => {
+  type SetOf = { pages: { id: string; title: string; data: Pid }[] };
+  it('24 stubs: the main run on the overview with a marker; every stub on a page', () => {
     const r = traceCircuit(C, [sheetA(24), sheetB()]);
-    const pid = r.pid as Pid;
-    expect(validate('pid', pid).ok).toBe(true);
-    expect(pid.lines).toHaveLength(20);
-    expect(pid.lines[0]).toMatchObject({ from: 'E-301/R1', to: 'C-401' });
-    const stubs = pid.lines.filter((l) => l.deadleg === true);
-    expect(stubs).toHaveLength(18);
-    expect(r.limits.join(' ')).toMatch(/24 on line N100-39-6" \(18 drawn, the longest\)/);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    const ov = set.pages[0]!.data;
+    // The main run first; its deadlegs do not fit beside it, so none are
+    // drawn there and a marker counts them and links to where they are.
+    expect(ov.lines[0]).toMatchObject({ from: 'E-301/R1', to: 'C-401' });
+    expect(ov.lines.filter((l) => l.deadleg === true)).toEqual([]);
+    expect(ov.lines[0]!.more).toMatchObject({ text: '+24 DEADLEGS' });
+    // Pages named after the sheets. The sheet over budget keeps its main
+    // run and as many of its deadlegs as fit; the other 6 go to a detail
+    // page that draws the run again, with a marker linking there.
+    expect(set.pages.map((p) => [p.id, p.title, p.data.lines.length])).toEqual([
+      ['overview', 'Overview', 2],
+      ['sheet-1', 'PID-2001-rev-2', 20],
+      ['sheet-1-1', 'PID-2001-rev-2: line N100-39-6"', 7],
+      ['sheet-2', 'PID-2002', 1],
+    ]);
+    // The overview's marker goes where most of them are.
+    expect(ov.lines[0]!.more).toMatchObject({ link: 'sheet-1' });
+    const sheet1 = set.pages[1]!.data;
+    const run = sheet1.lines.find((l) => l.more)!;
+    expect(run.more).toMatchObject({ text: '+6 DEADLEGS', link: 'sheet-1-1', focus: run.id });
+    // The detail page's copy of the run leads back to the sheet it is on.
+    const d1 = set.pages[2]!.data;
+    expect(d1.offpage.map((o) => [o.text, o.link, o.focus])).toContainEqual([
+      'SEE PID-2001-rev-2',
+      'sheet-1',
+      run.id,
+    ]);
+    // Every stub is on a page; nothing is said as left off.
+    const stubs = set.pages.slice(1).flatMap((p) => p.data.lines.filter((l) => l.deadleg === true));
+    expect(stubs).toHaveLength(24);
+    expect(r.limits.join(' ')).not.toMatch(/not all drawn|left off|no page/);
   });
 });
 

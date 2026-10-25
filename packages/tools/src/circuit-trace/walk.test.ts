@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { validate } from '@mantle/diagram-templates';
-import { CIRCUIT, DL, MAIN, sheetOne, sheetTwo } from './fixtures';
+import { checkStaticSvg, estimateMeasurer, render, validate } from '@mantle/diagram-templates';
+import { CIRCUIT, DL, MAIN, overviewOf, sheetOne, sheetTwo } from './fixtures';
 import {
   isContinuationBlock,
   layersOf,
@@ -140,7 +140,7 @@ describe('sheet links', () => {
 
 describe('the pid template input', () => {
   const r = traceCircuit(CIRCUIT, [sheetOne(), sheetTwo()]);
-  const pid = r.pid as {
+  const pid = overviewOf(r.pid) as {
     equipment: { id: string; type: string }[];
     offpage: { id: string; direction: string; sheet: string; text?: string }[];
     lines: Record<string, unknown>[];
@@ -178,7 +178,7 @@ describe('the pid template input', () => {
     one.texts = one.texts.filter((t) => !t.text.startsWith('CONT'));
     const two = sheetTwo();
     two.texts = [];
-    const g = traceCircuit(CIRCUIT, [one, two]).pid as typeof pid;
+    const g = overviewOf(traceCircuit(CIRCUIT, [one, two]).pid) as typeof pid;
     expect(g.offpage.some((o) => /\(GUESS\)$/.test(o.text ?? ''))).toBe(true);
     expect(validate('pid', g).ok).toBe(true);
   });
@@ -187,7 +187,7 @@ describe('the pid template input', () => {
     const one = sheetOne();
     one.texts = [];
     const r1 = traceCircuit(CIRCUIT, [one]);
-    const p = r1.pid as typeof pid;
+    const p = overviewOf(r1.pid) as typeof pid;
     expect(p.offpage.some((o) => o.text === 'OPEN END')).toBe(true);
     expect(r1.limits.join(' ')).toMatch(/meets nothing drawn/);
     expect(validate('pid', p).ok).toBe(true);
@@ -304,7 +304,7 @@ type Pid = {
   tees: { id: string; on: string; at?: number }[];
   circuits: { id: string }[];
 };
-const pidOf = (r: ReturnType<typeof traceCircuit>) => r.pid as unknown as Pid;
+const pidOf = (r: ReturnType<typeof traceCircuit>) => overviewOf(r.pid) as unknown as Pid;
 const valid = (r: ReturnType<typeof traceCircuit>) => {
   const v = validate('pid', r.pid);
   return v.ok ? [] : v.errors;
@@ -575,7 +575,11 @@ describe('round 1: sheet links', () => {
 });
 
 describe('round 1: the pid input always passes the template check (MED-6)', () => {
-  it('25 open runs: connectors capped at 20, the cut said', () => {
+  type SetOf = {
+    description: string;
+    pages: { id: string; title: string; data: Pid }[];
+  };
+  it('25 open runs: the overview draws 20, the sheet splits into parts, nothing is cut', () => {
     const segments: SegRow[] = [];
     const nodes: NodeRow[] = [];
     for (let i = 0; i < 25; i++) {
@@ -587,9 +591,17 @@ describe('round 1: the pid input always passes the template check (MED-6)', () =
     }
     const r = traceCircuit(C, [sheet({ segments, nodes })]);
     expect(valid(r)).toEqual([]);
-    expect(pidOf(r).offpage.length).toBeLessThanOrEqual(20);
-    // The line budget comes first: 20 drawn, the other 5 counted.
-    expect(r.limits.join(' ')).toMatch(/the drawing holds 20 lines: 5 more lines/);
+    const set = r.pid as unknown as SetOf;
+    expect(set.pages.map((p) => [p.id, p.title, p.data.lines.length])).toEqual([
+      ['overview', 'Overview', 20],
+      ['sheet-1-p1', 'PID-1001 (part 1 of 2)', 20],
+      ['sheet-1-p2', 'PID-1001 (part 2 of 2)', 5],
+    ]);
+    for (const p of set.pages) expect(p.data.offpage.length).toBeLessThanOrEqual(20);
+    expect(set.description).toMatch(
+      /the overview draws 20 of 25 lines; the sheet pages draw every line/,
+    );
+    expect(r.limits.join(' ')).not.toMatch(/holds 20 lines|left off|cut at|no page/);
   });
 
   it('a long circuit name keeps the circuit id within the schema', () => {
@@ -606,7 +618,7 @@ describe('round 1: the pid input always passes the template check (MED-6)', () =
     expect(valid(r)).toEqual([]);
   });
 
-  it('equipment past 30: the ends go without it, no dangling line, the cut said', () => {
+  it('equipment past 30: the overview stops at the equipment cap, the sheet splits, nothing is cut', () => {
     const segments: SegRow[] = [];
     const nodes: NodeRow[] = [];
     const texts: { text: string; layer: string; x: number; y: number }[] = [];
@@ -621,8 +633,14 @@ describe('round 1: the pid input always passes the template check (MED-6)', () =
     }
     const r = traceCircuit(C, [sheet({ segments, nodes, texts })]);
     expect(valid(r)).toEqual([]);
-    expect(pidOf(r).equipment).toHaveLength(30);
-    expect(r.limits.join(' ')).toMatch(/equipment past 30/);
+    const set = r.pid as unknown as SetOf;
+    // 2 pieces of equipment a line: 15 lines fill the 30 a page draws.
+    expect(set.pages.map((p) => [p.title, p.data.lines.length, p.data.equipment.length])).toEqual([
+      ['Overview', 15, 30],
+      ['PID-1001 (part 1 of 2)', 15, 30],
+      ['PID-1001 (part 2 of 2)', 5, 10],
+    ]);
+    expect(r.limits.join(' ')).not.toMatch(/equipment past 30|left off|no page/);
   });
 });
 
@@ -671,5 +689,119 @@ describe('round 1: branch order along a header (MED-9)', () => {
     const branchTo = (eq: string) => p.lines.find((l) => l.to === eq)!.from;
     expect(branchTo('P-150')).toBe(p.tees[0]!.id);
     expect(branchTo('P-450')).toBe(p.tees[6]!.id);
+  });
+});
+
+describe('the drawing set: past the budget it splits, never cuts', () => {
+  type SetOf = { pages: { id: string; title: string; data: Pid }[] };
+  /** V-100 to E-999 along a header of `stretches` pieces, a gate valve in
+   *  each and a tee between them; off each tee `dl` deadlegs side by side
+   *  (stubs on the deadleg layer). */
+  const valvedHeader = (stretches: number, dl: number) => {
+    const DLL = `${M}-DL`;
+    const segments: SegRow[] = [];
+    const nodes: NodeRow[] = [];
+    const inserts: SheetInput['inserts'] = [];
+    let id = 1;
+    const at = (x: number, y: number, kind: string, deg = 1, layers = [M], block = '', bh = '') => {
+      nodes.push(nd(id, x, y, deg, kind, layers, block, bh));
+      return id++;
+    };
+    let prev = at(0, 0, 'end');
+    for (let i = 0; i < stretches; i++) {
+      const x = i * 100;
+      const v1 = at(x + 40, 0, 'block', 1, [M], 'GATE_VALVE', `V${i}`);
+      const v2 = at(x + 44, 0, 'block', 1, [M], 'GATE_VALVE', `V${i}`);
+      inserts.push({
+        block: 'GATE_VALVE',
+        layer: 'VALVES',
+        handle: `V${i}`,
+        x: x + 42,
+        y: 0,
+        minX: x + 40,
+        minY: -2,
+        maxX: x + 44,
+        maxY: 2,
+      });
+      segments.push(sg(M, `H${i}a`, x, 0, x + 40, 0, prev, v1));
+      const last = i === stretches - 1;
+      const t = at(x + 100, 0, last ? 'end' : 'tee', last ? 1 : 2 + dl, last ? [M] : [M, DLL]);
+      segments.push(sg(M, `H${i}b`, x + 44, 0, x + 100, 0, v2, t));
+      prev = t;
+      if (last) break;
+      for (let k = 0; k < dl; k++) {
+        const e = at(x + 100 + k * 3, 30 + k * 5, 'end', 1, [DLL]);
+        segments.push(sg(DLL, `D${i}-${k}`, x + 100, 0, x + 100 + k * 3, 30 + k * 5, t, e));
+      }
+    }
+    return sheet({
+      circuitLayers: [M, DLL],
+      segments,
+      nodes,
+      inserts,
+      texts: [
+        { text: 'V-100', layer: 'T', x: -2, y: 2 },
+        { text: 'E-999', layer: 'T', x: stretches * 100 + 2, y: 2 },
+      ],
+    });
+  };
+  const owned = (set: SetOf) => set.pages.slice(1);
+
+  it('a line with more valves than one drawn line holds goes on through a CONTINUES pair', () => {
+    const r = traceCircuit(C, [valvedHeader(9, 1)]);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    // The overview draws six of the nine valves and its marker counts the rest.
+    const ov = set.pages[0]!.data;
+    expect(ov.lines[0]!.inline).toHaveLength(6);
+    expect(ov.lines[0]!.more).toMatchObject({ text: '+3 VALVES', link: 'sheet-1' });
+    // The sheet page holds all nine: six on one line, three on the next,
+    // joined by a pair of connectors that link to each other.
+    const sheetLines = set.pages[1]!.data.lines.filter((l) => !l.deadleg);
+    expect(sheetLines.map((l) => (l.inline as unknown[]).length)).toEqual([6, 3]);
+    const pair = set.pages[1]!.data.offpage as { text?: string; link?: string; focus?: string }[];
+    expect(pair.map((o) => [o.text, o.link, o.focus])).toEqual([
+      ['CONTINUES', 'sheet-1', sheetLines[1]!.id],
+      ['CONTINUED', 'sheet-1', sheetLines[0]!.id],
+    ]);
+    expect(r.limits.join(' ')).not.toMatch(/past six|left off|no page/);
+  });
+
+  it('a busy sheet: every deadleg on exactly one page, each page in budget, the set valid', () => {
+    const r = traceCircuit(C, [valvedHeader(6, 7)]);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    for (const p of set.pages) {
+      expect(p.data.lines.length, p.id).toBeLessThanOrEqual(20);
+      expect(p.data.offpage.length, p.id).toBeLessThanOrEqual(20);
+    }
+    // 5 tees, 7 deadlegs each: 35, each drawn as a deadleg once on a page
+    // that owns it (a detail page draws its parent again, never a deadleg).
+    const dls = owned(set).flatMap((p) => p.data.lines.filter((l) => l.deadleg === true));
+    expect(dls).toHaveLength(35);
+    expect(
+      new Set(
+        owned(set).flatMap((p) =>
+          p.data.lines.filter((l) => l.deadleg).map((l) => `${p.id}:${l.id}`),
+        ),
+      ).size,
+    ).toBe(35);
+    expect(r.limits.join(' ')).not.toMatch(/left off|no page|cut at/);
+    // Every detail page is reached by a link (a sheet page by its button).
+    const linked = new Set(
+      set.pages.flatMap((p) => [
+        ...p.data.lines.map((l) => (l.more as { link?: string } | undefined)?.link),
+        ...(p.data.offpage as { link?: string }[]).map((o) => o.link),
+      ]),
+    );
+    const details = set.pages.filter((p) => /^sheet-\d+-\d+$/.test(p.id));
+    expect(details.length).toBeGreaterThan(0);
+    for (const p of details) expect(linked.has(p.id), p.id).toBe(true);
+    // The set draws, and its export is static.
+    const drawn = render('pid', r.pid, estimateMeasurer);
+    expect(drawn.ok).toBe(true);
+    expect(drawn.ok && checkStaticSvg(drawn.svg)).toEqual([]);
   });
 });

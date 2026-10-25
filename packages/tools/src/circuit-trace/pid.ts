@@ -16,6 +16,7 @@
  * Pure: it reads the walk's output and writes the template's input.
  */
 import type { SheetLink, TraceChain, TraceEnd, TraceSheet, TraceValve } from './walk';
+import { PAGES_MAX as SET_PAGES, splitPages, type SplitPage } from './pages';
 
 /** The template's own hard limits (packages/diagram-templates pid schema). */
 export const PID_MAX = { lines: 60, tees: 30, equipment: 30, offpage: 20, inline: 6 } as const;
@@ -23,6 +24,9 @@ export const PID_MAX = { lines: 60, tees: 30, equipment: 30, offpage: 20, inline
  *  circuit gets 20 so a few deadlegs fit beside the main run and branches. */
 export const PID_LINES = 20;
 const CIRCUIT_ID = 24;
+/** A page's name in the set: its sheet's name, kept short. */
+const PAGE_TITLE = 60;
+const clipTitle = (t: string) => (t.length > PAGE_TITLE ? `${t.slice(0, PAGE_TITLE - 3)}...` : t);
 
 const norm = (t: string) => t.toUpperCase().replace(/[\s"'`]+/g, '');
 /** Register text echoed into limits and guesses is cut to this length. */
@@ -522,18 +526,223 @@ export function buildPid(
     drain();
   }
 
+  // -------------------------------------------------------------- pieces
+  /** A line as one page draws it: a whole planned line on the overview; on
+   *  a sheet page its stretch on that sheet, cut again where it carries
+   *  more valves than one drawn line holds. `prev`/`next` are the stretches
+   *  before and after it (a sheet crossing, or a valve cut). */
+  type Piece = {
+    id: string;
+    plan: Plan;
+    edges: Edge[];
+    verts: string[];
+    length: number;
+    sheet?: TraceSheet;
+    parent?: { piece: Piece; at: number; cont?: true };
+    prev?: Piece;
+    next?: Piece;
+  };
+  const along = (pc: Piece, v: string) => {
+    let cum = 0;
+    for (let i = 0; i < pc.verts.length; i++) {
+      if (i > 0) cum += pc.edges[i - 1]!.length;
+      if (pc.verts[i] === v) return pc.length > 0 ? Math.round((cum / pc.length) * 100) / 100 : 0;
+    }
+    return 0;
+  };
+  const planById = new Map(plans.map((p) => [p.id, p]));
+  const sheetPieces: Piece[] = [];
+  const piecesOf = new Map<Plan, Piece[]>();
+  for (const p of plans) {
+    const runs: { edges: Edge[]; verts: string[]; cont: boolean }[] = [];
+    p.edges.forEach((e, i) => {
+      const last = runs[runs.length - 1];
+      const n = e.chain.valves.length;
+      const valves = last ? last.edges.reduce((x, f) => x + f.chain.valves.length, 0) : 0;
+      if (last && last.edges[last.edges.length - 1]!.sheet === e.sheet) {
+        if (valves + n <= PID_MAX.inline) {
+          last.edges.push(e);
+          last.verts.push(p.verts[i + 1]!);
+          return;
+        }
+        // More valves than one line draws: the stretch goes on as a new
+        // line, joined to it by a pair of CONTINUES connectors.
+        runs.push({ edges: [e], verts: [p.verts[i]!, p.verts[i + 1]!], cont: true });
+        return;
+      }
+      runs.push({ edges: [e], verts: [p.verts[i]!, p.verts[i + 1]!], cont: false });
+    });
+    const list = runs.map((r, i): Piece => ({
+      id: runs.length === 1 ? p.id : `${p.id}-${i + 1}`,
+      plan: p,
+      edges: r.edges,
+      verts: r.verts,
+      length: r.edges.reduce((x, e) => x + e.length, 0),
+      sheet: r.edges[0]!.sheet,
+    }));
+    list.forEach((pc, i) => {
+      if (i > 0) {
+        pc.prev = list[i - 1]!;
+        list[i - 1]!.next = pc;
+        if (runs[i]!.cont) pc.parent = { piece: list[i - 1]!, at: 1, cont: true };
+        return;
+      }
+      if (!p.parent) return;
+      const v = pc.verts[0]!;
+      const theirs = (piecesOf.get(planById.get(p.parent.line)!) ?? []).filter((q) =>
+        q.verts.includes(v),
+      );
+      const q = theirs.find((x) => x.sheet === pc.sheet) ?? theirs[0];
+      if (q) pc.parent = { piece: q, at: along(q, v) };
+    });
+    piecesOf.set(p, list);
+    sheetPieces.push(...list);
+  }
+
+  // --------------------------------------------------- where a vertex sits
+  /** Where each vertex sits on the lines of one page (its fraction along
+   *  the first line that passes it), as `plan` placed them. */
+  const placeOn = (all: Piece[]) => {
+    const at = new Map<string, { piece: Piece; at: number }>();
+    for (const pc of all) {
+      pc.verts.forEach((v, i) => {
+        if (i === 0 || isEq(v) || at.has(v)) return;
+        if (i === pc.verts.length - 1 && (adj.get(v)?.length ?? 0) <= 1) return;
+        at.set(v, { piece: pc, at: along(pc, v) });
+      });
+    }
+    return at;
+  };
+  /** Where each vertex sits on its sheet's lines, whatever page they are
+   *  on: a line that ends on a line drawn on another page joins it there. */
+  const sheetPlace = new Map(
+    sheets.map((s) => [s, placeOn(sheetPieces.filter((pc) => pc.sheet === s))] as const),
+  );
+  /** A stretch on another sheet that passes `v`: where a line crosses. */
+  const crossAt = (v: string, pc: Piece): Piece | undefined => {
+    if (isEq(v) || !pc.sheet) return undefined;
+    const there = sheetPieces.filter((q) => q.sheet !== pc.sheet && q.verts.includes(v));
+    return there.find((q) => q.plan === pc.plan) ?? there[0];
+  };
+
+  // ------------------------------------------------------------ the ends
+  /** What a free end of a line becomes: equipment, a connector (text,
+   *  direction, sheet), or a stop. The one rule for every page. */
+  type EndPlan =
+    | { eq: string }
+    | { conn: string; dir: 'in' | 'out'; sheet: string }
+    | { stop: 'open' | 'deadleg' };
+  const endPlan = (v: string, side: 'from' | 'to'): EndPlan => {
+    if (isEq(v)) return { eq: v };
+    const dir = side === 'from' ? 'in' : 'out';
+    const keys = endAt.has(v) ? [v] : [...endAt.keys()].filter((k) => find(k) === v);
+    const at = keys.flatMap((k) => endAt.get(k) ?? []);
+    const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
+    const mark = ' (GUESS)';
+    // Off-page style: an end that is not drawn as the equipment it is near.
+    if (near) return { conn: `NEAR ${near}`.slice(0, 40 - mark.length) + mark, dir, sheet: near };
+    const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
+    if (guessedLink) {
+      const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
+      return { conn: head.slice(0, 40 - mark.length) + mark, dir, sheet: guessedLink.other };
+    }
+    for (const { sheet, end } of at) {
+      if (end.meets.kind === 'circuit')
+        return { conn: `CIRCUIT ${end.meets.circuit}`, dir, sheet: sheet.title };
+      const label = end.labels.find((l) => !/^block /.test(l));
+      if (label) {
+        const named = /\b(COD|CONT\w*|SEE|TO|FROM)\b\s*(.*)$/i.exec(label);
+        const other = named?.[2]?.trim() || label;
+        return { conn: `${side === 'from' ? 'FROM' : 'TO'} ${other}`, dir, sheet: other };
+      }
+      if (end.deadleg) return { stop: 'deadleg' };
+    }
+    return { stop: 'open' };
+  };
+
   // ------------------------------------------------------------ the budget
-  const byId = new Map(plans.map((p) => [p.id, p]));
+  type Page = SplitPage<Piece>;
+  /** What a page holds, counted the way `emit` draws it. */
+  const costOf = (pg: Page) => {
+    const all = pg.context ? [pg.context, ...pg.items] : pg.items;
+    const on = new Set(all);
+    const placed = placeOn(all);
+    const eq = new Set<string>();
+    let conn = 0;
+    let tees = 0;
+    for (const pc of all) {
+      const a = pc.verts[0]!;
+      const b = pc.verts[pc.verts.length - 1]!;
+      if (pc !== pg.context && pc.parent && !pc.parent.cont && on.has(pc.parent.piece)) tees += 1;
+      else if (isEq(a)) eq.add(a);
+      else conn += 1;
+      const onLine = placed.get(b);
+      const elsewhere = pc.sheet ? sheetPlace.get(pc.sheet)?.get(b) : undefined;
+      if (pc !== pg.context && !pc.next && onLine && onLine.piece !== pc) tees += 1;
+      else if (isEq(b)) eq.add(b);
+      else if (
+        pc === pg.context ||
+        pc.next ||
+        (elsewhere && elsewhere.piece !== pc) ||
+        crossAt(b, pc) ||
+        'conn' in endPlan(b, 'to')
+      )
+        conn += 1;
+    }
+    return { lines: all.length, eq: eq.size, conn, tees };
+  };
+  const over = (pg: Page) => {
+    const c = costOf(pg);
+    return (
+      c.lines > PID_LINES ||
+      c.eq > PID_MAX.equipment ||
+      c.conn > PID_MAX.offpage ||
+      c.tees > PID_MAX.tees
+    );
+  };
+  const nameOf = (pc: Piece) => {
+    const ln = pc.edges.flatMap((e) => e.chain.lineNumbers)[0]?.number;
+    return clip(ln ? `line ${ln}` : `line ${pc.id}`);
+  };
+
+  // ------------------------------------------------------------ the overview
+  // The overview draws the main line, then the lines that carry a line
+  // number, then the short pieces between them, while it stays within the
+  // budget (lines, equipment, connectors). A line's deadlegs all go on it,
+  // or none do: then they are on the sheet pages, and the line carries a
+  // marker that counts them and links there.
+  const ovPieces: Piece[] = [];
+  const ovOf = new Map<string, Piece>();
   const chosen = new Set<string>();
   const parentOk = (p: Plan) => !p.parent || chosen.has(p.parent.line);
-  // Lines on main layers: the main line, then those that carry a line
-  // number (a named pipe), then the short unnamed pieces between them.
   const named = (p: Plan) => p.edges.some((e) => e.chain.lineNumbers.length > 0);
+  /** Lines onto the overview, all of them or none. */
+  const take = (ps: Plan[]): boolean => {
+    if (ovPieces.length + ps.length > PID_LINES) return false;
+    const pcs = ps.map((p): Piece => {
+      const parentPiece = p.parent ? ovOf.get(p.parent.line) : undefined;
+      return {
+        id: p.id,
+        plan: p,
+        edges: p.edges,
+        verts: p.verts,
+        length: p.length,
+        ...(parentPiece && p.parent ? { parent: { piece: parentPiece, at: p.parent.at } } : {}),
+      };
+    });
+    if (over({ key: 'overview', title: '', items: [...ovPieces, ...pcs] })) return false;
+    for (const pc of pcs) {
+      ovPieces.push(pc);
+      ovOf.set(pc.id, pc);
+      chosen.add(pc.plan.id);
+    }
+    return true;
+  };
   for (const pass of [true, false]) {
     for (const p of plans) {
-      if (chosen.size >= PID_LINES) break;
+      if (ovPieces.length >= PID_LINES) break;
       if (p.deadleg || chosen.has(p.id) || (pass && p.depth > 0 && !named(p))) continue;
-      if (parentOk(p)) chosen.add(p.id);
+      if (parentOk(p)) take([p]);
     }
   }
   const deadlegsOf = new Map<string, Plan[]>();
@@ -542,290 +751,516 @@ export function buildPid(
     const k = p.parent?.line ?? '-';
     deadlegsOf.set(k, [...(deadlegsOf.get(k) ?? []), p]);
   }
-  for (const list of deadlegsOf.values()) list.sort((a, b) => b.length - a.length);
-  // Round robin over the parents, main line first, the longest each time.
-  for (let round = 0; chosen.size < PID_LINES; round++) {
-    let took = false;
-    for (const [k, list] of [...deadlegsOf].sort(
-      (a, b) => (byId.get(a[0])?.depth ?? 99) - (byId.get(b[0])?.depth ?? 99),
-    )) {
-      const p = list[round];
-      if (!p || chosen.size >= PID_LINES) continue;
-      if (k !== '-' && !chosen.has(k)) continue;
-      chosen.add(p.id);
-      took = true;
-    }
-    if (!took) break;
+  for (const [k, list] of [...deadlegsOf].sort(
+    (a, b) => (planById.get(a[0])?.depth ?? 99) - (planById.get(b[0])?.depth ?? 99),
+  )) {
+    if (k === '-' || chosen.has(k)) take(list);
   }
   // A line hanging off a deadleg line (the far side of a deadleg between two
   // main-layer pieces), once its parent is drawn.
   for (const p of plans) {
-    if (chosen.size >= PID_LINES) break;
-    if (!p.deadleg && !chosen.has(p.id) && parentOk(p)) chosen.add(p.id);
+    if (ovPieces.length >= PID_LINES) break;
+    if (!p.deadleg && !chosen.has(p.id) && parentOk(p)) take([p]);
   }
-  const leftBranches = plans.filter((p) => !p.deadleg && !chosen.has(p.id));
-  if (leftBranches.length) {
+  // Drawn in the order they were planned: the main line first.
+  const planIndex = new Map(plans.map((p, i) => [p, i]));
+  ovPieces.sort((x, y) => planIndex.get(x.plan)! - planIndex.get(y.plan)!);
+
+  // Valves past six on one overview line are on its sheet page.
+  const valveCut = new Map<Piece, number>();
+  for (const pc of ovPieces) {
+    const n = pc.edges.reduce((x, e) => x + e.chain.valves.length, 0);
+    if (n > PID_MAX.inline) valveCut.set(pc, n - PID_MAX.inline);
+  }
+  const hiddenPlans = plans.filter((p) => !chosen.has(p.id));
+  const sheetsUsed = sheets
+    .filter((s) => sheetPieces.some((pc) => pc.sheet === s))
+    .sort((a, b) => sheetRank(a) - sheetRank(b));
+  const needSheets = sheetsUsed.length > 1 || hiddenPlans.length > 0 || valveCut.size > 0;
+
+  // ------------------------------------------------------------ the pages
+  const pages: { page: Page; title: string; sheet?: TraceSheet }[] = [];
+  const markersOn = new Map<string, Map<Piece, { text: string; page: string; focus: string }>>();
+  const homeOf = new Map<Piece, string>();
+  const titleOf = new Map<string, string>();
+  let capped = false;
+  if (needSheets) {
+    sheetsUsed.forEach((s, i) => {
+      const items = sheetPieces.filter((pc) => pc.sheet === s);
+      const split = splitPages<Piece>(
+        { key: `sheet-${i + 1}`, title: clipTitle(s.title), items },
+        { parentOf: (pc) => pc.parent?.piece, over, budget: PID_LINES, nameOf },
+        pages.length + 1,
+      );
+      capped ||= split.capped;
+      for (const pg of split.pages) {
+        pages.push({ page: pg, title: pg.title, sheet: s });
+        titleOf.set(pg.key, pg.title);
+        for (const pc of pg.items) homeOf.set(pc, pg.key);
+      }
+      for (const mk of split.markers) {
+        const m = markersOn.get(mk.page) ?? new Map();
+        m.set(mk.on, { text: countText(mk.items, 0), page: mk.to, focus: mk.on.id });
+        markersOn.set(mk.page, m);
+      }
+    });
+  }
+  if (capped) {
     limits.push(
-      `the drawing holds ${PID_LINES} lines: ${leftBranches.length} more line${leftBranches.length === 1 ? '' : 's'} on main layers ${leftBranches.length === 1 ? 'is' : 'are'} left off it (${round(leftBranches.reduce((x, p) => x + p.length, 0))} drawing units); the trace JSON has every chain.`,
+      `the drawing set holds ${SET_PAGES} pages: a sheet that needs more is drawn over the line budget on its last page.`,
     );
   }
-  const dlNotes: string[] = [];
-  for (const [k, list] of deadlegsOf) {
-    const drawn = list.filter((p) => chosen.has(p.id)).length;
-    if (drawn === list.length) continue;
-    const parentPlan = byId.get(k);
-    const where = parentPlan ? `on ${lineName(parentPlan)}` : 'apart from the main line';
-    dlNotes.push(`${list.length} ${where} (${drawn} drawn, the longest)`);
+  // The overview's markers: what hangs off a drawn line but is not drawn
+  // there (and the valves past six on it), with the page that holds most
+  // of it.
+  const kidsOf = new Map<string, Plan[]>();
+  for (const p of plans) {
+    if (p.parent) kidsOf.set(p.parent.line, [...(kidsOf.get(p.parent.line) ?? []), p]);
   }
-  if (dlNotes.length) {
-    limits.push(`deadlegs not all drawn, by the line they hang off: ${dlNotes.join('; ')}.`);
+  const below = (p: Plan): Plan[] => [p, ...(kidsOf.get(p.id) ?? []).flatMap(below)];
+  const ovMarkers = new Map<Piece, { text: string; page: string; focus: string }>();
+  if (needSheets) {
+    for (const pc of ovPieces) {
+      const hidden = (kidsOf.get(pc.plan.id) ?? []).filter((k) => !chosen.has(k.id)).flatMap(below);
+      const valves = valveCut.get(pc) ?? 0;
+      if (!hidden.length && !valves) continue;
+      const firsts = hidden.length
+        ? hidden.map((h) => piecesOf.get(h)![0]!)
+        : [
+            [...(piecesOf.get(pc.plan) ?? [])].sort(
+              (a, b) =>
+                b.edges.reduce((x, e) => x + e.chain.valves.length, 0) -
+                a.edges.reduce((x, e) => x + e.chain.valves.length, 0),
+            )[0]!,
+          ];
+      const votes = new Map<string, number>();
+      for (const f of firsts) {
+        const h = homeOf.get(f);
+        if (h) votes.set(h, (votes.get(h) ?? 0) + 1);
+      }
+      const page = [...votes].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (!page) continue;
+      const focus = firsts.find((f) => homeOf.get(f) === page)!;
+      const counted = hidden.flatMap((h) => piecesOf.get(h)!.slice(0, 1));
+      ovMarkers.set(pc, { text: countText(counted, valves), page, focus: focus.id });
+    }
   }
 
-  // ---------------------------------------------------------------- output
-  const cuts = new Set<string>();
-  const equipment = new Map<string, { id: string; type: string }>();
-  const offpage: { id: string; direction: 'in' | 'out'; sheet: string; text?: string }[] = [];
-  const tees: { id: string; on: string; at?: number }[] = [];
-  const lines: Record<string, unknown>[] = [];
-  const taken = new Set<string>();
-  const unique = (base: string) => {
-    let id = base;
-    for (let k = 2; taken.has(id); k++) id = `${base.slice(0, 28)}-${k}`;
-    taken.add(id);
-    return id;
+  // ------------------------------------------------------------ drawing
+  const typeOf = new Map<string, string>();
+  const typeFor = (tag: string) => {
+    if (!typeOf.has(tag)) typeOf.set(tag, input.equipmentType(tag));
+    return typeOf.get(tag)!;
   };
-  const eqId = new Map<string, string>();
-  const equipmentOf = (v: string) => {
-    const known = eqId.get(v);
-    if (known) return known;
-    if (equipment.size >= PID_MAX.equipment) {
-      cuts.add(`equipment past ${PID_MAX.equipment}: an end drawn without its equipment`);
-      return null;
-    }
-    const tag = eqTag(v);
-    const id = unique(tagId(tag, `EQ-${equipment.size + 1}`));
-    eqId.set(v, id);
-    equipment.set(id, { id, type: input.equipmentType(tag) });
-    return id;
+  const said = new Set<string>();
+  const once = (text: string) => {
+    if (said.has(text)) return;
+    said.add(text);
+    limits.push(text);
   };
-  const teeId = new Map<string, string>();
-  const teeOn = (lineId: string, at: number, v: string) => {
-    const known = teeId.get(v);
-    if (known) return known;
-    if (tees.length >= PID_MAX.tees) return null;
-    const id = unique(`T-${tees.length + 1}`);
-    tees.push({ id, on: lineId, at });
-    teeId.set(v, id);
-    return id;
-  };
-  const shortSheet = (t: string) => t.replace(/\s+/g, '').slice(0, 12) || '?';
-  const connector = (text: string, dir: 'in' | 'out', sheet: string) => {
-    if (offpage.length >= PID_MAX.offpage) {
-      cuts.add(`connectors past ${PID_MAX.offpage}: ends drawn open`);
-      return null;
-    }
-    const id = unique(`OPC-${offpage.length + 1}`);
-    offpage.push({ id, direction: dir, sheet: shortSheet(sheet), text: text.slice(0, 40) });
-    return id;
-  };
-  /** What a free end of a line becomes. */
-  const endOf = (
-    v: string,
-    side: 'from' | 'to',
-  ): { id: string } | { stop: 'open' | 'deadleg' } | null => {
-    if (isEq(v)) {
-      const id = equipmentOf(v);
-      return id ? { id } : { stop: 'open' };
-    }
-    const at = endAt.get(v) ?? [...endAt].find(([k]) => find(k) === v)?.[1] ?? [];
-    const keys = endAt.has(v) ? [v] : [...endAt.keys()].filter((k) => find(k) === v);
-    const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
-    if (near) {
-      // Off-page style: an end that is not drawn as the equipment it is near.
-      const mark = ' (GUESS)';
-      const id = connector(
-        `NEAR ${near}`.slice(0, 40 - mark.length) + mark,
-        side === 'from' ? 'in' : 'out',
-        near,
-      );
-      if (id) return { id };
-    }
-    const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
-    if (guessedLink) {
-      const mark = ' (GUESS)';
-      const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
-      const id = connector(
-        head.slice(0, 40 - mark.length) + mark,
-        side === 'from' ? 'in' : 'out',
-        guessedLink.other,
-      );
-      if (id) return { id };
-    }
-    for (const { sheet, end } of at) {
-      if (end.meets.kind === 'circuit') {
-        const id = connector(
-          `CIRCUIT ${end.meets.circuit}`,
-          side === 'from' ? 'in' : 'out',
-          sheet.title,
-        );
-        if (id) return { id };
-      }
-      const label = end.labels.find((l) => !/^block /.test(l));
-      if (label) {
-        const named = /\b(COD|CONT\w*|SEE|TO|FROM)\b\s*(.*)$/i.exec(label);
-        const other = named?.[2]?.trim() || label;
-        const id = connector(
-          `${side === 'from' ? 'FROM' : 'TO'} ${other}`,
-          side === 'from' ? 'in' : 'out',
-          other,
-        );
-        if (id) return { id };
-      }
-      if (end.deadleg) return { stop: 'deadleg' };
-    }
-    return { stop: 'open' };
-  };
-  const usedNumbers = new Set<string>();
-  const numberFor = (p: Plan) => {
-    const share = new Map<string, { number: string; length: number }>();
-    for (const e of p.edges) {
-      for (const ln of e.chain.lineNumbers) {
-        const k = norm(ln.number);
-        const s = share.get(k) ?? { number: ln.number, length: 0 };
-        s.length += e.length;
-        share.set(k, s);
-      }
-    }
-    const ranked = [...share].sort((a, b) => b[1].length - a[1].length);
-    const pick = ranked.find(([k]) => !usedNumbers.has(k));
-    if (!pick) return undefined;
-    usedNumbers.add(pick[0]);
-    return pick[1].number.slice(0, 40);
-  };
-  const valvesOn = (p: Plan): TraceValve[] => {
+  const guessMarks = { linkAt: linkAt.size > 0, inferred: false, near: false };
+  const valvesOn = (pc: Piece): TraceValve[] => {
     const out: TraceValve[] = [];
-    p.edges.forEach((e, i) => {
-      const forward = p.verts[i] === e.a;
+    pc.edges.forEach((e, i) => {
+      const forward = pc.verts[i] === e.a;
       out.push(...(forward ? e.chain.valves : [...e.chain.valves].reverse()));
     });
     return out;
   };
-  let inlineCut = 0;
-  let marked = 0;
-  for (const p of plans) {
-    if (!chosen.has(p.id)) continue;
-    const start = p.verts[0]!;
-    const stop = p.verts[p.verts.length - 1]!;
-    let from: string | undefined;
-    if (p.parent) {
-      from = teeOn(p.parent.line, p.parent.at, start) ?? undefined;
-    } else {
-      const ep = endOf(start, 'from');
-      if (ep && 'id' in ep) from = ep.id;
-      else {
-        from = connector('OPEN END', 'in', p.edges[0]!.sheet.title) ?? undefined;
-        if (from) {
-          limits.push(
-            `${p.edges[0]!.sheet.title}: ${lineName(p)} starts at an end that meets nothing drawn; the pid input starts it at a connector marked OPEN END.`,
-          );
+  let ovLines = 0;
+
+  /** One page's `pid` data: the lines it owns (and its context line). */
+  const emit = (
+    pg: Page,
+    pageTitle: string,
+    markers: Map<Piece, { text: string; page: string; focus: string }>,
+    sheetMode: boolean,
+  ): Record<string, unknown> => {
+    const all = pg.context ? [pg.context, ...pg.items] : pg.items;
+    const onPage = new Set(all);
+    const placed = placeOn(all);
+    const cuts = new Set<string>();
+    const equipment = new Map<string, { id: string; type: string }>();
+    const offpage: {
+      id: string;
+      direction: 'in' | 'out';
+      sheet: string;
+      text?: string;
+      link?: string;
+      focus?: string;
+    }[] = [];
+    const tees: { id: string; on: string; at?: number }[] = [];
+    const lines: Record<string, unknown>[] = [];
+    const taken = new Set<string>();
+    const unique = (base: string) => {
+      let id = base;
+      for (let k = 2; taken.has(id); k++) id = `${base.slice(0, 28)}-${k}`;
+      taken.add(id);
+      return id;
+    };
+    const eqId = new Map<string, string>();
+    const equipmentOf = (v: string) => {
+      const known = eqId.get(v);
+      if (known) return known;
+      if (equipment.size >= PID_MAX.equipment) {
+        cuts.add(`equipment past ${PID_MAX.equipment}: an end drawn without its equipment`);
+        return null;
+      }
+      const tag = eqTag(v);
+      const id = unique(tagId(tag, `EQ-${equipment.size + 1}`));
+      eqId.set(v, id);
+      equipment.set(id, { id, type: typeFor(tag) });
+      return id;
+    };
+    const teeId = new Map<string, string>();
+    const teeOn = (lineId: string, at: number, v: string) => {
+      const known = teeId.get(v);
+      if (known) return known;
+      if (tees.length >= PID_MAX.tees) return null;
+      const id = unique(`T-${tees.length + 1}`);
+      tees.push({ id, on: lineId, at });
+      teeId.set(v, id);
+      return id;
+    };
+    const shortSheet = (t: string) => t.replace(/\s+/g, '').slice(0, 12) || '?';
+    const connector = (text: string, dir: 'in' | 'out', sheet: string, to?: Piece) => {
+      if (offpage.length >= PID_MAX.offpage) {
+        cuts.add(`connectors past ${PID_MAX.offpage}: ends drawn open`);
+        return null;
+      }
+      const id = unique(`OPC-${offpage.length + 1}`);
+      const home = to ? homeOf.get(to) : undefined;
+      offpage.push({
+        id,
+        direction: dir,
+        sheet: shortSheet(sheet),
+        text: text.slice(0, 40),
+        ...(home && to ? { link: home, focus: to.id } : {}),
+      });
+      return id;
+    };
+    /** A free end as `endPlan` says, or a connector to the sheet a line
+     *  crosses to (a sheet page). */
+    const endOf = (pc: Piece, v: string, side: 'from' | 'to') => {
+      const cross = sheetMode ? crossAt(v, pc) : undefined;
+      if (cross) {
+        const id = connector(
+          `${side === 'from' ? 'FROM' : 'TO'} ${cross.sheet!.title}`,
+          side === 'from' ? 'in' : 'out',
+          cross.sheet!.title,
+          cross,
+        );
+        if (id) return { id };
+      }
+      const e = endPlan(v, side);
+      if ('eq' in e) {
+        const id = equipmentOf(v);
+        return id ? { id } : { stop: 'open' as const };
+      }
+      if ('conn' in e) {
+        if (e.conn.startsWith('NEAR ')) guessMarks.near = true;
+        const id = connector(e.conn, e.dir, e.sheet);
+        if (id) return { id };
+        return { stop: 'open' as const };
+      }
+      return e;
+    };
+    const usedNumbers = new Set<string>();
+    const numberFor = (pc: Piece) => {
+      const share = new Map<string, { number: string; length: number }>();
+      for (const e of pc.edges) {
+        for (const ln of e.chain.lineNumbers) {
+          const k = norm(ln.number);
+          const s = share.get(k) ?? { number: ln.number, length: 0 };
+          s.length += e.length;
+          share.set(k, s);
         }
       }
+      const ranked = [...share].sort((a, b) => b[1].length - a[1].length);
+      const pick = ranked.find(([k]) => !usedNumbers.has(k));
+      if (!pick) return undefined;
+      usedNumbers.add(pick[0]);
+      return pick[1].number.slice(0, 40);
+    };
+    const originTitle = pg.origin ? (titleOf.get(pg.origin) ?? pg.origin) : '';
+    let inlineCut = 0;
+    for (const pc of all) {
+      const start = pc.verts[0]!;
+      const stop = pc.verts[pc.verts.length - 1]!;
+      const isContext = pc === pg.context;
+      let from: string | undefined;
+      let to: string | undefined;
+      let end: 'open' | undefined;
+      let deadleg = pc.plan.deadleg;
+      if (isContext) {
+        // The line its children hang off, drawn again here: its ends lead
+        // back to the page it belongs to.
+        const back = (v: string, dir: 'in' | 'out') =>
+          (isEq(v) ? equipmentOf(v) : null) ??
+          connector(`SEE ${originTitle}`, dir, originTitle, pc) ??
+          undefined;
+        from = back(start, 'in');
+        to = back(stop, 'out');
+        if (!to) end = 'open';
+        deadleg = false;
+      } else {
+        if (pc.prev) {
+          const crossing = pc.prev.sheet !== pc.sheet;
+          from =
+            connector(
+              crossing ? `FROM ${pc.prev.sheet!.title}` : 'CONTINUED',
+              'in',
+              (crossing ? pc.prev.sheet! : pc.sheet!).title,
+              pc.prev,
+            ) ?? undefined;
+        } else if (pc.parent && onPage.has(pc.parent.piece)) {
+          from = teeOn(pc.parent.piece.id, pc.parent.at, start) ?? undefined;
+        } else if (pc.parent) {
+          const home = homeOf.get(pc.parent.piece);
+          from =
+            connector(
+              `FROM ${home ? (titleOf.get(home) ?? home) : pc.parent.piece.id}`,
+              'in',
+              pc.parent.piece.sheet?.title ?? '?',
+              pc.parent.piece,
+            ) ?? undefined;
+        } else {
+          const ep = endOf(pc, start, 'from');
+          if ('id' in ep) from = ep.id;
+          else {
+            from = connector('OPEN END', 'in', pc.edges[0]!.sheet.title) ?? undefined;
+            if (from) {
+              once(
+                `${pc.edges[0]!.sheet.title}: ${lineName(pc.plan)} starts at an end that meets nothing drawn; the pid input starts it at a connector marked OPEN END.`,
+              );
+            }
+          }
+        }
+        if (pc.next) {
+          const crossing = pc.next.sheet !== pc.sheet;
+          to =
+            connector(
+              crossing ? `TO ${pc.next.sheet!.title}` : 'CONTINUES',
+              'out',
+              (crossing ? pc.next.sheet! : pc.sheet!).title,
+              pc.next,
+            ) ?? undefined;
+          if (!to) end = 'open';
+          deadleg = false;
+        } else {
+          const onLine = placed.get(stop);
+          const elsewhere = pc.sheet ? sheetPlace.get(pc.sheet)?.get(stop) : undefined;
+          if (onLine && onLine.piece !== pc) {
+            to = teeOn(onLine.piece.id, onLine.at, stop) ?? undefined;
+            if (!to) end = 'open';
+          } else if (
+            sheetMode &&
+            elsewhere &&
+            elsewhere.piece !== pc &&
+            homeOf.has(elsewhere.piece)
+          ) {
+            // It ends on a line this page does not draw: a connector to it.
+            const home = homeOf.get(elsewhere.piece)!;
+            to =
+              connector(
+                `JOINS ${elsewhere.piece.id} ON ${titleOf.get(home) ?? home}`,
+                'out',
+                pc.sheet!.title,
+                elsewhere.piece,
+              ) ?? undefined;
+            if (!to) end = 'open';
+          } else {
+            const ep = endOf(pc, stop, 'to');
+            if ('id' in ep) to = ep.id;
+            else if (ep.stop === 'deadleg') deadleg = true;
+            else end = 'open';
+          }
+        }
+      }
+      if (!from) {
+        cuts.add('lines with no room for their start: left off');
+        continue;
+      }
+      if (to && to === from) {
+        to = undefined;
+        end = 'open';
+      }
+      const valves = valvesOn(pc);
+      // Up to six inline items: named ones before guessed ones, in path order.
+      const keep = new Set(
+        [...valves.keys()]
+          .sort((a, b) => Number(valves[a]!.guessed) - Number(valves[b]!.guessed) || a - b)
+          .slice(0, PID_MAX.inline),
+      );
+      if (!(sheetMode === false && valveCut.has(pc))) inlineCut += valves.length - keep.size;
+      const inline = valves.filter((_, i) => keep.has(i)).map((v) => ({ type: v.type }));
+      const number = numberFor(pc);
+      // A process-line join on the line is an inference: marked on every
+      // page that draws it.
+      const inferred = pc.edges.reduce(
+        (x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length,
+        0,
+      );
+      if (inferred) guessMarks.inferred = true;
+      const mk = markers.get(pc);
+      lines.push({
+        id: pc.id,
+        ...(number ? { number } : {}),
+        ...(inferred
+          ? {
+              note: inferred === 1 ? 'INFERRED JOIN (GUESS)' : `${inferred} INFERRED JOINS (GUESS)`,
+            }
+          : {}),
+        from,
+        ...(to ? { to } : {}),
+        ...(!to && end ? { end } : {}),
+        ...(deadleg && !to ? { deadleg: true } : {}),
+        ...(pc.plan.depth > 0 ? { weight: 'secondary' } : {}),
+        ...(inline.length ? { inline } : {}),
+        ...(mk ? { more: { text: mk.text, link: mk.page, focus: mk.focus } } : {}),
+      });
     }
-    if (!from) {
-      cuts.add('lines with no room for their start: left off');
-      continue;
+    if (cuts.size) {
+      once(
+        needSheets && !sheetMode
+          ? `the overview is cut at the template limits (${[...cuts].join('; ')}); the sheet pages draw every line.`
+          : `${pageTitle}: the page is cut at the template limits (${[...cuts].join('; ')}); the trace JSON has every chain.`,
+      );
     }
-    let to: string | undefined;
-    let end: 'open' | undefined;
-    let deadleg = p.deadleg;
-    const onLine = placed.get(stop);
-    if (onLine && onLine.line !== p.id && chosen.has(onLine.line)) {
-      to = teeOn(onLine.line, onLine.at, stop) ?? undefined;
-      if (!to) end = 'open';
-    } else {
-      const ep = endOf(stop, 'to');
-      if (ep && 'id' in ep) to = ep.id;
-      else if (ep?.stop === 'deadleg') deadleg = true;
-      else end = 'open';
+    if (inlineCut) {
+      once(
+        `${pageTitle}: ${inlineCut} valve${inlineCut === 1 ? '' : 's'} or reducer${inlineCut === 1 ? '' : 's'} past six on one chain ${inlineCut === 1 ? 'is' : 'are'} left off the drawing (guessed ones first); the trace JSON has them on its chains.`,
+      );
     }
-    if (to && to === from) {
-      to = undefined;
-      end = 'open';
+    const drawnLines = new Set(lines.map((l) => l.id as string));
+    return {
+      lines,
+      equipment: [...equipment.values()],
+      offpage,
+      tees: tees.filter(
+        (t) => drawnLines.has(t.on) && lines.some((l) => l.from === t.id || l.to === t.id),
+      ),
+      circuits: [
+        {
+          id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', CIRCUIT_ID),
+          label: circuit.slice(0, 40),
+          lines: lines.map((l) => l.id as string),
+          equipment: [...equipment.keys()],
+        },
+      ],
+    };
+  };
+
+  const ov = emit(
+    { key: 'overview', title: 'Overview', items: ovPieces },
+    'the overview',
+    ovMarkers,
+    false,
+  );
+  ovLines = (ov.lines as unknown[]).length;
+  const sheetData = pages.map(({ page, title, sheet }) => ({
+    page,
+    title,
+    sheet,
+    data: emit(page, title, markersOn.get(page.key) ?? new Map(), true),
+  }));
+  if (!ovLines) limits.push('nothing on the circuit could be drawn.');
+  // A link's focus names a line the target page drew; a line left off at a
+  // cap is not there, so the link shows the page alone.
+  const drawnOn = new Map<string, Set<string>>(
+    sheetData.map(({ page, data }) => [
+      page.key,
+      new Set((data.lines as { id: string }[]).map((l) => l.id)),
+    ]),
+  );
+  for (const [key, d] of [
+    ['overview', ov] as const,
+    ...sheetData.map((x) => [x.page.key, x.data] as const),
+  ]) {
+    const fix = (o: { link?: string; focus?: string }) => {
+      if (o.link && o.focus && !drawnOn.get(o.link)?.has(o.focus)) delete o.focus;
+      // A link to its own page is only for the element it shows.
+      if (o.link === key && !o.focus) delete o.link;
+    };
+    for (const o of d.offpage as { link?: string; focus?: string }[]) fix(o);
+    for (const l of d.lines as { more?: { link?: string; focus?: string } }[]) {
+      if (l.more) fix(l.more);
     }
-    const valves = valvesOn(p);
-    // Up to six inline items: named ones before guessed ones, in path order.
-    const keep = new Set(
-      [...valves.keys()]
-        .sort((a, b) => Number(valves[a]!.guessed) - Number(valves[b]!.guessed) || a - b)
-        .slice(0, PID_MAX.inline),
-    );
-    inlineCut += valves.length - keep.size;
-    const inline = valves.filter((_, i) => keep.has(i)).map((v) => ({ type: v.type }));
-    const number = numberFor(p);
-    // A process-line join on the line is an inference: marked on the drawing.
-    const inferred = p.edges.reduce(
-      (x, e) => x + (e.chain.joins ?? []).filter((j) => j.inferred).length,
-      0,
-    );
-    if (inferred) marked += 1;
-    lines.push({
-      id: p.id,
-      ...(number ? { number } : {}),
-      ...(inferred
-        ? { note: inferred === 1 ? 'INFERRED JOIN (GUESS)' : `${inferred} INFERRED JOINS (GUESS)` }
-        : {}),
-      from,
-      ...(to ? { to } : {}),
-      ...(!to && end ? { end } : {}),
-      ...(deadleg && !to ? { deadleg: true } : {}),
-      ...(p.depth > 0 ? { weight: 'secondary' } : {}),
-      ...(inline.length ? { inline } : {}),
-    });
   }
-  if (cuts.size) {
+
+  // Every chain lands on a page that owns it: said when one does not.
+  const owned = new Set(
+    (needSheets ? pages.flatMap((p) => p.page.items) : ovPieces).flatMap((pc) => pc.edges),
+  );
+  const lost = edges.filter((e) => !owned.has(e)).length;
+  if (lost) {
     limits.push(
-      `the pid input is cut at the template limits (${[...cuts].join('; ')}); the trace JSON has every chain.`,
+      `${lost} chain${lost === 1 ? ' is' : 's are'} on no page of the drawing set; the trace JSON has every chain.`,
     );
   }
-  if (inlineCut) {
-    limits.push(
-      `${inlineCut} valve${inlineCut === 1 ? '' : 's'} or reducer${inlineCut === 1 ? '' : 's'} past six on one line ${inlineCut === 1 ? 'is' : 'are'} left off the drawing (guessed ones first); the trace JSON has them on its chains.`,
-    );
-  }
-  if (!lines.length) limits.push('nothing on the circuit could be drawn.');
-  const nearEnds = offpage.filter((o) => o.text?.startsWith('NEAR ')).length;
   const marks = [
-    linkAt.size ? 'sheet links' : '',
-    marked ? 'joins through process lines' : '',
-    nearEnds ? 'ends only near equipment' : '',
+    guessMarks.linkAt ? 'sheet links' : '',
+    guessMarks.inferred ? 'joins through process lines' : '',
+    guessMarks.near ? 'ends only near equipment' : '',
   ].filter(Boolean);
   const guessNote = marks.length ? ` Guesses are marked GUESS (${marks.join(', ')}).` : '';
-
+  const total = plans.length;
+  const setNote = needSheets
+    ? ` ${pages.length + 1} pages: the overview draws ${ovLines} of ${total} line${total === 1 ? '' : 's'}; the sheet pages draw every line, deadleg and valve.`
+    : '';
   const crossings = m ? new Set(m.edges.map((e) => e.sheet.title)).size - 1 : 0;
   const description = m
-    ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}, ${lines.length} lines drawn, deadlegs on caps.${guessNote}`
-    : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${guessNote}`;
-  const drawnLines = new Set(lines.map((l) => l.id as string));
+    ? `Circuit ${circuit}: main line ${vname(m.from)} to ${vname(m.to)}${mainBasis ? ` (${mainBasis})` : ''}, ${round(m.edges.reduce((x, e) => x + e.length, 0))} drawing units across ${crossings + 1} sheet${crossings ? 's' : ''}.${setNote}${guessNote}`
+    : `Circuit ${circuit} traced from ${sheets.length} uploaded drawing${sheets.length === 1 ? '' : 's'}; no main line between two pieces of equipment was found.${setNote}${guessNote}`;
+  const head = `Circuit ${circuit}`.slice(0, 80);
+  const only = !needSheets && sheetsUsed.length === 1 ? sheetsUsed[0]!.title : undefined;
   return {
     template: 'pid',
-    title: `Circuit ${circuit}`.slice(0, 80),
+    title: head,
     description: description.slice(0, 300),
     legendNames: LEGEND_NAMES,
-    equipment: [...equipment.values()],
-    offpage,
-    lines,
-    tees: tees.filter(
-      (t) => drawnLines.has(t.on) && lines.some((l) => l.from === t.id || l.to === t.id),
-    ),
-    circuits: [
+    pages: [
       {
-        id: tagId(`CIRCUIT-${circuit}`, 'CIRCUIT', CIRCUIT_ID),
-        label: circuit.slice(0, 40),
-        lines: lines.map((l) => l.id as string),
-        equipment: [...equipment.keys()],
+        id: 'overview',
+        title: only ? clipTitle(only) : 'Overview',
+        data: {
+          title: head,
+          description: description.slice(0, 300),
+          ...ov,
+        },
       },
+      ...sheetData.map(({ page, title, sheet, data }) => ({
+        id: page.key,
+        title,
+        data: {
+          title: `${head}: ${title}`.slice(0, 80),
+          description: (page.context
+            ? `Detail of ${sheet?.title ?? title}: the lines off ${nameOf(page.context)}, drawn again here.`
+            : `Sheet ${sheet?.title ?? title} of circuit ${circuit}: ${(data.lines as unknown[]).length} line${(data.lines as unknown[]).length === 1 ? '' : 's'}, every deadleg and valve on it.${guessNote}`
+          ).slice(0, 300),
+          ...data,
+        },
+      })),
     ],
   };
+
+  /** A count of what moved: "+3 LINES, 5 DEADLEGS", and valves past six. */
+  function countText(items: Piece[], valves: number): string {
+    const dl = items.filter((pc) => pc.plan.deadleg).length;
+    const ln = items.length - dl;
+    const s = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 'S'}`;
+    const long = [
+      ln ? s(ln, 'LINE') : '',
+      dl ? s(dl, 'DEADLEG') : '',
+      valves ? s(valves, 'VALVE') : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    const short = [ln ? `${ln} LN` : '', dl ? `${dl} DL` : '', valves ? `${valves} VLV` : '']
+      .filter(Boolean)
+      .join(', ');
+    return `+${long}`.length <= 32 ? `+${long}` : `+${short}`.slice(0, 32);
+  }
 
   function lineName(p: Plan): string {
     const ln = p.edges.flatMap((e) => e.chain.lineNumbers)[0]?.number;

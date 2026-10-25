@@ -121,3 +121,9 @@ export function sheetTwo(): SheetInput {
     limits: [],
   };
 }
+
+/** The overview page of a traced drawing set (the first page): what the
+ *  single drawing was before sets. */
+export function overviewOf(pid: unknown): Record<string, unknown> {
+  return (pid as { pages: { data: Record<string, unknown> }[] }).pages[0]!.data;
+}

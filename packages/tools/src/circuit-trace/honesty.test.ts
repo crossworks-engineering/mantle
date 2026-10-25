@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimateMeasurer, render, validate } from '@mantle/diagram-templates';
 import type { WorkbookTabRef } from '@mantle/tabledb';
+import { overviewOf } from './fixtures';
 import { readSheet } from './read';
 import { MAX_DISCREPANCIES, traceCircuit } from './walk';
 import type { BlockRow, NodeRow, SegRow, SheetInput, TextRow } from './walk';
@@ -123,9 +124,10 @@ function sheet(
 type Pid = {
   description: string;
   equipment: { id: string }[];
-  offpage: { text?: string }[];
+  offpage: { text?: string; direction?: string; link?: string; focus?: string }[];
   lines: Record<string, unknown>[];
 };
+type SetOf = { pages: { id: string; title: string; data: Pid }[] };
 
 /** Two pieces either side of a vessel at x 20..30 drawn on PROCESS. */
 function vesselSheet(closed: boolean): SheetInput {
@@ -214,7 +216,7 @@ describe('P5a: a process join is an inference, and never across another line num
     expect(r.guesses.join(' ')).toMatch(
       /pieces #2 and #3 of the circuit are joined through 1 process-line segment on PROCESS, 10 drawing units \(handles pGap\): an inferred join/,
     );
-    const pid = r.pid as Pid;
+    const pid = overviewOf(r.pid) as Pid;
     expect(pid.lines.filter((l) => l.note === 'INFERRED JOIN (GUESS)')).toHaveLength(1);
     expect(validate('pid', pid).ok).toBe(true);
     const svg = render('pid', pid, estimateMeasurer);
@@ -259,7 +261,7 @@ describe('P6: a join never changes a piece role', () => {
     );
     const r = traceCircuit(C, [s(), other]);
     expect(r.links.some((l) => l.from.node === 4 || l.to?.node === 4)).toBe(false);
-    expect((r.pid as Pid).description).toMatch(/no main line/);
+    expect((overviewOf(r.pid) as Pid).description).toMatch(/no main line/);
   });
 });
 
@@ -284,7 +286,7 @@ describe('P7: a tag past the near distance is a reading, never equipment', () =>
     expect(r.guesses.join(' ')).toMatch(
       /end #2 meets nothing drawn; the nearest equipment tag V-201/,
     );
-    const pid = r.pid as Pid;
+    const pid = overviewOf(r.pid) as Pid;
     expect(pid.equipment.map((e) => e.id)).toEqual(['E-101']);
     expect(pid.offpage.map((o) => o.text)).toContain('NEAR V-201 (GUESS)');
     expect(pid.description).toMatch(/no main line/);
@@ -292,7 +294,7 @@ describe('P7: a tag past the near distance is a reading, never equipment', () =>
 
   it("the register's to confirms it: then the main line ends there", () => {
     const r = traceCircuit(C, [s()], { from: 'E-101', to: 'V-201' });
-    const pid = r.pid as Pid;
+    const pid = overviewOf(r.pid) as Pid;
     expect(pid.equipment.map((e) => e.id).sort()).toEqual(['E-101', 'V-201']);
     expect(pid.lines[0]).toMatchObject({ from: 'E-101', to: 'V-201' });
   });
@@ -356,9 +358,9 @@ describe('P11: the branches of a process circuit are process lines', () => {
         ],
       ),
     ]);
-    const pid = r.pid as Pid & { legendNames: Record<string, string> };
+    const pid = overviewOf(r.pid) as Pid & { legendNames: Record<string, string> };
     expect(pid.lines.some((l) => l.weight === 'secondary')).toBe(true);
-    const out = render('pid', pid, estimateMeasurer);
+    const out = render('pid', r.pid, estimateMeasurer);
     expect(out.ok).toBe(true);
     const svg = out.ok ? out.svg : '';
     expect(svg).toMatch(/Process branch or deadleg/i);
@@ -390,7 +392,7 @@ describe('the main line: ties and the register', () => {
   it("the register's from and to with no path between them: a limit", () => {
     const r = traceCircuit(C, [twin()], { from: 'E-101', to: 'V-102' });
     expect(r.limits.join(' ')).toMatch(/no path that keeps off deadlegs joins them/);
-    expect((r.pid as Pid).description).toMatch(/no main line/);
+    expect((overviewOf(r.pid) as Pid).description).toMatch(/no main line/);
   });
 
   it("the register's text echoed in limits is cut short", () => {
@@ -487,7 +489,7 @@ describe('a sheet with the circuit is always listed', () => {
     expect((r.sheet.network ?? []).map((g) => g.handle)).toEqual(['P1']);
     const t = traceCircuit(C, [r.sheet]);
     expect(t.sheets.map((s) => s.title)).toEqual(['PID-9801']);
-    expect((t.pid as Pid).equipment).toEqual([]);
+    expect((overviewOf(t.pid) as Pid).equipment).toEqual([]);
   });
 
   it('a neighbourhood tab that cannot be read is a limit, not a missing sheet', async () => {
@@ -615,7 +617,7 @@ describe('MED-B: the main line never runs through a deadleg chain', () => {
   ] as const) {
     it(`${name}: no main line, said in limits; the deadleg is drawn as a deadleg`, () => {
       const r = traceCircuit(C, [s()]);
-      const pid = r.pid as Pid;
+      const pid = overviewOf(r.pid) as Pid;
       expect(pid.description).toMatch(/no main line/);
       expect(r.limits.join(' ')).toMatch(
         /E-101 and E-201 are joined only through a deadleg chain; a main line never runs through a deadleg/,
@@ -684,7 +686,7 @@ describe('MED-C: a tall single-tag outline is one piece of equipment', () => {
     const end = r.sheets[0]!.runs[0]!.ends.find((e) => e.node === 2)!;
     expect(end.equipment).toEqual(['E-201']);
     expect(end.equipmentBasis).toMatch(/elongated outline/);
-    expect((r.pid as Pid).description).toMatch(/main line E-101 to E-201/);
+    expect((overviewOf(r.pid) as Pid).description).toMatch(/main line E-101 to E-201/);
   });
 
   it('two distinct tags inside: a cluster, only a reading', () => {
@@ -731,11 +733,123 @@ describe('a reading is a main-line end only across more sheets, as a guess', () 
   it('drawn to a NEAR connector marked GUESS, never as the equipment, and said', () => {
     const r = traceCircuit(C, sheets());
     expect(r.links.filter((l) => !l.guessed)).toHaveLength(1);
-    const pid = r.pid as Pid;
+    const pid = overviewOf(r.pid) as Pid;
     expect(pid.description).toMatch(/main line E-101 to near V-201 \(GUESS\).*across 2 sheets/);
     expect(pid.equipment.map((e) => e.id)).toEqual(['E-101']);
     expect(pid.offpage.map((o) => o.text)).toContain('NEAR V-201 (GUESS)');
     expect(r.guesses.join(' ')).toMatch(/its to end is only near V-201/);
+  });
+
+  it('the reading stays a marked guess on the sheet page that draws that end', () => {
+    const r = traceCircuit(C, sheets());
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    expect(set.pages.map((p) => p.title)).toEqual(['Overview', 'PID-9541', 'PID-9542']);
+    const texts = (i: number) => set.pages[i]!.data.offpage.map((o) => o.text);
+    expect(texts(2)).toContain('NEAR V-201 (GUESS)');
+    expect(texts(1)).not.toContain('NEAR V-201 (GUESS)');
+    expect(set.pages[2]!.data.equipment.map((e) => e.id)).toEqual([]);
+  });
+});
+
+describe('a drawing set marks every guess on every page that draws it', () => {
+  // PID-9201: E-101 to a tee; up from it to "CONT. ON PID-9202" (the main
+  // run, a certain link: labels and N100-1 on both ends' own chains); on
+  // from the tee as a branch, joined through the process line (an
+  // inference) to a second piece. PID-9202: on to V-201.
+  //
+  //            6 "CONT. ON PID-9202"
+  //            |
+  //   E-101 1--2--5 .. gap .. 3--4
+  const two = () => {
+    const one = sheet(
+      'PID-9201',
+      [
+        sg(M, 'A', 0, 0, 20, 0, 1, 2),
+        sg(M, 'T', 20, 0, 40, 0, 2, 5),
+        sg(M, 'U', 20, 0, 20, 20, 2, 6),
+        sg(M, 'B', 50, 0, 70, 0, 3, 4),
+      ],
+      [
+        sg(PIPE, 'pA', 0, 0, 20, 0, 1, 2),
+        sg(PIPE, 'pT', 20, 0, 40, 0, 2, 5),
+        sg(PIPE, 'pU', 20, 0, 20, 20, 2, 6),
+        sg(PIPE, 'pGap', 40, 0, 50, 0, 5, 3),
+        sg(PIPE, 'pB', 50, 0, 70, 0, 3, 4),
+      ],
+      [
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+        { text: 'CONT. ON PID-9202', layer: 'T', x: 21, y: 21 },
+      ],
+      [
+        lineNo('LA', 10, 1, 'N100-1', C),
+        lineNo('LU', 21, 10, 'N100-1', C),
+        lineNo('LG', 45, 1, 'N100-1'),
+      ],
+    );
+    return [
+      one,
+      sheet(
+        'PID-9202',
+        [sg(M, 'X', 0, 0, 20, 0, 1, 2)],
+        [],
+        [
+          { text: 'CONT. FROM PID-9201', layer: 'T', x: -1, y: 1 },
+          { text: 'V-201', layer: 'EQUIP', x: 21, y: 0 },
+        ],
+        [lineNo('LX', 10, 1, 'N100-1', C)],
+      ),
+    ];
+  };
+
+  it('an inferred join is marked on the overview and on its sheet page; links go both ways', () => {
+    const r = traceCircuit(C, two());
+    expect(r.links.filter((l) => !l.guessed)).toHaveLength(1);
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    const set = r.pid as unknown as SetOf;
+    expect(set.pages.map((p) => p.title)).toEqual(['Overview', 'PID-9201', 'PID-9202']);
+    const notes = (i: number) =>
+      set.pages[i]!.data.lines.filter((l) => l.note === 'INFERRED JOIN (GUESS)');
+    expect(notes(0)).toHaveLength(1);
+    expect(notes(1)).toHaveLength(1);
+    expect(notes(2)).toHaveLength(0);
+    // The sheet connectors jump to the neighbour sheet's page, to the line.
+    const out = set.pages[1]!.data.offpage.find((o) => o.link)!;
+    const back = set.pages[2]!.data.offpage.find((o) => o.link)!;
+    expect(out).toMatchObject({ direction: 'out', text: 'TO PID-9202', link: set.pages[2]!.id });
+    expect(back).toMatchObject({ direction: 'in', text: 'FROM PID-9201', link: set.pages[1]!.id });
+    expect(set.pages[2]!.data.lines.map((l) => l.id)).toContain(out.focus);
+    expect(set.pages[1]!.data.lines.map((l) => l.id)).toContain(back.focus);
+    // The static export prints each link as the page it goes to.
+    const drawn = render('pid', r.pid, estimateMeasurer);
+    expect(drawn.ok && drawn.svg).toContain('SEE PAGE 3: PID-9202');
+    expect(drawn.ok && drawn.svg).toContain('SEE PAGE 2: PID-9201');
+    expect(
+      drawn.ok && drawn.pages!.filter((p) => p.svg.includes('INFERRED JOIN (GUESS)')),
+    ).toHaveLength(2);
+  });
+
+  it('a guessed link: GUESS on the connector of every page that draws the end, never a page link', () => {
+    const [one, other] = two();
+    one!.texts = one!.texts.filter((t) => !t.text.startsWith('CONT'));
+    other!.texts = other!.texts.filter((t) => !t.text.startsWith('CONT'));
+    const r = traceCircuit(C, [one!, other!]);
+    const set = r.pid as unknown as SetOf;
+    const v = validate('pid', r.pid);
+    expect(v.ok ? [] : v.errors).toEqual([]);
+    for (const p of set.pages) {
+      for (const o of p.data.offpage) {
+        if (/PID-920/.test(o.text ?? '')) {
+          expect(o.text).toMatch(/\(GUESS\)$/);
+          expect(o.link).toBeUndefined();
+        }
+      }
+    }
+    expect(
+      set.pages.flatMap((p) => p.data.offpage).filter((o) => /GUESS/.test(o.text ?? '')).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -764,7 +878,7 @@ describe('outlines on the pipe layers keep to the size and one-tag rule', () => 
     ]);
     const end = r.sheets[0]!.runs[0]!.ends.find((e) => e.node === 2)!;
     expect(end.equipment).toEqual([]);
-    expect((r.pid as Pid).equipment.map((e) => e.id)).toEqual(['E-101']);
+    expect((overviewOf(r.pid) as Pid).equipment.map((e) => e.id)).toEqual(['E-101']);
   });
 
   it('L2: a pipe loop round a tag (a bypass the circuit is drawn over) is no outline', () => {
@@ -790,7 +904,7 @@ describe('outlines on the pipe layers keep to the size and one-tag rule', () => 
     ]);
     const ends = r.sheets[0]!.runs.flatMap((x) => x.ends);
     expect(ends.flatMap((e) => e.equipment).sort()).toEqual(['E-101', 'E-301']);
-    expect((r.pid as Pid).description).toMatch(/main line E-101 to E-301/);
+    expect((overviewOf(r.pid) as Pid).description).toMatch(/main line E-101 to E-301/);
   });
 
   it('L3: a join-only chain from a main end to a deadleg is a deadleg chain', () => {
@@ -945,7 +1059,7 @@ describe('round 3: a continuation label wins over a reading, readings ranked and
       expect(end.equipmentUnconfirmed).toBeUndefined();
       expect(end.labels).toContain('CONT. ON PID-9573');
       expect(r.links.filter((l) => !l.guessed)).toHaveLength(2);
-      const pid = r.pid as Pid;
+      const pid = overviewOf(r.pid) as Pid;
       expect(pid.description).toMatch(/main line E-101 to E-301, .* across 3 sheets/);
       expect(r.guesses.join(' ')).not.toMatch(/V-555/);
     }
