@@ -128,3 +128,155 @@ export function overviewOf(pid: unknown): Record<string, unknown> {
   const set = pid as { pages?: { data: Record<string, unknown> }[] };
   return set.pages ? set.pages[0]!.data : (pid as Record<string, unknown>);
 }
+
+/** A seeded generator (the same numbers for the same seed, every run). */
+export function seeded(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+/**
+ * A random sheet for fuzzing: up to `k` polylines on the circuit's layers
+ * (some dashed, with gaps at the joining tolerance, some sharing points so
+ * they tee), ends that are valves, labels near points, line number blocks
+ * and process strokes joining random points. Nothing in it is a real
+ * drawing.
+ */
+export function randomSheet(
+  rnd: () => number,
+  k: number,
+  title = 'PID-1001',
+  tableId = 't1',
+): SheetInput {
+  const ri = (n: number) => Math.floor(rnd() * n);
+  const pick = <T>(a: T[]): T => a[ri(a.length)]!;
+  const near = pick([1, 2.5, 10, 0.5, 7]);
+  const segments: SegRow[] = [];
+  const nodes: NodeRow[] = [];
+  const network: SegRow[] = [];
+  let id = 1;
+  let h = 0;
+  const nodeAt = new Map<string, number>();
+  const at = (x: number, y: number, layer: string, share: boolean) => {
+    const key = `${x},${y},${layer}`;
+    if (share && nodeAt.has(key)) return nodeAt.get(key)!;
+    const n = id++;
+    nodeAt.set(key, n);
+    nodes.push(node(n, x, y, 1, 'end', [layer]));
+    return n;
+  };
+  const piece = (
+    layer: string,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    a: number,
+    b: number,
+  ) => seg(layer, `H${h++}`, x1, y1, x2, y2, a, b);
+  const starts: [number, number][] = [];
+  const lines = 1 + ri(k);
+  for (let L = 0; L < lines; L++) {
+    const layer = rnd() < 0.25 ? DL : MAIN;
+    let x = rnd() < 0.3 ? 2 * near * ri(20) : Math.round(rnd() * 400 * 100) / 100;
+    let y = rnd() < 0.3 ? 2 * near * ri(20) : Math.round(rnd() * 400 * 100) / 100;
+    if (starts.length && rnd() < 0.4) [x, y] = pick(starts);
+    const ang = pick([
+      0,
+      Math.PI / 2,
+      Math.PI,
+      -Math.PI / 2,
+      rnd() * 2 * Math.PI,
+      0.01,
+      Math.PI / 4,
+    ]);
+    const dashed = rnd() < 0.5;
+    const pieces = 1 + ri(6);
+    let n0 = at(x, y, layer, true);
+    starts.push([x, y]);
+    for (let p = 0; p < pieces; p++) {
+      const len = pick([near * 0.3, near, near * 2, 3 * near, rnd() * 20 * near, near * 0.5]);
+      const x2 = x + Math.cos(ang) * len;
+      const y2 = y + Math.sin(ang) * len;
+      const n1 = at(x2, y2, layer, true);
+      segments.push(piece(layer, x, y, x2, y2, n0, n1));
+      starts.push([x2, y2]);
+      x = x2;
+      y = y2;
+      n0 = n1;
+      if (dashed) {
+        const gap = pick([near, near * 0.999, near * 1.0001, near * 0.5, 0, near * 2, near * 0.1]);
+        const jitter = rnd() < 0.3 ? (rnd() - 0.5) * near * 0.2 : 0;
+        x = x + Math.cos(ang) * gap + (rnd() < 0.5 ? jitter : 0);
+        y = y + Math.sin(ang) * gap;
+        n0 = at(x, y, layer, rnd() < 0.5);
+      }
+    }
+  }
+  const strokes = ri(k * 2);
+  for (let i = 0; i < strokes; i++) {
+    const a = pick(nodes);
+    const b = pick(nodes);
+    network.push(piece(pick(['PROCESS', 'PROCESS', 'SYMBOL']), a.x, a.y, b.x, b.y, a.id, b.id));
+  }
+  const deg = new Map<number, number>();
+  for (const s of segments) {
+    deg.set(s.n1, (deg.get(s.n1) ?? 0) + 1);
+    deg.set(s.n2, (deg.get(s.n2) ?? 0) + 1);
+  }
+  for (const n of nodes) {
+    const d = deg.get(n.id) ?? 0;
+    n.degree = d;
+    n.kind = d >= 3 ? 'tee' : d === 2 ? 'vertex' : 'end';
+    if (d === 1 && rnd() < 0.05) {
+      n.kind = 'block';
+      n.block = 'GATE_VALVE';
+      n.blockHandle = `V${ri(4)}`;
+    }
+    const ls = new Set<string>();
+    for (const s of segments) if (s.n1 === n.id || s.n2 === n.id) ls.add(s.layer);
+    if (ls.size) n.layers = [...ls];
+  }
+  const texts: SheetInput['texts'] = [];
+  const tags = [
+    'V-100',
+    'E-999',
+    'P-201',
+    'T-5',
+    'PI-2001',
+    'CONT. ON PID-1002',
+    'CONT. FROM PID-1001',
+  ];
+  for (let i = 0; i < ri(6); i++) {
+    const n = pick(nodes);
+    texts.push({
+      text: pick(tags),
+      layer: 'T',
+      x: n.x + (rnd() - 0.5) * near * 2,
+      y: n.y + (rnd() - 0.5) * near * 2,
+    });
+  }
+  const blocks: BlockRow[] = [];
+  for (let i = 0; i < ri(3); i++) {
+    const n = pick(nodes);
+    blocks.push(lineNo(`LN${i}`, n.x, n.y, `2"-P-000${ri(5)}-A1`));
+  }
+  return {
+    tableId,
+    title,
+    sourceFileId: null,
+    circuitLayers: [MAIN, DL],
+    circuitRows: [],
+    segments,
+    nodes,
+    inserts: [],
+    texts,
+    blocks,
+    near,
+    limits: [],
+    ...(rnd() < 0.6 ? { network } : {}),
+  };
+}
