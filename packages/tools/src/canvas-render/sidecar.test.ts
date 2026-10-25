@@ -162,6 +162,29 @@ const REQ = {
   atSeconds: 0,
 };
 
+describe('raceTimeout', () => {
+  it('leaves no timer behind, whichever side wins', async () => {
+    const { raceTimeout } = await import('./sidecar');
+    vi.useFakeTimers();
+    try {
+      // The work wins: the timer is cleared at once.
+      expect(await raceTimeout(Promise.resolve('done'), 8_000, null)).toBe('done');
+      expect(vi.getTimerCount()).toBe(0);
+      // The work never answers: the fallback, and no timer left.
+      const late = raceTimeout(new Promise<string>(() => {}), 8_000, null);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await late).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+      // The work fails: the failure, and no timer left.
+      await expect(raceTimeout(Promise.reject(new Error('x')), 8_000, null)).rejects.toThrow('x');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('renderCanvas', () => {
   it('steps a slide only once a diagram set has mounted, and says the page shown', async () => {
     const { renderCanvas } = await import('./sidecar');

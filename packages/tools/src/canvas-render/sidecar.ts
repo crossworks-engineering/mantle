@@ -66,6 +66,19 @@ const MAX_SLIDE = 60;
 const SETTLE_DEFAULT_S = 2;
 const SETTLE_MAX_S = 10;
 const DIAGRAM_TIMEOUT_MS = 8_000;
+/** `work`, or `fallback` once `ms` pass first. The timer is cleared either
+ *  way, so a finished race leaves nothing pending. */
+export async function raceTimeout<T, F>(work: Promise<T>, ms: number, fallback: F): Promise<T | F> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<F>((r) => {
+    timer = setTimeout(() => r(fallback), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 /** Resolves once a diagram canvas has mounted (at once for any other). */
 const SET_MOUNTED = `(async () => {
   const d = window.diagram;
@@ -450,10 +463,11 @@ async function renderInSlot(
       // A diagram set listens for the arrow keys once it is mounted, after
       // its fonts are ready: a key before that reaches nothing. Wait for it
       // (bounded: the canvas's own code runs here).
-      await Promise.race([
+      await raceTimeout(
         page.evaluate(SET_MOUNTED).catch(() => null),
-        new Promise((r) => setTimeout(r, DIAGRAM_TIMEOUT_MS)),
-      ]);
+        DIAGRAM_TIMEOUT_MS,
+        null,
+      );
       await page.focus('body').catch(() => {});
       for (let i = 1; i < Math.min(req.slide, MAX_SLIDE); i++) {
         await page.keyboard.press('ArrowRight');
@@ -462,10 +476,11 @@ async function renderInSlot(
     }
     await new Promise((r) => setTimeout(r, settle * 1000));
 
-    const sent: unknown = await Promise.race([
+    const sent: unknown = await raceTimeout(
       page.evaluate(diagramProbe(req.exportSvg === true, MAX_LINES, MAX_LINE_CHARS, MAX_SVG_CHARS)),
-      new Promise<null>((r) => setTimeout(() => r(null), DIAGRAM_TIMEOUT_MS)),
-    ]);
+      DIAGRAM_TIMEOUT_MS,
+      null,
+    );
     // The probe answers JSON text of bounded length; read it and cap again.
     let reported: unknown = null;
     if (typeof sent === 'string') {
