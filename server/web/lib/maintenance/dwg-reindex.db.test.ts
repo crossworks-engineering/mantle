@@ -163,6 +163,14 @@ describe.skipIf(!URL)('dwg-reindex', () => {
       () => [],
     );
     await admin`delete from nodes where id = any(${[...tableIds, fileIn, fileOut, fileEdited, fileChecked, fileSealed, folder]}::uuid[])`;
+    // The sealed case's Drawing checks folder, by exact path and only once
+    // empty: never a folder this file did not make.
+    const { autoFiledFolderPath } = await import('@mantle/files');
+    const cropPath = autoFiledFolderPath('drawing-checks', { document: { slug: fileSealed } });
+    await admin`delete from nodes n where n.owner_id = ${anchor} and n.type = 'branch'
+      and n.path::text = ${cropPath}
+      and not exists (select 1 from nodes c where c.owner_id = ${anchor}
+        and c.path <@ n.path and c.id <> n.id)`;
     await superuserExec(URL!, sqlTag`delete from workspaces where id = ${wsId}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
