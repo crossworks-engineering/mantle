@@ -10,7 +10,9 @@ export const policy = routePolicy({
   GET: { class: 'content' },
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a public link: the item is named in the body, not the path; the handler asks its right',
+    },
   },
 });
 

@@ -13,7 +13,7 @@ export const policy = routePolicy({
   POST: {
     class: 'self',
     open: 'telegram',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { none: 'a Telegram chat, not an item: its pairing definer decides by the login' },
   },
 });
 

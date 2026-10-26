@@ -28,7 +28,9 @@ export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a contact, an Admin-only kind: no workspace item; only an Admin user reaches the route, in the Admin scope',
+    },
   },
 });
 

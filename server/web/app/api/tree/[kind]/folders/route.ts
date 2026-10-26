@@ -13,7 +13,9 @@ export const policy = routePolicy({
     class: 'content',
     open: 'owner',
     creates: true,
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'it makes a new folder; the parent it names in the body is asked by the create rule',
+    },
   },
 });
 

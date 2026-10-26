@@ -11,7 +11,9 @@ export const policy = routePolicy({
   POST: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'the items it moves and their target: the item is named in the body, not the path; the handler asks its right',
+    },
   },
 });
 

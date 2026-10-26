@@ -16,11 +16,15 @@ export const policy = routePolicy({
   GET: { class: 'content' },
   PATCH: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a contact, an Admin-only kind: no workspace item; only an Admin user reaches the route, in the Admin scope',
+    },
   },
   DELETE: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a contact, an Admin-only kind: no workspace item; only an Admin user reaches the route, in the Admin scope',
+    },
   },
 });
 

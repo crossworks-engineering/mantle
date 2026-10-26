@@ -21,11 +21,15 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   PATCH: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "a link, not an item: shareItemRefusal asks the right of the link's item in the login's scope",
+    },
   },
   DELETE: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "a link, not an item: shareItemRefusal asks the right of the link's item in the login's scope",
+    },
   },
 });
 

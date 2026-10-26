@@ -275,6 +275,10 @@ export type RouteRow = Readonly<{
   creates: boolean;
   /** A write that may make an item (its private workspace may be made). */
   makesItems: boolean;
+  /** The item the gate checks before the handler (session.ts
+   *  itemWriteGate): null on every row, as no route has a pre-check (a
+   *  declared item states intent only). Only a test that stands in
+   *  routeItemTarget feeds the gate one, to record an old answer. */
   item: RouteItem | null;
   /** The write logs its own audit event: the session guards' generic
    *  `api.write` row is not written for it (session.ts auditMutation reads
@@ -501,6 +505,10 @@ type RowFacts = Readonly<{
   effect: 'read' | 'write';
   creates: boolean;
   makesItems: boolean;
+  /** The item the gate checks before the handler (session.ts
+   *  itemWriteGate): null on every row, as no route has a pre-check (a
+   *  declared item states intent only). Only a test that stands in
+   *  routeItemTarget feeds the gate one, to record an old answer. */
   item: RouteItem | null;
   key: Readonly<{ keyArea: AccessKeyArea | null; keySelf: boolean }> | null;
   alias: string | null;
@@ -648,14 +656,13 @@ function declaredFacts(
   // A 'self' row no owner guard serves is a row of a login list.
   if (d.class === 'self' && scope === null && !logins) bad('scope null on a row no list opens');
   const ownMethod = m === answeredAs;
-  let item: RouteItem | null = null;
-  if (d.item?.param !== undefined && d.item.need !== undefined) {
-    item = Object.freeze({
-      need: d.item.need,
-      ref: 'node',
-      seg: pattern.split('/').indexOf(`:${d.item.param}`),
-    });
-  }
+  // The item a write declares (`item: { param, need }`) states intent only,
+  // as a tool's matrix declaration does: the right the handler asks of the
+  // item in the database, in the login's scope. The gate reads none: no
+  // route has an item pre-check, and a declaration does not bring one
+  // back. The A8 route cells (server/web/server/a8-route-cells.ts) are
+  // generated from it.
+  const item: RouteItem | null = null;
   // The key area an API key needs (an /api/v1 row only: the validator): the
   // one source since the key table went (S9 part 3). A v1 row that declares
   // none is not in the API (keyOnRow: 'not-in-api').

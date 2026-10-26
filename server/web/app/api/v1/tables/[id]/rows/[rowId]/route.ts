@@ -17,7 +17,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   PATCH: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
     keyArea: 'tables',
   },
 });

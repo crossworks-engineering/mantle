@@ -23,7 +23,7 @@ export const routeParams = { id: 'uuid', sid: 'uuid' } as const satisfies RouteP
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'manage' },
   },
 });
 

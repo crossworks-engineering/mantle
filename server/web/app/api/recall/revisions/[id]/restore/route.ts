@@ -9,7 +9,9 @@ export const policy = routePolicy({
   POST: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "a Recall revision, not an item: the handler reads it in the login's scope, and the map's edit right decides",
+    },
   },
 });
 

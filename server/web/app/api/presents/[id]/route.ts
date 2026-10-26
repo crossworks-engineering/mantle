@@ -22,12 +22,12 @@ export const policy = routePolicy({
   PATCH: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
   },
   DELETE: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'manage' },
   },
 });
 

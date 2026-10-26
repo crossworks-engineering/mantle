@@ -9,7 +9,9 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   DELETE: {
     class: 'self',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "a push subscription of the login's own, no workspace item: the handler acts only on its own",
+    },
   },
 });
 

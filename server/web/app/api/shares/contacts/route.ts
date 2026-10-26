@@ -23,7 +23,9 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a contact share: the item is named in the body, not the path; the handler asks its right',
+    },
   },
 });
 

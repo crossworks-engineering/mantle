@@ -35,7 +35,9 @@ export const policy = routePolicy({
   },
   DELETE: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'the files it deletes: the item is named in the body, not the path; the handler asks its right',
+    },
   },
 });
 

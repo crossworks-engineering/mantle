@@ -169,12 +169,16 @@ describe('validateMethodPolicy: the one validator', () => {
     for (const m of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
       expect(methodEffect(m)).toBe('write');
     expect(() =>
+      validateMethodPolicy({ class: 'content', item: { none: 'why' } }, '/api/x', 'DELETE'),
+    ).not.toThrow();
+    // S11b: the placeholder is no reason.
+    expect(() =>
       validateMethodPolicy(
         { class: 'content', item: { none: ITEM_NONE_PLACEHOLDER } },
         '/api/x',
         'DELETE',
       ),
-    ).not.toThrow();
+    ).toThrow(/placeholder: decide it/);
   });
 
   it('an effect exception: read only on a POST, write only on a GET or HEAD', () => {

@@ -8,7 +8,7 @@ export const policy = routePolicy({
     class: 'self',
     scope: null,
     open: 'any',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { none: 'a workspace, not an item: its definers decide by the workspace seats' },
   },
 });
 

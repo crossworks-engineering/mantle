@@ -5,7 +5,7 @@ export { POST, routeParams } from '../../../../tables/[id]/commit/route';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
     keyArea: 'tables',
     aliasOf: 'POST /api/tables/:id/commit',
   },

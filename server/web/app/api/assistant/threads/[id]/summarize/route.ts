@@ -13,7 +13,9 @@ export const policy = routePolicy({
   POST: {
     class: 'self',
     open: 'chat',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "a chat thread of the login's own, no workspace item: the handler acts only on its own",
+    },
   },
 });
 

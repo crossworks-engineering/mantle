@@ -18,7 +18,9 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   DELETE: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'a deleted app (Recently deleted), no live item: mantle_app_trash_act asks its manage right',
+    },
   },
 });
 

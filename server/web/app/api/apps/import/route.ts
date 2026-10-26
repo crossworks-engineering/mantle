@@ -46,7 +46,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { none: 'it makes a new app from the package in the body; it names no existing item' },
   },
 });
 

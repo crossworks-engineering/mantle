@@ -590,13 +590,13 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
     expect(() => pub('publicLogin', { class: 'public' })).toThrow(/does not serve its row/);
   });
 
-  it('an item a write names: its param is the segment the gate reads', () => {
+  it('an item a write names states intent only: the gate reads none (S11b)', () => {
     const rows = build(
       entry('/api/notes/:id', ['PATCH'], {
         PATCH: { class: 'content', item: { param: 'id', need: 'edit' } },
       }),
     );
-    expect(rows.get('PATCH /api/notes/:id')?.item).toEqual({ need: 'edit', ref: 'node', seg: 3 });
+    expect(rows.get('PATCH /api/notes/:id')?.item).toBeNull();
   });
 });
 

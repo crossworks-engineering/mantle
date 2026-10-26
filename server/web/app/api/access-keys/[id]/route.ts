@@ -23,7 +23,9 @@ export const policy = routePolicy({
     class: 'self',
     scope: null,
     open: 'any',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: "an API key of the login's own, no workspace item: the handler acts only on its own",
+    },
     audit: 'own',
   },
 });

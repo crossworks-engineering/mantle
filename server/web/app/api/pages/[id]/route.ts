@@ -20,12 +20,12 @@ export const policy = routePolicy({
     class: 'content',
     open: 'owner',
     caller: 'ownerAtRead',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
   },
   DELETE: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'manage' },
   },
 });
 

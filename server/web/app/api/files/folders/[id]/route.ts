@@ -27,17 +27,17 @@ export const policy = routePolicy({
   GET: { class: 'content', open: 'owner' },
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
   },
   PATCH: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
   },
   DELETE: {
     class: 'content',
     open: 'owner',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'manage' },
   },
 });
 

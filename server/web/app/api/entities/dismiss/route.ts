@@ -8,7 +8,9 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: {
+      none: 'entities, not items: the entity graph is the Admin workspace’s; only an Admin user reaches the route',
+    },
   },
 });
 

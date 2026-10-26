@@ -35,7 +35,7 @@ export const policy = routePolicy({
     class: 'content',
     open: 'owner',
     makesItems: false,
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'read' },
     limits: { rateLimit: ['memberToolBroker'] },
   },
 });

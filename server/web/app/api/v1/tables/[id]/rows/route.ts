@@ -19,7 +19,7 @@ export const policy = routePolicy({
   GET: { class: 'content', keyArea: 'tables', aliasOf: 'GET /api/tables/:id/rows' },
   POST: {
     class: 'content',
-    item: { none: 'not decided yet: the write names an item no check reads' },
+    item: { param: 'id', need: 'edit' },
     keyArea: 'tables',
   },
 });
