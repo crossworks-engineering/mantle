@@ -44,6 +44,7 @@ import {
   type Verdict,
 } from './check';
 import type { ChainRole } from './pid';
+import { VERIFY_NEXT } from './workflow';
 import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
 
 export type VerifyWorker = {
@@ -56,6 +57,8 @@ export type VerifyWorker = {
 export type CheckAnswer = {
   q: CheckQuestion;
   verdict: Verdict;
+  /** After a no: what the image named instead, one of `q.alts`. */
+  alt?: string;
   reason: string;
   /** The model that answered (the provider's id when it names one). */
   model: string;
@@ -200,6 +203,7 @@ export async function verifyCircuit(
       ...(q.node !== null ? { node: q.node } : {}),
       guess: q.guess,
       question: q.question,
+      if_no: q.altAsk,
     }));
   if (!picked.length) {
     return {
@@ -449,6 +453,7 @@ export async function verifyCircuit(
         reply.text,
         batch.questions.map((b) => b.q.id),
         truncated ? 'cut' : empty ? 'empty' : undefined,
+        new Map(batch.questions.map((b) => [b.q.id, b.q.alts])),
       );
       for (const { q } of batch.questions) {
         const a = parsed.answers.get(q.id);
@@ -462,6 +467,7 @@ export async function verifyCircuit(
         answers.push({
           q,
           verdict: a.verdict,
+          ...(a.alt ? { alt: a.alt } : {}),
           reason: a.reason,
           model: reply.model || worker.model,
           crops: cropsOf.get(q.id)!.map((c) => ({
@@ -520,7 +526,7 @@ export async function verifyCircuit(
     ok: true,
     output: {
       summary:
-        `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted, ${n('unsure')} unsure` +
+        `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted (${answers.filter((a) => a.alt).length} naming what it is instead), ${n('unsure')} unsure` +
         (notAsked.length ? `; ${notAsked.length} not asked (see not_asked)` : '') +
         `. ${
           [
@@ -540,6 +546,7 @@ export async function verifyCircuit(
         ...(a.q.node !== null ? { node: a.q.node } : {}),
         guess: a.q.guess,
         answer: a.verdict,
+        ...(a.alt ? { alt: a.alt } : {}),
         trust: TRUST[a.verdict],
         reason: a.reason,
         model: a.model,
@@ -554,7 +561,7 @@ export async function verifyCircuit(
         ...(timedOut ? { timed_out: timedOut } : {}),
       },
       limits: [...limits, ...traceLimits(trace.limits)],
-      next: 'circuit_trace now marks these on the drawing: CHECKED BY IMAGE for a confirmed guess; a contradicted or unsure one stays GUESS.',
+      next: VERIFY_NEXT,
     },
   };
 }

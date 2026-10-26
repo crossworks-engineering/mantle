@@ -1,6 +1,7 @@
 /** Verbatim system prompts + skill instructions for the default manifest agents
  *  and skills. The single home for these bodies; the manifest references them. */
 import { FONT_LIBRARY } from '@mantle/client-types/display-fonts';
+import { CIRCUIT_DRAWING_STEPS } from '@mantle/tools/circuit-workflow';
 
 /** The faces a canvas may name, from the Appearance registry (so the skill
  *  never lists a font the frame does not load). */
@@ -947,7 +948,7 @@ Two types have a layout template: \`pid\` (a P&ID first draft) and \`flow\` (box
 5. In the page: a \`diagram\` spec block with \`type\`, \`title\` and \`canvas: <canvas id>\` (the data lives in the canvas), then the \`embed\` line under it.
 6. To CHANGE it: \`present_update\` with the whole new \`data\`, then \`present_export\` again with the same filename and \`overwrite: true\`. The file id stays, so the page updates.
 
-**A circuit drawn from the uploaded P&IDs** (\`Draw circuit <name>\`): call \`circuit_trace\` with the circuit's name FIRST, before any guide or drawing. It walks the real geometry on the drawings' \`Circuit <name>\` layers and returns the runs, tees, deadlegs, valves, line numbers, the links between sheets and a ready \`pid\` object: that object is your template data (step 2 on), with the site profile added; past one page it is a linked drawing set, saved unchanged as one canvas (its \`next\` says how). Read its pid_check and limits first. When the brain has a site register tool for circuits, read the circuit there and pass what it lists as \`register\` (its line numbers, sheets and deadlegs); report the differences the trace returns, never smooth them over. A link marked \`guessed\` stays labelled as a guess on the drawing (its connector text says GUESS) and in your report; never present a guess as a fact, and never invent a line, a tee or a connection the trace did not find. A sheet the trace says is not uploaded is named in the report.
+**A circuit drawn from the uploaded P&IDs** (\`Draw circuit <name>\`): call \`circuit_trace\` with the circuit's name FIRST, before any guide or drawing. It walks the real geometry on the drawings' \`Circuit <name>\` layers and returns the runs, tees, deadlegs, valves, line numbers, the links between sheets and a ready \`pid\` object: that object is your template data (step 2 on), with the site profile added; past one page it is a linked drawing set, saved unchanged as one canvas (its \`next\` says how). Read its pid_check and limits first. When the brain has a site register tool for circuits, read the circuit there and pass what it lists as \`register\` (its line numbers, sheets and deadlegs); report the differences the trace returns, never smooth them over. A link marked \`guessed\` stays labelled as a guess on the drawing (its connector text says GUESS) and in your report; never present a guess as a fact, and never invent a line, a tee or a connection the trace did not find. A sheet the trace says is not uploaded is named in the report. ${CIRCUIT_DRAWING_STEPS}
 
 Any other type: hand-draw it with the workflow below. (The "no tooling" medium rule is about the upstream guides' scripts and template files; these layout templates are tools you call.)
 
@@ -1086,7 +1087,7 @@ For a P&ID first draft or a boxes-and-arrows process flow, do NOT hand-write SVG
 2. \`diagram_render\` with \`template\` and \`data\` draws it without saving. Data that does not fit comes back as the tool's error, every problem at once: fix them all. Data that fits comes back drawn: read \`render.diagram.warnings\`, look at the picture, fix the data.
 3. \`present_create\` with the same \`template\` and \`data\` saves the canvas. Change it later with \`present_update\` \`data\` (the whole new data); never edit a template canvas's source.
 
-A circuit drawn from the uploaded P&IDs: \`circuit_trace\` first; its \`pid\` object is the data (add the site profile), its \`register\` input is filled from a site register tool when the brain has one, and every link it marks \`guessed\` stays labelled as a guess in the drawing and the report. Never add a line or a connection the trace did not find.
+A circuit drawn from the uploaded P&IDs: its \`pid\` object is the data (add the site profile), its \`register\` input is filled from a site register tool when the brain has one, and every link it marks \`guessed\` stays labelled as a guess in the drawing and the report. Never add a line or a connection the trace did not find. ${CIRCUIT_DRAWING_STEPS}
 
 ## Pages, print and shares
 

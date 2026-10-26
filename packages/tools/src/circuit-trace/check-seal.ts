@@ -19,6 +19,12 @@
  * guesses again (docs/scripts.md, rotate:master-key). A key rotated out is
  * never kept to vouch for rows: it may be the reason for the rotation.
  *
+ * The alternative a no names (phase 6, the Alternative column) is sealed
+ * with the row when it has one: appended to the sealed list, so a row with
+ * no alternative (every row written before phase 6) seals exactly as it
+ * did, and its seal still holds. Adding an alternative to such a row by
+ * hand, or taking one off a sealed row, breaks the seal.
+ *
  * Known limit: a seal vouches for one row, not for the tab's history. A
  * table editor who deletes a newer sealed row brings back the older sealed
  * answer of the same key and revision (a real model answer, superseded);
@@ -67,6 +73,8 @@ export type SealedFields = {
   checkedAt: string;
   /** The Crops cell as written (the overview's and the crops' file ids). */
   crops: string;
+  /** The Alternative cell; '' or absent when the row has none. */
+  alt?: string;
 };
 
 function hmac(k: Buffer, f: SealedFields): string {
@@ -81,6 +89,8 @@ function hmac(k: Buffer, f: SealedFields): string {
     f.revision,
     f.checkedAt,
     f.crops,
+    // Only when there is one: a row without it seals as before phase 6.
+    ...(f.alt ? [f.alt] : []),
   ]);
   return createHmac('sha256', k).update(body, 'utf8').digest('hex');
 }

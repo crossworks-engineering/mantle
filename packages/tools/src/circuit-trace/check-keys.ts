@@ -43,3 +43,11 @@ export function linkKey(handle: string, x: number, y: number, target: string): s
 export function valveKey(handle: string): string {
   return `valve:${handle}`;
 }
+
+/** One guess's id on a drawing (the `check.key` of the element that draws
+ *  it, @mantle/diagram-templates pid/check.ts): its table and check key,
+ *  hashed short. The same guess drawn on two pages of a set has one id, so
+ *  it is counted once. */
+export function guessId(tableId: string, key: string): string {
+  return createHash('sha256').update(`${tableId.toLowerCase()}|${key}`).digest('hex').slice(0, 16);
+}

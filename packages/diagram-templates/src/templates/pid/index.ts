@@ -20,4 +20,14 @@ export {
   type PidSet,
   type PidPage,
 } from './set.ts';
+export {
+  CHECK_STATES,
+  CHECK_GUESS_KINDS,
+  CHECK_LIMITS,
+  imageCheckSummary,
+  withImageCheckSummary,
+  type PidCheck,
+  type PidChecksSummary,
+  type CheckState,
+} from './check.ts';
 export { DEFAULT_LINE_PATTERN, DEFAULT_SERVICE_COLOURS, type SiteProfile } from './profile.ts';

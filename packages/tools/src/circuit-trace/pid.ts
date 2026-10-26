@@ -23,7 +23,13 @@
  * Pure: it reads the walk's output and writes the template's input.
  */
 import type { SheetLink, TraceChain, TraceEnd, TraceSheet, TraceValve } from './walk';
-import { clipText, PID_LIMITS, SET_LIMITS } from '@mantle/diagram-templates';
+import {
+  clipText,
+  CHECK_LIMITS,
+  PID_LIMITS,
+  SET_LIMITS,
+  VALVE_TYPES,
+} from '@mantle/diagram-templates';
 import { splitPages, type SplitPage } from './pages';
 import { joinKey, valveKey } from './check-keys';
 
@@ -101,12 +107,37 @@ export type PidInput = {
 };
 
 export type Verdict = 'yes' | 'no' | 'unsure';
+/** One guess the image check asks about, as the drawing marks it: its id
+ *  (check-keys.ts guessId, the element's `check.key`), its words, and the
+ *  answer that applies to it now, if any. */
+export type GuessCheck = {
+  id: string;
+  kind: 'join' | 'end' | 'link' | 'valve';
+  guess: string;
+  answer?: {
+    verdict: Verdict;
+    /** What the image named instead, after a no: one of the question's own
+     *  alternatives (check.ts ALT_WORDS, a valve type, a tag, a sheet). */
+    alt?: string;
+    question: string;
+    reason: string;
+    model: string;
+    checkedAt: string;
+    crops: string[];
+    overview?: string;
+  };
+};
 export type PidChecks = {
   near?: ReadonlyMap<string, Verdict>;
   link?: ReadonlyMap<string, Verdict>;
   joins?: ReadonlyMap<string, Verdict>;
   /** Per `<tableId>:<valve key>` (check-keys.ts valveKey). */
   valves?: ReadonlyMap<string, Verdict>;
+  /** Every guess the image check may ask about, per `<kind>|<pidKey>`
+   *  (check.ts CheckQuestion.pidKey): each drawn element that shows one
+   *  carries its `check` (state unchecked until an answer applies), and a
+   *  no that names an alternative corrects the drawing, FROM IMAGE. */
+  guesses?: ReadonlyMap<string, GuessCheck>;
 };
 export type ChainRole = 'main' | 'branch' | 'deadleg';
 
@@ -116,7 +147,54 @@ export const MARK = {
   guess: ' (GUESS)',
   yes: ' (CHECKED BY IMAGE)',
   no: ' (GUESS, IMAGE: NO)',
+  /** Drawn as the image check named it after a no: never certain. */
+  image: ' (FROM IMAGE)',
 } as const;
+
+/** The end words an image check's no may name (check.ts ALT_WORDS.end),
+ *  as the drawing writes them. */
+const END_WORDS: Readonly<Record<string, string>> = {
+  break: 'BREAK',
+  continues: 'CONTINUES',
+  open: 'OPEN END',
+};
+/** Alternatives that name nothing the trace can draw. */
+const NAMES_NOTHING = new Set(['other', 'none', 'separate', 'crossing', 'gap']);
+
+/** An element's `check` (@mantle/diagram-templates pid/check.ts) for a
+ *  guess: unchecked until an answer applies; `corrected` only when the
+ *  drawing shows the image's alternative. */
+export function checkMark(g: GuessCheck, corrected = false): Record<string, unknown> {
+  const a = g.answer;
+  const state = !a
+    ? 'unchecked'
+    : a.verdict === 'yes'
+      ? 'checked'
+      : a.verdict === 'unsure'
+        ? 'unsure'
+        : corrected && a.alt
+          ? 'corrected'
+          : 'contradicted';
+  const cut = (t: string, n: number) => clipText(t, n);
+  return {
+    key: g.id,
+    kind: g.kind,
+    state,
+    guess: cut(g.guess, CHECK_LIMITS.guess),
+    ...(a
+      ? {
+          question: cut(a.question, CHECK_LIMITS.question),
+          answer: a.verdict,
+          ...(a.alt ? { alt: a.alt.slice(0, CHECK_LIMITS.alt) } : {}),
+          ...(a.reason ? { reason: cut(a.reason, CHECK_LIMITS.reason) } : {}),
+          ...(a.model ? { model: a.model.slice(0, CHECK_LIMITS.model) } : {}),
+          ...(a.checkedAt ? { checkedAt: a.checkedAt.slice(0, CHECK_LIMITS.checkedAt) } : {}),
+          ...(a.crops.length ? { crops: a.crops.slice(0, CHECK_LIMITS.crops) } : {}),
+          ...(a.overview ? { overview: a.overview } : {}),
+        }
+      : {}),
+  };
+}
 const markOf = (v: Verdict | undefined) =>
   v === 'yes' ? MARK.yes : v === 'no' ? MARK.no : MARK.guess;
 
@@ -152,6 +230,16 @@ export function buildPid(
     .filter((t): t is string => !!t?.trim())
     .map((t) => baseTag(t.trim()));
   const unconfirmed = new Map<string, string>();
+  /** What an image check's no said of an end only near equipment: the
+   *  equipment tag it named (`tag`), or a break, a continuation, an open
+   *  end. Such an end is never taken as at the tag it was near; one that
+   *  names a tag is a reading of THAT tag, FROM IMAGE (phase 6: the main
+   *  line is re-picked without the contradicted end). */
+  const imageEnd = new Map<string, { tag?: string; word?: string }>();
+  /** Ends the image check contradicted: no longer readings of their tag. */
+  const contradicted = new Set<string>();
+  const guessAt = (kind: GuessCheck['kind'], k: string) =>
+    input.checked?.guesses?.get(`${kind}|${k}`);
   for (const s of sheets) {
     for (const run of s.runs) {
       for (const end of run.ends) {
@@ -159,8 +247,21 @@ export function buildPid(
         const list = endAt.get(k);
         if (list) list.push({ sheet: s, end });
         else endAt.set(k, [{ sheet: s, end }]);
+        const said = end.equipmentUnconfirmed
+          ? (input.checked?.near?.get(k) ?? guessAt('end', k)?.answer?.verdict)
+          : undefined;
         if (end.equipment.length) join(k, `EQ:${end.equipment[0]!}`);
-        else if (end.equipmentUnconfirmed) {
+        else if (end.equipmentUnconfirmed && said === 'no') {
+          contradicted.add(k);
+          unconfirmed.set(k, end.equipmentUnconfirmed);
+          const alt = guessAt('end', k)?.answer?.alt;
+          const word = alt ? END_WORDS[alt] : undefined;
+          if (alt && word) imageEnd.set(k, { word });
+          else if (alt && !NAMES_NOTHING.has(alt)) imageEnd.set(k, { tag: alt });
+          guesses.push(
+            `${s.title}: end #${end.node} is not at ${end.equipmentUnconfirmed}, the image check says${alt && !NAMES_NOTHING.has(alt) ? ` (${word ? `it ${alt === 'open' ? 'is an open end' : alt === 'break' ? 'stops at a break symbol' : 'continues elsewhere'}` : `it connects to ${alt}`}: FROM IMAGE, never certain)` : ''}; ${alt && !word && !NAMES_NOTHING.has(alt) ? `it is read as at ${alt}, not as ${end.equipmentUnconfirmed}` : `it is not taken as an end at ${end.equipmentUnconfirmed}`}, and the main line is picked without that reading.`,
+          );
+        } else if (end.equipmentUnconfirmed) {
           if (registerTags.includes(baseTag(end.equipmentUnconfirmed))) {
             join(k, `EQ:${end.equipmentUnconfirmed}`);
             guesses.push(
@@ -297,12 +398,21 @@ export function buildPid(
   const readingAt = new Map<string, string>();
   /** How each reading was taken (walk.ts): its distance ranks readings. */
   const readingOf = new Map<string, NonNullable<TraceEnd['reading']>>();
-  for (const [k, tag] of unconfirmed) {
+  /** Readings the image check named (FROM IMAGE): they rank first. */
+  const fromImage = new Set<string>();
+  for (const [k, near] of unconfirmed) {
     const v = find(k);
     if (isEq(v) || !adj.has(v)) continue;
     const at = endAt.get(k) ?? [];
     if (at.every(({ end }) => end.deadleg)) continue;
-    readingAt.set(v, tag);
+    // A contradicted end is a reading only of the tag the image named.
+    const named = contradicted.has(k) ? imageEnd.get(k)?.tag : near;
+    if (!named) continue;
+    readingAt.set(v, named);
+    if (contradicted.has(k)) {
+      fromImage.add(v);
+      continue;
+    }
     const by = at.find(({ end }) => end.reading)?.end.reading;
     if (by) readingOf.set(v, by);
   }
@@ -310,6 +420,8 @@ export function buildPid(
   const readingWords = (v: string): string => {
     const r = readingOf.get(v);
     const tag = readingAt.get(v);
+    if (fromImage.has(v))
+      return `at ${tag} as the image check named it after it said no to the nearer tag (FROM IMAGE, never certain)`;
     if (r?.kind === 'outline') {
       const more = r.count > r.tags.length ? ', ...' : '';
       return r.count > 1
@@ -322,7 +434,13 @@ export function buildPid(
   };
   /** A vertex's name in the words the trace writes. */
   const vname = (v: string) =>
-    isEq(v) ? eqTag(v) : readingAt.has(v) ? `near ${readingAt.get(v)} (GUESS)` : v;
+    isEq(v)
+      ? eqTag(v)
+      : readingAt.has(v)
+        ? fromImage.has(v)
+          ? `${readingAt.get(v)}${MARK.image}`
+          : `near ${readingAt.get(v)} (GUESS)`
+        : v;
   const matchEq = (name?: string) => {
     if (!name?.trim()) return undefined;
     const n = baseTag(name.trim());
@@ -408,7 +526,8 @@ export function buildPid(
     main = null;
     for (const v of eqs) {
       if (pinned && v !== pinned) continue;
-      for (const r of readingAt.keys()) consider(v, r, readingOf.get(r)?.distance ?? Infinity);
+      for (const r of readingAt.keys())
+        consider(v, r, fromImage.has(r) ? 0 : (readingOf.get(r)?.distance ?? Infinity));
     }
     const reading = main as Main | null;
     confirmedReach = confirmed ? sheetsOf(confirmed) : null;
@@ -712,7 +831,14 @@ export function buildPid(
    *  direction, sheet), or a stop. The one rule for every page. */
   type EndPlan =
     | { eq: string }
-    | { conn: string; dir: 'in' | 'out'; sheet: string; guess?: 'link' | 'near' | 'checked' }
+    | {
+        conn: string;
+        dir: 'in' | 'out';
+        sheet: string;
+        guess?: 'link' | 'near' | 'checked' | 'image';
+        /** The image check of the guess the connector draws. */
+        check?: Record<string, unknown>;
+      }
     | { stop: 'open' | 'deadleg' };
   /** The ends joined into each vertex (read once: the graph is built). */
   const endKeys = new Map<string, string[]>();
@@ -732,30 +858,55 @@ export function buildPid(
     const dir = side === 'from' ? 'in' : 'out';
     const keys = endAt.has(v) ? [v] : (endKeys.get(v) ?? []);
     const at = keys.flatMap((k) => endAt.get(k) ?? []);
-    const near = keys.map((k) => unconfirmed.get(k)).find(Boolean);
+    const nearKey = keys.find((k) => unconfirmed.has(k));
+    const near = nearKey ? unconfirmed.get(nearKey) : undefined;
     const verdictOf = (m: ReadonlyMap<string, Verdict> | undefined) =>
       m ? keys.map((k) => m.get(k)).find(Boolean) : undefined;
+    const fit = (head: string, mark: string) => head.slice(0, TEXT.connector - mark.length) + mark;
     // Off-page style: an end that is not drawn as the equipment it is near.
-    if (near) {
+    if (near && nearKey) {
       const v = verdictOf(input.checked?.near);
-      const mark = markOf(v);
+      const g = guessAt('end', nearKey);
+      const fix = imageEnd.get(nearKey);
+      if (v === 'no' && fix) {
+        // The image's alternative, drawn as it named it: never certain.
+        return {
+          conn: fit(fix.tag ? `AT ${fix.tag}` : fix.word!, MARK.image),
+          dir,
+          sheet: fix.tag ?? near,
+          guess: 'image',
+          ...(g ? { check: checkMark(g, true) } : {}),
+        };
+      }
       return {
-        conn: `NEAR ${near}`.slice(0, TEXT.connector - mark.length) + mark,
+        conn: fit(`NEAR ${near}`, markOf(v)),
         dir,
         sheet: near,
         guess: v === 'yes' ? 'checked' : 'near',
+        ...(g ? { check: checkMark(g) } : {}),
       };
     }
     const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
     if (guessedLink) {
-      const head = `${side === 'from' ? 'FROM' : 'TO'} ${guessedLink.other}`;
+      const way = side === 'from' ? 'FROM' : 'TO';
       const v = verdictOf(input.checked?.link) ?? input.checked?.link?.get(guessedLink.checkAt);
-      const mark = markOf(v);
+      const g = guessAt('link', guessedLink.checkAt);
+      const alt = v === 'no' ? g?.answer?.alt : undefined;
+      if (alt && !NAMES_NOTHING.has(alt)) {
+        return {
+          conn: fit(`${way} ${alt}`, MARK.image),
+          dir,
+          sheet: alt,
+          guess: 'image',
+          ...(g ? { check: checkMark(g, true) } : {}),
+        };
+      }
       return {
-        conn: head.slice(0, TEXT.connector - mark.length) + mark,
+        conn: fit(`${way} ${guessedLink.other}`, markOf(v)),
         dir,
         sheet: guessedLink.other,
         guess: v === 'yes' ? 'checked' : 'link',
+        ...(g ? { check: checkMark(g) } : {}),
       };
     }
     for (const { sheet, end } of at) {
@@ -993,17 +1144,35 @@ export function buildPid(
         `${title}: at the page cap no line on the drawing links to this detail page; it is reached from the page bar.`,
       );
   }
-  type Mark = 'link' | 'inferred' | 'near' | 'checked';
+  type Mark = 'link' | 'inferred' | 'near' | 'checked' | 'image';
   /** The guess kinds drawn on each page, and on the whole set. */
   const marksOf = new Map<string, Set<Mark>>();
   const allMarks = new Set<Mark>();
-  const valvesOn = (pc: Piece): TraceValve[] => {
-    const out: TraceValve[] = [];
+  const valvesOn = (pc: Piece): (TraceValve & { sheet: TraceSheet })[] => {
+    const out: (TraceValve & { sheet: TraceSheet })[] = [];
     pc.edges.forEach((e, i) => {
       const forward = pc.verts[i] === e.a;
-      out.push(...(forward ? e.chain.valves : [...e.chain.valves].reverse()));
+      out.push(
+        ...(forward ? e.chain.valves : [...e.chain.valves].reverse()).map((v) => ({
+          ...v,
+          sheet: e.sheet,
+        })),
+      );
     });
     return out;
+  };
+  /** A valve's image check, and the type the image named instead (a valve
+   *  type the template draws), after a no. */
+  const valveCheck = (v: TraceValve & { sheet: TraceSheet }) => {
+    if (!v.guessed || !v.handle) return { type: v.type };
+    const g = guessAt('valve', `${v.sheet.tableId}:${valveKey(v.handle)}`);
+    const alt = g?.answer?.verdict === 'no' ? g.answer.alt : undefined;
+    const fixed = alt && (VALVE_TYPES as readonly string[]).includes(alt) ? alt : undefined;
+    return {
+      type: fixed ?? v.type,
+      ...(fixed ? { fixed: true } : {}),
+      ...(g ? { check: checkMark(g, !!fixed) } : {}),
+    };
   };
 
   /** One page's `pid` data: the lines it owns (and its context line). */
@@ -1027,6 +1196,7 @@ export function buildPid(
       text?: string;
       link?: string;
       focus?: string;
+      check?: Record<string, unknown>;
     }[] = [];
     const tees: { id: string; on: string; at?: number }[] = [];
     const lines: Record<string, unknown>[] = [];
@@ -1064,7 +1234,13 @@ export function buildPid(
       return id;
     };
     const shortSheet = (t: string) => t.replace(/\s+/g, '').slice(0, 12) || '?';
-    const connector = (text: string, dir: 'in' | 'out', sheet: string, to?: Piece) => {
+    const connector = (
+      text: string,
+      dir: 'in' | 'out',
+      sheet: string,
+      to?: Piece,
+      check?: Record<string, unknown>,
+    ) => {
       if (offpage.length >= PID_LIMITS.offpage) {
         cuts.add(`connectors past ${PID_LIMITS.offpage}: ends drawn open`);
         return null;
@@ -1077,6 +1253,7 @@ export function buildPid(
         sheet: shortSheet(sheet),
         text: text.slice(0, TEXT.connector),
         ...(home && to ? { link: home, focus: to.id } : {}),
+        ...(check ? { check } : {}),
       });
       return id;
     };
@@ -1100,7 +1277,7 @@ export function buildPid(
       }
       if ('conn' in e) {
         if (e.guess) marks.add(e.guess);
-        const id = connector(e.conn, e.dir, e.sheet);
+        const id = connector(e.conn, e.dir, e.sheet, undefined, e.check);
         if (id) return { id };
         return { stop: 'open' as const };
       }
@@ -1238,7 +1415,12 @@ export function buildPid(
           .slice(0, PID_LIMITS.inline),
       );
       if (!(sheetMode === false && valveCut.has(pc))) inlineCut += valves.length - keep.size;
-      const inline = valves.filter((_, i) => keep.has(i)).map((v) => ({ type: v.type }));
+      const inline = valves
+        .filter((_, i) => keep.has(i))
+        .map((v) => {
+          const c = valveCheck(v);
+          return { type: c.type, ...(c.check ? { check: c.check } : {}) };
+        });
       const number = numberFor(pc);
       // A process-line join on the line is an inference: marked on every
       // page that draws it.
@@ -1248,6 +1430,15 @@ export function buildPid(
         (e.chain.joins ?? [])
           .filter((j) => j.inferred)
           .map((j) => input.checked?.joins?.get(`${e.sheet.tableId}:${joinKey(j.handles)}`)),
+      );
+      // Each inferred join's image check, on the line whose note counts it.
+      const joinChecks = pc.edges.flatMap((e) =>
+        (e.chain.joins ?? [])
+          .filter((j) => j.inferred)
+          .flatMap((j) => {
+            const g = guessAt('join', `${e.sheet.tableId}:${joinKey(j.handles)}`);
+            return g ? [checkMark(g)] : [];
+          }),
       );
       const inferred = verdicts.filter((v) => v !== 'yes').length;
       const confirmed = verdicts.length - inferred;
@@ -1265,13 +1456,24 @@ export function buildPid(
           .map((v) => input.checked?.valves?.get(`${e.sheet.tableId}:${valveKey(v.handle)}`))
           .filter((v): v is Verdict => v === 'yes' || v === 'no'),
       );
-      const valveNo = valveVerdicts.filter((v) => v === 'no').length;
-      const valveYes = valveVerdicts.length - valveNo;
+      // A no whose alternative the drawing shows (FROM IMAGE) is said as
+      // corrected, not as a contradicted guess.
+      const valveFixed = pc.edges.reduce(
+        (x, e) =>
+          x +
+          e.chain.valves.filter((v) => valveCheck({ ...v, sheet: e.sheet }).fixed === true).length,
+        0,
+      );
+      const valveNo = valveVerdicts.filter((v) => v === 'no').length - valveFixed;
+      const valveYes = valveVerdicts.filter((v) => v === 'yes').length;
       const valveNote = valveNo
         ? `${valveNo === 1 ? 'VALVE TYPE' : `${valveNo} VALVE TYPES`}${MARK.no}`
-        : valveYes
-          ? `${valveYes === 1 ? 'VALVE TYPE' : `${valveYes} VALVE TYPES`}${MARK.yes}`
-          : '';
+        : valveFixed
+          ? `${valveFixed === 1 ? 'VALVE TYPE' : `${valveFixed} VALVE TYPES`}${MARK.image}`
+          : valveYes
+            ? `${valveYes === 1 ? 'VALVE TYPE' : `${valveYes} VALVE TYPES`}${MARK.yes}`
+            : '';
+      if (valveFixed) marks.add('image');
       if (valveYes && !inferred && !confirmed) marks.add('checked');
       const mk = markers.get(pc);
       drawn.push(pc);
@@ -1303,6 +1505,7 @@ export function buildPid(
         ...(pc.plan.depth > 0 ? { weight: 'secondary' } : {}),
         ...(inline.length ? { inline } : {}),
         ...(mk ? { more: { text: mk.text, link: mk.page, focus: mk.focus } } : {}),
+        ...(joinChecks.length ? { checks: joinChecks } : {}),
       });
     }
     const drawnLines = new Set(lines.map((l) => l.id as string));
@@ -1427,6 +1630,9 @@ export function buildPid(
       (words.length ? ` Guesses are marked GUESS (${words.join(', ')}).` : '') +
       (ms.has('checked')
         ? ' CHECKED BY IMAGE: a vision model saw the guess in the drawing; still not certain.'
+        : '') +
+      (ms.has('image')
+        ? ' FROM IMAGE: drawn as a vision model read the drawing after it said no to the guess; not certain.'
         : '')
     );
   };

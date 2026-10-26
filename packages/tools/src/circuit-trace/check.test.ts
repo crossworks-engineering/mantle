@@ -358,10 +358,21 @@ describe('the trace shows the checks', () => {
     return { pid, applied, limits, svg: drawn.ok ? drawn.svg : '' };
   };
 
-  it('no checks: the drawing is as before', () => {
+  it('no checks: the drawing is as before, each guess marked unchecked', () => {
     const base = traceCircuit(C, both());
     const { pid } = traced(undefined);
-    expect(pid).toEqual(overviewOf(base.pid));
+    // Without its check marks, the drawing is the plain trace's.
+    const strip = (o: unknown): unknown =>
+      JSON.parse(
+        JSON.stringify(o, (k, v: unknown) => (k === 'check' || k === 'checks' ? undefined : v)),
+      );
+    expect(strip(pid)).toEqual(overviewOf(base.pid));
+    const near = pid.offpage.find((o) => /NEAR V-201/.test(o.text ?? '')) as {
+      check?: { state: string; kind: string };
+    };
+    expect(near.check).toMatchObject({ kind: 'end', state: 'unchecked' });
+    const joined = pid.lines.find((l) => l.checks) as { checks: { state: string; kind: string }[] };
+    expect(joined.checks).toEqual([expect.objectContaining({ kind: 'join', state: 'unchecked' })]);
   });
 
   it('a yes is CHECKED BY IMAGE, never certain', () => {

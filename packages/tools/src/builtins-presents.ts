@@ -57,7 +57,10 @@ import {
   slugify,
   validate as validateTemplate,
   TEMPLATES,
+  imageCheckSummary,
+  withImageCheckSummary,
 } from '@mantle/diagram-templates';
+import { imageCheckReport } from './circuit-trace/workflow';
 import type { PresentMeta } from '@mantle/db';
 import { ConflictError, publicErrorText } from '@mantle/std';
 import type {
@@ -342,12 +345,18 @@ function saved(
   extra: Record<string, unknown> = {},
 ): ToolHandlerResult {
   const tpl = templateOf(p.source);
+  // A traced P&ID: how many of its guesses no image has checked, counted
+  // from the drawing's own marks (the same count circuit_trace reports, for
+  // every author; nothing is spent here).
+  const imageCheck =
+    tpl?.template === 'pid' ? imageCheckReport(imageCheckSummary(tpl.data)) : undefined;
   return {
     ok: true,
     output: {
       ...compact(p),
       page_embed: pageEmbed(p),
       ...(tpl ? { template: tpl.template } : {}),
+      ...(imageCheck ? { image_check: imageCheck } : {}),
       ...extra,
       render: seen ? seen.report : { rendered: false, note: 'look: false, so nothing was drawn.' },
     },
@@ -411,14 +420,18 @@ function checkedData(
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { error: 'data must be an object: the template data, e.g. {"title": …, "nodes": […]}.' };
   }
-  const checked = validateTemplate(template, { ...data, template });
+  // A traced P&ID's image check counts are the drawing's own: recounted
+  // from its marks, whatever `checks` the author passed (@mantle/diagram-
+  // templates pid/check.ts). Data with no marks keeps no `checks`.
+  const own = (template === 'pid' ? withImageCheckSummary(data) : data) as Record<string, unknown>;
+  const checked = validateTemplate(template, { ...own, template });
   if (!checked.ok) {
     return {
       error: `The ${template} data has ${checked.errors.length} problem(s); nothing was saved. Fix all of them and call again:\n- ${checked.errors.join('\n- ')}\nThe ${template} data takes: ${CONTRACT_FIELDS[template]}. The whole contract with an example: diagram_guide with type "${template}".`,
     };
   }
   return {
-    data: { ...(data as Record<string, unknown>), template, version: TEMPLATES[template].version },
+    data: { ...own, template, version: TEMPLATES[template].version },
   };
 }
 

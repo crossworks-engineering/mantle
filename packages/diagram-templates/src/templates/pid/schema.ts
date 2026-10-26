@@ -29,6 +29,13 @@ import {
   type ResolvedProfile,
   type SiteProfile,
 } from './profile.ts';
+import {
+  checkListOf,
+  checkOf,
+  checksSummaryOf,
+  type PidCheck,
+  type PidChecksSummary,
+} from './check.ts';
 
 export const PID_VERSION = 1;
 
@@ -100,6 +107,8 @@ export type OffPage = {
   text?: string;
   /** Inside a set only: the page this connector continues on. */
   link?: PageLink;
+  /** The image check of the guess this end draws (./check.ts). */
+  check?: PidCheck;
 };
 /** A "more here" marker beside a line: what the page leaves to another
  *  ("+7 DEADLEGS"), with the page that holds it inside a set. */
@@ -111,6 +120,8 @@ export type InlineItem = {
   fail?: 'FO' | 'FC' | 'FL';
   closed: boolean;
   focal: boolean;
+  /** The image check of a valve type read from a block name (./check.ts). */
+  check?: PidCheck;
 };
 export const LINE_ENDS = ['open', 'cap'] as const;
 export const TOWARD = ['up', 'down', 'left', 'right'] as const;
@@ -142,6 +153,9 @@ export type Line = {
   note?: string;
   /** A "more here" marker beside the line. */
   more?: More;
+  /** The image checks of the inferred joins the line's note counts, one
+   *  per join (./check.ts). */
+  checks?: PidCheck[];
 };
 export type Instrument = {
   tag: string;
@@ -193,6 +207,8 @@ export type PidData = {
   instruments: Instrument[];
   signals: Signal[];
   circuits: Circuit[];
+  /** The image check counts of the drawing's guesses (./check.ts). */
+  checks?: PidChecksSummary;
 };
 
 /** Hard limits (errors) and the guide's complexity budget (warnings). */
@@ -247,6 +263,7 @@ const TOP_KEYS = [
   'instruments',
   'signals',
   'circuits',
+  'checks',
 ];
 const PROFILE_KEYS = [
   'name',
@@ -476,6 +493,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     );
   const showTitle = bool(d, 'showTitle', '', issues) ?? true;
   const legend = bool(d, 'legend', '', issues) ?? true;
+  const checks = checksSummaryOf(d, '', issues);
   let legendNames: PidData['legendNames'];
   if (d.legendNames !== undefined) {
     if (!isObj(d.legendNames))
@@ -551,7 +569,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     'offpage',
     issues,
   )) {
-    checkKeys(o, ['id', 'direction', 'sheet', 'text', 'link', 'focus'], p, issues);
+    checkKeys(o, ['id', 'direction', 'sheet', 'text', 'link', 'focus', 'check'], p, issues);
     const id = str(o, 'id', p, issues, tagRule);
     const direction = oneOf(o, 'direction', ['in', 'out'] as const, p, issues);
     if (o.direction === undefined)
@@ -559,6 +577,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     const sheetNo = str(o, 'sheet', p, issues, { required: true, max: 12 });
     const text = str(o, 'text', p, issues, { max: PID_LIMITS.text.connector });
     const link = linkOf(o, p, issues, opts);
+    const check = checkOf(o, p, issues);
     if (id) claim(id, p);
     if (id && direction && sheetNo)
       offpage.push({
@@ -567,6 +586,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         sheet: sheetNo,
         ...(text ? { text } : {}),
         ...(link ? { link } : {}),
+        ...(check ? { check } : {}),
       });
   }
   // Tees: junctions on a line, where branches start or end. Read before the
@@ -633,6 +653,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
           'toward',
           'note',
           'more',
+          'checks',
         ],
         p,
         issues,
@@ -710,6 +731,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         }
       }
       const focal = bool(l, 'focal', p, issues) ?? false;
+      const checks = checkListOf(l, p, issues);
       if (number) {
         const parts = parseLineNumber(profile, number);
         if (!parts) {
@@ -723,7 +745,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         `${p}.inline`,
         issues,
       )) {
-        checkKeys(it, ['type', 'tag', 'actuator', 'fail', 'closed', 'focal'], ip, issues);
+        checkKeys(it, ['type', 'tag', 'actuator', 'fail', 'closed', 'focal', 'check'], ip, issues);
         const type = oneOf(it, 'type', VALVE_TYPES, ip, issues);
         if (it.type === undefined)
           issues.errors.push(`${ip}.type: required, one of ${VALVE_TYPES.join(', ')}.`);
@@ -734,6 +756,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
         const fail = oneOf(it, 'fail', ['FO', 'FC', 'FL'] as const, ip, issues);
         const closed = bool(it, 'closed', ip, issues) ?? false;
         const ifocal = bool(it, 'focal', ip, issues) ?? false;
+        const icheck = checkOf(it, ip, issues);
         if (type === 'control' && !tag)
           issues.warnings.push(
             `${ip}: a control valve usually carries its tag (for example LV-101).`,
@@ -752,6 +775,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
             focal: ifocal,
             ...(tag ? { tag } : {}),
             ...(fail ? { fail } : {}),
+            ...(icheck ? { check: icheck } : {}),
           });
       }
       if (fromOk && (to ? toKind : stops || end) && from !== to) {
@@ -773,6 +797,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
           ...(service ? { service } : {}),
           ...(note ? { note } : {}),
           ...(more ? { more } : {}),
+          ...(checks ? { checks } : {}),
         });
       }
     },
@@ -1013,5 +1038,6 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     ...(description ? { description } : {}),
     ...(sheet ? { sheet } : {}),
     ...(legendNames ? { legendNames } : {}),
+    ...(checks ? { checks } : {}),
   });
 }

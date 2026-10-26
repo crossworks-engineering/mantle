@@ -3,7 +3,8 @@
  * the drawing it is about. No new database (owner, 2026-10-25): every DWG
  * import already has its own workbook (the auto-import table), and the
  * check adds a Checks tab to it, one row per answer: the key, the
- * question, the answer and its reason, the trust it gives, the model, the
+ * question, the answer (and, after a no, the alternative the image named)
+ * and its reason, the trust it gives, the model, the
  * date, the drawing's revision and file, the crops' file ids and the seal
  * (./check-seal.ts: only rows circuit_verify wrote are ever applied).
  *
@@ -270,6 +271,7 @@ export async function storeChecks(
       Guess: a.q.guess,
       Question: a.q.question,
       Answer: a.verdict,
+      Alternative: a.alt ?? '',
       Reason: a.reason,
       Trust: TRUST[a.verdict],
       Model: a.model,
@@ -288,6 +290,7 @@ export async function storeChecks(
         revision,
         checkedAt,
         crops,
+        alt: a.alt ?? '',
       }),
     };
     ops.push({

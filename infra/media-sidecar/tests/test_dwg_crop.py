@@ -211,6 +211,37 @@ class RenderTests(unittest.TestCase):
             self.assertGreater(greens, 50)
             self.assertEqual(reds, 0)
 
+    def test_the_overlay_is_the_solid_colour_its_name_says(self):
+        """Phase 6: the overlay is drawn solid, so a red line is red on the
+        page (#E00000), never the pink a translucent red over white makes."""
+        self.assertEqual(dwg_crop.OVERLAY_ALPHA, 1.0)
+        self.assertEqual(set(dwg_crop.COLOR_NAMES), set(dwg_crop.COLORS))
+        doc = ezdxf.readfile(self._path())
+        with tempfile.TemporaryDirectory() as out:
+            spec = dwg_crop.parse_spec(self.spec())
+            index = dwg_crop.render(doc, spec, out, deadline=time.time() + 120)
+            import matplotlib.image as mpimg  # noqa: PLC0415
+
+            def close_to(img, hexcol, tol=0.08):
+                want = [int(hexcol[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+                return (
+                    (abs(img[:, :, 0] - want[0]) <= tol)
+                    & (abs(img[:, :, 1] - want[1]) <= tol)
+                    & (abs(img[:, :, 2] - want[2]) <= tol)
+                ).sum()
+
+            # The join crop holds both the red main line and the blue branch.
+            crop = next(c for c in index["crops"] if c["id"] == "join")
+            img = mpimg.imread(os.path.join(out, crop["file"]))
+            red = close_to(img, dwg_crop.COLORS["main"])
+            self.assertGreater(red, 50)
+            self.assertGreater(close_to(img, dwg_crop.COLORS["branch"]), 50)
+            # Pink (red at half strength over white) is only the anti-aliased
+            # edge of the line, never its body: the line reads as red.
+            pink = ((img[:, :, 0] > 0.9) & (img[:, :, 1] > 0.3) & (img[:, :, 1] < 0.75)
+                    & (img[:, :, 2] > 0.3) & (img[:, :, 2] < 0.75)).sum()
+            self.assertGreater(red, 2 * pink)
+
     def test_a_spent_deadline_cuts_and_says_so(self):
         doc = ezdxf.readfile(self._path())
         with tempfile.TemporaryDirectory() as out:

@@ -22,14 +22,22 @@
  * image" (CHECKED BY IMAGE on the drawing), never certain; a no keeps it a
  * guess and says the image disagreed; anything unclear is unsure.
  *
+ * A no also asks "what is it then?" in the same request (phase 6): each
+ * question names the alternatives it takes (`alts`: a valve type, an
+ * equipment tag seen near the end, a break or a continuation, another
+ * sheet), and a reply's `alt` is kept only when it is one of them. The
+ * trace then draws the alternative, labelled FROM IMAGE, never certain
+ * (pid.ts); the raw geometry and the first guess stay in the trace.
+ *
  * No I/O: the tool (builtins-circuits.ts) reads, crops, asks and stores.
  */
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
 import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
-import { endKey, joinKey, linkKey, valveKey } from './check-keys';
+import { VALVE_TYPES } from '@mantle/diagram-templates';
+import { endKey, guessId, joinKey, linkKey, valveKey } from './check-keys';
 import { sealHolds, type SealedFields } from './check-seal';
-import type { ChainRole, PidChecks, Verdict } from './pid';
-import type { SegRow, SheetInput, SheetLink, TraceSheet } from './walk';
+import type { ChainRole, GuessCheck, PidChecks, Verdict } from './pid';
+import { readTag, type SegRow, type SheetInput, type SheetLink, type TraceSheet } from './walk';
 
 export type { Verdict } from './pid';
 export type CheckKind = 'join' | 'end' | 'link' | 'valve';
@@ -76,7 +84,25 @@ export type CheckQuestion = {
   /** Where the drawing shows the answer: the end's `<tableId>:<node>` for
    *  `end` and `link`, the join key for `join`. */
   pidKey: string;
+  /** What a no may name instead (the reply's `alt` is one of these, or
+   *  none): a closed list, so the trace can use it. */
+  alts: string[];
+  /** The "what is it then?" line of the prompt (never part of `question`,
+   *  so an answer stored before phase 6 still matches its question). */
+  altAsk: string;
 };
+
+/** The words a no may name for each kind, past the drawing's own names. */
+export const ALT_WORDS = {
+  join: ['separate', 'crossing', 'gap', 'other'],
+  end: ['break', 'continues', 'open', 'other'],
+  link: ['none', 'other'],
+  valve: ['instrument', 'not-a-valve', 'other'],
+} as const satisfies Record<CheckKind, readonly string[]>;
+/** Most equipment tags (or sheets) an end (or link) question lists. */
+export const ALT_NAMES_MAX = 8;
+/** An alternative as the store and the drawing keep it. */
+export const ALT_MAX = 40;
 
 type Pt = [number, number];
 /** A crop item before its id (a union: each kind keeps its own fields). */
@@ -192,6 +218,46 @@ export function simplifyPath(points: readonly Pt[], max = PATH_POINTS_MAX): Pt[]
   return out;
 }
 
+/** A question's alternatives: the closed list and the prompt line. */
+function altsOf(list: readonly string[], what: string): { alts: string[]; altAsk: string } {
+  const alts = [...new Set(list.map((a) => a.trim()).filter(Boolean))];
+  return {
+    alts,
+    altAsk: `If no, give "alt", ${what}; one of ${alts.map((a) => quoted(a)).join(', ')}.`,
+  };
+}
+
+/** Equipment tags written within `pad` of an end, nearest first, past the
+ *  guessed one (and an outline reading's other tags), at most
+ *  ALT_NAMES_MAX: the tags an end question offers as its alternative. */
+function equipmentNear(
+  input: SheetInput,
+  at: Pt,
+  pad: number,
+  guessed: string,
+  reading?: { kind: string; tags?: string[] },
+): string[] {
+  const norm = (t: string) => t.toUpperCase().replace(/\s+/g, '');
+  const skip = norm(guessed);
+  const found: { tag: string; d: number }[] = [];
+  for (const t of input.texts) {
+    const r = readTag(t.text);
+    if (r?.kind !== 'equipment' || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+    const d = dist(at, pt(t.x, t.y));
+    if (d <= pad) found.push({ tag: r.tag, d });
+  }
+  found.sort((a, b) => a.d - b.d || a.tag.localeCompare(b.tag));
+  const out: string[] = [];
+  for (const tag of [...found.map((f) => f.tag), ...(reading?.tags ?? [])]) {
+    const n = norm(tag);
+    if (n === skip || out.some((o) => norm(o) === n)) continue;
+    if (tag.length > ALT_MAX) continue;
+    out.push(tag);
+    if (out.length >= ALT_NAMES_MAX) break;
+  }
+  return out;
+}
+
 /**
  * The questions for a trace's guesses, in a stable order (sheet, then
  * kind, then position), at most `max`; `left` counts the guesses past it.
@@ -216,6 +282,7 @@ export function questionsFor(
       ? Infinity
       : Math.max(0, Math.min(opts.max ?? VERIFY_MAX.questions, VERIFY_MAX.questions));
   const inputOf = new Map(inputs.map((s) => [s.tableId, s]));
+  const titles = sheets.map((s) => s.title);
   const all: Omit<CheckQuestion, 'id' | 'item'>[] = [];
   const items = new Map<string, ItemBody>();
   const seen = new Set<string>();
@@ -264,6 +331,7 @@ export function questionsFor(
             guess: `pieces #${j.from} and #${j.to} of the circuit are one pipe, joined through ${round(j.length)} drawing units on layer ${j.layers.join(', ') || '(unnamed)'}`,
             question: `The trace joined two pieces of the circuit through a line drawn on another layer: the coloured path between the green rings. Is that one continuous pipe from one ring to the other (yes), or two separate pipes, a line that only crosses, or a gap (no)?`,
             pidKey: `${s.tableId}:${joinKey(j.handles)}`,
+            ...altsOf([...ALT_WORDS.join], 'what is drawn there instead'),
           },
           { kind: 'path', points, pad: 2 * near, marks },
         );
@@ -276,6 +344,7 @@ export function questionsFor(
         if (kinds.has('end') && e.equipmentUnconfirmed) {
           const far = e.reading?.distance ?? 0;
           const pad = Math.min(Math.max(4 * near, far * 1.25), 15 * near);
+          const tags = equipmentNear(input, at, pad, e.equipmentUnconfirmed, e.reading);
           add(
             {
               ...base,
@@ -286,6 +355,10 @@ export function questionsFor(
               guess: `the pipe end #${e.node} belongs to ${quoted(e.equipmentUnconfirmed)} (the nearest equipment tag, ${round(far)} drawing units off)`,
               question: `The trace guessed that the pipe end in the green ring belongs to the equipment tagged ${quoted(e.equipmentUnconfirmed)}. Does the pipe end connect to that equipment (into its outline or a nozzle of it)? Yes, no (it ends somewhere else, or at other equipment), or unsure.`,
               pidKey: `${s.tableId}:${e.node}`,
+              ...altsOf(
+                [...tags, ...ALT_WORDS.end],
+                `where the pipe end really goes: the tag of the equipment it connects to${tags.length ? '' : ' (none is listed near it)'}, "break" (it stops at a break symbol), "continues" (a label or connector says it goes on elsewhere), "open" (it just ends), or "other"`,
+              ),
             },
             { kind: 'point', at, pad, marks: [at] },
           );
@@ -311,6 +384,17 @@ export function questionsFor(
             guess: `the pipe at end #${end.node} continues on ${quoted(other)} (${l.note})`,
             question: `The trace guessed that the pipe at the green ring continues on another drawing, ${quoted(other)}. Does a label, arrow or off-page connector at that end say it continues on that drawing? Yes, no (it names another drawing, or nothing), or unsure.`,
             pidKey: `${s.tableId}:${end.node}`,
+            ...altsOf(
+              [
+                ...titles
+                  .filter(
+                    (t) => t !== s.title && t.trim().toUpperCase() !== other.trim().toUpperCase(),
+                  )
+                  .slice(0, ALT_NAMES_MAX),
+                ...ALT_WORDS.link,
+              ],
+              'the drawing the end really names: one of the sheet names listed, "none" (no continuation is named), or "other" (a drawing not listed)',
+            ),
           },
           { kind: 'point', at, pad: 6 * near, marks: [at] },
         );
@@ -341,6 +425,10 @@ export function questionsFor(
                 guess: `block ${quoted(v.block)} is a ${sayType(v.type)} valve (read from its name)`,
                 question: `The trace read the symbol in the green ring as a ${sayType(v.type)} valve from its block name. Is it drawn as a ${sayType(v.type)} valve? Yes, no (another valve or not a valve), or unsure.`,
                 pidKey: `${s.tableId}:${valveKey(v.handle)}`,
+                ...altsOf(
+                  [...VALVE_TYPES.filter((t) => t !== v.type), ...ALT_WORDS.valve],
+                  'what the symbol is drawn as: a valve type listed (an orifice plate or flow element is "orifice"), "instrument" (an inline instrument), "not-a-valve", or "other"',
+                ),
               },
               { kind: 'point', at, pad: Math.max(half * 1.6, 3 * near), marks: [at] },
             );
@@ -500,21 +588,33 @@ export function promptFor(batch: CheckBatch, overview = true): string {
     image += crops.length;
     const which =
       crops.length === 1 ? `image ${from}` : `images ${from} to ${from + crops.length - 1}`;
-    return `${q.id} (${which}): ${q.question}`;
+    return `${q.id} (${which}): ${q.question} ${q.altAsk}`;
   });
   return [
     `You check guesses a program made when it traced a piping circuit on an engineering drawing (a P&ID). Each question below is about one or more close-up crops of the drawing${overview ? '; image 1 is an overview of the whole sheet' : ''}.`,
     COLOR_NOTE,
     DRAWING_TEXT_GUARD,
     'Answer only from what the images show; do not guess. Answer "unsure" when the images do not show enough to tell.',
-    'Reply with JSON only, no other text: {"answers":[{"id":"q1","answer":"yes","reason":"..."}]}, one entry per question, answer one of "yes", "no", "unsure", reason at most 25 words naming what you saw.',
+    'Reply with JSON only, no other text: {"answers":[{"id":"q1","answer":"no","alt":"...","reason":"..."}]}, one entry per question, answer one of "yes", "no", "unsure", reason at most 25 words naming what you saw. Give "alt" only with a "no": exactly one of the choices its question lists, copied as written; leave it out when none fits or you cannot tell.',
     '',
     'Questions:',
     ...lines,
   ].join('\n');
 }
 
-export type ParsedAnswer = { verdict: Verdict; reason: string };
+export type ParsedAnswer = { verdict: Verdict; reason: string; alt?: string };
+
+/** A reply's alternative as one of the question's own (the listed
+ *  spelling), or undefined: only after a no, never free text. */
+export function altOf(said: unknown, alts: readonly string[] | undefined): string | undefined {
+  if (typeof said !== 'string' || !alts?.length) return undefined;
+  // Compared on letters and digits only: "three way", "Three-Way" and
+  // "E 101" read as the listed "three-way" and "E-101".
+  const n = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  const want = n(said);
+  if (!want) return undefined;
+  return alts.find((a) => n(a) === want);
+}
 
 /** What a reply held: the answers the model gave (`answers`, a genuine
  *  "unsure" among them), and why each other question has none (`missing`).
@@ -536,6 +636,8 @@ export function parseAnswers(
   text: string,
   ids: readonly string[],
   stopped?: 'cut' | 'empty',
+  /** Per question id, the alternatives its no may name. */
+  alts?: ReadonlyMap<string, readonly string[]>,
 ): ParsedReply {
   const answers = new Map<string, ParsedAnswer>();
   const missing = new Map<string, string>();
@@ -580,7 +682,8 @@ export function parseAnswers(
       .replace(/[\u0000-\u001f\u007f]+/g, ' ')
       .trim()
       .slice(0, 300);
-    answers.set(id, { verdict: said, reason });
+    const alt = said === 'no' ? altOf(o.alt, alts?.get(id)) : undefined;
+    answers.set(id, { verdict: said, reason, ...(alt ? { alt } : {}) });
   }
   for (const id of ids)
     if (!answers.has(id) && !missing.has(id))
@@ -609,6 +712,7 @@ export const CHECK_COLUMNS = [
   'Guess',
   'Question',
   'Answer',
+  'Alternative',
   'Reason',
   'Trust',
   'Model',
@@ -642,6 +746,9 @@ export type StoredCheck = {
   crops?: string;
   /** circuit_verify's seal of the row (./check-seal.ts); '' when none. */
   seal?: string;
+  /** What the image said it is instead, after a no (phase 6; '' on older
+   *  rows and on a yes or unsure). */
+  alt?: string;
 };
 
 /** Each Checks column and the stored check's field it reads into: every
@@ -656,6 +763,7 @@ export const CHECK_FIELD = {
   Guess: 'guess',
   Question: 'question',
   Answer: 'answer',
+  Alternative: 'alt',
   Reason: 'reason',
   Trust: 'trust',
   Model: 'model',
@@ -691,6 +799,7 @@ export function sealFieldsOf(tableId: string, r: StoredCheck): SealedFields {
     revision: r.revision,
     checkedAt: r.checkedAt,
     crops: r.crops ?? '',
+    alt: r.alt ?? '',
   };
 }
 
@@ -774,10 +883,27 @@ export type AppliedCheck = {
   guess: string;
   trust: string;
   answer: Verdict;
+  /** What the image named instead, after a no (drawn FROM IMAGE). */
+  alt?: string;
   reason: string;
   model: string;
   checkedAt: string;
 };
+
+/** The Crops cell (`overview <id> <id> ...`) as the overview's file id and
+ *  the crops' file ids. */
+export function cropIdsOf(cell: string): { overview?: string; crops: string[] } {
+  const words = cell.split(/\s+/).filter(Boolean);
+  let overview: string | undefined;
+  const crops: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === 'overview' && words[i + 1]) {
+      overview = words[i + 1];
+      i += 1;
+    } else crops.push(words[i]!);
+  }
+  return { ...(overview ? { overview } : {}), crops };
+}
 
 /**
  * The stored checks that apply to a trace (circuit_trace): every guess's
@@ -785,7 +911,9 @@ export type AppliedCheck = {
  * sheet's current revision. Fills `applied` and `limits` (checks of an
  * older revision, unsealed rows and answers to a question that now reads
  * differently are kept in the tab, never applied) and returns the
- * drawing's marks.
+ * drawing's marks: per guess the trace may ask about (`guesses`, keyed
+ * `<kind>|<pidKey>`) its id, its words and the answer that applies, so the
+ * drawing marks every guess, the unchecked ones too.
  */
 export function appliedChecks(
   sheets: readonly TraceSheet[],
@@ -796,21 +924,39 @@ export function appliedChecks(
 ): PidChecks | undefined {
   const { latest, notes } = latestBySheet(inputs);
   limits.push(...notes);
-  if (!latest.size) return undefined;
   const { questions } = questionsFor(sheets, links, inputs, { max: Infinity });
   const near = new Map<string, Verdict>();
   const link = new Map<string, Verdict>();
   const joins = new Map<string, Verdict>();
   const valves = new Map<string, Verdict>();
+  const guesses = new Map<string, GuessCheck>();
   const changed = new Map<string, number>();
   for (const q of questions) {
     const had = latest.get(q.tableId)?.get(q.key);
     const c = currentAnswer(latest, q);
+    const at = `${q.kind}|${q.pidKey}`;
+    const base: GuessCheck = { id: guessId(q.tableId, q.key), kind: q.kind, guess: q.guess };
     if (!c) {
       if (had) changed.set(q.sheet, (changed.get(q.sheet) ?? 0) + 1);
+      if (!guesses.has(at)) guesses.set(at, base);
       continue;
     }
     const v = verdictOf(c.answer);
+    // An alternative applies only after a no, and only one the question
+    // still offers (the drawing around the guess may have changed).
+    const alt = v === 'no' ? altOf(c.alt, q.alts) : undefined;
+    guesses.set(at, {
+      ...base,
+      answer: {
+        verdict: v,
+        ...(alt ? { alt } : {}),
+        question: q.question,
+        reason: c.reason,
+        model: c.model,
+        checkedAt: c.checkedAt,
+        ...cropIdsOf(c.crops ?? ''),
+      },
+    });
     if (q.kind === 'end') near.set(q.pidKey, v);
     else if (q.kind === 'link') link.set(q.pidKey, v);
     else if (q.kind === 'join') joins.set(q.pidKey, v);
@@ -822,6 +968,7 @@ export function appliedChecks(
       guess: q.guess,
       trust: TRUST[v],
       answer: v,
+      ...(alt ? { alt } : {}),
       reason: c.reason,
       model: c.model,
       checkedAt: c.checkedAt,
@@ -831,5 +978,5 @@ export function appliedChecks(
     limits.push(
       `${sheet}: ${n} image check${n === 1 ? '' : 's'} answered a question that reads differently now (the guess changed): kept, not applied; circuit_verify asks it again.`,
     );
-  return { near, link, joins, valves };
+  return { near, link, joins, valves, guesses };
 }

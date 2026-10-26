@@ -104,6 +104,8 @@ describe.skipIf(!URL)('the image check store', () => {
       question: 'Does the pipe end connect to "V-201"?',
       item: { id: 'q1', kind: 'point' as const, at: [1, 0] as [number, number], pad: 4 },
       pidKey: 'x:2',
+      alts: ['V-202', 'break', 'continues', 'open', 'other'],
+      altAsk: 'If no, give "alt".',
     },
     verdict: 'yes' as const,
     reason: 'into its nozzle',

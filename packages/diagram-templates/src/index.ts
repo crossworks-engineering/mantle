@@ -119,5 +119,14 @@ export { buildCanvas, readCanvasData, replaceCanvasData, type CanvasMode } from 
 export type { PageFailure, RenderResult } from './types.ts';
 export type { FlowData } from './templates/flow.ts';
 export type { PidData, PidSet, PidPage, PidInput, SiteProfile } from './templates/pid/index.ts';
-export { PID_LIMITS, SET_LIMITS } from './templates/pid/index.ts';
+export { PID_LIMITS, SET_LIMITS, VALVE_TYPES } from './templates/pid/index.ts';
+export {
+  CHECK_STATES,
+  CHECK_LIMITS,
+  imageCheckSummary,
+  withImageCheckSummary,
+  type PidCheck,
+  type PidChecksSummary,
+  type CheckState,
+} from './templates/pid/index.ts';
 export { pageRef, stackPages, SET_NAV_HEIGHT, type StackPage } from './runtime/pages.ts';
