@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildAppFrameCsp } from '@mantle/share-ui/app-frame-html';
+import { buildCanvasFrameCsp } from '@mantle/share-ui/canvas-frame-html';
 
 /**
  * The front door is ONE release-owned Caddyfile plus shape files, wired into
@@ -36,12 +38,27 @@ describe('infra/caddy layout', () => {
     // login redirect and the frame stays blank. Every /<x>-runtime/* prefix
     // static.ts serves must be a server path in the same-origin shape.
     const served = [
-      ...read('server/web/server/static.ts').matchAll(/'\/([a-z]+-runtime)\/\*'/g),
+      ...read('server/web/server/static.ts').matchAll(/'\/([a-z-]+-runtime)\/\*'/g),
     ].map((m) => m[1]);
     expect(new Set(served)).toEqual(new Set(['app-runtime', 'canvas-runtime', 'share-runtime']));
     const line =
       read('infra/caddy/shapes/same-origin.caddy').match(/^@server path (.+)$/m)?.[1] ?? '';
     for (const prefix of served) expect(line.split(' ')).toContain(`/${prefix}/*`);
+  });
+
+  it('same-origin sends every path a sandboxed frame loads from the box to the server', () => {
+    // The frame's origin is 'null': a script, style or font it loads from the
+    // box is a cross-origin fetch with no cookies. Only the server answers
+    // those CORS-open, so every box path in a frame CSP must be a server path.
+    const ORIGIN = 'https://box.example';
+    const paths = new Set<string>();
+    for (const csp of [buildCanvasFrameCsp(ORIGIN, []), buildAppFrameCsp(ORIGIN)]) {
+      for (const m of csp.matchAll(/https:\/\/box\.example(\/[^\s;]+\/)/g)) paths.add(`${m[1]}*`);
+    }
+    expect(paths.size).toBeGreaterThan(0);
+    const line =
+      read('infra/caddy/shapes/same-origin.caddy').match(/^@server path (.+)$/m)?.[1] ?? '';
+    for (const p of paths) expect(line.split(' ')).toContain(p);
   });
 
   it('compose mounts shapes + conf.d and passes the shape and body-cap env to caddy', () => {

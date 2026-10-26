@@ -4,16 +4,17 @@
 # a box (routes a box needs go in conf.d/).
 #
 # Server-owned paths: the API plane, the share + print render surfaces, the
-# generated runtime bundles those surfaces and the Present canvas frame load
-# (/canvas-runtime/* is fetched from a sandboxed frame with no cookies, so the
-# client app would answer it with a login redirect), and the MCP OAuth
-# discovery docs. Everything else (owner UI, /login, /hub, /team*, /env.js, /_next/*,
-# fonts) falls through to the client app; both publics ship identical
-# font/runtime assets, so either could serve them and the client is the
-# natural default. Env for this shape: MANTLE_SERVER_ORIGIN=https://<domain>
-# (the client app needs an absolute origin for its server-side appearance
-# fetch). MANTLE_CLIENT_SITE_ADDRESS and MANTLE_API_CORS_ORIGINS stay unset.
-@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /canvas-runtime/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
+# MCP OAuth discovery docs, and every asset a sandboxed frame (a Present
+# canvas, a mini app) loads: the runtime bundles and the fonts. Such a frame
+# has the opaque origin 'null' and sends no cookies, so the client app would
+# answer a bundle with a login redirect and a font without the CORS header a
+# font fetch needs; the server serves both CORS-open (server/web/server/
+# static.ts). Everything else (owner UI, /login, /hub, /team*, /env.js,
+# /_next/*) falls through to the client app. Env for this shape:
+# MANTLE_SERVER_ORIGIN=https://<domain> (the client app needs an absolute
+# origin for its server-side appearance fetch). MANTLE_CLIENT_SITE_ADDRESS
+# and MANTLE_API_CORS_ORIGINS stay unset.
+@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /canvas-runtime/* /fonts/* /Inter/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
 handle @server {
 	reverse_proxy web:3000
 }
