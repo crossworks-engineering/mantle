@@ -1347,6 +1347,20 @@ roll.
   place. The revert (`packages/db/rollback/0333_present_embeds.revert.sql`)
   puts 0208's parsers back and takes 0333 off the ledger.
 
+## Going up to 0334 (the login bridge goes, plan v3.2 S8d)
+
+Migration 0334 drops `mantle_bridge_login`, which nothing has called since
+0330's image and which took a login out of Admin only when its role said
+member (0330 refused its migrate while any such seat stood, so it deleted
+nothing). Nothing to do before the roll.
+
+- **What it changes for readers:** nothing.
+- **Rolling back below it:** optional; the older image calls no bridge.
+  The revert (`packages/db/rollback/0334_s8d_drop_bridge_login.revert.sql`)
+  puts 0330's body, owner and rights back and takes 0334 off the ledger.
+  Going below 0330 as well: this revert first (0330's reads the bridge's
+  owner), then 0330's (below).
+
 ## Rollback
 
 ```bash
@@ -1468,7 +1482,8 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   count, drops 0330's new functions and takes it off the ledger: the
   catalog is the older image's again (the S8b handover in docs/_archive/).
   To go below b2 or b3 as well, this revert comes first, then theirs (the
-  entry above). Going up to 0330: "Going up to 0330" above.
+  entry above). From an image with 0334, its revert comes before this one
+  ("Going up to 0334" above). Going up to 0330: "Going up to 0330" above.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

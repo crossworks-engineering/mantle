@@ -36,7 +36,7 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
   (`runtimeFunctionAllowlist`): what `PUBLIC` or a viewer role may run, plus
   `RUNTIME_SYSTEM_FUNCTIONS`, the few functions taken from `PUBLIC` that the
   system pool calls itself, each listed with where it is called
-  (`mantle_actor_miss_log`, `mantle_bridge_login`, `mantle_check_box_mode`,
+  (`mantle_actor_miss_log`, `mantle_check_box_mode`,
   `mantle_embed_host`, `mantle_ws_attach_assistants`,
   `mantle_ws_private_workspace`, `mantle_ws_skip_reason`,
   `mantle_file_restamp_home`, `mantle_tg_login_moderates`). Everything else
@@ -315,7 +315,8 @@ Its rights, made equal to the access matrix at every migrate inside
   transaction inside it (0322: the identity readers answer no login on the
   narrow role). A secret's sealed row is written by the structure helper
   itself; its caller passes only the sealed value, no statement;
-  `mantle_bridge_login` left it with the role change, and the promotion
+  `mantle_bridge_login` left it with the role change (and was dropped in
+  0334), and the promotion
   definer `mantle_space_settle_promotion` in S7b part b2 round 5, all
   denied by name), and what the column defaults and checks of the
   tables it writes call (none today; runtime-role.db.test.ts reads them from

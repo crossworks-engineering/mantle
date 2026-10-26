@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
+
+- **Security:** a request's login resolves to one shape: the brain, the
+  login and whether it is an Admin user now (membership of the live Admin
+  workspace). The `admin`/`member` kind union and its legacy readers are
+  gone (`loginCaller`, `chatLoginCaller`, `publicLoginCaller`,
+  `ownerCallerWithLogin`, `legacyLogin`, `AnyLogin`); handlers read
+  `anyLoginCaller()`, `chatCaller()` and `publicLoginItself()`, and a shown
+  role is `sessionRole(login)`. A member's asset token and a member's open
+  stream ask membership instead of the role column, which the definers keep
+  equal to it. No route or tool answers differently: the guard sweep's
+  recorded files are unchanged byte for byte.
+- **Migration 0334:** drops `mantle_bridge_login`, unused since 0330's
+  image (it deleted nothing on a box whose Admin seats all have role
+  admin). Its revert puts 0330's body back (`docs/update-prod.md`, "Going
+  up to 0334"). `mantle_role_drift()` stays as the box count.
+
 ## Unreleased: the trace's guesses checked by an image model
 
 - **Feature:** `circuit_verify(circuit, register?, kinds?, max_questions?,

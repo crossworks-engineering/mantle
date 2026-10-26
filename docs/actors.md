@@ -125,9 +125,14 @@ The database's needs (`mantle_check_row`, `mantle_check_item`): `read`,
 ([edit-check.md](./edit-check.md)). An item the caller does not read answers
 the 404 of none, as a random id; one it reads but may not change, 403.
 
-Admin is management, not reading. An Admin login is role admin AND a user
-of the live Admin workspace (`mantle_login_is_admin`; SQL's
-`mantle_login_is_admin_user` too). `mantle_area_rule` answers `loginHasArea`
+Admin is management, not reading. An Admin login is a user of the live
+Admin workspace, the login enabled (`mantle_login_is_admin`; SQL's
+`mantle_login_is_admin_user` too): membership decides. `auth.users.role`
+follows it, written only by the membership definers (the role guard holds
+every other writer off; the login bridge is gone since 0334), and is shown,
+never asked: the request's `Login` has no kind and no role, and neither do
+the owner and chat answers (`login-shape.test.ts`); a decision asks
+`adminFacts(login)`. `mantle_role_drift()` counts a hand write on a box. `mantle_area_rule` answers `loginHasArea`
 and `areasFor`; `requireArea` asks `mantle_scope_has_area` (the rule plus
 "Admin in the scope") in its login's own scope, the rule unscoped.
 `mantle_login_area` adds a counted fail-open (S4b removes it).
@@ -333,7 +338,10 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - The seven Admin acts' definers (0308, 0310) run by `loginDefinerCall` on the
   system pool: the write role holds no EXECUTE on them yet. S7.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
-- `Login` has no kind or role (`adminFacts`); its legacy shapes do. S8.
+- Fourteen code reads of `auth.users.role` remain (the requested role of a
+  new or changed login, a shown role, the member-path checks of the MCP
+  login): each equals membership while `mantle_role_drift()` is 0, which
+  the definers and the role guard keep. Accepted, no step.
 - Route policy is spread over lists, not declared per route. S9.
 - The A8 matrix covers every kind and tool, not yet the routes. S11b.
 - Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.

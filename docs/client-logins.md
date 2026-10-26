@@ -54,8 +54,9 @@ A former client stays one (`archive_client_logins` is the list):
   21.9). After the hand setup, the switch is run by hand in one
   transaction: `SET LOCAL mantle.ws_former_clients = 'reviewed'`, then
   `select * from mantle_ws_migrate_locked()`.
-- The login bridge (`mantle_bridge_login`) gives a former client no role:
-  no switch, role change or invite puts one in Admin or Team.
+- A former client is a member (its role says so since 0272): no switch,
+  role change or invite puts one in Admin or Team (the membership definers
+  add to Admin; the login bridge is gone since 0334).
 - Nor in a private workspace: the review homes, the spaces fold of a
   switch and `mantle_ws_private_workspace` treat a former client as a
   login that is gone. Its items go to its "Former user" workspace (no
