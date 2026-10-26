@@ -86,51 +86,40 @@ export function extOf(filename: string): string {
 }
 
 /**
- * Four sets that drive ingestion + editor behaviour.
+ * The sets that drive ingestion + editor behaviour.
  *  - TEXT_EXTS: editable in the UI, `data.content` populated, extractor reads.
- *  - TIKA_EXTS: routed to the Apache Tika fallback parser (see ./tika.ts).
+ *  - ANYDOC_EXTS: legacy Office, OpenDocument, RTF and EPUB, read in-process
+ *    by anydoc (see ./anydoc.ts).
+ *  - MARKUP_EXTS: HTML and XML, tags stripped in-process (see ./markup.ts).
+ *  - TIKA_EXTS: formats only Apache Tika reads, an opt-in add-on (./tika.ts).
  *  - INGESTABLE_EXTS: union of all formats the extractor will try to read.
  *  - PREVIEWABLE_EXTS: rendered as Markdown / code preview in the UI.
  */
 export const TEXT_EXTS = new Set<string>(['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'csv']);
 export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
-/** Formats handled by the Tika fallback (./tika.ts) — anything our in-process
- *  parsers (pdf/docx/xlsx/text) can't handle but Tika reliably can.
- *  LibreOffice native (.odt/.ods/.odp), PowerPoint (.pptx/.ppt), legacy Word
- *  (.doc), Rich Text (.rtf), e-books (.epub), Visio diagrams (.vsdx/.vsd —
- *  Tika pulls the shape text). Tika supports more (RFC822 mail, MS Publisher,
- *  …); add slugs here as you need them. */
-export const TIKA_EXTS = new Set<string>([
-  'odt',
-  'ods',
-  'odp',
-  'pptx',
-  'ppt',
-  'doc',
-  'rtf',
-  'epub',
-  'vsdx',
-  'vsd',
-  // `.xml` was previously unreadable — not in any set, so `parserRouteForExt`
-  // returned `none` and an upload was indexed by its filename alone. Tika
-  // strips the markup and keeps the content, which is right for a format that
-  // is mostly tags: as TEXT_EXTS the summary, embedding and chunks would all be
-  // dominated by element names, so retrieval would get *worse* while appearing
-  // to work (matching `<title>` rather than titles). Project's MSPDI export is
-  // recognised by content before this fallback — see parseDocumentBytes.
-  'xml',
-  // Saved web pages. Same shape as .xml: mostly markup, real content inside,
-  // Tika strips the tags cleanly. Without this, .html routed 'none' and — once
-  // the hollow-body guard landed — went from degraded filename-indexing to a
-  // no_parser skip, which is a regression for a folder of saved articles.
-  'html',
-  'htm',
-]);
+/** Read in-process by anydoc (a Rust library, no service): legacy Word
+ *  (.doc), PowerPoint (.ppt), LibreOffice native (.odt/.ods/.odp), Rich Text
+ *  (.rtf) and e-books (.epub). When Tika is on, it is the second try for a
+ *  file anydoc cannot read. The legacy sheets (.xls/.xlsb) use anydoc too, but
+ *  through ./legacy-sheet.ts, so they are not in this set. */
+export const ANYDOC_EXTS = new Set<string>(['doc', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'epub']);
+/** Mostly tags, real content inside: tags stripped in-process (./markup.ts).
+ *  `.xml` used to be unreadable (indexed by its filename alone), and as plain
+ *  text the summary, embedding and chunks would all be dominated by element
+ *  names, so retrieval would get *worse* while appearing to work (matching
+ *  `<title>` rather than titles). Project's MSPDI export is recognised by
+ *  content before the generic read (see parseDocumentBytes). `.html`/`.htm`
+ *  are saved web pages, the same shape. */
+export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
+/** Only Apache Tika reads these, and Tika is an opt-in add-on (the `tika`
+ *  compose profile). Without it a `.vsd` takes the honest no-text skip.
+ *  Tika supports more (RFC822 mail, MS Publisher, …); add slugs here as you
+ *  need them. */
+export const TIKA_EXTS = new Set<string>(['vsd']);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
- *  In-process: pdf-parse, mammoth, exceljs. Tika-routed: TIKA_EXTS. Each
- *  in-process binary type has a parser module under packages/files/src/
- *  and a branch in the extractor's readNodeBodyRaw; Tika-routed ones go
- *  through parseDocumentBytes → tika.ts. */
+ *  In-process: pdf-parse, mammoth, exceljs, anydoc, the markup and Visio
+ *  readers. Tika-routed: TIKA_EXTS. Each binary type has a parser module
+ *  under packages/files/src/ and goes through parseDocumentBytes. */
 export const INGESTABLE_EXTS = new Set<string>([
   ...TEXT_EXTS,
   'pdf',
@@ -150,6 +139,10 @@ export const INGESTABLE_EXTS = new Set<string>([
   // machinery — see ./dxf.ts. Deliberately NOT in TEXT_EXTS even though
   // ASCII DXF is text: raw group codes would index as garbage.
   'dxf',
+  'pptx',
+  'vsdx',
+  ...ANYDOC_EXTS,
+  ...MARKUP_EXTS,
   ...TIKA_EXTS,
 ]);
 
@@ -235,11 +228,17 @@ export function exportHintForExt(ext: string): string | undefined {
 export type ParserRoute =
   | 'pdf-parse'
   | 'mammoth'
-  /** PowerPoint, read in-process (./pptx.ts); Tika is its fallback. */
+  /** PowerPoint, read in-process (./pptx.ts); anydoc is its fallback. */
   | 'pptx'
   | 'exceljs'
-  /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
+  /** Legacy .xls/.xlsb: converted to .xlsx via anydoc, then read by exceljs. */
   | 'legacy-sheet'
+  /** Legacy Office, OpenDocument, RTF, EPUB: in-process anydoc (./anydoc.ts). */
+  | 'anydoc'
+  /** HTML / XML: tags stripped in-process (./markup.ts). */
+  | 'markup'
+  /** Visio .vsdx: shape text read in-process (./vsdx.ts). */
+  | 'vsdx'
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
   | 'dwf'
@@ -258,7 +257,10 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'dwf') return 'dwf';
   if (ext === 'dwg') return 'dwg';
   if (ext === 'dxf') return 'dxf';
+  if (ext === 'vsdx') return 'vsdx';
   if (TEXT_EXTS.has(ext)) return 'utf8';
+  if (ANYDOC_EXTS.has(ext)) return 'anydoc';
+  if (MARKUP_EXTS.has(ext)) return 'markup';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
 }

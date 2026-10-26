@@ -509,11 +509,16 @@ services:
       # ERROR (503). Harmless; the grace period keeps it from counting.
       start_period: 10s
 
-  # Apache Tika — document-parser fallback for formats our in-process parsers
-  # don't cover (.odt / .ods / .odp / .ppt / .doc / .rtf / .epub / …, and the
-  # fallback for a .pptx the in-process reader cannot open).
-  # Self-hosted; bytes stay on the VPS. Stateless — no volume.
+  # Apache Tika: an OPT-IN add-on. anydoc (in-process, no JVM) reads the
+  # legacy Office, OpenDocument, RTF and EPUB files, and our own readers take
+  # HTML, XML and .vsdx. Tika is the only reader for the old binary Visio
+  # .vsd, the second try for a file anydoc cannot read, and the source of
+  # embedded pictures from the legacy binaries. Turn it on with the `tika`
+  # profile (COMPOSE_PROFILES=tika in .env, then `docker compose up -d`);
+  # the app reads the same profile list and skips Tika when it is absent.
+  # Self-hosted; bytes stay on the VPS. Stateless, no volume.
   tika:
+    profiles: ['tika']
     image: apache/tika:4.1.0-1
     container_name: mantle_tika
     restart: unless-stopped
@@ -781,7 +786,8 @@ services:
       # .env, the updater's rolls included). Web derives the deploy shape from
       # it and MANTLE_COMPOSE_PROFILES (in the app-env anchor;
       # lib/compose-shape.ts): on a core box without the helpers profile the
-      # onboarding check treats the shed Tika as optional.
+      # onboarding check treats the shed browser as optional, and on any box
+      # without the tika profile the Tika add-on is optional.
       MANTLE_COMPOSE_FILE: ${COMPOSE_FILE:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files

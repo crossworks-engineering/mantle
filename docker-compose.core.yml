@@ -42,12 +42,12 @@
 #   worker_maintenance                        nightly registry sweeps, cheap
 #
 # The doc helpers (back on with --helpers, or ad hoc: naming a service on the
-# command line overrides its profile gate, `docker compose up -d tika browser`):
-#   tika               document-parse fallback for formats the in-process
-#                      parsers don't cover (.odt/.doc/.rtf/.epub/...). Common
-#                      formats (pdf, docx, pptx, txt, md) parse in-process, so a
-#                      helper-less core still ingests them fine.
+# command line overrides its profile gate, `docker compose up -d browser`):
 #   browser            PDF export only; share pages still serve HTML
+#
+# Tika is no longer a helper: it is an opt-in add-on on every shape (the
+# `tika` profile, see docker-compose.yml). The in-process readers cover the
+# formats it used to, so a core ingests .doc/.odt/.rtf/.epub without it.
 #
 # Full-shape only (channel workers; `full` is not meant to be enabled as a
 # profile — want these back, run `scripts/install.sh --no-core`):
@@ -63,8 +63,6 @@
 # use ONLINE embeddings; the CPU embedder does not fit a 4 GB box.
 
 services:
-  tika:
-    profiles: ["full", "helpers"]
   browser:
     profiles: ["full", "helpers"]
   worker_email:

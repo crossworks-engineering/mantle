@@ -3,9 +3,10 @@
  *
  * Two things matter for the wrapper's contract:
  *
- *   1. **URL resolution.** TIKA_URL env overrides DEFAULT_TIKA_URL; trailing
- *      slashes are stripped so we don't produce `…//tika`. Empty / whitespace
- *      env falls back to the default.
+ *   1. **Opt-in, then URL resolution.** Tika is an add-on: with TIKA_URL
+ *      unset or blank, or a compose box without the `tika` profile, no call
+ *      is made at all. When it is on, trailing slashes are stripped so we
+ *      don't produce `…//tika`.
  *
  *   2. **Never-throws.** Every failure mode the wrapper documents — service
  *      down, timeout, non-2xx, malformed response — must return `''` (not
@@ -21,19 +22,24 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
-import { parseTikaBytes, tikaIsUp, tikaVersion, unpackTikaImages } from './tika';
+import { parseTikaBytes, tikaConfigured, tikaIsUp, tikaVersion, unpackTikaImages } from './tika';
 
 const ORIGINAL_TIKA_URL = process.env.TIKA_URL;
+const ORIGINAL_PROFILES = process.env.MANTLE_COMPOSE_PROFILES;
 
 beforeEach(() => {
-  // Wipe between tests so URL-resolution assertions are deterministic.
-  delete process.env.TIKA_URL;
+  // A dev-style box with Tika on, reset between tests so URL-resolution
+  // assertions are deterministic.
+  process.env.TIKA_URL = 'http://127.0.0.1:9998';
+  delete process.env.MANTLE_COMPOSE_PROFILES;
   vi.restoreAllMocks();
 });
 
 afterEach(() => {
   if (ORIGINAL_TIKA_URL == null) delete process.env.TIKA_URL;
   else process.env.TIKA_URL = ORIGINAL_TIKA_URL;
+  if (ORIGINAL_PROFILES == null) delete process.env.MANTLE_COMPOSE_PROFILES;
+  else process.env.MANTLE_COMPOSE_PROFILES = ORIGINAL_PROFILES;
 });
 
 /** Helper: mock global fetch to capture the call + return a fake Response.
@@ -81,8 +87,40 @@ function mockFetch(...responses: FakeResponse[]): FetchSpy {
   return fetchSpy;
 }
 
+describe('tikaConfigured: the opt-in switch', () => {
+  it('is off when TIKA_URL is unset or blank, and no call is made', async () => {
+    delete process.env.TIKA_URL;
+    expect(tikaConfigured()).toBe(false);
+    process.env.TIKA_URL = '   ';
+    expect(tikaConfigured()).toBe(false);
+    const fetchSpy = mockFetch({ ok: true, text: 'hello' });
+    await expect(parseTikaBytes(Buffer.from('x'))).resolves.toBe('');
+    await expect(tikaIsUp()).resolves.toBe(false);
+    await expect(tikaVersion()).resolves.toBeNull();
+    await expect(unpackTikaImages(Buffer.from('x'), 'doc')).resolves.toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('under compose, follows the tika profile', async () => {
+    process.env.TIKA_URL = 'http://tika:9998';
+    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes,helpers';
+    expect(tikaConfigured()).toBe(false);
+    const fetchSpy = mockFetch({ ok: true, text: 'hello' });
+    await expect(parseTikaBytes(Buffer.from('x'))).resolves.toBe('');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes, tika';
+    expect(tikaConfigured()).toBe(true);
+    process.env.MANTLE_COMPOSE_PROFILES = '';
+    expect(tikaConfigured()).toBe(false);
+  });
+
+  it('outside compose, TIKA_URL alone turns it on', () => {
+    expect(tikaConfigured()).toBe(true);
+  });
+});
+
 describe('parseTikaBytes — URL resolution', () => {
-  it('defaults to http://127.0.0.1:9998 when TIKA_URL is unset', async () => {
+  it('uses TIKA_URL (dev: the host port)', async () => {
     const fetchSpy = mockFetch({ ok: true, text: 'hello' });
     await parseTikaBytes(Buffer.from('x'));
     expect(fetchSpy.mock.calls[0]![0]).toBe('http://127.0.0.1:9998/tika/text');
@@ -102,11 +140,11 @@ describe('parseTikaBytes — URL resolution', () => {
     expect(fetchSpy.mock.calls[0]![0]).toBe('http://tika:9998/tika/text');
   });
 
-  it('falls back to default when TIKA_URL is whitespace-only', async () => {
-    process.env.TIKA_URL = '   ';
+  it('trims surrounding whitespace from TIKA_URL', async () => {
+    process.env.TIKA_URL = '  http://tika:9998  ';
     const fetchSpy = mockFetch({ ok: true, text: 'hello' });
     await parseTikaBytes(Buffer.from('x'));
-    expect(fetchSpy.mock.calls[0]![0]).toBe('http://127.0.0.1:9998/tika/text');
+    expect(fetchSpy.mock.calls[0]![0]).toBe('http://tika:9998/tika/text');
   });
 });
 

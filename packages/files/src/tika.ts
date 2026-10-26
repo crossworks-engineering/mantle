@@ -6,9 +6,10 @@ import { NET_TIMEOUTS, parseRetryAfterMs, timeoutSignal, withRetry } from '@mant
  * The first tier is our in-process parsers (pdf-parse / mammoth / exceljs in
  * `./pdf`, `./docx`, `./xlsx`). The second tier is the vision worker (OCR for
  * scanned PDFs and images, see server/api/src/extractor.ts `ocrIngestPdfNode`).
- * This third tier handles the long tail of formats neither of those covers:
- * `.odt` / `.ods` / `.odp` (LibreOffice), `.pptx` / `.ppt` (PowerPoint),
- * `.doc` (legacy Word), `.rtf`, `.epub`, and whatever else Tika knows about.
+ * This third tier is now an opt-in add-on (see {@link tikaConfigured}): anydoc
+ * reads the legacy Office, OpenDocument, RTF and EPUB files in-process, and
+ * Tika is the only reader for `.vsd` and the second try for a file anydoc
+ * cannot read.
  *
  * Self-hosted (`apache/tika:4.1.0-1` in docker-compose), so bytes never leave
  * the VPS — same privacy property as the rest of the stack. Stateless: a
@@ -22,10 +23,25 @@ import { NET_TIMEOUTS, parseRetryAfterMs, timeoutSignal, withRetry } from '@mant
  * text" (the `no_text_layer` honest skip).
  */
 
-/** Default endpoint for dev (Tika exposed on the host) and tests. In prod
- *  docker-compose, the web/agent/workers reach Tika by service name via the
- *  TIKA_URL env (set to `http://tika:9998`). */
-const DEFAULT_TIKA_URL = 'http://127.0.0.1:9998';
+/**
+ * Tika is an opt-in add-on: anydoc and the in-process readers cover what it
+ * used to (see ./parse.ts), so it now runs only on a box that asks for it.
+ * The one switch is the `tika` compose profile. Compose gives every app
+ * container TIKA_URL (`http://tika:9998`) and the box's COMPOSE_PROFILES as
+ * MANTLE_COMPOSE_PROFILES, so a box without the profile is read as "Tika off"
+ * and no call is made: no wait on a DNS miss, and an anydoc failure keeps its
+ * own error instead of becoming Tika's empty answer. Outside compose (dev,
+ * tests) TIKA_URL alone decides.
+ */
+export function tikaConfigured(): boolean {
+  if (!env('TIKA_URL')?.trim()) return false;
+  const profiles = env('MANTLE_COMPOSE_PROFILES');
+  if (profiles === undefined) return true;
+  return profiles
+    .split(',')
+    .map((p) => p.trim())
+    .includes('tika');
+}
 
 /** Per-request timeout (NET_TIMEOUTS.tika, 60 s). Tika's cold start can take a
  *  few seconds, and large documents (long PPTX decks, complex spreadsheets)
@@ -43,9 +59,9 @@ const DEFAULT_TIMEOUT_MS = NET_TIMEOUTS.tika;
  *  ≪ the threshold at which an evil zip can do damage. */
 const MAX_PARTIAL_BODY_BYTES = 5_000_000;
 
+/** Only called after {@link tikaConfigured}, so TIKA_URL is set. */
 function tikaUrl(): string {
-  const configured = env('TIKA_URL')?.trim();
-  return (configured && configured.length > 0 ? configured : DEFAULT_TIKA_URL).replace(/\/$/, '');
+  return (env('TIKA_URL') ?? '').trim().replace(/\/$/, '');
 }
 
 /** Tika 4 names the output format in the path; the bare `/tika` now answers
@@ -146,6 +162,7 @@ export async function parseTikaBytes(
   bytes: Buffer,
   opts?: { mimeType?: string; timeoutMs?: number; accept?: TikaAccept },
 ): Promise<string> {
+  if (!tikaConfigured()) return '';
   const accept = opts?.accept ?? 'text/plain';
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
@@ -220,6 +237,7 @@ export async function unpackTikaImages(
   ext: string,
   opts?: { timeoutMs?: number },
 ): Promise<import('./embedded-images').EmbeddedImage[]> {
+  if (!tikaConfigured()) return [];
   const url = `${tikaUrl()}/unpack/all`;
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const signal = timeoutSignal(timeoutMs);
@@ -315,6 +333,7 @@ async function unpackedImageEntries(
  * endpoint with a short timeout; returns true iff a 2xx came back.
  */
 export async function tikaIsUp(timeoutMs: number = NET_TIMEOUTS.tikaProbe): Promise<boolean> {
+  if (!tikaConfigured()) return false;
   const url = `${tikaUrl()}/version`;
   const signal = timeoutSignal(timeoutMs);
   try {
@@ -335,6 +354,7 @@ export async function tikaIsUp(timeoutMs: number = NET_TIMEOUTS.tikaProbe): Prom
 export async function tikaVersion(
   timeoutMs: number = NET_TIMEOUTS.tikaProbe,
 ): Promise<string | null> {
+  if (!tikaConfigured()) return null;
   const url = `${tikaUrl()}/version`;
   const signal = timeoutSignal(timeoutMs);
   try {

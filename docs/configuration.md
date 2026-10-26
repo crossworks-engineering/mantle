@@ -131,7 +131,7 @@ as `env()` does) and the three profile readers in
 | `sandboxes` | `service sandboxes` | Settings > Services | the sandboxes service (sandboxd) |
 | `media` | `service media` | Settings > Services | the media sidecar (video_ingest, CAD renders) |
 | `localEmbedder` | `service local-embedder` | Settings > Services | the bundled local embedder |
-| `docHelpers` | `service helpers` | Settings > Services | Tika and the PDF browser (always on a full box) |
+| `docHelpers` | `service helpers` | Settings > Services | the PDF browser (always on a full box). Tika is its own opt-in: the `tika` compose profile |
 
 A profile feature is read with the owner's preferences:
 `feature('streamThoughts', { prefs })`. `mcpTerminal` takes its default from

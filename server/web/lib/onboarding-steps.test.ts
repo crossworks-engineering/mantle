@@ -111,45 +111,39 @@ beforeEach(() => {
 
 describe('compose shape (derived from COMPOSE_FILE / COMPOSE_PROFILES)', () => {
   const CORE = '/srv/b/docker-compose.yml:/srv/b/docker-compose.core.yml';
-  it('core without helpers: Tika optional', () => {
+  it('without the tika profile, Tika is optional on every shape', () => {
     expect(tikaIsOptional(composeShapeFrom(CORE, 'sandboxes'))).toBe(true);
-    expect(tikaIsOptional(composeShapeFrom(CORE, ''))).toBe(true);
+    expect(tikaIsOptional(composeShapeFrom(CORE, 'sandboxes, helpers'))).toBe(true);
+    expect(tikaIsOptional(composeShapeFrom('/srv/b/docker-compose.yml', ''))).toBe(true);
+    expect(tikaIsOptional(composeShapeFrom(undefined, undefined))).toBe(true);
   });
-  it('core WITH helpers: Tika required (a crashed Tika must not pass)', () => {
-    expect(tikaIsOptional(composeShapeFrom(CORE, 'sandboxes, helpers'))).toBe(false);
-  });
-  it('full shape, or nothing set: Tika required', () => {
-    expect(tikaIsOptional(composeShapeFrom('/srv/b/docker-compose.yml', 'helpers'))).toBe(false);
-    expect(tikaIsOptional(composeShapeFrom(undefined, undefined))).toBe(false);
+  it('with the tika profile, Tika is required (a crashed Tika must not pass)', () => {
+    expect(tikaIsOptional(composeShapeFrom(CORE, 'helpers, tika'))).toBe(false);
+    expect(tikaIsOptional(composeShapeFrom('/srv/b/docker-compose.yml', 'tika'))).toBe(false);
   });
 });
 
 describe('runInfraChecks: the Tika row', () => {
   const tikaRow = async () =>
-    (await runInfraChecks(null)).find((c) => c.label === 'Document parser (Tika)')!;
+    (await runInfraChecks(null)).find((c) => c.label === 'Document parser add-on (Tika)')!;
   const CORE = '/srv/b/docker-compose.yml:/srv/b/docker-compose.core.yml';
 
-  it('core + no helpers, Tika down: optional, passes, says how to add it', async () => {
+  it('no tika profile, Tika down: optional, passes, says how to add it', async () => {
     process.env.MANTLE_COMPOSE_FILE = CORE;
-    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
+    process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes, helpers';
     const row = await tikaRow();
     expect(row.ok).toBe(true);
-    expect(row.detail).toMatch(/optional on a brain-core box/);
-    expect(row.detail).toMatch(/\.xls/);
+    expect(row.detail).toMatch(/optional/);
+    expect(row.detail).toMatch(/tika profile/);
   });
 
-  it('core + helpers, Tika down: fails', async () => {
-    process.env.MANTLE_COMPOSE_FILE = CORE;
-    process.env.MANTLE_COMPOSE_PROFILES = 'helpers';
-    expect((await tikaRow()).ok).toBe(false);
+  it('unset (dev, an older compose), Tika down: optional, passes', async () => {
+    expect((await tikaRow()).ok).toBe(true);
   });
 
-  it('full shape, Tika down: fails', async () => {
+  it('tika profile on, Tika down: fails', async () => {
     process.env.MANTLE_COMPOSE_FILE = '/srv/b/docker-compose.yml';
-    expect((await tikaRow()).ok).toBe(false);
-  });
-
-  it('unset (dev, an older compose), Tika down: fails', async () => {
+    process.env.MANTLE_COMPOSE_PROFILES = 'tika';
     expect((await tikaRow()).ok).toBe(false);
   });
 

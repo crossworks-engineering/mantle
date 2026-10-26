@@ -240,7 +240,7 @@ describe('extension sets', () => {
   });
 });
 
-import { parserRouteForExt, TIKA_EXTS } from './slug';
+import { ANYDOC_EXTS, MARKUP_EXTS, parserRouteForExt, TIKA_EXTS } from './slug';
 
 describe('parserRouteForExt', () => {
   it('routes PDFs to pdf-parse (tier 1: in-process)', () => {
@@ -264,20 +264,33 @@ describe('parserRouteForExt', () => {
     }
   });
 
-  it('routes every TIKA_EXTS extension to tika (tier 2), except pptx', () => {
-    // Whatever Tika handles today — ensures no entry sneaks in without a route.
-    // pptx stays in TIKA_EXTS as the fallback, but reads in-process first.
-    for (const ext of TIKA_EXTS) {
-      expect(parserRouteForExt(ext)).toBe(ext === 'pptx' ? 'pptx' : 'tika');
-    }
+  it('routes every set to its own reader, so no entry sneaks in without a route', () => {
+    for (const ext of ANYDOC_EXTS) expect(parserRouteForExt(ext)).toBe('anydoc');
+    for (const ext of MARKUP_EXTS) expect(parserRouteForExt(ext)).toBe('markup');
+    for (const ext of TIKA_EXTS) expect(parserRouteForExt(ext)).toBe('tika');
   });
 
-  it('routes specifically the formats we promised Tika would cover', () => {
-    // Belt-and-braces: the exact set from the file-ingestion.md changelog.
-    // If someone narrows TIKA_EXTS in the future, this fails loudly.
-    for (const ext of ['odt', 'ods', 'odp', 'pptx', 'ppt', 'doc', 'rtf', 'epub', 'vsdx', 'vsd']) {
-      expect(TIKA_EXTS.has(ext)).toBe(true);
-      if (ext !== 'pptx') expect(parserRouteForExt(ext)).toBe('tika');
+  it('still reads every format Tika used to cover, now mostly in-process', () => {
+    // Belt-and-braces: the set Tika covered before anydoc. If one of these
+    // ever drops out of ingest, this fails loudly.
+    const expected: Record<string, string> = {
+      odt: 'anydoc',
+      ods: 'anydoc',
+      odp: 'anydoc',
+      ppt: 'anydoc',
+      doc: 'anydoc',
+      rtf: 'anydoc',
+      epub: 'anydoc',
+      pptx: 'pptx',
+      vsdx: 'vsdx',
+      vsd: 'tika',
+      xml: 'markup',
+      html: 'markup',
+      htm: 'markup',
+    };
+    for (const [ext, route] of Object.entries(expected)) {
+      expect(INGESTABLE_EXTS.has(ext), ext).toBe(true);
+      expect(parserRouteForExt(ext), ext).toBe(route);
     }
   });
 
@@ -285,11 +298,11 @@ describe('parserRouteForExt', () => {
     expect(parserRouteForExt('pptx')).toBe('pptx');
   });
 
-  it('routes .xml to tika rather than leaving it unreadable', () => {
+  it('routes .xml to the markup reader rather than leaving it unreadable', () => {
     // Regression guard. `.xml` used to route to `none`, so an upload was
-    // indexed by its filename alone — the same silent-nothing `.mpp` had, for a
-    // plainly readable format. Tika strips markup and keeps content.
-    expect(parserRouteForExt('xml')).toBe('tika');
+    // indexed by its filename alone, the same silent-nothing `.mpp` had, for
+    // a plainly readable format. The markup reader keeps the content.
+    expect(parserRouteForExt('xml')).toBe('markup');
     expect(mimeForExt('xml')).toBe('application/xml; charset=utf-8');
   });
 

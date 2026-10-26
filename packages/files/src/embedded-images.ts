@@ -43,7 +43,22 @@
 
 import { createHash } from 'node:crypto';
 import { sniffImage } from './image-probe';
-import { extOf, slugifyFolder, TIKA_EXTS } from './slug';
+import { extOf, slugifyFolder } from './slug';
+
+/** Formats whose pictures only Tika's /unpack gives: the set Tika used to
+ *  read text for, minus those with an in-process image reader above. */
+const TIKA_IMAGE_EXTS = new Set<string>([
+  'doc',
+  'ppt',
+  'rtf',
+  'epub',
+  'vsd',
+  'vsdx',
+  'xlsb',
+  'xml',
+  'html',
+  'htm',
+]);
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -400,9 +415,11 @@ async function extractRaw(
   if (ext === 'dxf') {
     return (await import('./dxf')).extractDxfImages(bytes);
   }
-  // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
-  // one, so it goes to Tika too rather than getting a bespoke reader.
-  if (TIKA_EXTS.has(ext) || ext === 'xlsb') {
+  // Tier 2: the legacy binaries, through Tika's /unpack. `xlsb` is a zip but
+  // an undocumented binary one, so it goes to Tika too rather than getting a
+  // bespoke reader. Tika is an opt-in add-on now; without it these give no
+  // images (their text still comes from anydoc).
+  if (TIKA_IMAGE_EXTS.has(ext)) {
     return (await import('./tika')).unpackTikaImages(bytes, ext);
   }
   return [];

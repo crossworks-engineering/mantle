@@ -211,26 +211,26 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
     });
   }
 
-  // Tika — the long-tail document parser (office formats, odd PDFs). A
-  // brain-core box without the helpers profile sheds it on purpose
-  // (docker-compose.core.yml), and common formats parse in-process without
-  // it, so there it is optional: reported, never blocking. The shape is
-  // derived from the box's compose settings (lib/compose-shape.ts).
+  // Tika: an opt-in add-on (the `tika` compose profile). The in-process
+  // readers cover the formats it used to, so without the profile it is
+  // optional: reported, never blocking. The shape is derived from the box's
+  // compose settings (lib/compose-shape.ts).
   const tika = await tikaVersion(2_500);
   checks.push(
     tika
-      ? { label: 'Document parser (Tika)', ok: true, detail: tika }
+      ? { label: 'Document parser add-on (Tika)', ok: true, detail: tika }
       : tikaIsOptional()
         ? {
-            label: 'Document parser (Tika)',
+            label: 'Document parser add-on (Tika)',
             ok: true,
             detail:
-              'not running: optional on a brain-core box. PDF, DOCX, text and markdown parse without it; add it with scripts/install.sh --helpers for .odt, .pptx, .doc, .xls and .rtf.',
+              'off: optional. Office, OpenDocument, RTF, EPUB, HTML and .vsdx files are read without it; turn it on with the tika profile for old Visio .vsd files and pictures inside .doc and .ppt files.',
           }
         : {
-            label: 'Document parser (Tika)',
+            label: 'Document parser add-on (Tika)',
             ok: false,
-            detail: 'not answering — is the tika container running? Office/PDF parsing will fail.',
+            detail:
+              'not answering: the tika profile is on, so the tika container should be running. Old Visio .vsd files will not be read.',
           },
   );
 

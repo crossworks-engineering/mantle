@@ -4,6 +4,40 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: anydoc reads the legacy formats; Tika becomes an opt-in add-on
+
+- Legacy Word (`.doc`), PowerPoint (`.ppt`, and the fallback for a `.pptx`
+  our reader cannot open), OpenDocument (`.odt`/`.ods`/`.odp`), RTF, EPUB
+  and the legacy sheets (`.xls`/`.xlsb`, through `legacy-sheet.ts`) are now
+  read in-process by anydoc (`@firecrawl/anydoc` 0.2.4, MIT, a Rust addon:
+  no JVM, no container, no network). Output is Markdown, so headings, lists
+  and tables survive. The package's hosted OCR is never asked for.
+- HTML and XML are read in-process (`markup.ts`): file ingest and `web_fetch`
+  share one reader. Visio `.vsdx` shape text is read in-process (`vsdx.ts`),
+  page by page.
+- Tika is an opt-in add-on: the `tika` compose profile on every shape (no
+  longer one of the core box's helpers). The app reads the same profile list
+  and makes no Tika call without it. With it, Tika reads `.vsd`, is the
+  second try for a file anydoc cannot read, and gives the pictures inside
+  the legacy binaries.
+- Compared on 14 public Tika test documents, Tika 4.1 on the dev box against
+  this branch with Tika off: the same words on `.doc`, `.ppt`, `.odt`, `.rtf`,
+  `.epub`, `.xls` and `.vsdx`, except page headers and footers, sheet cell
+  comments and the name of a one-sheet `.xlsb`. anydoc parses in 0.1 to 2 ms
+  a file; Tika took 50 to 260 ms warm and 10.5 s cold, and grew from 244 to
+  478 MB over 28 small parses. Without Tika, an Excel 2007 beta `.xlsb`, a
+  `.vsd`, and pictures inside `.doc`/`.ppt`/`.rtf` are not read.
+- Fleet count before the change (six boxes, 2,359 files): 18 went to Tika,
+  and by format none of them needs it once anydoc and the in-process readers
+  are counted (no `.vsd` on any box).
+
+Deploy note: after the roll, `docker compose up -d` no longer starts Tika on
+a box without the `tika` profile. Check after the roll whether an old
+`mantle_tika` container is still running (not verified on a real roll); if
+it is, stop it with `docker compose stop tika && docker compose rm -f tika`.
+A box that keeps Tika adds `tika` to `COMPOSE_PROFILES` in `.env` and runs
+`docker compose up -d`.
+
 ## Unreleased: workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace

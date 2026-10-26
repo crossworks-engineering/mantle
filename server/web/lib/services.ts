@@ -22,7 +22,7 @@ import {
   type OptionalService,
 } from '@mantle/config';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
-import { mediaSidecarHealth, tikaVersion } from '@mantle/files';
+import { mediaSidecarHealth } from '@mantle/files';
 import type {
   ServiceDescription,
   ServiceInfo,
@@ -42,8 +42,8 @@ export function isOptionalService(v: unknown): v is OptionalService {
 }
 
 /** What the UI says about each service. Sizes: the compressed images on the
- *  registry (mantle-media, mantle-sandbox base, ollama plus its model, tika
- *  plus browserless); memory: the compose caps. */
+ *  registry (mantle-media, mantle-sandbox base, ollama plus its model,
+ *  browserless); memory: the compose caps. */
 export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> = {
   sandboxes: {
     title: 'Sandboxes',
@@ -87,18 +87,15 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
   },
   helpers: {
     title: 'Helpers',
-    what: 'Two small helpers for a core box: Tika reads rare file types, and a headless browser makes PDF exports.',
-    usedBy:
-      'File ingest for formats the brain cannot read itself (ODT, PPTX, DOC, RTF and others), PDF export, and drawing pictures in exports.',
-    whenOff:
-      'PDF, Word, text and Markdown files are still read, and everything else keeps working.',
+    what: 'A headless browser for a core box that makes PDF exports.',
+    usedBy: 'PDF export, and drawing pictures in exports.',
+    whenOff: 'Every file type is still read, and everything else keeps working.',
     keeps: 'Everything already ingested. The helpers store nothing.',
-    downloadMb: 1200,
-    memory: 'up to 3.5 GB (Tika 2 GB, the browser 1.5 GB)',
-    memoryMaxMb: 3072,
+    downloadMb: 1000,
+    memory: 'up to 1.5 GB',
+    memoryMaxMb: 1536,
     note: null,
-    offWarning:
-      'Rare file types (ODT, PPTX, DOC, RTF) are not read and PDF export stops until you switch it on again.',
+    offWarning: 'PDF export stops until you switch it on again.',
   },
 };
 
@@ -252,13 +249,12 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
   const names = OPTIONAL_SERVICES.filter(serviceOffered);
   const helpers = names.includes('helpers');
-  const [blocker, run, sbx, media, embedUp, tika, browser, embedCfg] = await Promise.all([
+  const [blocker, run, sbx, media, embedUp, browser, embedCfg] = await Promise.all([
     switchBlocker(),
     readServiceRun(),
     sandboxdHealth().catch(() => null),
     mediaSidecarHealth(1_500).catch(() => null),
     serviceEnabled('local-embedder') ? bundledEmbedderUp() : Promise.resolve(false),
-    helpers ? tikaVersion(1_500).catch(() => null) : Promise.resolve(null),
     helpers ? browserHealth(1_500).catch(() => null) : Promise.resolve(null),
     resolveEmbeddingConfig(ownerId).catch(() => null),
   ]);
@@ -266,7 +262,7 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
     sandboxes: sbx?.up,
     media: media?.up,
     'local-embedder': embedUp,
-    helpers: Boolean(tika) && browser?.up !== false,
+    helpers: browser?.up,
   };
   const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
   const services: ServiceInfo[] = names.map((name) => {

@@ -24,7 +24,8 @@ export { parseDocumentBytes } from './parse';
 
 export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-password';
 
-export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
+export { parseTikaBytes, tikaConfigured, tikaIsUp, tikaVersion } from './tika';
+export { htmlToText } from './markup';
 
 export {
   mediaSidecarEnabled,

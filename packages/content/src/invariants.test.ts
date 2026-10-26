@@ -120,10 +120,11 @@ describe('brain-core override ↔ main compose', () => {
     }
   });
 
-  it(`the doc helpers (tika + browser) carry the helpers profile, channel workers don't`, () => {
-    // install.sh --helpers re-enables exactly the stateless parse/render pair
-    // on a core box. A channel worker slipping into the helpers profile would
-    // come back with them — this pins the split.
+  it(`the doc helper (browser) carries the helpers profile, channel workers don't`, () => {
+    // install.sh --helpers re-enables exactly the stateless render helper on
+    // a core box (Tika left the helpers: it is an opt-in add-on on every
+    // shape, gated in docker-compose.yml). A channel worker slipping into the
+    // helpers profile would come back with it; this pins the split.
     const src = read(COMPOSE_CORE);
     const gates = new Map(
       [...src.matchAll(/^ {2}([a-z][a-z0-9_]*):\n {4}profiles: (\[[^\]]*\])$/gm)].map((m) => [
@@ -132,13 +133,13 @@ describe('brain-core override ↔ main compose', () => {
       ]),
     );
     for (const [svc, profiles] of gates) {
-      const wantHelpers = svc === 'tika' || svc === 'browser';
+      const wantHelpers = svc === 'browser';
       expect(
         profiles,
         `${COMPOSE_CORE}: '${svc}' has profiles ${profiles} — ` +
           (wantHelpers
-            ? `the doc helpers must be ["full", "helpers"] so --helpers brings them back.`
-            : `only tika/browser may carry "helpers"; everything else is full-shape only.`),
+            ? `the doc helper must be ["full", "helpers"] so --helpers brings it back.`
+            : `only browser may carry "helpers"; everything else is full-shape only.`),
       ).toBe(wantHelpers ? '["full", "helpers"]' : '["full"]');
     }
   });
@@ -154,7 +155,8 @@ describe('brain-core override ↔ main compose', () => {
       'postgres',
       'objectstore_init',
       'objectstore',
-      'tika',
+      // tika left on purpose (2026-10, anydoc): an opt-in add-on behind the
+      // `tika` profile. The deploy note says how a box keeps it.
       'browser',
       'tailscale',
       'migrate',
@@ -223,7 +225,6 @@ describe('brain-core override ↔ main compose', () => {
     // every core box, and quietly UN-gating a channel worker would put LLM-
     // spending workers back on 4 GB boxes.
     const GATED = [
-      'tika',
       'browser',
       'worker_email',
       'worker_telegram',
@@ -234,7 +235,7 @@ describe('brain-core override ↔ main compose', () => {
     ];
     expect(
       composeServices(COMPOSE_CORE).sort(),
-      `${COMPOSE_CORE} must gate exactly the doc helpers (tika, browser) and the six ` +
+      `${COMPOSE_CORE} must gate exactly the doc helper (browser) and the six ` +
         `channel workers — nothing from the data spine, nothing more, nothing less. ` +
         `Changing the core shape is a deliberate decision; update this pin with it.`,
     ).toEqual([...GATED].sort());

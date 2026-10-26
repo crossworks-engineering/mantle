@@ -15,6 +15,9 @@
     "./sheet-to-grid": "./src/sheet-to-grid.ts",
     "./rasterize": "./src/rasterize.ts",
     "./tika": "./src/tika.ts",
+    "./anydoc": "./src/anydoc.ts",
+    "./markup": "./src/markup.ts",
+    "./vsdx": "./src/vsdx.ts",
     "./embedded-images": "./src/embedded-images.ts",
     "./image-probe": "./src/image-probe.ts",
     "./ooxml-media": "./src/ooxml-media.ts",
@@ -29,6 +32,7 @@
   },
   "dependencies": {
     "@fast-csv/parse": "^5.0.8",
+    "@firecrawl/anydoc": "0.2.4",
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",

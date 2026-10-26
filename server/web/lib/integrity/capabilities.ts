@@ -12,7 +12,7 @@
  * don't require a key, so those only check that a worker is configured.
  */
 import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
-import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
+import { mediaSidecarHealth, tikaConfigured, tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
 import { env } from '@mantle/config';
@@ -82,7 +82,11 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
   return {
     tika: {
       available: tikaUp,
-      detail: tikaUp ? 'reachable' : 'unreachable (set TIKA_URL / start the service)',
+      detail: tikaUp
+        ? 'reachable'
+        : tikaConfigured()
+          ? 'unreachable (the tika profile is on: start the service)'
+          : 'off (an opt-in add-on: the tika compose profile)',
     },
     vision,
     extractor,

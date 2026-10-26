@@ -30,7 +30,6 @@ vi.mock('./updates', () => ({
 const probes = vi.hoisted(() => ({
   sandboxes: null as boolean | null,
   media: null as boolean | null,
-  tika: null as string | null,
   browser: null as boolean | null,
   embedding: { provider: 'openrouter', baseUrl: null as string | null },
 }));
@@ -42,7 +41,6 @@ vi.mock('./render-pdf', () => ({
 }));
 vi.mock('@mantle/files', () => ({
   mediaSidecarHealth: async () => ({ up: probes.media }),
-  tikaVersion: async () => probes.tika,
 }));
 vi.mock('@mantle/embeddings', () => ({
   resolveEmbeddingConfig: async () => ({ model: 'm', primary: probes.embedding }),
@@ -110,7 +108,6 @@ beforeEach(() => {
   updater.status = null;
   probes.sandboxes = null;
   probes.media = null;
-  probes.tika = null;
   probes.browser = null;
   probes.embedding = { provider: 'openrouter', baseUrl: null };
   delete process.env.MANTLE_COMPOSE_FILE;
@@ -274,16 +271,15 @@ describe('getServicesView', () => {
     expect(await names()).not.toContain('helpers');
   });
 
-  it('the helpers are off without their profile, up when both answer', async () => {
+  it('the helpers are off without their profile, up when the browser answers', async () => {
     servicesJson({ core: true });
     const helpers = async () =>
       (await getServicesView('owner-1')).services.find((s) => s.name === 'helpers');
     expect((await helpers())?.state).toBe('off');
     servicesJson({ core: true, profiles: 'helpers' });
-    probes.tika = '3.3.1';
     probes.browser = true;
     expect((await helpers())?.state).toBe('up');
-    probes.tika = null;
+    probes.browser = false;
     expect((await helpers())?.state).toBe('down');
     expect((await helpers())?.description.offWarning).toMatch(/PDF export stops/);
   });

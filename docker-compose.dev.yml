@@ -138,13 +138,13 @@ services:
       # ERROR (503). Harmless; the grace period keeps it from counting.
       start_period: 10s
 
-  # Apache Tika — the third-tier document parser (the first two being our
-  # in-process pdf-parse / mammoth / SheetJS, and the vision worker for
-  # scanned PDFs). Used as a fallback for formats those can't handle:
-  # .odt / .ods / .odp (LibreOffice), .pptx / .ppt, .doc (legacy Word),
-  # .rtf, .epub, plus the long-tail Tika supports. Self-hosted, stateless
-  # — bytes never leave the VPS. See docs/file-ingestion.md.
+  # Apache Tika: an opt-in add-on, as in docker-compose.yml. anydoc and our
+  # own readers cover the formats it used to; Tika reads .vsd and is the
+  # second try for a file anydoc cannot read. Start it with
+  # `--profile tika` and set TIKA_URL in .env.local. Self-hosted, stateless.
+  # See docs/file-ingestion.md.
   tika:
+    profiles: ['tika']
     image: apache/tika:4.1.0-1
     container_name: mantle_dev_tika
     restart: unless-stopped

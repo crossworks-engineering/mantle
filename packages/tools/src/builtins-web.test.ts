@@ -268,16 +268,13 @@ describe('web_fetch', () => {
     expect(parseTikaBytes).not.toHaveBeenCalled();
   });
 
-  it('sends html through Tika and falls back to the crude stripper when Tika is empty', async () => {
-    const html = '<html><body><script>x()</script><p>Hi &amp; bye</p></body></html>';
-    // A fresh Response per call: a body can only be read once.
+  it('reads html in-process, with no Tika hop', async () => {
+    const html =
+      '<html><head><title>T</title></head><body><script>x()</script><p>Hi &amp; bye</p><p>Next</p></body></html>';
     fetchSpy.mockImplementation(async () => textResponse(html, 'text/html; charset=utf-8'));
     const out = outputOf(await webFetch.handler({ url: PUBLIC }, ctx));
-    expect(parseTikaBytes).toHaveBeenCalledWith(expect.any(Buffer), { mimeType: 'text/html' });
-    expect(out.text).toBe('Hi & bye');
-
-    vi.mocked(parseTikaBytes).mockResolvedValue('Tika text');
-    expect(outputOf(await webFetch.handler({ url: PUBLIC }, ctx)).text).toBe('Tika text');
+    expect(out.text).toBe('Hi & bye\n\nNext');
+    expect(parseTikaBytes).not.toHaveBeenCalled();
   });
 
   it('pages with offset and max_chars (floored at 1000) and flags truncation', async () => {

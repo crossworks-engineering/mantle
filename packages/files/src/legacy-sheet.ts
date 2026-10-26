@@ -13,19 +13,19 @@
  * the same output shape as anything else — no parallel code path to keep in
  * step.
  *
- * ## The converter is Apache Tika, which we already run
+ * ## The converter is anydoc, with Tika as the opt-in second try
  *
- * Tika is Apache POI underneath, which reads BIFF and `.xlsb` properly, and it
- * is already a service in docker-compose (tier 2 of `parseDocumentBytes`).
- * Using it here costs no new dependency, no new container, and no LibreOffice
- * in the image. We ask for Tika's XHTML rendering — one `<div class="page">`
- * per sheet, with an `<h1>` sheet name and a `<table>` of `<tr>`/`<td>` — and
- * rebuild that as a workbook with exceljs.
+ * anydoc (./anydoc.ts) reads BIFF and `.xlsb` in-process and gives each sheet
+ * as a heading and a table, which we rebuild as a workbook with exceljs. A
+ * file anydoc cannot read goes to Tika (Apache POI underneath) on a box that
+ * runs the Tika add-on: we ask for its XHTML rendering (one
+ * `<div class="page">` per sheet, with an `<h1>` sheet name and a `<table>` of
+ * `<tr>`/`<td>`) and rebuild that the same way.
  *
  * ## What conversion costs, honestly
  *
- * Tika's XHTML is a RENDERING, not the cell model, so type fidelity is
- * reduced:
+ * Both readers give a RENDERING, not the cell model, so type fidelity is
+ * reduced. Tika's XHTML:
  *
  *   - **Booleans are dropped.** A `TRUE`/`FALSE` cell renders as an empty
  *     `<td/>`. Column alignment survives (verified — the placeholder cell is
@@ -169,25 +169,44 @@ function sheetsFromXhtml(xhtml: string): LegacySheet[] {
   return sheets.filter((s) => s.rows.some((r) => r.some((c) => c !== '')));
 }
 
+/** The sheets as anydoc reads them, empty sheets dropped; `[]` when anydoc
+ *  cannot read the file (an Excel 2007 beta `.xlsb`, a corrupt record). */
+async function sheetsFromAnydoc(bytes: Buffer): Promise<LegacySheet[]> {
+  try {
+    const { anydocSheets } = await import('./anydoc');
+    const sheets = await anydocSheets(bytes, 'xls');
+    return sheets.filter((s) => s.rows.some((r) => r.some((c) => c !== '')));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Convert legacy spreadsheet bytes to a real `.xlsx` buffer, or `null` when
  * the file cannot be converted.
  *
- * `mimeType` should be the legacy type for the extension (see `mimeForExt`) so
- * Tika does not have to guess from the bytes.
+ * anydoc reads the sheets in-process first. Only a file it cannot read goes
+ * to Tika's XHTML, and only on a box that runs the Tika add-on (without it
+ * `parseTikaBytes` answers `''` at once). `mimeType` should be the legacy type
+ * for the extension (see `mimeForExt`) so Tika does not have to guess.
  *
  * Cells are written as numbers where the rendered text is unambiguously
  * numeric and as strings otherwise — that keeps a numeric column numeric
  * through the round trip, which is the type that matters most downstream (it
  * drives both the grid's column type and Excel's own alignment/formatting).
+ * anydoc renders a date as ISO text (`2017-03-09`), which sheet-to-grid
+ * re-infers as a date; Tika gave display text (`3/9/17`).
  */
 export async function convertLegacySheetToXlsx(
   bytes: Buffer,
   mimeType: string,
 ): Promise<Buffer | null> {
-  const xhtml = await parseTikaBytes(bytes, { mimeType, accept: 'text/html' });
-  if (!xhtml) return null;
-  const sheets = sheetsFromXhtml(xhtml);
+  let sheets = await sheetsFromAnydoc(bytes);
+  if (sheets.length === 0) {
+    const xhtml = await parseTikaBytes(bytes, { mimeType, accept: 'text/html' });
+    if (!xhtml) return null;
+    sheets = sheetsFromXhtml(xhtml);
+  }
   if (sheets.length === 0) return null;
 
   const wb = new ExcelJS.Workbook();

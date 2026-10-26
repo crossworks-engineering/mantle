@@ -5,39 +5,56 @@
  * stays identical wherever a file enters.
  *
  * Three-tier dispatch:
- *   1. In-process parsers (fast, no network) — pdf-parse, mammoth, SheetJS,
- *      and the UTF-8 read for text files. Throws on a parser failure
- *      (encrypted / corrupt) so callers can tell a real failure apart from a
- *      genuinely-empty file.
- *   2. Apache Tika fallback (self-hosted docker service) — for everything
- *      else our in-process parsers can't handle: .odt / .ods / .odp / .pptx
- *      / .ppt / .doc / .rtf / .epub / .vsdx / .vsd plus the long tail Tika
- *      supports. Tika
- *      is **never-throws**: any failure (service down, timeout, unsupported
- *      bytes) returns '' so we degrade cleanly. See ./tika.ts.
+ *   1. In-process parsers (fast, no network): pdf-parse, mammoth, exceljs,
+ *      our .pptx and .vsdx readers, anydoc (legacy Office, OpenDocument,
+ *      RTF, EPUB), the markup reader (HTML, XML), and the UTF-8 read for
+ *      text files. Throws on a parser failure (encrypted / corrupt) so
+ *      callers can tell a real failure apart from a genuinely-empty file.
+ *   2. Apache Tika, an OPT-IN add-on (the `tika` compose profile): the only
+ *      reader for .vsd, and the second try for a file anydoc cannot read.
+ *      Tika is **never-throws**: any failure (service off or down, timeout,
+ *      unsupported bytes) returns '' so we degrade cleanly. See ./tika.ts.
  *   3. Returns '' for an extension we don't try to extract text from at all
  *      (images go through the vision path; truly opaque binaries fall
  *      through). Caller (the extractor) treats '' as the honest
  *      "no_text_layer" skip.
  */
 
-import { TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
+import { ANYDOC_EXTS, MARKUP_EXTS, TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
+
+/** anydoc first; when it fails or reads nothing, Tika if the box runs it.
+ *  Without Tika, anydoc's own failure is the answer (it throws, so the
+ *  extractor records a real error rather than an empty document). */
+async function anydocThenTika(bytes: Buffer, ext: string): Promise<string> {
+  const { tikaConfigured, parseTikaBytes } = await import('./tika');
+  let failure: unknown = null;
+  try {
+    const text = await (await import('./anydoc')).parseAnydocBytes(bytes, ext);
+    if (text) return text;
+  } catch (err) {
+    failure = err;
+  }
+  if (tikaConfigured()) return parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
+  if (failure) throw failure;
+  return '';
+}
 
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
   if (ext === 'pdf') return (await import('./pdf')).parsePdf(bytes);
   if (ext === 'docx') return (await import('./docx')).parseDocx(bytes);
-  // PowerPoint: in-process, because Tika 4 shuffles slide order (see
-  // ./pptx.ts). A deck the reader cannot open, or one it reads as empty,
-  // still gets Tika's attempt below; `pptx` stays in TIKA_EXTS for that.
+  // PowerPoint: our own reader keeps slide order (Tika 4 shuffles it, see
+  // ./pptx.ts). A deck it cannot open, or one it reads as empty, gets anydoc,
+  // then Tika when the box runs it.
   if (ext === 'pptx') {
     const text = await (await import('./pptx')).parsePptx(bytes).catch(() => '');
     if (text) return text;
+    return anydocThenTika(bytes, ext);
   }
   // Spreadsheets. exceljs reads OOXML only, so the legacy binaries are
-  // CONVERTED to .xlsx at the door (via Tika — see ./legacy-sheet.ts) and then
-  // take the identical path as a modern workbook. One reader, one set of caps,
-  // one output shape. A conversion that fails falls through to Tika's plain
-  // text, which is still a searchable document rather than nothing.
+  // CONVERTED to .xlsx at the door (via anydoc, see ./legacy-sheet.ts) and
+  // then take the identical path as a modern workbook. One reader, one set of
+  // caps, one output shape. A conversion that fails falls through to Tika's
+  // plain text when the box runs Tika, else ''.
   if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') {
     const { isLegacySheetExt, convertLegacySheetToXlsx } = await import('./legacy-sheet');
     if (isLegacySheetExt(ext)) {
@@ -87,10 +104,10 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   // that is actually MSPDI gets the plan renderer.
   //
   // The fall-through is deliberate and load-bearing. A file that sniffs as a
-  // plan but yields no rows (truncated, a dialect we mis-read) drops to Tika
-  // rather than returning ''. Worst case the upload is a searchable document;
-  // it is never silently nothing, which is the failure this whole path exists
-  // to prevent.
+  // plan but yields no rows (truncated, a dialect we mis-read) drops to the
+  // generic markup read rather than returning ''. Worst case the upload is a
+  // searchable document; it is never silently nothing, which is the failure
+  // this whole path exists to prevent.
   if (ext === 'xml') {
     const { sniffMspdi, renderMspdiText } = await import('./mspdi');
     if (sniffMspdi(bytes)) {
@@ -98,10 +115,12 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
       if (plan) return plan;
     }
   }
-  // Tier 2 — anything else Tika might know how to parse. Lazy import keeps
-  // the fetch + AbortController machinery off the cold path for the common
-  // case (in-process parsers handle ~95% of uploads). Tika's wrapper is
-  // never-throws → '' on every failure mode.
+  if (MARKUP_EXTS.has(ext)) return (await import('./markup')).parseMarkupBytes(bytes, ext);
+  if (ext === 'vsdx') return (await import('./vsdx')).parseVsdx(bytes);
+  if (ANYDOC_EXTS.has(ext)) return anydocThenTika(bytes, ext);
+  // Tier 2: what only Tika reads. Lazy import keeps the fetch +
+  // AbortController machinery off the cold path. Tika's wrapper is
+  // never-throws → '' on every failure mode, and at once when it is off.
   if (TIKA_EXTS.has(ext)) {
     return (await import('./tika')).parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
   }
