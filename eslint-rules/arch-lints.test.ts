@@ -470,8 +470,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // (readerAsset), and the share's canvas snapshot (a link row, no caller).
     // The Desk (+1): PUT /api/profile/home-desk (self).
     // The tree's custom order (+1, with a caller): POST /api/tree/:kind/place.
-    expect(rows.filter((r) => r.caller).length).toBe(777);
-    expect(rows.length).toBe(837);
+    // The canvas data store (+4, DWG phase 7a): GET, HEAD, PUT and DELETE,
+    // each reading the owner's login.
+    expect(rows.filter((r) => r.caller).length).toBe(781);
+    expect(rows.length).toBe(841);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

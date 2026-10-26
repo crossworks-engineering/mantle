@@ -33,6 +33,7 @@ import {
 } from '@mantle/app-build';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
+import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
 
 export const CANVAS_LIBRARY_DIR = 'canvas-libraries';
 
@@ -67,6 +68,63 @@ export const CANVAS_LIBRARIES: readonly CanvasLibrary[] = [
     aliases: ['alpine'],
   },
 ];
+
+/**
+ * What the frame itself gives a canvas, with no library and no import:
+ * `data`, the canvas data store (`mantle.data`, DWG phase 7a). Its guide is
+ * the canvas_authoring skill's own section (CANVAS_DATA_HOWTO, one text for
+ * the in-app agents and an MCP client), with its example set in a whole
+ * canvas, which the browser test renders as it renders every guide's.
+ */
+export const CANVAS_FRAME_GUIDES: readonly CanvasLibrary[] = [
+  {
+    name: 'data',
+    pkg: 'mantle.data',
+    useFor: 'saving what viewers add: notes, suggestions, votes, marks (`mantle.data`)',
+    aliases: ['mantle.data', 'store', 'save', 'storage'],
+  },
+];
+
+/** The data guide's example snippet as one whole canvas. */
+export function canvasDataExample(): string {
+  const m = /```html\n([\s\S]*?)\n```/.exec(CANVAS_DATA_HOWTO);
+  const body = (m?.[1] ?? '')
+    .split('\n')
+    .map((l) => `    ${l}`)
+    .join('\n');
+  return [
+    '<!doctype html>',
+    '<html>',
+    '  <head>',
+    '    <title>Meeting notes and ideas</title>',
+    '    <meta name="description" content="Shared notes and each viewer\'s ideas, kept with mantle.data." />',
+    '    <meta name="canvas:size" content="1280x720" />',
+    '  </head>',
+    '  <body class="flex flex-col gap-6 bg-background p-16 text-foreground">',
+    '    <h1 class="text-5xl font-semibold">Meeting notes and ideas</h1>',
+    body,
+    '  </body>',
+    '</html>',
+  ].join('\n');
+}
+
+/** The data guide: the shared section, then the whole example canvas. */
+export function canvasDataGuide(): string {
+  return [
+    '# Saving data in a canvas (`mantle.data`)',
+    '',
+    'Built into the canvas frame: no library, no import, no version.',
+    '',
+    CANVAS_DATA_HOWTO,
+    '',
+    '## Example',
+    '',
+    '```html',
+    canvasDataExample(),
+    '```',
+    '',
+  ].join('\n');
+}
 
 /** Libraries a mini app imports that a canvas takes another way: a
  *  template canvas is written by `diagram_render` and `present_create`. */
@@ -200,6 +258,9 @@ export async function canvasLibraryHandler(
 ): Promise<ToolHandlerResult> {
   const asked = str(input.name);
   if (str(input.for) === 'app') return appLibraryHandler(asked);
+  if (find(CANVAS_FRAME_GUIDES, asked)) {
+    return { ok: true, output: { library: 'data', version: null, guide: canvasDataGuide() } };
+  }
   const lib = resolveCanvasLibrary(asked);
   if (!lib && find(APP_ONLY_LIBRARIES, asked)) {
     return {
@@ -210,7 +271,7 @@ export async function canvasLibraryHandler(
   if (!lib) {
     return {
       ok: false,
-      error: `No canvas library '${asked}'. Valid: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}. Plain SVG and JS need no library; Plotly loads with the script tag the canvas_authoring skill gives.`,
+      error: `No canvas library '${asked}'. Valid: ${[...CANVAS_LIBRARIES, ...CANVAS_FRAME_GUIDES].map((l) => l.name).join(', ')}. Plain SVG and JS need no library; Plotly loads with the script tag the canvas_authoring skill gives.`,
     };
   }
   const md = await readCanvasLibraryGuide(lib);
@@ -241,7 +302,7 @@ const canvas_library: BuiltinToolDef = {
     properties: {
       name: {
         type: 'string',
-        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; for an app also ${APP_ONLY_LIBRARIES.map((l) => l.name).join(', ')}.`,
+        description: `The library: ${CANVAS_LIBRARIES.map((l) => l.name).join(', ')}; or 'data' for saving what viewers add (\`mantle.data\`, built into the frame); for an app also ${APP_ONLY_LIBRARIES.map((l) => l.name).join(', ')}.`,
       },
       for: {
         type: 'string',

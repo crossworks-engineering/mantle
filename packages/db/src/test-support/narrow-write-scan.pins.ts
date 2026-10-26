@@ -67,6 +67,16 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: "saveAppPins: only PUT /api/app-nav/pins, a content route: the login's own request scope (the login write gateway)",
   },
+  'packages/content/src/canvas-data.ts delete public.canvas_data': {
+    n: 1,
+    tag: 'covered-across-files',
+    why: "deleteCanvasData: only DELETE /api/presents/:id/data, a content route: the login's own request scope (the login write gateway)",
+  },
+  'packages/content/src/canvas-data.ts insert public.canvas_data': {
+    n: 1,
+    tag: 'covered-across-files',
+    why: "setCanvasData: only PUT /api/presents/:id/data, a content route: the login's own request scope (the login write gateway)",
+  },
   'packages/content/src/contact-share-codes.ts insert public.share_access_log': {
     n: 1,
     tag: 'covered-across-files',

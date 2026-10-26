@@ -11,9 +11,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { APP_LIBRARY_SPECIFIERS, CANVAS_MODULE_SPECIFIERS } from '@mantle/app-build';
 import { canvasLoadProblems } from '@mantle/content-core/canvas';
+import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
 import {
   APP_GUIDE_LIBRARIES,
+  CANVAS_FRAME_GUIDES,
   CANVAS_LIBRARIES,
+  canvasDataGuide,
   CANVAS_LIBRARY_TOOLS,
   appSpecifiers,
   guideFile,
@@ -87,6 +90,35 @@ describe('the canvas_library tool', () => {
     expect(res.ok).toBe(false);
     const error = (res as { error: string }).error;
     for (const lib of CANVAS_LIBRARIES) expect(error).toContain(lib.name);
+  });
+});
+
+describe("canvas_library 'data': the canvas data store", () => {
+  it('answers the skill’s own section, with a whole example canvas that loads', async () => {
+    for (const name of ['data', 'mantle.data', 'Store']) {
+      const res = await tool.handler({ name }, ctx);
+      expect(res.ok, name).toBe(true);
+      const out = (res as { output: { library: string; guide: string } }).output;
+      expect(out.library).toBe('data');
+      expect(out.guide).toBe(canvasDataGuide());
+    }
+    const md = canvasDataGuide();
+    // One text: the guide carries the skill's section byte for byte.
+    expect(md).toContain(CANVAS_DATA_HOWTO);
+    expect(md).not.toMatch(/[\u2013\u2014]/);
+    expect(md.length).toBeLessThan(6000);
+    const example = exampleOf(md);
+    expect(example).toMatch(/<title>[^<]+<\/title>/);
+    expect(example).toMatch(/name="canvas:size"/);
+    expect(example).toContain('mantle.data.set(');
+    expect(canvasLoadProblems(example, CANVAS_MODULE_SPECIFIERS)).toEqual([]);
+  });
+
+  it('is named among the valid guides, and is no npm library', async () => {
+    const res = await tool.handler({ name: 'gsap' }, ctx);
+    expect((res as { error: string }).error).toContain('data');
+    expect(CANVAS_LIBRARIES.map((l) => l.name)).not.toContain('data');
+    expect(CANVAS_FRAME_GUIDES.map((l) => l.name)).toEqual(['data']);
   });
 });
 

@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser } from 'puppeteer-core';
-import { CANVAS_LIBRARIES, guideFile } from '../builtins-canvas-library';
+import { CANVAS_LIBRARIES, canvasDataExample, guideFile } from '../builtins-canvas-library';
 import { findChrome } from './find-chrome';
 
 const ROOT = path.resolve(__dirname, '../../../..');
@@ -128,6 +128,21 @@ describe.skipIf(!chrome || !runtimeBuilt)('canvas_library examples in a real bro
     if (!r.ok) return;
     expect(r.consoleErrors.join('\n')).toMatch(/worker/i);
     expect(r.consoleErrors.join('').length).toBeLessThan(5000);
+  }, 60_000);
+
+  it('data (mantle.data): renders clean and not blank with no host (a render: the store is empty)', async () => {
+    const source = canvasDataExample();
+    const css = await buildCanvasCss(source).catch(() => '');
+    const r = await render({
+      ownerId: '00000000-0000-4000-8000-000000000000',
+      canvas: { source, css, meta: readCanvas(source).meta },
+      atSeconds: 2,
+    });
+    expect(r.ok, r.ok ? '' : r.error).toBe(true);
+    if (!r.ok) return;
+    expect(r.consoleErrors, 'data console').toEqual([]);
+    expect(r.blocked, 'data blocked').toEqual([]);
+    expect(await colours(r.png, r.mime), 'data is blank').toBeGreaterThan(3);
   }, 60_000);
 
   for (const lib of CANVAS_LIBRARIES) {

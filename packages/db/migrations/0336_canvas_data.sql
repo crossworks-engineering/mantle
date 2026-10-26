@@ -8,7 +8,9 @@
 -- (canvas, login, key) in `mine`. `bytes` is the size of the value's JSON
 -- text, which the caps count (@mantle/content-core/canvas-data). NOT a canvas
 -- revision: nothing here touches `presents` or its rev. A row goes with its
--- canvas (nodes cascade) and a `mine` row with its login.
+-- canvas (nodes cascade) and a `mine` row with its login. `updated_by` is the
+-- login that last wrote a row and `by_name` its display name then (a
+-- snapshot: a member's scope reads no other login's profile).
 --
 -- Rights, on the canvas's own item rights:
 --  - read (the row rule below, for the workspace role): a row of a canvas
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS "public"."canvas_data" (
   "value" jsonb NOT NULL,
   "bytes" integer NOT NULL,
   "updated_by" uuid REFERENCES "auth"."users"("id") ON DELETE SET NULL,
+  "by_name" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT "canvas_data_bucket_ck" CHECK (

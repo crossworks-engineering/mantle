@@ -26,7 +26,8 @@ import { nodes } from './nodes';
  *    reads everyone's.
  *
  * `bytes` is the size of the value's JSON text, which the caps count.
- * `updated_by` is the login that last wrote the row. A row goes with its
+ * `updated_by` is the login that last wrote the row, `by_name` its display
+ * name then. A row goes with its
  * canvas, and a `mine` row with its login.
  */
 export const canvasData = pgTable(
@@ -44,6 +45,9 @@ export const canvasData = pgTable(
     value: jsonb('value').notNull(),
     bytes: integer('bytes').notNull(),
     updatedBy: uuid('updated_by').references(() => authUsers.id, { onDelete: 'set null' }),
+    /** The writer's display name when it wrote (a snapshot, as a comment's
+     *  author_name): a reader's scope may not read other logins' profiles. */
+    byName: text('by_name'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

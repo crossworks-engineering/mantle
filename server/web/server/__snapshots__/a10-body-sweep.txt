@@ -1,7 +1,7 @@
 # A10 part 2 fold 1: every write route and body, recorded on main (v0.300.41)
 # BEFORE the move. Written once (A10_BODY_SWEEP_RECORD=1); a10-body-sweep.test.ts
 # reads it back and holds every cell to it, or to a named change.
-# cells: 2196
+# cells: 2208
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1376,6 +1376,18 @@ DELETE /api/presents/:id owner empty => 404 application/json {"error":"not found
 DELETE /api/presents/:id owner nul => 404 application/json {"error":"not found"}
 DELETE /api/presents/:id owner array => 404 application/json {"error":"not found"}
 DELETE /api/presents/:id owner chunked => 404 application/json {"error":"not found"}
+PUT /api/presents/:id/data owner valid => 400 application/json {"error":"bucket, key and value are required"}
+PUT /api/presents/:id/data owner malformed => 400 application/json {"error":"invalid JSON"}
+PUT /api/presents/:id/data owner empty => 400 application/json {"error":"bucket, key and value are required"}
+PUT /api/presents/:id/data owner nul => 400 application/json {"error":"bucket, key and value are required"}
+PUT /api/presents/:id/data owner array => 400 application/json {"error":"bucket, key and value are required"}
+PUT /api/presents/:id/data owner chunked => 413 application/json {"error":"This request is too large (at most 96 KB).","reason":"body-too-large"}
+DELETE /api/presents/:id/data owner valid => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
+DELETE /api/presents/:id/data owner malformed => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
+DELETE /api/presents/:id/data owner empty => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
+DELETE /api/presents/:id/data owner nul => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
+DELETE /api/presents/:id/data owner array => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
+DELETE /api/presents/:id/data owner chunked => 400 application/json {"error":"bucket must be 'shared' or 'mine'"}
 POST /api/presents/:id/frame-ticket owner valid => 404 application/json {"error":"not found"}
 POST /api/presents/:id/frame-ticket owner malformed => 404 application/json {"error":"not found"}
 POST /api/presents/:id/frame-ticket owner empty => 404 application/json {"error":"not found"}

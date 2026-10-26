@@ -393,6 +393,24 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [login('member-canvas-frame-ticket', 30)],
   },
+  // A canvas's data store (DWG phase 7a): reads and writes, per login.
+  ...getHead('/api/presents/:id/data', {
+    cred: 'member',
+    limits: [login('canvas-data', 600)],
+  }),
+  {
+    row: 'PUT /api/presents/:id/data',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('canvas-data-write', 120)],
+    sharesWith: ['DELETE /api/presents/:id/data'],
+  },
+  {
+    row: 'DELETE /api/presents/:id/data',
+    cred: 'member',
+    limits: [login('canvas-data-write', 120)],
+    sharesWith: ['PUT /api/presents/:id/data'],
+  },
   {
     row: 'POST /api/apps/:id/db-broker',
     cred: 'member',
