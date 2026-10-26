@@ -126,6 +126,48 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
     fo.takeFailOpenHits();
   });
 
+  it('a scoped typed write to a table that names scopedSystemWrite: no hit, still on the system pool', async () => {
+    fo.resetFailOpenForTest();
+    await su`delete from actor_check_misses`;
+    const am = await import('./access-matrix');
+    expect(Object.keys(am.SCOPED_SYSTEM_WRITE)).toContain('public.item_marks');
+    await inWriteRequest(async () => {
+      await m.db
+        .update(m.itemMarks)
+        .set({ openCount: 1 })
+        .where(sql`false`);
+    });
+    await settle();
+    expect(await rowsBySite()).toEqual({});
+    expect(fo.takeFailOpenHits()).toEqual([]);
+  });
+
+  it("an assistant's and an AI worker's use counters in a write request: systemDb, no hit", async () => {
+    fo.resetFailOpenForTest();
+    await su`delete from actor_check_misses`;
+    const [w] = await su<{ id: string }[]>`
+      insert into ai_workers (owner_id, slug, name, kind, provider, model)
+      values (${login}, ${`fo-${randomUUID().slice(0, 8)}`}, 'w', 'tts', 'openai', 'x')
+      returning id::text`;
+    const [a] = await su<{ id: string }[]>`
+      insert into agents (owner_id, slug, name, provider, model, system_prompt)
+      values (${login}, ${`fo-${randomUUID().slice(0, 8)}`}, 'a', 'openai', 'x', '')
+      returning id::text`;
+    await inWriteRequest(async () => {
+      await m.bumpWorkerUsage(w!.id);
+      await m.bumpAgentUsage(a!.id);
+    });
+    const counts = await su<{ n: string }[]>`
+      select usage_count::text as n from ai_workers where id = ${w!.id}
+      union all select usage_count::text from agents where id = ${a!.id}`;
+    expect(counts.map((r) => r.n)).toEqual(['1', '1']);
+    await settle();
+    expect(await rowsBySite()).toEqual({});
+    expect(fo.takeFailOpenHits()).toEqual([]);
+    await su`delete from ai_workers where id = ${w!.id}`;
+    await su`delete from agents where id = ${a!.id}`;
+  });
+
   it('system work and an unscoped yes under a system actor: no row', async () => {
     fo.resetFailOpenForTest();
     await su`delete from actor_check_misses`;

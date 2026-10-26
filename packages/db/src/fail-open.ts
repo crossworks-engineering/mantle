@@ -32,6 +32,23 @@ export const FAIL_OPEN_SITES = [
 ] as const;
 export type FailOpenSite = (typeof FAIL_OPEN_SITES)[number];
 
+/**
+ * The tables a scoped typed write still sends to the system pool with no
+ * scopedSystemWrite reason on their access matrix row, measured by the
+ * full vitest run (docs/fail-open.md): each is to be moved (the write role,
+ * systemDb, an Admin area's areaSystem) or named before S4b refuses it.
+ * vitest.setup.ts fails a test whose typed-write hit names any other
+ * table, so the list only goes down (fail-open.test.ts pins it).
+ */
+export const SCOPED_SYSTEM_WRITES_LEFT: readonly string[] = Object.freeze([
+  // The approval queue: an asking turn parks its call, an approver decides
+  // it (packages/tools pending-queue.ts, pending.ts, toolsmith/groups.ts).
+  'public.pending_tool_calls',
+  // The one conversation store: a login turn's rows over MCP
+  // (packages/runtime agent/conversation.ts).
+  'public.assistant_messages',
+]);
+
 /** The miss row of a hit, as mantle_actor_miss_log takes it (actor.ts
  *  ActorMiss): check 'fail-open:<site>', the actor's kind, the calling
  *  file. */

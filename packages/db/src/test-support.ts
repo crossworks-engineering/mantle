@@ -936,3 +936,7 @@ export { takeNarrowDenials, takeNarrowUses, takeNarrowWrites, takeSpotUses } fro
 /** The would-refuse count's call reading, timed by the scan cost cell
  *  (a2a-round-trips.db.test.ts). */
 export { calledMantleFunctions } from './gateway/narrow-would-refuse';
+
+/** The fail-open hits a cell caused (or proves absent), drained so the
+ *  run's check (vitest.setup.ts) does not count them. */
+export { resetFailOpenForTest, takeFailOpenHits } from './fail-open';

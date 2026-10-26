@@ -22,7 +22,7 @@ import {
   takeNarrowWrites,
   takeWriteRoleGaps,
 } from './packages/db/src/actor';
-import { takeFailOpenHits } from './packages/db/src/fail-open';
+import { SCOPED_SYSTEM_WRITES_LEFT, takeFailOpenHits } from './packages/db/src/fail-open';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -35,17 +35,36 @@ beforeEach(() => enterTestActor());
 // Plan v3.2 S4a: MANTLE_FAIL_OPEN_DUMP=<file> lists every fail-open hit of
 // the run (site, actor kind, table, test file), one JSON line each: how the
 // tables a scoped write sends to the system pool were measured
-// (docs/fail-open.md, "Measuring the system-pool tables"). A hit never
-// fails a test.
+// (docs/fail-open.md, "Measuring the system-pool tables").
+//
+// And S4b's refusal, rehearsed: a scoped typed write to a table the write
+// role does not hold fails its test unless the table names
+// scopedSystemWrite (it is then no hit) or is one of the tables still left
+// to decide (SCOPED_SYSTEM_WRITES_LEFT). A new such write cannot reach S4b
+// unseen. A cell that causes one on purpose takes it (takeFailOpenHits).
 const failOpenDump = process.env.MANTLE_FAIL_OPEN_DUMP;
-if (failOpenDump) {
-  afterEach(() => {
-    const hits = takeFailOpenHits();
-    if (hits.length === 0) return;
-    const file = expect.getState().testPath ?? '?';
+afterEach(() => {
+  const hits = takeFailOpenHits();
+  if (hits.length === 0) return;
+  const file = expect.getState().testPath ?? '?';
+  if (failOpenDump) {
     appendFileSync(failOpenDump, hits.map((h) => `${JSON.stringify({ ...h, file })}\n`).join(''));
-  });
-}
+  }
+  const unnamed = [
+    ...new Set(
+      hits
+        .filter((h) => h.site === 'typed-write')
+        .map((h) => h.table ?? '?')
+        .filter((t) => !SCOPED_SYSTEM_WRITES_LEFT.includes(t)),
+    ),
+  ];
+  if (unnamed.length > 0) {
+    throw new Error(
+      `a scoped typed write went to the system pool on a table the write role does not hold, with no scopedSystemWrite reason (plan v3.2 S4a; S4b refuses it): ${unnamed.join(', ')}.\n` +
+        'Write it through the write role, systemDb (infrastructure) or areaSystem (an Admin area), or name the reason on its access matrix row (docs/fail-open.md).',
+    );
+  }
+});
 
 // Plan v3.2 S7a: MANTLE_NARROW_DUMP=<file> lists the narrow route's uses
 // by actor (one JSON line per test file and actor, with the count) and its

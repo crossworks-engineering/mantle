@@ -14,7 +14,7 @@ import {
   takeFailOpenHits,
   type FailOpenRow,
 } from './fail-open';
-import { actorCheckMisses, nodes } from './schema';
+import { actorCheckMisses, itemMarks, nodes } from './schema';
 import {
   asSystem,
   assertSystemDbCaller,
@@ -208,6 +208,15 @@ describe('a scoped typed write to a table the write role does not hold (site typ
     expect(rows).toEqual([]);
     expect(takeFailOpenHits()).toEqual([]);
   });
+
+  it('a table whose matrix row names scopedSystemWrite is not counted', async () => {
+    await inWriteRequest(async () => {
+      tryIt(() => db.insert(itemMarks));
+      tryIt(() => db.update(itemMarks));
+    });
+    expect(rows).toEqual([]);
+    expect(takeFailOpenHits()).toEqual([]);
+  });
 });
 
 // The raw write site (loginWriteClient) needs a database: fail-open.db.test.ts.
@@ -262,5 +271,23 @@ describe('the production allows in a turn scope (sites turn-exit, system-db)', (
       inTurn(async () => assertSystemDbCaller('Error\n    at f (/app/x/y.ts:1:1)')),
     ).rejects.toThrow();
     expect(rows).toEqual([]);
+  });
+});
+
+describe('the scoped system writes still left to decide (S4b reads them as refused)', () => {
+  it('only goes down, names no write-role table and no table that names a reason', async () => {
+    const { SCOPED_SYSTEM_WRITES_LEFT } = await import('./fail-open');
+    const { SCOPED_SYSTEM_WRITE, WRITE_ROLE_TABLES } = await import('./access-matrix');
+    // Measured by the full DB vitest run (docs/fail-open.md). A table leaves
+    // this list when its write moves (the write role, systemDb, areaSystem)
+    // or its matrix row names scopedSystemWrite; none joins it unreviewed.
+    expect([...SCOPED_SYSTEM_WRITES_LEFT].sort()).toEqual([
+      'public.assistant_messages',
+      'public.pending_tool_calls',
+    ]);
+    for (const t of SCOPED_SYSTEM_WRITES_LEFT) {
+      expect(WRITE_ROLE_TABLES).not.toContain(t);
+      expect(Object.keys(SCOPED_SYSTEM_WRITE)).not.toContain(t);
+    }
   });
 });
