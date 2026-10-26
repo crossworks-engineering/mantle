@@ -134,3 +134,47 @@ fail-open.db.test.ts 0 with both checks on (4). Cleaned up there.
 Gates: Mac typecheck, lint, format:check, docs:check, arch:check, web
 build, unit vitest, test-deploy-scripts, cleanup-counts.test.ts and
 arch-lints.test.ts: see the final report.
+
+## The scopedSystemWrite list (feat/s4a-list, 2026-10-26)
+
+The piece S4b reads before it refuses a scoped typed write to a table the
+write role does not hold. Every site box miss was `fail-open:typed-write`
+from a login actor; each site is named, moved or left for the owner.
+
+- `TableAccess.scopedSystemWrite` (a reason) and `SCOPED_SYSTEM_WRITE`
+  (packages/db/src/access-matrix.ts); `noteScopedSystemWrite` skips a named
+  table. One table: `public.item_marks` (own marks: actor_id is the
+  caller's login; the node is read in scope first). Its comment no longer
+  says owner paths only. New pin `scopedSystemWriteTables` 1, counted from
+  the matrix rows (eslint-rules/arch-counts.mjs); access-matrix.test.ts
+  holds each reason non-empty, never a write-role table, the list equal to
+  the pin.
+- `bumpAgentUsage` and `bumpWorkerUsage` on `systemDb` (narrow in a scope),
+  not named: a reason on agents or ai_workers would let every scoped
+  configuration write through. ai_workers' NARROW_WRITES gains
+  `last_used_at` and `usage_count`. Grants are applied at every migrate
+  (applyRuntimeGrants), so no migration (0336 not used). systemDbUses 68 to
+  70, systemDbFiles 20 to 22, systemDbUses_narrow 64 to 66; the narrow
+  write scan's pin for the bump is gone.
+- `api_tool_update`: updateTool, addToolToGroup and setToolExternalAccess
+  through `areaSystem('connectors', …)`. The gate is unchanged.
+- vitest.setup.ts fails a test whose typed-write hit names a table that is
+  neither named nor in `SCOPED_SYSTEM_WRITES_LEFT` (fail-open.ts, pinned by
+  fail-open.test.ts). Left for the owner: `pending_tool_calls` (the approval
+  queue, 164 hits over the suites) and `assistant_messages` (a login's MCP
+  turn rows, 8 hits). Measured with MANTLE_FAIL_OPEN_DUMP over both DB shards and
+  test:actor-off, actor-on, edit-on, matrix, runtime-role and serial: no
+  other table.
+- No answer changed. Cells: fail-open.test.ts (a named table is no hit; the
+  left list), fail-open.db.test.ts (item_marks no hit; the counters move with
+  no hit), packages/tools/src/api-tool-update-area.db.test.ts (a member and
+  an Admin user with connectors off refused, nothing written; an Admin user's
+  update, group join and External access off with no hit).
+
+Gates on the Mac (rebased on v0.400.7): pnpm -r typecheck 0, eslint on the
+changed files 0, format:check 0, docs:check 0, arch:check 0, web build 0,
+unit vitest 0 (one harness timeout under load in deploy-scripts.test.ts,
+0 when rerun alone). Workstation suites on eab94e984 (the pushed head
+before this docs-only note), all exit 0: DB vitest shard 1/2 6889 passed
+and 2/2 8349 passed, test:actor-off 1652, actor-on 419, edit-on 591,
+matrix 8, runtime-role 3174, serial 1.
