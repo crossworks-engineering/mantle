@@ -77,6 +77,7 @@ const HTTP_SURFACE = [
   'tree_folder_create',
   'tree_folder_update',
   'tree_item_move',
+  'tree_item_place',
   'tree_folder_delete',
   'recall_index',
   'recall_open',

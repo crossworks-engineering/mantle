@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { RECALL_V2, shellFeatures } from './features';
+import { RECALL_V2, TREE_CUSTOM_ORDER, shellFeatures } from './features';
 import { routeManifest } from '../server/route-manifest.gen';
 
 /**
@@ -21,12 +21,12 @@ import { routeManifest } from '../server/route-manifest.gen';
 describe('shell features', () => {
   it('reports recallV2 true (from R2, and for good since R5 retired v1), so a client builds the v2 screen', () => {
     expect(RECALL_V2).toBe(true);
-    expect(shellFeatures()).toEqual({ recallV2: true });
+    expect(shellFeatures()).toEqual({ recallV2: true, treeCustomOrder: true });
   });
 
   it('is reached through one function, so a flag is one line', () => {
     expect(typeof shellFeatures).toBe('function');
-    expect(Object.keys(shellFeatures())).toEqual(['recallV2']);
+    expect(Object.keys(shellFeatures())).toEqual(['recallV2', 'treeCustomOrder']);
   });
 
   it('is actually served by the owner shell route', () => {
@@ -67,5 +67,12 @@ describe('shell features', () => {
         'features.recallV2 is true but these routes are not served: a client would render the v2 screen and 400/404 on save',
       ).toEqual([]);
     }
+  });
+
+  it('does not claim treeCustomOrder without the place route', () => {
+    const served = routeManifest.some(
+      (r) => r.pattern === '/api/tree/:kind/place' && r.methods.includes('POST'),
+    );
+    if (TREE_CUSTOM_ORDER) expect(served, 'POST /api/tree/:kind/place').toBe(true);
   });
 });

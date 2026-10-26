@@ -178,6 +178,7 @@ const LISTS: Record<string, readonly string[]> = {
     'tree_folder_update',
     'tree_folders',
     'tree_item_move',
+    'tree_item_place',
   ],
   AREA_SYSTEM_TOOLS: [
     'agent_grant_tool_group',

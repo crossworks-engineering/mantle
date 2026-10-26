@@ -220,6 +220,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // its share (null, the top level, is never shared).
   tree_folder_update: onNodes('folder_id', 'parent_id'),
   tree_item_move: onNodes('item_ids', 'folder_id'),
+  // An order names the item it places; nothing lands anywhere new.
+  tree_item_place: onNodes('item_id'),
   tree_folder_delete: onNodes('folder_id'),
   export_node: creates(),
   sheet_build: creates(),

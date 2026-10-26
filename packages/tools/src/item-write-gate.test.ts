@@ -237,6 +237,14 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['page_extract_section', entry('page_id', 'edit', lib('extractSectionToPage'))],
   ['tree_folder_delete', entry('folder_id', 'manage', lib('deleteTreeFolder, before the lift'))],
   ['tree_item_move', entry('item_ids', 'manage', lib('moveTreeItems: the whole list first'))],
+  [
+    'tree_item_place',
+    entry(
+      'item_id',
+      'edit',
+      lib('placeTreeItem: Write on its folder, Admin at the top; the db: edit of item or folder'),
+    ),
+  ],
   ['app_table_export_set', entry('id', 'edit', lib('createAppTableExport'))],
   ['app_table_export_remove', entry('id', 'edit', lib('removeAppTableExport'))],
   ['content_supersede', entry('node_id', 'edit', lib('assertMaySupersede (supersede.ts)'))],
@@ -262,8 +270,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
 
 describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
-    // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3.
-    expect(DATABASE_CHECKED.size).toBe(101);
+    // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
+    // tree's custom order added tree_item_place.
+    expect(DATABASE_CHECKED.size).toBe(102);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

@@ -1,7 +1,7 @@
 # A10 part 2 fold 1: every write route and body, recorded on main (v0.300.41)
 # BEFORE the move. Written once (A10_BODY_SWEEP_RECORD=1); a10-body-sweep.test.ts
 # reads it back and holds every cell to it, or to a named change.
-# cells: 2178
+# cells: 2184
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1910,6 +1910,12 @@ POST /api/tree/:kind/move owner empty => 404 application/json {"error":"not foun
 POST /api/tree/:kind/move owner nul => 404 application/json {"error":"not found"}
 POST /api/tree/:kind/move owner array => 404 application/json {"error":"not found"}
 POST /api/tree/:kind/move owner chunked => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner valid => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner malformed => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner empty => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner nul => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner array => 404 application/json {"error":"not found"}
+POST /api/tree/:kind/place owner chunked => 404 application/json {"error":"not found"}
 POST /api/tree/items/:id/opened owner valid => 500 application/json {"error":"internal error"}
 POST /api/tree/items/:id/opened owner malformed => 500 application/json {"error":"internal error"}
 POST /api/tree/items/:id/opened owner empty => 500 application/json {"error":"internal error"}

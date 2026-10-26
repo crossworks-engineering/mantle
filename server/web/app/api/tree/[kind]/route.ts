@@ -1,8 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { TREE_SORTS } from '@mantle/client-types/tree';
-import { loadTreeFolder } from '@mantle/content/tree';
+import { TREE_KIND_SPECS, TREE_SORTS } from '@mantle/client-types/tree';
+import { loadTreeFolder, mayOrderFolder } from '@mantle/content/tree';
 import { ensureTreeRoot, privateRootItems, treeKindOr404 } from '@/lib/tree-route';
 import { otherWorkspaces, parseWsFilter, withChips, workspaceChips } from '@/lib/list-workspaces';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -27,7 +27,8 @@ const Query = z.object({
  *  (no private items) and is echoed back; each folder then also counts the
  *  items there that only the caller's other workspaces read
  *  (`itemsElsewhere`), and a first page with no item names them
- *  (`elsewhere`, task f26a516e). */
+ *  (`elsewhere`, task f26a516e). `mayOrder` says whether the caller may set
+ *  the folder's order (Write on it; an Admin scope at the top level). */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
@@ -59,6 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
     folder: page.folder ? withChips([page.folder], chips)[0]! : null,
     folders: withChips(page.folders, chips),
     items: withChips(page.items, chips),
+    mayOrder: await mayOrderFolder(user.id, kind, page.folder?.path ?? TREE_KIND_SPECS[kind].root),
     ...(ws ? { ws } : {}),
   });
 }

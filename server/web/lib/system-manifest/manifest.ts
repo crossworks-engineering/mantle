@@ -695,6 +695,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
 
       'note_create',
       'note_update',
@@ -714,6 +715,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       'event_list',
       'event_get',
       'event_create',
@@ -731,6 +733,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
 
       'task_list',
       'task_get',
@@ -751,6 +754,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
 
       ...PAGE_AUTHORING_TOOL_SLUGS,
     ],
@@ -786,6 +790,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       ...APP_AUTHORING_TOOL_SLUGS,
       // The library guides (`for: 'app'`): the vendored libraries an app may
       // import, for the exact versions the runtime serves.
@@ -817,6 +822,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       ...TABLE_AUTHORING_TOOL_SLUGS,
     ],
   },
@@ -911,6 +917,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       ...CONTACT_AUTO_GRANT_SLUGS,
     ],
   },
@@ -949,6 +956,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       ...FORMULA_AUTO_GRANT_SLUGS,
     ],
   },
@@ -1076,6 +1084,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
     ],
   },
   {
@@ -1114,6 +1123,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'tree_folder_create',
       'tree_folder_update',
       'tree_item_move',
+      'tree_item_place',
       'secret_create',
     ],
   },

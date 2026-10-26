@@ -5401,6 +5401,24 @@
    "peerRisky": false
   }
  },
+ "tree_item_place": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
  "tree_list": {
   "readOnly": true,
   "peerRisky": false,

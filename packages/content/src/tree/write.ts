@@ -16,8 +16,10 @@ import {
   publicErrorMessage,
 } from '@mantle/std';
 import {
+  advisoryXactLock,
   assertItemRight,
   busyMessage,
+  currentWorkspaceScope,
   db,
   executeWrite,
   isBusy,
@@ -43,8 +45,8 @@ import {
   type TreeShareLevel,
 } from '@mantle/client-types/tree';
 import { treeParentPath } from '@mantle/content-core/tree';
-import { ranksAfter } from '../rank';
-import { isTreeLiveKind } from './kinds';
+import { RANK_RE, rankBetween, ranksSpread } from '../rank';
+import { isTreeLiveKind, kindItemFilter } from './kinds';
 import {
   TreeVisibilityError,
   liftDiff,
@@ -63,7 +65,7 @@ import {
   moveNodeItem,
   renameNodeFolder,
 } from './node-ops';
-import { treeFolderById } from './read';
+import { treeFallbackSort, treeFolderById, treeItemOrderBy } from './read';
 import { FilesMergeRefusal, deleteFilesFolderMerging } from './files-merge';
 
 /** NOTIFY channel for a tree write (payload: JSON {ownerId, kind}). Consumed
@@ -366,6 +368,15 @@ export async function updateTreeFolder(
   if (patch.share !== undefined) throw new TreeError('gone', FOLDER_SHARE_GONE);
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
+  // A place is asked of the folder it lands in before anything is written,
+  // so a move and a place never half apply.
+  if (patch.after !== undefined) {
+    const dest =
+      patch.parentId !== undefined
+        ? await pathOf(ownerId, kind, patch.parentId)
+        : treeParentPath(folder.path);
+    await assertMayOrder(ownerId, kind, dest);
+  }
   if (patch.parentId !== undefined) {
     if (patch.parentId === folderId) throw new TreeError('invalid', 'a folder cannot hold itself');
     if (folder.system && patch.parentId !== folder.parentId) {
@@ -454,8 +465,9 @@ async function placeFolder(
     throw new TreeError('invalid', 'the sibling to place after was not found');
   const moving = { id: folderId, data: {} as Record<string, unknown> };
   const order = [...siblings.slice(0, at), moving, ...siblings.slice(at)];
-  const ranks = ranksAfter(null, order.length);
+  const ranks = ranksSpread(order.length);
   await db.transaction(async (tx) => {
+    await keepUpdatedAt(tx);
     for (const [i, s] of order.entries()) {
       await tx
         .update(nodes)
@@ -465,6 +477,190 @@ async function placeFolder(
         .where(sql`id = ${s.id} and owner_id = ${ownerId}`);
     }
   });
+}
+
+/** A place is no edit of what it orders: the transaction keeps each row's
+ *  `updated_at` (touch_updated_at reads mantle.keep_updated_at), so "last
+ *  updated" and the extractor never see an order change. */
+async function keepUpdatedAt(tx: Pick<typeof db, 'execute'>): Promise<void> {
+  await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+}
+
+/** The refusal of an order at the top level outside an Admin scope. */
+export const TOP_LEVEL_ORDER_REFUSED =
+  'Only an Admin orders the top level. Ask for Write on a folder to order what is in it.';
+
+/** An order the caller may not set: the top level outside an Admin scope
+ *  (403, its own words; a folder's refusal is the item check's). */
+export class TreeOrderRefusal extends Error {
+  constructor() {
+    super(TOP_LEVEL_ORDER_REFUSED);
+    this.name = 'TreeOrderRefusal';
+  }
+}
+
+defineDomainError(TreeOrderRefusal, {
+  reason: 'an order of the top level outside an Admin scope; the message says who may',
+  status: 403,
+});
+
+/**
+ * Whether the caller may set the order of what the folder at `path` holds
+ * (its items and its subfolders): Write on that folder, or an Admin scope at
+ * the kind's top level, which is in no folder (owner decision 2026-10-26).
+ * The order is one for everyone. The database asks the same of the rank it
+ * writes: edit of the item or of its folder (the presentation key, 0281).
+ * System work is not checked.
+ */
+export async function mayOrderFolder(
+  ownerId: string,
+  kind: TreeKind,
+  path: string,
+): Promise<boolean> {
+  if (!currentWorkspaceScope()) return true;
+  if (path === TREE_KIND_SPECS[kind].root) {
+    const [row] = (await db.execute(
+      sql`select "public"."mantle_may_manage_home"(NULL) as ok`,
+    )) as unknown as Array<{ ok: boolean | null }>;
+    return row?.ok === true;
+  }
+  const folderId = await folderIdAt(ownerId, path);
+  if (!folderId) return false;
+  return (await itemWriteVerdicts([folderId], 'edit')).get(folderId) === 'ok';
+}
+
+/** Throws the edit check's refusal unless the caller may order the folder
+ *  at `path` (mayOrderFolder). */
+async function assertMayOrder(ownerId: string, kind: TreeKind, path: string): Promise<void> {
+  if (!currentWorkspaceScope()) return;
+  if (path === TREE_KIND_SPECS[kind].root) {
+    if (!(await mayOrderFolder(ownerId, kind, path))) throw new TreeOrderRefusal();
+    return;
+  }
+  const folderId = await folderIdAt(ownerId, path);
+  // A folder the caller does not read: "not in your workspaces".
+  if (!folderId) throw editCheckRefusalError('no_read');
+  await assertItemRight(folderId, 'edit');
+}
+
+/** The id of the folder at `path`, when the caller reads it. */
+async function folderIdAt(ownerId: string, path: string): Promise<string | null> {
+  const [row] = (await db.execute(sql`
+    select id::text as id from nodes
+     where owner_id = ${ownerId} and type = 'branch' and path = ${path}::ltree
+     limit 1`)) as unknown as Array<{ id: string }>;
+  return row?.id ?? null;
+}
+
+/** The rank a single place may write before the folder is ranked whole
+ *  again: keys stay well inside RANK_RE's 64 characters. */
+const RANK_MAX_LEN = 48;
+
+/**
+ * Put an item directly after `afterId` among the items of its folder (null
+ * = first), in the folder's custom order, one for everyone (the tree's
+ * `custom` sort). The place is the item's `data.tree_rank` (0335), written
+ * without touching `updated_at`.
+ *
+ * Only the moved item is written when its new neighbours both carry a rank.
+ * Else the folder is ranked whole, evenly, in the order the tree shows it
+ * now (its custom order, or the kind's other sort when it has none yet), so
+ * the first drag moves one item and nothing else. Only rows the caller may
+ * write take a rank then: never a read-only snapshot copy, and at the top
+ * level only what the caller may edit; the rest keep theirs. Items the
+ * caller does not read keep theirs too. One place at a time per folder.
+ */
+export async function placeTreeItem(
+  ownerId: string,
+  kind: TreeKind,
+  itemId: string,
+  afterId: string | null,
+): Promise<void> {
+  opsFor(kind);
+  const nodeType = TREE_KIND_SPECS[kind].nodeType;
+  const root = TREE_KIND_SPECS[kind].root;
+  const [item] = (await db.execute(sql`
+    select n.id::text as id, n.path::text as path, (n.data ? 'snapshot_of') as copy
+      from nodes n
+     where n.id = ${itemId}::uuid and n.owner_id = ${ownerId} and n.type = ${nodeType}
+       and n.path <@ ${root}::ltree ${kindItemFilter(kind, 'n')}
+     limit 1`)) as unknown as Array<{ id: string; path: string; copy: boolean }>;
+  if (!item) throw new TreeError('not-found', 'item not found');
+  await assertMayOrder(ownerId, kind, item.path);
+  if (afterId === itemId) throw new TreeError('invalid', 'an item cannot follow itself');
+  if (item.copy) throw new TreeError('invalid', 'a read-only copy keeps its place');
+  const here = sql`n.owner_id = ${ownerId} and n.type = ${nodeType}
+    and n.path = ${item.path}::ltree ${kindItemFilter(kind, 'n')}`;
+  // At the top level the database asks edit of each item (no folder holds
+  // it): a whole ranking writes only those.
+  const editable =
+    item.path === root && currentWorkspaceScope()
+      ? await itemWriteVerdicts(
+          (
+            (await db.execute(
+              sql`select n.id::text as id from nodes n where ${here}`,
+            )) as unknown as Array<{ id: string }>
+          ).map((r) => r.id),
+          'edit',
+        )
+      : null;
+  await refusing(() =>
+    db.transaction(async (tx) => {
+      await keepUpdatedAt(tx);
+      await advisoryXactLock(tx, `tree-order:${ownerId}:${kind}:${item.path}`, 'hashtextextended');
+      const [has] = (await tx.execute(sql`
+        select exists (select 1 from nodes n
+                        where ${here} and n.data->>'tree_rank' ~ ${RANK_RE.source}) as ordered`)) as unknown as Array<{
+        ordered: boolean;
+      }>;
+      const order = has?.ordered ? 'custom' : treeFallbackSort(kind);
+      const siblings = (
+        (await tx.execute(sql`
+          select n.id::text as id, n.data->>'tree_rank' as rank,
+                 (n.data ? 'snapshot_of') as copy
+            from nodes n
+           where ${here} and n.id <> ${itemId}::uuid
+           order by ${treeItemOrderBy(order)}`)) as unknown as Array<{
+          id: string;
+          rank: string | null;
+          copy: boolean;
+        }>
+      ).map((r) => ({ ...r, rank: r.rank !== null && RANK_RE.test(r.rank) ? r.rank : null }));
+      const at = afterId === null ? 0 : siblings.findIndex((r) => r.id === afterId) + 1;
+      if (afterId !== null && at === 0) {
+        throw new TreeError('invalid', 'the item to place after is not in this folder');
+      }
+      const prev = siblings[at - 1];
+      const next = siblings[at];
+      const lo = prev ? prev.rank : null;
+      const hi = next ? next.rank : null;
+      const between =
+        (!prev || lo !== null) &&
+        (!next || hi !== null) &&
+        !(lo !== null && hi !== null && lo >= hi)
+          ? rankBetween(lo, hi)
+          : null;
+      let writes: Array<{ id: string; rank: string }>;
+      if (between !== null && between.length <= RANK_MAX_LEN) {
+        writes = [{ id: itemId, rank: between }];
+      } else {
+        // Ranked whole: the rows the caller may write, in the new order.
+        const order = [...siblings.slice(0, at), { id: itemId, copy: false }, ...siblings.slice(at)]
+          .filter((r) => !r.copy && (editable === null || editable.get(r.id) === 'ok'))
+          .map((r) => r.id);
+        const ranks = ranksSpread(order.length);
+        writes = order.map((id, k) => ({ id, rank: ranks[k]! }));
+      }
+      for (const w of writes) {
+        await tx
+          .update(nodes)
+          .set({
+            data: sql`jsonb_set(coalesce(data, '{}'::jsonb), '{tree_rank}', to_jsonb(${w.rank}::text))`,
+          })
+          .where(and(eq(nodes.id, w.id), eq(nodes.ownerId, ownerId)));
+      }
+    }),
+  );
 }
 
 /**

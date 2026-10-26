@@ -14,7 +14,12 @@ import type { ShellWorkspace, WorkspaceArea } from './workspaces';
 export type ShellRole = LoginRole;
 
 /** What this brain can do, so a client branches on capability, not version. */
-export type ShellFeatures = { recallV2: boolean };
+export type ShellFeatures = {
+  recallV2: boolean;
+  /** The tree's custom order: the `custom` sort, `ordered` and `mayOrder` on
+   *  a folder page, POST /api/tree/:kind/place. Absent from a brain before it. */
+  treeCustomOrder?: boolean;
+};
 
 export type Shell = {
   role: ShellRole;

@@ -101,6 +101,7 @@ const EXPECTED_OWNER_ONLY = [
   'tree_folder_update',
   'tree_folders',
   'tree_item_move',
+  'tree_item_place',
   'video_ingest',
   'web_crawl',
   'web_map',

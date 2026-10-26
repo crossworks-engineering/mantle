@@ -21,6 +21,7 @@ import {
   listTreeFolders,
   moveTreeItems,
   notifyTreeChanged,
+  placeTreeItem,
   updateTreeFolder,
   type TreeFolderPatch,
 } from '@mantle/content/tree';
@@ -212,13 +213,17 @@ export const tree_folder_update: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    itemArgs: [{ param: 'folder_id' }, { param: 'parent_id', least: 'none' }],
+    itemArgs: [
+      { param: 'folder_id' },
+      { param: 'parent_id', least: 'none' },
+      { param: 'after', least: 'read' },
+    ],
     clientSourced: CS.onNodes('folder_id', 'parent_id'),
   },
   ownerOnly: true,
-  name: 'Rename, move or restyle a folder',
+  name: 'Rename, move, restyle or reorder a folder',
   description:
-    'Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), change its icon or colour (`icon`, `color`; null clears), or any of these together. Everything inside comes along on a move. Refused for a system folder, a move into itself, a move that would nest deeper than ' +
+    'Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), change its icon or colour (`icon`, `color`; null clears), put it in order among its sibling folders (`after`: the folder it follows; null for first), or any of these together. The order is one for everyone: it needs Write on the folder that holds it (an Admin at the top level). Everything inside comes along on a move. Refused for a system folder, a move into itself, a move that would nest deeper than ' +
     `${TREE_MAX_DEPTH} levels, and a name already taken where it lands.`,
   preconditions: [
     { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
@@ -244,6 +249,11 @@ export const tree_folder_update: BuiltinToolDef = {
         enum: [...APP_TINTS, null],
         description: 'the tile colour; null for none',
       },
+      after: {
+        type: ['string', 'null'],
+        description:
+          'the sibling folder to place it right after (an id from `tree_folders`); null to place it first; omit to leave its place',
+      },
       confirm: CONFIRM_INPUT,
     },
     required: ['kind', 'folder_id'],
@@ -262,8 +272,12 @@ export const tree_folder_update: BuiltinToolDef = {
       if ('error' in look) return { ok: false, error: look.error };
       if (look.icon !== undefined) patch.icon = look.icon;
       if (look.color !== undefined) patch.color = look.color;
+      if ('after' in input) patch.after = parentOf(input.after);
       if (Object.keys(patch).length === 0) {
-        return { ok: false, error: 'pass `name`, `parent_id`, `icon` or `color` (any of them)' };
+        return {
+          ok: false,
+          error: 'pass `name`, `parent_id`, `icon`, `color` or `after` (any of them)',
+        };
       }
       const folder = await updateTreeFolder(ctx.ownerId, kind, folderId, patch, {
         confirm: input.confirm === true,
@@ -390,12 +404,56 @@ export const tree_folder_delete: BuiltinToolDef = {
     }),
 };
 
+export const tree_item_place: BuiltinToolDef = {
+  slug: 'tree_item_place',
+  policy: {
+    matrix: {
+      none: 'orders a folder: the right is Write on the folder that holds the item (an Admin scope at the top level), not a right of the item; placeTreeItem asks it',
+    },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [
+      { param: 'item_id', least: 'read' },
+      { param: 'after', least: 'read' },
+    ],
+    clientSourced: CS.onNodes('item_id'),
+  },
+  ownerOnly: true,
+  name: 'Put an item in order in its folder',
+  description:
+    "Put an item (a note, an app, a task, ... id) in its folder's custom order, right after another item of the same folder (`after`; null for first). The order is one for everyone and shows in the tree's Custom order: use it for stages, steps or any sequence the folder's items are worked in. Needs Write on the folder (an Admin at the top level). Only the item's place in the order changes: not its folder, content or last-changed date. To file it into another folder use `tree_item_move` first; to order folders use `tree_folder_update` with `after`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      kind: KIND_PROP,
+      item_id: { type: 'string', format: 'uuid', description: 'the item to place' },
+      after: {
+        type: ['string', 'null'],
+        description: 'the item of the same folder it follows; null to place it first',
+      },
+    },
+    required: ['kind', 'item_id', 'after'],
+  },
+  handler: (input, ctx) =>
+    run(input, ctx, async (kind) => {
+      const itemId = str(input.item_id);
+      if (!itemId) return { ok: false, error: 'item_id required' };
+      const after = parentOf(input.after);
+      await placeTreeItem(ctx.ownerId, kind, itemId, after);
+      await notifyTreeChanged(ctx.ownerId, kind);
+      ctx.step?.setOutput({ kind, itemId, after });
+      return { ok: true, output: after ? `placed after ${after}` : 'placed first' };
+    }),
+};
+
 /** Offered to agents through each kind's tool group. */
 export const TREE_TOOLS: BuiltinToolDef[] = [
   tree_folders,
   tree_folder_create,
   tree_folder_update,
   tree_item_move,
+  tree_item_place,
 ];
 
 /** Operator surface (MCP only), like Files' folder_delete. */
