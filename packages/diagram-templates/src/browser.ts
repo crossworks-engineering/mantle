@@ -21,17 +21,33 @@
  * canvas's own page: nothing is fetched, no URL is opened, and the window
  * is never navigated (the canvas sandbox's rule).
  *
+ * The data block is read once, when `mount()` runs, and a `pid` drawing's
+ * image check marks are drawn as stored only when the block sits where
+ * buildCanvas puts it; in any other document, and in `render` called by
+ * script, every mark draws unchecked (data-read.ts).
+ *
  * Bad data shows its errors in the page and throws one error, which the
  * Present frame reports to its host as `{v:1, kind:'error'}`.
  */
-import { render, type RenderOutcome } from './index.ts';
-import { domMeasurer } from './runtime/text.ts';
-// A mini app draws a template inside its own React tree instead of mounting
-// a page: `render(template, data, domMeasurer(document))` returns the same
-// escaped, static SVG string `mount` inserts (app-libraries.ts, app-build).
-export { render, domMeasurer };
+import { render as renderTemplate, type RenderOptions, type RenderOutcome } from './index.ts';
+import { domMeasurer, type Measurer } from './runtime/text.ts';
+import { readDataBlock, unvouched } from './data-read.ts';
+export { domMeasurer };
 export type { RenderOutcome };
-import { DATA_ID } from './canvas.ts';
+
+/** A mini app draws a template inside its own React tree instead of
+ *  mounting a page: `render(template, data, domMeasurer(document))` returns
+ *  the same escaped, static SVG string `mount` inserts (app-libraries.ts,
+ *  app-build). Data handed in by script is no canvas's stored data, so a
+ *  `pid` drawing's marks are drawn unchecked (data-read.ts). */
+export function render(
+  template: string,
+  data: unknown,
+  m: Measurer,
+  opts?: RenderOptions,
+): RenderOutcome {
+  return renderTemplate(template, template === 'pid' ? unvouched(data) : data, m, opts);
+}
 import { messageOf } from './runtime/validate.ts';
 import { PALETTE } from './runtime/style.ts';
 
@@ -247,12 +263,14 @@ export function mount(doc: Document = document): DiagramApi {
     exportPageSvg: () => api.exportSvg(),
   };
   window.diagram = api;
+  // The data block, read once, now: the inline runtime runs right after it,
+  // the import once the document is parsed (data-read.ts).
+  const read = readDataBlock(doc);
   const run = async () => {
     let outcome: RenderOutcome;
-    const block = doc.getElementById(DATA_ID);
     let data: unknown;
     try {
-      data = JSON.parse(block?.textContent ?? '');
+      data = JSON.parse(read.text ?? '');
     } catch (err) {
       outcome = {
         ok: false,
@@ -268,7 +286,10 @@ export function mount(doc: Document = document): DiagramApi {
         doc.querySelector('meta[name="diagram:template"]')?.getAttribute('content') ?? '';
       const fromData = (data as { template?: unknown }).template;
       const template = typeof fromData === 'string' ? fromData : (meta.split('@')[0] ?? '');
-      outcome = render(template, data, domMeasurer(doc));
+      // Marks only from a block where buildCanvas puts it: any other
+      // document is the author's own, and draws every mark unchecked.
+      const own = template === 'pid' && !read.canonical ? unvouched(data) : data;
+      outcome = renderTemplate(template, own, domMeasurer(doc));
     }
     api.template = outcome!.template;
     api.warnings = outcome!.warnings;

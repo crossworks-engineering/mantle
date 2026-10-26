@@ -15,6 +15,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildCanvas,
+  canonicalPidCanvas,
+  CanvasShapeError,
+  claimsPidTemplate,
   dataBlockCount,
   honestImageChecks,
   imageCheckSummary,
@@ -36,10 +39,12 @@ const holds = (body: string, sig: string) => seal(body) === sig;
 const PROV = '0123456789abcdef';
 type Mark = Record<string, unknown>;
 type Drawing = Record<string, unknown>;
-const provenance = (keys: string[], id = PROV) => ({
+/** A provenance sealed over `drawing`'s title and sheet (the test
+ *  drawings' title is 'Traced'). */
+const provenance = (keys: string[], id = PROV, drawing: unknown = { title: 'Traced' }) => ({
   id,
   keys,
-  sig: seal(provenanceSealBody({ id, keys })),
+  sig: seal(provenanceSealBody({ id, keys }, drawing)),
 });
 /** The drawing with every mark sealed where it sits (circuit_trace's one
  *  path), under `id` and `key`. */
@@ -160,7 +165,7 @@ describe('a save keeps only sealed marks', () => {
         { id: 'p1', title: 'One', data: page },
         { id: 'p2', title: 'Two', data: { ...page, provenance: provenance(['g1', 'g2']) } },
       ],
-      provenance: provenance(['g1', 'g2', 'g3']),
+      provenance: provenance(['g1', 'g2', 'g3'], PROV, { title: 'Set' }),
     }) as { pages: { data: Drawing }[] };
     const out = honestImageChecks(set, holds) as typeof set;
     expect(out.pages[0]).toBe(set.pages[0]);
@@ -335,7 +340,10 @@ describe('the trust words: drawn from the mark, never typed into a label (MED-3)
     };
     const out = withoutMarkWords(typed) as Drawing;
     expect(out.title).toBe('Traced');
-    expect(out.equipment).toEqual([{ id: 'V-101', type: 'vertical-vessel', service: '' }]);
+    // Only the view's bracketed forms are stripped: a word in prose stays.
+    expect(out.equipment).toEqual([
+      { id: 'V-101', type: 'vertical-vessel', service: 'CHECKED-BY-IMAGE' },
+    ]);
     // A connector with a mark: its GUESS is the view's.
     expect((out.offpage as Drawing[]).map((o) => o.text)).toEqual(['NEAR V-9', 'TO S2']);
     // A line with no mark keeps GUESS (it claims no check), never IMAGE: NO;
@@ -432,5 +440,252 @@ describe('the data block a save reads is the one the runtime reads', () => {
     expect(() => readCanvasData(upper)).toThrow(/no <script/);
     const escaped = one.replace(open, `${open}<!--<script>`);
     expect(dataBlockCount(escaped).written).toBe(0);
+  });
+});
+
+describe('the words a save strips (LOW a, b)', () => {
+  const marked = (text: string) =>
+    (
+      withoutMarkWords({
+        title: 'T',
+        offpage: [{ id: 'O', direction: 'out', sheet: 'S', text, check: fresh }],
+      }) as { offpage: { text: string }[] }
+    ).offpage[0]!.text;
+
+  it('GUESS goes before the claim words, until nothing changes: no trust word is made', () => {
+    expect(marked('OUT (CHECKED BY (GUESS) IMAGE)')).toBe('OUT');
+    expect(marked('OUT (FROM (GUESS) (GUESS) IMAGE)')).toBe('OUT');
+    expect(marked('OUT (GUESS; IMAGE: 3 NO)')).toBe('OUT');
+    // Outside the view's brackets nothing is stripped, so nothing is made.
+    expect(marked('OUT CHECKED BY GUESS IMAGE')).toBe('OUT CHECKED BY GUESS IMAGE');
+  });
+
+  it('only the bracketed forms the view draws: prose with the same words stays', () => {
+    const title = 'Redrawn from image scan, see image no. 4';
+    const d = { title, offpage: [{ id: 'O', direction: 'out', sheet: 'S', text: title }] };
+    expect(withoutMarkWords(d)).toBe(d);
+    expect(marked(title)).toBe(title);
+    expect(marked('TO S2 (checked  by image)')).toBe('TO S2');
+  });
+});
+
+describe("a line's marks are sealed together (MED M1)", () => {
+  /** A line whose join marks say checked and contradicted, and whose valve
+   *  says checked: the line's words are GUESS, IMAGE: NO. */
+  function line(): Drawing {
+    return {
+      ...drawn(),
+      lines: [
+        {
+          id: 'L1',
+          number: '2"-P-101',
+          from: 'OPC-1',
+          to: 'V-101',
+          checks: [
+            { ...yes, key: 'j1', kind: 'join', guess: 'a join' },
+            {
+              key: 'j2',
+              kind: 'join',
+              state: 'contradicted',
+              guess: 'another join',
+              answer: 'no',
+            },
+          ],
+          inline: [
+            { type: 'globe', check: { ...yes, key: 'v1', kind: 'valve', guess: 'a globe valve' } },
+          ],
+        },
+      ],
+      provenance: provenance(['g1', 'g2', 'j1', 'j2', 'v1']),
+    };
+  }
+  type L = { checks: Mark[]; inline: { check: Mark }[] };
+  const l1 = (d: unknown) => (d as { lines: L[] }).lines[0]!;
+
+  it('as sealed it holds, and says the contradiction', () => {
+    const d = sign(line());
+    expect(honestImageChecks(d, holds)).toBe(d);
+    expect(lineNoteSuffix(l1(d))).toBe(' (GUESS, IMAGE: NO)');
+  });
+
+  it('dropping the contradicted sibling unseals the rest: never CHECKED BY IMAGE', () => {
+    const d = sign(line());
+    const dropped = { ...d, lines: [{ ...l1(d), checks: [l1(d).checks[0]] }] };
+    const out = l1(honestImageChecks(dropped, holds));
+    expect(out.checks.map((c) => c.state)).toEqual(['unchecked']);
+    expect(out.inline[0]!.check.state).toBe('unchecked');
+    expect(lineNoteSuffix(out)).toBe(' (GUESS)');
+  });
+
+  it('copying the checked sibling over the contradicted one unseals both', () => {
+    const d = sign(line());
+    const [a] = l1(d).checks;
+    const copied = { ...d, lines: [{ ...l1(d), checks: [a, a] }] };
+    const out = l1(honestImageChecks(copied, holds));
+    expect(out.checks.map((c) => c.state)).toEqual(['unchecked', 'unchecked']);
+  });
+
+  it('reordering the marks, or dropping the valve mark, unseals them', () => {
+    const d = sign(line());
+    const [a, b] = l1(d).checks;
+    const swapped = l1(honestImageChecks({ ...d, lines: [{ ...l1(d), checks: [b, a] }] }, holds));
+    expect(swapped.checks.map((c) => c.state)).toEqual(['unchecked', 'unchecked']);
+    const noValve = l1(
+      honestImageChecks({ ...d, lines: [{ ...l1(d), inline: [{ type: 'globe' }] }] }, holds),
+    );
+    expect(noValve.checks.map((c) => c.state)).toEqual(['unchecked', 'unchecked']);
+  });
+});
+
+describe('what else a seal covers (LOW c)', () => {
+  it("the drawing's title or sheet: a renamed drawing shows every mark unchecked", () => {
+    const d = traced();
+    for (const change of [{ title: 'Renamed' }, { sheet: { number: 'PID-9' } }]) {
+      const out = honestImageChecks({ ...d, ...change }, holds) as Drawing;
+      expect(out.provenance).toBeUndefined();
+      expect(marksOf(out).map((m) => m.state)).toEqual(['unchecked', 'unchecked']);
+    }
+  });
+
+  it("a connector's direction or link, and a line's number", () => {
+    const d = traced();
+    for (const change of [{ direction: 'in' }, { link: { page: 'p9' } }]) {
+      const edited = {
+        ...d,
+        offpage: (d.offpage as Drawing[]).map((o, i) => (i === 1 ? { ...o, ...change } : o)),
+      };
+      expect(marksOf(honestImageChecks(edited, holds))[1]).toEqual(unchecked(yes));
+    }
+    const lined = sign({
+      ...drawn(),
+      lines: [
+        {
+          id: 'L1',
+          number: 'A',
+          from: 'OPC-1',
+          to: 'V-101',
+          checks: [{ ...yes, key: 'j1', kind: 'join' }],
+        },
+      ],
+      provenance: provenance(['g1', 'g2', 'j1']),
+    });
+    const renumbered = {
+      ...lined,
+      lines: (lined.lines as Drawing[]).map((l) => ({ ...l, number: 'B' })),
+    };
+    const out = honestImageChecks(renumbered, holds) as unknown as { lines: { checks: Mark[] }[] };
+    expect(out.lines[0]!.checks[0]).toMatchObject({ state: 'unchecked' });
+  });
+
+  it("a set's page: a mark moved to another page id is unchecked", () => {
+    const page = drawn();
+    delete page.provenance;
+    const set = sign({
+      set: true,
+      title: 'Set',
+      pages: [{ id: 'p1', title: 'One', data: page }],
+      provenance: provenance(['g1', 'g2', 'g3'], PROV, { title: 'Set' }),
+    }) as { pages: { id: string; data: Drawing }[] };
+    expect(honestImageChecks(set, holds)).toBe(set);
+    const moved = { ...set, pages: [{ ...set.pages[0]!, id: 'p2' }] };
+    const out = honestImageChecks(moved, holds) as typeof set;
+    expect(marksOf(out.pages[0]!.data)[1]).toEqual(unchecked(yes));
+  });
+});
+
+describe('the stored data block reads alike everywhere (HIGH H1)', () => {
+  const svgBlock = (json: string) =>
+    `<!doctype html><html><head><title>x</title></head><body><svg><script type="application/json" id="diagram-data">${json}</script></svg></body></html>`;
+
+  it('scriptJson leaves no &, < or > in the block, and reads back the same', () => {
+    const data = { title: 'A & B <c> \u2028', template: 'pid' };
+    const html = buildCanvas({ template: 'pid', data, mode: 'import' });
+    const block = /id="diagram-data">([^<]*)<\/script>/.exec(html)![1]!;
+    expect(block).not.toMatch(/[&<>\u2028]/);
+    expect(readCanvasData(html).title).toBe(data.title);
+  });
+
+  it('a canvas that claims no template keeps its markup; its block is written again escaped', () => {
+    // Inside <svg> a browser decodes &#115; in the script's text: the raw
+    // key the server reads is never what the browser would read once stored.
+    const forged = svgBlock('{"&#116;emplate":"flow","&#115;tate":"checked"}');
+    expect(claimsPidTemplate(forged)).toBe(false);
+    const out = withHonestImageChecks(forged, holds);
+    expect(out).toContain('<svg><script type="application/json" id="diagram-data">');
+    expect(out).not.toContain('&#');
+    expect(out).toContain('"\\u0026#116;emplate": "flow"');
+    expect(readCanvasData(out)).toEqual(readCanvasData(forged));
+    // Already escaped: byte for byte.
+    expect(withHonestImageChecks(out, holds)).toBe(out);
+  });
+
+  it('a canvas that claims the template must be exactly what buildCanvas writes', () => {
+    const genuine = withHonestImageChecks(
+      buildCanvas({ template: 'pid', data: traced(), mode: 'import' }),
+      holds,
+    );
+    expect(canonicalPidCanvas(genuine, readCanvasData(genuine))).toBe(genuine);
+    const runtime = '<script type="module">';
+    for (const extra of [
+      genuine.replace(
+        runtime,
+        `<script>document.getElementById('diagram-data').textContent='{}'</script>${runtime}`,
+      ),
+      genuine.replace('<main', '<p>a note</p><main'),
+      genuine.replace('</head>', '<script>1</script></head>'),
+      genuine.replace(
+        '<main id="diagram" aria-live="polite"></main>',
+        '<main id="diagram" aria-live="polite"><b>x</b></main>',
+      ),
+      svgBlock(JSON.stringify({ template: 'pid', title: 'x' })),
+      genuine
+        .replace(
+          '<script type="application/json" id="diagram-data">',
+          '<svg><script type="application/json" id="diagram-data">',
+        )
+        .replace('</script>\n<script type="module">', '</script></svg>\n<script type="module">'),
+    ]) {
+      expect(claimsPidTemplate(extra)).toBe(true);
+      expect(() => withHonestImageChecks(extra, holds), extra.slice(0, 80)).toThrow(
+        CanvasShapeError,
+      );
+    }
+  });
+
+  it('the head title and description stay as written; an inline runtime becomes the import', () => {
+    const inline = buildCanvas({ template: 'pid', data: traced(), runtime: 'mount()' });
+    const titled = inline.replace(/<title>[^<]*<\/title>/, '<title>Own &amp; title</title>');
+    const out = withHonestImageChecks(titled, holds);
+    expect(out).toContain('<title>Own &amp; title</title>');
+    expect(out).toContain(
+      `<script type="module">import { mount } from '@mantle/diagram-templates/browser';`,
+    );
+    expect(out).not.toContain('<script>mount()</script>');
+  });
+
+  it('the head meta alone claims the template, in any case or encoding', () => {
+    const page = (meta: string) =>
+      `<!doctype html><html><head>${meta}</head><body><script type="application/json" id="diagram-data">{}</script></body></html>`;
+    expect(claimsPidTemplate(page('<meta name="diagram:template" content="pid@1">'))).toBe(true);
+    expect(claimsPidTemplate(page("<META CONTENT='PID@1' NAME='diagram&#58;template'>"))).toBe(
+      true,
+    );
+    expect(claimsPidTemplate(page('<meta name="diagram:template" content="flow@1">'))).toBe(false);
+  });
+
+  it('a canvas that claims no template counts only ids a browser finds (LOW f)', () => {
+    const page = (id: string) =>
+      `<p id="${id}">x</p><script type="application/json" id="diagram-data">{}</script>`;
+    expect(dataBlockCount(page('diagram&amp;chart'), { loose: false })).toEqual({
+      any: 1,
+      written: 1,
+    });
+    expect(dataBlockCount(page('Diagram-Data'), { loose: false })).toEqual({ any: 1, written: 1 });
+    expect(dataBlockCount(page('diagram&#45;data'), { loose: false })).toEqual({
+      any: 2,
+      written: 1,
+    });
+    // A pid canvas is held to the loose count.
+    expect(dataBlockCount(page('diagram&amp;chart'))).toEqual({ any: 2, written: 1 });
   });
 });

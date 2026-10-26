@@ -44,6 +44,7 @@ import { drawingSeal, drawingSealHolds } from '@mantle/content/drawing-seal';
 export { sealPayload, sealPayloadHolds } from '@mantle/content/drawing-seal';
 import {
   CHECK_LIMITS,
+  mapDrawings,
   mapImageChecks,
   provenanceSealBody,
   signImageChecks,
@@ -110,7 +111,8 @@ export function sealHolds(f: SealedFields, seal: string): boolean {
  * it sits on under a fresh provenance id, and the drawing (a set: the
  * set) carries `provenance` { id, keys, sig }: every guess it marks, then `cutKeys` (guesses a cap
  * left unmarked), so a mark dropped later, or never drawn, still counts as
- * unchecked. A save keeps only marks whose seal holds
+ * unchecked; its seal covers the drawing's title and sheet too, so a
+ * renamed drawing shows its marks unchecked until it is traced again. A save keeps only marks whose seal holds
  * (@mantle/content/drawing-seal honestCanvasSource). Without a master key
  * nothing is sealed: the drawing comes back as it was (its labels without
  * trust words, as any save stores them), and a save shows
@@ -125,16 +127,14 @@ export function sealedPid(
   // them from the marks), so a save finds each mark where it was sealed.
   const pid = withoutMarkWords(drawn);
   const id = randomBytes(8).toString('hex');
-  const drawings: Record<string, unknown>[] = Array.isArray(pid.pages)
-    ? (pid.pages as { data?: Record<string, unknown> }[]).flatMap((p) => (p?.data ? [p.data] : []))
-    : [pid];
   const seen = new Set<string>();
-  for (const d of drawings)
+  mapDrawings(pid, (d) =>
     mapImageChecks(d, (c) => {
       const key = (c as { key?: unknown } | null)?.key;
       if (typeof key === 'string') seen.add(key);
       return c;
-    });
+    }),
+  );
   for (const k of cutKeys) seen.add(k);
   const all = [...seen];
   const keys = all.slice(0, CHECK_LIMITS.provenanceKeys);
@@ -142,7 +142,7 @@ export function sealedPid(
     limits.push(
       `the drawing lists ${keys.length} of its ${all.length} guesses in its sealed provenance; a save counts the rest only while their marks stay on it.`,
     );
-  const sig = drawingSeal(provenanceSealBody({ id, keys }));
+  const sig = drawingSeal(provenanceSealBody({ id, keys }, pid));
   if (!sig) return pid;
   // The one sealing path (@mantle/diagram-templates signImageChecks): each
   // mark sealed on the element it sits on, as a save checks it.

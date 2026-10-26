@@ -47,6 +47,7 @@ import {
 import type { ChainRole } from './pid';
 import { VERIFY_GUARD, VERIFY_NEXT, VERIFY_ONCE } from './workflow';
 import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
+import { circuitKey } from './check-keys';
 
 export type VerifyWorker = {
   slug: string;
@@ -181,6 +182,8 @@ export function verifyAgainRefusal(
   opts: { by?: string; recheck?: boolean; now: Date; runs?: readonly VerifyRun[] },
 ): string | null {
   const now = opts.now.getTime();
+  // One circuit however its name is written (case, spacing): circuitKey.
+  const asked = circuitKey(circuit);
   const calls = new Set<string>();
   let recent: string | null = null;
   const seen = (at: string, by: string | undefined, sameRevision: boolean) => {
@@ -199,12 +202,12 @@ export function verifyAgainRefusal(
   const revisionOf = new Map(sheets.map((s) => [s.tableId, s.revision ?? '']));
   for (const s of sheets) {
     for (const r of s.checks ?? []) {
-      if (r.circuit !== circuit || !sealedRow(s.tableId, r)) continue;
+      if (circuitKey(r.circuit ?? '') !== asked || !sealedRow(s.tableId, r)) continue;
       seen(r.checkedAt, r.by, r.revision === (s.revision ?? ''));
     }
   }
   for (const r of opts.runs ?? []) {
-    if (r.circuit !== circuit || !revisionOf.has(r.tableId)) continue;
+    if (circuitKey(r.circuit) !== asked || !revisionOf.has(r.tableId)) continue;
     seen(r.at, r.by, r.revision === revisionOf.get(r.tableId));
   }
   if (!opts.recheck && recent !== null) {

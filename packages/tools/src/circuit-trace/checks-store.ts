@@ -54,6 +54,7 @@ import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
 import { ALT_MAX, CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
 import { sealOf } from './check-seal';
+import { circuitKey } from './check-keys';
 import type { CheckAnswer, StoreResult, VerifyClaim, VerifyRun } from './verify';
 import type { SheetInput } from './walk';
 
@@ -380,8 +381,11 @@ export async function storeChecks(
  *  the last hour (verify.ts VerifyDeps.claim). Bookkeeping of the server,
  *  no table op writes it. */
 export const VERIFY_RUNS_KEY = 'dwgVerifyRuns';
-/** Most claims one table keeps (an hour's worth is far fewer). */
-const RUNS_KEPT = 40;
+/** Most claims one table keeps per circuit (circuitKey), each pruned to
+ *  the last hour: an hour's worth on one circuit is far fewer (the guard
+ *  lets VERIFY_GUARD.perHour rechecks through), and calls on one circuit
+ *  never push another circuit's claims out. */
+const RUNS_PER_CIRCUIT = 16;
 const HOUR = 60 * 60_000;
 
 /** The claims a node's data holds, read loosely. */
@@ -420,7 +424,9 @@ export async function claimVerifyRun(
   const write = [...new Set(claim.sheets.map((s) => s.tableId))];
   const read = [...new Set([...claim.readFrom, ...write])];
   return withHeads(write, 'update', async (tx) => {
-    await advisoryXactLock(tx, `circuit-verify:${ownerId}:${claim.circuit}`, 'hashtextextended');
+    // One lock per circuit however its name is written (circuitKey).
+    const circuit = circuitKey(claim.circuit);
+    await advisoryXactLock(tx, `circuit-verify:${ownerId}:${circuit}`, 'hashtextextended');
     const rows = await tx
       .select({ id: nodes.id, runs: sql<unknown>`${nodes.data}->${VERIFY_RUNS_KEY}` })
       .from(nodes)
@@ -433,10 +439,21 @@ export async function claimVerifyRun(
       const kept = runs
         .filter((r) => r.tableId === s.tableId && Date.parse(r.at) >= since)
         .map(({ tableId: _t, ...r }) => r);
-      const next = [
+      const all = [
         ...kept,
         { circuit: claim.circuit, by: claim.by, at: claim.at, revision: s.revision },
-      ].slice(-RUNS_KEPT);
+      ];
+      // The newest RUNS_PER_CIRCUIT of each circuit, in their order.
+      const left = new Map<string, number>();
+      const next = all
+        .reverse()
+        .filter((r) => {
+          const k = circuitKey(r.circuit);
+          const n = left.get(k) ?? RUNS_PER_CIRCUIT;
+          left.set(k, n - 1);
+          return n > 0;
+        })
+        .reverse();
       await tx
         .update(nodes)
         .set({

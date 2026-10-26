@@ -69,3 +69,12 @@ export function valveKey(handle: string): string {
 export function guessId(tableId: string, key: string): string {
   return createHash('sha256').update(`${tableId.toLowerCase()}|${key}`).digest('hex').slice(0, 16);
 }
+
+/** A circuit's name as every match of it reads it: trimmed, lower case,
+ *  runs of white space as one space. The trace finds a circuit's layers
+ *  by it (walk.ts), and circuit_verify's guard compares claims and Checks
+ *  rows by it and locks the circuit under it (verify.ts, checks-store.ts),
+ *  so `ABC`, `abc` and ` Abc ` are one circuit everywhere. */
+export function circuitKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}

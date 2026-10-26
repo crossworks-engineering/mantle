@@ -582,6 +582,54 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(after!.runs).toEqual([{ circuit, by: 'login:c', at: later.at, revision: 'r1' }]);
   });
 
+  it('one circuit however its name is written: the lock and the claims read it alike (MED M2)', async () => {
+    const t = await makeTable(`${tag} claim case`);
+    const at = '2026-10-25T12:00:00.000Z';
+    const claimOf = (circuit: string, by: string, when = at) => ({
+      circuit,
+      by,
+      at: when,
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const { circuitKey } = await import('./check-keys');
+    const refusal = (asked: string) => (runs: readonly import('./verify').VerifyRun[]) =>
+      runs.some((r) => circuitKey(r.circuit) === circuitKey(asked)) ? 'already claimed' : null;
+    const names = [`${tag}-ABC`, `${tag}-abc`, ` ${tag}-Abc `];
+    const all = await Promise.all(
+      names.map((n, i) => s.claimVerifyRun(anchor, claimOf(n, `login:${i}`), refusal(n))),
+    );
+    expect(all.filter((r) => r === null)).toHaveLength(1);
+    expect(all.filter((r) => r === 'already claimed')).toHaveLength(2);
+  });
+
+  it('claims are kept per circuit, each pruned to the hour; a table rename keeps them (LOW e)', async () => {
+    const t = await makeTable(`${tag} claim bound`);
+    const base = Date.parse('2026-10-25T12:00:00.000Z');
+    const claim = (circuit: string, i: number) => ({
+      circuit,
+      by: `login:${i}`,
+      at: new Date(base + i * 1000).toISOString(),
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const other = `${tag}-OTHER`;
+    expect(await s.claimVerifyRun(anchor, claim(other, 0), () => null)).toBeNull();
+    for (let i = 1; i <= 20; i++)
+      expect(await s.claimVerifyRun(anchor, claim(`${tag}-BUSY`, i), () => null)).toBeNull();
+    const read = async () =>
+      (await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`)[0]!
+        .runs as { circuit: string; by: string }[];
+    const runs = await read();
+    // The busy circuit's newest 16; the other circuit's one is kept.
+    expect(runs.filter((r) => r.circuit === other)).toHaveLength(1);
+    const busy = runs.filter((r) => r.circuit === `${tag}-BUSY`);
+    expect(busy.map((r) => r.by)).toEqual(Array.from({ length: 16 }, (_, k) => `login:${k + 5}`));
+    // A rename or an icon change merges its keys: the claims stay.
+    await c.updateTable(anchor, t, { title: `${tag} renamed`, icon: 'x' });
+    expect(await read()).toEqual(runs);
+  });
+
   it('the revision is the stamp; a file replaced in place reads stale', async () => {
     const t = await makeTable(`${tag} revision`);
     const find = async () => (await readMod.dwgTables(anchor)).tables.find((x) => x.id === t);

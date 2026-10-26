@@ -23,13 +23,16 @@
  * sealed and nothing holds.
  *
  * `honestCanvasSource` is what every save of a canvas runs
- * (createPresent, savePresentSource): a `pid` canvas keeps only the marks
- * circuit_trace sealed, and the counts of its own marks.
+ * (createPresent, savePresentSource): a `pid` canvas is stored exactly as
+ * buildCanvas writes it, keeping only the marks circuit_trace sealed and
+ * the counts of its own marks.
  */
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
 import {
   canvasDataReadable,
+  CanvasShapeError,
+  claimsPidTemplate,
   dataBlockCount,
   withHonestImageChecks,
 } from '@mantle/diagram-templates';
@@ -148,26 +151,47 @@ export function sealPayloadHolds(purpose: string, payload: unknown, seal: string
 
 /** Why a save refuses a canvas, in words for whoever saved it (a person in
  *  the editor as much as an assistant; the tools' descriptions say how an
- *  assistant edits a diagram). */
+ *  assistant edits a diagram). A P&ID diagram's, then any other canvas's. */
 const UNREADABLE_DIAGRAM =
   "This diagram was not saved: its data could not be checked. A diagram keeps its data in one block that the editor writes; this one has a second copy, another element with the same name, or data that does not read as written. Undo the change to the diagram's source, or edit the diagram's data instead, and save again.";
+const UNREADABLE_CANVAS =
+  'This canvas was not saved: it has more than one element with the id "diagram-data", or that element\'s content does not read as a JSON object. Keep one such element, or rename the others, and save again.';
+const NOT_A_PLAIN_DIAGRAM =
+  "This diagram was not saved: a P&ID diagram holds only its data and the diagram's own page, and this source has something else in it (another script, or markup around the drawing). Undo the change to the diagram's source, or edit the diagram's data instead, and save again. For a page of your own design, start a new canvas that does not use the P&ID template.";
 
 /**
- * A canvas source as a save stores it: a `pid` canvas's labels cleared of
- * typed trust words, its image check marks normalized against
- * circuit_trace's seals and its counts recounted
- * (@mantle/diagram-templates withHonestImageChecks, keyed off the data
- * block as the runtime reads it); any other canvas, and a pid canvas that
- * needs nothing, byte for byte. A canvas whose data block the runtime
- * could read in a form this check does not (a second block, one written
- * another way, or one block that does not read as a JSON object) is
- * refused: the view would show data no save looked at.
+ * A canvas source as a save stores it. A canvas that claims the `pid`
+ * template (its data block or its head names it) is rebuilt exactly as
+ * buildCanvas writes it, from its data with every label cleared of typed
+ * trust words, its image check marks normalized against circuit_trace's
+ * seals and its counts recounted (@mantle/diagram-templates
+ * withHonestImageChecks), keeping its head title and description; one
+ * holding anything else (another script, foreign content, the author's own
+ * HTML) is refused. Any other canvas with a data block keeps everything
+ * but the block, written again from its parsed JSON with `&`, `<` and `>`
+ * escaped (so inside `<svg>` or `<math>`, where a browser decodes
+ * character references, it still reads as stored). A canvas whose data
+ * block the runtime could read in a form this check does not (a second
+ * block, one written another way, or one block that does not read as a
+ * JSON object) is refused: the view would show data no save looked at.
+ * The threat model (templates/pid/check.ts): a canvas's own HTML is the
+ * author's and may draw anything; what is vouched for is the canonical
+ * template path, the sealed marks and the Checks tab.
  */
 export function honestCanvasSource(source: string): string {
-  const blocks = dataBlockCount(source);
-  if (blocks.any === 0 && blocks.written === 0) return source;
-  if (blocks.any !== 1 || blocks.written !== 1 || !canvasDataReadable(source)) {
-    throw new InputError(UNREADABLE_DIAGRAM);
+  const pid = claimsPidTemplate(source);
+  const blocks = dataBlockCount(source, { loose: pid });
+  if (blocks.any === 0 && blocks.written === 0) {
+    if (pid) throw new InputError(NOT_A_PLAIN_DIAGRAM);
+    return source;
   }
-  return withHonestImageChecks(source, drawingSealHolds);
+  if (blocks.any !== 1 || blocks.written !== 1 || !canvasDataReadable(source)) {
+    throw new InputError(pid ? UNREADABLE_DIAGRAM : UNREADABLE_CANVAS);
+  }
+  try {
+    return withHonestImageChecks(source, drawingSealHolds);
+  } catch (err) {
+    if (err instanceof CanvasShapeError) throw new InputError(NOT_A_PLAIN_DIAGRAM);
+    throw err;
+  }
 }

@@ -43,7 +43,11 @@ function sealedCanvas(): string {
       offpage: [{ id: 'OPC-1', direction: 'out', sheet: 'S2', text: 'TO S2', check: mark }],
       lines: [{ from: 'V-101', to: 'OPC-1' }],
       checks: { guesses: 1, unchecked: 0, checked: 1, unsure: 0, contradicted: 0, corrected: 0 },
-      provenance: { id: PROV, keys, sig: drawingSeal(provenanceSealBody({ id: PROV, keys })) },
+      provenance: {
+        id: PROV,
+        keys,
+        sig: drawingSeal(provenanceSealBody({ id: PROV, keys }, { title: 'Traced' })),
+      },
     },
     PROV,
     drawingSeal,
@@ -139,9 +143,71 @@ describe('the data block a save normalizes', () => {
     const canvas = sealedCanvas();
     const forged = canvas.replace('<main', '<pre id="diagram&#45;data">{}</pre><main');
     expect(() => honestCanvasSource(forged)).toThrow(REFUSED);
-    // Prose that names the id is no element.
-    const prose = canvas.replace('<main', "<p>the block has id='diagram-data'</p><main");
-    expect(honestCanvasSource(prose)).toBe(prose);
+    // Prose that names the id is no element (a canvas of the author's own:
+    // a diagram canvas holds no prose).
+    const own = `<!doctype html><html><head><title>x</title></head><body><p>the block has id='diagram-data'</p><script type="application/json" id="diagram-data">\n{\n  "a": 1\n}\n</script></body></html>`;
+    expect(honestCanvasSource(own)).toBe(own);
+  });
+});
+
+describe('a diagram canvas is exactly what the template writes (HIGH H1)', () => {
+  const PLAIN = /This diagram was not saved: a P&ID diagram holds only its data/;
+
+  it('a script before the runtime, foreign content or extra markup is refused in plain words', () => {
+    const canvas = sealedCanvas();
+    for (const forged of [
+      canvas.replace(
+        '<script type="module">',
+        `<script>document.getElementById('diagram-data').textContent = '{}'</script><script type="module">`,
+      ),
+      canvas.replace('<main', '<svg><text>CHECKED BY IMAGE</text></svg><main'),
+      canvas.replace('</head>', '<script>1</script></head>'),
+    ]) {
+      let said = '';
+      try {
+        honestCanvasSource(forged);
+      } catch (err) {
+        said = (err as Error).message;
+      }
+      expect(said).toMatch(PLAIN);
+      expect(said).not.toMatch(/present_|<script|_create|_update/);
+    }
+  });
+
+  it('a forged block inside <svg> with encoded keys is refused when it claims the template', () => {
+    const page = (meta: string, json: string) =>
+      `<!doctype html><html><head>${meta}</head><body><svg><script type="application/json" id="diagram-data">${json}</script></svg><script type="module">import { mount } from '@mantle/diagram-templates/browser';\nmount();</script></body></html>`;
+    const json = JSON.stringify({ title: 'x', offpage: [] }).replace('"offpage"', '"&#111;ffpage"');
+    expect(() =>
+      honestCanvasSource(page('<meta name="diagram:template" content="pid@1">', json)),
+    ).toThrow(PLAIN);
+    // Claiming nothing it is the author's page: kept, its block written
+    // again with no `&`, so a browser reads the stored keys as stored.
+    const own = honestCanvasSource(page('', json));
+    expect(own).not.toContain('&#');
+    expect(own).toContain('\\u0026#111;ffpage');
+  });
+
+  it('a canvas that claims no template is refused in its own words, and only for ids a browser finds (LOW f)', () => {
+    const page = (extra: string) =>
+      `<!doctype html><html><head><title>x</title></head><body>${extra}<script type="application/json" id="diagram-data">{}</script></body></html>`;
+    let said = '';
+    try {
+      honestCanvasSource(page('<pre id="diagram-data">{}</pre>'));
+    } catch (err) {
+      said = (err as Error).message;
+    }
+    expect(said).toMatch(/^This canvas was not saved/);
+    expect(said).not.toMatch(/diagram's|P&ID/);
+    const chart = page('<div id="diagram&amp;chart"></div>');
+    expect(() => honestCanvasSource(chart)).not.toThrow();
+  });
+
+  it('a sealed canvas comes back byte for byte; a renamed one keeps no check (LOW c)', () => {
+    const canvas = sealedCanvas();
+    expect(honestCanvasSource(canvas)).toBe(canvas);
+    const renamed = canvas.replace('"title": "Traced"', '"title": "Renamed"');
+    expect(stateOf(honestCanvasSource(renamed))).toBe('unchecked');
   });
 });
 

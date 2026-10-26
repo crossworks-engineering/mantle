@@ -117,6 +117,9 @@ export { THEME_COLOURS, THEME_TEXT_COLOURS, THEME_ATTR } from './runtime/theme.t
 export { estimateMeasurer, domMeasurer, clipText, type Measurer } from './runtime/text.ts';
 export {
   buildCanvas,
+  canonicalPidCanvas,
+  CanvasShapeError,
+  claimsPidTemplate,
   readCanvasData,
   replaceCanvasData,
   dataBlockCount,
@@ -137,6 +140,7 @@ export {
   imageChecksStale,
   LINE_CHECKS_MAX,
   lineNoteSuffix,
+  mapDrawings,
   mapImageChecks,
   MARK_WORDS,
   markSealBody,

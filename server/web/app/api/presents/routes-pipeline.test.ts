@@ -328,7 +328,11 @@ describe('POST and PATCH /api/presents (the handlers): a pid canvas is saved hon
             contradicted: 0,
             corrected: 0,
           },
-          provenance: { id, keys, sig: drawingSeal(provenanceSealBody({ id, keys })) },
+          provenance: {
+            id,
+            keys,
+            sig: drawingSeal(provenanceSealBody({ id, keys }, { title: 'Traced' })),
+          },
         },
         id,
         drawingSeal,

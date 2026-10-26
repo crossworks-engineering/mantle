@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCanvas,
+  CanvasShapeError,
   imageCheckSummary,
   imageChecksStale,
   readCanvasData,
@@ -98,7 +99,7 @@ describe('a pid canvas keeps the count of its own marks', () => {
     for (const p of data.pages) expect(p.data.checks).toMatchObject({ guesses: 2, unchecked: 1 });
   });
 
-  it('a count that matches, another template, or a broken data block: byte for byte', () => {
+  it('a count that matches, or another template: byte for byte; a broken pid block throws', () => {
     const honest = buildCanvas({
       template: 'pid',
       data: withImageCheckSummary(drawing()),
@@ -114,7 +115,9 @@ describe('a pid canvas keeps the count of its own marks', () => {
     expect(recount(flow)).toBe(flow);
     const broken = honest.replace('"checks": {', '"checks": {,,');
     expect(broken).not.toBe(honest);
-    expect(recount(broken)).toBe(broken);
+    // A canvas that claims the template must be one buildCanvas writes
+    // (the content layer words the refusal).
+    expect(() => recount(broken)).toThrow(CanvasShapeError);
     const page = '<!doctype html><html><head><title>x</title></head><body>hi</body></html>';
     expect(recount(page)).toBe(page);
   });

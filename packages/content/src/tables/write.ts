@@ -7,7 +7,7 @@
  * renamed while its cells stay owned by the export sync.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   afterCommit,
   afterOuterRollback,
@@ -210,10 +210,12 @@ export async function updateTable(
     .limit(1);
   if (!node) return null;
 
-  const oldData = (node.data ?? {}) as Record<string, unknown>;
-  const newData: Record<string, unknown> = { ...oldData };
-  if (input.icon !== undefined) newData.icon = input.icon;
-  if (input.visibility !== undefined) newData.visibility = input.visibility;
+  // Only the keys this update writes, merged into the stored data in the
+  // statement itself (jsonb ||): a key another writer set since the read
+  // above (circuit_verify's claims under its own lock, say) is kept.
+  const patch: Record<string, unknown> = {};
+  if (input.icon !== undefined) patch.icon = input.icon;
+  if (input.visibility !== undefined) patch.visibility = input.visibility;
 
   const title =
     input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled table' : node.title;
@@ -227,7 +229,9 @@ export async function updateTable(
       .set({
         ...(input.title !== undefined ? { title } : {}),
         ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-        data: newData,
+        ...(Object.keys(patch).length
+          ? { data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))

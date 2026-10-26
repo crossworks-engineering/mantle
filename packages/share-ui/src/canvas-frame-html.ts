@@ -242,6 +242,10 @@ export function buildCanvasFrameHtml(opts: {
   // A fixed canvas wears the light baseline: no dark class, no colour theme.
   const cls = follow ? opts.cls : '';
   const colorTheme = follow ? opts.colorTheme : null;
+  // One import map, and a classic script that removes itself as it runs:
+  // the diagram runtime counts any other script in the head as an author's
+  // and then draws no image check as checked (@mantle/diagram-templates
+  // data-read.ts).
   const prelude = [
     '<meta charset="utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',

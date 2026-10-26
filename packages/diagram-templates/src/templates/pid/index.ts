@@ -29,6 +29,7 @@ export {
   imageChecksStale,
   LINE_CHECKS_MAX,
   lineNoteSuffix,
+  mapDrawings,
   mapImageChecks,
   MARK_WORDS,
   markSealBody,

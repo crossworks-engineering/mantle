@@ -21,7 +21,13 @@ const sample = (name: string) =>
 const SAMPLES = readdirSync(path.join(ROOT, 'samples')).filter((f) => f.endsWith('.json'));
 
 /** Text with the SVG namespace (a name, never fetched) taken out. */
-const noNs = (s: string) => s.replaceAll('http://www.w3.org/2000/svg', '');
+/** Namespace names are identifiers, never fetched: SVG, and the XHTML and
+ *  MathML ones the runtime compares elements against (data-read.ts). */
+const noNs = (s: string) =>
+  s
+    .replaceAll('http://www.w3.org/2000/svg', '')
+    .replaceAll('http://www.w3.org/1999/xhtml', '')
+    .replaceAll('http://www.w3.org/1998/Math/MathML', '');
 
 const errorsOf = (template: string, data: unknown): string[] => {
   const r = validate(template, data);

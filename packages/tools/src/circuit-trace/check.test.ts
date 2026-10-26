@@ -27,7 +27,7 @@ import {
   type AppliedCheck,
   type StoredCheck,
 } from './check';
-import { endKey, joinKey, linkKey } from './check-keys';
+import { circuitKey, endKey, joinKey, linkKey } from './check-keys';
 import { sealedPid, sealOf } from './check-seal';
 import { CIRCUIT, overviewOf, sheetOne, shown } from './fixtures';
 import {
@@ -1549,6 +1549,33 @@ describe('circuit_verify, held to once (fix round 2, L4)', () => {
     expect(verifyAgainRefusal(sheets, 'C-OTHER', { by: ME, now: NOW })).toBeNull();
     const typed = withRows((s) => [{ ...filed(s, 4, ME), seal: '' }]);
     expect(verifyAgainRefusal(typed, C, { by: ME, now: NOW })).toBeNull();
+  });
+
+  it('one circuit however its name is written: ABC, abc, Abc (MED M2)', () => {
+    const named = (s: SheetInput, circuit: string, ago: number): StoredCheck => {
+      const r = { ...filed(s, ago, ME), circuit };
+      return { ...r, seal: sealOf(sealFieldsOf(s.tableId, r)) };
+    };
+    const sheets = withRows((s) => [named(s, 'ABC', 4)]);
+    for (const asked of ['ABC', 'abc', ' Abc ', 'aBc']) {
+      expect(verifyAgainRefusal(sheets, asked, { by: ME, now: NOW }), asked).toMatch(
+        /refused unless `recheck`/,
+      );
+    }
+    expect(verifyAgainRefusal(sheets, 'ABD', { by: ME, now: NOW })).toBeNull();
+    // The calls claimed count alike whatever case they were made in.
+    const s0 = withRows(() => []);
+    const runs = ['ABC', 'abc', 'Abc'].map((circuit, i) => ({
+      tableId: s0[0]!.tableId,
+      circuit,
+      by: `login:${i}`,
+      at: new Date(NOW.getTime() - (10 + i) * 60_000).toISOString(),
+      revision: s0[0]!.revision ?? '',
+    }));
+    expect(verifyAgainRefusal(s0, 'aBC', { by: ME, recheck: true, now: NOW, runs })).toMatch(
+      /3 times in the last hour/,
+    );
+    expect(circuitKey('  Line  10\t A ')).toBe('line 10 a');
   });
 
   it('a recheck runs at most 3 times an hour on a circuit, whoever ran the calls', () => {
