@@ -27,6 +27,7 @@ import {
   clipText,
   CHECK_LIMITS,
   LINE_CHECKS_MAX,
+  markSuffix,
   PID_LIMITS,
   SET_LIMITS,
   VALVE_TYPES,
@@ -155,13 +156,16 @@ export type PidChecks = {
 export type ChainRole = 'main' | 'branch' | 'deadleg';
 
 /** The trust marks a drawing shows, by verdict: a confirmed guess is
- *  CHECKED BY IMAGE, never certain. */
+ *  CHECKED BY IMAGE, never certain. The words are the template's
+ *  (MARK_WORDS): an element carrying its `check` never has them in its
+ *  text (the view draws them from the mark, a save strips typed ones);
+ *  only a guess drawn with no mark keeps GUESS in its own text. */
 export const MARK = {
-  guess: ' (GUESS)',
-  yes: ' (CHECKED BY IMAGE)',
-  no: ' (GUESS, IMAGE: NO)',
+  guess: markSuffix('unchecked'),
+  yes: markSuffix('checked'),
+  no: markSuffix('contradicted'),
   /** Drawn as the image check named it after a no: never certain. */
-  image: ' (FROM IMAGE)',
+  image: markSuffix('corrected'),
 } as const;
 
 /** The end words an image check's no may name (check-keys.ts ALT_WORDS.end):
@@ -908,7 +912,12 @@ export function buildPid(
       keys.find((k) => unconfirmed.has(k) && imageEnd.has(k)) ??
       keys.find((k) => unconfirmed.has(k));
     const near = nearKey ? unconfirmed.get(nearKey) : undefined;
-    const fit = (head: string, mark: string) => head.slice(0, TEXT.connector - mark.length) + mark;
+    // A connector's text, room left for its trust word: the view draws the
+    // mark's (markSuffix); a guess with no mark carries GUESS itself.
+    const fit = (head: string, mark: string, check?: Record<string, unknown>) =>
+      check
+        ? head.slice(0, TEXT.connector - markSuffix(check).length)
+        : head.slice(0, TEXT.connector - mark.length) + mark;
     // Off-page style: an end that is not drawn as the equipment it is near.
     if (near && nearKey) {
       const g = guessAt('end', nearKey);
@@ -918,20 +927,22 @@ export function buildPid(
         // The image's alternative, drawn as it named it: never certain. A
         // word (a break, an open end, a continuation) names no sheet: the
         // sheet box says the word, never the tag the image said no to.
+        const check = g ? checkMark(g, true) : undefined;
         return {
-          conn: fit(fix.tag ? `AT ${fix.tag}` : fix.word!, MARK.image),
+          conn: fit(fix.tag ? `AT ${fix.tag}` : fix.word!, MARK.image, check),
           dir,
           sheet: fix.tag ?? fix.sheet!,
           guess: 'image',
-          ...(g ? { check: checkMark(g, true) } : {}),
+          ...(check ? { check } : {}),
         };
       }
+      const check = g ? checkMark(g) : undefined;
       return {
-        conn: fit(`NEAR ${near}`, markOf(v)),
+        conn: fit(`NEAR ${near}`, markOf(v), check),
         dir,
         sheet: near,
         guess: v === 'yes' ? 'checked' : 'near',
-        ...(g ? { check: checkMark(g) } : {}),
+        ...(check ? { check } : {}),
       };
     }
     const linkEnd = keys.find((k) => linkAt.has(k));
@@ -949,20 +960,22 @@ export function buildPid(
       // guessed) shows the same state (corrected), without the alternative,
       // which names nothing about where the far end comes from.
       if (corrected && linkEnd === guessedLink.checkAt) {
+        const check = g ? checkMark(g, true) : undefined;
         return {
-          conn: fit(`${way} ${named}`, MARK.image),
+          conn: fit(`${way} ${named}`, MARK.image, check),
           dir,
           sheet: named,
           guess: 'image',
-          ...(g ? { check: checkMark(g, true) } : {}),
+          ...(check ? { check } : {}),
         };
       }
+      const check = g ? checkMark(g, corrected, { noAlt: corrected }) : undefined;
       return {
-        conn: fit(`${way} ${guessedLink.other}`, markOf(v)),
+        conn: fit(`${way} ${guessedLink.other}`, markOf(v), check),
         dir,
         sheet: guessedLink.other,
         guess: v === 'yes' ? 'checked' : 'link',
-        ...(g ? { check: checkMark(g, corrected, { noAlt: corrected }) } : {}),
+        ...(check ? { check } : {}),
       };
     }
     for (const { sheet, end } of at) {
@@ -1483,7 +1496,8 @@ export function buildPid(
       // A process-line join on the line is an inference: marked on every
       // page that draws it.
       // The image check: a confirmed join is no longer a GUESS on the line
-      // (CHECKED BY IMAGE), a contradicted one says so.
+      // (CHECKED BY IMAGE), a contradicted one says so (the words drawn
+      // from the line's marks).
       const verdicts = pc.edges.flatMap((e) =>
         (e.chain.joins ?? [])
           .filter((j) => j.inferred)
@@ -1524,12 +1538,15 @@ export function buildPid(
       const valveFixed = valveChecks.filter((c) => c.fixed === true).length;
       const valveNo = valveVerdicts.filter((v, i) => v === 'no' && !valveChecks[i]!.fixed).length;
       const valveYes = valveVerdicts.filter((v) => v === 'yes').length;
+      // The note names the valves; its trust word is the view's, drawn
+      // from the inline items' marks (lineNoteSuffix), as an answer has one.
+      const valveTypes = (n: number) => (n === 1 ? 'VALVE TYPE' : `${n} VALVE TYPES`);
       const valveNote = valveNo
-        ? `${valveNo === 1 ? 'VALVE TYPE' : `${valveNo} VALVE TYPES`}${MARK.no}`
+        ? valveTypes(valveNo)
         : valveFixed
-          ? `${valveFixed === 1 ? 'VALVE TYPE' : `${valveFixed} VALVE TYPES`}${MARK.image}`
+          ? valveTypes(valveFixed)
           : valveYes
-            ? `${valveYes === 1 ? 'VALVE TYPE' : `${valveYes} VALVE TYPES`}${MARK.yes}`
+            ? valveTypes(valveYes)
             : '';
       if (valveFixed) marks.add('image');
       if (valveYes && !inferred && !confirmed) marks.add('checked');
@@ -1538,21 +1555,19 @@ export function buildPid(
       lines.push({
         id: pc.id,
         ...(number ? { number } : {}),
+        // The note names the joins; with their marks on the line the view
+        // draws the trust word (lineNoteSuffix), else GUESS is the note's.
         ...(inferred
           ? {
-              note: contradicted
-                ? inferred === 1
-                  ? `INFERRED JOIN${MARK.no}`
-                  : `${inferred} JOINS (GUESS; IMAGE: ${contradicted} NO)`
-                : inferred === 1
-                  ? 'INFERRED JOIN (GUESS)'
-                  : `${inferred} INFERRED JOINS (GUESS)`,
+              note:
+                (contradicted && inferred > 1
+                  ? `${inferred} JOINS`
+                  : inferred === 1
+                    ? 'INFERRED JOIN'
+                    : `${inferred} INFERRED JOINS`) + (joinChecks.length ? '' : MARK.guess),
             }
           : confirmed
-            ? {
-                note:
-                  confirmed === 1 ? `INFERRED JOIN${MARK.yes}` : `${confirmed} JOINS${MARK.yes}`,
-              }
+            ? { note: confirmed === 1 ? 'INFERRED JOIN' : `${confirmed} JOINS` }
             : valveNote
               ? { note: valveNote.slice(0, TEXT.note) }
               : {}),

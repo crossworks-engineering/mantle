@@ -38,14 +38,24 @@
  * Every save normalizes the data (`honestImageChecks`, with a verifier the
  * content layer passes): without a valid provenance every mark is
  * `unchecked` with no evidence (a hand-written drawing never shows a check
- * it did not get); with one, a mark whose seal does not hold is made
- * `unchecked` with its evidence stripped, and a guess key with no mark
+ * it did not get); with one, a mark whose seal does not hold where it sits
+ * is made `unchecked` with its evidence stripped, and a guess key with no mark
  * still counts, as unchecked (`imageCheckSummary`). The stored data is
  * then honest, and the view trusts it without verifying anything.
  *
  * The far end of a corrected sheet link shows the asked end's state
  * (corrected) without `alt`: the alternative names where the ASKED end
- * continues, nothing about the far one.
+ * continues, nothing about the far one (its words are GUESS, IMAGE: NO:
+ * it is drawn as first guessed).
+ *
+ * The trust words (MARK_WORDS: GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM
+ * IMAGE) are never part of a label's text: a label is text anyone with
+ * Write may type. The view draws them from the mark (`markSuffix` after a
+ * connector's text, `lineNoteSuffix` after a line's note), and a save
+ * strips them from every label (`withoutMarkWords`), so a word on the
+ * drawing is always the mark's. A mark's seal covers the element it sits
+ * on (`markSite`: its ids, ends and label), so a sealed mark copied onto
+ * another element, or kept under a changed label, is made unchecked.
  */
 import {
   checkKeys,
@@ -402,15 +412,213 @@ export function imageChecksStale(data: unknown): boolean {
   return false;
 }
 
+// ------------------------------------------------------------- the words
+
+/** The trust words, the one list (the view draws them, circuit_trace
+ *  writes them only where an element carries no mark, a save strips them
+ *  from every label): a guess no image confirmed is a GUESS; one it saw
+ *  is CHECKED BY IMAGE, never certain; IMAGE: NO when it said no; FROM
+ *  IMAGE when the drawing shows what it named instead. */
+export const MARK_WORDS = {
+  guess: 'GUESS',
+  checked: 'CHECKED BY IMAGE',
+  no: 'IMAGE: NO',
+  image: 'FROM IMAGE',
+} as const;
+
+/** What the view draws after a marked element's label (a connector's
+ *  text), by its mark: unchecked and unsure ` (GUESS)`, checked ` (CHECKED
+ *  BY IMAGE)`, contradicted ` (GUESS, IMAGE: NO)`, corrected ` (FROM
+ *  IMAGE)` when the mark names its alternative (`alt`: the element is
+ *  drawn as the image named it), else ` (GUESS, IMAGE: NO)` (the far end
+ *  of a corrected sheet link, drawn as first guessed). */
+export function markSuffix(mark: CheckState | { state?: unknown; alt?: unknown }): string {
+  const state = typeof mark === 'string' ? mark : mark.state;
+  const named = typeof mark === 'string' || (typeof mark.alt === 'string' && mark.alt !== '');
+  switch (state) {
+    case 'checked':
+      return ` (${MARK_WORDS.checked})`;
+    case 'corrected':
+      return named ? ` (${MARK_WORDS.image})` : ` (${MARK_WORDS.guess}, ${MARK_WORDS.no})`;
+    case 'contradicted':
+      return ` (${MARK_WORDS.guess}, ${MARK_WORDS.no})`;
+    default:
+      return ` (${MARK_WORDS.guess})`;
+  }
+}
+
+const stateOf = (c: unknown): CheckState | undefined =>
+  isObj(c) && (CHECK_STATES as readonly unknown[]).includes(c.state)
+    ? (c.state as CheckState)
+    : undefined;
+
+/**
+ * What the view draws after a line's note (or alone, when the line has
+ * marks and no note), from the marks the line carries: its inferred
+ * joins' (`checks`) when it has any, else its inline valves' (an inline
+ * item's `check` of kind valve). Joins: all checked ` (CHECKED BY
+ * IMAGE)`; one open and it contradicted ` (GUESS, IMAGE: NO)`; several
+ * open, n contradicted ` (GUESS; IMAGE: n NO)`; else ` (GUESS)`. Valves
+ * (only answered ones are said): any contradicted ` (GUESS, IMAGE: NO)`,
+ * else any corrected ` (FROM IMAGE)`, else any checked ` (CHECKED BY
+ * IMAGE)`, else nothing. '' when the line carries no such mark.
+ */
+export function lineNoteSuffix(line: unknown): string {
+  if (!isObj(line)) return '';
+  const joins = (Array.isArray(line.checks) ? line.checks : [])
+    .map(stateOf)
+    .filter((s): s is CheckState => !!s);
+  if (joins.length) {
+    const open = joins.filter((s) => s !== 'checked').length;
+    const no = joins.filter((s) => s === 'contradicted').length;
+    if (!open) return ` (${MARK_WORDS.checked})`;
+    if (!no) return ` (${MARK_WORDS.guess})`;
+    return open === 1
+      ? ` (${MARK_WORDS.guess}, ${MARK_WORDS.no})`
+      : ` (${MARK_WORDS.guess}; IMAGE: ${no} NO)`;
+  }
+  const valves = (Array.isArray(line.inline) ? line.inline : [])
+    .map((it) =>
+      isObj(it) && isObj(it.check) && it.check.kind === 'valve' ? stateOf(it.check) : undefined,
+    )
+    .filter((s): s is CheckState => !!s);
+  if (valves.includes('contradicted')) return ` (${MARK_WORDS.guess}, ${MARK_WORDS.no})`;
+  if (valves.includes('corrected')) return ` (${MARK_WORDS.image})`;
+  if (valves.includes('checked')) return ` (${MARK_WORDS.checked})`;
+  return '';
+}
+
+/** The words that claim an image check, in any case or spacing. */
+const CLAIM_WORDS =
+  /\b(?:CHECKED[\W_]*BY[\W_]*IMAGE|FROM[\W_]*IMAGE|IMAGE[\W_]*(?:\d+[\W_]*)?NO)\b/gi;
+const GUESS_WORD = /\bGUESS\b/gi;
+
+/** `s` without `words`, and the brackets and separators they leave. The
+ *  same string when it holds none. */
+function strip(s: string, words: RegExp): string {
+  words.lastIndex = 0;
+  if (!words.test(s)) return s;
+  return s
+    .replace(words, ' ')
+    .replace(/\(\s*[,;:]?\s*/g, '(')
+    .replace(/\s*[,;:]?\s*\)/g, ')')
+    .replace(/\(\s*\)|\[\s*\]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** Keys whose values are no label: the marks themselves, the seals, the
+ *  counts, the site profile and the prose description (which explains the
+ *  words). */
+const NOT_LABELS = new Set(['check', 'checks', 'provenance', 'profile', 'description']);
+
+/** Every label string of `v` passed through `fn`, structure shared where
+ *  nothing changed. */
+function mapLabels(v: unknown, fn: (s: string) => string): unknown {
+  if (typeof v === 'string') return fn(v);
+  if (Array.isArray(v)) {
+    const out = v.map((x) => mapLabels(x, fn));
+    return out.some((x, i) => x !== v[i]) ? out : v;
+  }
+  if (!isObj(v)) return v;
+  let out: Obj | null = null;
+  for (const [k, x] of Object.entries(v)) {
+    if (NOT_LABELS.has(k)) continue;
+    const y = mapLabels(x, fn);
+    if (y !== x) (out ??= { ...v })[k] = y;
+  }
+  return out ?? v;
+}
+
+/**
+ * `pid` data (a drawing or a set) with no trust word typed into a label:
+ * every word claiming an image check (CHECKED BY IMAGE, FROM IMAGE, IMAGE:
+ * NO) is stripped from every label, ids and references alike (one
+ * function of the text, so a reference still names its element); GUESS is
+ * stripped from the label of an element that carries a mark (a connector's
+ * text, an inline item's tag, the note of a line with marks), whose word
+ * the view draws. GUESS stays on an element with no mark: it claims no
+ * check, and a drawing traced before the marks has no other. The prose
+ * description is not a label and keeps its words. The same object comes
+ * back when nothing changed. Limit: text that only looks like a word (a
+ * letter from another script) is not caught; the view draws the real words
+ * in a style of their own.
+ */
+export function withoutMarkWords<T>(data: T): T {
+  if (!isObj(data)) return data;
+  const claims = mapLabels(data, (s) => strip(s, CLAIM_WORDS)) as Obj;
+  const guessless = (o: Obj, k: string): Obj =>
+    typeof o[k] === 'string' && strip(o[k] as string, GUESS_WORD) !== o[k]
+      ? { ...o, [k]: strip(o[k] as string, GUESS_WORD) }
+      : o;
+  const drawing = (d: Obj): Obj => {
+    const mapList = (v: unknown, f: (x: Obj) => Obj): unknown => {
+      if (!Array.isArray(v)) return v;
+      const out = v.map((x) => (isObj(x) ? f(x) : x));
+      return out.some((x, i) => x !== v[i]) ? out : v;
+    };
+    const offpage = mapList(d.offpage, (o) => (o.check !== undefined ? guessless(o, 'text') : o));
+    const lines = mapList(d.lines, (l) => {
+      const inline = mapList(l.inline, (it) =>
+        it.check !== undefined ? guessless(it, 'tag') : it,
+      );
+      const marked =
+        (Array.isArray(l.checks) && l.checks.length > 0) ||
+        (Array.isArray(inline) && inline.some((it) => isObj(it) && it.check !== undefined));
+      const next = inline === l.inline ? l : { ...l, inline };
+      return marked ? guessless(next, 'note') : next;
+    });
+    return offpage === d.offpage && lines === d.lines ? d : { ...d, offpage, lines };
+  };
+  let out = claims;
+  if (Array.isArray(out.pages)) {
+    const pages = out.pages.map((pg) =>
+      isObj(pg) && isObj(pg.data) && drawing(pg.data) !== pg.data
+        ? { ...pg, data: drawing(pg.data) }
+        : pg,
+    );
+    if (pages.some((p, i) => p !== (out.pages as unknown[])[i])) out = { ...out, pages };
+  } else out = drawing(out);
+  return out as T;
+}
+
 // ------------------------------------------------------------- the seals
+
+/**
+ * Where a mark sits, as its seal covers it: a connector's id, sheet and
+ * text; a line's id, ends and note (its inferred joins' marks); and for an
+ * inline item, the line's and the item's place, type and tag. A sealed
+ * mark copied onto another element, or left under a label changed since
+ * (the view draws the mark's word after it), no longer holds. Raw values.
+ */
+export type MarkSite = readonly unknown[];
+const raw = (x: unknown) => (x === undefined ? null : x);
+function lineSite(l: Obj): unknown[] {
+  return [raw(l.id), raw(l.from), raw(l.to), raw(l.note)];
+}
+export function markSite(
+  where: { offpage: Obj } | { line: Obj } | { line: Obj; inline: Obj; index: number },
+): MarkSite {
+  if ('offpage' in where) {
+    const o = where.offpage;
+    return ['offpage', raw(o.id), raw(o.sheet), raw(o.text)];
+  }
+  if ('inline' in where) {
+    const it = where.inline;
+    return ['inline', ...lineSite(where.line), where.index, raw(it.type), raw(it.tag)];
+  }
+  return ['line', ...lineSite(where.line)];
+}
 
 /** What circuit_trace seals of one mark: every field the view shows, under
  *  the provenance it was drawn with (a mark cannot move to another trace's
- *  drawing). Raw values, so a changed type breaks the seal too. */
-export function markSealBody(provenanceId: string, c: Obj): string {
+ *  drawing) and on the element it sits on (`markSite`: nor to another
+ *  element). Raw values, so a changed type breaks the seal too. */
+export function markSealBody(provenanceId: string, c: Obj, site?: MarkSite): string {
   return JSON.stringify([
-    'pid-check v1',
+    'pid-check v2',
     provenanceId,
+    site ?? null,
     ...CHECK_KEYS.filter((k) => k !== 'sig').map((k) => c[k] ?? null),
   ]);
 }
@@ -424,29 +632,58 @@ export function provenanceSealBody(p: Pick<PidProvenance, 'id' | 'keys'>): strin
  *  it; this package holds no key). */
 export type SealCheck = (body: string, sig: string) => boolean;
 
-/** One drawing's raw data with each mark passed through `fn`: its
- *  connectors', its lines' and their inline items'. The same object comes
- *  back when `fn` changed nothing (so an honest canvas stays byte for
- *  byte); raw data is walked loosely. */
-export function mapImageChecks(d: Obj, fn: (mark: unknown) => unknown): Obj {
-  const mapList = (v: unknown, f: (x: unknown) => unknown): unknown => {
-    if (!Array.isArray(v)) return v;
-    const out = v.map(f);
-    return out.some((x, i) => x !== v[i]) ? out : v;
+/** One drawing's raw data with each mark passed through `fn`, with where
+ *  it sits (`markSite`): its connectors', its lines' and their inline
+ *  items'. The same object comes back when `fn` changed nothing (so an
+ *  honest canvas stays byte for byte); raw data is walked loosely. */
+export function mapImageChecks(d: Obj, fn: (mark: unknown, site: MarkSite) => unknown): Obj {
+  const mapList = (val: unknown, f: (x: unknown, i: number) => unknown): unknown => {
+    if (!Array.isArray(val)) return val;
+    const out = val.map(f);
+    return out.some((x, i) => x !== val[i]) ? out : val;
   };
-  const one = (o: unknown): unknown => {
+  const offpage = mapList(d.offpage, (o) => {
     if (!isObj(o) || o.check === undefined) return o;
-    const next = fn(o.check);
+    const next = fn(o.check, markSite({ offpage: o }));
     return next === o.check ? o : { ...o, check: next };
-  };
-  const offpage = mapList(d.offpage, one);
+  });
   const lines = mapList(d.lines, (l) => {
     if (!isObj(l)) return l;
-    const checks = mapList(l.checks, fn);
-    const inline = mapList(l.inline, one);
+    const checks = mapList(l.checks, (c) => fn(c, markSite({ line: l })));
+    const inline = mapList(l.inline, (it, index) => {
+      if (!isObj(it) || it.check === undefined) return it;
+      const next = fn(it.check, markSite({ line: l, inline: it, index }));
+      return next === it.check ? it : { ...it, check: next };
+    });
     return checks === l.checks && inline === l.inline ? l : { ...l, checks, inline };
   });
   return offpage === d.offpage && lines === d.lines ? d : { ...d, offpage, lines };
+}
+
+/**
+ * `pid` data (a drawing or a set) with every mark sealed (`sig`) under
+ * `provenanceId` where it sits, by `sign` (the content layer's seal; this
+ * package holds no key). circuit_trace's one sealing path
+ * (@mantle/tools check-seal.ts sealedPid), so the site a save checks is
+ * the site that was sealed.
+ */
+export function signImageChecks<T>(
+  data: T,
+  provenanceId: string,
+  sign: (body: string) => string,
+): T {
+  if (!isObj(data)) return data;
+  const seal = (d: Obj) =>
+    mapImageChecks(d, (c, site) =>
+      isObj(c) ? { ...c, sig: sign(markSealBody(provenanceId, c, site)) } : c,
+    );
+  if (Array.isArray(data.pages)) {
+    return {
+      ...data,
+      pages: data.pages.map((p) => (isObj(p) && isObj(p.data) ? { ...p, data: seal(p.data) } : p)),
+    } as T;
+  }
+  return seal(data) as T;
 }
 
 /** The fields of a mark that are evidence of an answer (all but what names
@@ -464,34 +701,37 @@ function unclaimed(c: Obj): Obj {
 }
 
 /**
- * The data as a save stores it (`pid` data, one drawing or a set): its
- * provenance kept only when its seal holds (a set's on the set; one on a
- * set's page is dropped), and each mark kept only when it claims nothing
- * (unchecked, no evidence) or circuit_trace's seal of it holds under that
- * provenance and names one of its keys; any other mark becomes unchecked,
- * its evidence stripped. Without a provenance (a hand-written drawing)
- * every mark is unchecked. The same object comes back when nothing
- * changed. The `checks` counts are not touched (withImageCheckSummary).
+ * The data as a save stores it (`pid` data, one drawing or a set): no
+ * trust word in a label (`withoutMarkWords`), its provenance kept only
+ * when its seal holds (a set's on the set; one on a set's page is
+ * dropped), and each mark kept only when it claims nothing (unchecked, no
+ * evidence) or circuit_trace's seal of it holds under that provenance on
+ * the element it sits on; any other mark becomes unchecked, its evidence
+ * stripped. Without a provenance (a hand-written drawing) every mark is
+ * unchecked. The same object comes back when nothing changed. The
+ * `checks` counts are not touched (withImageCheckSummary).
  */
-export function honestImageChecks<T>(data: T, holds: SealCheck): T {
-  if (!isObj(data)) return data;
+export function honestImageChecks<T>(given: T, holds: SealCheck): T {
+  if (!isObj(given)) return given;
+  const data = withoutMarkWords(given) as Obj;
   const p = data.provenance;
-  let prov: { id: string; keys: Set<string> } | null = null;
+  let prov: { id: string } | null = null;
   if (p !== undefined) {
     const issues: Issues = { errors: [], warnings: [] };
     const read = provenanceOf(data, '', issues);
     if (read && !issues.errors.length && holds(provenanceSealBody(read), read.sig))
-      prov = { id: read.id, keys: new Set(read.keys) };
+      prov = { id: read.id };
   }
-  const fix = (c: unknown): unknown => {
+  // The seal covers the key and the provenance id: a sealed mark past the
+  // provenance's key cap still holds (only its count needs the list).
+  const fix = (c: unknown, site: MarkSite): unknown => {
     if (!isObj(c)) return c;
     if (
       prov &&
       typeof c.key === 'string' &&
-      prov.keys.has(c.key) &&
       typeof c.sig === 'string' &&
       SIG.test(c.sig) &&
-      holds(markSealBody(prov.id, c), c.sig)
+      holds(markSealBody(prov.id, c, site), c.sig)
     )
       return c;
     if (c.state === 'unchecked' && !EVIDENCE.some((k) => c[k] !== undefined)) return c;

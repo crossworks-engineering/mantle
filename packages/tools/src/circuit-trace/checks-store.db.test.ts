@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor, superuserExec } from '@mantle/db/test-support';
+import { shown } from './fixtures';
 
 /** Runs between the Checks write and its commit: a user acting meanwhile. */
 const midStore = vi.hoisted(() => ({ hook: null as null | (() => Promise<void>) }));
@@ -256,6 +257,7 @@ describe.skipIf(!URL)('the image check store', () => {
         };
       },
       storable: s.storeRefusal,
+      claim: s.claimVerifyRun,
       store: s.storeChecks,
       now: () => new Date('2026-10-25T12:00:00.000Z'),
       ...over,
@@ -492,7 +494,9 @@ describe.skipIf(!URL)('the image check store', () => {
       }
     ).output;
     expect(t.checks?.items.map((x) => x.trust)).toEqual(['CHECKED BY IMAGE']);
-    expect(JSON.stringify(t.pid)).toContain('NEAR V-201 (CHECKED BY IMAGE)');
+    // The label is the trace's; the view draws the mark's words after it.
+    expect(JSON.stringify(t.pid)).toContain('"NEAR V-201"');
+    expect(JSON.stringify(shown(t.pid))).toContain('NEAR V-201 (CHECKED BY IMAGE)');
     expect(t.limits.join(' ')).not.toMatch(/no circuit_verify seal/);
 
     // A second call does not pay for the answered question again.
@@ -540,6 +544,42 @@ describe.skipIf(!URL)('the image check store', () => {
     }
     expect(await foldersAt(path)).toBe(0);
     expect(counter.n).toBe(0);
+  });
+
+  it('a claim is taken under a lock: of two at once on one circuit one passes, and it is kept (LOW-c)', async () => {
+    const t = await makeTable(`${tag} claim`);
+    const circuit = `${tag}-CLAIM`;
+    const at = '2026-10-25T12:00:00.000Z';
+    const claimOf = (by: string) => ({
+      circuit,
+      by,
+      at,
+      sheets: [{ tableId: t, revision: 'r1' }],
+      readFrom: [t],
+    });
+    const seen: number[] = [];
+    const refusal = (runs: readonly import('./verify').VerifyRun[]) => {
+      seen.push(runs.length);
+      return runs.some((r) => r.circuit === circuit) ? 'already claimed' : null;
+    };
+    const both = await Promise.all([
+      s.claimVerifyRun(anchor, claimOf('login:a'), refusal),
+      s.claimVerifyRun(anchor, claimOf('login:b'), refusal),
+    ]);
+    expect(both.filter((r) => r === null)).toHaveLength(1);
+    expect(both.filter((r) => r === 'already claimed')).toHaveLength(1);
+    // The second saw the first's claim: the lock made them take turns.
+    expect(seen.sort()).toEqual([0, 1]);
+    const [row] = await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`;
+    expect(row!.runs).toEqual([
+      { circuit, by: expect.stringMatching(/^login:[ab]$/), at, revision: 'r1' },
+    ]);
+    // Claims past an hour are dropped when the next is kept.
+    const later = { ...claimOf('login:c'), at: '2026-10-25T14:00:00.000Z' };
+    expect(await s.claimVerifyRun(anchor, later, () => null)).toBeNull();
+    const [after] =
+      await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`;
+    expect(after!.runs).toEqual([{ circuit, by: 'login:c', at: later.at, revision: 'r1' }]);
   });
 
   it('the revision is the stamp; a file replaced in place reads stale', async () => {

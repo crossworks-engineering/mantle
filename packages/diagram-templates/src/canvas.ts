@@ -112,8 +112,13 @@ export function buildCanvas(input: BuildCanvasInput): string {
     .join('\n');
 }
 
+/** The data block as this package writes it: its JSON never holds a `<`
+ *  (scriptJson escapes it), so the block ends at the first `<`, which must
+ *  open `</script>`. A block whose text holds a `<` (a `</SCRIPT>` the
+ *  browser ends it at, or a `<!--<script>` that keeps it open past the
+ *  first close) is not one this package wrote, and is not read as one. */
 const DATA_BLOCK = new RegExp(
-  `(<script type="application/json" id="${DATA_ID}">)([\\s\\S]*?)(</script>)`,
+  `(<script type="application/json" id="${DATA_ID}">)([^<]*)(</script>)`,
 );
 
 /** The data block of a canvas, parsed. Throws with a clear message when the
@@ -151,12 +156,85 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
   return out;
 }
 
+/** HTML whitespace (the tokenizer's: tab, LF, FF, CR, space). */
+const WS = new Set(['\t', '\n', '\f', '\r', ' ']);
+
+/** An attribute value with its numeric character references decoded, as
+ *  a browser reads it (with or without the closing `;`), and `&amp;`. */
+function decodeRefs(value: string): string {
+  return value
+    .replace(
+      /&#[xX]([0-9a-fA-F]+);?|&#(\d+);?/g,
+      (m, hex: string | undefined, dec: string | undefined) => {
+        const n = hex !== undefined ? parseInt(hex, 16) : Number(dec);
+        return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+      },
+    )
+    .replace(/&amp;?/gi, '&');
+}
+
 /**
- * How many times a canvas names the data block's id as an attribute, in any
- * form a browser reads (`document.getElementById`, which the runtime uses:
- * any tag, any attribute order, case or quoting; matched loosely, so text
- * that only looks like one counts too), and how many data blocks it holds
- * as this package writes them (`readCanvasData` reads the first). A save
+ * The `id` attributes of every start tag in `html`, read as the HTML
+ * tokenizer reads a tag's attributes (any case, any order, quoted or not,
+ * `/` between them). A superset: a tag is read at EVERY `<` followed by a
+ * letter, inside comments, scripts and attribute values too, so no element
+ * the browser makes is missed (text that only looks like a tag adds one);
+ * prose with no `<` before it never counts.
+ */
+function idValues(html: string): string[] {
+  const out: string[] = [];
+  const n = html.length;
+  for (let at = html.indexOf('<'); at !== -1; at = html.indexOf('<', at + 1)) {
+    if (!/[A-Za-z]/.test(html[at + 1] ?? '')) continue;
+    let i = at + 1;
+    while (i < n && !WS.has(html[i]!) && html[i] !== '/' && html[i] !== '>') i += 1;
+    for (;;) {
+      while (i < n && (WS.has(html[i]!) || html[i] === '/')) i += 1;
+      if (i >= n || html[i] === '>') break;
+      // The name: its first character may be `=`.
+      const start = i;
+      i += 1;
+      while (i < n && !WS.has(html[i]!) && !'/>='.includes(html[i]!)) i += 1;
+      const name = html.slice(start, i).toLowerCase();
+      while (i < n && WS.has(html[i]!)) i += 1;
+      let value: string | null = null;
+      if (html[i] === '=') {
+        i += 1;
+        while (i < n && WS.has(html[i]!)) i += 1;
+        const q = html[i];
+        if (q === '"' || q === "'") {
+          const end = html.indexOf(q, i + 1);
+          value = html.slice(i + 1, end === -1 ? n : end);
+          i = end === -1 ? n : end + 1;
+        } else {
+          const start2 = i;
+          while (i < n && !WS.has(html[i]!) && html[i] !== '>') i += 1;
+          value = html.slice(start2, i);
+        }
+      }
+      if (name === 'id' && value !== null) out.push(value);
+    }
+  }
+  return out;
+}
+
+/** Whether an id could be the data block's to a browser: the id once its
+ *  character references are decoded (any case: a loose match), or any id
+ *  with a reference in it that names a diagram (a named reference this
+ *  check does not decode). */
+function dataBlockId(value: string): boolean {
+  const decoded = decodeRefs(value);
+  if (decoded.toLowerCase() === DATA_ID) return true;
+  return value.includes('&') && /diagram/i.test(decoded.replace(/&[A-Za-z][A-Za-z0-9]*;?/g, ''));
+}
+
+/**
+ * How many elements of a canvas carry the data block's id, in any form a
+ * browser reads (`document.getElementById`, which the runtime uses: any
+ * tag, any attribute order, case or quoting, character references
+ * decoded; read at every tag-like position, so text that only looks like
+ * a tag counts too, prose does not), and how many data blocks it holds as
+ * this package writes them (`readCanvasData` reads the first). A save
  * normalizes a canvas's image checks through `readCanvasData`, so a canvas
  * where the two are not both 0 or both 1 (a second block, or one in
  * another form) could show the view data no save looked at: the content
@@ -165,9 +243,21 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
  * this check vouches for; this closes the data block the runtime reads.
  */
 export function dataBlockCount(html: string): { any: number; written: number } {
-  const any = html.match(new RegExp(`\\bid\\s*=\\s*["']?${DATA_ID}(?![\\w-])`, 'gi'));
+  const any = idValues(html).filter(dataBlockId).length;
   const written = html.match(new RegExp(DATA_BLOCK.source, 'g'));
-  return { any: any?.length ?? 0, written: written?.length ?? 0 };
+  return { any, written: written?.length ?? 0 };
+}
+
+/** Whether a canvas's one data block reads as a JSON object (what the
+ *  runtime draws from). A save refuses a canvas whose block does not:
+ *  the browser may read it where this package cannot. */
+export function canvasDataReadable(html: string): boolean {
+  try {
+    const d: unknown = readCanvasData(html);
+    return typeof d === 'object' && d !== null && !Array.isArray(d);
+  } catch {
+    return false;
+  }
 }
 
 /** The data of a canvas whose data block may draw a `pid` (pid/check.ts):
@@ -175,8 +265,8 @@ export function dataBlockCount(html: string): { any: number; written: number } {
  *  (`data.template`, else the head's diagram:template meta). Data naming
  *  another template is not; data naming none is taken (whatever the meta
  *  says, the marks are normalized: a superset, never a miss). Null when
- *  there is no data block or it does not parse (the runtime draws nothing
- *  from it then either). */
+ *  there is no data block or it does not parse (a save refuses a canvas
+ *  whose one block does not: @mantle/content drawing-seal). */
 function pidDataOf(html: string): Record<string, unknown> | null {
   let data: unknown;
   try {
@@ -190,25 +280,12 @@ function pidDataOf(html: string): Record<string, unknown> | null {
 }
 
 /**
- * A `pid` canvas with the image check counts its data stores (`checks`, and
- * each set page's) recounted from the drawing's own marks (pid/check.ts).
- * The content layer runs it on every save (withHonestImageChecks, which
- * also normalizes the marks). Byte for byte unchanged when the count
- * already matches, the data block draws no pid, or it does not parse; only
- * the data block changes otherwise.
- */
-export function withOwnImageChecks(html: string): string {
-  const data = pidDataOf(html);
-  if (!data || !imageChecksStale(data)) return html;
-  return withData(html, withImageCheckSummary(data));
-}
-
-/**
  * A `pid` canvas as every save stores it (@mantle/content presents.ts
  * createPresent and savePresentSource): its marks normalized against
- * circuit_trace's seals (`honestImageChecks`: a mark whose seal does not
- * hold is unchecked, its evidence stripped; without a sealed provenance
- * every mark is), then its counts recounted. Byte for byte unchanged when
+ * circuit_trace's seals (`honestImageChecks`: no trust word typed into a
+ * label; a mark whose seal does not hold where it sits is unchecked, its
+ * evidence stripped; without a sealed provenance every mark is), then its
+ * counts recounted. Byte for byte unchanged when
  * nothing changes; only the data block changes otherwise.
  */
 export function withHonestImageChecks(html: string, holds: SealCheck): string {

@@ -22,9 +22,9 @@ import { runRoute } from '@/server/run-route';
 import { standInLogin } from '@/server/run-route-stand-ins';
 import {
   buildCanvas,
-  markSealBody,
   provenanceSealBody,
   readCanvasData,
+  signImageChecks,
 } from '@mantle/diagram-templates';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
@@ -286,45 +286,53 @@ describe('POST and PATCH /api/presents (the handlers): a pid canvas is saved hon
     const { drawingSeal } = await import('@mantle/content/drawing-seal');
     const id = '0123456789abcdef';
     const keys = ['g1', 'g2', 'g3'];
-    const sealed = (c: Record<string, unknown>) => ({
-      ...c,
-      sig: drawingSeal(markSealBody(id, c)),
-    });
     return buildCanvas({
       template: 'pid',
       mode: 'import',
-      data: {
-        title: 'Traced',
-        equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
-        offpage: [
-          {
-            id: 'OPC-1',
-            direction: 'in',
-            sheet: 'S1',
-            check: sealed({ key: 'g1', kind: 'end', state: 'unchecked', guess: 'near V-9' }),
+      // Each mark sealed where it sits, as circuit_trace seals it.
+      data: signImageChecks(
+        {
+          title: 'Traced',
+          equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
+          offpage: [
+            {
+              id: 'OPC-1',
+              direction: 'in',
+              sheet: 'S1',
+              check: { key: 'g1', kind: 'end', state: 'unchecked', guess: 'near V-9' },
+            },
+            {
+              id: 'OPC-2',
+              direction: 'out',
+              sheet: 'S2',
+              check: {
+                key: 'g2',
+                kind: 'link',
+                state: 'checked',
+                guess: 'on S2',
+                question: 'Does it go on S2?',
+                answer: 'yes',
+                crops: ['crop1'],
+              },
+            },
+          ],
+          lines: [
+            { from: 'OPC-1', to: 'V-101' },
+            { from: 'V-101', to: 'OPC-2' },
+          ],
+          checks: {
+            guesses: 3,
+            unchecked: 2,
+            checked: 1,
+            unsure: 0,
+            contradicted: 0,
+            corrected: 0,
           },
-          {
-            id: 'OPC-2',
-            direction: 'out',
-            sheet: 'S2',
-            check: sealed({
-              key: 'g2',
-              kind: 'link',
-              state: 'checked',
-              guess: 'on S2',
-              question: 'Does it go on S2?',
-              answer: 'yes',
-              crops: ['crop1'],
-            }),
-          },
-        ],
-        lines: [
-          { from: 'OPC-1', to: 'V-101' },
-          { from: 'V-101', to: 'OPC-2' },
-        ],
-        checks: { guesses: 3, unchecked: 2, checked: 1, unsure: 0, contradicted: 0, corrected: 0 },
-        provenance: { id, keys, sig: drawingSeal(provenanceSealBody({ id, keys })) },
-      },
+          provenance: { id, keys, sig: drawingSeal(provenanceSealBody({ id, keys })) },
+        },
+        id,
+        drawingSeal,
+      ),
     });
   }
   const body = (b: unknown) => ({

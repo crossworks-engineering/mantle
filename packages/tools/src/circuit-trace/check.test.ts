@@ -29,8 +29,14 @@ import {
 } from './check';
 import { endKey, joinKey, linkKey } from './check-keys';
 import { sealedPid, sealOf } from './check-seal';
-import { CIRCUIT, overviewOf, sheetOne } from './fixtures';
-import { verifyAgainRefusal, verifyCircuit, type CheckAnswer, type VerifyDeps } from './verify';
+import { CIRCUIT, overviewOf, sheetOne, shown } from './fixtures';
+import {
+  verifyAgainRefusal,
+  verifyCircuit,
+  type CheckAnswer,
+  type VerifyDeps,
+  type VerifyRun,
+} from './verify';
 import { VERIFY_ONCE } from './workflow';
 import { traceCircuit } from './walk';
 import type { BlockRow, NodeRow, SegRow, SheetInput, TextRow } from './walk';
@@ -269,7 +275,7 @@ describe('a valve type read from a block name', () => {
         checks: (sheets, links) => appliedChecks(sheets, links, s, applied, []),
       });
       expect(applied).toHaveLength(1);
-      const notes = JSON.stringify(r.pid);
+      const notes = JSON.stringify(shown(r.pid));
       expect(notes).toContain(note);
       expect(validate('pid', r.pid).ok).toBe(true);
     }
@@ -353,11 +359,12 @@ describe('the trace shows the checks', () => {
     const r = traceCircuit(C, s, undefined, {
       checks: (sheets, links) => appliedChecks(sheets, links, s, applied, limits),
     });
-    const pid = overviewOf(r.pid) as Pid;
+    // As the view draws it: the trust words from the marks.
+    const pid = shown(overviewOf(r.pid)) as Pid;
     expect(validate('pid', r.pid).ok).toBe(true);
     const drawn = render('pid', r.pid, estimateMeasurer);
     expect(drawn.ok).toBe(true);
-    return { pid, applied, limits, svg: drawn.ok ? drawn.svg : '' };
+    return { pid, raw: overviewOf(r.pid), applied, limits, svg: drawn.ok ? drawn.svg : '' };
   };
 
   it('no checks: the drawing is as before, each guess marked unchecked', () => {
@@ -378,14 +385,15 @@ describe('the trace shows the checks', () => {
   });
 
   it('a yes is CHECKED BY IMAGE, never certain', () => {
-    const { pid, applied, svg } = traced([
+    const { pid, raw, applied } = traced([
       stored(joinKey(['pGap']), 'yes'),
       stored(endKey('A', 20, 0), 'yes'),
     ]);
     expect(pid.lines.map((l) => l.note)).toContain('INFERRED JOIN (CHECKED BY IMAGE)');
     expect(pid.offpage.map((o) => o.text)).toContain('NEAR V-201 (CHECKED BY IMAGE)');
     expect(pid.description).toMatch(/CHECKED BY IMAGE: a vision model saw the guess/);
-    expect(svg).toContain('CHECKED BY IMAGE');
+    // The words are the view's, never the labels' (MED-3).
+    expect(JSON.stringify(raw)).not.toContain('(CHECKED BY IMAGE)');
     expect(applied.map((a) => a.trust)).toEqual(['CHECKED BY IMAGE', 'CHECKED BY IMAGE']);
   });
 
@@ -522,6 +530,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
   function deps(over: Partial<VerifyDeps> = {}) {
     const calls = { crop: [] as DwgCropSpec[], ask: [] as { n: number; prompt: string }[] };
     const filed: CheckAnswer[] = [];
+    const claimed: VerifyRun[] = [];
     const d: VerifyDeps = {
       readSheets: async () => ({ sheets: both(), limits: [] }),
       fileBytes: async () => BYTES,
@@ -566,6 +575,19 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
         };
       },
       storable: async () => null,
+      claim: async (_o, c, refusal) => {
+        const why = refusal(claimed);
+        if (why) return why;
+        for (const s of c.sheets)
+          claimed.push({
+            tableId: s.tableId,
+            circuit: c.circuit,
+            by: c.by,
+            at: c.at,
+            revision: s.revision,
+          });
+        return null;
+      },
       store: async (_o, _s, _c, answers) => {
         filed.push(...answers);
         return { stored: answers.length };
@@ -573,7 +595,7 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
       now: () => new Date('2026-10-25T12:00:00.000Z'),
       ...over,
     };
-    return { d, calls, filed };
+    return { d, calls, filed, claimed };
   }
   type Out = {
     summary: string;
@@ -584,6 +606,58 @@ describe('verifyCircuit with a fake sidecar, model and store', () => {
     questions?: unknown[];
   };
   const outOf = (r: unknown) => (r as { output: Out }).output;
+
+  it('a call is claimed before its first request: one whose replies held nothing usable still counts (LOW-c)', async () => {
+    let asked = 0;
+    const { d, filed, claimed } = deps({
+      ask: async () => {
+        asked += 1;
+        return { text: '', model: 'gm', tokensIn: 900, tokensOut: 0 };
+      },
+    });
+    const first = await verifyCircuit('o', { circuit: C, by: 'login:x' }, d);
+    expect(first.ok).toBe(true);
+    expect(filed).toHaveLength(0);
+    expect(asked).toBeGreaterThan(0);
+    expect(claimed.map((r) => [r.circuit, r.by, r.at])).toContainEqual([
+      C,
+      'login:x',
+      '2026-10-25T12:00:00.000Z',
+    ]);
+    const spent = asked;
+    const second = await verifyCircuit('o', { circuit: C, by: 'login:x' }, d);
+    expect(second.ok).toBe(false);
+    expect((second as { error: string }).error).toContain(VERIFY_ONCE);
+    expect(asked).toBe(spent);
+    // Another caller is not held by it; a claim refused asks nothing.
+    const third = await verifyCircuit('o', { circuit: C, by: 'login:y' }, d);
+    expect(third.ok).toBe(true);
+    const refused = deps({ claim: async () => 'held' });
+    const r = await verifyCircuit('o', { circuit: C, by: 'login:z' }, refused.d);
+    expect(r).toEqual({ ok: false, error: 'held' });
+    expect(refused.calls.ask).toHaveLength(0);
+  });
+
+  it('the rows of a claimed call are filed under its claim time', async () => {
+    let now = new Date('2026-10-25T12:00:00.000Z');
+    const at: string[] = [];
+    const { d, claimed } = deps({
+      now: () => {
+        const t = now;
+        now = new Date(now.getTime() + 1000);
+        return t;
+      },
+      store: async (_o, _s, _c, answers, _ov, checkedAt) => {
+        at.push(checkedAt);
+        return { stored: answers.length };
+      },
+    });
+    const r = await verifyCircuit('o', { circuit: C, by: 'login:x' }, d);
+    expect(r.ok).toBe(true);
+    // One time for the call: its claim's, the one the guard reads.
+    expect(at.length).toBeGreaterThan(0);
+    expect(new Set([...at, ...claimed.map((c) => c.at)])).toEqual(new Set([claimed[0]!.at]));
+  });
 
   it('crops each sheet once, asks once per sheet, files every answer with its model and crops', async () => {
     const { d, calls, filed } = deps();
@@ -1167,7 +1241,7 @@ describe('the drawing words each answer it shows', () => {
       checks: (w, links) => appliedChecks(w, links, s, [], []),
     });
     expect(validate('pid', r.pid).ok).toBe(true);
-    return JSON.stringify(r.pid);
+    return JSON.stringify(shown(r.pid));
   };
 
   it('one no among several joins on a line is counted, not said of all', () => {
@@ -1267,7 +1341,7 @@ describe('a no that names what it is (phase 6) on links and joins', () => {
       checks: (w, links) => appliedChecks(w, links, s, applied, []),
     });
     expect(validate('pid', r.pid).ok).toBe(true);
-    const pid = r.pid as { pages?: { data: Drawn }[] } & Drawn;
+    const pid = shown(r.pid) as { pages?: { data: Drawn }[] } & Drawn;
     const pages = pid.pages ? pid.pages.map((p) => p.data) : [pid];
     return {
       applied,
@@ -1505,6 +1579,7 @@ describe('circuit_verify, held to once (fix round 2, L4)', () => {
         throw new Error('no ask expected');
       },
       storable: async () => null,
+      claim: async (_o, _c, refusal) => refusal([]),
       store: async () => ({ stored: 0 }),
       now: () => NOW,
     };

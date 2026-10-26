@@ -28,7 +28,11 @@
  */
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
-import { dataBlockCount, withHonestImageChecks } from '@mantle/diagram-templates';
+import {
+  canvasDataReadable,
+  dataBlockCount,
+  withHonestImageChecks,
+} from '@mantle/diagram-templates';
 import { InputError } from '@mantle/std';
 
 const SEAL_INFO = 'mantle drawing check seal v1';
@@ -72,44 +76,98 @@ export function drawingSealHolds(body: string, seal: string): boolean {
   return sealKeys().some((k) => timingSafeEqual(Buffer.from(hmac(k, body), 'hex'), got));
 }
 
+/** `v` as canonical JSON: object keys sorted, `undefined` object members
+ *  left out (as JSON does), and anything JSON cannot say exactly refused
+ *  (a non-finite number, an `undefined` value or array item, a function,
+ *  a bigint, a class instance), so two payloads seal alike only when they
+ *  are the same data, and `null` never reads as a missing value. */
+function canonical(v: unknown): string {
+  if (v === null) return 'null';
+  switch (typeof v) {
+    case 'string':
+    case 'boolean':
+      return JSON.stringify(v);
+    case 'number':
+      if (!Number.isFinite(v)) throw new Error('drawing seal: a number that is not finite');
+      return JSON.stringify(v);
+    case 'object': {
+      if (Array.isArray(v)) {
+        return `[${v
+          .map((x) => {
+            if (x === undefined) throw new Error('drawing seal: an undefined item');
+            return canonical(x);
+          })
+          .join(',')}]`;
+      }
+      const proto = Object.getPrototypeOf(v) as unknown;
+      if (proto !== Object.prototype && proto !== null)
+        throw new Error('drawing seal: not plain data');
+      const o = v as Record<string, unknown>;
+      return `{${Object.keys(o)
+        .filter((k) => o[k] !== undefined)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
+        .join(',')}}`;
+    }
+    default:
+      throw new Error(`drawing seal: a ${typeof v} is not data`);
+  }
+}
+
 /** The canonical body of a sealed payload for `purpose` (a short label,
  *  e.g. 'pid-crop v1'): tagged so it never reads as a Checks row's body or
  *  a mark's (those have their own fixed shapes). */
 function purposeBody(purpose: string, payload: unknown): string {
   if (!/^[a-z][a-z0-9 ._-]{0,63}$/.test(purpose)) throw new Error('drawing seal: not a purpose');
-  return JSON.stringify(['purpose', purpose, payload]);
+  if (payload === undefined) throw new Error('drawing seal: no payload');
+  return `["purpose",${JSON.stringify(purpose)},${canonical(payload)}]`;
 }
 
-/** The drawing check seal of `payload` (JSON-serializable, canonical: the
- *  caller fixes its order) for `purpose`, '' without a master key. The one
- *  helper any further drawing evidence is sealed with (a canvas's embedded
- *  crops, say), so there is never a second key path. */
+/** The drawing check seal of `payload` for `purpose`, '' without a master
+ *  key. The payload is plain JSON data, sealed canonically (keys in sorted
+ *  order, so the caller need not fix one); a value JSON cannot say exactly
+ *  (NaN, Infinity, undefined) throws. The one helper any further drawing
+ *  evidence is sealed with (a canvas's embedded crops, say), so there is
+ *  never a second key path. */
 export function sealPayload(purpose: string, payload: unknown): string {
   return drawingSeal(purposeBody(purpose, payload));
 }
 
 /** Whether `seal` is sealPayload's seal of `payload` for `purpose`, under
- *  the current or the staged master key. */
+ *  the current or the staged master key (false for a payload sealPayload
+ *  would refuse). */
 export function sealPayloadHolds(purpose: string, payload: unknown, seal: string): boolean {
-  return drawingSealHolds(purposeBody(purpose, payload), seal);
+  let body: string;
+  try {
+    body = purposeBody(purpose, payload);
+  } catch {
+    return false;
+  }
+  return drawingSealHolds(body, seal);
 }
 
+/** Why a save refuses a canvas, in words for whoever saved it (a person in
+ *  the editor as much as an assistant; the tools' descriptions say how an
+ *  assistant edits a diagram). */
+const UNREADABLE_DIAGRAM =
+  "This diagram was not saved: its data could not be checked. A diagram keeps its data in one block that the editor writes; this one has a second copy, another element with the same name, or data that does not read as written. Undo the change to the diagram's source, or edit the diagram's data instead, and save again.";
+
 /**
- * A canvas source as a save stores it: a `pid` canvas's image check marks
- * normalized against circuit_trace's seals and its counts recounted
+ * A canvas source as a save stores it: a `pid` canvas's labels cleared of
+ * typed trust words, its image check marks normalized against
+ * circuit_trace's seals and its counts recounted
  * (@mantle/diagram-templates withHonestImageChecks, keyed off the data
  * block as the runtime reads it); any other canvas, and a pid canvas that
- * needs nothing, byte for byte. A canvas whose data block the runtime could
- * read in a form this check does not (a second block, or one written
- * another way) is refused: the view would show data no save looked at.
+ * needs nothing, byte for byte. A canvas whose data block the runtime
+ * could read in a form this check does not (a second block, one written
+ * another way, or one block that does not read as a JSON object) is
+ * refused: the view would show data no save looked at.
  */
 export function honestCanvasSource(source: string): string {
   const blocks = dataBlockCount(source);
   if (blocks.any === 0 && blocks.written === 0) return source;
-  if (blocks.any !== 1 || blocks.written !== 1) {
-    throw new InputError(
-      'A diagram canvas holds exactly one data block, written as <script type="application/json" id="diagram-data">, and no other element with that id. Keep the one block present_create wrote and edit its data (present_update with data).',
-    );
+  if (blocks.any !== 1 || blocks.written !== 1 || !canvasDataReadable(source)) {
+    throw new InputError(UNREADABLE_DIAGRAM);
   }
   return withHonestImageChecks(source, drawingSealHolds);
 }

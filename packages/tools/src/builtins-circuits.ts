@@ -21,8 +21,8 @@ import {
   type AppliedCheck,
   type CheckKind,
 } from './circuit-trace/check';
-import { storeChecks, storeRefusal } from './circuit-trace/checks-store';
-import { sealedPid } from './circuit-trace/check-seal';
+import { claimVerifyRun, storeChecks, storeRefusal } from './circuit-trace/checks-store';
+import { sealedPid, sealPayload } from './circuit-trace/check-seal';
 import { verifyCircuit } from './circuit-trace/verify';
 import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
@@ -461,6 +461,7 @@ export async function circuitVerifyHandler(
           return r;
         },
         storable: storeRefusal,
+        claim: claimVerifyRun,
         store: (owner, sheet, c, answers, overview, checkedAt) =>
           storeChecks(owner, sheet, c, answers, overview, checkedAt, by),
         now: () => new Date(),
@@ -473,24 +474,29 @@ export async function circuitVerifyHandler(
   }
 }
 
-/** Who runs a circuit_verify call, as its Checks rows record it: the login
- *  (`login:<id>`), an assistant, the system, or the kind of caller. Never
- *  empty, so rows filed before the By column (empty) are nobody's. */
+/** Who runs a circuit_verify call, as its Checks rows and its claim
+ *  record it: the kind of caller (login, assistant, system, peer, owner)
+ *  and a keyed hash of its id (the drawing check seal's key, so the table
+ *  holds no login or agent id and no one without the key can tell whose
+ *  it is), or the kind alone when it has no id or the brain no master
+ *  key. Never empty, so rows filed before the By column (empty) are
+ *  nobody's. */
 export function callerOf(): string {
   const a = currentActor();
-  if (!a) return 'owner';
-  switch (a.kind) {
-    case 'login':
-      return `login:${a.loginId}`;
-    case 'assistant':
-      return `assistant:${a.agentId ?? 'none'}`;
-    case 'system':
-      return `system:${a.reason}`;
-    case 'peer':
-      return `peer:${a.peerId ?? 'none'}`;
-    default:
-      return a.kind;
-  }
+  const [kind, id] = !a
+    ? ['owner', '']
+    : a.kind === 'login'
+      ? ['login', a.loginId]
+      : a.kind === 'assistant'
+        ? ['assistant', a.agentId ?? 'none']
+        : a.kind === 'system'
+          ? ['system', a.reason]
+          : a.kind === 'peer'
+            ? ['peer', a.peerId ?? 'none']
+            : [a.kind, ''];
+  if (!id) return kind;
+  const hash = sealPayload('check-by v1', [kind, id]).slice(0, 24);
+  return hash ? `${kind}:${hash}` : kind;
 }
 
 /** Questions asked when the call does not say. */

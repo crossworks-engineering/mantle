@@ -31,8 +31,8 @@
  * crops are kept as the evidence (the result says the rows are pending).
  */
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
-import { db, nodes, tables, withHeads } from '@mantle/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { advisoryXactLock, db, nodes, tables, withHeads } from '@mantle/db';
 import { applyTableOps, commitTable, discardTableDraft, tableWriteRefusal } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import {
@@ -54,7 +54,7 @@ import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
 import { ALT_MAX, CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
 import { sealOf } from './check-seal';
-import type { CheckAnswer, StoreResult } from './verify';
+import type { CheckAnswer, StoreResult, VerifyClaim, VerifyRun } from './verify';
 import type { SheetInput } from './walk';
 
 /** Node data key: the table version a check commit made on an unedited
@@ -153,7 +153,8 @@ export async function storeChecks(
   answers: CheckAnswer[],
   overview: Buffer | null,
   checkedAt: string,
-  /** Who runs the call (the By column, verify.ts callerOf). */
+  /** Who runs the call (the By column, builtins-circuits.ts callerOf: a
+   *  kind and a keyed hash, never a raw id; sealed with the row). */
   by = '',
 ): Promise<StoreResult> {
   const before = await tableState(sheet.tableId);
@@ -296,6 +297,7 @@ export async function storeChecks(
         checkedAt,
         crops,
         alt,
+        by,
       }),
       By: by,
     };
@@ -372,4 +374,78 @@ export async function storeChecks(
     }
   }
   return { stored: answers.length };
+}
+
+/** Node data key: the circuit_verify calls claimed on a drawing's table in
+ *  the last hour (verify.ts VerifyDeps.claim). Bookkeeping of the server,
+ *  no table op writes it. */
+export const VERIFY_RUNS_KEY = 'dwgVerifyRuns';
+/** Most claims one table keeps (an hour's worth is far fewer). */
+const RUNS_KEPT = 40;
+const HOUR = 60 * 60_000;
+
+/** The claims a node's data holds, read loosely. */
+function runsOf(tableId: string, v: unknown): VerifyRun[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r: unknown) => {
+    if (!r || typeof r !== 'object') return [];
+    const { circuit, by, at, revision } = r as Record<string, unknown>;
+    return typeof circuit === 'string' && typeof at === 'string'
+      ? [
+          {
+            tableId,
+            circuit,
+            at,
+            by: typeof by === 'string' ? by : '',
+            revision: typeof revision === 'string' ? revision : '',
+          },
+        ]
+      : [];
+  });
+}
+
+/**
+ * circuit_verify's claim (verify.ts VerifyDeps.claim): in one transaction,
+ * the heads of the tables it asks about locked and then a lock on the
+ * owner's circuit (so two calls on one circuit take turns, whatever sheets
+ * each asks about), the claims on every sheet of the circuit go to
+ * `refusal`; when it says nothing, this call is recorded on each table it
+ * asks about (claims older than an hour dropped) and null comes back.
+ */
+export async function claimVerifyRun(
+  ownerId: string,
+  claim: VerifyClaim,
+  refusal: (runs: readonly VerifyRun[]) => string | null,
+): Promise<string | null> {
+  const write = [...new Set(claim.sheets.map((s) => s.tableId))];
+  const read = [...new Set([...claim.readFrom, ...write])];
+  return withHeads(write, 'update', async (tx) => {
+    await advisoryXactLock(tx, `circuit-verify:${ownerId}:${claim.circuit}`, 'hashtextextended');
+    const rows = await tx
+      .select({ id: nodes.id, runs: sql<unknown>`${nodes.data}->${VERIFY_RUNS_KEY}` })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, read)));
+    const runs = rows.flatMap((r) => runsOf(r.id, r.runs));
+    const why = refusal(runs);
+    if (why) return why;
+    const since = Date.parse(claim.at) - HOUR;
+    for (const s of claim.sheets) {
+      const kept = runs
+        .filter((r) => r.tableId === s.tableId && Date.parse(r.at) >= since)
+        .map(({ tableId: _t, ...r }) => r);
+      const next = [
+        ...kept,
+        { circuit: claim.circuit, by: claim.by, at: claim.at, revision: s.revision },
+      ].slice(-RUNS_KEPT);
+      await tx
+        .update(nodes)
+        .set({
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify({
+            [VERIFY_RUNS_KEY]: next,
+          })}::jsonb`,
+        })
+        .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, s.tableId)));
+    }
+    return null;
+  });
 }

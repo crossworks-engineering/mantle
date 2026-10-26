@@ -14,7 +14,50 @@
  * Sheet PID-1002: the line comes in under "CONT. FROM PID-1001" and ends on
  * another circuit's layer (10000-002-01).
  */
+import { lineNoteSuffix, markSuffix } from '@mantle/diagram-templates';
 import type { BlockRow, NodeRow, SegRow, SheetInput } from './walk';
+
+/**
+ * `pid` data (a drawing or a set) with its labels as the view draws them
+ * (@mantle/diagram-templates markSuffix, lineNoteSuffix): a connector's
+ * text with its mark's trust word, a line's note with its marks'. The
+ * trace writes the words only where an element has no mark; the tests read
+ * the drawing as a person sees it.
+ */
+export function shown<T>(pid: T): T {
+  const obj = (v: unknown): v is Record<string, unknown> =>
+    !!v && typeof v === 'object' && !Array.isArray(v);
+  const drawing = (d: Record<string, unknown>) => ({
+    ...d,
+    ...(Array.isArray(d.offpage)
+      ? {
+          offpage: d.offpage.map((o: unknown) =>
+            obj(o) && obj(o.check)
+              ? { ...o, text: `${String(o.text ?? '')}${markSuffix(o.check)}` }
+              : o,
+          ),
+        }
+      : {}),
+    ...(Array.isArray(d.lines)
+      ? {
+          lines: d.lines.map((l: unknown) => {
+            if (!obj(l)) return l;
+            const words = lineNoteSuffix(l);
+            return words ? { ...l, note: `${String(l.note ?? '')}${words}`.trim() } : l;
+          }),
+        }
+      : {}),
+  });
+  if (!obj(pid)) return pid;
+  if (Array.isArray(pid.pages))
+    return {
+      ...pid,
+      pages: pid.pages.map((p: unknown) =>
+        obj(p) && obj(p.data) ? { ...p, data: drawing(p.data) } : p,
+      ),
+    } as T;
+  return drawing(pid) as T;
+}
 
 export const CIRCUIT = '10000-001-01';
 export const MAIN = `Circuit ${CIRCUIT}`;

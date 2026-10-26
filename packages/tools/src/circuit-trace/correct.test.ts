@@ -24,7 +24,13 @@ import {
   type StoredCheck,
 } from './check';
 import { sealOf } from './check-seal';
-import { CIRCUIT, overviewOf, readingSheets, genericValveSheet as genericValve } from './fixtures';
+import {
+  CIRCUIT,
+  overviewOf,
+  readingSheets,
+  shown,
+  genericValveSheet as genericValve,
+} from './fixtures';
 import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
 
 beforeAll(() => {
@@ -64,14 +70,15 @@ function row(
   return { ...r, seal: sealOf(sealFieldsOf(q.tableId, r)) };
 }
 
-/** circuit_trace's way: stored checks applied before the drawing. */
+/** circuit_trace's way: stored checks applied before the drawing; its
+ *  pid as the view draws it (the trust words from the marks). */
 function traced(sheets: SheetInput[], register?: RegisterInput) {
   const applied: AppliedCheck[] = [];
   const limits: string[] = [];
   const r = traceCircuit(CIRCUIT, sheets, register, {
     checks: (w, l) => appliedChecks(w, l, sheets, applied, limits),
   });
-  return { r, applied, limits };
+  return { r: { ...r, pid: shown(r.pid) }, applied, limits };
 }
 
 describe('a no asks what it is then', () => {

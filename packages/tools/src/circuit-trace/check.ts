@@ -805,9 +805,10 @@ export type StoredCheck = {
   /** What the image said it is instead, after a no (phase 6; '' on older
    *  rows and on a yes or unsure). */
   alt?: string;
-  /** Who ran the call that filed it (verify.ts callerOf: `login:<id>`, an
-   *  assistant, the system); '' on older rows. Not sealed: only the guard
-   *  against a second call reads it (verify.ts verifyAgainRefusal). */
+  /** Who ran the call that filed it (builtins-circuits.ts callerOf: the
+   *  caller's kind and a keyed hash of its id, never the raw id); '' on
+   *  older rows. Sealed with the row when it has one (check-seal.ts); the
+   *  guard against a second call reads it (verify.ts verifyAgainRefusal). */
   by?: string;
 };
 
@@ -861,6 +862,7 @@ export function sealFieldsOf(tableId: string, r: StoredCheck): SealedFields {
     checkedAt: r.checkedAt,
     crops: r.crops ?? '',
     alt: r.alt ?? '',
+    by: r.by ?? '',
   };
 }
 

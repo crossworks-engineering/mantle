@@ -24,7 +24,9 @@
  * with the row when it has one: appended to the sealed list, so a row with
  * no alternative (every row written before phase 6) seals exactly as it
  * did, and its seal still holds. Adding an alternative to such a row by
- * hand, or taking one off a sealed row, breaks the seal.
+ * hand, or taking one off a sealed row, breaks the seal. The By column
+ * (who ran the call, a kind and a keyed hash, which the guard against a
+ * second call reads) is sealed the same way, after it, tagged.
  *
  * Known limit: a seal vouches for one row, not for the tab's history. A
  * table editor who deletes a newer sealed row brings back the older sealed
@@ -43,8 +45,9 @@ export { sealPayload, sealPayloadHolds } from '@mantle/content/drawing-seal';
 import {
   CHECK_LIMITS,
   mapImageChecks,
-  markSealBody,
   provenanceSealBody,
+  signImageChecks,
+  withoutMarkWords,
 } from '@mantle/diagram-templates';
 
 /** What a seal covers. */
@@ -62,6 +65,9 @@ export type SealedFields = {
   crops: string;
   /** The Alternative cell; '' or absent when the row has none. */
   alt?: string;
+  /** The By cell (who ran the call, never a raw id: builtins-circuits.ts
+   *  callerOf); '' or absent on rows filed before it was sealed. */
+  by?: string;
 };
 
 /** What a row's seal is made over. */
@@ -79,6 +85,10 @@ function bodyOf(f: SealedFields): string {
     f.crops,
     // Only when there is one: a row without it seals as before phase 6.
     ...(f.alt ? [f.alt] : []),
+    // Only when there is one, and tagged (a list, never a string), so it
+    // never reads as an alternative: a row filed before By was sealed
+    // seals as it did, and blanking a sealed row's By breaks its seal.
+    ...(f.by ? [['by', f.by]] : []),
   ]);
 }
 
@@ -96,20 +106,24 @@ export function sealHolds(f: SealedFields, seal: string): boolean {
 
 /**
  * circuit_trace's drawing, sealed (phase 6): each image check
- * mark carries `sig`, the drawing check seal of its fields under a fresh
- * provenance id, and the drawing (a set: the set) carries `provenance`
- * { id, keys, sig }: every guess it marks, then `cutKeys` (guesses a cap
+ * mark carries `sig`, the drawing check seal of its fields and the element
+ * it sits on under a fresh provenance id, and the drawing (a set: the
+ * set) carries `provenance` { id, keys, sig }: every guess it marks, then `cutKeys` (guesses a cap
  * left unmarked), so a mark dropped later, or never drawn, still counts as
  * unchecked. A save keeps only marks whose seal holds
  * (@mantle/content/drawing-seal honestCanvasSource). Without a master key
- * nothing is sealed: the drawing comes back as it was, and a save shows
+ * nothing is sealed: the drawing comes back as it was (its labels without
+ * trust words, as any save stores them), and a save shows
  * every mark unchecked (no answer applies without one either).
  */
 export function sealedPid(
-  pid: Record<string, unknown>,
+  drawn: Record<string, unknown>,
   cutKeys: readonly string[],
   limits: string[],
 ): Record<string, unknown> {
+  // Sealed as a save stores it: no trust word in a label (the view draws
+  // them from the marks), so a save finds each mark where it was sealed.
+  const pid = withoutMarkWords(drawn);
   const id = randomBytes(8).toString('hex');
   const drawings: Record<string, unknown>[] = Array.isArray(pid.pages)
     ? (pid.pages as { data?: Record<string, unknown> }[]).flatMap((p) => (p?.data ? [p.data] : []))
@@ -130,23 +144,7 @@ export function sealedPid(
     );
   const sig = drawingSeal(provenanceSealBody({ id, keys }));
   if (!sig) return pid;
-  const seal = (d: Record<string, unknown>) =>
-    mapImageChecks(d, (c) =>
-      c && typeof c === 'object' && !Array.isArray(c)
-        ? { ...c, sig: drawingSeal(markSealBody(id, c as Record<string, unknown>)) }
-        : c,
-    );
-  const provenance = { id, keys, sig };
-  if (Array.isArray(pid.pages)) {
-    return {
-      ...pid,
-      pages: (pid.pages as Record<string, unknown>[]).map((p) =>
-        p && typeof p.data === 'object' && p.data
-          ? { ...p, data: seal(p.data as Record<string, unknown>) }
-          : p,
-      ),
-      provenance,
-    };
-  }
-  return { ...seal(pid), provenance };
+  // The one sealing path (@mantle/diagram-templates signImageChecks): each
+  // mark sealed on the element it sits on, as a save checks it.
+  return { ...signImageChecks(pid, id, drawingSeal), provenance: { id, keys, sig } };
 }

@@ -7,6 +7,11 @@
  */
 import { createHash } from 'node:crypto';
 import type { CheckKind } from './check';
+/** The trust words (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE), the
+ *  one list: @mantle/diagram-templates pid/check.ts holds it, where the
+ *  view draws them from a mark (markSuffix, lineNoteSuffix) and a save
+ *  strips them from labels (withoutMarkWords). */
+export { MARK_WORDS, markSuffix, lineNoteSuffix } from '@mantle/diagram-templates';
 
 /** The words an image check's no may name for each kind, past the
  *  drawing's own names (check.ts asks with them, pid.ts draws them): here,

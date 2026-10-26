@@ -1,9 +1,11 @@
 /**
  * The image check counts a `pid` canvas stores (templates/pid/check.ts,
- * canvas.ts withOwnImageChecks): every save path recounts them from the
- * drawing's own marks, so no saved canvas keeps a count its marks do not
- * hold. A canvas whose count already matches, or that is no pid canvas,
- * comes back byte for byte. Synthetic data only.
+ * canvas.ts withHonestImageChecks, the one recount path): every save
+ * recounts them from the drawing's own marks, so no saved canvas keeps a
+ * count its marks do not hold. A canvas whose count already matches, or
+ * that is no pid canvas, comes back byte for byte. The seal check here
+ * accepts every seal, so only the counting is under test (pid-seal.test.ts
+ * tests the seals). Synthetic data only.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -11,15 +13,20 @@ import {
   imageCheckSummary,
   imageChecksStale,
   readCanvasData,
+  withHonestImageChecks,
   withImageCheckSummary,
-  withOwnImageChecks,
 } from './index.ts';
+
+/** Every seal holds: the save's recount alone. */
+const recount = (html: string) => withHonestImageChecks(html, () => true);
+const provenance = { id: '0123456789abcdef', keys: [], sig: 'a'.repeat(64) };
 
 const mark = (key: string, state: string, extra: Record<string, unknown> = {}) => ({
   key,
   kind: 'link',
   state,
   ...extra,
+  sig: 'b'.repeat(64),
 });
 
 /** One drawing: two guesses, one answered yes. */
@@ -34,6 +41,7 @@ const drawing = (checks?: unknown) => ({
     { from: 'OPC-1', to: 'V-101' },
     { from: 'V-101', to: 'OPC-2' },
   ],
+  provenance,
   ...(checks ? { checks } : {}),
 });
 const FORGED = { guesses: 2, unchecked: 0, checked: 2, unsure: 0, contradicted: 0, corrected: 0 };
@@ -42,7 +50,7 @@ describe('a pid canvas keeps the count of its own marks', () => {
   it('a forged count is recounted from the marks; only the data block changes', () => {
     const html = buildCanvas({ template: 'pid', data: drawing(FORGED), mode: 'import' });
     expect(imageChecksStale(readCanvasData(html))).toBe(true);
-    const own = withOwnImageChecks(html);
+    const own = recount(html);
     const data = readCanvasData(own) as { checks: Record<string, number> };
     expect(data.checks).toEqual(imageCheckSummary(data));
     expect(data.checks).toMatchObject({ guesses: 2, unchecked: 1, checked: 1 });
@@ -54,7 +62,7 @@ describe('a pid canvas keeps the count of its own marks', () => {
 
   it('a missing count is added, a count on unmarked data is dropped', () => {
     const missing = buildCanvas({ template: 'pid', data: drawing(), mode: 'import' });
-    const added = readCanvasData(withOwnImageChecks(missing)) as { checks?: unknown };
+    const added = readCanvasData(recount(missing)) as { checks?: unknown };
     expect(added.checks).toMatchObject({ guesses: 2, unchecked: 1 });
     const plain = {
       title: 'Hand drawn',
@@ -64,7 +72,7 @@ describe('a pid canvas keeps the count of its own marks', () => {
       checks: FORGED,
     };
     const dropped = readCanvasData(
-      withOwnImageChecks(buildCanvas({ template: 'pid', data: plain, mode: 'import' })),
+      recount(buildCanvas({ template: 'pid', data: plain, mode: 'import' })),
     );
     expect(dropped.checks).toBeUndefined();
   });
@@ -77,10 +85,11 @@ describe('a pid canvas keeps the count of its own marks', () => {
         { id: 'p1', title: 'One', data: drawing(FORGED) },
         { id: 'p2', title: 'Two', data: drawing() },
       ],
+      provenance,
       checks: FORGED,
     };
     const html = buildCanvas({ template: 'pid', data: set, mode: 'import' });
-    const data = readCanvasData(withOwnImageChecks(html)) as {
+    const data = readCanvasData(recount(html)) as {
       checks: Record<string, number>;
       pages: { data: { checks: Record<string, number> } }[];
     };
@@ -96,17 +105,17 @@ describe('a pid canvas keeps the count of its own marks', () => {
       mode: 'import',
     });
     expect(imageChecksStale(readCanvasData(honest))).toBe(false);
-    expect(withOwnImageChecks(honest)).toBe(honest);
+    expect(recount(honest)).toBe(honest);
     const flow = buildCanvas({
       template: 'flow',
       data: { title: 'F', nodes: [{ id: 'a', label: 'A' }], edges: [], checks: FORGED },
       mode: 'import',
     });
-    expect(withOwnImageChecks(flow)).toBe(flow);
+    expect(recount(flow)).toBe(flow);
     const broken = honest.replace('"checks": {', '"checks": {,,');
     expect(broken).not.toBe(honest);
-    expect(withOwnImageChecks(broken)).toBe(broken);
+    expect(recount(broken)).toBe(broken);
     const page = '<!doctype html><html><head><title>x</title></head><body>hi</body></html>';
-    expect(withOwnImageChecks(page)).toBe(page);
+    expect(recount(page)).toBe(page);
   });
 });
