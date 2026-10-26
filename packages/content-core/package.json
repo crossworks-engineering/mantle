@@ -13,6 +13,7 @@
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",
     "./canvas": "./src/canvas.ts",
+    "./canvas-data": "./src/canvas-data.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
     "./drift-spec": "./src/drift-spec.ts",
