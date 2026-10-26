@@ -140,3 +140,55 @@ export const CANVAS_DATA_FULL_ERROR =
   `the canvas's data is full: ${CANVAS_DATA_CANVAS_MAX_BYTES / 1024 / 1024} MB and ` +
   `${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas, ` +
   `${CANVAS_DATA_MINE_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_MAX_KEYS} entries of your own`;
+
+/**
+ * How a canvas author uses the store, ONE text for every author: the
+ * canvas_authoring skill (in-app agents) sets it in as a section, and
+ * canvas_library 'data' (what an MCP client reads) answers it with a full
+ * example canvas. Markdown, no heading of its own. The caps come from the
+ * constants above, so the words never drift from the checks.
+ */
+export const CANVAS_DATA_HOWTO = `Only when a canvas must keep something people add (notes, suggestions, votes, a saved layout, meeting marks). A canvas that only shows things stays plain: no store calls.
+
+The frame gives every canvas \`mantle.data\` (no import, no network: the page around the canvas saves it for the signed-in viewer, for this canvas only):
+
+- \`await mantle.data.get(key, { bucket })\`: the value, or \`undefined\`.
+- \`await mantle.data.set(key, value, { bucket })\`: save (made or replaced).
+- \`await mantle.data.delete(key, { bucket })\`.
+- \`await mantle.data.list({ bucket, everyone })\`: \`[{ key, value, updatedAt, by: { id, name } }]\`.
+- \`await mantle.data.info()\`: \`{ canWriteShared, readsEveryone, me, readOnly }\`.
+
+Buckets (\`bucket\` defaults to \`'shared'\`):
+
+- \`'shared'\`: one value per key for everyone who can open the canvas. Only a user with Write on the canvas may write it (layouts, meeting marks).
+- \`'mine'\`: each viewer's own entries; any viewer writes their own (suggestions, votes). A user with Write on the canvas reads everyone's with \`list({ bucket: 'mine', everyone: true })\`; others see only their own.
+
+Rules:
+
+- Values are small JSON: at most ${CANVAS_DATA_VALUE_MAX_BYTES / 1024} KB each, ${CANVAS_DATA_CANVAS_MAX_BYTES / 1024 / 1024} MB and ${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas, ${CANVAS_DATA_MINE_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_MAX_KEYS} entries per viewer in \`'mine'\`. Keys: letters, digits and \`_ - . : /\`, up to 128, a letter or digit first.
+- Data arrives after the first paint: draw the canvas first, then fill it in. The picture a save returns, the poster and exports show the canvas with no data.
+- Every call returns a promise that can reject (no right, full, offline): catch it and say so on the canvas; never lose what the viewer typed.
+- Another viewer wrote what you read: show it as text (\`textContent\`), never as HTML.
+- Never store secrets, passwords or keys. A photo or a big file goes in Files; keep only its id here.
+- Saving data never changes the canvas or makes a new version of it.
+
+\`\`\`html
+<textarea id="notes" class="h-40 w-full rounded-md border border-border bg-card p-4 text-xl"></textarea>
+<ul id="ideas" class="text-xl"></ul>
+<script type="module">
+  const notes = document.getElementById('notes');
+  const info = await mantle.data.info();
+  notes.readOnly = !info.canWriteShared;
+  notes.value = (await mantle.data.get('notes')) ?? '';
+  notes.addEventListener('change', () =>
+    mantle.data.set('notes', notes.value).catch((e) => (notes.title = e.message)));
+  // A viewer's suggestion: their own entry in 'mine'.
+  const suggest = (text) => mantle.data.set('idea-' + Date.now(), { text }, { bucket: 'mine' });
+  const ideas = await mantle.data.list({ bucket: 'mine', everyone: info.readsEveryone });
+  for (const e of ideas) {
+    const li = document.createElement('li');
+    li.textContent = (e.by?.name ?? 'Someone') + ': ' + e.value.text;
+    document.getElementById('ideas').append(li);
+  }
+</script>
+\`\`\``;

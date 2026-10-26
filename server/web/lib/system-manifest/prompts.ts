@@ -1,6 +1,7 @@
 /** Verbatim system prompts + skill instructions for the default manifest agents
  *  and skills. The single home for these bodies; the manifest references them. */
 import { FONT_LIBRARY } from '@mantle/client-types/display-fonts';
+import { CANVAS_DATA_HOWTO } from '@mantle/content-core/canvas-data';
 
 /** The faces a canvas may name, from the Appearance registry (so the skill
  *  never lists a font the frame does not load). */
@@ -1032,7 +1033,11 @@ The SVG is served sandboxed and rendered through an <img> tag, where external fe
 
 ## No network
 
-The frame has NO network: no fetch, no CDN, no outside images, fonts or stylesheets, no API. Put the data in the page (a JS array, a \`<script type="application/json">\` block). Images: inline SVG or \`data:\` URLs. A save with an import or URL that would not load is refused with every problem listed: fix them all and save again.
+The frame has NO network: no fetch, no CDN, no outside images, fonts or stylesheets, no API. Put the data in the page (a JS array, a \`<script type="application/json">\` block). What viewers add is kept with \`mantle.data\` (Saving data, below). Images: inline SVG or \`data:\` URLs. A save with an import or URL that would not load is refused with every problem listed: fix them all and save again.
+
+## Saving data
+
+${CANVAS_DATA_HOWTO}
 
 ## Libraries: write the import, nothing else
 

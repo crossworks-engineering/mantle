@@ -51,7 +51,7 @@ describe('canvas data contract', () => {
 
   it('counts UTF-8 bytes as Node does', () => {
     for (const s of ['', 'abc', 'é', '€', '😀', 'a😀b€é', '\ud800', '\udc00x']) {
-      expect(utf8Bytes(s), JSON.stringify(s)).toBe(Buffer.byteLength(s, 'utf8'));
+      expect(utf8Bytes(s), JSON.stringify(s)).toBe(new TextEncoder().encode(s).length);
     }
   });
 

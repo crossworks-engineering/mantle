@@ -190,6 +190,11 @@ export const RATE_LIMITS = {
   // A canvas's snapshot in a page, per login: a page with many canvases
   // loads one each, and a stamp asks ?meta=1 for each.
   presentPoster: perLogin('present-poster', 600),
+  // A canvas's data store (DWG phase 7a), per login: what the canvas asks
+  // through `mantle.data`, forwarded by its host page. Reads load a canvas's
+  // marks or suggestions; writes save them (a meeting's markup, a vote).
+  canvasData: perLogin('canvas-data', 600),
+  canvasDataWrite: perLogin('canvas-data-write', 120),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
   shareRows: perIp('share-rows', 120),

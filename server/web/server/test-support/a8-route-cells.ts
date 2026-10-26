@@ -105,6 +105,8 @@ export type A8RouteHigher = {
   seed?: string;
   params?: (c: A8RouteCtx) => Readonly<Record<string, string>>;
   body?: (c: A8RouteCtx) => unknown;
+  /** The query its request carries in place of the route's. */
+  query?: (c: A8RouteCtx) => string;
   refusedStatus?: A8RouteSpec['refusedStatus'];
 };
 
@@ -216,6 +218,30 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'DELETE /api/formulas/:id': { kind: 'formula', action: 'delete' },
   'PATCH /api/presents/:id': { kind: 'present', action: 'edit', body: title, warnMade: true },
   'DELETE /api/presents/:id': { kind: 'present', action: 'delete' },
+  // A canvas's data store (DWG phase 7a): a reader writes its own `mine`
+  // entries; the `shared` bucket asks Write on the canvas, its higher cells.
+  'PUT /api/presents/:id/data': {
+    kind: 'present',
+    action: 'read',
+    body: () => ({ bucket: 'mine', key: 'a8', value: { a8: 1 } }),
+    blind: 'a canvas’s data is not in the probe (canvas_data, never the canvas)',
+    higher: {
+      why: 'the shared bucket asks Write on the canvas (the right a source save asks)',
+      action: 'edit',
+      body: () => ({ bucket: 'shared', key: 'a8', value: { a8: 1 } }),
+    },
+  },
+  'DELETE /api/presents/:id/data': {
+    kind: 'present',
+    action: 'read',
+    query: () => 'bucket=mine&key=a8',
+    blind: 'a canvas’s data is not in the probe (canvas_data, never the canvas)',
+    higher: {
+      why: 'the shared bucket asks Write on the canvas (the right a source save asks)',
+      action: 'edit',
+      query: () => 'bucket=shared&key=a8',
+    },
+  },
   'PATCH /api/draws/:id': { kind: 'draw', action: 'edit', body: title, warnMade: true },
   'DELETE /api/draws/:id': { kind: 'draw', action: 'delete' },
   'PUT /api/draws/:id/draft': {

@@ -35,6 +35,7 @@ DELETE /api/pdf-passwords/:id class=area scope=area:keys caller=owner gone=false
 DELETE /api/peers/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
 DELETE /api/presents/:id class=content scope=content caller=owner gone=false
+DELETE /api/presents/:id/data class=content scope=content caller=owner gone=false
 DELETE /api/profile/logo class=self scope=self caller=owner gone=false
 DELETE /api/profile/photo class=self scope=self caller=owner gone=false
 DELETE /api/push/subscriptions/:id class=self scope=self caller=owner gone=false
@@ -211,6 +212,7 @@ GET /api/pending class=area scope=area:settings caller=owner gone=false
 GET /api/pending/:id class=area scope=area:settings caller=owner gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
+GET /api/presents/:id/data class=content scope=content caller=owner gone=false
 GET /api/presents/:id/frame class=content scope=content caller=frame gone=false
 GET /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 GET /api/presents/:id/revisions class=content scope=content caller=owner gone=false
@@ -464,6 +466,7 @@ HEAD /api/pending class=area scope=area:settings caller=owner gone=false
 HEAD /api/pending/:id class=area scope=area:settings caller=owner gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
+HEAD /api/presents/:id/data class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id/frame class=content scope=content caller=frame gone=false
 HEAD /api/presents/:id/poster class=content scope=content caller=readerAsset gone=false
 HEAD /api/presents/:id/revisions class=content scope=content caller=owner gone=false
@@ -814,6 +817,7 @@ PUT /api/member/push/preferences class=self scope=self caller=member gone=false
 PUT /api/microsoft/config class=area scope=area:connectors caller=owner gone=false
 PUT /api/microsoft/drives/:id/scopes class=area scope=area:connectors caller=owner gone=false
 PUT /api/pages/:id/draft class=content scope=content caller=owner gone=false
+PUT /api/presents/:id/data class=content scope=content caller=owner gone=false
 PUT /api/profile class=self scope=self caller=owner gone=false
 PUT /api/profile/avatar class=self scope=self caller=owner gone=false
 PUT /api/profile/backgrounds class=self scope=self caller=owner gone=false
