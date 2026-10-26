@@ -126,7 +126,8 @@ function styleText(css: string): string {
  *    host can tell a broken canvas from a slow one. The parent checks
  *    `e.source` and accepts nothing else.
  *  - Data (DWG phase 7a): `window.mantle.data` (get, set, delete, list,
- *    info, clear), each a promise. A call is `{v:1, kind:'data', n, id, op,
+ *    info, clear), each a promise; not on a canvas that names an element
+ *    mantle (namesMantle), whose window.mantle stays that element. A call is `{v:1, kind:'data', n, id, op,
  *    bucket, key, json, everyone, by}` to the parent, held until `ready` has
  *    gone (the parent takes none before the proof), and answered by
  *    `{v:1, kind:'data-reply', id, ok, result | error}` from the parent only.
@@ -153,6 +154,8 @@ function preludeScript(opts: {
   followTheme: boolean;
   size: CanvasSize;
   nonce: string;
+  /** The canvas names an element mantle (namesMantle): window.mantle stays its. */
+  named: boolean;
 }): string {
   const cfg = scriptJson({
     cls: opts.cls,
@@ -160,6 +163,7 @@ function preludeScript(opts: {
     follow: opts.followTheme,
     size: opts.size === 'fill' ? null : opts.size,
     n: opts.nonce,
+    named: opts.named,
   });
   // The script takes itself out of the document as it runs: the nonce lives
   // on only in this closure, out of the canvas's reach (it runs later, in the
@@ -167,9 +171,13 @@ function preludeScript(opts: {
   // is read once, first: `window.parent` is replaceable, and a canvas that
   // set it to an object of its own would be handed the nonce at load. The
   // real parent is another origin's window, whose postMessage a canvas
-  // cannot change.
-  return `(function(){
+  // cannot change. The bfcache test reads `persisted` through the getter
+  // taken here, not off the event: a canvas could redefine it later.
+  return `(function(){'use strict';
   var P=window.parent;
+  var persisted=(function(){try{var d=Object.getOwnPropertyDescriptor(PageTransitionEvent.prototype,'persisted');
+    return d&&typeof d.get==='function'?Function.prototype.call.bind(d.get):null;}catch(_){return null;}})();
+  function kept(e){if(!e)return false;if(!persisted)return !!e.persisted;try{return !!persisted(e);}catch(_){return false;}}
   var me=document.currentScript;if(me&&me.parentNode){me.parentNode.removeChild(me);}
   var cfg=${cfg};var h=document.documentElement;var nonce=cfg.n;cfg.n='';
   ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCSessionDescription'].forEach(function(n){
@@ -178,7 +186,7 @@ function preludeScript(opts: {
   theme(cfg.cls,cfg.ct);
   var waits=Object.create(null),seq=0,up=false,queue=[],qn=0,noHost=!nonce;
   window.addEventListener('pagehide',function(e){
-    if(nonce&&!(e&&e.persisted)){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}},{capture:true});
+    if(nonce&&!kept(e)){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}},{capture:true});
   window.addEventListener('message',function(e){
     if(e.source!==P)return;var m=e.data;if(!m||m.v!==1)return;
     if(m.kind==='theme'&&cfg.follow){theme(m.cls,m.colorTheme);}
@@ -209,7 +217,7 @@ function preludeScript(opts: {
     info:function(){return call('info',{});},
     clear:function(){return call('clear',{}).then(function(r){return r&&typeof r.removed==='number'?r.removed:0;});}
   };
-  try{window.mantle=Object.freeze({data:Object.freeze(data)});}catch(_){}
+  if(!cfg.named&&!('mantle' in window)){try{window.mantle=Object.freeze({data:Object.freeze(data)});}catch(_){}}
   if(cfg.size){
     var fit=function(){var W=cfg.size.w,H=cfg.size.h,iw=window.innerWidth||W,ih=window.innerHeight||H;
       var s=Math.min(iw/W,ih/H);if(!(s>0))s=1;
@@ -230,6 +238,18 @@ function preludeScript(opts: {
     try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}
     up=true;var q=queue,k=qn;queue=null;qn=0;for(var i=0;i<k;i++){send(q[i]);}});
 })();`;
+}
+
+/** Whether the canvas names an element mantle (id="mantle", or name="mantle"
+ *  on a form, img, embed, object or iframe): the browser hands that element
+ *  out as window.mantle, and the prelude's own window.mantle would hide it.
+ *  The prelude runs before the canvas body is parsed, so it reads this from
+ *  the source; a false match only costs that canvas mantle.data. Linear: no
+ *  nested repeat. */
+export function namesMantle(source: string): boolean {
+  return /(?:^|[\s"'/])(?:[iI][dD]|[nN][aA][mM][eE])\s*=\s*(?:"mantle"|'mantle'|mantle(?=[\s/>]|$))/.test(
+    source,
+  );
 }
 
 /** The ground and fit rules. A fixed canvas draws its body at the design
@@ -295,6 +315,7 @@ export function buildCanvasFrameHtml(opts: {
   // A fixed canvas wears the light baseline: no dark class, no colour theme.
   const cls = follow ? opts.cls : '';
   const colorTheme = follow ? opts.colorTheme : null;
+  const source = stripLeadingDoctype(opts.source);
   const prelude = [
     '<meta charset="utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',
@@ -304,7 +325,7 @@ export function buildCanvasFrameHtml(opts: {
     `<style>${styleText(opts.fontCss)}</style>`,
     `<style>${styleText(opts.css)}</style>`,
     `<style>${layoutCss(opts.size)}</style>`,
-    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size, nonce: opts.nonce ?? '' })}</script>`,
+    `<script>${preludeScript({ cls, colorTheme, followTheme: follow, size: opts.size, nonce: opts.nonce ?? '', named: namesMantle(source) })}</script>`,
   ].join('\n');
-  return `<!doctype html>\n${prelude}\n${stripLeadingDoctype(opts.source)}`;
+  return `<!doctype html>\n${prelude}\n${source}`;
 }

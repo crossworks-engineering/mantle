@@ -197,9 +197,13 @@ describe('the prelude', () => {
 
 describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
   /** The prelude run in a stand-in window; `nonce` '' is a render. */
-  function frame(nonce: string, canvas?: string) {
+  function frame(
+    nonce: string,
+    canvas?: string,
+    o: { source?: string; win?: Record<string, unknown>; globals?: Record<string, unknown> } = {},
+  ) {
     const html = buildCanvasFrameHtml({
-      source: '<html><body>x</body></html>',
+      source: o.source ?? '<html><body>x</body></html>',
       css: '',
       importMapJson: '{"imports":{}}',
       cls: '',
@@ -224,6 +228,7 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       },
       innerWidth: 800,
       innerHeight: 600,
+      ...o.win,
     };
     const el = {
       className: '',
@@ -232,6 +237,7 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       style: { setProperty() {} },
     };
     const ctx = {
+      ...o.globals,
       window: win,
       document: { currentScript: null, documentElement: el },
       Object,
@@ -247,19 +253,87 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     runInNewContext(prelude, ctx);
     // What a canvas runs after the prelude, in the same realm.
     if (canvas) runInContext(canvas, ctx);
-    const api = (win.mantle as { data: Record<string, (...a: unknown[]) => Promise<unknown>> })
-      .data;
+    const api = (
+      win.mantle as { data?: Record<string, (...a: unknown[]) => Promise<unknown>> } | undefined
+    )?.data as Record<string, (...a: unknown[]) => Promise<unknown>>;
     const load = () => {
       for (const f of handlers.load ?? []) f({});
     };
     const reply = (source: unknown, data: unknown) => {
       for (const f of handlers.message ?? []) f({ source, data });
     };
-    const pagehide = (persisted = false) => {
-      for (const f of handlers.pagehide ?? []) f({ persisted });
+    const pagehide = (persisted: unknown = false) => {
+      const e = typeof persisted === 'boolean' ? { persisted } : persisted;
+      for (const f of handlers.pagehide ?? []) f(e);
     };
-    return { api, toParent, load, reply, parent, pagehide, options, ctx };
+    return { api, toParent, load, reply, parent, pagehide, options, ctx, win, prelude };
   }
+
+  /** A stand-in for the browser's PageTransitionEvent: `persisted` a
+   *  prototype getter over an internal slot, as in the browser. */
+  function pageTransitionEvent() {
+    const slot = new WeakMap<object, boolean>();
+    class PageTransitionEvent {
+      constructor(persisted: boolean) {
+        slot.set(this, persisted);
+      }
+    }
+    Object.defineProperty(PageTransitionEvent.prototype, 'persisted', {
+      configurable: true,
+      get(this: object) {
+        if (!slot.has(this)) throw new TypeError('Illegal invocation');
+        return slot.get(this);
+      },
+    });
+    return PageTransitionEvent;
+  }
+
+  it('runs in strict mode', () => {
+    expect(frame('n0').prelude.startsWith("(function(){'use strict';")).toBe(true);
+  });
+
+  it('reads persisted through the getter it took first: a canvas that redefines it changes nothing', () => {
+    const PageTransitionEvent = pageTransitionEvent();
+    const f = frame(
+      'n8',
+      `Object.defineProperty(PageTransitionEvent.prototype, 'persisted', { get() { return false; } });`,
+      { globals: { PageTransitionEvent } },
+    );
+    f.load();
+    f.pagehide(new PageTransitionEvent(true));
+    expect(f.toParent.filter((m) => m.kind === 'leaving')).toEqual([]);
+    f.pagehide(new PageTransitionEvent(false));
+    expect(f.toParent.filter((m) => m.kind === 'leaving')).toEqual([
+      { v: 1, kind: 'leaving', n: 'n8' },
+    ]);
+  });
+
+  it('leaves window.mantle alone when the canvas names an element mantle', () => {
+    for (const source of [
+      '<html><body><div id="mantle">x</div></body></html>',
+      "<form name='mantle'></form>",
+      '<img name=mantle>',
+      '<p\n  ID = "mantle">',
+    ]) {
+      const f = frame('n9', undefined, { source });
+      expect(f.win.mantle, source).toBeUndefined();
+    }
+    // Already taken when the prelude runs: kept as it was.
+    const taken = { tagName: 'DIV' };
+    const f = frame('n9', undefined, { win: { mantle: taken } });
+    expect(f.win.mantle).toBe(taken);
+  });
+
+  it('defines window.mantle when no element is named mantle', () => {
+    for (const source of [
+      '<html><body><div id="mantle-x" data-id="mantle">x</div></body></html>',
+      '<div id="Mantle"></div>',
+      '<script>el.id = mantleId</script>',
+    ]) {
+      const f = frame('n10', undefined, { source });
+      expect(Object.keys(f.api ?? {}), source).toContain('set');
+    }
+  });
 
   it('holds every call until ready has gone, and names no canvas and no login', async () => {
     const f = frame('n1');
