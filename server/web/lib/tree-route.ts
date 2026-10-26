@@ -116,7 +116,7 @@ function extensionOf(name: string): string | null {
 }
 
 /** The kind named by a member or client tree route, or a 404 when those
- *  trees do not serve it (READER_TREE_KINDS: the kinds a Library holds). */
+ *  trees do not serve it (READER_TREE_KINDS: the kinds a Library holds, and apps). */
 export async function readerTreeKindOr404(ctx: {
   params: Promise<{ kind: string }>;
 }): Promise<TreeKind | Response> {

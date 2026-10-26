@@ -29,9 +29,11 @@ export function isTreeLiveKind(kind: TreeKind): boolean {
 
 /** The kinds the member and client trees serve: the live kinds whose items a
  *  Library holds (files, notes, pages, drawings, tables; the registry's
- *  `library`). */
+ *  `library`), and apps. A member's Apps screen lists the apps its row rules
+ *  read (GET /api/apps), and the tree reads the same rows with the folders on
+ *  the way to them, so the screen keeps its folders. */
 export const READER_TREE_KINDS: readonly TreeKind[] = TREE_LIVE_KINDS.filter(
-  (k) => (kindSpecOf(TREE_KIND_SPECS[k].nodeType)?.library ?? false) !== false,
+  (k) => k === 'apps' || (kindSpecOf(TREE_KIND_SPECS[k].nodeType)?.library ?? false) !== false,
 );
 
 /** The short token an item shows in its row's status slot. */

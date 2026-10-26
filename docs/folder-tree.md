@@ -202,28 +202,19 @@ client refetches.
 
 ### Apps for members
 
-Apps are not a reader tree kind (`READER_TREE_KINDS`): a member RUNS an app,
-and that rule is not the Library's read rule (a green published build, never
-through an embed). So the launcher gets its folders from the list that
-already held the rule: `GET /api/member/apps` answered `folders` next to
-`apps` (a 410 stub from W8d, and the client launcher, `GET
-/api/client/apps`, from W5c; both deleted in arch A7) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
-`appIds`; `packages/content/src/app-folders.ts`).
+Apps are a reader tree kind (`READER_TREE_KINDS`): a member's or client's
+shell names `apps` in `treeKinds`, and its Apps screen is the tree. The
+tree reads the apps the login's row rules read, the same rows `GET
+/api/apps` lists for it, and the folders on the way to them (the
+login's trail, as on every kind): a team app in a folder nobody shared
+still shows in its folder, while a folder of admin apps, of drafts or an
+empty one is absent.
 
-- **One rule.** `appLauncher(anchor, reader)` reads the apps the reader may
-  run, as the reader, then reads the folder rows on the way to those apps,
-  as the brain, and nothing else. It takes no paths from its caller. A
-  folder is answered only when it holds, at any depth, an app of the same
-  answer. A folder of admin apps, a folder of drafts and an empty folder are
-  absent, name and id, whatever their share says. When the folder read
-  fails the apps still list, with no folders, and the failure is logged.
-- **Names are organisational.** A team app in a folder nobody shared still
-  shows in its folder: the folder's name, icon and colour come with it.
-- **Read only.** No level, share or system flag on a folder, no path on a
-  card, and no write route. Siblings come in the admin's order.
-- **Older clients** read `apps` (and `homeAppId`) as before and ignore
-  `folders`; an older brain sends none, and the launcher shows one flat
-  list.
+History: the launcher (`GET /api/member/apps`, and the client launcher
+`GET /api/client/apps`) answered `folders` next to `apps` from
+`appLauncher` (`packages/content/src/app-folders.ts`). Both routes went in
+arch A7, leaving a member's Apps screen a flat card list until apps
+joined the reader kinds.
 
 ## Sharing a folder (workspaces)
 
