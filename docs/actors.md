@@ -127,8 +127,9 @@ the 404 of none, as a random id; one it reads but may not change, 403.
 
 Admin is management, not reading. An Admin login is an enabled user of the
 live Admin workspace (`mantle_login_is_admin`, `..._admin_user`); the role
-column follows, written by the membership definers only, shown never asked
-(`Login` has no kind or role: `adminFacts`; `mantle_role_drift` counts). `mantle_area_rule` answers `loginHasArea`
+column follows, written by the membership definers only, and is shown, not
+asked, except by the narrowing checks under Known limits (`Login` has no kind
+or role: `adminFacts`; `mantle_role_drift` counts). `mantle_area_rule` answers `loginHasArea`
 and `areasFor`; `requireArea` asks `mantle_scope_has_area` (the rule plus
 "Admin in the scope") in its login's own scope, the rule unscoped.
 `mantle_login_area` adds a counted fail-open (S4b removes it).
@@ -337,6 +338,8 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
 - Route policy is spread over lists, not declared per route. S9.
 - The A8 matrix covers every kind and tool, not yet the routes. S11b.
 - Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.
+- Five checks still ask the role column, each only narrowing while drift is 0:
+  `findMemberAsset`, `memberLoginActive`, `mcp-auth.ts` (2), `login-notices.ts`. S8 follow-up.
 - Accepted, no step: any role can `set_config('mantle.actor', …)`, so the
   settings are no credential; access is never decided from them on a role
   that runs caller-shaped SQL.

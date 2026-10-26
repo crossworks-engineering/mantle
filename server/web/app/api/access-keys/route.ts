@@ -101,7 +101,7 @@ async function handleGET(login: Login) {
   return NextResponse.json(
     {
       keys,
-      // The display role (the legacy shape's, until the role is derived).
+      // The display role (sessionRole: from Admin membership).
       role: sessionRole(login),
       areas: [...ACCESS_KEY_AREAS],
       defaultExpiryDays: Math.min(DEFAULT_ACCESS_KEY_EXPIRY_DAYS, maxDays ?? Infinity),

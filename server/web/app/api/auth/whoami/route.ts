@@ -45,9 +45,9 @@ const ROUTES = {
 export async function GET() {
   const login = await publicLoginItself();
   if (!login) return unauthorizedRefusal();
-  // The display role (and its client routes) stays the session's until the
-  // role is derived from Admin membership; whether the login
-  // is an Admin user is adminFacts (no scope here: the row's answer).
+  // The display role (and its client routes) comes from Admin membership
+  // (sessionRole); whether the login is an Admin user is adminFacts (no
+  // scope here: the row's answer).
   const role = sessionRole(login);
   const body: AuthWhoami = {
     role,

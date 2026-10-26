@@ -30,7 +30,7 @@ export class AdminActRefusedError extends Error {
 }
 
 // The guard's own refusal of a login that is no Admin user (session.ts
-// loginRefused('member')), the same 403 and body.
+// loginRefused), the same 403 and body.
 defineDomainError(AdminActRefusedError, {
   reason: 'the login is no Admin user in the database (an Admin act refused it inside)',
   status: 403,

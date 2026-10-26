@@ -101,7 +101,7 @@ async function handleGET(login: Login) {
   );
   const { displayName, email } = login;
   const body: Shell = {
-    // The display role (the legacy shape's, until the role is derived).
+    // The display role (sessionRole: from Admin membership).
     role: sessionRole(login),
     loginId,
     // The brain's anchor login (its id is the brain's): the app delete

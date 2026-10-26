@@ -18,7 +18,7 @@ async function handleGET(login: Login) {
   const { displayName } = login;
   const key = getRequestContext()?.accessKey;
   return NextResponse.json({
-    // The display role (the legacy shape's, until the role is derived).
+    // The display role (sessionRole: from Admin membership).
     role: sessionRole(login),
     loginId: login.loginId,
     email: login.email,
