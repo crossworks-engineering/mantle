@@ -880,8 +880,8 @@ Until member logins Phase 6 the same app was the team-code **Team Hub** at
 `/hub`, beside the `/team` workspace and the Forum; those are retired and
 redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`
 (site name, member name, briefing sections, Library counts),
-`host.hub.openChat()`, `host.hub.openBriefing(token)`, and the built-in member
-home renders automatically if the app ever breaks.
+`host.hub.openChat()`, `host.hub.openBriefing(token)`, and the built-in Desk
+shows if the app ever breaks.
 
 Everything else about building one is this guide, plus the hub-specific
 contract, project structure, and content-update patterns (including the
