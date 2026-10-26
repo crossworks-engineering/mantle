@@ -107,6 +107,10 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The approval queue's park (at the full-route spot pending-park), claim,
   // return and settle, in the asking or deciding scope (S4a list).
   'packages/db/src/pending-calls.ts': 'narrow',
+  // The conversation store's turn rows (recordTurn, a turn's outcome, the
+  // cancel route's supersede at the full-route spot turn-supersede), in
+  // the turn or request that writes them.
+  'packages/db/src/conversation-writes.ts': 'narrow',
   // An embed or extract failure, in a turn's embed as in the workers.
   'packages/db/src/provider-alerts.ts': 'narrow',
   // The embedding cache, in a turn's embed as in the workers.

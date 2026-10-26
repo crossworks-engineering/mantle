@@ -118,17 +118,32 @@ tables would let every scoped configuration write through):
   tool_groups, audit_log): `areaSystem('connectors', …)`, the area asked
   again, as `api_tool_create` runs whole.
 
-Left to decide (`SCOPED_SYSTEM_WRITES_LEFT`; each is moved or named before
-S4b, else S4b refuses it):
+- The approval queue (`pending_tool_calls`): every park (the turn's
+  confirm gate, an agent's queued call, the toolsmith, the dev console) is
+  one `parkPendingCall` at the full-route spot `pending-park`, and the
+  claim, rejection, put-back, revert and settles of
+  `packages/tools/src/pending.ts` are `decidePendingCall`,
+  `unclaimPendingCall`, `revertPendingCall` and `settlePendingCall`
+  (`packages/db/src/pending-calls.ts`): `systemDb`, the narrow route in a
+  scope, with who may decide the call in each WHERE (`deciderFilter`), as
+  `pending-elevated.ts` decides an elevated one. The narrow role already
+  held every column written after a park.
+- The conversation store (`assistant_messages`): `recordTurn`, a turn's
+  outcome and the cancel route's supersede
+  (`packages/db/src/conversation-writes.ts`): `systemDb`, as
+  `team-messages.ts` writes a workspace thread. A row names its login
+  whenever a login actor is bound (`threadLoginFor`): on the system pool
+  the database's stamp reads no login, so an unset one would land a
+  member's row in the anchor's thread; a row naming another login is
+  refused. The supersede stamps a settled inbound row, which the narrow
+  role never rewrites (0323), so it runs at the full-route spot
+  `turn-supersede`, the system pool it ran on before.
 
-| Table                       | Measured in                                                                       | Writers                                                                                        |
-| --------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `public.pending_tool_calls` | `a5-approval-recheck`, `a5-elevated-approval`, `w7a-tool-sweep` (79 hits, logins) | the approval queue: `packages/tools/src/pending-queue.ts`, `pending.ts`, `toolsmith/groups.ts` |
-| `public.assistant_messages` | `a5-mcp-writes-smoke`, `w7c-chat` (4 hits, logins)                                | a login's turn rows over MCP: `packages/runtime/src/agent/conversation.ts`                     |
-
-Measured 2026-10-26 on feat/s4a-list (both shards of the full DB run): no
-other table. The integrity screen's delete of a node's trace rows
-(`server/web/lib/integrity/landed.ts`) has no vitest hit.
+Left to decide (`SCOPED_SYSTEM_WRITES_LEFT`): none, since the S4a list's
+fix round. Measured with `MANTLE_FAIL_OPEN_DUMP` over both DB shards and
+test:actor-off, actor-on, edit-on, matrix, runtime-role and serial: no
+scoped system-pool write left. The integrity screen's delete of a node's
+trace rows (`server/web/lib/integrity/landed.ts`) has no vitest hit.
 
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two

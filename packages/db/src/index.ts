@@ -181,6 +181,15 @@ export {
   rejectElevatedPendingCall,
 } from './pending-elevated';
 export {
+  insertConversationRow,
+  settleConversationRow,
+  supersedeConversationTurn,
+  threadLoginFor,
+  ThreadLoginMismatchError,
+  type ConversationExecutor,
+  type ConversationOutcome,
+} from './conversation-writes';
+export {
   decidePendingCall,
   parkPendingCall,
   revertPendingCall,

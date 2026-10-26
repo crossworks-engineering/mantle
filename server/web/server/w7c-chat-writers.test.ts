@@ -10,6 +10,10 @@
  * bare `null`. Telegram's writers are W7d's (they name the anchor for the
  * owner's bot until Telegram is per user) and are listed, not checked.
  *
+ * recordTurn's own row is insertConversationRow's (@mantle/db
+ * conversation-writes.ts), which names the bound login itself when a login
+ * actor is bound; its call and its insert are swept too.
+ *
  * W7 integration fix 2: so does each direct `insert(assistantMessages)` and
  * `insert(chatThreads)`, and a call that passes a variable instead of an
  * inline object is checked through that variable's object in the same file
@@ -47,7 +51,7 @@ function sources(dir: string, out: string[] = []): string[] {
 /** The argument object of each `fn({ ... })` call in `src`. */
 function calls(src: string, fn: string): string[] {
   const found: string[] = [];
-  const re = new RegExp(`\\b${fn}\\(\\{`, 'g');
+  const re = new RegExp(`\\b${fn}\\(\\s*\\{`, 'g');
   for (let m = re.exec(src); m; m = re.exec(src)) {
     let depth = 0;
     let i = m.index + m[0].length - 1;
@@ -126,6 +130,7 @@ describe('W7c: every chat row writer names its login', () => {
         calls: [
           ...calls(src, 'recordTurn'),
           ...calls(src, 'appendThreadMessage'),
+          ...calls(src, 'insertConversationRow'),
           ...variableCalls(src, 'recordTurn'),
           ...variableCalls(src, 'appendThreadMessage'),
           ...inserts(src, 'assistantMessages'),
@@ -147,6 +152,8 @@ describe('W7c: every chat row writer names its login', () => {
         // The direct inserts (W7 integration fix 2).
         'packages/runtime/src/agent/chat-archive.ts',
         'packages/runtime/src/agent/conversation.ts',
+        // recordTurn's insert, on the system pool (S4a list).
+        'packages/db/src/conversation-writes.ts',
         'packages/content/src/team-messages.ts',
       ]),
     );

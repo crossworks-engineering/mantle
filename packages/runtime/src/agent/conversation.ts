@@ -30,6 +30,9 @@ import {
   db,
   agents,
   assistantMessages,
+  insertConversationRow,
+  settleConversationRow,
+  supersedeConversationTurn,
   notSuperseded,
   chatThreads,
   entities,
@@ -275,17 +278,18 @@ export async function recordTurn(args: {
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
   data?: Record<string, unknown> | null;
-  /** The login whose thread this turn is in (workspaces R3, 0269). Unset:
-   *  the database stamps the scope's login, else the anchor's (the owner's
-   *  thread): no chat row is left without a login, and each login reads
-   *  only its own rows. */
+  /** The login whose thread this turn is in (workspaces R3, 0269). With a
+   *  login actor bound it is that login (another is refused:
+   *  @mantle/db threadLoginFor); unset with none, the database stamps the
+   *  anchor's (the owner's thread): no chat row is left without a login,
+   *  and each login reads only its own rows. */
   loginId?: string | null;
   tx?: Executor;
 }): Promise<AssistantMessage> {
-  const exec = args.tx ?? db;
-  const [row] = await exec
-    .insert(assistantMessages)
-    .values({
+  // On the system pool (@mantle/db conversation-writes.ts), never the
+  // caller's scoped write; a caller's own transaction when it passes one.
+  return insertConversationRow(
+    {
       ownerId: args.ownerId,
       agentId: args.agentId,
       direction: args.direction,
@@ -297,10 +301,9 @@ export async function recordTurn(args: {
       ...(args.status ? { status: args.status } : {}),
       ...(args.data != null ? { data: args.data } : {}),
       ...(args.loginId ? { loginId: args.loginId } : {}),
-    })
-    .returning();
-  if (!row) throw new Error('recordTurn: insert returned no row');
-  return row;
+    },
+    args.tx,
+  );
 }
 
 /**
@@ -353,14 +356,16 @@ export async function updateAssistantMessageOutcome(args: {
   attachments?: ConversationAttachment[];
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
-  const exec = args.tx ?? db;
   const dataPatch: Record<string, unknown> = {
     ...(args.thoughts != null ? { thoughts: args.thoughts } : {}),
     ...(args.toolStats != null ? { toolStats: args.toolStats } : {}),
   };
-  const [row] = await exec
-    .update(assistantMessages)
-    .set({
+  // On the system pool (@mantle/db conversation-writes.ts); a column left
+  // undefined is not written.
+  return settleConversationRow(
+    args.ownerId,
+    args.id,
+    {
       status: args.status,
       ...(args.text != null ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
@@ -368,15 +373,10 @@ export async function updateAssistantMessageOutcome(args: {
       ...(args.attachments != null && args.attachments.length > 0
         ? { attachments: args.attachments }
         : {}),
-      ...(Object.keys(dataPatch).length > 0
-        ? {
-            data: sql`${assistantMessages.data} || ${JSON.stringify(dataPatch)}::jsonb`,
-          }
-        : {}),
-    })
-    .where(and(eq(assistantMessages.id, args.id), eq(assistantMessages.ownerId, args.ownerId)))
-    .returning();
-  return row ?? null;
+      dataPatch,
+    },
+    args.tx,
+  );
 }
 
 /**
@@ -396,23 +396,12 @@ export async function markTurnSuperseded(args: {
   inboundId: string;
   outboundId: string;
   newTurnId: string;
-  /** The login whose thread it is (0269): another login's rows are no-ops. */
+  /** The login whose thread it is (0269): another login's rows are no-ops.
+   *  With a login actor bound it is that login (another is refused). */
   loginId?: string;
 }): Promise<number> {
-  const rows = await db
-    .update(assistantMessages)
-    .set({
-      data: sql`${assistantMessages.data} || ${JSON.stringify({ superseded_by: args.newTurnId })}::jsonb`,
-    })
-    .where(
-      and(
-        inArray(assistantMessages.id, [args.inboundId, args.outboundId]),
-        eq(assistantMessages.ownerId, args.ownerId),
-        ...(args.loginId ? [eq(assistantMessages.loginId, args.loginId)] : []),
-      ),
-    )
-    .returning({ id: assistantMessages.id });
-  return rows.length;
+  // On the system pool (@mantle/db conversation-writes.ts).
+  return supersedeConversationTurn(args);
 }
 
 /**

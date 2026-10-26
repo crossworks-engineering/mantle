@@ -8,8 +8,10 @@
  * was never written, so it stayed `[]`. Four successful tool calls, nothing on
  * screen, nothing failed.
  *
- * Same chain-capturing shape as conversation.supersede.test.ts: `@mantle/db` is
- * mocked so the SET payload can be inspected directly.
+ * The row is settled on the system pool (@mantle/db settleConversationRow,
+ * which writes each column it is given and skips one left undefined:
+ * conversation-writes.test.ts); `@mantle/db` is mocked so the outcome this
+ * module hands it can be inspected directly.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -20,15 +22,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  db: {
-    update: () => ({
-      set: (payload: Record<string, unknown>) => {
-        h.updates.push(payload);
-        return {
-          where: () => ({ returning: () => Promise.resolve([{ id: 'out-1' }]) }),
-        };
-      },
-    }),
+  settleConversationRow: async (_owner: string, id: string, outcome: Record<string, unknown>) => {
+    h.updates.push(outcome);
+    return { id };
   },
 }));
 

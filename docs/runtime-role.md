@@ -231,7 +231,9 @@ Its rights, made equal to the access matrix at every migrate inside
   appended, answered, its budget decided or cancelled; `model-route`,
   `tool-config`, `heartbeat-maker`, `skill-text`, `pending-park`,
   `docs-root`, `agent-group-grant`, `push-device`: a phone subscribed and
-  the push relay), where `systemDb`
+  the push relay; `turn-supersede`: a cancelled turn pair stamped, whose
+  settled inbound row the message guard never lets the narrow role
+  rewrite), where `systemDb`
   takes the system pool too. The screens and tools that edit such a table
   call `onNarrowSpots` (packages/db/src/narrow-spots.ts): one list,
   `NARROW_TABLE_SPOTS`, names per table the spots a write may need (an
@@ -1124,8 +1126,7 @@ OAuth code's burn) write, uncounted; the drill's N-1 rows run each as the
 runtime role with the actor check on. With the switch on, the older
 image's grants also leave the narrow role without those readers, so its
 holds refuse (42501, fail closed) every write they guard, a member's too.
-The b2 image (one back) is the exception: its own migrations (0315 to
-0327) grant the held readers, and with the switch on only 0328's wider
+The b2 image (one back) is the exception: its own migrations (0315 to 0327) grant the held readers, and with the switch on only 0328's wider
 hold stands in its way (it refuses the push device deletes b2 sends
 outside the spot). So with the switch on, pinning b2 takes one of
 two forms: set `MANTLE_NARROW_SYSTEM=0` in the same `.env` edit as

@@ -622,6 +622,87 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     expect(rows.map((row) => row.login)).toEqual([adminB, adminB]);
   });
 
+  // ── S4a list: the turn rows on the system pool ────────────────────────
+
+  it("a member's turn rows and its cancel land in its own thread on the system pool; another login's is refused", async () => {
+    const v = await import('@mantle/db/viewer');
+    /** `login`'s mutating request scope, the login actor bound, as the
+     *  session guard leaves it (the MCP surface, the cancel route). */
+    const asLogin = <T>(login: string, fn: () => Promise<T>) =>
+      v.runInRequestSlot(async () => {
+        const scope = Object.freeze({
+          kind: 'user' as const,
+          loginId: login,
+          ws: Object.freeze([teamWs]),
+          modWs: Object.freeze([]),
+        });
+        expect(v.enterRequestScope(scope, { writes: true, drafts: false })).toBe(true);
+        return fn();
+      });
+    const text = `${tag} s4a member turn`;
+    // No login named: the member's own, never the anchor's (the stamp's).
+    const inbound = await asLogin(member, () =>
+      rt.recordTurn({ ownerId: owner, agentId: teamAgent, direction: 'inbound', text }),
+    );
+    const outbound = await asLogin(member, () =>
+      rt.recordTurn({
+        ownerId: owner,
+        agentId: teamAgent,
+        direction: 'outbound',
+        text: '',
+        status: 'pending',
+      }),
+    );
+    const rows = await x<{ login: string }>(sql`select login_id::text as login
+      from assistant_messages where id in (${inbound.id}, ${outbound.id})`);
+    expect(rows.map((r) => r.login)).toEqual([member, member]);
+    // Its outcome settles on the system pool.
+    const settled = await asLogin(member, () =>
+      rt.updateAssistantMessageOutcome({
+        ownerId: owner,
+        id: outbound.id,
+        status: 'complete',
+        text: 'answered',
+      }),
+    );
+    expect(settled).toMatchObject({ status: 'complete', text: 'answered' });
+    // Another login's thread named: refused, nothing written.
+    await expect(
+      asLogin(member, () =>
+        rt.recordTurn({
+          ownerId: owner,
+          agentId: teamAgent,
+          direction: 'inbound',
+          text: `${tag} s4a mismatched`,
+          loginId: member2,
+        }),
+      ),
+    ).rejects.toThrow(m.ThreadLoginMismatchError);
+    expect(
+      await x(sql`select 1 from assistant_messages where text = ${`${tag} s4a mismatched`}`),
+    ).toEqual([]);
+    // The cancel: another login stamps nothing of this pair, nor names it.
+    const pair = { ownerId: owner, inboundId: inbound.id, outboundId: outbound.id };
+    expect(
+      await asLogin(member2, () =>
+        rt.markTurnSuperseded({ ...pair, newTurnId: randomUUID(), loginId: member2 }),
+      ),
+    ).toBe(0);
+    await expect(
+      asLogin(member2, () =>
+        rt.markTurnSuperseded({ ...pair, newTurnId: randomUUID(), loginId: member }),
+      ),
+    ).rejects.toThrow(m.ThreadLoginMismatchError);
+    // The member's own: both rows, the settled inbound one included.
+    const newTurnId = randomUUID();
+    expect(
+      await asLogin(member, () => rt.markTurnSuperseded({ ...pair, newTurnId, loginId: member })),
+    ).toBe(2);
+    const stamped = await x<{ by: string | null }>(sql`select data->>'superseded_by' as by
+      from assistant_messages where id in (${inbound.id}, ${outbound.id})`);
+    expect(stamped.map((r) => r.by)).toEqual([newTurnId, newTurnId]);
+  });
+
   // ── Routes ────────────────────────────────────────────────────────────
 
   it('M3: a member’s thread comes back with the outside picture escaped', async () => {

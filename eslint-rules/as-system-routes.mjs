@@ -184,6 +184,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // The approval queue's one park (the turn's confirm gate, an agent's
   // queued call, the toolsmith, the dev console all call parkPendingCall).
   'packages/db/src/pending-calls.ts': ['pending-park'],
+  // A cancelled turn pair stamped superseded (the cancel route).
+  'packages/db/src/conversation-writes.ts': ['turn-supersede'],
   'packages/files/src/docs.ts': ['docs-root'],
   // A content feed switched on (0324: enabled only off on the narrow login).
   'packages/calendar/src/manage.ts': ['feed-enable'],

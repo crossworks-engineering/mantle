@@ -358,10 +358,10 @@ describe('the scoped system writes still left to decide (S4b reads them as refus
     // Measured by the full DB vitest run (docs/fail-open.md). A table leaves
     // this list when its write moves (the write role, systemDb, areaSystem)
     // or its matrix row names scopedSystemWrite; none joins it unreviewed.
-    expect([...SCOPED_SYSTEM_WRITES_LEFT].sort()).toEqual([
-      'public.assistant_messages',
-      'public.pending_tool_calls',
-    ]);
+    // Empty since the S4a list's fix round: the approval queue and the
+    // conversation store moved to the system pool helpers (pending-calls.ts,
+    // conversation-writes.ts). It stays empty: S4b refuses any other.
+    expect([...SCOPED_SYSTEM_WRITES_LEFT]).toEqual([]);
     for (const t of SCOPED_SYSTEM_WRITES_LEFT) {
       expect(WRITE_ROLE_TABLES).not.toContain(t);
       expect(Object.keys(SCOPED_SYSTEM_WRITE)).not.toContain(t);
