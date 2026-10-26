@@ -29,6 +29,8 @@
  *      reached, not just the `assistant` slug. Tool groups UNION (add-only); skill
  *      links CONVERGE (add new + drop a retired manifest skill like rich_writing;
  *      operator-authored skills kept). See reconcilePersonaCapabilitiesByRole.
+ *      Then the content-kind groups (Present) onto the assistant of EVERY
+ *      workspace, add-only: reconcileAssistantContentKinds.
  *   4. Provision any specialist agent that this version of the manifest ships but
  *      the brain is MISSING (e.g. `appsmith` in 0.31) — create-only, and wire the
  *      persona's delegation to it. This closes the same gap step 1 closes for
@@ -53,6 +55,7 @@ import { loadProfilePreferences, updateProfilePreferences } from '@mantle/conten
 import { APP_VERSION } from '@mantle/client-types/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
 import {
+  ASSISTANT_CONTENT_KIND_GROUPS,
   MANIFEST_AGENTS,
   MANIFEST_SKILL_SLUGS,
   PERSONA_MANIFEST,
@@ -206,6 +209,44 @@ export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promi
     changes.push(
       `${a.slug}:${added.length ? `+${added.join(',')}` : ''}${removed.length ? ` -${removed.join(',')}` : ''}`,
     );
+  }
+  return changes;
+}
+
+/**
+ * Add the content-kind groups (ASSISTANT_CONTENT_KIND_GROUPS: Present's
+ * read and write) to the assistant of EVERY workspace: Admin's persona and
+ * the assistants of the other workspaces, which were copied from the
+ * persona before Present shipped and so hold neither. The persona
+ * reconcile deliberately reaches Admin's assistants alone (the rest of the
+ * persona's groups stay the workspace's own choice); this is the one
+ * declared exception, for a workspace content kind every assistant writes
+ * where its turn's login may (the row rules decide, not the group).
+ * Add-only: a removal is never made, and an operator who drops one sees it
+ * back on the next version (the persona's trade-off). Never an adminOnly
+ * group outside Admin (groupsForAgent; none is, manifest.test.ts). Not a
+ * responder or assistant on no workspace, and not a manifest agent with its
+ * own entry (the team responder, the specialists): their entry owns their
+ * groups. Returns the `slug:+added` strings changed.
+ */
+export async function reconcileAssistantContentKinds(ownerId: string): Promise<string[]> {
+  const adminOnly = await adminOnlyGroups(ownerId);
+  const assistants = (await agentRows(ownerId, ['responder', 'assistant'])).filter(
+    (a) => !MANIFEST_NON_PERSONA_SLUGS.has(a.slug) && a.workspace !== 'none',
+  );
+  const changes: string[] = [];
+  for (const a of assistants) {
+    const missing = groupsForAgent(
+      missingPersonaGroups(a.groups, ASSISTANT_CONTENT_KIND_GROUPS),
+      a,
+      adminOnly,
+    );
+    if (missing.length === 0) continue;
+    await db
+      .update(agents)
+      .set({ toolGroupSlugs: [...(a.groups ?? []), ...missing], updatedAt: new Date() })
+      .where(eq(agents.id, a.id));
+    changes.push(`${a.slug}:+${missing.join(',')}`);
   }
   return changes;
 }
@@ -441,6 +482,7 @@ export async function reconcileOwner(ownerId: string) {
     skillMode: 'overwrite',
   });
   const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
+  const contentKindChanges = await reconcileAssistantContentKinds(ownerId);
   const provisioned = await provisionMissingSpecialists(ownerId);
   const specialistGrants = await grantSpecialistCapabilities(ownerId);
   const defsSynced = await syncSpecialistDefs(ownerId);
@@ -455,6 +497,7 @@ export async function reconcileOwner(ownerId: string) {
   return {
     seededHeartbeats,
     personaChanges,
+    contentKindChanges,
     provisioned,
     specialistGrants,
     defsSynced,
@@ -508,6 +551,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     const {
       seededHeartbeats,
       personaChanges,
+      contentKindChanges,
       provisioned,
       specialistGrants,
       defsSynced,
@@ -520,6 +564,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     console.log(
       `[reconcile] synced manifest to v${APP_VERSION}` +
         (personaChanges.length ? `; persona ${personaChanges.join('; ')}` : ' (persona current)') +
+        (contentKindChanges.length ? `; assistants ${contentKindChanges.join('; ')}` : '') +
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
         (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +

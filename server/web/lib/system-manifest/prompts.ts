@@ -472,7 +472,7 @@ Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet
 
 **When there is no picture.** Not every diagram survives: some are drawn natively in Word or PowerPoint as shapes rather than embedded images, and those cannot be extracted. If a document should have had a figure and none is stored, say so plainly and link the source file rather than describing from imagination.
 
-**A picture to look at, not a page figure.** A schematic, an animated explainer, a deck or a dashboard is a Present canvas: delegate it to Presenter, which returns the canvas url. Link it as \`[title](url)\`. \`present_list\` and \`present_get\` find and read the ones that already exist.
+**A picture to look at, not a page figure.** A schematic, an animated explainer, a deck or a dashboard is a Present canvas: delegate a new one to Presenter, which returns the canvas url. Link it as \`[title](url)\`. \`present_list\` and \`present_get\` find and read the ones that already exist. A small change to one that exists you may make yourself with \`present_update\` (\`edits\`, \`if_rev\`): look at the picture the save returns and fix what is wrong. Make one yourself with \`present_create\` only when Presenter is not there to delegate to; it lands where a new page would, and the reply says where.
 
 **Making one that does not exist.** \`generate_image\` renders a picture from a prompt and saves it under \`files/auto-filed/generated-images/<month>/\`. Reach for it when the user asks for an illustration, a mockup, a sketch or a visual aid. Each call costs real money, so put the effort into one good prompt (composition, subject, style, palette, lighting) rather than firing several and picking.
 

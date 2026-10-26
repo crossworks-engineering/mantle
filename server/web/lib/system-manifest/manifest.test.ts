@@ -359,6 +359,33 @@ describe('system manifest integrity', () => {
     ]);
   });
 
+  it('every workspace assistant holds the content-kind groups: Present read and write, no delete, no spend, none adminOnly', async () => {
+    const { ASSISTANT_CONTENT_KIND_GROUPS, MANIFEST_ADMIN_ONLY_GROUPS, PERSONA_TOOL_GROUP_SLUGS } =
+      await import('./manifest');
+    expect([...ASSISTANT_CONTENT_KIND_GROUPS]).toEqual(['present-read', 'present']);
+    const adminOnly = new Set(MANIFEST_ADMIN_ONLY_GROUPS);
+    for (const g of ASSISTANT_CONTENT_KIND_GROUPS) {
+      // The persona holds them (a fresh brain's onboarding), and the
+      // reconcile may add them to another workspace's assistant.
+      expect(PERSONA_TOOL_GROUP_SLUGS, g).toContain(g);
+      expect(adminOnly.has(g), `${g} is adminOnly`).toBe(false);
+      for (const slug of groupTools.get(g) ?? []) {
+        const policy = builtinPolicy(slug);
+        expect(policy, slug).toBeDefined();
+        // Rights come from the turn's login; the deliberate parts stay off:
+        // a delete (present-admin) and a tool that spends (circuit_verify).
+        expect(policy!.spends, `${slug} spends`).toBe('none');
+        expect(
+          policy!.matrix && 'action' in policy!.matrix ? policy!.matrix.action : null,
+        ).not.toBe('delete');
+      }
+    }
+    // As pages keep page-admin off the persona, present-admin and circuits stay off.
+    expect(PERSONA_TOOL_GROUP_SLUGS).not.toContain('present-admin');
+    expect(PERSONA_TOOL_GROUP_SLUGS).not.toContain('page-admin');
+    expect(PERSONA_TOOL_GROUP_SLUGS).not.toContain('circuits');
+  });
+
   it('the client chat is retired: no client agent or group ships, its tools are disabled (W5c)', () => {
     expect(MANIFEST_AGENTS.find((a) => a.slug === 'client-responder')).toBeUndefined();
     expect(MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'client-read')).toBeUndefined();

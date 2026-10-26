@@ -1454,8 +1454,13 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'calculator',
       'pages-draft',
       'draw-read',
-      // Find and read canvases; authoring routes to the Presenter.
+      // Present is a workspace content kind like pages and tables (owner
+      // rule 2026-10-26): the assistant reads and writes canvases where its
+      // turn's login may. Delete stays the deliberate `present-admin`, as
+      // pages keep `page-admin` off the persona. Every workspace's assistant
+      // holds these two (ASSISTANT_CONTENT_KIND_GROUPS).
       'present-read',
+      'present',
       'app-data',
       'federation',
       // Powers the brain_health heartbeat (brain_capacity + recall_eval). The
@@ -2084,6 +2089,18 @@ export const PERSONA_SLUG = PERSONA_MANIFEST.slug;
 /** The persona's default tool grant (P6: pure tool GROUPS — the generalist's
  *  whole capability). Onboarding seeds a fresh persona with exactly these. */
 export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] = PERSONA_MANIFEST.toolGroupSlugs ?? [];
+
+/**
+ * The content-kind groups every workspace's assistant holds, not only the
+ * Admin workspace's persona (owner rule 2026-10-26: Present is a workspace
+ * content kind of its own, and the agents of a user who may write canvases
+ * may write them too). The boot reconcile adds them to the assistant of
+ * every workspace (reconcileAssistantContentKinds), where the persona
+ * reconcile reaches Admin's alone. Add-only; never an adminOnly group
+ * (manifest.test.ts); never a group with a delete or a tool that spends:
+ * the rights come from the turn's login (row rules), not the group.
+ */
+export const ASSISTANT_CONTENT_KIND_GROUPS: readonly string[] = ['present-read', 'present'];
 
 /** The agents the persona delegates to (memory_config.delegate_to). */
 export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a.isDelegate).map(
