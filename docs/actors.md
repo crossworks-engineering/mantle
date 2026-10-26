@@ -264,7 +264,7 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   run, map a refusal. Listing equals calling.
 - A write handler reads its item in the caller's scope first, or asks
   `assertItemRight` (`packages/db/src/item-rights.ts`) before any side effect;
-  a hidden item is the 404 of none. Its row's `item` says which right, or none and why (intent only).
+  a hidden item is the 404 of none. Its declaration's `item` says which right, or none and why (intent only).
 
 ## 11. Tools
 
