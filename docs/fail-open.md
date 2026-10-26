@@ -33,25 +33,28 @@ with no Admin workspace.
 
 `packages/db/src/fail-open.ts` writes the row through actor.ts's miss writer
 (`mantle_actor_miss_log`, on another connection, after the statement):
-`check_name` is `fail-open:<site>`, `actor` the bound actor's kind (or the
-scope's kind in viewer.ts), `detail` the calling file. A write runs when
+`check_name` is `fail-open:<site>`, or `fail-open:<site>:<table>` for a
+write site (`fail-open:typed-write:public.x`), `actor` the bound actor's
+kind (or the scope's kind in viewer.ts), `detail` the calling file. A write runs when
 its query is awaited, often with no app frame on the stack; its `detail`
 names the table then (`unknown caller, table public.x`).
 
-What it does, in order: a hit first asks a map keyed by site whether that
-site took a stack in the last 60 seconds; if it did, nothing more happens
-(no stack). Otherwise the site takes one stack, which names the calling
-file, and a second map keyed by site and file says whether that pair's row
-was written in the last hour; if not, the row is handed to the writer, and
-the pair is marked only when the writer took it (a hit before the pool has
-its writer is written by a later one). So a busy branch pays at most one
-stack a minute, a second caller of the same site is found when it is the
-first hit after the site's minute gate, and every process that still hits writes its pair again each hour. The
-database keeps at most 100 rows an hour per check.
+What it does, in order: a hit first asks a map keyed by site (by site and
+table for a write site) whether it took a stack in the last 60 seconds; if
+it did, nothing more happens (no stack). Otherwise it takes one stack,
+which names the calling file, and a second map keyed by check and file says
+whether that pair's row was written in the last hour; if not, the row is
+handed to the writer, and the pair is marked only when the writer took it
+(a hit before the pool has its writer is written by a later one). So a busy
+branch pays at most one stack a minute per table, a write to a new table is
+found at once however busy another table keeps the site, a second caller of
+the same site and table is found when it is the first hit after the minute
+gate, and every process that still hits writes its pair again each hour.
+The database keeps at most 100 rows an hour per check.
 
 `scripts/arch-scoreboard-box.sh <ssh-alias>` prints, numbers only:
-`fail_open_misses:all` and one count per site (the distinct site and file
-pairs in the last 24 hours, or since the last roll began, the updater's
+`fail_open_misses:all` and one count per site (the distinct check and file
+pairs, the site read from the check, in the last 24 hours, or since the last roll began, the updater's
 `started_at`, when that is later, but never from later than an hour ago:
 any write of the updater's status moves `started_at`, a client-only or
 refused roll too, and none restarts a server, so an error reads as a false
@@ -62,6 +65,18 @@ site's count is 0 only when no process hit it in that window;
 no readable `.env`). The repo
 count is the pin `failOpenSites` (`scripts/arch-scoreboard.pins.json`): the
 five calls that note a hit. S4b takes it to 0.
+
+Which tables a box's write hits name, numbers only (each label is a site
+and a table the code names, never a row's data):
+
+```sql
+select check_name, count(distinct detail) as files
+  from public.actor_check_misses
+ where check_name like 'fail-open:%'
+   and at >= now() - interval '24 hours'
+ group by check_name
+ order by check_name;
+```
 
 ## Measuring the system-pool tables
 

@@ -120,8 +120,8 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
     });
     // Waits for the row itself (up to 10 s): a row that lands after a
     // fixed wait would be counted by the next cell instead.
-    expect(await rowsLanded({ 'fail-open:typed-write': 1 })).toEqual({
-      'fail-open:typed-write': 1,
+    expect(await rowsLanded({ 'fail-open:typed-write:public.provider_alerts': 1 })).toEqual({
+      'fail-open:typed-write:public.provider_alerts': 1,
     });
     fo.takeFailOpenHits();
   });

@@ -5,12 +5,15 @@
  * row (actor_check_misses, check 'fail-open:<site>', detail the calling
  * file), counted on the box by scripts/arch-scoreboard-box.sh.
  *
- * Cost: a hit asks one map, by site, before any stack is taken; a site
- * takes at most one stack a minute, so a busy branch never pays a stack
- * per call and a second caller of the same site is still found later. The
- * stack gives the calling file; one row per site and calling file an
- * hour in a process, marked only once a writer took it. Changes no answer:
- * it only writes rows.
+ * Cost: a hit asks one map, by site (and table, for a write site), before
+ * any stack is taken; each takes at most one stack a minute, so a busy
+ * branch never pays a stack per call, a second caller of the same site is
+ * still found later, and a write to a new table is found at once whatever
+ * else the site keeps hitting. The table is in the check name
+ * ('fail-open:typed-write:public.x'), so a box's counts name it. The stack
+ * gives the calling file; one row per check and calling file an hour in a
+ * process, marked only once a writer took it. Changes no answer: it only
+ * writes rows.
  *
  * Imports nothing from this package (viewer.ts and the gateway modules both
  * call it; fail-open-sites.ts holds what makes a gateway/scope-answers.ts or
@@ -50,18 +53,19 @@ export const SCOPED_SYSTEM_WRITES_LEFT: readonly string[] = Object.freeze([
 ]);
 
 /** The miss row of a hit, as mantle_actor_miss_log takes it (actor.ts
- *  ActorMiss): check 'fail-open:<site>', the actor's kind, the calling
- *  file. */
+ *  ActorMiss): check 'fail-open:<site>' ('fail-open:<site>:<table>' for a
+ *  write site's), the actor's kind, the calling file. */
 export type FailOpenRow = { source: 'ts'; check: string; actor: string; detail: string };
 
-/** How long a site waits after a stack before it takes the next one. */
+/** How long a site (a write site: a site and table) waits after a stack
+ *  before it takes the next one. */
 const STACK_EVERY_MS = 60_000;
 /** How long a site and file wait before their row is written again, so a
  *  process that keeps hitting keeps showing in the box count's window (as
  *  actor.ts writes an actor miss at most once an hour per key). */
 const ROW_EVERY_MS = 3_600_000;
 
-const lastStack = new Map<FailOpenSite, number>();
+const lastStack = new Map<string, number>();
 const rowWritten = new Map<string, number>();
 let rowWriter: ((row: FailOpenRow) => boolean) | null = null;
 const testHits: { site: FailOpenSite; actor: string; table?: string }[] = [];
@@ -91,18 +95,22 @@ export function noteFailOpen(
 ): void {
   if (env('NODE_ENV') === 'test') testHits.push({ site, actor, ...(table ? { table } : {}) });
   const now = Date.now();
-  const last = lastStack.get(site);
+  // A write site's gate is per table: a busy table never hides a new one.
+  const gate = table ? `${site}\0${table}` : site;
+  const last = lastStack.get(gate);
   if (last !== undefined && now - last < STACK_EVERY_MS) return;
-  lastStack.set(site, now);
+  if (lastStack.size > 5_000) lastStack.clear();
+  lastStack.set(gate, now);
+  const check = table ? `fail-open:${site}:${table}` : `fail-open:${site}`;
   // A raw write runs when its query is awaited, often with no app frame on
   // the stack: its table names it then.
   const file = caller() ?? (table ? `unknown caller, table ${table}` : 'unknown caller');
-  const key = `${site}\0${file}`;
+  const key = `${check}\0${file}`;
   const written = rowWritten.get(key);
   if (written !== undefined && now - written < ROW_EVERY_MS) return;
   // Marked only when a writer took the row: a hit before the pool exists
   // is written by a later one.
-  if (!rowWriter?.({ source: 'ts', check: `fail-open:${site}`, actor, detail: file })) return;
+  if (!rowWriter?.({ source: 'ts', check, actor, detail: file })) return;
   if (rowWritten.size > 5_000) rowWritten.clear();
   rowWritten.set(key, now);
 }

@@ -327,6 +327,13 @@ check ".env.example shows it set" grep -qx 'MANTLE_DB_RUNTIME_ROLE=1' "$ROOT/.en
 check "box: the fail-open window's floor is at most an hour old" sh -c "
   sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | tr -s ' \n' ' ' |
     grep -q \"greatest(now() - interval '24 hours', least(coalesce(nullif('\\\$started', '')::timestamptz, '-infinity'), now() - interval '1 hour'))\""
+# A write site's check names its table (fail-open.ts): the per-site counts
+# read the check's site part, so 'fail-open:typed-write:public.x' and an
+# older image's 'fail-open:typed-write' both count as typed-write.
+check "box: the fail-open per-site counts read the site part of the check" sh -c "
+  sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' |
+    grep -q \"split_part(check_name, ':', 2) as site, check_name, detail\" &&
+  ! sed -n '/^fail_open=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q \"check_name = 'fail-open:\""
 check "box: the narrow counts read all time (no window)" sh -c "
   sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'narrow-would-refuse' &&
   ! sed -n '/^narrow=/,/^SQL\$/p' '$ROOT/scripts/arch-scoreboard-box.sh' | grep -q 'interval'"

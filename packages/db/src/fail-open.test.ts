@@ -94,7 +94,26 @@ describe('noteFailOpen: one row per site and calling file, the lookup before the
   it('each site keeps its own lookup', () => {
     noteFailOpen('typed-write', 'login', () => '/app/lib/a.ts', 'public.x');
     noteFailOpen('raw-write', 'login', () => '/app/lib/a.ts', 'public.x');
-    expect(rows.map((r) => r.check)).toEqual(['fail-open:typed-write', 'fail-open:raw-write']);
+    expect(rows.map((r) => r.check)).toEqual([
+      'fail-open:typed-write:public.x',
+      'fail-open:raw-write:public.x',
+    ]);
+  });
+
+  it('a write site gates per table: a busy table never hides a new one, which the check names', () => {
+    const now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const busy = vi.fn(() => '/app/lib/a.ts');
+    noteFailOpen('typed-write', 'login', busy, 'public.x');
+    noteFailOpen('typed-write', 'login', busy, 'public.x');
+    // Within the same minute, from the same file: a new table still gets
+    // its stack and its own row.
+    noteFailOpen('typed-write', 'login', () => '/app/lib/a.ts', 'public.y');
+    expect(busy).toHaveBeenCalledTimes(1);
+    expect(rows).toEqual([
+      expect.objectContaining({ check: 'fail-open:typed-write:public.x', detail: '/app/lib/a.ts' }),
+      expect.objectContaining({ check: 'fail-open:typed-write:public.y', detail: '/app/lib/a.ts' }),
+    ]);
   });
 
   it('no app frame on the stack: a write names its table', () => {
@@ -195,7 +214,10 @@ describe('a scoped typed write to a table the write role does not hold (site typ
       tryIt(() => db.delete(actorCheckMisses));
     });
     expect(rows).toEqual([
-      expect.objectContaining({ check: 'fail-open:typed-write', actor: 'login' }),
+      expect.objectContaining({
+        check: 'fail-open:typed-write:public.actor_check_misses',
+        actor: 'login',
+      }),
     ]);
     expect(takeFailOpenHits()).toEqual([
       { site: 'typed-write', actor: 'login', table: 'public.actor_check_misses' },

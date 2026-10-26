@@ -30,8 +30,9 @@
 #     mantle_web's environment, or from the stack's .env when that
 #     container is not there; n/a with neither, or an unreadable .env);
 #   - the fail-open counts (plan v3.2 S4a; packages/db/src/fail-open.ts):
-#     the distinct site and file pairs of the miss rows checked
-#     'fail-open:<site>' in the last 24 hours, or since the last roll began
+#     the distinct check and file pairs of the miss rows checked
+#     'fail-open:<site>' (a write site's 'fail-open:<site>:<table>', so a
+#     new table is a new pair) in the last 24 hours, or since the last roll began
 #     (the updater's started_at) when that is later but never from later
 #     than an hour ago, in all and per site. Every process writes its row
 #     again each hour it still hits (fail-open.ts), so a process that has
@@ -189,13 +190,14 @@ started=$(docker exec mantle_updater cat /signal/status.json 2>/dev/null |
   sed -n 's/.*"started_at":"\([^"]*\)".*/\1/p' | head -1 || true)
 case "$started" in *[!0-9TZ:.+-]* | '') started="" ;; esac
 fail_open=$(q <<SQL || true
-select count(*) || ' ' || count(*) filter (where check_name = 'fail-open:scope-holds-admin')
-    || ' ' || count(*) filter (where check_name = 'fail-open:scope-has-area')
-    || ' ' || count(*) filter (where check_name = 'fail-open:typed-write')
-    || ' ' || count(*) filter (where check_name = 'fail-open:raw-write')
-    || ' ' || count(*) filter (where check_name = 'fail-open:turn-exit')
-    || ' ' || count(*) filter (where check_name = 'fail-open:system-db')
-  from (select distinct check_name, detail from public.actor_check_misses
+select count(*) || ' ' || count(*) filter (where site = 'scope-holds-admin')
+    || ' ' || count(*) filter (where site = 'scope-has-area')
+    || ' ' || count(*) filter (where site = 'typed-write')
+    || ' ' || count(*) filter (where site = 'raw-write')
+    || ' ' || count(*) filter (where site = 'turn-exit')
+    || ' ' || count(*) filter (where site = 'system-db')
+  from (select distinct split_part(check_name, ':', 2) as site, check_name, detail
+          from public.actor_check_misses
          where check_name like 'fail-open:%'
            and at >= greatest(now() - interval '24 hours',
                               least(coalesce(nullif('$started', '')::timestamptz, '-infinity'),
