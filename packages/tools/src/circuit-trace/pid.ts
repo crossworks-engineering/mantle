@@ -158,6 +158,12 @@ const END_WORDS: Readonly<Record<string, string>> = {
   continues: 'CONTINUES',
   open: 'OPEN END',
 };
+/** The same end words in a sentence. */
+const END_SEEN: Readonly<Record<string, string>> = {
+  break: 'a break symbol',
+  continues: 'a continuation',
+  open: 'an open end',
+};
 /** Alternatives that name nothing the trace can draw. */
 const NAMES_NOTHING = new Set(['other', 'none', 'separate', 'crossing', 'gap']);
 
@@ -250,25 +256,36 @@ export function buildPid(
         const said = end.equipmentUnconfirmed
           ? (input.checked?.near?.get(k) ?? guessAt('end', k)?.answer?.verdict)
           : undefined;
+        const tag = end.equipmentUnconfirmed;
         if (end.equipment.length) join(k, `EQ:${end.equipment[0]!}`);
-        else if (end.equipmentUnconfirmed && said === 'no') {
+        else if (tag && registerTags.includes(baseTag(tag))) {
+          // The register names the tag: the end is drawn at it, as before
+          // the image check could say anything. A no from the image is kept
+          // on the check (the Checks tab, the trace's `checks`) and said
+          // here; it never outweighs the site register.
+          join(k, `EQ:${tag}`);
+          const alt = said === 'no' ? guessAt('end', k)?.answer?.alt : undefined;
+          guesses.push(
+            `${s.title}: end #${end.node} is drawn at ${tag}: the tag is past the near distance, and the register's from or to names it.` +
+              (said === 'no'
+                ? ` The image check said no to it${alt && !NAMES_NOTHING.has(alt) ? ` (${END_SEEN[alt] ? `it saw ${END_SEEN[alt]}` : `it named ${alt}`})` : ''}; the register is kept, the no stays on the check.`
+                : ''),
+          );
+        } else if (tag && said === 'no') {
           contradicted.add(k);
-          unconfirmed.set(k, end.equipmentUnconfirmed);
+          unconfirmed.set(k, tag);
           const alt = guessAt('end', k)?.answer?.alt;
           const word = alt ? END_WORDS[alt] : undefined;
+          const named = alt && !word && !NAMES_NOTHING.has(alt) ? alt : undefined;
           if (alt && word) imageEnd.set(k, { word });
-          else if (alt && !NAMES_NOTHING.has(alt)) imageEnd.set(k, { tag: alt });
+          else if (named) imageEnd.set(k, { tag: named });
           guesses.push(
-            `${s.title}: end #${end.node} is not at ${end.equipmentUnconfirmed}, the image check says${alt && !NAMES_NOTHING.has(alt) ? ` (${word ? `it ${alt === 'open' ? 'is an open end' : alt === 'break' ? 'stops at a break symbol' : 'continues elsewhere'}` : `it connects to ${alt}`}: FROM IMAGE, never certain)` : ''}; ${alt && !word && !NAMES_NOTHING.has(alt) ? `it is read as at ${alt}, not as ${end.equipmentUnconfirmed}` : `it is not taken as an end at ${end.equipmentUnconfirmed}`}, and the main line is picked without that reading.`,
+            `${s.title}: end #${end.node} is not at ${tag}, the image check says${word ? ` (it ${alt === 'open' ? 'is an open end' : alt === 'break' ? 'stops at a break symbol' : 'continues elsewhere'}: FROM IMAGE, never certain)` : named ? ` (it connects to ${named}: FROM IMAGE, never certain)` : ''}; ${named ? `it is read as at ${named}, not as ${tag}` : `it is not taken as an end at ${tag}`}, and the main line is picked without that reading.`,
           );
-        } else if (end.equipmentUnconfirmed) {
-          if (registerTags.includes(baseTag(end.equipmentUnconfirmed))) {
-            join(k, `EQ:${end.equipmentUnconfirmed}`);
-            guesses.push(
-              `${s.title}: end #${end.node} is drawn at ${end.equipmentUnconfirmed}: the tag is past the near distance, and the register's from or to names it.`,
-            );
-          } else unconfirmed.set(k, end.equipmentUnconfirmed);
-        }
+          limits.push(
+            `${s.title}: end #${end.node} was read as near ${tag} (a guess); the image check said no, so the drawing no longer takes that end as at ${tag}: the image removed that reading${named ? `, and the end is read as at ${named} instead (FROM IMAGE)` : word ? `, and the end is drawn as ${END_SEEN[alt!]} (FROM IMAGE)` : ''}.`,
+          );
+        } else if (tag) unconfirmed.set(k, tag);
       }
     }
   }
@@ -886,12 +903,17 @@ export function buildPid(
         ...(g ? { check: checkMark(g) } : {}),
       };
     }
-    const guessedLink = keys.map((k) => linkAt.get(k)).find(Boolean);
+    const linkEnd = keys.find((k) => linkAt.has(k));
+    const guessedLink = linkEnd ? linkAt.get(linkEnd) : undefined;
     if (guessedLink) {
       const way = side === 'from' ? 'FROM' : 'TO';
       const v = verdictOf(input.checked?.link) ?? input.checked?.link?.get(guessedLink.checkAt);
       const g = guessAt('link', guessedLink.checkAt);
-      const alt = v === 'no' ? g?.answer?.alt : undefined;
+      // The sheet the image named is where the ASKED end continues: only
+      // that end is re-pointed. The link's far end (on the sheet first
+      // guessed) shows the no as a contradicted guess, never the other
+      // sheet, which names nothing about where the far end comes from.
+      const alt = v === 'no' && linkEnd === guessedLink.checkAt ? g?.answer?.alt : undefined;
       if (alt && !NAMES_NOTHING.has(alt)) {
         return {
           conn: fit(`${way} ${alt}`, MARK.image),
@@ -1415,12 +1437,12 @@ export function buildPid(
           .slice(0, PID_LIMITS.inline),
       );
       if (!(sheetMode === false && valveCut.has(pc))) inlineCut += valves.length - keep.size;
-      const inline = valves
-        .filter((_, i) => keep.has(i))
-        .map((v) => {
-          const c = valveCheck(v);
-          return { type: c.type, ...(c.check ? { check: c.check } : {}) };
-        });
+      const drawnValves = valves.filter((_, i) => keep.has(i));
+      const valveChecks = drawnValves.map((v) => valveCheck(v));
+      const inline = valveChecks.map((c) => ({
+        type: c.type,
+        ...(c.check ? { check: c.check } : {}),
+      }));
       const number = numberFor(pc);
       // A process-line join on the line is an inference: marked on every
       // page that draws it.
@@ -1449,22 +1471,18 @@ export function buildPid(
       if (confirmed) marks.add('checked');
       // A valve type the image check answered: said in the line's note
       // when no join note holds it (a note is one short text; the trace's
-      // `checks` lists every answer either way).
-      const valveVerdicts = pc.edges.flatMap((e) =>
-        e.chain.valves
-          .filter((v) => v.guessed && v.handle)
-          .map((v) => input.checked?.valves?.get(`${e.sheet.tableId}:${valveKey(v.handle)}`))
-          .filter((v): v is Verdict => v === 'yes' || v === 'no'),
+      // `checks` lists every answer either way). Only the valves the line
+      // draws are counted: one past the inline cap is not on the drawing,
+      // so its answer is not in the note either (the cut is in `limits`).
+      const valveVerdicts = drawnValves.map((v) =>
+        v.guessed && v.handle
+          ? input.checked?.valves?.get(`${v.sheet.tableId}:${valveKey(v.handle)}`)
+          : undefined,
       );
       // A no whose alternative the drawing shows (FROM IMAGE) is said as
       // corrected, not as a contradicted guess.
-      const valveFixed = pc.edges.reduce(
-        (x, e) =>
-          x +
-          e.chain.valves.filter((v) => valveCheck({ ...v, sheet: e.sheet }).fixed === true).length,
-        0,
-      );
-      const valveNo = valveVerdicts.filter((v) => v === 'no').length - valveFixed;
+      const valveFixed = valveChecks.filter((c) => c.fixed === true).length;
+      const valveNo = valveVerdicts.filter((v, i) => v === 'no' && !valveChecks[i]!.fixed).length;
       const valveYes = valveVerdicts.filter((v) => v === 'yes').length;
       const valveNote = valveNo
         ? `${valveNo === 1 ? 'VALVE TYPE' : `${valveNo} VALVE TYPES`}${MARK.no}`

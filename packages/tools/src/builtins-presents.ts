@@ -59,6 +59,7 @@ import {
   TEMPLATES,
   imageCheckSummary,
   withImageCheckSummary,
+  withOwnImageChecks,
 } from '@mantle/diagram-templates';
 import { imageCheckReport } from './circuit-trace/workflow';
 import type { PresentMeta } from '@mantle/db';
@@ -742,6 +743,9 @@ const present_create: BuiltinToolDef = {
         error: 'source is empty: pass the whole HTML document, or template + data.',
       };
     }
+    // A pid canvas keeps the image check count of its own marks, whatever
+    // count a pasted source carries (the view counts the marks too).
+    source = withOwnImageChecks(source);
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {
@@ -847,6 +851,9 @@ const present_update: BuiltinToolDef = {
           if (!next.trim())
             return { ok: false, error: 'source is empty: pass the whole document.' };
         }
+        // Whichever way the source changed (edits, a whole source, data),
+        // a pid canvas keeps the count of its own marks.
+        next = withOwnImageChecks(next);
         const refused = loadRefusal(next);
         if (refused) return refused;
         css = await cssOf(next);
@@ -915,15 +922,18 @@ const present_restore: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id);
     const rev = typeof input.rev === 'number' ? input.rev : NaN;
-    const source = Number.isInteger(rev)
+    const kept = Number.isInteger(rev)
       ? await getPresentRevisionSource(ctx.ownerId, id, rev)
       : null;
-    if (source === null) {
+    if (kept === null) {
       return {
         ok: false,
         error: `canvas ${id} keeps no version ${String(input.rev)}. List the kept ones with present_revisions.`,
       };
     }
+    // A kept version saved before its marks were recounted (or edited by
+    // hand) comes back with the count of its own marks.
+    const source = withOwnImageChecks(kept);
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {

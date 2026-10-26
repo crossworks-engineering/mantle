@@ -308,3 +308,21 @@ export function withImageCheckSummary<T>(data: T): T {
     ...(total ? { checks: total } : {}),
   } as T;
 }
+
+/** Whether the data's `checks` (or a set page's) differs from the count of
+ *  its own marks: a hand edit, a pasted source or an old revision may carry
+ *  a count its marks do not. */
+export function imageChecksStale(data: unknown): boolean {
+  if (!isObj(data)) return false;
+  const same = (stored: unknown, own: PidChecksSummary | null): boolean =>
+    own === null
+      ? stored === undefined
+      : isObj(stored) &&
+        Object.keys(stored).length === SUMMARY_KEYS.length &&
+        SUMMARY_KEYS.every((k) => stored[k] === own[k as keyof PidChecksSummary]);
+  if (!same(data.checks, imageCheckSummary(data))) return true;
+  if (Array.isArray(data.pages))
+    for (const p of data.pages)
+      if (isObj(p) && isObj(p.data) && !same(p.data.checks, imageCheckSummary(p.data))) return true;
+  return false;
+}

@@ -16,13 +16,20 @@
  */
 import type { PidChecksSummary } from '@mantle/diagram-templates';
 
+/** How often circuit_verify runs: one call per trace in a turn, never a
+ *  loop over what it left out (each call spends the owner's vision key). */
+export const VERIFY_ONCE =
+  'Call `circuit_verify` at most once per trace in a turn: never again in the same turn for guesses it left out (its not_asked, or ones cut by a cap or a time limit); if guesses stay unchecked after that one call, save the drawing and report how many are unchecked.';
+
 /** The steps, said the same way to every author. */
 export const CIRCUIT_DRAWING_STEPS =
-  "A circuit drawn from the uploaded P&IDs is made the same way by every author, an agent here or a client over MCP: 1. `circuit_trace` with the circuit's name; 2. `circuit_verify` on the same circuit: each guess the trace made is asked about on a close-up crop of the drawing by the default vision model, which spends the owner's vision key (a few cents a circuit; dry_run lists the questions for free; it never runs on its own); 3. `circuit_trace` again, so the drawing carries the answers (CHECKED BY IMAGE, or FROM IMAGE where the image named what a guess really is); 4. save that `pid` object, unchanged, with `present_create` (or `present_update` for a saved drawing), once its pid_check is ok. `circuit_trace`, `present_create` and `present_update` report image_check: how many guesses on the drawing no image has checked, and the drawing shows that count until they are. Never drop or relabel a GUESS, CHECKED BY IMAGE or FROM IMAGE mark.";
+  "A circuit drawn from the uploaded P&IDs is made the same way by every author, an agent here or a client over MCP: 1. `circuit_trace` with the circuit's name; 2. `circuit_verify` on the same circuit: each guess the trace made is asked about on a close-up crop of the drawing by the default vision model, which spends the owner's vision key (a few cents a circuit; dry_run lists the questions for free; it never runs on its own); 3. `circuit_trace` again, so the drawing carries the answers (CHECKED BY IMAGE, or FROM IMAGE where the image named what a guess really is); 4. save that `pid` object, unchanged, with `present_create` (or `present_update` for a saved drawing), once its pid_check is ok. `circuit_trace`, `present_create` and `present_update` report image_check: how many guesses on the drawing no image has checked, and the drawing shows that count until they are. Never drop or relabel a GUESS, CHECKED BY IMAGE or FROM IMAGE mark. " +
+  VERIFY_ONCE;
 
 /** circuit_verify's `next`. */
 export const VERIFY_NEXT =
-  'Call circuit_trace again: it marks these on the drawing (CHECKED BY IMAGE for a yes; FROM IMAGE where a no named what the guess really is; a no without one, or an unsure, stays GUESS). Then save that pid with present_create, or present_update for a drawing already saved.';
+  'Call circuit_trace again: it marks these on the drawing (CHECKED BY IMAGE for a yes; FROM IMAGE where a no named what the guess really is; a no without one, or an unsure, stays GUESS). Then save that pid with present_create, or present_update for a drawing already saved. ' +
+  VERIFY_ONCE;
 
 /** What a result says about a drawing's image check, or undefined when
  *  nothing on it is a guess the check asks about. */
@@ -44,7 +51,7 @@ export function imageCheckReport(
       : `Every one of the ${g(s.guesses)} on this drawing has an image check: ${done.join(', ')}. None is certain.`,
     ...(s.unchecked
       ? {
-          next: "Check them: circuit_verify on the circuit (spends the owner's vision key; dry_run lists the questions for free), then circuit_trace again and save its pid (present_create, or present_update with the canvas id). Only when asked to skip the check: save as is and say how many guesses are unchecked.",
+          next: `Check them: circuit_verify on the circuit (spends the owner's vision key; dry_run lists the questions for free), then circuit_trace again and save its pid (present_create, or present_update with the canvas id). Only when asked to skip the check: save as is and say how many guesses are unchecked. ${VERIFY_ONCE}`,
         }
       : {}),
   };

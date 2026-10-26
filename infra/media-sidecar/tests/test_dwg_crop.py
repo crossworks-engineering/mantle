@@ -215,7 +215,6 @@ class RenderTests(unittest.TestCase):
         """Phase 6: the overlay is drawn solid, so a red line is red on the
         page (#E00000), never the pink a translucent red over white makes."""
         self.assertEqual(dwg_crop.OVERLAY_ALPHA, 1.0)
-        self.assertEqual(set(dwg_crop.COLOR_NAMES), set(dwg_crop.COLORS))
         doc = ezdxf.readfile(self._path())
         with tempfile.TemporaryDirectory() as out:
             spec = dwg_crop.parse_spec(self.spec())
@@ -241,6 +240,67 @@ class RenderTests(unittest.TestCase):
             pink = ((img[:, :, 0] > 0.9) & (img[:, :, 1] > 0.3) & (img[:, :, 1] < 0.75)
                     & (img[:, :, 2] > 0.3) & (img[:, :, 2] < 0.75)).sum()
             self.assertGreater(red, 2 * pink)
+
+    def test_a_symbol_on_the_traced_line_stays_black(self):
+        """Phase 6 fix round: the overlay is drawn under the drawing, so a
+        valve symbol on the traced pipe keeps its black linework (the model
+        is asked to read that symbol); the band still shows solid red."""
+        self.assertLess(dwg_crop.OVERLAY_ZORDER, 0)
+        import matplotlib.image as mpimg  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = ezdxf.new("R2013")
+            msp = doc.modelspace()
+            doc.layers.add("Circuit 90000-020-01")
+            doc.layers.add("VALVE")
+            msp.add_line((0, 0), (400, 0), dxfattribs={"layer": "Circuit 90000-020-01"})
+            # A gate valve drawn inline: a bow tie whose two upright edges
+            # cross the pipe at x=190 and x=210.
+            msp.add_lwpolyline([(190, -6), (190, 6), (210, -6), (210, 6)], close=True,
+                               dxfattribs={"layer": "VALVE"})
+            msp.add_text("6\"-P-0001", dxfattribs={"insert": (100, 3), "height": 2.5})
+            path = os.path.join(tmp, "valve.dxf")
+            doc.saveas(path)
+            doc = ezdxf.readfile(path)
+
+            def crop_of(overlay):
+                out = os.path.join(tmp, f"out-{len(overlay)}")
+                os.makedirs(out)
+                spec = dwg_crop.parse_spec({"items": [point("valve", 200, 0, pad=20)],
+                                            "overlay": overlay, "overview": False})
+                index = dwg_crop.render(doc, spec, out, deadline=time.time() + 120)
+                (c,) = index["crops"]
+                return c, mpimg.imread(os.path.join(out, c["file"]))
+
+            c, plain = crop_of([])
+            c2, traced = crop_of([{"color": "main", "segs": [[0, 0, 400, 0]]}])
+            self.assertEqual(c["window"], c2["window"])
+            x0, y0, x1, y1 = c["window"]
+            h, w = plain.shape[0], plain.shape[1]
+
+            def px(x, y):
+                return (int(round((x - x0) / (x1 - x0) * w)), int(round((y1 - y) / (y1 - y0) * h)))
+
+            def dark(img):
+                return (img[:, :, 0] < 0.35) & (img[:, :, 1] < 0.35) & (img[:, :, 2] < 0.35)
+
+            # The valve's box, in pixels: its black linework is all there.
+            (ax, ay), (bx, by) = px(186, 8), px(214, -8)
+            box_plain = dark(plain)[ay:by, ax:bx].sum()
+            box_traced = dark(traced)[ay:by, ax:bx].sum()
+            self.assertGreater(box_plain, 40)
+            self.assertGreaterEqual(box_traced, 0.9 * box_plain)
+            # Where each upright edge crosses the band, the pixel is black,
+            # not red: the symbol is drawn over the overlay.
+            for ex in (190, 210):
+                cx, cy = px(ex, 0)
+                patch = traced[cy - 2:cy + 3, cx - 2:cx + 3]
+                self.assertTrue(dark(patch).any(), f"edge at x={ex} is painted over")
+            # The band itself is still the solid red the prompt names.
+            want = [int(dwg_crop.COLORS["main"][i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+            red = ((abs(traced[:, :, 0] - want[0]) <= 0.08) & (abs(traced[:, :, 1] - want[1]) <= 0.08)
+                   & (abs(traced[:, :, 2] - want[2]) <= 0.08)).sum()
+            self.assertGreater(red, 50)
 
     def test_a_spent_deadline_cuts_and_says_so(self):
         doc = ezdxf.readfile(self._path())

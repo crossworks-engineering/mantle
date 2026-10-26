@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   createPresent: vi.fn(),
   getPresent: vi.fn(),
   savePresentSource: vi.fn(),
+  getPresentRevisionSource: vi.fn(async () => null as string | null),
 }));
 
 vi.mock('./circuit-trace/read', async (importOriginal) => {
@@ -45,7 +46,7 @@ vi.mock('@mantle/content/presents', async (importOriginal) => {
     updatePresent: vi.fn(),
     listPresents: vi.fn(async () => []),
     listPresentRevisions: vi.fn(async () => null),
-    getPresentRevisionSource: vi.fn(async () => null),
+    getPresentRevisionSource: h.getPresentRevisionSource,
   };
 });
 vi.mock('@mantle/app-build', () => ({
@@ -57,15 +58,15 @@ vi.mock('./builtins-diagrams', async (importOriginal) => ({
   readProfileJson: vi.fn(async () => null),
 }));
 
-import { readCanvasData } from '@mantle/diagram-templates';
-import { circuitTraceHandler } from './builtins-circuits';
+import { buildCanvas, imageCheckSummary, readCanvasData } from '@mantle/diagram-templates';
+import { circuitTraceHandler, CIRCUIT_TOOLS } from './builtins-circuits';
 import { PRESENT_TOOLS } from './builtins-presents';
 import { registerCanvasRenderer } from './canvas-render-bridge';
 import { questionsFor, sealFieldsOf, type StoredCheck } from './circuit-trace/check';
 import { sealOf } from './circuit-trace/check-seal';
 import { CIRCUIT, readingSheets } from './circuit-trace/fixtures';
 import { traceCircuit } from './circuit-trace/walk';
-import { CIRCUIT_DRAWING_STEPS } from './circuit-trace/workflow';
+import { CIRCUIT_DRAWING_STEPS, VERIFY_ONCE } from './circuit-trace/workflow';
 import type { ToolHandlerContext } from './types';
 
 const tool = (slug: string) => PRESENT_TOOLS.find((t) => t.slug === slug)!;
@@ -214,5 +215,96 @@ describe('every author gets the same unchecked-guess count', () => {
     );
     expect(out.ok, JSON.stringify(out)).toBe(true);
     expect((out as { output: Record<string, unknown> }).output.image_check).toBeUndefined();
+  });
+});
+
+describe('circuit_verify runs at most once per trace in a turn', () => {
+  it('its description, and the trace hint that names it, say so', async () => {
+    const verify = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_verify')!;
+    expect(verify.description).toMatch(/At most once per trace in a turn/);
+    expect(verify.description).toMatch(/never again for guesses it left out \(not_asked/);
+    expect(verify.description).toMatch(/save and report how many are unchecked/);
+    h.sheets = readingSheets();
+    const traced = await circuitTraceHandler({ circuit: CIRCUIT }, 'anchor');
+    const out = (traced as { output: { next: string; workflow: string } }).output;
+    expect(out.next).toContain(VERIFY_ONCE);
+    expect(out.workflow).toContain(VERIFY_ONCE);
+  });
+});
+
+describe('no saved pid canvas keeps a count its marks do not hold', () => {
+  const FORGED = { guesses: 1, unchecked: 0, checked: 1, unsure: 0, contradicted: 0, corrected: 0 };
+  /** A traced drawing's canvas whose stored count says every guess is
+   *  checked, while its marks say none is. */
+  async function forged() {
+    h.sheets = readingSheets();
+    const traced = await circuitTraceHandler({ circuit: CIRCUIT }, 'anchor');
+    const pid = (traced as { output: { pid: Record<string, unknown> } }).output.pid;
+    const source = buildCanvas({
+      template: 'pid',
+      data: { ...pid, checks: FORGED },
+      mode: 'import',
+    });
+    const own = imageCheckSummary(readCanvasData(source))!;
+    expect(own.unchecked).toBe(own.guesses);
+    return { source, own };
+  }
+  const storedOf = (call: unknown[] | undefined) =>
+    readCanvasData((call![2] as { source: string }).source) as { checks: unknown };
+
+  it('present_create with a whole source', async () => {
+    const { source, own } = await forged();
+    for (const ctx of Object.values(AUTHORS)) {
+      const out = await tool('present_create').handler({ source, look: false }, ctx);
+      expect(out.ok, JSON.stringify(out)).toBe(true);
+      const saved = (h.createPresent.mock.calls.at(-1)![1] as { source: string }).source;
+      expect(readCanvasData(saved).checks).toEqual(own);
+      expect((out as { output: { image_check: unknown } }).output.image_check).toMatchObject(own);
+    }
+  });
+
+  it('present_update with source, and with edits', async () => {
+    const { source, own } = await forged();
+    h.getPresent.mockResolvedValue(detail(source));
+    const bySource = await tool('present_update').handler(
+      { id: ID, source, look: false },
+      AUTHORS.mcp!,
+    );
+    expect(bySource.ok, JSON.stringify(bySource)).toBe(true);
+    expect(storedOf(h.savePresentSource.mock.calls.at(-1)).checks).toEqual(own);
+    // An edit somewhere else in a canvas that carries the forged count.
+    const byEdits = await tool('present_update').handler(
+      {
+        id: ID,
+        edits: [
+          {
+            find: '<meta name="canvas:theme" content="fixed">',
+            replace: '<meta name="canvas:theme" content="fixed">\n',
+          },
+        ],
+        look: false,
+      },
+      AUTHORS.agent!,
+    );
+    expect(byEdits.ok, JSON.stringify(byEdits)).toBe(true);
+    expect(storedOf(h.savePresentSource.mock.calls.at(-1)).checks).toEqual(own);
+  });
+
+  it('present_restore of a kept version', async () => {
+    const { source, own } = await forged();
+    h.getPresentRevisionSource.mockResolvedValue(source);
+    const out = await tool('present_restore').handler({ id: ID, rev: 1 }, AUTHORS.mcp!);
+    expect(out.ok, JSON.stringify(out)).toBe(true);
+    expect(storedOf(h.savePresentSource.mock.calls.at(-1)).checks).toEqual(own);
+    expect((out as { output: { restored_from: number } }).output.restored_from).toBe(1);
+  });
+
+  it('a canvas whose count already matches is saved byte for byte', async () => {
+    const { source } = await forged();
+    h.getPresent.mockResolvedValue(detail(source));
+    await tool('present_update').handler({ id: ID, source, look: false }, AUTHORS.agent!);
+    const honest = (h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source;
+    await tool('present_update').handler({ id: ID, source: honest, look: false }, AUTHORS.agent!);
+    expect((h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source).toBe(honest);
   });
 });

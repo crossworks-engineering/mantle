@@ -29,7 +29,7 @@ import { mediaDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
 import { CS } from './client-sourced-rule';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
-import { CIRCUIT_DRAWING_STEPS, imageCheckReport } from './circuit-trace/workflow';
+import { CIRCUIT_DRAWING_STEPS, imageCheckReport, VERIFY_ONCE } from './circuit-trace/workflow';
 
 /** The register's size, held both in the schema and here (a schema in
  *  warn mode lets more through): lines and sheets read, and the longest
@@ -228,7 +228,7 @@ export async function circuitTraceHandler(
           : {
               next:
                 (imageCheck?.unchecked
-                  ? `${imageCheck.unchecked} guess${imageCheck.unchecked === 1 ? ' is' : 'es are'} not checked by image yet: circuit_verify on circuit ${JSON.stringify(circuit)} checks them (spends the owner's vision key; dry_run lists the questions for free), then call circuit_trace again and save THAT pid. `
+                  ? `${imageCheck.unchecked} guess${imageCheck.unchecked === 1 ? ' is' : 'es are'} not checked by image yet: circuit_verify on circuit ${JSON.stringify(circuit)} checks them (spends the owner's vision key; dry_run lists the questions for free), then call circuit_trace again and save THAT pid. ${VERIFY_ONCE} `
                   : '') +
                 ('pages' in pid
                   ? `Save it as ONE canvas: present_create with template "pid" and the pid object, unchanged, as data (a drawing set: page 1 the overview, then a page per sheet named after it, linked; pid_check must be ok first). diagram_render shows page 1; present_render with slide N shows page N; present_export writes every page stacked, links printed as page references. Never drop or relabel a GUESS, CHECKED BY IMAGE or FROM IMAGE mark.`
@@ -489,7 +489,7 @@ const circuit_verify: BuiltinToolDef = {
   },
   name: 'Check a traced circuit with an image model',
   description:
-    "Check the guesses `circuit_trace` made on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name becomes a yes/no question on a close-up crop of the drawing; a no also names what it is instead from a closed list. Returns per-guess answers (yes, no or unsure, the alternative, a reason, the model). **Spends the owner's vision key**: the step between `circuit_trace` and saving a traced drawing, never run on its own; `dry_run` lists the questions for free. Stores each answer with its crops in the drawing table's Checks tab; trace again to draw them (CHECKED BY IMAGE, FROM IMAGE), never certain.",
+    "Check the guesses of `circuit_trace` on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name is a yes/no question on a close-up crop; a no names what it is from a closed list. Stores each answer with its crops in the drawing table's Checks tab; trace again to draw them (CHECKED BY IMAGE, FROM IMAGE), never certain. **Spends the owner's vision key**: the step between `circuit_trace` and saving, never automatic; `dry_run` lists the questions free. At most once per trace in a turn, never again for guesses it left out (not_asked, a cap, a time limit): save and report how many are unchecked.",
   inputSchema: {
     type: 'object',
     properties: {

@@ -9,6 +9,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { imageCheckSummary, validate } from '@mantle/diagram-templates';
 import {
+  ALT_MAX,
   ALT_WORDS,
   altOf,
   appliedChecks,
@@ -24,7 +25,7 @@ import {
 } from './check';
 import { sealOf } from './check-seal';
 import { CIRCUIT, overviewOf, readingSheets, genericValveSheet as genericValve } from './fixtures';
-import { traceCircuit, type SheetInput } from './walk';
+import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
 
 beforeAll(() => {
   process.env.MANTLE_MASTER_KEY ??= 'circuit-verify-test-key';
@@ -64,10 +65,10 @@ function row(
 }
 
 /** circuit_trace's way: stored checks applied before the drawing. */
-function traced(sheets: SheetInput[]) {
+function traced(sheets: SheetInput[], register?: RegisterInput) {
   const applied: AppliedCheck[] = [];
   const limits: string[] = [];
-  const r = traceCircuit(CIRCUIT, sheets, undefined, {
+  const r = traceCircuit(CIRCUIT, sheets, register, {
     checks: (w, l) => appliedChecks(w, l, sheets, applied, limits),
   });
   return { r, applied, limits };
@@ -255,5 +256,106 @@ describe('the unchecked count', () => {
     const after = imageCheckSummary(traced(sheets).r.pid)!;
     expect(after.corrected).toBe(1);
     expect(after.unchecked).toBe(before.unchecked - 1);
+  });
+});
+
+describe('a no on an end the register names (fix round M1)', () => {
+  it('the register is kept: the end stays at its tag, the no is said and kept on the check', () => {
+    const startEnd = questionOf(readingSheets(), 'end', 1);
+    const sheets = readingSheets();
+    sheets[0]!.checks = [row(startEnd, 'no', 'break')];
+    const register = { from: 'E-101', to: 'V-201' };
+    const { r, applied } = traced(sheets, register);
+    // The answer is applied (it stays in the trace's checks and the tab).
+    expect(applied).toEqual([expect.objectContaining({ kind: 'end', node: 1, answer: 'no' })]);
+    const said = r.guesses.join(' ');
+    expect(said).toMatch(
+      /end #1 is drawn at E-101: .*register's from or to names it\. The image check said no to it \(it saw a break symbol\); the register is kept, the no stays on the check\./,
+    );
+    // Never re-picked away from the register, never "not at any end".
+    expect(said).not.toMatch(/end #1 is not at E-101/);
+    expect(r.limits.join(' ')).not.toMatch(/not at any end/);
+    expect(r.limits.join(' ')).not.toMatch(/image removed/);
+    expect(JSON.stringify(r.pid)).not.toContain('BREAK (FROM IMAGE)');
+    // The same drawing as with the register and no answer at all.
+    const plain = traced(readingSheets(), register).r;
+    const strip = (o: unknown): unknown =>
+      JSON.parse(
+        JSON.stringify(o, (k, v: unknown) => (k === 'check' || k === 'checks' ? undefined : v)),
+      );
+    expect(strip(r.pid)).toEqual(strip(plain.pid));
+    expect(validate('pid', r.pid).ok).toBe(true);
+  });
+
+  it('without a register tag the end is dropped, and limits say plainly the image removed it', () => {
+    const startEnd = questionOf(readingSheets(), 'end', 1);
+    for (const [alt, tail] of [
+      ['', /the image removed that reading\.$/],
+      [
+        'break',
+        /the image removed that reading, and the end is drawn as a break symbol \(FROM IMAGE\)\.$/,
+      ],
+      [
+        'P-150',
+        /the image removed that reading, and the end is read as at P-150 instead \(FROM IMAGE\)\.$/,
+      ],
+    ] as const) {
+      const sheets = readingSheets();
+      sheets[0]!.checks = [row(startEnd, 'no', alt)];
+      const { r } = traced(sheets);
+      const line = r.limits.find((l) => /end #1 was read as near E-101/.test(l));
+      expect(line, alt).toMatch(
+        /the image check said no, so the drawing no longer takes that end as at E-101/,
+      );
+      expect(line, alt).toMatch(tail);
+      expect(r.limits.join(' ')).not.toMatch(/not at any end/);
+    }
+  });
+});
+
+describe('the alternatives a no may name (fix round L1, L2)', () => {
+  it('a reserved word wins over a sheet named the same, in any case', () => {
+    expect(altOf('NONE', ['none', 'other'])).toBe('none');
+    expect(altOf('Not a valve', ['orifice', 'not-a-valve'])).toBe('not-a-valve');
+    // A sheet titled "None" or "OTHER" is never offered as a name.
+    const sheets = readingSheets();
+    sheets[1]!.title = 'None';
+    const r = traceCircuit(CIRCUIT, sheets);
+    for (const q of questionsFor(r.sheets, r.links, sheets, { max: Infinity }).questions)
+      expect(q.alts.filter((a) => a.toUpperCase() === 'NONE').length).toBeLessThanOrEqual(1);
+  });
+
+  it('a name matches exactly first; on letters and digits only when one name does', () => {
+    const alts = ['E-101', 'E101', 'P-150', 'break'];
+    expect(altOf('E101', alts)).toBe('E101');
+    expect(altOf('e-101', alts)).toBe('E-101');
+    // "E 101" reads as both: a tie names nothing.
+    expect(altOf('E 101', alts)).toBeUndefined();
+    expect(altOf('p 150', alts)).toBe('P-150');
+    expect(altOf('Break', alts)).toBe('break');
+  });
+
+  it('a sheet title past ALT_MAX is never offered, so a stored one is always whole', () => {
+    const sheets = readingSheets();
+    const long = `PID-${'9'.repeat(ALT_MAX)}`;
+    sheets.push({ ...sheets[1]!, tableId: 'table-long', title: long, checks: [] });
+    const r = traceCircuit(CIRCUIT, sheets);
+    for (const q of questionsFor(r.sheets, r.links, sheets, { max: Infinity }).questions) {
+      expect(q.alts).not.toContain(long);
+      for (const a of q.alts) expect(a.length).toBeLessThanOrEqual(ALT_MAX);
+    }
+  });
+
+  it('equipment near an end at the same distance is listed by the tag itself', () => {
+    const sheets = readingSheets();
+    // Two more tags at the same distance from end #1, the later one first.
+    sheets[0]!.texts.push(
+      { text: 'P-201', layer: 'EQUIP', x: 0, y: 8 },
+      { text: 'P-200', layer: 'EQUIP', x: 0, y: -8 },
+    );
+    const end = questionOf(sheets, 'end', 1);
+    const i = end.alts.indexOf('P-200');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(end.alts.indexOf('P-201')).toBe(i + 1);
   });
 });

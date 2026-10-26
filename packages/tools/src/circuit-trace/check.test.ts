@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { estimateMeasurer, render, validate } from '@mantle/diagram-templates';
 import type { DwgCropSpec } from '@mantle/files';
 import {
+  ALT_WORDS,
   appliedChecks,
   batchesFor,
   cropSpecFor,
@@ -1226,5 +1227,133 @@ describe('the drawing words each answer it shows', () => {
     expect(out).toContain('TO PID-9612 (CHECKED BY IMAGE)');
     expect(out).toContain('FROM PID-9611 (CHECKED BY IMAGE)');
     expect(out).not.toMatch(/PID-961[12] \(GUESS\)/);
+  });
+});
+
+describe('a no that names what it is (phase 6) on links and joins', () => {
+  /** A sealed row answering `key`, with the alternative the image named. */
+  const answeredAlt = (sheets: SheetInput[], key: string, alt: string): StoredCheck => {
+    const r = traceCircuit(C, sheets);
+    const q = questionsFor(r.sheets, r.links, sheets, { max: Infinity }).questions.find(
+      (x) => x.key === key,
+    );
+    if (!q) throw new Error(`no question for ${key}`);
+    const row: StoredCheck = {
+      key,
+      kind: q.kind,
+      answer: 'no',
+      alt,
+      revision: 'rev1',
+      checkedAt: '2026-10-26T10:00:00.000Z',
+      model: 'm',
+      reason: 'r',
+      question: q.question,
+      trust: '',
+      circuit: C,
+      crops: 'c1',
+    };
+    return { ...row, seal: sealOf(sealFieldsOf(q.tableId, row)) };
+  };
+  type Drawn = {
+    offpage: { text?: string; sheet: string; check?: Record<string, unknown> }[];
+    lines: { note?: string; checks?: Record<string, unknown>[] }[];
+  };
+  /** The trace with the rows stored on each sheet, every page's data. */
+  const traced = (sheets: SheetInput[], rows: StoredCheck[]) => {
+    const s = sheets.map((x) => ({ ...x, checks: rows }));
+    const applied: AppliedCheck[] = [];
+    const r = traceCircuit(C, s, undefined, {
+      checks: (w, links) => appliedChecks(w, links, s, applied, []),
+    });
+    expect(validate('pid', r.pid).ok).toBe(true);
+    const pid = r.pid as { pages?: { data: Drawn }[] } & Drawn;
+    const pages = pid.pages ? pid.pages.map((p) => p.data) : [pid];
+    return {
+      applied,
+      offpage: pages.flatMap((p) => p.offpage),
+      lines: pages.flatMap((p) => p.lines),
+    };
+  };
+  /** A guessed link PID-9711 to PID-9712, and a third sheet, PID-9713. */
+  const linkSheets = (third = true) => {
+    const segs = [sg(M, 'A', 0, 0, 20, 0, 1, 2), sg(M, 'B', 30, 0, 50, 0, 3, 4)];
+    const s1 = sheet(
+      'PID-9711',
+      segs,
+      [
+        ...segs.map((g) => ({ ...g, layer: PIPE, handle: `p${g.handle}` })),
+        sg(PIPE, 'gap', 20, 0, 30, 0, 2, 3),
+      ],
+      [
+        { text: 'CONT. ON PID-9712', layer: 'T', x: 51, y: 1 },
+        { text: 'E-101', layer: 'EQUIP', x: -1, y: 0 },
+      ],
+      [{ ...lineNo('L1', 10, 1, 'N300-2'), attribs: { LINENO: 'N300-2', CIRCUIT: C } }],
+    );
+    const s2 = sheet(
+      'PID-9712',
+      [sg(M, 'X', 0, 0, 30, 0, 1, 2)],
+      [],
+      [{ text: 'CONT. FROM PID-9711', layer: 'T', x: -1, y: 1 }],
+      [{ ...lineNo('L3', 15, 1, 'N300-2'), attribs: { LINENO: 'N300-2', CIRCUIT: C } }],
+    );
+    const s3 = sheet(
+      'PID-9713',
+      [sg(M, 'Y', 0, 0, 30, 0, 1, 2)],
+      [],
+      [{ text: 'V-301', layer: 'EQUIP', x: 31, y: 0 }],
+    );
+    return third ? [s1, s2, s3] : [s1, s2];
+  };
+  const LINK = linkKey('B', 50, 0, 'PID-9712');
+
+  it('a link the image names another sheet for is re-pointed at the asked end only', () => {
+    const sheets = linkSheets();
+    expect(traceCircuit(C, sheets).links[0]!.guessed).toBe(true);
+    const r0 = traceCircuit(C, sheets);
+    const q = questionsFor(r0.sheets, r0.links, sheets, { max: Infinity }).questions.find(
+      (x) => x.key === LINK,
+    )!;
+    expect(q.alts).toContain('PID-9713');
+    expect(q.alts).not.toContain('PID-9712');
+    const { applied, offpage } = traced(sheets, [answeredAlt(sheets, LINK, 'PID-9713')]);
+    expect(applied).toEqual([expect.objectContaining({ kind: 'link', alt: 'PID-9713' })]);
+    const near = offpage.find((o) => o.text === 'TO PID-9713 (FROM IMAGE)');
+    expect(near?.check).toMatchObject({ kind: 'link', state: 'corrected', alt: 'PID-9713' });
+    // The far end, on PID-9712, does not come FROM PID-9713: it shows the
+    // link it was guessed with, contradicted.
+    const far = offpage.find((o) => /^FROM PID-971/.test(o.text ?? ''));
+    expect(far?.text).toBe('FROM PID-9711 (GUESS, IMAGE: NO)');
+    expect(far?.check).toMatchObject({ state: 'contradicted', answer: 'no' });
+  });
+
+  it('a stored alternative the question no longer offers is dropped when applied', () => {
+    // Answered while PID-9713 was uploaded; traced without it.
+    const row = answeredAlt(linkSheets(), LINK, 'PID-9713');
+    const { applied, offpage } = traced(linkSheets(false), [row]);
+    expect(applied).toEqual([expect.objectContaining({ kind: 'link', answer: 'no' })]);
+    expect(applied[0]!.alt).toBeUndefined();
+    expect(offpage.map((o) => o.text)).toContain('TO PID-9712 (GUESS, IMAGE: NO)');
+    expect(offpage.map((o) => o.text)).not.toContain('TO PID-9713 (FROM IMAGE)');
+    const near = offpage.find((o) => o.text === 'TO PID-9712 (GUESS, IMAGE: NO)');
+    expect(near?.check).toMatchObject({ state: 'contradicted' });
+    expect(near?.check?.alt).toBeUndefined();
+  });
+
+  it('a join the image calls a crossing keeps the alternative on its check, still a guess', () => {
+    const sheets = both();
+    const key = joinKey(['pGap']);
+    const r0 = traceCircuit(C, sheets);
+    const q = questionsFor(r0.sheets, r0.links, sheets, { max: Infinity }).questions.find(
+      (x) => x.key === key,
+    )!;
+    expect(q.alts).toEqual([...ALT_WORDS.join]);
+    const { applied, lines } = traced(sheets, [answeredAlt(sheets, key, 'crossing')]);
+    expect(applied).toEqual([expect.objectContaining({ kind: 'join', alt: 'crossing' })]);
+    const line = lines.find((l) => l.checks)!;
+    expect(line.note).toBe('INFERRED JOIN (GUESS, IMAGE: NO)');
+    expect(line.checks).toEqual([
+      expect.objectContaining({ kind: 'join', state: 'contradicted', alt: 'crossing' }),
+    ]);
   });
 });

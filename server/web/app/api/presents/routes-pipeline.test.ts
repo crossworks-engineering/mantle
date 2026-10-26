@@ -10,6 +10,8 @@
  *    ticket's nonce inside the prelude, never in the canvas's own text.
  *  - A share's ticket or a client login's ticket for a canvas is refused.
  *  - The DELETE handler deletes, and answers 404 for none.
+ *  - The create and update handlers store a pid canvas with the image
+ *    check count of its own marks, whatever count the posted source says.
  *
  * The content layer is stood in; the frame document is built by the real
  * share-ui builder over a stand-in import map and fonts.
@@ -17,12 +19,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runRoute } from '@/server/run-route';
 import { standInLogin } from '@/server/run-route-stand-ins';
+import { buildCanvas, readCanvasData } from '@mantle/diagram-templates';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const CANVAS = '11111111-1111-4111-8111-111111111111';
 const MISSING = '44444444-4444-4444-8444-444444444444';
 
-const h = vi.hoisted(() => ({ deleted: [] as string[] }));
+const h = vi.hoisted(() => ({ deleted: [] as string[], saved: [] as string[] }));
 
 vi.mock(
   '@/lib/auth/login-row',
@@ -66,7 +69,14 @@ vi.mock('@/lib/presents', () => ({
     id === CANVAS ? { title: 'Pump deck', rev: 3, posterRev: 2 } : null,
   ),
   compileCanvasCss: vi.fn(async () => ''),
-  savePresentSource: vi.fn(),
+  savePresentSource: vi.fn(async (_o: string, _id: string, input: { source: string }) => {
+    h.saved.push(input.source);
+    return { ok: true, present: { id: CANVAS, rev: 4 } };
+  }),
+  createPresent: vi.fn(async (_o: string, input: { source?: string }) => {
+    h.saved.push(input.source ?? '');
+    return { id: CANVAS, rev: 1 };
+  }),
   updatePresent: vi.fn(),
 }));
 vi.mock('@mantle/tools/canvas-frame-document', async () => {
@@ -105,6 +115,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   h.deleted.length = 0;
+  h.saved.length = 0;
 });
 
 describe('POST /api/presents/:id/frame-ticket', () => {
@@ -218,5 +229,62 @@ describe('DELETE /api/presents/:id (the handler; a write through the pipeline ne
     expect(ok.status).toBe(200);
     expect(h.deleted).toEqual([CANVAS]);
     expect((await call(MISSING)).status).toBe(404);
+  });
+});
+
+describe('POST and PATCH /api/presents (the handlers): a pid canvas keeps its own count', () => {
+  // Two guesses drawn, one checked: a source that says both are checked.
+  const forged = buildCanvas({
+    template: 'pid',
+    mode: 'import',
+    data: {
+      title: 'Marked',
+      equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
+      offpage: [
+        {
+          id: 'OPC-1',
+          direction: 'in',
+          sheet: 'S1',
+          check: { key: 'k1', kind: 'link', state: 'unchecked' },
+        },
+        {
+          id: 'OPC-2',
+          direction: 'out',
+          sheet: 'S2',
+          check: { key: 'k2', kind: 'link', state: 'checked', answer: 'yes' },
+        },
+      ],
+      lines: [
+        { from: 'OPC-1', to: 'V-101' },
+        { from: 'V-101', to: 'OPC-2' },
+      ],
+      checks: { guesses: 2, unchecked: 0, checked: 2, unsure: 0, contradicted: 0, corrected: 0 },
+    },
+  });
+  const own = { guesses: 2, unchecked: 1, checked: 1, unsure: 0, contradicted: 0, corrected: 0 };
+  const body = (b: unknown) => ({
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(b),
+  });
+
+  it('the create stores the recount', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://brain.test/api/presents', body({ source: forged })));
+    expect(res.status).toBe(201);
+    expect(readCanvasData(h.saved.at(-1)!).checks).toEqual(own);
+  });
+
+  it('the update stores the recount', async () => {
+    const { PATCH } = await import('./[id]/route');
+    const res = await PATCH(
+      new Request(`http://brain.test/api/presents/${CANVAS}`, {
+        ...body({ source: forged }),
+        method: 'PATCH',
+      }),
+      { params: Promise.resolve({ id: CANVAS }) },
+    );
+    expect(res.status).toBe(200);
+    expect(readCanvasData(h.saved.at(-1)!).checks).toEqual(own);
   });
 });

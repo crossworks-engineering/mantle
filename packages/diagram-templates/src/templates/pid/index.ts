@@ -25,9 +25,11 @@ export {
   CHECK_GUESS_KINDS,
   CHECK_LIMITS,
   imageCheckSummary,
+  imageChecksStale,
   withImageCheckSummary,
   type PidCheck,
   type PidChecksSummary,
   type CheckState,
+  type CheckGuessKind,
 } from './check.ts';
 export { DEFAULT_LINE_PATTERN, DEFAULT_SERVICE_COLOURS, type SiteProfile } from './profile.ts';

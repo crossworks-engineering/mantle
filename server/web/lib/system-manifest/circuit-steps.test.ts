@@ -8,7 +8,12 @@
  * the tools' own (packages/tools/src/circuit-parity.test.ts).
  */
 import { describe, expect, it } from 'vitest';
-import { CIRCUIT_DRAWING_STEPS } from '@mantle/tools/circuit-workflow';
+import {
+  CIRCUIT_DRAWING_STEPS,
+  imageCheckReport,
+  VERIFY_NEXT,
+  VERIFY_ONCE,
+} from '@mantle/tools/circuit-workflow';
 import { MANTLE_MCP_INSTRUCTIONS, mcpInstructionsFor } from '@mantle/mcp-core';
 import { MANIFEST_AGENTS } from './manifest';
 import { SKILL_INSTRUCTIONS } from './prompts';
@@ -37,5 +42,31 @@ describe('the circuit drawing steps reach every author the same', () => {
     expect(MANTLE_MCP_INSTRUCTIONS).toContain(CIRCUIT_DRAWING_STEPS);
     const login = mcpInstructionsFor({} as never);
     expect(login).toContain(CIRCUIT_DRAWING_STEPS);
+  });
+
+  it('says circuit_verify runs at most once per trace in a turn, to every author', () => {
+    // The rule (owner, 2026-10-26: every drawing goes through the image
+    // check, but never a loop of calls on the owner's key).
+    expect(VERIFY_ONCE).toMatch(/at most once per trace in a turn/);
+    expect(VERIFY_ONCE).toMatch(/never again in the same turn/);
+    expect(VERIFY_ONCE).toMatch(/not_asked/);
+    expect(VERIFY_ONCE).toMatch(/save the drawing and report how many are unchecked/);
+    // In the steps, so in both skills and the MCP server instructions.
+    expect(CIRCUIT_DRAWING_STEPS).toContain(VERIFY_ONCE);
+    for (const skill of ['diagram_design', 'canvas_authoring'])
+      expect(SKILL_INSTRUCTIONS[skill], skill).toContain(VERIFY_ONCE);
+    expect(MANTLE_MCP_INSTRUCTIONS).toContain(VERIFY_ONCE);
+    expect(mcpInstructionsFor({} as never)).toContain(VERIFY_ONCE);
+    // And in the hints a result carries after a trace or a check.
+    expect(VERIFY_NEXT).toContain(VERIFY_ONCE);
+    const unchecked = imageCheckReport({
+      guesses: 3,
+      unchecked: 2,
+      checked: 1,
+      unsure: 0,
+      contradicted: 0,
+      corrected: 0,
+    });
+    expect(unchecked?.next).toContain(VERIFY_ONCE);
   });
 });

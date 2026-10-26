@@ -52,7 +52,7 @@ import {
 } from '@mantle/files/dwg';
 import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
-import { CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
+import { ALT_MAX, CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
 import { sealOf } from './check-seal';
 import type { CheckAnswer, StoreResult } from './verify';
 import type { SheetInput } from './walk';
@@ -262,6 +262,9 @@ export async function storeChecks(
   for (const a of answers) {
     const ids = cropIds.get(a.q.id) ?? [];
     const crops = [...(overviewId ? [`overview ${overviewId}`] : []), ...ids].join(' ');
+    // Every listed alternative fits ALT_MAX (check.ts altsOf); capped here
+    // too, the cell and its seal alike, so no stored one is ever longer.
+    const alt = (a.alt ?? '').slice(0, ALT_MAX);
     const cells: Record<CheckColumn, string | number | null> = {
       Key: a.q.key,
       Kind: a.q.kind,
@@ -271,7 +274,7 @@ export async function storeChecks(
       Guess: a.q.guess,
       Question: a.q.question,
       Answer: a.verdict,
-      Alternative: a.alt ?? '',
+      Alternative: alt,
       Reason: a.reason,
       Trust: TRUST[a.verdict],
       Model: a.model,
@@ -290,7 +293,7 @@ export async function storeChecks(
         revision,
         checkedAt,
         crops,
-        alt: a.alt ?? '',
+        alt,
       }),
     };
     ops.push({

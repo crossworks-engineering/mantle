@@ -63,7 +63,7 @@ export const VERIFY_MAX = {
 /** The colours the sidecar draws the trace in (dwg_crop.COLORS), named in
  *  every prompt. */
 export const COLOR_NOTE =
-  'The traced circuit is drawn over each crop in colour: red is the main line, blue a branch, orange a deadleg. A green ring marks the spot a question asks about; on the sheet overview, green boxes show where the crops are.';
+  "The traced circuit is drawn on each crop as a band of solid colour under the drawing's own black lines and symbols: red is the main line, blue a branch, orange a deadleg. A green ring marks the spot a question asks about; on the sheet overview, green boxes show where the crops are.";
 
 export type CheckQuestion = {
   /** q1, q2...: the crop item id and the answer id in the prompt. */
@@ -218,9 +218,39 @@ export function simplifyPath(points: readonly Pt[], max = PATH_POINTS_MAX): Pt[]
   return out;
 }
 
-/** A question's alternatives: the closed list and the prompt line. */
-function altsOf(list: readonly string[], what: string): { alts: string[]; altAsk: string } {
-  const alts = [...new Set(list.map((a) => a.trim()).filter(Boolean))];
+/** Every reserved alternative word (ALT_WORDS), on letters and digits. */
+const RESERVED = new Set(Object.values(ALT_WORDS).flatMap((w) => w.map((x) => loose(x))));
+
+/** A name on its letters and digits only ("E 101", "e-101" read "E101"). */
+function loose(t: string): string {
+  return t.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+}
+/** A name compared without case or extra spaces. */
+function plain(t: string): string {
+  return t.trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * A question's alternatives: the closed list and the prompt line. `names`
+ * are the drawing's own (equipment tags, sheet titles, valve types): one
+ * that reads as a reserved word ("None", "OTHER") is left out, so the word
+ * always means the word; one past ALT_MAX is left out, so every listed
+ * alternative is stored and drawn whole; a name listed twice (in any case)
+ * once. Then the kind's reserved words.
+ */
+function altsOf(
+  names: readonly string[],
+  words: readonly string[],
+  what: string,
+): { alts: string[]; altAsk: string } {
+  const alts: string[] = [];
+  for (const n of names) {
+    const t = n.trim();
+    if (!t || t.length > ALT_MAX || RESERVED.has(loose(t))) continue;
+    if (alts.some((a) => plain(a) === plain(t))) continue;
+    alts.push(t);
+  }
+  alts.push(...words);
   return {
     alts,
     altAsk: `If no, give "alt", ${what}; one of ${alts.map((a) => quoted(a)).join(', ')}.`,
@@ -246,7 +276,9 @@ function equipmentNear(
     const d = dist(at, pt(t.x, t.y));
     if (d <= pad) found.push({ tag: r.tag, d });
   }
-  found.sort((a, b) => a.d - b.d || a.tag.localeCompare(b.tag));
+  // Ties by the tag's own characters: the same order on every machine and
+  // locale.
+  found.sort((a, b) => a.d - b.d || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
   const out: string[] = [];
   for (const tag of [...found.map((f) => f.tag), ...(reading?.tags ?? [])]) {
     const n = norm(tag);
@@ -331,7 +363,7 @@ export function questionsFor(
             guess: `pieces #${j.from} and #${j.to} of the circuit are one pipe, joined through ${round(j.length)} drawing units on layer ${j.layers.join(', ') || '(unnamed)'}`,
             question: `The trace joined two pieces of the circuit through a line drawn on another layer: the coloured path between the green rings. Is that one continuous pipe from one ring to the other (yes), or two separate pipes, a line that only crosses, or a gap (no)?`,
             pidKey: `${s.tableId}:${joinKey(j.handles)}`,
-            ...altsOf([...ALT_WORDS.join], 'what is drawn there instead'),
+            ...altsOf([], ALT_WORDS.join, 'what is drawn there instead'),
           },
           { kind: 'path', points, pad: 2 * near, marks },
         );
@@ -356,7 +388,8 @@ export function questionsFor(
               question: `The trace guessed that the pipe end in the green ring belongs to the equipment tagged ${quoted(e.equipmentUnconfirmed)}. Does the pipe end connect to that equipment (into its outline or a nozzle of it)? Yes, no (it ends somewhere else, or at other equipment), or unsure.`,
               pidKey: `${s.tableId}:${e.node}`,
               ...altsOf(
-                [...tags, ...ALT_WORDS.end],
+                tags,
+                ALT_WORDS.end,
                 `where the pipe end really goes: the tag of the equipment it connects to${tags.length ? '' : ' (none is listed near it)'}, "break" (it stops at a break symbol), "continues" (a label or connector says it goes on elsewhere), "open" (it just ends), or "other"`,
               ),
             },
@@ -385,14 +418,11 @@ export function questionsFor(
             question: `The trace guessed that the pipe at the green ring continues on another drawing, ${quoted(other)}. Does a label, arrow or off-page connector at that end say it continues on that drawing? Yes, no (it names another drawing, or nothing), or unsure.`,
             pidKey: `${s.tableId}:${end.node}`,
             ...altsOf(
-              [
-                ...titles
-                  .filter(
-                    (t) => t !== s.title && t.trim().toUpperCase() !== other.trim().toUpperCase(),
-                  )
-                  .slice(0, ALT_NAMES_MAX),
-                ...ALT_WORDS.link,
-              ],
+              titles
+                .filter((t) => plain(t) !== plain(s.title) && plain(t) !== plain(other))
+                .filter((t) => t.trim().length <= ALT_MAX)
+                .slice(0, ALT_NAMES_MAX),
+              ALT_WORDS.link,
               'the drawing the end really names: one of the sheet names listed, "none" (no continuation is named), or "other" (a drawing not listed)',
             ),
           },
@@ -426,7 +456,8 @@ export function questionsFor(
                 question: `The trace read the symbol in the green ring as a ${sayType(v.type)} valve from its block name. Is it drawn as a ${sayType(v.type)} valve? Yes, no (another valve or not a valve), or unsure.`,
                 pidKey: `${s.tableId}:${valveKey(v.handle)}`,
                 ...altsOf(
-                  [...VALVE_TYPES.filter((t) => t !== v.type), ...ALT_WORDS.valve],
+                  VALVE_TYPES.filter((t) => t !== v.type),
+                  ALT_WORDS.valve,
                   'what the symbol is drawn as: a valve type listed (an orifice plate or flow element is "orifice"), "instrument" (an inline instrument), "not-a-valve", or "other"',
                 ),
               },
@@ -604,16 +635,28 @@ export function promptFor(batch: CheckBatch, overview = true): string {
 
 export type ParsedAnswer = { verdict: Verdict; reason: string; alt?: string };
 
-/** A reply's alternative as one of the question's own (the listed
- *  spelling), or undefined: only after a no, never free text. */
+/**
+ * A reply's alternative as one of the question's own (the listed
+ * spelling), or undefined: only after a no, never free text. In order:
+ *   1. a reserved word (ALT_WORDS: "none", "other", "break"...), without
+ *      case or punctuation ("Not a valve" is "not-a-valve"): the word wins
+ *      over any name;
+ *   2. a listed name exactly, without case or extra spaces ("e101" is the
+ *      listed "E101", never "E-101");
+ *   3. a listed name on its letters and digits ("three way", "E 101"),
+ *      only when ONE listed name reads so: "E 101" with both "E-101" and
+ *      "E101" listed is a tie, and a tie names nothing.
+ */
 export function altOf(said: unknown, alts: readonly string[] | undefined): string | undefined {
   if (typeof said !== 'string' || !alts?.length) return undefined;
-  // Compared on letters and digits only: "three way", "Three-Way" and
-  // "E 101" read as the listed "three-way" and "E-101".
-  const n = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]+/g, '');
-  const want = n(said);
+  const want = loose(said);
   if (!want) return undefined;
-  return alts.find((a) => n(a) === want);
+  const word = alts.find((a) => RESERVED.has(loose(a)) && loose(a) === want);
+  if (word) return word;
+  const exact = alts.find((a) => plain(a) === plain(said));
+  if (exact) return exact;
+  const close = alts.filter((a) => !RESERVED.has(loose(a)) && loose(a) === want);
+  return close.length === 1 ? close[0] : undefined;
 }
 
 /** What a reply held: the answers the model gave (`answers`, a genuine

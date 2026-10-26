@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { withOwnImageChecks } from '@mantle/diagram-templates';
 import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller } from '@/lib/auth';
 import {
@@ -59,8 +60,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { source, ifRev, ...meta } = parsed.data;
-  if (source !== undefined) {
+  const { source: posted, ifRev, ...meta } = parsed.data;
+  if (posted !== undefined) {
+    // A pid canvas keeps the image check count of its own marks, whatever
+    // count the edited source carries (@mantle/diagram-templates).
+    const source = withOwnImageChecks(posted);
     const css = await compileCanvasCss(source);
     const saved = await savePresentSource(user.id, id, {
       source,

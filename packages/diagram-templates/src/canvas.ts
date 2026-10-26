@@ -21,6 +21,7 @@ import { esc } from './runtime/svg.ts';
 import { messageOf } from './runtime/validate.ts';
 import { PALETTE } from './runtime/style.ts';
 import { TEMPLATES, isTemplateName, type TemplateName } from './index.ts';
+import { imageChecksStale, withImageCheckSummary } from './templates/pid/check.ts';
 
 /** `inline`: the runtime is inside the file (works anywhere, offline, from
  *  file://; about 110 KB). `import`: the file imports the runtime by name
@@ -143,4 +144,31 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
     );
   }
   return out;
+}
+
+/**
+ * A `pid` canvas with the image check counts its data stores (`checks`, and
+ * each set page's) recounted from the drawing's own marks (pid/check.ts).
+ * Every save path runs a source through it (present_create / present_update
+ * / present_restore, the HTTP create and update), so no saved canvas keeps a
+ * count its marks do not hold, whoever wrote the source. The marks are
+ * author data; what an image really answered is the drawing table's sealed
+ * Checks tab. Byte for byte unchanged when the count already matches, the
+ * canvas is no pid template, or its data block does not parse; only the
+ * data block changes otherwise.
+ */
+export function withOwnImageChecks(html: string): string {
+  if (!/<meta name="diagram:template" content="pid@/.test(html)) return html;
+  let data: Record<string, unknown>;
+  try {
+    data = readCanvasData(html);
+  } catch {
+    return html;
+  }
+  if (data.template !== 'pid' || !imageChecksStale(data)) return html;
+  const own = withImageCheckSummary(data);
+  return html.replace(
+    DATA_BLOCK,
+    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(own)}\n${close}`,
+  );
 }
