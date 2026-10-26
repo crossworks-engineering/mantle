@@ -1231,6 +1231,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ...userOnly('public.item_marks', 'admin'),
     scopedSystemWrite: "own marks: actor_id is the caller's login; the node is read in scope first",
   },
+  // The canvas data store (0335, DWG phase 7a): a Present canvas's small
+  // JSON values. Read by its row rule (a canvas the scope reads: `shared`,
+  // the login's own `mine`, or everyone's with Write on the canvas); written
+  // by packages/content/src/canvas-data.ts after its checks, on the system
+  // pool, as item_marks.
+  {
+    ...userOnly('public.canvas_data', 'admin'),
+    scopedSystemWrite:
+      "a canvas's data: the canvas is read in scope first; `shared` asks Write on it (assertItemRight edit), `mine` writes only the caller's own login",
+  },
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
@@ -1496,6 +1506,7 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
 export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.presents', // 0332
   'public.present_revisions', // 0332
+  'public.canvas_data', // 0335
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as
