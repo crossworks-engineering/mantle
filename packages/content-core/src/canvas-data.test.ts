@@ -9,6 +9,7 @@ import {
   canvasDataValue,
   isCanvasDataBucket,
   isCanvasDataKey,
+  isCanvasDataLoginId,
   isCanvasDataOp,
   readCanvasDataJson,
   utf8Bytes,
@@ -20,6 +21,13 @@ describe('canvas data contract', () => {
     expect(isCanvasDataBucket('mine')).toBe(true);
     for (const b of ['', 'Shared', 'others', 'all', null, 1, {}]) {
       expect(isCanvasDataBucket(b)).toBe(false);
+    }
+  });
+
+  it('takes a login id as the store gives it: a lowercase uuid', () => {
+    expect(isCanvasDataLoginId('00000000-0000-4000-8000-00000000000a')).toBe(true);
+    for (const v of ['00000000-0000-4000-8000-00000000000A', 'not-a-uuid', '', null, 1]) {
+      expect(isCanvasDataLoginId(v), String(v)).toBe(false);
     }
   });
 
