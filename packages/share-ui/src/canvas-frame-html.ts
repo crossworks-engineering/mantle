@@ -19,6 +19,7 @@
  * fetch, no form posts, no popups, no top navigation.
  */
 import type { CanvasSize } from '@mantle/content-core/canvas';
+import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
 
 /**
  * The canvas frame CSP, sent as a HEADER (section 5.2). Every source names
@@ -125,14 +126,18 @@ function styleText(css: string): string {
  *    host can tell a broken canvas from a slow one. The parent checks
  *    `e.source` and accepts nothing else.
  *  - Data (DWG phase 7a): `window.mantle.data` (get, set, delete, list,
- *    info), each a promise. A call is `{v:1, kind:'data', id, op, bucket,
- *    key, json, everyone}` to the parent, held until `ready` has gone (the
- *    parent takes none before the proof), and answered by
+ *    info, clear), each a promise. A call is `{v:1, kind:'data', n, id, op,
+ *    bucket, key, json, everyone, by}` to the parent, held until `ready` has
+ *    gone (the parent takes none before the proof), and answered by
  *    `{v:1, kind:'data-reply', id, ok, result | error}` from the parent only.
- *    The message names no canvas and no login: the parent binds both, and
- *    checks every field (canvas-sandbox.tsx). A canvas that never calls it
- *    sends nothing. With no parent (a render: no nonce) reads answer empty
- *    and writes refuse, at once.
+ *    `n` is the nonce again, from this closure: the parent drops a data
+ *    message without it, so a page the frame navigated to (the same window)
+ *    sends nothing it takes. The message names no canvas and no login: the
+ *    parent binds both, and checks every field (canvas-sandbox.tsx). A
+ *    canvas that never calls it sends nothing. With no parent (a render: no
+ *    nonce) reads answer empty and writes refuse, at once.
+ *  - Leaving: `{v:1, kind:'leaving', n}` as the document unloads (pagehide),
+ *    so the parent takes the frame down before a navigated-to page runs.
  */
 function preludeScript(opts: {
   cls: string;
@@ -177,9 +182,9 @@ function preludeScript(opts: {
       else if(op==='info'){ok({canWriteShared:false,readsEveryone:false,me:null,readOnly:true});}
       else{no(new Error('nothing is saved here: this is a picture of the canvas'));}
       return;}
-    var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the canvas data store did not answer'));}},30000);
+    var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the canvas data store did not answer'));}},${CANVAS_DATA_CALL_TIMEOUT_MS + 5_000});
     waits[id]={ok:ok,no:no,t:t};
-    var m={v:1,kind:'data',id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone};
+    var m={v:1,kind:'data',n:nonce,id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone,by:a.by};
     if(up){send(m);}else{queue.push(m);}
   });}
   function bk(o){return o&&typeof o==='object'&&o.bucket!==undefined?o.bucket:'shared';}
@@ -188,9 +193,10 @@ function preludeScript(opts: {
     set:function(k,v,o){var j;try{j=JSON.stringify(v);}catch(err){return Promise.reject(err);}
       if(j===undefined){return Promise.reject(new TypeError('the value must be JSON'));}
       return call('set',{bucket:bk(o),key:k,json:j}).then(function(){return undefined;});},
-    delete:function(k,o){return call('delete',{bucket:bk(o),key:k}).then(function(r){return !!(r&&r.deleted);});},
+    delete:function(k,o){return call('delete',{bucket:bk(o),key:k,by:o&&typeof o==='object'?o.by:undefined}).then(function(r){return !!(r&&r.deleted);});},
     list:function(o){return call('list',{bucket:bk(o),everyone:!!(o&&typeof o==='object'&&o.everyone)});},
-    info:function(){return call('info',{});}
+    info:function(){return call('info',{});},
+    clear:function(){return call('clear',{}).then(function(r){return r&&typeof r.removed==='number'?r.removed:0;});}
   };
   try{window.mantle=Object.freeze({data:Object.freeze(data)});}catch(_){}
   if(cfg.size){
@@ -212,6 +218,8 @@ function preludeScript(opts: {
   window.addEventListener('load',function(){
     try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}
     up=true;var q=queue;queue=[];for(var i=0;i<q.length;i++){send(q[i]);}});
+  window.addEventListener('pagehide',function(){
+    if(nonce){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}});
 })();`;
 }
 

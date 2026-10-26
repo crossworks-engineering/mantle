@@ -10,13 +10,17 @@
  * `data-reply`. Nothing else crosses.
  *
  * Data (DWG phase 7a): a canvas's `mantle.data` calls arrive as `data`
- * messages. This parent takes them only from its own frame (`e.source`)
- * and only once the frame proved itself (`ready` with the nonce), checks
- * every field (./canvas-data-bridge.ts), and forwards each to THIS canvas's
- * API (`apiBase` + `/data`) with its own fetcher: the canvas names no
- * canvas and no login, and never holds a credential. At most
- * CANVAS_DATA_IN_FLIGHT_MAX wait at once. A canvas that never calls it
- * costs no request.
+ * messages. This parent takes them only from its own frame (`e.source`),
+ * only once the frame proved itself (`ready` with the nonce), and only when
+ * the message carries that nonce again (`n`): a page the frame navigated to
+ * is the same window but never knows it. It checks every field
+ * (./canvas-data-bridge.ts) and forwards each to THIS canvas's API
+ * (`apiBase` + `/data`) with its own fetcher: the canvas names no canvas and
+ * no login, and never holds a credential. At most CANVAS_DATA_IN_FLIGHT_MAX
+ * wait at once, each at most 30 s. A canvas that never calls it costs no
+ * request. The served document says `leaving` (with the nonce) as it
+ * unloads, so a navigation takes the frame down before the next page runs
+ * anything, not at its load.
  *
  * The iframe is `sandbox="allow-scripts"` only: an opaque origin, no
  * cookies, no storage, no forms, no popups, no top navigation. The frame's
@@ -38,9 +42,11 @@ import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { buildCanvasEmbedCsp } from './canvas-frame-html';
 import {
   CANVAS_DATA_IN_FLIGHT_MAX,
+  acceptsDataMessage,
   canvasDataReply,
   readCanvasDataMessage,
 } from './canvas-data-bridge';
+import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
 
 type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
@@ -103,9 +109,14 @@ export function CanvasSandbox({
   const handlers = useRef({ onReady, onDown, onError, fetcher });
   handlers.current = { onReady, onDown, onError, fetcher };
   // The frame load each data call belongs to: a reply to an earlier load
-  // (a reload, Replay, a take-down) is dropped, never sent to the new one.
+  // (a reload, Replay, a take-down) is dropped, never sent to the new one,
+  // and the in-flight count starts again with each load.
   const frameLoad = useRef(0);
   const dataInFlight = useRef(0);
+  const nextLoad = () => {
+    frameLoad.current += 1;
+    dataInFlight.current = 0;
+  };
   const apiBaseRef = useRef(apiBase);
   apiBaseRef.current = apiBase;
 
@@ -115,7 +126,7 @@ export function CanvasSandbox({
     setStatus('loading');
     setFailure(null);
     setSrc(null);
-    frameLoad.current += 1;
+    nextLoad();
     handlers.current.onDown?.();
     void (async () => {
       try {
@@ -152,7 +163,9 @@ export function CanvasSandbox({
     if (proofWait.current) clearTimeout(proofWait.current);
     proofWait.current = null;
     proven.current = false;
+    nonce.current = null;
     frameLoad.current += 1;
+    dataInFlight.current = 0;
     setSrc(null);
     setStatus('left');
     handlers.current.onDown?.();
@@ -170,7 +183,7 @@ export function CanvasSandbox({
     return () => clearTimeout(t);
   }, [src]);
 
-  // The frame's two messages, from this frame only.
+  // The frame's messages, from this frame only.
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       const frame = iframeRef.current;
@@ -189,10 +202,15 @@ export function CanvasSandbox({
         const text = typeof m.message === 'string' ? m.message.slice(0, 500) : 'the canvas failed';
         setFailure(text);
         handlers.current.onError?.(text);
+      } else if (m.kind === 'leaving') {
+        // The served document unloads: whatever loads next is not the
+        // canvas. Taken down now, before that page runs anything.
+        if (!acceptsDataMessage(m, { proven: proven.current, nonce: nonce.current })) return;
+        takeDown('the canvas tried to open another page');
       } else if (m.kind === 'data') {
-        // Only the proven document: before the proof, the frame may be a
-        // page the canvas navigated to.
-        if (!proven.current) return;
+        // Only the proven document, and only with its nonce: the frame's
+        // window may hold a page the canvas navigated to.
+        if (!acceptsDataMessage(m, { proven: proven.current, nonce: nonce.current })) return;
         void forwardData(frame, m);
       }
     }
@@ -218,6 +236,7 @@ export function CanvasSandbox({
       try {
         const res = await handlers.current.fetcher(`${apiBaseRef.current}${req.path}`, {
           method: req.method,
+          signal: AbortSignal.timeout(CANVAS_DATA_CALL_TIMEOUT_MS),
           ...(req.body !== undefined
             ? { headers: { 'content-type': 'application/json' }, body: req.body }
             : {}),
@@ -227,7 +246,8 @@ export function CanvasSandbox({
       } catch {
         answer(req.id, { ok: false, error: 'the canvas data store could not be reached' });
       } finally {
-        dataInFlight.current -= 1;
+        // A call of an earlier load is not counted in this one's.
+        if (load === frameLoad.current) dataInFlight.current -= 1;
       }
     }
     window.addEventListener('message', onMessage);

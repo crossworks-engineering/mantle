@@ -3,9 +3,12 @@
  * does with a `{v:1, kind:'data'}` message from its frame. Pure, so every
  * check is tested without a browser (canvas-data-bridge.test.ts).
  *
- * The frame is hostile. Its message is checked field by field before any
- * request: a known operation, a known bucket, a key of the contract's
- * format, a value that is JSON text within the cap, a boolean `everyone`.
+ * The frame is hostile. Its message is taken only from the document the
+ * brain served this load (acceptsDataMessage: the frame's own window, after
+ * its proof, carrying the proof's nonce), then checked field by field before
+ * any request: a known operation, a known bucket, a key of the contract's
+ * format, a value that is JSON text within the cap, a boolean `everyone`, a
+ * login id for `by`.
  * Nothing in it names a canvas or a login: the request goes to THIS
  * sandbox's own canvas API (`apiBase`), with the host's own credential
  * (its fetcher), and the brain reads the login from that credential. Any
@@ -14,6 +17,7 @@
 import {
   isCanvasDataBucket,
   isCanvasDataKey,
+  isCanvasDataLoginId,
   isCanvasDataOp,
   readCanvasDataJson,
   type CanvasDataOp,
@@ -23,6 +27,27 @@ import {
  *  asks more is answered at once with an error (the brain's rate limit is
  *  the bound across time). */
 export const CANVAS_DATA_IN_FLIGHT_MAX = 8;
+
+/**
+ * Whether a `data` message may be forwarded at all: the frame has proved
+ * itself this load (`ready` with the nonce), and the message carries that
+ * same nonce (`n`). The nonce lives only in the served document's prelude
+ * closure, so a page the frame navigated to (the same window, so the same
+ * `e.source`) cannot send one, even in the moment before the host sees its
+ * load.
+ */
+export function acceptsDataMessage(
+  m: { n?: unknown } | null | undefined,
+  state: { proven: boolean; nonce: string | null },
+): boolean {
+  return (
+    !!m &&
+    state.proven &&
+    typeof state.nonce === 'string' &&
+    state.nonce !== '' &&
+    m.n === state.nonce
+  );
+}
 
 /** The request a valid message becomes, relative to the canvas API base. */
 export type CanvasDataRequest = {
@@ -57,6 +82,7 @@ export function readCanvasDataMessage(
   if (!isCanvasDataOp(m.op)) return no('unknown operation');
   const op = m.op;
   if (op === 'info') return { ok: true, req: { id, op, method: 'GET', path: '/data?info=1' } };
+  if (op === 'clear') return { ok: true, req: { id, op, method: 'DELETE', path: '/data?all=1' } };
 
   const bucket = m.bucket;
   if (!isCanvasDataBucket(bucket)) return no("bucket must be 'shared' or 'mine'");
@@ -74,7 +100,16 @@ export function readCanvasDataMessage(
   const key = m.key;
   const q = new URLSearchParams({ bucket, key }).toString();
   if (op === 'get') return { ok: true, req: { id, op, method: 'GET', path: `/data?${q}` } };
-  if (op === 'delete') return { ok: true, req: { id, op, method: 'DELETE', path: `/data?${q}` } };
+  if (op === 'delete') {
+    if (m.by === undefined || m.by === null) {
+      return { ok: true, req: { id, op, method: 'DELETE', path: `/data?${q}` } };
+    }
+    if (bucket !== 'mine' || !isCanvasDataLoginId(m.by)) {
+      return no("by must be a viewer's id (an entry's by.id), for the 'mine' bucket");
+    }
+    const qb = new URLSearchParams({ bucket, key, by: m.by }).toString();
+    return { ok: true, req: { id, op, method: 'DELETE', path: `/data?${qb}` } };
+  }
   // set
   const value = readCanvasDataJson(m.json);
   if (!value.ok) return no(value.error);
@@ -109,6 +144,8 @@ export function canvasDataReply(
         return { ok: true, result: { updatedAt: b.updatedAt ?? null } };
       case 'delete':
         return { ok: true, result: { deleted: b.deleted === true } };
+      case 'clear':
+        return { ok: true, result: { removed: typeof b.removed === 'number' ? b.removed : 0 } };
     }
   }
   if (status === 404) return { ok: false, error: 'this canvas is not available' };
