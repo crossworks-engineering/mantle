@@ -447,7 +447,9 @@ describe('a pid drawing set', () => {
     }
     expect(renders).toHaveLength(2);
     expect(renders[1]!.height).toBe(renders[0]!.height);
-    const pages = render('pid', many, estimateMeasurer);
+    // A new drawing is saved in the current style (style 2, stamped by
+    // present_create), so the window is sized for that drawing.
+    const pages = render('pid', { ...many, style: 2 }, estimateMeasurer);
     expect(pages.ok && pages.pages).toHaveLength(40);
     if (!pages.ok) return;
     const tallest = Math.max(...pages.pages!.map((p) => p.height));

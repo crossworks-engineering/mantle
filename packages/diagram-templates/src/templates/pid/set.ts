@@ -35,12 +35,13 @@ import {
   type Obj,
 } from '../../runtime/validate.ts';
 import { clipText, type Measurer } from '../../runtime/text.ts';
-import type { PageFailure, RenderResult } from '../../types.ts';
+import type { CheckEvidence, PageFailure, RenderResult } from '../../types.ts';
 import { renderPid } from './render.ts';
 import {
   PAGE_ID,
   PID_LIMITS,
   PID_VERSION,
+  drawingFields,
   validatePid,
   type LinkSite,
   type PidData,
@@ -80,10 +81,15 @@ const SET_KEYS = [
   'legend',
   'showTitle',
   'pages',
+  'style',
+  'view',
   'checks',
   'provenance',
 ];
-const INHERITED = ['profile', 'legendNames', 'legend', 'showTitle'] as const;
+/** Page defaults the set gives every page that does not set its own: the
+ *  style edition too, so every page draws in one style. (`checks` is each
+ *  page's own count: present_create recounts it per page, check.ts.) */
+const INHERITED = ['profile', 'legendNames', 'legend', 'showTitle', 'style'] as const;
 /** A drawing's own fields, which belong in a page's data, not on the set. */
 const DRAWING_KEYS = [
   'sheet',
@@ -135,6 +141,9 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
     );
   const checks = checksSummaryOf(d, '', issues);
   const provenance = provenanceOf(d, '', issues);
+  // The set's view (the live canvas's zoom); its style is checked as every
+  // page's default below.
+  if (d.view !== undefined) drawingFields({ view: d.view }, issues);
   const rawPages = objects(
     list(d, 'pages', '', issues, { required: true, max: SET_LIMITS.pages }),
     'pages',
@@ -304,7 +313,7 @@ export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
   const warnings: string[] = [];
   const failed: PageFailure[] = [];
   const stats: Record<string, number> = { pages: set.pages.length };
-  const pages: StackPage[] = set.pages.map((p, i) => {
+  const pages: (StackPage & { checks?: CheckEvidence[] })[] = set.pages.map((p, i) => {
     const idPrefix = `${prefix}-p${i + 1}`;
     let r: RenderResult;
     try {
@@ -320,7 +329,14 @@ export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
     }
     for (const w of r.warnings) warnings.push(`page '${p.id}': ${w}`);
     for (const [k, v] of Object.entries(r.stats)) stats[k] = (stats[k] ?? 0) + v;
-    return { id: p.id, title: p.title, svg: r.svg, width: r.width, height: r.height };
+    return {
+      id: p.id,
+      title: p.title,
+      svg: r.svg,
+      width: r.width,
+      height: r.height,
+      ...(r.checks ? { checks: r.checks } : {}),
+    };
   });
   const names = set.pages.map((p) => p.title).join(', ');
   const stacked = stackPages({

@@ -47,23 +47,25 @@ no server and no network.
 
 ## Package layout
 
-| Path                                    | What it is                                                           |
-| --------------------------------------- | -------------------------------------------------------------------- |
-| `src/index.ts`                          | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg`   |
-| `src/browser.ts`                        | `mount()`: reads the data block, renders, exposes `window.diagram`   |
-| `src/canvas.ts`                         | the canvas file: build, read and replace the data block              |
-| `src/runtime/style.ts`                  | the house style as code: palette, node kinds, font roles, grid       |
-| `src/runtime/text.ts`                   | text measurement (real in the browser, an estimate in Node) and wrap |
-| `src/runtime/layered.ts`                | dagre layout plus the channel and track router for `flow`            |
-| `src/runtime/grid-router.ts`            | A* orthogonal router on an 8px grid for `pid` pipes and signals      |
-| `src/runtime/geom.ts`                   | boxes, segments, hops and the layout self-check                      |
-| `src/runtime/svg.ts`, `export.ts`       | string SVG builder (no scripts possible) and the static check        |
-| `src/runtime/validate.ts`               | checks with exact paths and "did you mean"                           |
-| `src/templates/flow.ts`                 | the `flow` template                                                  |
-| `src/templates/pid/`                    | the `pid` template: schema, site profile, symbols, render, sets      |
-| `src/runtime/pages.ts`                  | a drawing set stacked into one static SVG, and its page references   |
-| `scripts/build.ts`, `scripts/render.ts` | the bundle build and the Chromium harness                            |
-| `samples/`                              | sample data, an example site profile, and the rendered results       |
+| Path                                      | What it is                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| `src/index.ts`                            | `render`, `validate`, `TEMPLATES`, `buildCanvas`, `checkStaticSvg`   |
+| `src/browser.ts`                          | `mount()`: reads the data block, renders, exposes `window.diagram`   |
+| `src/canvas.ts`                           | the canvas file: build, read and replace the data block              |
+| `src/runtime/style.ts`                    | the house style as code: palette, node kinds, font roles, grid       |
+| `src/runtime/text.ts`                     | text measurement (real in the browser, an estimate in Node) and wrap |
+| `src/runtime/layered.ts`                  | dagre layout plus the channel and track router for `flow`            |
+| `src/runtime/grid-router.ts`              | A* orthogonal router on an 8px grid for `pid` pipes and signals      |
+| `src/runtime/geom.ts`                     | boxes, segments, hops and the layout self-check                      |
+| `src/runtime/svg.ts`, `export.ts`         | string SVG builder (no scripts possible) and the static check        |
+| `src/runtime/validate.ts`                 | checks with exact paths and "did you mean"                           |
+| `src/templates/flow.ts`                   | the `flow` template                                                  |
+| `src/templates/pid/`                      | the `pid` template: schema, site profile, symbols, render, sets      |
+| `src/runtime/pages.ts`                    | a drawing set stacked into one static SVG, and its page references   |
+| `src/zoom.ts`, `src/runtime/zoom-math.ts` | zoom and pan of the live SVG (`zoomable`), and its view maths        |
+| `src/evidence.ts`                         | the image check's evidence dialog in the live canvas                 |
+| `scripts/build.ts`, `scripts/render.ts`   | the bundle build and the Chromium harness                            |
+| `samples/`                                | sample data, an example site profile, and the rendered results       |
 
 ## Libraries and sizes
 
@@ -248,6 +250,51 @@ drawings are untouched: the pin in `src/unchanged-output.test.ts` holds, and
 bug) draws as an error panel naming the page and the problem; the render
 result lists it in `failed` (`{ page, path, error }`) and the warnings, and
 the other pages draw.
+
+### Style, evidence and zoom (phase 6)
+
+- **`style`** (pid, a set's too): the drawing style edition
+  (`src/runtime/style.ts`). Absent or `1`: the classic monochrome style,
+  byte for byte as before (`src/unchanged-output.test.ts`,
+  `src/colour-set.test.ts`). `2`: ONE fixed colour set, `ROLE_COLOURS` (main
+  line, branch, deadleg, valve or instrument, guess, checked by image, image
+  says no or from image, page link), each at least 4.5:1 on the paper and on
+  white (computed in `src/colour-set.test.ts`), each also told apart in grey
+  by weight, dash or words (`ROLE_STROKES`). Style 2 also gives a connector
+  the room of its text and page reference when it is placed, so notes,
+  markers, line numbers and valves keep off them (`src/label-room.test.ts`
+  on two synthetic sets). The tools stamp `style: 2` on every NEW drawing
+  (`present_create`, `diagram_render`); `present_update` keeps the edition a
+  canvas was saved with, so an older canvas draws as before until its data
+  asks for 2.
+- **Image check marks** (the check side's contract, `src/templates/pid/check.ts`):
+  `check` on a connector or a valve, `checks[]` on a line (one per inferred
+  join): `{ key, kind, state, guess, question, answer, alt, reason, model,
+checkedAt, crops, overview }`. Each marked element gets
+  `data-check="<kind>:<id>"`, style 2 a small "i" badge in its state's colour
+  (unchecked and unsure: guess; checked; contradicted; corrected each their
+  own), and the render returns the evidence (`checks`, per page in a set).
+  The drawing prints `N GUESSES NOT CHECKED BY IMAGE` under its title,
+  counted at render time from the marks (`imageCheckSummary`), never from a
+  stored `checks`. In the canvas a click (or Enter) opens each check's
+  crops, guess, question, answer and model (`src/evidence.ts`). The crops
+  (file ids) are embedded when the canvas is saved, in an assets block
+  beside the data block (`<script type="application/json"
+id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`): the
+  frame loads nothing, and shows only a base64 PNG, JPEG or WebP data URL.
+- **Zoom and pan** (`src/zoom.ts`, `zoomable(target, options)` from
+  `@mantle/diagram-templates/browser`): a view of the live SVG through its
+  `viewBox`, never the export (`exportSvg`, `exportPageSvg` and a print are
+  the whole drawing). `mount` uses it for every template; it shows only when
+  the drawing does not fit the frame at a readable size (it runs past the
+  frame's height, or its smallest text would draw under 6 px), judged again
+  on resize and page switch; `view: { zoom: true | false }` in the data
+  forces it. Hidden, wheel, drag and keys do nothing. Shown: wheel or
+  pinch, drag, double click, two-finger pinch and drag, the buttons (zoom
+  out, zoom in, fit page, 100%), keys `+` `-` `0` and the arrows once zoomed
+  in past the fit. A page link zooms to its focus and outlines it. A
+  hand-made canvas opts in with one call:
+  `zoomable(document.querySelector('svg'), { mode: 'on' })`.
 
 ### Site profile
 

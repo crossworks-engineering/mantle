@@ -48,10 +48,12 @@ import { canvasLoadProblems } from '@mantle/content-core/canvas';
 import {
   buildCanvas,
   checkStaticSvg,
+  CURRENT_STYLE,
   estimateMeasurer,
   isTemplateName,
   readCanvasData,
   render as renderTemplate,
+  replaceCanvasAssets,
   replaceCanvasData,
   SET_NAV_HEIGHT,
   slugify,
@@ -79,6 +81,7 @@ import {
   type CanvasRenderRequest,
   type CanvasRenderResult,
 } from './canvas-render-bridge';
+import { embedCheckCrops, scopedCropRead } from './present-crops';
 
 const LOOKUP = 'present_list / search_nodes';
 
@@ -407,6 +410,19 @@ async function withSiteProfile(ownerId: string, template: string, data: unknown)
   return profile ? { ...(data as Record<string, unknown>), profile } : data;
 }
 
+/**
+ * The `pid` style edition a save stamps (style.ts in diagram-templates):
+ * a NEW drawing takes the current one (the colour set), a saved drawing
+ * keeps the one it was saved with, so an older canvas draws byte for byte
+ * as before unless its data asks for `style` itself.
+ */
+function stampStyle(template: string, data: unknown, style: number | undefined): unknown {
+  if (template !== 'pid' || style === undefined) return data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const d = data as Record<string, unknown>;
+  return d.style === undefined ? { ...d, style } : d;
+}
+
 function checkedData(
   template: string,
   data: unknown,
@@ -652,7 +668,10 @@ const diagram_render: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const template = str(input.template);
-    const checked = checkedData(template, await withSiteProfile(ctx.ownerId, template, input.data));
+    const checked = checkedData(
+      template,
+      stampStyle(template, await withSiteProfile(ctx.ownerId, template, input.data), CURRENT_STYLE),
+    );
     if ('error' in checked) return { ok: false, error: checked.error };
     const source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
     const seen = await look(
@@ -727,13 +746,29 @@ const present_create: BuiltinToolDef = {
     if (template && source) {
       return { ok: false, error: 'Give either source or template + data, not both.' };
     }
+    let cropNotes: string[] = [];
     if (template) {
       const checked = checkedData(
         template,
-        await withSiteProfile(ctx.ownerId, template, input.data),
+        stampStyle(
+          template,
+          await withSiteProfile(ctx.ownerId, template, input.data),
+          CURRENT_STYLE,
+        ),
       );
       if ('error' in checked) return { ok: false, error: checked.error };
-      source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
+      // The image check's crops travel inside the canvas (present-crops.ts).
+      const crops =
+        template === 'pid'
+          ? await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId))
+          : { assets: null, notes: [] };
+      cropNotes = crops.notes;
+      source = buildCanvas({
+        template: template as never,
+        data: checked.data,
+        mode: 'import',
+        ...(crops.assets ? { assets: crops.assets } : {}),
+      });
     }
     if (!source.trim()) {
       return {
@@ -753,7 +788,7 @@ const present_create: BuiltinToolDef = {
       });
       ctx.step?.setOutput({ id: p.id, title: p.title });
       const seen = lookWanted(input) ? await lookAndPoster(ctx, p, css) : null;
-      return saved(p, seen);
+      return saved(p, seen, cropNotes.length ? { crop_notes: cropNotes } : {});
     } catch (err) {
       return { ok: false, error: visibilityRefusal(err) ?? publicErrorText(err, 'present') };
     }
@@ -817,6 +852,7 @@ const present_update: BuiltinToolDef = {
     }
     const cur = await getPresent(ctx.ownerId, id);
     if (!cur) return notFound('canvas', id, LOOKUP);
+    let cropNotes: string[] = [];
     try {
       let detail: PresentDetail = cur;
       let css: string | null = null;
@@ -831,12 +867,23 @@ const present_update: BuiltinToolDef = {
                 'This canvas is not a diagram template, so it has no data. Change it with edits or source.',
             };
           }
+          // A saved drawing keeps its style edition unless the data names one.
+          const kept = typeof tpl.data.style === 'number' ? tpl.data.style : undefined;
           const checked = checkedData(
             tpl.template,
-            await withSiteProfile(ctx.ownerId, tpl.template, input.data),
+            stampStyle(
+              tpl.template,
+              await withSiteProfile(ctx.ownerId, tpl.template, input.data),
+              kept,
+            ),
           );
           if ('error' in checked) return { ok: false, error: checked.error };
           next = replaceCanvasData(cur.source, checked.data);
+          if (tpl.template === 'pid') {
+            const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId));
+            cropNotes = crops.notes;
+            next = replaceCanvasAssets(next, crops.assets);
+          }
         } else if (input.edits !== undefined) {
           const edited = applyEdits(cur.source, input.edits);
           if (typeof edited !== 'string') return { ok: false, error: edited.error };
@@ -880,7 +927,7 @@ const present_update: BuiltinToolDef = {
       }
       if (css === null) return saved(detail, null, { note: 'Only the name or labels changed.' });
       const seen = lookWanted(input) ? await lookAndPoster(ctx, detail, css) : null;
-      return saved(detail, seen);
+      return saved(detail, seen, cropNotes.length ? { crop_notes: cropNotes } : {});
     } catch (err) {
       return { ok: false, error: visibilityRefusal(err) ?? publicErrorText(err, 'present') };
     }

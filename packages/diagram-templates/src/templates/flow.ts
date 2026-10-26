@@ -106,6 +106,7 @@ const TOP_KEYS = [
   'nodes',
   'edges',
   'groups',
+  'view',
 ];
 const NODE_KEYS = ['id', 'label', 'sublabel', 'tag', 'kind', 'shape', 'group'];
 const EDGE_KEYS = ['id', 'from', 'to', 'label', 'style', 'tone'];
@@ -117,6 +118,14 @@ export function validateFlow(input: unknown): Checked<FlowData> {
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
   const d = input as Obj;
   checkKeys(d, TOP_KEYS, '', issues);
+  // How the live canvas shows it (zoom and pan); the drawing is untouched.
+  if (d.view !== undefined) {
+    if (!isObj(d.view)) issues.errors.push('view: must be { zoom? }.');
+    else {
+      checkKeys(d.view, ['zoom'], 'view', issues);
+      bool(d.view, 'zoom', 'view', issues);
+    }
+  }
   if (d.template !== undefined && d.template !== 'flow') {
     issues.errors.push(
       `template: this is the 'flow' template, the data says '${String(d.template)}'.`,

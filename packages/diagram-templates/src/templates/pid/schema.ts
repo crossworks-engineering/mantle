@@ -20,7 +20,7 @@ import {
   type Issues,
   type Obj,
 } from '../../runtime/validate.ts';
-import { isColour } from '../../runtime/style.ts';
+import { isColour, STYLE_EDITIONS, type StyleEdition } from '../../runtime/style.ts';
 import {
   FOLLOWING_LETTERS,
   parseLineNumber,
@@ -86,6 +86,11 @@ export type SignalType = (typeof SIGNAL_TYPES)[number];
 
 export const LOCATIONS = ['field', 'control-room', 'local-panel', 'behind-panel'] as const;
 export const DISPLAYS = ['discrete', 'shared', 'computer', 'plc', 'interlock'] as const;
+
+/** How the live canvas shows the drawing (never the export): `zoom`
+ *  forces the zoom and pan controls on or off; absent, they show only when
+ *  the drawing does not fit the frame at a readable size. */
+export type DrawingView = { zoom?: boolean };
 
 export type Equipment = {
   id: string;
@@ -193,6 +198,9 @@ export type Circuit = {
 
 export type PidData = {
   title: string;
+  /** The drawing style edition (style.ts): 1 classic, 2 the colour set. */
+  style: StyleEdition;
+  view?: DrawingView;
   description?: string;
   sheet?: { number?: string; revision?: string };
   profile: ResolvedProfile;
@@ -269,6 +277,8 @@ const TOP_KEYS = [
   'circuits',
   'checks',
   'provenance',
+  'style',
+  'view',
 ];
 const PROFILE_KEYS = [
   'name',
@@ -478,6 +488,29 @@ function linkOf(o: Obj, p: string, issues: Issues, opts: PidCheckOptions): PageL
   return link;
 }
 
+/** The drawing-wide view fields every pid input may carry, a set's too:
+ *  the style edition and the live canvas's view. */
+export function drawingFields(d: Obj, issues: Issues): { style: StyleEdition; view?: DrawingView } {
+  let style: StyleEdition = 1;
+  if (d.style !== undefined) {
+    if (!(STYLE_EDITIONS as readonly unknown[]).includes(d.style))
+      issues.errors.push(
+        `style: ${JSON.stringify(d.style)} is not a style edition (${STYLE_EDITIONS.join(' or ')}; 2 is the colour set).`,
+      );
+    else style = d.style as StyleEdition;
+  }
+  let view: DrawingView | undefined;
+  if (d.view !== undefined) {
+    if (!isObj(d.view)) issues.errors.push('view: must be { zoom? }.');
+    else {
+      checkKeys(d.view, ['zoom'], 'view', issues);
+      const zoom = bool(d.view, 'zoom', 'view', issues);
+      view = zoom === undefined ? {} : { zoom };
+    }
+  }
+  return { style, ...(view ? { view } : {}) };
+}
+
 export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked<PidData> {
   const issues = newIssues();
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
@@ -500,6 +533,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   const legend = bool(d, 'legend', '', issues) ?? true;
   const checks = checksSummaryOf(d, '', issues);
   const provenance = provenanceOf(d, '', issues);
+  const drawing = drawingFields(d, issues);
   let legendNames: PidData['legendNames'];
   if (d.legendNames !== undefined) {
     if (!isObj(d.legendNames))
@@ -1031,6 +1065,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
 
   return done(issues, {
     title,
+    ...drawing,
     showTitle,
     legend,
     profile,

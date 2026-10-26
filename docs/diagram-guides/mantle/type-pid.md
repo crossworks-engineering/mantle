@@ -317,6 +317,9 @@ not ISA-5.1, and a line number outside the profile's format when the profile
 enforces it. Every error names the field and the fix; the tool returns them
 all at once.
 
+`style` (2: the colour set), `check` and `checks` (image checks) are
+written for you: keep them. `view: { zoom: false }` hides the zoom controls.
+
 **A drawing set.** Past the budget, split, never cut: `{ title, pages:
 [{ id, title, data }] }`, each `data` a sheet as above. In a set a
 connector takes `link` (a page id) and `focus` (an id there), and a line

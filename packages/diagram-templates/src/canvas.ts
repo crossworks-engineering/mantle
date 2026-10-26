@@ -35,6 +35,10 @@ import {
 export type CanvasMode = 'inline' | 'import';
 
 export const DATA_ID = 'diagram-data';
+/** The assets block: pictures the drawing shows on request (the image
+ *  check's crops, by file id), embedded so the frame loads nothing. */
+export const ASSETS_ID = 'diagram-assets';
+export type CanvasAssets = { crops: Record<string, string> };
 export const RUNTIME_SPECIFIER = '@mantle/diagram-templates/browser';
 
 /** JSON that cannot close its `<script>` tag, and that every parser reads
@@ -67,7 +71,18 @@ export type BuildCanvasInput = {
   /** The browser runtime as one classic script (dist/diagram-runtime.js),
    *  required for `inline`. */
   runtime?: string;
+  /** Embedded pictures (crops); no block when absent or empty. */
+  assets?: CanvasAssets;
 };
+
+function assetsBlock(assets: CanvasAssets | null | undefined): string {
+  if (!assets || !Object.keys(assets.crops).length) return '';
+  const json = JSON.stringify({ crops: assets.crops })
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  return `<script type="application/json" id="${ASSETS_ID}">${json}</script>`;
+}
 
 /** The import-mode runtime: the shipped runtime, by name, through the
  *  frame's import map. */
@@ -82,6 +97,8 @@ function canvasDocument(parts: {
   titleHtml: string;
   descriptionHtml: string | null;
   dataJson: string;
+  /** The assets block, written (assetsBlock), or '' for none. */
+  assetsHtml: string;
   runtime: string;
 }): string {
   return [
@@ -103,6 +120,7 @@ function canvasDocument(parts: {
     '<main id="diagram" aria-live="polite"></main>',
     '<div id="diagram-errors" role="alert"></div>',
     `<script type="application/json" id="${DATA_ID}">\n${parts.dataJson}\n</script>`,
+    parts.assetsHtml,
     parts.runtime,
     '</body>',
     '</html>',
@@ -140,6 +158,7 @@ export function buildCanvas(input: BuildCanvasInput): string {
     titleHtml: esc(title),
     descriptionHtml: description ? esc(description) : null,
     dataJson: scriptJson({ template: t.name, version: t.version, ...d }),
+    assetsHtml: assetsBlock(input.assets),
     runtime,
   });
 }
@@ -376,6 +395,7 @@ function shapeOfPid(): RegExp {
       titleHtml: mark('T'),
       descriptionHtml: mark('D'),
       dataJson: mark('J'),
+      assetsHtml: '',
       runtime: mark('R'),
     }),
   );
@@ -411,6 +431,7 @@ export function canonicalPidCanvas(html: string, data: Record<string, unknown>):
     titleHtml: m[1]!,
     descriptionHtml: m[2] ?? null,
     dataJson: scriptJson({ template: t.name, version: t.version, ...data }),
+    assetsHtml: '',
     runtime: IMPORT_RUNTIME,
   });
 }
@@ -454,4 +475,37 @@ function withData(html: string, data: unknown): string {
     (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
   );
   return out;
+}
+
+const ASSETS_BLOCK = new RegExp(
+  `<script type="application/json" id="${ASSETS_ID}">[\\s\\S]*?</script>\\n?`,
+);
+
+/** The canvas's embedded pictures, or none. */
+export function readCanvasAssets(html: string): CanvasAssets {
+  const m = new RegExp(
+    `<script type="application/json" id="${ASSETS_ID}">([\\s\\S]*?)</script>`,
+  ).exec(html);
+  if (!m) return { crops: {} };
+  try {
+    const v = JSON.parse(m[1]!) as { crops?: unknown };
+    const crops: Record<string, string> = {};
+    if (v.crops && typeof v.crops === 'object')
+      for (const [k, u] of Object.entries(v.crops)) if (typeof u === 'string') crops[k] = u;
+    return { crops };
+  } catch {
+    return { crops: {} };
+  }
+}
+
+/** The same canvas with its embedded pictures replaced (none: the block
+ *  goes). The block sits right after the data block. */
+export function replaceCanvasAssets(html: string, assets: CanvasAssets | null): string {
+  const out = html.replace(ASSETS_BLOCK, '');
+  const block = assetsBlock(assets);
+  if (!block) return out;
+  const m = DATA_BLOCK.exec(out);
+  if (!m) throw new Error('canvas: no data block to put the assets after');
+  const end = m.index + m[0].length;
+  return `${out.slice(0, end)}\n${block}${out.slice(end)}`;
 }

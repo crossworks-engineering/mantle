@@ -21,7 +21,7 @@
  * A colour the data names itself (`#rrggbb` on a circuit or a service) is
  * the author's and is left alone.
  */
-import { NODE_KINDS, PALETTE, SERIES, opaque } from './style.ts';
+import { NODE_KINDS, PALETTE, ROLE_COLOURS, SERIES, opaque } from './style.ts';
 
 /** Where a house ink goes: the token of the same role. */
 const INKS: Record<string, string> = {
@@ -84,11 +84,27 @@ export const THEME_TEXT_COLOURS: Readonly<Record<string, string>> = Object.fromE
   ]),
 );
 
+/** The colour set's roles (style 2) and their tokens. Only a drawing that
+ *  uses one gets its rules, so a drawing in the classic style themes byte
+ *  for byte as before. Text takes a quarter of the foreground, as the
+ *  series do. */
+export const THEME_ROLE_COLOURS: Readonly<Record<string, string>> = {
+  [ROLE_COLOURS.main]: 'var(--destructive)',
+  [ROLE_COLOURS.branch]: 'var(--chart-2)',
+  [ROLE_COLOURS.deadleg]: 'var(--chart-3)',
+  [ROLE_COLOURS.instrument]: 'var(--chart-5)',
+  [ROLE_COLOURS.guess]: 'var(--chart-4)',
+  [ROLE_COLOURS.checked]: 'var(--chart-1)',
+  [ROLE_COLOURS.contradicted]: 'var(--primary)',
+  [ROLE_COLOURS.corrected]: 'var(--chart-5)',
+  [ROLE_COLOURS.link]: 'var(--chart-2)',
+};
+
 /** The attribute that marks a themed drawing; the stylesheet is scoped to it,
  *  since a `<style>` inside inline SVG applies to the whole document. */
 export const THEME_ATTR = 'data-mantle-theme';
 
-function themeCss(): string {
+function themeCss(svg: string): string {
   const rules: string[] = [];
   for (const [house, token] of Object.entries(THEME_COLOURS)) {
     for (const prop of ['fill', 'stroke']) {
@@ -99,6 +115,14 @@ function themeCss(): string {
   for (const [house, css] of Object.entries(THEME_TEXT_COLOURS)) {
     rules.push(`svg[${THEME_ATTR}] text[fill="${house}"]{fill:${css}}`);
   }
+  for (const [role, token] of Object.entries(THEME_ROLE_COLOURS)) {
+    if (!svg.includes(`"${role}"`)) continue;
+    for (const prop of ['fill', 'stroke'])
+      rules.push(`svg[${THEME_ATTR}] [${prop}="${role}"]{${prop}:${token}}`);
+    rules.push(
+      `svg[${THEME_ATTR}] text[fill="${role}"]{fill:color-mix(in oklab, ${token} 75%, var(--foreground))}`,
+    );
+  }
   return rules.join('');
 }
 
@@ -107,5 +131,5 @@ export function themeSvg(svg: string): string {
   const open = /^<svg\b[^>]*>/.exec(svg);
   if (!open) return svg;
   const root = open[0].replace(/^<svg\b/, `<svg ${THEME_ATTR}="tokens"`);
-  return `${root}<style>${themeCss()}</style>${svg.slice(open[0].length)}`;
+  return `${root}<style>${themeCss(svg)}</style>${svg.slice(open[0].length)}`;
 }

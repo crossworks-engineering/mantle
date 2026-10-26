@@ -209,6 +209,7 @@ export {
   type IndexingSetting,
   type EffectiveIndexing,
 } from './indexing';
+export { embeddableJpeg, EMBED_SOURCE_MAX_BYTES } from './embed-image';
 export {
   isThumbable,
   thumbnailFor,
