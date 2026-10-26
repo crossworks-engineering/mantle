@@ -287,12 +287,12 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   and the A8 grid read the registry. `handKindLists` fails a hand list.
 - **A route**: a policy row; `route-scope.test.ts` fails an unclassified
   route, the gate refuses one with no row; its route file declares it. A write naming its
-  item gets A8 route cells (`server/web/server/test-support/a8-route-cells.ts`), or runs refused cells only.
+  item gets A8 route cells (`server/web/server/test-support/a8-route-cells.ts`, warn and on), or runs refused cells only; its need is the lowest right its handler takes (a higher one gets its own cells).
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
   declares its `clientSourced` rule (unset, a client-sourced call waits),
   `itemArgs` and A8 `matrix` (action and argument, or `none` and why; an
   id-taking read too), read by no gate: the tool cells (one allowed, one
-  refused at least); `a8-coverage.test.ts` pins `a8Uncovered` 0, `a8Exempt` 112.
+  refused at least); `a8-coverage.test.ts` pins `a8Uncovered` 0, `a8Exempt` 114.
 - **A table**: a row in `packages/db/src/access-matrix.ts` (with none no
   scoped role may touch it); an item table gets the actor trigger
   (`actor-trigger-coverage.db.test.ts`).

@@ -197,6 +197,9 @@ every workspace it is granted to, each with a Write switch.
 
 - A Moderator of a workspace that is not the item's home edits the item
   only when that grant has Write on.
+- A Recall map is narrower than the table: deleting it, confirming a
+  prompt on it and reordering its cards stay with the Admin users, whoever
+  else may edit it ([recall.md](./recall.md)).
 - For an Admin user, **Add Admin** is the first choice in the panel. It
   needs no switch of workspace for an item they manage.
 - An item the caller may not read answers "not found", never "exists

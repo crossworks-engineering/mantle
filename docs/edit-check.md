@@ -288,6 +288,23 @@ stays on the system pool until A4.
   (`MANTLE_TEST_EDIT_CHECK` switches each scratch database, as an operator
   switches a box).
 
+## The routes the database alone checks
+
+These write routes make their edit in one statement, with no check of
+their own before it: the edit check is the only one that refuses a login
+that reads the item and may not edit it. In `warn` such an edit is made
+and logged as an actor miss (the A8 route cells pin it, `warnMade` in
+`server/web/server/test-support/a8-route-cells.ts`); in `on` it is the
+403 `item-workspace`. A delete, an item the login does not read and every
+other route's own check refuse in both modes.
+
+- PATCH `/api/notes/:id`, `/api/tasks/:id`, `/api/v1/tasks/:id`,
+  `/api/events/:id`, `/api/formulas/:id`, `/api/presents/:id`,
+  `/api/draws/:id`, `/api/pages/:id`, `/api/tables/:id`
+
+A box below `on` is an emergency: the check floor of migration 0301
+(`0301_check_mode_floor`) keeps every fleet box on.
+
 ## Cost
 
 - `off`: every edit check trigger is disabled; no statement and no round
