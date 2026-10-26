@@ -296,7 +296,8 @@ A folder is an item with a home and grants like any other.
   grants the two groups (`present-read`, `present`) to each such
   assistant once, also one copied before Present; one made later gets
   them at the next upgrade. An owner who removes either from an assistant
-  keeps it removed: no upgrade adds it back. What the assistant may do
+  after that grant keeps it removed: no later upgrade adds it back (a
+  removal before the assistant's first upgrade is undone once). What the assistant may do
   with a canvas is its user's right by the table in Items and grants: a
   canvas lands by the home rule, a Moderator of its home or a grant with
   Write on edits it, and a canvas in a user's private workspace is that

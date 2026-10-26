@@ -1075,9 +1075,6 @@ const present_export: BuiltinToolDef = {
   },
 };
 
-/** Why an overwrite of `filename` in `folderPath` is refused: the file
- *  there is not an earlier export of canvas `canvasId`. Null when there is
- *  no such file (the write makes it) or it is that canvas's export. */
 /** The markdown of an exported copy (its title, never a bracket). */
 function exportEmbed(p: { title: string }, fileId: string): string {
   return `![${p.title.replace(/[[\]]/g, '')}](media:${fileId})`;
@@ -1136,6 +1133,9 @@ async function exportHome(
   }
 }
 
+/** Why an overwrite of `filename` in `folderPath` is refused: the file
+ *  there is not an earlier export of canvas `canvasId`. Null when there is
+ *  no such file (the write makes it) or it is that canvas's export. */
 async function exportClash(
   ownerId: string,
   folderPath: string,
