@@ -529,9 +529,9 @@ export const READ_PATH_WRITES = {
   'repair:abandoned-traces':
     'GET /api/activity: close the caller’s running traces that never finished (server/web/lib/journey.ts)',
   'backfill:app-nav':
-    'GET /api/app-nav: move the pre-tree sidebar layout into the tree, once (content tree/apps-nav.ts)',
+    'GET /api/app-nav, and GET /api/tree/apps, its marks and a folder create there, in a scope that holds the Admin workspace only: move the pre-tree sidebar layout into the tree, once (content tree/apps-nav.ts)',
   'backfill:app-marks':
-    'GET /api/app-nav: copy a login’s app pins and opens into item_marks, once (content tree/apps-nav.ts)',
+    'GET /api/app-nav, and GET /api/tree/apps and its marks for any login: copy that login’s own app pins and opens into item_marks, once, and note it on the apps root row (content tree/apps-nav.ts)',
   'repair:kind-root':
     'GET /api/tree/:kind, /api/app-nav, and every kind’s create (A2b2b): make a kind’s missing root folder row (content kind-root.ts)',
   'backfill:doc-collections':

@@ -13,6 +13,9 @@
  *   folder get " 2", " 3"; a name with no letters or digits keeps its title
  *   and takes the slug `folder`. The document itself is left as it was, a
  *   copy to roll back to.
+ *   It is the brain's own housekeeping (it places every app), so a read in
+ *   a scope that does not hold the Admin workspace (a member's) leaves it
+ *   for an Admin user's read, and reads the apps where their rows stand.
  * - `reconcileAppMarks`: one login's pins (in order) and open counts.
  * Done-markers live on the apps root row's data, so no preference key is
  * needed and no migration.
@@ -26,6 +29,9 @@ import {
   itemMarks,
   nodes,
   runReadPathWrite,
+  scopeLacksAdmin,
+  currentWorkspaceScope,
+  requestWriteScope,
 } from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
 import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
@@ -199,12 +205,23 @@ async function moveEntries(
   }
 }
 
+/** Whether the call runs in a scope that does not hold the Admin workspace
+ *  (a member's request). No scope (a script, a test, the system) is not one:
+ *  the move runs as before. */
+async function narrowScope(): Promise<boolean> {
+  if (!(requestWriteScope() ?? currentWorkspaceScope())) return false;
+  return scopeLacksAdmin(db);
+}
+
 /** Move the brain's app-nav document into folder rows, once. Returns whether
  *  this call did the move; null when the move is still to do but the database
  *  refuses writes (refused-write.ts): the apps are then read as the rows
- *  stand, and the move waits for a database that takes it. */
+ *  stand, and the move waits for a database that takes it. False, with no
+ *  write, in a scope that does not hold the Admin workspace (a member's
+ *  read, narrowScope): the move waits for an Admin user's read. */
 export async function reconcileAppNav(ownerId: string): Promise<boolean | null> {
   if (!(await ensureKindRoot(ownerId, 'apps'))) return null;
+  if (await narrowScope()) return false;
   if ((await rootData(ownerId)).appNavMigratedAt) return false;
   return unlessWriteRefused(() =>
     runReadPathWrite('backfill:app-nav', async () => {

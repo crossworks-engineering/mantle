@@ -93,7 +93,13 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
  *    reader who may edit the page (mayEdit);
  *  - GET /api/tree/:kind (an Admin user and a member): tree/node-ops.ts
  *    makes the kind's root row when the reader does not see one (insert on
- *    conflict do nothing; it returns no row to the reader).
+ *    conflict do nothing; it returns no row to the reader);
+ *  - GET /api/tree/apps: the kind root as above (tree/node-ops.ts), and
+ *    tree/apps-nav.ts copies the login's own app pins and opens into its
+ *    item_marks rows and notes that on the apps root row, once (a member
+ *    and an Admin user); the pre-tree layout move (claim, folders, placing
+ *    apps, its mark) runs for an Admin user only (reconcileAppNav). The
+ *    sweeps fill :kind with 'notes', so apps have a cell of their own.
  * The list only shrinks; a new entry needs review.
  */
 const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
@@ -104,12 +110,19 @@ const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
   'admin GET /api/files/files withSystemTx packages/files/src/ops/shared.ts',
   'admin GET /api/pages/:id update packages/content/src/pages/read.ts',
   'admin GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+  'admin GET /api/tree/apps update packages/content/src/tree/apps-nav.ts',
   'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+  'member GET /api/tree/apps insert packages/content/src/tree/apps-nav.ts',
+  'member GET /api/tree/apps update packages/content/src/tree/apps-nav.ts',
+  'member GET /api/tree/apps withSystemTx packages/content/src/tree/node-ops.ts',
 ]);
 
 /** The member entries of that list: a member's read writes nothing else. */
 const MEMBER_SCOPE_SYSTEM_WRITES = [
   'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+  'member GET /api/tree/apps insert packages/content/src/tree/apps-nav.ts',
+  'member GET /api/tree/apps update packages/content/src/tree/apps-nav.ts',
+  'member GET /api/tree/apps withSystemTx packages/content/src/tree/node-ops.ts',
 ];
 
 /**
@@ -955,6 +968,52 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     // own item through the owner route since W6b.
     expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(200);
   }, 600_000);
+
+  it('a member’s Apps tree read copies only its own pins; the layout move waits for an Admin user', async () => {
+    // The sweeps above fill :kind with 'notes'; apps run the two pinned
+    // read-path writes of tree/apps-nav.ts (READ_PATH_WRITES backfill:app-nav
+    // and backfill:app-marks), so this cell reads GET /api/tree/apps as the
+    // member and pins what it writes. The layout move is made to wait again
+    // (the Admin sweep's GET /api/app-nav did it), and the member has an app
+    // pin of its own to copy.
+    const pinned = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${pinned}, ${owner}, 'app', ${`${tag} pinned app`}, 'apps')`);
+    await alsoIn(pinned, team);
+    await su(sql`insert into profiles (user_id, preferences)
+                 values (${mem}, ${JSON.stringify({ appPins: [pinned] })}::jsonb)
+                 on conflict (user_id) do update
+                 set preferences = profiles.preferences || excluded.preferences`);
+    await su(sql`update nodes set data = coalesce(data, '{}'::jsonb)
+                   - 'appNavMigratedAt' - 'appNavMigratingAt' - 'appMarksMigrated'
+                 where owner_id = ${owner} and type = 'branch' and path = 'apps'`);
+    const rootData = async () =>
+      (
+        await su<{ data: Record<string, unknown> | null }>(sql`
+          select data from nodes where owner_id = ${owner} and type = 'branch' and path = 'apps'`)
+      )[0]?.data ?? {};
+
+    const r = await call('/api/tree/apps', mem);
+    expect(r.status, r.text.slice(0, 200)).toBe(200);
+    expect(r.outcome?.kind).toBe('user');
+    noteWrites('member', 'GET /api/tree/apps', r.writes);
+    const afterMember = await rootData();
+    // No layout move for a member: neither its claim nor its mark.
+    expect(afterMember.appNavMigratedAt).toBeUndefined();
+    expect(afterMember.appNavMigratingAt).toBeUndefined();
+    expect(afterMember.appMarksMigrated).toEqual([mem]);
+    // The marks it wrote are its own, of its own pin.
+    const marks = await su<{ actor: string; node: string }>(sql`
+      select actor_id::text as actor, node_id::text as node from item_marks
+       where node_id = ${pinned}`);
+    expect(marks).toEqual([{ actor: mem, node: pinned }]);
+
+    // An Admin user's read makes the move.
+    const o = await call('/api/tree/apps', owner);
+    expect(o.status, o.text.slice(0, 200)).toBe(200);
+    noteWrites('admin', 'GET /api/tree/apps', o.writes);
+    expect(typeof (await rootData()).appNavMigratedAt).toBe('string');
+  });
 
   it('L2: the system-pool writes of request scopes are the pinned list', () => {
     // Runs after the Admin and member sweeps above (same file, in order).
