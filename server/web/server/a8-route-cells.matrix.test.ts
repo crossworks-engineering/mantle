@@ -59,9 +59,9 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
 }));
 
 /** The time the route cells may take, both modes (the budget cell): about
- *  100 s on the workstation with other lanes running (1260 cells, warn 48 s,
- *  on 54 s); past the ceiling the cell fails, past the target it only warns
- *  (a loaded box is slower). */
+ *  70 s on the workstation alone (1330 cells, warn 37 s, on 31 s), about
+ *  100 s with other lanes running; past the ceiling the cell fails, past the
+ *  target it only warns (a loaded box is slower). */
 const A8_ROUTE_TIME_TARGET_MS = 120_000;
 const A8_ROUTE_TIME_CEILING_MS = 600_000;
 
