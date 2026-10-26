@@ -204,11 +204,27 @@ client refetches.
 
 Apps are a reader tree kind (`READER_TREE_KINDS`): a member's or client's
 shell names `apps` in `treeKinds`, and its Apps screen is the tree. The
-tree reads the apps the login's row rules read, the same rows `GET
-/api/apps` lists for it, and the folders on the way to them (the
-login's trail, as on every kind): a team app in a folder nobody shared
-still shows in its folder, while a folder of admin apps, of drafts or an
-empty one is absent.
+tree reads the app rows the login's row rule reads (the nodes rule,
+0242), the same rows `GET /api/apps` lists for it, and the folders on the
+way to them (the login's trail, 0311, as on every kind).
+
+- **Every readable app, not only the runnable ones.** A draft or an app
+  whose build failed lists when it is granted to one of the login's
+  workspaces, and so does the login's own draft; running it still asks
+  the app's own rule. This is the move from the launcher, which listed
+  only the apps the login could run, to the list `GET /api/apps` already
+  answers.
+- **Folders.** A folder the login reads lists, empty or not (one granted
+  to its workspace, say). A folder it does not read lists only on the way
+  to a row it reads below it, at any depth, as id, path and name: a team
+  app in a folder nobody shared still shows in its folder, while a folder
+  of admin apps only is absent and does not open by id.
+- **Reads write little.** The first Apps read of a login copies its own
+  app pins and opens into its marks, once (`backfill:app-marks`). The
+  pre-tree layout move (`backfill:app-nav`) is the brain's own
+  housekeeping and runs on an Admin user's read only (a scope without the
+  Admin workspace skips it, `packages/content/src/tree/apps-nav.ts`);
+  until then a member reads the apps where their rows stand.
 
 History: the launcher (`GET /api/member/apps`, and the client launcher
 `GET /api/client/apps`) answered `folders` next to `apps` from
