@@ -333,6 +333,7 @@ const event_delete: BuiltinToolDef = {
   slug: 'event_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['event'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

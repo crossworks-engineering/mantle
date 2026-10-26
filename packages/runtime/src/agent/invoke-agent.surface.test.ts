@@ -11,6 +11,11 @@ const h = vi.hoisted(() => ({
   runToolLoop: vi.fn(async () => ({ reply: 'child reply' })),
   /** The open workspace scope (a workspace turn's, answering a login). */
   scope: null as null | { kind: 'assistant'; loginId: string; ws: string[]; modWs: string[] },
+  /** The target's memory_config, its granted tool slugs, and the slugs the
+   *  child's tools were resolved from. */
+  memoryConfig: null as null | Record<string, unknown>,
+  slugs: [] as string[],
+  resolved: [] as string[],
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -22,7 +27,9 @@ vi.mock('@mantle/db', async (importOriginal) => {
     model: 'm',
     provider: 'openrouter',
     systemPrompt: 'you research',
-    memoryConfig: null,
+    get memoryConfig() {
+      return h.memoryConfig;
+    },
     params: {},
     skillSlugs: [],
     toolGroupSlugs: [],
@@ -56,7 +63,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   loadProfilePreferences: async () => ({}),
 }));
 vi.mock('./tool-loop', () => ({
-  resolveAgentTools: async () => [],
+  resolveAgentTools: async (_o: string, slugs: string[]) => {
+    h.resolved = slugs;
+    return [];
+  },
   runToolLoop: h.runToolLoop,
 }));
 vi.mock('./chat-failover', () => ({
@@ -67,7 +77,7 @@ vi.mock('./skills', () => ({
   resolveAgentSkills: async () => [],
   resolveAgentToolGroups: async () => [],
   composeSystemPromptWithSkills: () => 'system',
-  effectiveToolSlugs: () => [],
+  effectiveToolSlugs: () => h.slugs,
 }));
 vi.mock('./agent-viewer', () => ({
   // A helper (no workspace): no turn scope of its own.
@@ -76,7 +86,7 @@ vi.mock('./agent-viewer', () => ({
   withAgentScope: (_a: unknown, fn: () => unknown) => fn(),
 }));
 
-import type { InvokeAgentInput } from '@mantle/tools';
+import { WORKSPACE_CHILD_MAX_ITERATIONS, type InvokeAgentInput } from '@mantle/tools';
 import { invokeAgent } from './invoke-agent';
 
 const BASE: InvokeAgentInput = {
@@ -94,6 +104,9 @@ const loopSurface = () => (h.runToolLoop.mock.calls as unknown as Array<[LoopArg
 
 beforeEach(() => {
   h.runToolLoop.mockClear();
+  h.memoryConfig = null;
+  h.slugs = [];
+  h.resolved = [];
   h.scope = {
     kind: 'assistant',
     loginId: '00000000-0000-4000-8000-000000000002',
@@ -161,5 +174,69 @@ describe('invokeAgent shares the parent taint with the child loop (plan N18)', (
     await invokeAgent({ ...BASE, surface: { kind: 'owner', via: 'delegate' }, taint });
     const args = (h.runToolLoop.mock.calls as unknown as Array<[{ taint?: unknown }]>)[0]![0];
     expect(args.taint).toBe(taint);
+  });
+});
+
+// A workspace turn's child gets no tool
+// its user's own MCP outside Admin would not, and a shorter loop.
+describe('a workspace turn’s child: its tools and its loop', () => {
+  const TEAM = { kind: 'team', loginId: '00000000-0000-4000-8000-000000000002' } as const;
+  const GRANTED = [
+    'app_create',
+    'app_update',
+    'app_delete',
+    'app_undelete',
+    'web_search',
+    'web_search_pro',
+    'web_fetch',
+    'circuit_verify',
+    'generate_image',
+    'invoke_agent',
+    'file_delete',
+    'page_create',
+  ];
+  const DROPPED = [
+    'app_delete',
+    'web_search',
+    'web_search_pro',
+    'web_fetch',
+    'circuit_verify',
+    'generate_image',
+    'invoke_agent',
+    'file_delete',
+  ];
+
+  it('drops every owner-key spend, egress and item delete; keeps the rest', async () => {
+    h.slugs = GRANTED;
+    await invokeAgent({ ...BASE, surface: TEAM });
+    expect(h.resolved).toEqual(GRANTED.filter((s) => !DROPPED.includes(s)));
+  });
+
+  it('an Admin turn’s child keeps them all', async () => {
+    h.scope = null;
+    h.slugs = GRANTED;
+    await invokeAgent({
+      ...BASE,
+      agentSlug: 'researcher',
+      surface: { kind: 'owner', via: 'delegate' },
+    });
+    expect(h.resolved).toEqual(GRANTED);
+  });
+
+  type Loop = { maxIterations?: number };
+  const loopIters = () =>
+    (h.runToolLoop.mock.calls as unknown as Array<[Loop]>)[0]![0].maxIterations;
+
+  it('the child’s iterations are clamped to WORKSPACE_CHILD_MAX_ITERATIONS', async () => {
+    h.memoryConfig = { max_iterations: 30 };
+    await invokeAgent({ ...BASE, surface: TEAM });
+    expect(loopIters()).toBe(WORKSPACE_CHILD_MAX_ITERATIONS);
+  });
+
+  it('an Admin turn’s child keeps its own (clamped at 30)', async () => {
+    h.scope = null;
+    h.memoryConfig = { max_iterations: 30 };
+    await invokeAgent({ ...BASE, surface: { kind: 'owner', via: 'delegate' } });
+    expect(loopIters()).toBe(30);
   });
 });

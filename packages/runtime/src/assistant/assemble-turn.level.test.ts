@@ -121,6 +121,7 @@ const assemble = (workspaceId: string | null) =>
     agent: agent(workspaceId),
     prefs: { timezone: 'UTC', locale: 'en-GB' },
     logPrefix: '[test]',
+    surface: { kind: 'team', loginId: 'u1' },
     includeIdentity: false,
     withThinking: false,
     allowDelegation: false,

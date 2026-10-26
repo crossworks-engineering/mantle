@@ -160,6 +160,7 @@ const BASE = {
   ownerId: 'owner-1',
   prefs: { timezone: 'Africa/Johannesburg', locale: 'en-GB' },
   logPrefix: '[test]',
+  surface: { kind: 'web' },
 } as const;
 
 beforeEach(() => {
@@ -466,6 +467,19 @@ describe('assembleResponderTurn — budgets, delegation, loop overrides', () => 
     h.holdsAdmin = true;
     const admin = await assembleResponderTurn({ ...BASE, agent: agent(cfg) });
     expect(admin.delegateTo).toEqual(cfg.memoryConfig.delegate_to);
+  });
+
+  it('the turn is read by delegationTurnOf: a team or missing surface is a workspace turn, whatever the scope', async () => {
+    const cfg = { memoryConfig: { delegate_to: ['researcher', 'presenter'] } };
+    h.holdsAdmin = true;
+    const team = await assembleResponderTurn({
+      ...BASE,
+      agent: agent(cfg),
+      surface: { kind: 'team', loginId: 'u1' },
+    });
+    expect(team.delegateTo).toEqual(['presenter']);
+    const none = await assembleResponderTurn({ ...BASE, agent: agent(cfg), surface: undefined });
+    expect(none.delegateTo).toEqual(['presenter']);
   });
 });
 

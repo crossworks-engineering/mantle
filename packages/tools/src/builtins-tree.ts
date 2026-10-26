@@ -351,6 +351,7 @@ export const tree_folder_delete: BuiltinToolDef = {
   slug: 'tree_folder_delete',
   policy: {
     matrix: { action: 'delete', param: 'folder_id', kinds: ['branch'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

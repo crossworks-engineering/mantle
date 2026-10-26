@@ -132,6 +132,7 @@ export {
   releaseMemberTurn,
   settleMemberTurn,
   memberTokensSince,
+  memberTokensLeft,
   memberDailyLimits,
   type MemberTurnLimits,
   type ClaimMemberTurnResult,

@@ -57,6 +57,8 @@ const h = vi.hoisted(() => ({
   firstMessages: {} as Record<string, Msg[]>,
   allText: [] as string[],
   calls: {} as Record<string, number>,
+  /** Model tokens each call of an agent reports (in, out), by its marker. */
+  usage: {} as Record<string, [number, number]>,
 }));
 
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -90,6 +92,18 @@ vi.mock('@mantle/voice', async (importOriginal) => {
     for (const m of opts.messages) {
       h.allText.push(text(m.content));
       if (m.role === 'tool' && m.toolCallId) h.results[m.toolCallId] = text(m.content);
+    }
+    const spend = h.usage[who];
+    if (spend) {
+      const { recordUsage } = await import('@mantle/tracing');
+      recordUsage({
+        capability: 'chat',
+        provider: 'openrouter',
+        model: 'fake/model',
+        inputTokens: spend[0],
+        outputTokens: spend[1],
+        reportedCostUsd: 0,
+      });
     }
     const next = h.script[who]?.shift();
     if (next?.calls?.length) {
@@ -136,7 +150,22 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
   const apiKeyId = randomUUID();
   const ws = { admin: '', w: '', x: '', userOwn: '', otherOwn: '', modOwn: '' };
   const wsa = `${tag}-wsa`;
-  const item = { cvX: '', cvAdmin: '', cvOther: '', pageX: '', appX: '' };
+  const item = {
+    cvX: '',
+    cvAdmin: '',
+    cvOther: '',
+    pageX: '',
+    appX: '',
+    /** Homed in W: its users edit it, its Moderators write its code. */
+    appW: '',
+    /** Homed in X, granted to W with Write off. */
+    appXtoW: '',
+    /** Homed in Admin, granted to W with Write off. */
+    appAdminToW: '',
+    /** Deleted apps, homed in W and in X. */
+    delW: '',
+    delX: '',
+  };
   const journalToken = `${tag}-owner-journal-secret`;
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -175,8 +204,14 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
       )
     )[0]!.n;
 
-  /** One member turn of W's assistant: it hands `prompt` to `slug`. */
-  const delegate = async (login: string, slug: string, childScript: Reply[]) => {
+  /** One member turn of W's assistant: it hands `prompt` to `slug`. With
+   *  `ledgerTurnId`, the turn holds that member turn ledger slot. */
+  const delegate = async (
+    login: string,
+    slug: string,
+    childScript: Reply[],
+    opts: { ledgerTurnId?: string } = {},
+  ) => {
     h.script = {
       wsa: [
         {
@@ -192,9 +227,34 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
       ],
       [slug]: childScript,
     };
-    const res = await runTeamTurn(owner, `please, ${tag}`, { loginId: login, agentSlug: wsa });
+    const res = await runTeamTurn(owner, `please, ${tag}`, {
+      loginId: login,
+      agentSlug: wsa,
+      ...opts,
+    });
     return { reply: res.reply, handOff: h.results[`${tag}-p1`] ?? '' };
   };
+  /** A member turn ledger slot of `login`, as the claim writes it. */
+  const ledgerSlot = async (login: string, tokens = 0) => {
+    const id = `ws-${login}.${randomUUID()}`;
+    await su(sql`insert into member_turn_ledger (turn_id, owner_id, login_id, tokens)
+      values (${id}, ${owner}, ${login}, ${tokens})`);
+    return id;
+  };
+  const slotTokens = async (id: string) =>
+    Number(
+      (
+        await su<{ t: string }>(
+          sql`select tokens::text as t from member_turn_ledger where turn_id = ${id}`,
+        )
+      )[0]?.t ?? -1,
+    );
+  /** An app's row as it stands (its node's title and its apps row). */
+  const appState = async (id: string) =>
+    JSON.stringify(
+      await su(sql`select n.title, a.* from apps a join nodes n on n.id = a.node_id
+        where a.node_id = ${id}`),
+    );
   /** The tools only an adminOnly group holds (a tool in a system-wide group
    *  too is the workspace's to call). */
   const adminOnlyTools = () => {
@@ -218,6 +278,11 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
       (d) => d.slug,
     );
     expect(offered.filter((t) => ownerOnly.includes(t))).toEqual([]);
+    // Nothing the user's MCP outside Admin would not get:
+    // no owner-key spend, no egress, no item delete.
+    expect(
+      offered.filter((t) => tools.workspaceChildDrop(tools.builtinPolicy(t)) !== null),
+    ).toEqual([]);
   };
   /** The child's own prompt: its system block and the hand-off, nothing of
    *  the owner's. */
@@ -355,6 +420,24 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
     );
     item.pageX = await homed(ws.x, () => createPage(owner, { title: `${tag} page x` }));
     item.appX = await homed(ws.x, () => createApp(owner, { title: `${tag} app x` }));
+    item.appW = await homed(ws.w, () => createApp(owner, { title: `${tag} app w` }));
+    const grantedToW = async (home: string, title: string) => {
+      const id = await homed(home, () => createApp(owner, { title }));
+      await m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+          values (${id}, ${ws.w}, false, false)`);
+      });
+      return id;
+    };
+    item.appXtoW = await grantedToW(ws.x, `${tag} app x to w`);
+    item.appAdminToW = await grantedToW(ws.admin, `${tag} app admin to w`);
+    // Two apps in Recently deleted: one homed in W, one in X.
+    const { deleteApp } = await import('@mantle/content');
+    item.delW = await homed(ws.w, () => createApp(owner, { title: `${tag} gone w` }));
+    item.delX = await homed(ws.x, () => createApp(owner, { title: `${tag} gone x` }));
+    for (const id of [item.delW, item.delX]) {
+      await m.asSystem(() => deleteApp(owner, id), 'test');
+    }
 
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await su(sql`select mantle_set_actor_check('on')`);
@@ -511,7 +594,9 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
     expect(app).toEqual({ level: 'team', author: mod });
     hiddenAsRandom('upd', ['x']);
     expect(await titleOf(item.appX)).toBe(before);
-    expect(h.results['a-nested']).toMatch(/cannot be delegated to from a workspace/);
+    // invoke_agent spends on the owner's keys: a workspace turn's child is
+    // not given it at all.
+    expect(h.results['a-nested']).toMatch(/not in this agent's allowlist/);
     expect(h.calls.toolsmith ?? 0).toBe(0);
     expectChildToolsScoped('appsmith');
     expect(m.takeActorMisses()).toEqual([]);
@@ -565,8 +650,167 @@ describe.skipIf(!URL)('a workspace assistant delegates with the member’s own r
     );
     expect(res.ok, JSON.stringify(res)).toBe(true);
     expect(h.calls.researcher).toBe(1);
+    // An Admin turn's child keeps the owner-key and egress tools.
+    for (const t of ['web_search', 'web_search_pro', 'web_fetch']) {
+      expect(h.offered.researcher?.has(t), t).toBe(true);
+    }
     const trace = await childTrace('researcher');
     expect(trace?.data.workspace_delegation).toBeUndefined();
     expect(m.takeActorMisses()).toEqual([]);
   }, 120_000);
+  // ── The child's tools and bounds; app rights ───────────────────────────────────────────────────────
+
+  it('Appsmith in a workspace turn is offered no owner-key, egress or delete tool, and a direct call is refused', async () => {
+    const before = await appState(item.appW);
+    const dropped = ['web_search', 'web_search_pro', 'web_fetch', 'circuit_verify', 'app_delete'];
+    const calls: Call[] = dropped.map((name) => ({
+      id: `drop-${name}`,
+      name,
+      args:
+        name === 'app_delete'
+          ? { id: item.appW }
+          : name === 'web_fetch'
+            ? { url: 'https://example.invalid/' }
+            : { query: 'x', id: item.appW },
+    }));
+    await delegate(mod, 'appsmith', [{ calls }, { text: 'tried' }]);
+    for (const name of dropped) {
+      expect(h.offered.appsmith?.has(name), name).toBe(false);
+      expect(h.results[`drop-${name}`], name).toMatch(/not in this agent's allowlist/);
+    }
+    // The research group is granted: it is the rule, not the grant, that drops it.
+    const granted = await x<{ groups: string[] }>(sql`select tool_group_slugs as groups
+      from agents where owner_id = ${owner} and slug = 'appsmith'`);
+    expect(granted[0]!.groups).toContain('research');
+    expect(await appState(item.appW)).toBe(before);
+    expectChildToolsScoped('appsmith');
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 180_000);
+
+  it('a third delegation in one workspace turn is refused', async () => {
+    h.script = {
+      wsa: [
+        {
+          calls: ['diagrammer', 'presenter', 'appsmith'].map((slug, i) => ({
+            id: `${tag}-n${i}`,
+            name: 'invoke_agent',
+            args: { agent_slug: slug, prompt: `please, ${tag}` },
+          })),
+        },
+        { text: 'parent done' },
+      ],
+    };
+    await runTeamTurn(owner, `please, ${tag}`, { loginId: user, agentSlug: wsa });
+    const answers = [0, 1, 2].map((i) => h.results[`${tag}-n${i}`] ?? '');
+    const refused = answers.filter((a) => a.includes(tools.WORKSPACE_DELEGATION_COUNT_ERROR));
+    expect(refused, answers.join('\n')).toHaveLength(1);
+    const ran = ['diagrammer', 'presenter', 'appsmith'].filter((s) => (h.calls[s] ?? 0) > 0);
+    expect(ran).toHaveLength(tools.WORKSPACE_TURN_MAX_DELEGATIONS);
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 180_000);
+
+  it('below the token floor a workspace turn delegates nothing', async () => {
+    const { memberDailyLimits } = await import('@mantle/content');
+    const budget = memberDailyLimits().dailyTokens;
+    expect(budget).toBeGreaterThan(tools.WORKSPACE_DELEGATION_TOKEN_FLOOR);
+    const spent = await ledgerSlot(user, budget - tools.WORKSPACE_DELEGATION_TOKEN_FLOOR + 1);
+    const slot = await ledgerSlot(user);
+    try {
+      const { reply, handOff } = await delegate(user, 'presenter', [{ text: 'should not run' }], {
+        ledgerTurnId: slot,
+      });
+      expect(reply).toBe('parent done');
+      expect(handOff).toContain(tools.WORKSPACE_DELEGATION_BUDGET_ERROR);
+      expect(h.calls.presenter ?? 0).toBe(0);
+    } finally {
+      await su(sql`delete from member_turn_ledger where turn_id in (${spent}, ${slot})`);
+    }
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 180_000);
+
+  it('end to end: the delegated child’s tokens reach the member’s ledger slot', async () => {
+    const slot = await ledgerSlot(user);
+    h.usage = { wsa: [100, 10], presenter: [40, 4] };
+    try {
+      const { handOff } = await delegate(user, 'presenter', [{ text: 'made it' }], {
+        ledgerTurnId: slot,
+      });
+      expect(handOff).toContain('made it');
+    } finally {
+      h.usage = {};
+    }
+    // The parent made two model calls, the child one.
+    const parent = (h.calls.wsa ?? 0) * 110;
+    const child = (h.calls.presenter ?? 0) * 44;
+    expect(h.calls.presenter).toBe(1);
+    expect(await slotTokens(slot)).toBe(parent + child);
+    await su(sql`delete from member_turn_ledger where turn_id = ${slot}`);
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 180_000);
+
+  it('app writes need the user’s own right: a plain user of W edits W’s app but not its code; Write off is read only', async () => {
+    const code = { path: 'App.tsx', content: 'export default function App() { return null; }' };
+    const writes = (id: string, p: string): Call[] => [
+      { id: `${p}-upd`, name: 'app_update', args: { id, name: `${tag} ${p} renamed` } },
+      { id: `${p}-file`, name: 'app_file_write', args: { id, ...code } },
+      { id: `${p}-pub`, name: 'app_publish', args: { id } },
+      { id: `${p}-tools`, name: 'app_tools_set', args: { id, tool_slugs: [] } },
+    ];
+    const codeOf = async (id: string) =>
+      JSON.stringify(
+        await su(sql`select draft_source, source, published_build, manifest from apps
+          where node_id = ${id}`),
+      );
+    // An edit-only user (a plain user of W, the app's home): a name, yes;
+    // its code, its publish and its tools are a home Moderator's.
+    const wCode = await codeOf(item.appW);
+    await delegate(user, 'appsmith', [{ calls: writes(item.appW, 'w') }, { text: 'tried' }]);
+    expect(h.results['w-upd'], h.results['w-upd']).not.toMatch(/"ok":\s*false|error/i);
+    expect(await titleOf(item.appW)).toBe(`${tag} w renamed`);
+    for (const k of ['w-file', 'w-pub', 'w-tools']) {
+      expect(h.results[k], k).toMatch(/error|not|refused|may not|Moderator/i);
+    }
+    expect(await codeOf(item.appW)).toBe(wCode);
+    // Read only (Write off on W): a Moderator of W changes nothing of an app
+    // homed in X, or in Admin, that W holds read only.
+    for (const [id, p] of [
+      [item.appXtoW, 'xw'],
+      [item.appAdminToW, 'aw'],
+    ] as const) {
+      const before = await appState(id);
+      await delegate(mod, 'appsmith', [{ calls: writes(id, p) }, { text: 'tried' }]);
+      for (const k of ['upd', 'file', 'pub', 'tools']) {
+        expect(h.results[`${p}-${k}`], `${p}-${k}`).toMatch(/error|not|refused|may not/i);
+      }
+      expect(await appState(id), p).toBe(before);
+    }
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 300_000);
+
+  it('Recently deleted in a workspace turn: a Moderator of W sees and brings back W’s app only; a plain user of W neither', async () => {
+    const list = (p: string): Call[] => [{ id: `${p}-list`, name: 'app_deleted_list', args: {} }];
+    await delegate(user, 'appsmith', [{ calls: list('u') }, { text: 'looked' }]);
+    expect(h.results['u-list']).not.toContain(item.delW);
+    expect(h.results['u-list']).not.toContain(item.delX);
+    await delegate(mod, 'appsmith', [
+      {
+        calls: [
+          ...list('m'),
+          { id: 'm-back-x', name: 'app_undelete', args: { id: item.delX } },
+          { id: 'm-back-w', name: 'app_undelete', args: { id: item.delW } },
+        ],
+      },
+      { text: 'restored' },
+    ]);
+    expect(h.results['m-list']).toContain(item.delW);
+    expect(h.results['m-list']).not.toContain(item.delX);
+    expect(h.results['m-back-x']).toMatch(/not in Recently deleted/);
+    expect(h.results['m-back-w'], h.results['m-back-w']).toContain(item.delW);
+    const rows = await su<{ id: string; home: string | null }>(sql`
+      select n.id::text as id, g.workspace_id::text as home from nodes n
+        left join item_grants g on g.node_id = n.id and g.is_home
+       where n.id in (${item.delW}::uuid, ${item.delX}::uuid)`);
+    expect(rows).toEqual([{ id: item.delW, home: ws.w }]);
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 180_000);
 });

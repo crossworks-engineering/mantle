@@ -320,6 +320,7 @@ const recall_map_delete: BuiltinToolDef = {
   slug: 'recall_map_delete',
   policy: {
     matrix: { action: 'delete', param: 'map', kinds: ['recall'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'admin',

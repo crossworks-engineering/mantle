@@ -45,6 +45,15 @@ export function loginTurnSurfaceId(surface: ToolHandlerContext['surface']): stri
     : null;
 }
 
+/** The daily token budget a workspace turn's user had left when the turn
+ *  started (the team surface's `tokensLeft`, stamped by the runtime from
+ *  the member turn ledger), or null: no budget, or another surface. */
+export function teamSurfaceTokensLeft(surface: ToolHandlerContext['surface']): number | null {
+  return surface?.kind === 'team' && typeof surface.tokensLeft === 'number'
+    ? surface.tokensLeft
+    : null;
+}
+
 /** The login a call acts for: the one an owner surface names, else a
  *  workspace turn's (loginTurnSurfaceId), else null. Where a tool records
  *  its author or deleter, it is this login, never the brain owner in its

@@ -445,11 +445,19 @@ export {
   WORKSPACE_DELEGATE_SLUGS,
   WORKSPACE_DELEGATE_ERROR,
   WORKSPACE_NO_LOGIN_DELEGATE_ERROR,
+  WORKSPACE_TURN_MAX_DELEGATIONS,
+  WORKSPACE_CHILD_MAX_ITERATIONS,
+  WORKSPACE_DELEGATION_TOKEN_FLOOR,
+  WORKSPACE_DELEGATION_COUNT_ERROR,
+  WORKSPACE_DELEGATION_BUDGET_ERROR,
+  childMaxIterations,
+  workspaceChildDrop,
+  type WorkspaceChildDrop,
   type DelegationTurn,
   type DepthCheckResult,
   type AllowlistCheckResult,
 } from './invoke-agent-guards';
-export { delegationTurnOf } from './builtins-delegation';
+export { delegationTurnOf } from './outside-admin';
 
 export { KNOWN_MCP_SERVERS, knownMcpServer, type KnownMcpServer } from './mcp-catalog';
 export {

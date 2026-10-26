@@ -27,7 +27,20 @@ import {
   turnDelegates,
   WORKSPACE_DELEGATE_ERROR,
   WORKSPACE_NO_LOGIN_DELEGATE_ERROR,
+  WORKSPACE_TURN_MAX_DELEGATIONS,
+  WORKSPACE_CHILD_MAX_ITERATIONS,
+  WORKSPACE_DELEGATION_TOKEN_FLOOR,
+  WORKSPACE_DELEGATION_COUNT_ERROR,
+  WORKSPACE_DELEGATION_BUDGET_ERROR,
+  checkWorkspaceDelegationBudget,
+  childMaxIterations,
+  claimWorkspaceDelegation,
+  releaseWorkspaceDelegation,
+  workspaceChildDrop,
 } from './invoke-agent-guards';
+
+/** An Admin turn (delegationTurnOf): the allowlist alone. */
+const ADMIN_TURN = { workspaceTurn: false, loginId: null };
 
 describe('depth constants', () => {
   it('base cap is 2 — parent + child, no grandchildren by default', () => {
@@ -124,22 +137,27 @@ describe('isTerminalDelegateConfig', () => {
     // same agent.
     expect(isTerminalDelegateConfig('toolsmith')).toBe(true);
     expect(isTerminalDelegateConfig({})).toBe(true);
-    expect(checkDelegationAllowed('a', 'b', 'toolsmith' as unknown as string[]).ok).toBe(false);
+    expect(
+      checkDelegationAllowed('a', 'b', 'toolsmith' as unknown as string[], ADMIN_TURN).ok,
+    ).toBe(false);
   });
 });
 
 describe('checkDelegationAllowed', () => {
   it('passes when target is in the allowlist', () => {
-    expect(checkDelegationAllowed('responder', 'researcher', ['researcher'])).toEqual({ ok: true });
+    expect(checkDelegationAllowed('responder', 'researcher', ['researcher'], ADMIN_TURN)).toEqual({
+      ok: true,
+    });
   });
 
   it('passes when target is one of several entries', () => {
     expect(
-      checkDelegationAllowed('responder', 'researcher', [
-        'pastoral_care',
+      checkDelegationAllowed(
+        'responder',
         'researcher',
-        'archivist',
-      ]),
+        ['pastoral_care', 'researcher', 'archivist'],
+        ADMIN_TURN,
+      ),
     ).toEqual({ ok: true });
   });
 
@@ -148,13 +166,13 @@ describe('checkDelegationAllowed', () => {
     // in delegate_to by accident. We refuse — self-invocation is the
     // closest thing to a recursion footgun we have once depth is past
     // the check.
-    const r = checkDelegationAllowed('responder', 'responder', ['responder']);
+    const r = checkDelegationAllowed('responder', 'responder', ['responder'], ADMIN_TURN);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/cannot invoke itself/);
   });
 
   it('nudges a self-invoke toward handling it directly or picking another specialist', () => {
-    const r = checkDelegationAllowed('assistant', 'assistant', ['pages', 'assistant']);
+    const r = checkDelegationAllowed('assistant', 'assistant', ['pages', 'assistant'], ADMIN_TURN);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toMatch(/cannot invoke itself/);
@@ -163,29 +181,34 @@ describe('checkDelegationAllowed', () => {
   });
 
   it('refuses delegation when the allowlist is missing', () => {
-    const r = checkDelegationAllowed('responder', 'researcher', undefined);
+    const r = checkDelegationAllowed('responder', 'researcher', undefined, ADMIN_TURN);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/delegation not configured/);
   });
 
   it('refuses delegation when the allowlist is empty', () => {
-    expect(checkDelegationAllowed('responder', 'researcher', []).ok).toBe(false);
+    expect(checkDelegationAllowed('responder', 'researcher', [], ADMIN_TURN).ok).toBe(false);
   });
 
   it('refuses delegation when the target is not in the allowlist', () => {
-    const r = checkDelegationAllowed('responder', 'rogue_agent', ['researcher', 'archivist']);
+    const r = checkDelegationAllowed(
+      'responder',
+      'rogue_agent',
+      ['researcher', 'archivist'],
+      ADMIN_TURN,
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/not in the parent's delegation allowlist/);
   });
 
   it('refuses an empty target slug even when allowlist contains one', () => {
-    const r = checkDelegationAllowed('responder', '', ['researcher']);
+    const r = checkDelegationAllowed('responder', '', ['researcher'], ADMIN_TURN);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/agent_slug is required/);
   });
 
   it('names the target slug in the "not authorised" refusal so the LLM can correct', () => {
-    const r = checkDelegationAllowed('responder', 'rogue', ['researcher']);
+    const r = checkDelegationAllowed('responder', 'rogue', ['researcher'], ADMIN_TURN);
     if (!r.ok) {
       expect(r.reason).toContain('rogue');
     }
@@ -197,10 +220,12 @@ describe('checkDelegationAllowed', () => {
     // in single-user Mantle but would matter if this surface ever
     // grows multi-tenant. Keep the message minimal — an unrelated miss
     // gets NO "did you mean", so no authorised slug is revealed.
-    const r = checkDelegationAllowed('responder', 'rogue', [
-      'secret_internal_agent',
-      'admin_console',
-    ]);
+    const r = checkDelegationAllowed(
+      'responder',
+      'rogue',
+      ['secret_internal_agent', 'admin_console'],
+      ADMIN_TURN,
+    );
     if (!r.ok) {
       expect(r.reason).not.toContain('secret_internal_agent');
       expect(r.reason).not.toContain('admin_console');
@@ -212,11 +237,12 @@ describe('checkDelegationAllowed', () => {
     // The exact production failure shape: the model invented
     // 'pages-specialist' for the agent whose slug is 'pages'. Containment
     // match → suggest 'pages' so the LLM retries correctly next round.
-    const r = checkDelegationAllowed('responder', 'pages-specialist', [
-      'pages',
-      'tables',
-      'researcher',
-    ]);
+    const r = checkDelegationAllowed(
+      'responder',
+      'pages-specialist',
+      ['pages', 'tables', 'researcher'],
+      ADMIN_TURN,
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toContain("Did you mean 'pages'?");
@@ -224,17 +250,18 @@ describe('checkDelegationAllowed', () => {
   });
 
   it('suggests on a small typo (edit distance)', () => {
-    const r = checkDelegationAllowed('responder', 'resercher', ['researcher']);
+    const r = checkDelegationAllowed('responder', 'resercher', ['researcher'], ADMIN_TURN);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/did you mean 'researcher'/i);
   });
 
   it('reveals only ONE slug — the near-match — not the rest of the roster', () => {
-    const r = checkDelegationAllowed('responder', 'page', [
-      'pages',
-      'secret_internal_agent',
-      'admin_console',
-    ]);
+    const r = checkDelegationAllowed(
+      'responder',
+      'page',
+      ['pages', 'secret_internal_agent', 'admin_console'],
+      ADMIN_TURN,
+    );
     if (!r.ok) {
       expect(r.reason).toContain("Did you mean 'pages'?");
       expect(r.reason).not.toContain('secret_internal_agent');
@@ -260,7 +287,6 @@ describe('workspace delegation', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe(WORKSPACE_DELEGATE_ERROR('toolsmith'));
     expect(checkDelegationAllowed('ws', 'toolsmith', ['toolsmith'], ADMIN).ok).toBe(true);
-    expect(checkDelegationAllowed('ws', 'toolsmith', ['toolsmith']).ok).toBe(true);
   });
 
   it('a listed delegate still needs the allowlist and a login', () => {
@@ -269,5 +295,82 @@ describe('workspace delegation', () => {
     const none = checkWorkspaceDelegate('presenter', { workspaceTurn: true, loginId: null });
     expect(none).toEqual({ ok: false, reason: WORKSPACE_NO_LOGIN_DELEGATE_ERROR });
     expect(checkWorkspaceDelegate('coder', { workspaceTurn: false, loginId: null }).ok).toBe(true);
+  });
+});
+
+// A workspace turn's three bounds, pinned.
+describe('a workspace turn’s delegation bounds', () => {
+  it('the constants are pinned', () => {
+    expect(WORKSPACE_TURN_MAX_DELEGATIONS).toBe(2);
+    expect(WORKSPACE_CHILD_MAX_ITERATIONS).toBe(20);
+    expect(WORKSPACE_DELEGATION_TOKEN_FLOOR).toBe(200_000);
+  });
+
+  it('two delegations per turn; a failed child gives its count back; turns count apart', () => {
+    const turn = {};
+    expect(claimWorkspaceDelegation(turn).ok).toBe(true);
+    expect(claimWorkspaceDelegation(turn).ok).toBe(true);
+    expect(claimWorkspaceDelegation(turn)).toEqual({
+      ok: false,
+      reason: WORKSPACE_DELEGATION_COUNT_ERROR,
+    });
+    releaseWorkspaceDelegation(turn);
+    expect(claimWorkspaceDelegation(turn).ok).toBe(true);
+    expect(claimWorkspaceDelegation(turn).ok).toBe(false);
+    expect(claimWorkspaceDelegation({}).ok).toBe(true);
+  });
+
+  it('a delegation that names no turn is refused (fail closed)', () => {
+    expect(claimWorkspaceDelegation(undefined).ok).toBe(false);
+  });
+
+  it('the child’s iterations: 30 at most, 20 in a workspace turn, unset kept', () => {
+    const ws = { workspaceTurn: true };
+    const admin = { workspaceTurn: false };
+    expect(childMaxIterations(30, admin)).toBe(30);
+    expect(childMaxIterations(99, admin)).toBe(30);
+    expect(childMaxIterations(30, ws)).toBe(WORKSPACE_CHILD_MAX_ITERATIONS);
+    expect(childMaxIterations(25, ws)).toBe(WORKSPACE_CHILD_MAX_ITERATIONS);
+    expect(childMaxIterations(8, ws)).toBe(8);
+    expect(childMaxIterations(undefined, ws)).toBeUndefined();
+    expect(childMaxIterations(0, ws)).toBeUndefined();
+    expect(childMaxIterations('30', ws)).toBeUndefined();
+  });
+
+  it('the budget floor: no budget passes; below the floor is refused', () => {
+    expect(checkWorkspaceDelegationBudget(null).ok).toBe(true);
+    expect(checkWorkspaceDelegationBudget(WORKSPACE_DELEGATION_TOKEN_FLOOR).ok).toBe(true);
+    expect(checkWorkspaceDelegationBudget(WORKSPACE_DELEGATION_TOKEN_FLOOR - 1)).toEqual({
+      ok: false,
+      reason: WORKSPACE_DELEGATION_BUDGET_ERROR,
+    });
+    expect(checkWorkspaceDelegationBudget(-5).ok).toBe(false);
+  });
+
+  it('workspaceChildDrop: an owner-key spend, an egress, an item delete; nothing else', () => {
+    const base = { effect: 'read', spends: 'none', scope: 'any' } as const;
+    expect(workspaceChildDrop(null)).toBeNull();
+    expect(workspaceChildDrop(base)).toBeNull();
+    expect(workspaceChildDrop({ ...base, spends: 'model' })).toBeNull();
+    expect(workspaceChildDrop({ ...base, spends: 'ownerKey' })).toBe('owner-key');
+    expect(workspaceChildDrop({ ...base, outside: { egress: true } })).toBe('egress');
+    expect(workspaceChildDrop({ ...base, outside: { untrusted: true } })).toBeNull();
+    expect(
+      workspaceChildDrop({
+        effect: 'write',
+        spends: 'none',
+        scope: 'any',
+        deletesItem: true,
+        matrix: { action: 'delete', param: 'id' },
+      }),
+    ).toBe('delete');
+    expect(
+      workspaceChildDrop({
+        effect: 'write',
+        spends: 'none',
+        scope: 'any',
+        matrix: { action: 'edit', param: 'id' },
+      }),
+    ).toBeNull();
   });
 });

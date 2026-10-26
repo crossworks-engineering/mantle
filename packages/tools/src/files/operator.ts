@@ -101,6 +101,7 @@ export const folder_delete: BuiltinToolDef = {
   slug: 'folder_delete',
   policy: {
     matrix: { action: 'delete', param: 'folder_id', kinds: ['branch'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -247,6 +248,7 @@ export const file_delete: BuiltinToolDef = {
   slug: 'file_delete',
   policy: {
     matrix: { action: 'delete', param: 'file_id', kinds: ['file'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

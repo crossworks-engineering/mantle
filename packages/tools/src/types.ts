@@ -123,6 +123,13 @@ export type ToolHandlerContext = {
          *  Absent = OFF: the read tools hide the private corpus (email,
          *  journal) as well as the always-hidden types. */
         privateReads?: boolean;
+        /** The login's daily token budget left when the turn started (the
+         *  member turn ledger, read by the runtime when the turn claimed a
+         *  slot). Absent: no budget (an Admin user, the budget off). A
+         *  workspace turn delegates only while enough is left
+         *  (WORKSPACE_DELEGATION_TOKEN_FLOOR, less the turn's own tokens so
+         *  far). Set by the runtime, never from model arguments. */
+        tokensLeft?: number;
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;

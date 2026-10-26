@@ -12,7 +12,8 @@
  *  - a second run changes nothing (idempotent);
  *  - an owner who removes the group or a delegate after the grant keeps it
  *    removed: the next whole reconcile (reconcileOwner, the specialist
- *    union too) does not add it back;
+ *    union too) does not add it back, nor does a specialist's reset or
+ *    adopt (wireDelegation reaches the Admin persona only);
  *  - a delegate the brain did not have is granted once its agent exists
  *    (provisioned by the reconcile); an assistant made later gets them once;
  *  - the ids of deleted agents leave the record.
@@ -175,10 +176,13 @@ describe.skipIf(!URL)(
       // now present, once; what the owner removed stays removed.
       const r = await rec.reconcileOwner(owner);
       expect(r.provisioned).toContain('appsmith');
-      // The provision wires each new specialist into every enabled responder
-      // and assistant (wireDelegation), `other` too, so this step has only
-      // the Team responder (a custom role) to give Appsmith.
-      expect(r.delegationChanges).toEqual(['team-responder:+appsmith']);
+      // The provision wires each new specialist into the Admin persona
+      // (wireDelegation), never into a workspace assistant: this step
+      // gives Appsmith to both, once.
+      expect(r.delegationChanges.sort()).toEqual(
+        [`${tag}-other:+appsmith`, 'team-responder:+appsmith'].sort(),
+      );
+      expect((await rowOf('persona')).mc.delegate_to).toContain('appsmith');
       for (const k of ['other', 'team']) {
         const row = await rowOf(k);
         expect(row.g, k).not.toContain('delegation');
@@ -190,6 +194,28 @@ describe.skipIf(!URL)(
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
       expect((await rec.reconcileOwner(owner)).delegationChanges).toEqual([]);
       expect((await rowOf('team')).g).not.toContain('delegation');
+    }, 240_000);
+
+    it('a specialist’s reset or adopt does not give a workspace assistant back a delegate its owner removed', async () => {
+      await x(sql`update agents set memory_config = jsonb_set(memory_config, '{delegate_to}', '["researcher"]')
+      where id in (${ids.other!}, ${ids.persona!})`);
+      const seed = await import('./seed');
+      // The Studio reset (applyManifest of the one agent) and the config
+      // adopt both call wireDelegation.
+      await m.asSystem(
+        () => seed.applyManifest(owner, { only: ['appsmith'], mode: 'overwrite' }),
+        'test',
+      );
+      await m.asSystem(() => seed.adoptManifestItem(owner, 'agent', 'presenter'), 'test');
+      expect((await rowOf('other')).mc.delegate_to).toEqual(['researcher']);
+      // The Admin persona is wired, as before.
+      expect((await rowOf('persona')).mc.delegate_to).toEqual([
+        'researcher',
+        'appsmith',
+        'presenter',
+      ]);
+      expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
+      expect((await rowOf('other')).mc.delegate_to).toEqual(['researcher']);
     }, 240_000);
 
     it('a later assistant gets them once', async () => {

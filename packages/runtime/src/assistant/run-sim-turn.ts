@@ -324,6 +324,8 @@ export async function prepareSimulatedTurn(
       prefs,
       logPrefix: opts.logPrefix,
       ownerLoginId: opts.loginId ?? null,
+      // The loop's surface below.
+      surface: opts.loginId ? { kind: 'web', loginId: opts.loginId } : { kind: 'web' },
       // Decider delegation hint, same as the web turn, so an ask_responder
       // canary exercises it: the message plus the caller-held previous user turn.
       inboundText: message,

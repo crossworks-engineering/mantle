@@ -376,6 +376,7 @@ const task_delete: BuiltinToolDef = {
   slug: 'task_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['task'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

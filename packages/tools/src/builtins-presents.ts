@@ -1162,6 +1162,7 @@ const present_delete: BuiltinToolDef = {
   slug: 'present_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['present'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

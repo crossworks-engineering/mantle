@@ -60,12 +60,29 @@ vi.mock('@mantle/db', async (importOriginal) => {
     scopeHoldsAdmin: vi.fn(async () => scope.holdsAdmin),
   };
 });
+/** The turn's trace as the handler reads it (currentTrace). */
+const trace = vi.hoisted(() => ({
+  now: null as null | {
+    tokens: { in: number; out: number };
+    delegatedTokens?: { in: number; out: number };
+  },
+}));
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  currentTrace: () => trace.now,
+}));
 vi.mock('./agent-bridge', () => ({ getAgentInvoker: vi.fn(), registerAgentInvoker: vi.fn() }));
 
 import * as dbmod from '@mantle/db';
 import { getAgentInvoker, type AgentInvoker } from './agent-bridge';
 import { invoke_agent, NO_PARENT_AGENT_ERROR } from './builtins-delegation';
-import { WORKSPACE_DELEGATE_SLUGS } from './invoke-agent-guards';
+import {
+  WORKSPACE_DELEGATE_SLUGS,
+  WORKSPACE_DELEGATION_BUDGET_ERROR,
+  WORKSPACE_DELEGATION_COUNT_ERROR,
+  WORKSPACE_DELEGATION_TOKEN_FLOOR,
+} from './invoke-agent-guards';
+import { newTurnTaint } from './client-sourced';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
@@ -116,6 +133,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   scope.open = null;
   scope.holdsAdmin = true;
+  trace.now = null;
   selectQueue.length = 0;
   whereArgs.length = 0;
   vi.mocked(getAgentInvoker).mockReturnValue(invoker);
@@ -311,7 +329,7 @@ describe('invoke_agent passes the caller down to the child', () => {
     // in a scope that answers the login.
     scope.open = { kind: 'assistant', loginId: TEAM.loginId, ws: ['w1'], modWs: [] };
     scope.holdsAdmin = false;
-    const ctx = { ...parent({ delegateTo: ['presenter'] }), surface };
+    const ctx = { ...parent({ delegateTo: ['presenter'], taint: newTurnTaint() }), surface };
     outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx));
     const input = invoker.mock.calls[0]![0];
     expect(input.surface).toEqual(expected);
@@ -330,7 +348,7 @@ describe('invoke_agent in a workspace turn', () => {
     scope.open = { kind: 'assistant', loginId: LOGIN, ws: ['w1'], modWs: [] };
     scope.holdsAdmin = false;
     return {
-      ...parent({ slug: 'ws-assistant', delegateTo: ALL, ...over }),
+      ...parent({ slug: 'ws-assistant', delegateTo: ALL, taint: newTurnTaint(), ...over }),
       surface: { kind: 'team' as const, loginId: LOGIN },
     };
   };
@@ -393,6 +411,87 @@ describe('invoke_agent in a workspace turn', () => {
     expect(err).toMatch(/cannot be delegated to from a workspace/);
     expect(invoker).not.toHaveBeenCalled();
     expect(dbmod.db.select).not.toHaveBeenCalled();
+  });
+
+  // At most two successful delegations per workspace
+  // turn, and none while the user's daily budget is below the floor.
+  it('a third delegation in one workspace turn is refused; a failed child does not count', async () => {
+    const ctx = wsTurn();
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx));
+    invoker.mockResolvedValueOnce({ ok: false, error: 'boom' });
+    expect(errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx))).toMatch(
+      /child agent failed: boom/,
+    );
+    invoker.mockRejectedValueOnce(new Error('thrown'));
+    await expect(invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx)).rejects.toThrow(
+      'thrown',
+    );
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'diagrammer' }, ctx));
+    expect(invoker).toHaveBeenCalledTimes(4);
+    expect(errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'appsmith' }, ctx))).toBe(
+      WORKSPACE_DELEGATION_COUNT_ERROR,
+    );
+    expect(invoker).toHaveBeenCalledTimes(4);
+    // Another turn counts on its own.
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'appsmith' }, wsTurn()));
+  });
+
+  it('an Admin turn is not counted', async () => {
+    const ctx = parent({ taint: newTurnTaint() });
+    for (let i = 0; i < 4; i++) outputOf(await invoke_agent.handler(ARGS, ctx));
+    expect(invoker).toHaveBeenCalledTimes(4);
+  });
+
+  it('a workspace turn with no turn object is refused (fail closed)', async () => {
+    const ctx = wsTurn({ taint: undefined });
+    expect(errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx))).toMatch(
+      /names no turn/,
+    );
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('below the token floor a workspace turn delegates nothing; no budget passes', async () => {
+    const low = {
+      ...wsTurn(),
+      surface: {
+        kind: 'team' as const,
+        loginId: LOGIN,
+        tokensLeft: WORKSPACE_DELEGATION_TOKEN_FLOOR - 1,
+      },
+    };
+    expect(errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, low))).toBe(
+      WORKSPACE_DELEGATION_BUDGET_ERROR,
+    );
+    expect(invoker).not.toHaveBeenCalled();
+    const enough = {
+      ...wsTurn(),
+      surface: {
+        kind: 'team' as const,
+        loginId: LOGIN,
+        tokensLeft: WORKSPACE_DELEGATION_TOKEN_FLOOR,
+      },
+    };
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, enough));
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, wsTurn()));
+    expect(invoker).toHaveBeenCalledTimes(2);
+  });
+
+  it('the turn’s own tokens so far, and its children’s, count against what is left', async () => {
+    const ctx = {
+      ...wsTurn(),
+      surface: {
+        kind: 'team' as const,
+        loginId: LOGIN,
+        tokensLeft: WORKSPACE_DELEGATION_TOKEN_FLOOR + 19,
+      },
+    };
+    trace.now = { tokens: { in: 8, out: 5 }, delegatedTokens: { in: 4, out: 3 } };
+    expect(errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx))).toBe(
+      WORKSPACE_DELEGATION_BUDGET_ERROR,
+    );
+    trace.now = { tokens: { in: 8, out: 5 } };
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx));
+    expect(invoker).toHaveBeenCalledTimes(1);
   });
 
   it('an owner surface in a scope without Admin is a workspace turn too', async () => {

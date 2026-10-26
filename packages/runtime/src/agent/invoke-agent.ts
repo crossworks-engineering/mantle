@@ -41,10 +41,12 @@ import {
   MAX_TERMINAL_EDGE_DEPTH,
   builtinPolicy,
   checkWorkspaceDelegate,
+  childMaxIterations,
   delegationTurnOf,
   isOwnerSurface,
   isTerminalDelegateConfig,
   turnDelegates,
+  workspaceChildDrop,
 } from '@mantle/tools';
 import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
 import { applyAgentThinking } from '@mantle/content-core/profile-projections';
@@ -229,6 +231,11 @@ export const invokeAgent: AgentInvoker = async ({
   // surfaces, as its parent's turn (excludePrivateCorpus in assemble-turn):
   // a team surface keeps it only with the owner's private-reads switch,
   // which the surface carries from the parent turn.
+  //
+  // A workspace turn's child gets nothing its user's own MCP connection
+  // outside Admin would not (workspaceChildDrop):
+  // no tool that spends on the owner's keys (the spending narrower's one
+  // predicate), none that reaches outside the brain, and no item delete.
   const hidePrivate =
     !isOwnerSurface(surface) && !(surface?.kind === 'team' && surface.privateReads === true);
   const allowedTools = await inChildScope(async () => {
@@ -236,9 +243,11 @@ export const invokeAgent: AgentInvoker = async ({
       ownerId,
       (target as Agent).toolGroupSlugs ?? [],
     );
-    const slugs = effectiveToolSlugs(groupTools).filter(
-      (slug) => !hidePrivate || builtinPolicy(slug)?.privateCorpus !== true,
-    );
+    const slugs = effectiveToolSlugs(groupTools).filter((slug) => {
+      const policy = builtinPolicy(slug);
+      if (hidePrivate && policy?.privateCorpus === true) return false;
+      return !turn.workspaceTurn || workspaceChildDrop(policy) === null;
+    });
     return resolveAgentTools(ownerId, slugs);
   });
 
@@ -288,13 +297,10 @@ export const invokeAgent: AgentInvoker = async ({
       // the tool-loop ceiling above the default 6 — read N blocks + write
       // N blocks costs N+overhead iterations, which exceeds the default
       // for any non-trivial multi-block edit. Clamped at 30 to keep the
-      // worst-case bounded.
+      // worst-case bounded, and in a workspace turn at
+      // WORKSPACE_CHILD_MAX_ITERATIONS (childMaxIterations).
       const mc = (target.memoryConfig as AgentMemoryConfig | null) ?? null;
-      const requestedMaxIters = typeof mc?.max_iterations === 'number' ? mc.max_iterations : null;
-      const maxIterations =
-        requestedMaxIters && requestedMaxIters > 0
-          ? Math.min(30, Math.floor(requestedMaxIters))
-          : undefined;
+      const maxIterations = childMaxIterations(mc?.max_iterations, turn);
 
       const result = await runToolLoop({
         adapter: childAdapter,

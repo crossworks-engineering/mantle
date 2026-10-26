@@ -90,6 +90,8 @@ export async function describeResponderPersona(
     agent,
     prefs,
     logPrefix: '[mcp-persona]',
+    // The surface its tool list is described on below.
+    surface: { kind: 'web' },
     ...(opts.readOnly ? { readOnly: true } : {}),
   });
 

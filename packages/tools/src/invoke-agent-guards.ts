@@ -9,6 +9,7 @@
  *      operator didn't authorise.
  *   3. No self-call — an agent never invokes itself (zero-cost cycle).
  */
+import { policySpendsOwnerKey, type ToolPolicy } from './tool-policy';
 
 /** Maximum agent-chain length, inclusive of the entry-point agent.
  *  2 means "parent + child only". Bump deliberately if you ever want
@@ -147,6 +148,134 @@ export function checkWorkspaceDelegate(
   return { ok: true };
 }
 
+// ── A workspace turn's bounds ────────────────────────────────────────────────
+
+/**
+ * Why a workspace turn's delegated child is not given a tool, or null when it
+ * is. The child runs with the user's own rights, so it gets nothing the
+ * user's own MCP connection outside Admin would not:
+ *
+ *  - `owner-key`: a tool that spends on the brain owner's provider keys
+ *    (policySpendsOwnerKey, the gate's spending narrower's one rule: web
+ *    search, circuit verify, image generation, a further delegation);
+ *  - `egress`: a tool that reaches outside the brain (`outside.egress`:
+ *    web fetch, mail, Telegram, a linked brain's call);
+ *  - `delete`: a tool that deletes an item (its policy's `deletesItem`: an
+ *    app, a file, a canvas, a page), so a delete stays a deliberate step of
+ *    the user's own, as it is for the pages and canvases the specialists'
+ *    groups leave out.
+ *
+ * Read off the builtin's policy; a tool with none (a connector, an outside
+ * tool) is the gate's to judge in the child's scope, as on the user's MCP.
+ * The runtime invoker drops these from the child's tool list (a call to one
+ * is then refused by the loop: not in its allowlist).
+ */
+export type WorkspaceChildDrop = 'owner-key' | 'egress' | 'delete';
+
+export function workspaceChildDrop(
+  policy: ToolPolicy | null | undefined,
+): WorkspaceChildDrop | null {
+  if (!policy) return null;
+  if (policySpendsOwnerKey(policy)) return 'owner-key';
+  if (policy.outside?.egress === true) return 'egress';
+  if (policy.deletesItem === true) return 'delete';
+  return null;
+}
+
+/** At most this many delegations succeed in one workspace turn; the next
+ *  invoke_agent is refused. Two covers the common hand-offs (a diagram and
+ *  a canvas, an app and its data look) and keeps one member message from
+ *  fanning out into many child runs on the owner's keys. */
+export const WORKSPACE_TURN_MAX_DELEGATIONS = 2;
+
+/** A workspace turn's child runs at most this many tool-loop iterations,
+ *  whatever its own memory_config.max_iterations (Admin's clamp is 30).
+ *  Twenty leaves Appsmith's build loop (write, build, read the errors, fix)
+ *  three or four rounds, and Draftsman's and Presenter's draw, look, fix
+ *  loops room, while a stuck child stops well short of the Admin bound. */
+export const WORKSPACE_CHILD_MAX_ITERATIONS = 20;
+
+/** The Admin turn's ceiling on a child's memory_config.max_iterations. */
+export const CHILD_MAX_ITERATIONS = 30;
+
+/** A workspace turn delegates only while its user has at least this many
+ *  of the daily token budget left (MANTLE_MEMBER_DAILY_TOKENS, the member
+ *  turn ledger): about one specialist run. Below it the specialist would
+ *  likely pass the budget mid-run, which the ledger sees only at the
+ *  turn's close. */
+export const WORKSPACE_DELEGATION_TOKEN_FLOOR = 200_000;
+
+/** The child's loop ceiling: its own memory_config.max_iterations (when
+ *  set and positive) clamped to CHILD_MAX_ITERATIONS, and in a workspace
+ *  turn to WORKSPACE_CHILD_MAX_ITERATIONS too; undefined keeps the loop's
+ *  default (which is below both). */
+export function childMaxIterations(
+  requested: unknown,
+  turn: Pick<DelegationTurn, 'workspaceTurn'>,
+): number | undefined {
+  const own =
+    typeof requested === 'number' && Number.isFinite(requested) && requested > 0
+      ? Math.min(CHILD_MAX_ITERATIONS, Math.floor(requested))
+      : undefined;
+  if (own === undefined || !turn.workspaceTurn) return own;
+  return Math.min(own, WORKSPACE_CHILD_MAX_ITERATIONS);
+}
+
+/** The refusal of a workspace turn's delegation past the per-turn count. */
+export const WORKSPACE_DELEGATION_COUNT_ERROR =
+  `this turn has already handed work to a specialist ${WORKSPACE_TURN_MAX_DELEGATIONS} times, ` +
+  `the most a workspace turn may: finish with what you have, and tell the user to ask again ` +
+  `in a new message for the rest.`;
+
+/** The refusal of a workspace turn that names no turn to count on. */
+export const WORKSPACE_DELEGATION_NO_TURN_ERROR =
+  'this delegation names no turn to count it on, so a workspace turn refuses it: do the work ' +
+  'yourself.';
+
+/** The refusal of a workspace turn whose user is near the daily budget. */
+export const WORKSPACE_DELEGATION_BUDGET_ERROR =
+  `the user has less than ${WORKSPACE_DELEGATION_TOKEN_FLOOR} of today's chat tokens left, ` +
+  `too few for a specialist: do the work yourself in a short form, or tell the user it can be ` +
+  `done tomorrow or by an admin.`;
+
+/** Each workspace turn's delegations in flight or done, by the turn's own
+ *  object (the turn's taint, one per turn and shared with its children). */
+const turnDelegations = new WeakMap<object, number>();
+
+/**
+ * Take one of a workspace turn's delegations (WORKSPACE_TURN_MAX_DELEGATIONS)
+ * before the child starts; `releaseWorkspaceDelegation` gives it back when
+ * the child fails, so only successful ones count. Taken before the child
+ * runs, so calls made at once cannot pass the count together. `turnKey` is
+ * the turn's own object; none: refused (fail closed).
+ */
+export function claimWorkspaceDelegation(turnKey: object | undefined): AllowlistCheckResult {
+  if (!turnKey) return { ok: false, reason: WORKSPACE_DELEGATION_NO_TURN_ERROR };
+  const n = turnDelegations.get(turnKey) ?? 0;
+  if (n >= WORKSPACE_TURN_MAX_DELEGATIONS) {
+    return { ok: false, reason: WORKSPACE_DELEGATION_COUNT_ERROR };
+  }
+  turnDelegations.set(turnKey, n + 1);
+  return { ok: true };
+}
+
+/** Give back a delegation claimWorkspaceDelegation took (its child failed). */
+export function releaseWorkspaceDelegation(turnKey: object | undefined): void {
+  if (!turnKey) return;
+  const n = turnDelegations.get(turnKey) ?? 0;
+  if (n > 0) turnDelegations.set(turnKey, n - 1);
+}
+
+/** Whether a workspace turn's user has enough of the daily budget left for
+ *  a delegation: `left` null is no budget (an Admin user, or the budget
+ *  off). */
+export function checkWorkspaceDelegationBudget(left: number | null): AllowlistCheckResult {
+  if (left === null) return { ok: true };
+  return left >= WORKSPACE_DELEGATION_TOKEN_FLOOR
+    ? { ok: true }
+    : { ok: false, reason: WORKSPACE_DELEGATION_BUDGET_ERROR };
+}
+
 /**
  * Verify the parent agent is permitted to delegate to `targetSlug`: the
  * delegation gateway (invoke_agent's handler and the runtime invoker both
@@ -155,15 +284,17 @@ export function checkWorkspaceDelegate(
  * Permission lives on the parent agent's `memory_config.delegate_to`
  * — a list of agent slugs. Missing / empty list = no delegation
  * allowed (fail closed). Self-delegation is always refused even when
- * the slug is in the list. In a workspace turn (`turn`), the target must
- * also be in WORKSPACE_DELEGATE_SLUGS, and the turn must answer a login.
- * Omitting `turn` is the Admin turn's rule (the allowlist alone).
+ * the slug is in the list. In a workspace turn (`turn`, delegationTurnOf),
+ * the target must also be in WORKSPACE_DELEGATE_SLUGS, and the turn must
+ * answer a login. `turn` is required: every caller says which turn it is,
+ * so no caller gets the Admin turn's rule (the allowlist alone) by leaving
+ * it out.
  */
 export function checkDelegationAllowed(
   parentAgentSlug: string,
   targetSlug: string,
   allowlist: readonly string[] | null | undefined,
-  turn?: DelegationTurn,
+  turn: DelegationTurn,
 ): AllowlistCheckResult {
   if (!targetSlug || typeof targetSlug !== 'string') {
     return { ok: false, reason: 'agent_slug is required' };
@@ -176,10 +307,8 @@ export function checkDelegationAllowed(
         `in your own turn, or delegate to a DIFFERENT specialist from your allowlist`,
     };
   }
-  if (turn) {
-    const ws = checkWorkspaceDelegate(targetSlug, turn);
-    if (!ws.ok) return ws;
-  }
+  const ws = checkWorkspaceDelegate(targetSlug, turn);
+  if (!ws.ok) return ws;
   if (!Array.isArray(allowlist) || allowlist.length === 0) {
     return {
       ok: false,

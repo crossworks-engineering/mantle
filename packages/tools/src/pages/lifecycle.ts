@@ -526,6 +526,7 @@ export const page_delete: BuiltinToolDef = {
   usageTier: 4,
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['page'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

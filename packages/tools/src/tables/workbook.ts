@@ -365,6 +365,7 @@ export const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['table'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

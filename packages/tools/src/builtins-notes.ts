@@ -481,6 +481,7 @@ export const note_delete: BuiltinToolDef = {
   slug: 'note_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['note'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

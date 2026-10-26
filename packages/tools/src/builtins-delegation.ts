@@ -7,11 +7,10 @@
 
 import { and, eq } from 'drizzle-orm';
 import { agents, db } from '@mantle/db';
-import { currentWorkspaceScope } from '@mantle/db/viewer';
-import { scopeOutsideAdmin } from './outside-admin';
+import { currentTrace } from '@mantle/tracing';
+import { delegationTurnOf } from './outside-admin';
 import { type BuiltinToolDef, type ToolHandlerContext } from './types';
-import type { DelegationTurn } from './invoke-agent-guards';
-import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
+import { isOwnerSurface, ownerSurfaceLoginId, teamSurfaceTokensLeft } from './surface';
 import { str } from './coerce';
 import { CS } from './client-sourced-rule';
 import { currentToolCaller } from './gate-callers';
@@ -42,21 +41,20 @@ export function childSurface(
 }
 
 /**
- * What the delegation gateway (checkDelegationAllowed) knows of the turn a
- * delegation starts in, read from the turn itself, never from arguments: a
- * WORKSPACE turn when its surface is not the owner's (a team surface, a
- * missing one: fail closed) or its scope does not hold the Admin workspace
- * (any workspace assistant's turn, whatever its surface); and the login its
- * scope answers. An Admin turn (an owner surface in a scope that holds
- * Admin, or unscoped owner work) keeps the allowlist alone. The
- * invoke_agent handler and the runtime invoker both read it here, so the
- * two gates cannot drift.
+ * A workspace turn's user's daily tokens left now: what was left when the
+ * turn started (the team surface's `tokensLeft`, which the runtime reads
+ * from the member turn ledger), less the turn's own model tokens so far and
+ * its children's. Null when the surface carries none: no budget (an Admin
+ * user, or the budget off).
  */
-export async function delegationTurnOf(
-  surface: ToolHandlerContext['surface'],
-): Promise<DelegationTurn> {
-  const workspaceTurn = !isOwnerSurface(surface) || (await scopeOutsideAdmin());
-  return { workspaceTurn, loginId: currentWorkspaceScope()?.loginId ?? null };
+export function workspaceTokensLeft(surface: ToolHandlerContext['surface']): number | null {
+  const atStart = teamSurfaceTokensLeft(surface);
+  if (atStart === null) return null;
+  const t = currentTrace();
+  const spent = t
+    ? t.tokens.in + t.tokens.out + (t.delegatedTokens?.in ?? 0) + (t.delegatedTokens?.out ?? 0)
+    : 0;
+  return atStart - spent;
 }
 
 export const invoke_agent: BuiltinToolDef = {
@@ -101,8 +99,15 @@ export const invoke_agent: BuiltinToolDef = {
     // Lazy imports keep the guard module + bridge out of the cold-
     // start path of every other builtin. They're tiny but the
     // separation lets us test them as pure helpers.
-    const { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed, isTerminalDelegateConfig } =
-      await import('./invoke-agent-guards');
+    const {
+      MAX_AGENT_DEPTH,
+      checkAgentDepth,
+      checkDelegationAllowed,
+      checkWorkspaceDelegationBudget,
+      claimWorkspaceDelegation,
+      isTerminalDelegateConfig,
+      releaseWorkspaceDelegation,
+    } = await import('./invoke-agent-guards');
     const { getAgentInvoker } = await import('./agent-bridge');
 
     if (!ctx.agent) {
@@ -160,8 +165,23 @@ export const invoke_agent: BuiltinToolDef = {
     const depth = checkAgentDepth(ctx.agent.depth, { targetIsTerminal });
     if (!depth.ok) return { ok: false, error: depth.reason };
 
+    // Guardrail 4, a workspace turn only: its user's
+    // daily token budget must hold a specialist run (the turn's own tokens
+    // so far counted), and the turn may hand work on at most
+    // WORKSPACE_TURN_MAX_DELEGATIONS times (counted on the turn's own
+    // object, its taint; a failed child gives its count back).
+    let turnKey: object | undefined;
+    if (turn.workspaceTurn) {
+      const budget = checkWorkspaceDelegationBudget(workspaceTokensLeft(ctx.surface));
+      if (!budget.ok) return { ok: false, error: budget.reason };
+      const claim = claimWorkspaceDelegation(ctx.agent.taint);
+      if (!claim.ok) return { ok: false, error: claim.reason };
+      turnKey = ctx.agent.taint;
+    }
+
     const invoker = getAgentInvoker();
     if (!invoker) {
+      releaseWorkspaceDelegation(turnKey);
       return {
         ok: false,
         error:
@@ -216,8 +236,12 @@ export const invoke_agent: BuiltinToolDef = {
       ...(surface ? { surface } : {}),
       // One taint for the whole delegation tree (plan N18).
       ...(ctx.agent.taint ? { taint: ctx.agent.taint } : {}),
+    }).catch((err: unknown) => {
+      releaseWorkspaceDelegation(turnKey);
+      throw err;
     });
     if (!result.ok) {
+      releaseWorkspaceDelegation(turnKey);
       return { ok: false, error: `child agent failed: ${result.error}` };
     }
     ctx.step?.setMeta({

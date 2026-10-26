@@ -37,6 +37,7 @@ import {
   runWithImageFallback,
 } from '@mantle/runtime/assistant';
 import { log } from '@mantle/tracing';
+import type { ToolSurface } from '@mantle/tools/surface';
 import { audioTagInstructionsFor, transcribeInboundVoice } from './voice';
 import { buildResponderInput } from './responder-input';
 import { deliverReply } from './deliver';
@@ -127,6 +128,26 @@ export async function runTelegramTurn(args: {
   // delivery below is keyed off the chat row, never the surface kind.
   const workspaceTurn = args.textOnly === true;
   const privateReads = workspaceTurn && isTeamPrivateReadsEnabled(prefs);
+  // Surface lets worker-delegation tools (synthesize_speech,
+  // etc.) target the right Telegram chat. The replyTo is the
+  // message that triggered this turn so the bot's outbound
+  // threads under it. A workspace turn is a team surface (M1): not
+  // the owner's, so owner-only and send tools refuse there. The app
+  // tools (`loginTurns`) do run there, for the chat's login in its
+  // workspace, when the owner grants the assistant `apps`: the turn's
+  // scope and the database decide, as on the login's web chat and MCP
+  // connection (they spend nothing on the owner's keys).
+  // The team surface carries the chat (W7d+e), so a run planned here
+  // reports back to it; no send tool reads it.
+  const surface: ToolSurface = workspaceTurn
+    ? { kind: 'team', loginId, privateReads, originTelegramChatId: row.telegramChatId }
+    : {
+        kind: 'telegram',
+        telegramChatId: row.telegramChatId,
+        accountId: row.accountId,
+        loginId,
+        ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
+      };
   const assembled = await assembleResponderTurn({
     ownerId,
     agent,
@@ -135,6 +156,7 @@ export async function runTelegramTurn(args: {
     loginId,
     prefs,
     logPrefix: '[agent]',
+    surface,
     systemPromptSuffix: audioTagInstructions,
     ...(workspaceTurn
       ? {
@@ -264,22 +286,7 @@ export async function runTelegramTurn(args: {
           });
           return m;
         }),
-      // Surface lets worker-delegation tools (synthesize_speech,
-      // etc.) target the right Telegram chat. The replyTo is the
-      // message that triggered this turn so the bot's outbound
-      // threads under it. A workspace turn is a team surface (M1): not
-      // the owner's, so owner-only and send tools refuse there.
-      // The team surface carries the chat (W7d+e), so a run planned here
-      // reports back to it; no send tool reads it.
-      surface: workspaceTurn
-        ? { kind: 'team', loginId, privateReads, originTelegramChatId: row.telegramChatId }
-        : {
-            kind: 'telegram',
-            telegramChatId: row.telegramChatId,
-            accountId: row.accountId,
-            loginId,
-            ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
-          },
+      surface,
     });
 
   // Run via the shared image-fallback wrapper: if the responder errors

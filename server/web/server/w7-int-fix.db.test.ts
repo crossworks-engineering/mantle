@@ -435,6 +435,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
         ownerLoginId: login,
         prefs,
         logPrefix: '[w7-int]',
+        surface: { kind: 'web', loginId: login },
       });
       return `${turn.effectiveSystemPrompt}\n${turn.journalBlock}`;
     };

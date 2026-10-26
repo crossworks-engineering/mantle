@@ -258,12 +258,14 @@ export async function runsResumeTurnImpl(
         loginId: runLoginId,
         prefs,
         logPrefix: '[runs]',
-        // A workspace run: no identity block, no owner thinking budget and
-        // no private reads, as runTeamTurn; delegation to the workspace
-        // delegates only (the assembly and the gateway read the scope), and
-        // only for a run planned by a login (none: no delegation at all).
+        surface,
+        // A workspace run: no identity block, no owner thinking budget, no
+        // delegation and no private reads. Unlike runTeamTurn, a run's turn
+        // settles no member ledger slot yet, so a delegated child's tokens
+        // would pass the user's daily budget unseen: no delegation until
+        // that settle exists (as a workspace Telegram turn).
         withThinking: !workspaceTurn,
-        allowDelegation: !workspaceTurn || runLoginId !== null,
+        allowDelegation: !workspaceTurn,
         ...(workspaceTurn ? { includeIdentity: false, excludePrivateCorpus: true } : {}),
       });
 

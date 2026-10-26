@@ -159,6 +159,13 @@ type ToolPolicyFields = Readonly<{
    *  builtin in step 1: the gate gets none today. */
   makesItems?: boolean;
   outside?: ToolOutside;
+  /** It deletes an item (an app, a page, a file, a folder, a canvas): a
+   *  workspace turn's delegated child is not given it (invoke-agent-guards
+   *  workspaceChildDrop), so a delete stays the user's own deliberate step.
+   *  Every builtin whose matrix action is `delete` says so, and only those
+   *  (tool-matrix.test.ts pins the two agree: the matrix itself is intent
+   *  only, read by no product code). */
+  deletesItem?: true;
   /** A create that lands in a folder named by its path (an ltree path, e.g.
    *  `parent_path`): the argument. Before a call is queued for approval the
    *  folder must resolve in the queuing turn's scope (A5 step 6a, carried
@@ -250,6 +257,18 @@ export function toGatePolicy(tp: ToolPolicy): GatePolicy {
       ...(typeof s === 'object' && s.systemWhole ? { systemWhole: true } : {}),
     }),
   });
+}
+
+/** Whether a policy's tool spends on the brain owner's provider keys
+ *  (`spends: 'ownerKey'`), which only a scope that holds Admin may. The one
+ *  reading of that rule: the gate's spending narrower (an MCP connection
+ *  outside Admin) and a workspace turn's delegated child
+ *  (invoke-agent-guards workspaceChildDrop) both ask it. Takes a builtin's
+ *  policy or the gate's. */
+export function policySpendsOwnerKey(
+  policy: Readonly<{ spends?: string }> | null | undefined,
+): boolean {
+  return policy?.spends === 'ownerKey';
 }
 
 /** Whether a policy's tool is adminOnly: scope `admin`, or an area scope

@@ -29,7 +29,8 @@
 import type { Agent } from '@mantle/db';
 // The guard's leaf module: no tool registry loads with the assembly.
 import { turnDelegates } from '@mantle/tools/invoke-agent-guards';
-import { scopeOutsideAdmin } from '@mantle/tools/outside-admin';
+import { delegationTurnOf } from '@mantle/tools/outside-admin';
+import type { ToolSurface } from '@mantle/tools/surface';
 import {
   delegationHintLine,
   loadDelegates,
@@ -128,13 +129,20 @@ export type AssembleResponderTurnOptions = {
   /** Resolve the per-user adaptive thinking budget (web + Telegram). Team
    *  turns pass false — no owner thinking budget for an external member. */
   withThinking?: boolean;
-  /** Honour memory_config.delegate_to (default true). A workspace turn (a
-   *  scope that does not hold Admin) gets the workspace delegates of it only
-   *  (turnDelegates, WORKSPACE_DELEGATE_SLUGS), whatever the caller passes:
-   *  the same rule the delegation gateway enforces at the call. False: no
-   *  delegation at all (a Telegram workspace turn, whose member turn ledger
-   *  slot has no tokens settled yet). */
+  /** Honour memory_config.delegate_to (default true). A workspace turn
+   *  (delegationTurnOf of `surface`, in this scope) gets the workspace
+   *  delegates of it only (turnDelegates, WORKSPACE_DELEGATE_SLUGS),
+   *  whatever the caller passes: the same rule the delegation gateway
+   *  enforces at the call. False: no delegation at all (a Telegram
+   *  workspace turn and a workspace run, whose member turn ledger slot has
+   *  no tokens settled yet). */
   allowDelegation?: boolean;
+  /** The surface the turn's tool loop runs on (its loop's `surface`).
+   *  Required, so every caller says it: with the turn's scope it decides
+   *  whether this is a workspace turn (delegationTurnOf, the gateway's one
+   *  definition). A missing surface reads as a workspace turn (fail
+   *  closed). */
+  surface: ToolSurface | undefined;
   /** The user's message for this turn (plus the previous user message as
    *  context). Enables the decider's `delegation_hint` use: one typed
    *  decision picks which delegate (or none) the message looks like, and in
@@ -336,13 +344,14 @@ async function assembleResponderTurnAtLevel(
   // a hint, never a route: the tool loop's allowlist is what delegation is
   // checked against. Best-effort like the blocks above.
   //
-  // A workspace turn (its scope does not hold the Admin workspace) is shown
-  // the workspace delegates of its list only (turnDelegates): the rule the
-  // delegation gateway (invoke_agent) enforces at the call, read here from
-  // the same scope, so the enum, the roster and the hint never offer what
-  // the call refuses.
+  // A workspace turn (delegationTurnOf: its surface is not the owner's, or
+  // its scope does not hold the Admin workspace) is shown the workspace
+  // delegates of its list only (turnDelegates): the rule the delegation
+  // gateway (invoke_agent) enforces at the call, read here by the same
+  // function from the same scope and surface, so the enum, the roster and
+  // the hint never offer what the call refuses.
   const listed = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
-  const workspaceTurn = listed.length > 0 && (await scopeOutsideAdmin());
+  const workspaceTurn = listed.length > 0 && (await delegationTurnOf(opts.surface)).workspaceTurn;
   const delegateTo = turnDelegates(listed, { workspaceTurn });
   let delegationHint: DelegationHint | null = null;
   let delegationHintText: string | null = null;

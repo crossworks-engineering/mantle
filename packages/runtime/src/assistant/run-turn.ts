@@ -413,6 +413,8 @@ export async function runAssistantTurn(
       ownerLoginId: options?.loginId ?? null,
       prefs,
       logPrefix: '[assistant]',
+      // The loop's surface below.
+      surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
       volatileExtras: [locationContextLine, timezoneSwitchNote],
       heartbeatSurface: { kind: 'web' },
       // For the decider's delegation hint: this message + the previous user

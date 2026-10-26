@@ -301,6 +301,9 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // none.
   'surface.ts': [
     "return surface?.kind === 'team' && typeof surface.loginId === 'string' && surface.loginId !== ''",
+    // The budget a workspace turn's user had left:
+    // only a team surface carries it.
+    "return surface?.kind === 'team' && typeof surface.tokensLeft === 'number'",
   ],
 };
 

@@ -355,6 +355,7 @@ const formula_delete: BuiltinToolDef = {
   slug: 'formula_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['formula'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

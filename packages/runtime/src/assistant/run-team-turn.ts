@@ -68,6 +68,8 @@ import {
   workspaceAssistantFor,
   type ThreadMessage,
   settleMemberTurn,
+  memberTokensLeft,
+  memberDailyLimits,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
 import { durableAttachmentsFor } from './inline-images';
@@ -325,6 +327,12 @@ export async function runTeamTurn(
   }
 }
 
+/** Midnight UTC today: the member daily limits' day. */
+function startOfUtcDay(): Date {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
 async function runTeamTurnSteps(
   ownerId: string,
   trimmed: string,
@@ -343,6 +351,24 @@ async function runTeamTurnSteps(
   if (!credential) {
     throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
   }
+
+  // A turn that claimed a ledger slot (a login that is not an Admin user):
+  // its daily token budget left now, read here, before the turn scope (the
+  // narrow route does not read the ledger). The team surface carries it to
+  // the delegation gateway, which counts the turn's own tokens on top.
+  const tokensLeft = options.ledgerTurnId
+    ? await memberTokensLeft({
+        ownerId,
+        loginId,
+        since: startOfUtcDay(),
+        limits: memberDailyLimits(),
+        // A failed read fails closed: nothing left, so the turn answers
+        // but delegates nothing.
+      }).catch((e: unknown) => {
+        log('team-turn').error('could not read the daily token budget left:', e);
+        return 0;
+      })
+    : null;
 
   // Everything below runs in the assistant's workspace's turn scope for this login
   // (withAgentViewer): the assistant reads only what row security shows that
@@ -455,6 +481,8 @@ async function runTeamTurnSteps(
           agent,
           prefs,
           logPrefix: '[team-turn]',
+          // The team surface the loop runs on (a workspace turn).
+          surface: { kind: 'team', loginId },
           includeIdentity: false,
           volatileExtras: [memberLine],
           withThinking: false,
@@ -550,6 +578,7 @@ async function runTeamTurnSteps(
                 contactName: options.contactName,
                 privateReads,
                 inboundMessageId: inbound.id,
+                ...(tokensLeft !== null ? { tokensLeft } : {}),
               },
               abortSignal: abortController?.signal ?? null,
             });

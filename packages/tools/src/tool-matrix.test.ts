@@ -121,6 +121,16 @@ describe('the matrix declarations', () => {
     }
   });
 
+  it('a builtin whose action is delete says `deletesItem`, and only those (a workspace turn’s child is not given them)', () => {
+    const byMatrix = BUILTIN_TOOLS.filter((d) => {
+      const m = d.policy.matrix;
+      return !!m && 'action' in m && m.action === 'delete';
+    }).map((d) => d.slug);
+    const byField = BUILTIN_TOOLS.filter((d) => d.policy.deletesItem === true).map((d) => d.slug);
+    expect(byField.sort()).toEqual(byMatrix.sort());
+    expect(byField).toContain('app_delete');
+  });
+
   it('no product code reads it: the gate never asks it (not a pre-check)', () => {
     // A read of a policy's matrix field: `.matrix` after a name, a
     // subscript (`['matrix']`), an `in` test, or a destructuring (`{ matrix }`

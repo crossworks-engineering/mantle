@@ -322,15 +322,34 @@ A folder is an item with a home and grants like any other.
   identity, Journal, persona notes or working notes in its prompt, the
   owner's mail and Journal tools dropped unless the private-reads switch
   is on, and its Admin-only groups dropped as in any turn outside Admin.
-  Its own delegation follows the same list, so Appsmith's hand-off to
-  the Toolsmith is refused in a workspace turn. Its trace is the usual
-  `child_agent` trace with `workspace_delegation`, `surface: team` and the
-  user's login; its tokens count on the user's turn slot (the daily token
-  budget). An upgrade grants the `delegation` group and the three
-  delegates to each such assistant once (`workspaceDelegationGranted`); an
-  owner's removal sticks. The web chat and a workspace run delegate; a
-  workspace's Telegram chat does not yet (its turn slot has no tokens
-  settled, so a child's spend would pass the budget unseen).
+  It gets nothing the user's own MCP connection outside Admin would not
+  (`workspaceChildDrop`): no tool that spends on the owner's provider keys
+  (`spends: 'ownerKey'`, the one predicate the MCP spending narrower reads:
+  web search, circuit verify, image generation, a further delegation), no
+  tool that reaches outside the brain (`outside.egress`: web fetch, mail,
+  Telegram), and no item delete (an app, a file, a canvas: a delete stays
+  the user's own deliberate step, as for pages). So Appsmith's hand-off to
+  the Toolsmith does not exist in a workspace turn. Three bounds hold the
+  cost: at most `WORKSPACE_TURN_MAX_DELEGATIONS` (2) successful delegations
+  per turn, the child's loop clamped to `WORKSPACE_CHILD_MAX_ITERATIONS`
+  (20) iterations, and no delegation while the user has less than
+  `WORKSPACE_DELEGATION_TOKEN_FLOOR` (200,000) of the daily token budget
+  left (the member turn ledger read when the turn starts, less the turn's
+  own tokens so far). Its trace is the usual `child_agent` trace with
+  `workspace_delegation`, `surface: team` and the user's login; its tokens
+  count on the user's turn slot (the daily token budget). An upgrade
+  grants the `delegation` group and the three delegates to each such
+  assistant once (`workspaceDelegationGranted`); an owner's removal sticks,
+  and a specialist's reset or adopt rewires the Admin assistant only. Only
+  the web chat delegates: a workspace run and a workspace's Telegram chat
+  do not yet, since their turns settle no ledger slot, so a child's spend
+  would pass the budget unseen.
+- **App tools on a workspace turn.** The app tools (`loginTurns`) run on
+  a user's workspace turn, its web chat, its run and its Telegram chat
+  alike, when the owner grants that assistant `apps` (or through
+  Appsmith): a team surface naming the very login the turn scope answers,
+  with that user's rights, as on the user's MCP connection. They spend
+  nothing on the owner's keys, so no ledger settle is needed for them.
 - **With no user** (a heartbeat, a scheduled run) an assistant only reads,
   except the Admin assistant, which acts for the owner.
 - **Each user reads only their own chats.** Every user has their own thread

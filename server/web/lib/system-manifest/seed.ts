@@ -36,6 +36,7 @@ import {
 } from '@mantle/db';
 import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
 import { computeNextFireAt } from '@mantle/runtime/heartbeats';
+import { agentWorkspaceKind } from '@mantle/runtime/agent';
 import { createAiWorker, updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import {
   MANIFEST_AGENTS,
@@ -411,18 +412,33 @@ export async function addAgentDelegates(agentId: string, add: readonly string[])
 
 /**
  * Wire each in-scope delegate specialist into the delegate_to of every enabled
- * entry-point agent (responder/assistant) — additive, slug-agnostic (so it
- * works whether the persona is the manifest 'assistant' or an operator persona
- * like 'telegram-default'). Only adds when missing.
+ * entry-point agent (responder/assistant) of the Admin workspace or of no
+ * workspace: additive, slug-agnostic (so it works whether the persona is the
+ * manifest 'assistant' or an operator persona like 'telegram-default'). Only
+ * adds when missing. The assistant of a workspace other than Admin is never
+ * reached here: its delegates are granted once by
+ * reconcileWorkspaceDelegation (the `workspaceDelegationGranted` marker), so
+ * a delegate its owner removed stays removed through a specialist's reset or
+ * adopt, which call this.
  */
 async function wireDelegation(ownerId: string, delegateSlugs: string[]): Promise<void> {
   if (delegateSlugs.length === 0) return;
   const entryRows = await db
-    .select({ id: agents.id, role: agents.role, memoryConfig: agents.memoryConfig })
+    .select({
+      id: agents.id,
+      ownerId: agents.ownerId,
+      role: agents.role,
+      memoryConfig: agents.memoryConfig,
+      workspaceId: agents.workspaceId,
+    })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
   const entries = entryRows.filter((r) => r.role === 'responder' || r.role === 'assistant');
   for (const entry of entries) {
+    // The agent's workspace kind, by the runtime's one reading of it; an
+    // archived or missing workspace (a throw there) is skipped too.
+    const kind = await agentWorkspaceKind(entry).catch(() => 'workspace' as const);
+    if (kind === 'workspace') continue;
     const mc = (entry.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
     const current = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
     const missing = delegateSlugs.filter((s) => !current.includes(s));

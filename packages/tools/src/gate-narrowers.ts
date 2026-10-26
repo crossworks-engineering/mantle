@@ -28,6 +28,7 @@ import { registerPreRunChecks } from './gate-prerun';
 import { registerToolCallAudit } from './call-audit';
 import { connectorScopeRefusal, type ConnectorScopeFacts } from './connector-scope';
 import { OWNER_ONLY_ERROR } from './surface';
+import { policySpendsOwnerKey } from './tool-policy';
 // The `tool` source (a builtin called through dispatch, A5 step 3a) and the
 // runtime rows' sources, registered with the narrowers in every process.
 import './tool-gate-policy';
@@ -157,9 +158,10 @@ const memberAppNarrower: Narrower = (caller, policy, ref) => {
 /** Spending on the owner's keys, on an MCP connection: only a scope that
  *  holds Admin (an unscoped caller keeps its own rules). A workspace
  *  assistant's turn keeps its own rules (the member turn ledger), as today:
- *  it is not narrowed here. */
+ *  it is not narrowed here; its delegated child is not given such a tool at
+ *  all, by the same predicate (policySpendsOwnerKey, workspaceChildDrop). */
 const spendingNarrower: Narrower = (caller, policy) =>
-  mcpConnection(caller) && policy.spends === 'ownerKey' && caller.admin && !caller.admin.holdsAdmin
+  mcpConnection(caller) && policySpendsOwnerKey(policy) && caller.admin && !caller.admin.holdsAdmin
     ? OWNER_KEYS_ERROR
     : null;
 

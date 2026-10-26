@@ -26,10 +26,25 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   landing by the home rule, no owner identity, Journal or persona notes,
   the owner's mail and Journal tools dropped unless the private-reads
   switch is on, its Admin-only groups dropped. Its trace says
-  `workspace_delegation`, `surface: team` and the user's login. The web
-  workspace chat and a workspace run planned by a user delegate; a
-  workspace's Telegram chat does not yet (its member turn slot gets no
-  tokens settled).
+  `workspace_delegation`, `surface: team` and the user's login. Only the
+  web workspace chat delegates; a workspace run and a workspace's
+  Telegram chat do not yet (their turns settle no member ledger slot).
+- **Security (fix round 1):** a workspace turn's child gets no tool that
+  spends on the owner's keys (the spending narrower's own predicate,
+  `policySpendsOwnerKey`), none that reaches outside the brain
+  (`outside.egress`) and no item delete (`workspaceChildDrop`); a call to
+  one is refused as off its allowlist. Three bounds, pinned:
+  `WORKSPACE_TURN_MAX_DELEGATIONS` 2 per turn,
+  `WORKSPACE_CHILD_MAX_ITERATIONS` 20 for the child's loop, and
+  `WORKSPACE_DELEGATION_TOKEN_FLOOR` 200,000 tokens of the daily budget
+  left (the ledger read at the turn's start, `memberTokensLeft`, carried on
+  the team surface's `tokensLeft`). `checkDelegationAllowed` takes the turn
+  as a required argument and the assembly reads `delegationTurnOf(surface)`,
+  the one definition of a workspace turn. A specialist's reset or adopt
+  (`wireDelegation`) no longer reaches a workspace assistant, so an owner's
+  removal of a delegate sticks there too. The app tools run on a workspace
+  Telegram turn as on its web chat when the owner grants `apps` (they spend
+  nothing on the owner's keys).
 - **Feature:** the app tools (`app_*`, the 23 owner-only ones) run on a
   user's workspace turn too (`loginTurns`: a team surface naming the
   login its turn scope answers, `facts.loginTurn` in the gate), with that

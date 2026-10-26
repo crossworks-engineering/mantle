@@ -97,10 +97,11 @@ const SITES: Record<string, Site> = {
     calls: 1,
     // A workspace assistant's chat is a team surface (W7d fix round 1, M1),
     // carrying its chat for a run's report (W7d+e); the Admin assistant's
-    // and a helper's keep the telegram surface.
+    // and a helper's keep the telegram surface. Built before the assembly,
+    // which reads it too (the delegation gateway's turn), and the call.
     surface:
-      /surface: workspaceTurn\s*\? \{ kind: 'team', loginId, privateReads, originTelegramChatId: row\.telegramChatId \}\s*: \{\s*kind: 'telegram',/,
-    scope: 'call',
+      /const surface: ToolSurface = workspaceTurn\s*\? \{ kind: 'team', loginId, privateReads, originTelegramChatId: row\.telegramChatId \}\s*: \{\s*kind: 'telegram',[\s\S]*\n\s*surface,\n/,
+    scope: 'file',
     why: "a Telegram chat: its paired user's (a workspace assistant's on a team surface)",
   },
   'packages/runtime/src/heartbeats/fire.ts': {

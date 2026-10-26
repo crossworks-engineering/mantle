@@ -994,6 +994,7 @@ const app_delete: BuiltinToolDef = {
   slug: 'app_delete',
   policy: {
     matrix: { action: 'delete', param: 'id', kinds: ['app'] },
+    deletesItem: true,
     effect: 'write',
     spends: 'none',
     scope: 'any',

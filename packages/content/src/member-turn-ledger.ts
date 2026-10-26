@@ -22,7 +22,7 @@
  * never reads the traces: the narrow login writes those, not the ledger.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
-import { loginDefinerCall, systemDb, traces } from '@mantle/db';
+import { loginDefinerCall, memberTurnLedger, systemDb, traces } from '@mantle/db';
 import { envNum } from '@mantle/config';
 
 export type MemberTurnLimits = {
@@ -140,4 +140,33 @@ export async function settleMemberTurn(
     sql`select mantle_member_turn_settle(${turnId}::text, ${n}::bigint) as hit`,
   );
   return rows[0]?.hit === true;
+}
+
+/**
+ * A login's daily token budget left: `limits.dailyTokens` less the tokens
+ * its ledger slots since `since` hold, the very sum mantle_member_turn_claim
+ * reads (0327). Null when there is no budget (`dailyTokens` 0). Read on the
+ * system pool OUTSIDE a turn scope (a turn's start): the runtime role reads
+ * the ledger, the narrow route does not. A workspace turn hands it to its
+ * delegation gateway (the team surface's `tokensLeft`).
+ */
+export async function memberTokensLeft(args: {
+  ownerId: string;
+  loginId: string;
+  since: Date;
+  limits: MemberTurnLimits;
+}): Promise<number | null> {
+  const { ownerId, loginId, since, limits } = args;
+  if (!(limits.dailyTokens > 0)) return null;
+  const [row] = await systemDb
+    .select({ n: sql<string>`coalesce(sum(${memberTurnLedger.tokens}), 0)::bigint` })
+    .from(memberTurnLedger)
+    .where(
+      and(
+        eq(memberTurnLedger.loginId, loginId),
+        eq(memberTurnLedger.ownerId, ownerId),
+        gte(memberTurnLedger.createdAt, since),
+      ),
+    );
+  return limits.dailyTokens - Number(row?.n ?? 0);
 }
