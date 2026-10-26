@@ -11,7 +11,9 @@
  *    into `output`, and becomes the poster at the rev it shows; without a
  *    renderer the save still lands and says nobody looked;
  *  - the export writes the template's static SVG (any other canvas a PNG)
- *    and hands back the embed line;
+ *    and hands back the embed line; with no folder named it goes through
+ *    the export gateway (saveExport), stamped with the canvas, and
+ *    `overwrite` asks it to replace this canvas's earlier export;
  *  - the delete answers both arms.
  *
  * The content and file layers are stubbed; the template package is real.
@@ -29,6 +31,7 @@ const h = vi.hoisted(() => ({
   deletePresent: vi.fn(),
   setPresentPoster: vi.fn(async () => true),
   upsertFile: vi.fn(),
+  saveExport: vi.fn(),
   listPresents: vi.fn(async () => [] as unknown[]),
   listPresentRevisions: vi.fn(async () => null as unknown),
   getPresentRevisionSource: vi.fn(async () => null as string | null),
@@ -56,6 +59,7 @@ vi.mock('@mantle/content/tree', () => ({ guardNewFileIn: vi.fn(async () => undef
 vi.mock('@mantle/files', () => ({
   ensureFolderPath: vi.fn(async ({ path }: { path: string }) => path),
   upsertFile: h.upsertFile,
+  saveExport: h.saveExport,
   listFiles: h.listFiles,
   sanitizeFilename: (n: string) => n.toLowerCase(),
 }));
@@ -270,14 +274,29 @@ describe('present_export', () => {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10" role="img" aria-labelledby="t"><title id="t">x</title><desc>A box.</desc><rect width="10" height="10"/></svg>';
     withRenderer(svg);
-    h.upsertFile.mockResolvedValue({ id: 'f1', filename: 'ingest.svg' });
+    h.saveExport.mockResolvedValue({
+      file: { id: 'f1', filename: 'ingest.svg', parentPath: 'files' },
+      autoFiled: false,
+      landedIn: { id: 'w1', name: 'your private workspace (only you)' },
+    });
     const out = await tool('present_export').handler({ id: ID, filename: 'ingest.svg' }, ctx);
     expect(out.ok).toBe(true);
     expect(renders[0]!.exportSvg).toBe(true);
-    const file = h.upsertFile.mock.calls[0]![0] as { filename: string; bytes: Buffer };
+    const file = h.saveExport.mock.calls[0]![0] as {
+      filename: string;
+      bytes: Buffer;
+      data: unknown;
+      replaceEarlier: boolean;
+    };
     expect(file.filename).toBe('ingest.svg');
     expect(file.bytes.toString('utf8')).toBe(svg);
-    expect((out as { output: { embed: string } }).output.embed).toBe('![Pumps](media:f1)');
+    expect(file.data).toEqual({ exportOf: ID });
+    expect(file.replaceEarlier).toBe(false);
+    expect(h.upsertFile).not.toHaveBeenCalled();
+    const output = (out as { output: Record<string, unknown> }).output;
+    expect(output.embed).toBe('![Pumps](media:f1)');
+    expect(output.parent_path).toBe('files');
+    expect(output.landedIn).toEqual({ id: 'w1', name: 'your private workspace (only you)' });
     // The export never stamps the poster: it may run for a reader.
     expect(h.setPresentPoster).not.toHaveBeenCalled();
   });
@@ -317,14 +336,39 @@ describe('present_export', () => {
       expect(out.ok, bad).toBe(false);
     }
     expect(h.upsertFile).not.toHaveBeenCalled();
+    expect(h.saveExport).not.toHaveBeenCalled();
   });
 
-  it('a name clash asks for overwrite instead of replacing the file', async () => {
+  it('with no folder named, overwrite asks the gateway to replace the earlier export', async () => {
+    h.getPresent.mockResolvedValue(detail(CANVAS));
+    withRenderer();
+    h.saveExport.mockResolvedValue({
+      file: { id: 'f3', filename: 'pumps.png', parentPath: 'files.auto_filed.exports.2026_10' },
+      autoFiled: true,
+      landedIn: null,
+    });
+    const out = await tool('present_export').handler(
+      { id: ID, filename: 'pumps.png', overwrite: true },
+      ctx,
+    );
+    expect(out.ok, JSON.stringify(out)).toBe(true);
+    expect(h.saveExport.mock.calls[0]![0]).toMatchObject({
+      filename: 'pumps.png',
+      data: { exportOf: ID },
+      replaceEarlier: true,
+    });
+    expect((out as { output: Record<string, unknown> }).output.landedIn).toBeUndefined();
+  });
+
+  it('a name clash in a named folder asks for overwrite instead of replacing the file', async () => {
     h.getPresent.mockResolvedValue(detail(CANVAS));
     withRenderer();
     const { ConflictError } = await import('@mantle/std');
     h.upsertFile.mockRejectedValue(new ConflictError('exists'));
-    const out = await tool('present_export').handler({ id: ID, filename: 'pumps.png' }, ctx);
+    const out = await tool('present_export').handler(
+      { id: ID, filename: 'pumps.png', parent_path: 'files.diagrams' },
+      ctx,
+    );
     expect(out.ok).toBe(false);
     expect((out as { error: string }).error).toContain('overwrite: true');
     expect((h.upsertFile.mock.calls[0]![0] as { overwrite: boolean }).overwrite).toBe(false);
@@ -333,11 +377,15 @@ describe('present_export', () => {
   it('exports any other canvas as a PNG at twice the pixels', async () => {
     h.getPresent.mockResolvedValue(detail(CANVAS));
     withRenderer();
-    h.upsertFile.mockResolvedValue({ id: 'f2', filename: 'pumps.png' });
+    h.saveExport.mockResolvedValue({
+      file: { id: 'f2', filename: 'pumps.png', parentPath: 'files' },
+      autoFiled: false,
+      landedIn: null,
+    });
     const out = await tool('present_export').handler({ id: ID }, ctx);
     expect(out.ok).toBe(true);
     expect(renders[0]!.scale).toBe(2);
-    expect((h.upsertFile.mock.calls[0]![0] as { filename: string }).filename).toBe('pumps.png');
+    expect((h.saveExport.mock.calls[0]![0] as { filename: string }).filename).toBe('pumps.png');
   });
 
   it('exports nothing without a renderer', async () => {
@@ -345,6 +393,7 @@ describe('present_export', () => {
     const out = await tool('present_export').handler({ id: ID }, ctx);
     expect(out.ok).toBe(false);
     expect(h.upsertFile).not.toHaveBeenCalled();
+    expect(h.saveExport).not.toHaveBeenCalled();
   });
 });
 
@@ -367,10 +416,14 @@ describe('a pid drawing set', () => {
     expect(drawn.ok).toBe(true);
     if (!drawn.ok) return;
     withRenderer(drawn.svg);
-    h.upsertFile.mockResolvedValue({ id: 'f1', filename: 'circuit.svg' });
+    h.saveExport.mockResolvedValue({
+      file: { id: 'f1', filename: 'circuit.svg', parentPath: 'files' },
+      autoFiled: false,
+      landedIn: null,
+    });
     const out = await tool('present_export').handler({ id: ID, filename: 'circuit.svg' }, ctx);
     expect(out.ok, JSON.stringify(out)).toBe(true);
-    const file = h.upsertFile.mock.calls[0]![0] as { bytes: Buffer };
+    const file = h.saveExport.mock.calls[0]![0] as { bytes: Buffer };
     const svg = file.bytes.toString('utf8');
     expect(svg.match(/<svg x="0" y=/g)).toHaveLength(3);
     expect(svg).toContain('SEE PAGE 2: PID-1001');
@@ -567,23 +620,18 @@ describe('the reads and the restore', () => {
     expect(h.savePresentSource).toHaveBeenCalledTimes(1);
   });
 
-  it('present_export replaces only an earlier export of the same canvas', async () => {
+  it('present_export in a named folder replaces only an earlier export of the same canvas', async () => {
     h.getPresent.mockResolvedValue(detail(CANVAS));
     withRenderer();
     h.listFiles.mockResolvedValue([{ id: 'f9', filename: 'pumps.png' }]);
     h.fileData = { exportOf: 'another-canvas' };
-    const refused = await tool('present_export').handler(
-      { id: ID, filename: 'pumps.png', overwrite: true },
-      ctx,
-    );
+    const named = { id: ID, filename: 'pumps.png', overwrite: true, parent_path: 'files.diagrams' };
+    const refused = await tool('present_export').handler(named, ctx);
     expect((refused as { error: string }).error).toContain('not an export of this canvas');
     expect(h.upsertFile).not.toHaveBeenCalled();
     h.fileData = { exportOf: ID };
     h.upsertFile.mockResolvedValue({ id: 'f9', filename: 'pumps.png' });
-    const ok = await tool('present_export').handler(
-      { id: ID, filename: 'pumps.png', overwrite: true },
-      ctx,
-    );
+    const ok = await tool('present_export').handler(named, ctx);
     expect(ok.ok).toBe(true);
     expect(h.upsertFile.mock.calls[0]![0]).toMatchObject({
       overwrite: true,

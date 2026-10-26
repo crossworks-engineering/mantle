@@ -110,10 +110,12 @@ seen:
    (`@mantle/diagram-templates/browser` in `/canvas-runtime/`), so the file
    is its data and a few lines.
 3. `present_export(id, filename)` writes the canvas's static SVG
-   (`window.diagram.exportSvg()`, checked by `checkStaticSvg`) into
-   `files/diagrams` and returns the `![title](media:<file id>)` line.
-   Re-exporting with the same filename and `overwrite: true` keeps the
-   file id, so every page,
+   (`window.diagram.exportSvg()`, checked by `checkStaticSvg`) where every
+   export goes (`saveExport`: Auto-filed / Exports when the caller may
+   change it, else the top of Files; `parent_path` names another folder)
+   and returns the `![title](media:<file id>)` line and `landedIn`.
+   Re-exporting with the same filename and `overwrite: true` writes over
+   that earlier export wherever it is and keeps the file id, so every page,
    print, PDF, Word export, email and share that embeds it updates.
 4. The page holds a `diagram` spec block naming the canvas and the embed
    line under it. A change is `present_update(id, data)`, then the export

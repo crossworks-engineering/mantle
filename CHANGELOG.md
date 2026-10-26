@@ -6,27 +6,46 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: Present is a workspace content kind
 
-- **Feature:** every workspace's assistant reads and writes Present
-  canvases where its user may, as it does pages and tables: the persona
-  holds `present` beside `present-read`, and the boot reconcile adds both
-  groups to the assistant of every workspace (also one copied before
-  Present), add-only, never an Admin-only group, never a manifest agent with
-  its own entry (`reconcileAssistantContentKinds`,
-  `ASSISTANT_CONTENT_KIND_GROUPS`). Deleting a canvas stays the deliberate
-  `present-admin` group, on no assistant, as `page-admin` is; `circuits`
-  (it spends) stays with the specialists. The routing skill lets the
-  assistant make a small change to a canvas itself; a new one still goes
-  to Presenter when it is there. No migration: the grants are data the
-  reconcile writes.
+- **Feature:** every enabled workspace assistant (the team responder
+  aside) reads and writes Present canvases where its user may, as it does
+  pages and tables: the persona holds `present` beside `present-read`
+  (the whole group, where pages and tables give it a lighter slice), and
+  the boot reconcile grants both groups to the assistant of every
+  workspace (also one copied before Present) ONCE per agent: the anchor's
+  `contentKindGroupsGranted` records what each agent id was granted, so
+  an owner who removes a group later keeps it removed, an assistant made
+  later gets them at the next upgrade, and a group added to the list
+  later reaches each assistant once. Never an Admin-only group, never a
+  manifest agent with its own entry (`reconcileAssistantContentKinds`,
+  `ASSISTANT_CONTENT_KIND_GROUPS`); the persona union leaves these two to
+  that step. Every reconcile group grant is now one SQL array union
+  (`addAgentGroups`), so a Studio edit between the read and the write is
+  never lost. Deleting a canvas stays the deliberate `present-admin`
+  group, on no assistant, as `page-admin` is; `circuits` (it spends)
+  stays with the specialists. The routing skill lets the assistant make a
+  small change to a canvas itself; a new one still goes to Presenter when
+  it is there. No migration: the grants and the record are data.
+- **Fix:** `present_export` with no `parent_path` saves where every
+  export goes (`saveExport`, export-home.ts: Auto-filed / Exports when
+  the caller may change it, else the top of Files and the create home)
+  and the reply names the file and `landedIn`. It made a fixed
+  `files.diagrams` of its own before, which a member's first export put in
+  that member's private workspace, failing every later default export. A
+  taken name takes the next free one; `overwrite: true` writes over this
+  canvas's earlier export of that name wherever it is (the file id and
+  every embed stay). The tool's schema and description changed, so the
+  MCP tool-list snapshots moved.
 - **Security (tests):** a Moderator of a workspace makes a canvas in it
-  and edits one it holds, a Write grant edits, a read grant does not,
-  nobody makes one in a workspace they do not moderate (named: refused,
-  nothing made; unnamed: their own private workspace, and MCP says where),
-  and a user's own canvas is theirs to edit and answers another member as
-  a random uuid does: through the assistant turn, the routes and MCP
+  and edits one it holds, a Write grant edits (`edits` and `source`), a
+  read grant does not, nobody makes one in a workspace they do not
+  moderate (named: refused, nothing made; unnamed: their own private
+  workspace, and MCP says where), a Moderator of another workspace edits
+  and restores nothing outside the turn's workspace, `present_list` shows
+  no canvas the turn may not read, a turn with no user makes nothing, and
+  a user's own canvas is theirs to edit and answers another member as a
+  random uuid does: through the assistant turn, the routes and MCP
   (`present-ws-rights.db.test.ts`); `present_create` joins the turn home
-  cases. The MCP surface and its snapshots are unchanged: the Present
-  tools were already on it for every login.
+  cases.
 - **Fix:** the chat trail names a canvas save like a page save.
 
 ## Unreleased: a member's Apps and Present screens are trees

@@ -20,7 +20,18 @@
  *    (`landedIn`);
  *  - a user's own canvas (its private workspace) is the user's to edit,
  *    on every way in, and another member who does not read it gets what a
- *    random uuid gets (the id aside).
+ *    random uuid gets (the id aside);
+ *  - a turn of W for a user who moderates another workspace X edits and
+ *    restores nothing in X or Admin; present_list in it shows no canvas
+ *    the turn may not read (X, Admin, another user's own);
+ *  - `edits` and `source` change a canvas for a Moderator and a Write
+ *    grant, and leave it unchanged for a reader; present_restore follows
+ *    the same rule; a turn with no user makes nothing;
+ *  - present_export with no folder named goes where every export of the
+ *    caller goes (saveExport): a member's lands at the top of Files in its
+ *    own workspace, `overwrite` keeps the file id, an outsider exports
+ *    nothing, and a `files.diagrams` homed in another user's workspace no
+ *    longer stands in the way.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/present-ws-rights.db.test.ts
  */
@@ -504,6 +515,270 @@ describe.skipIf(!URL)('Present rights follow the workspace roles on every way in
         await cm.close();
         await cu.close();
         await co.close();
+      }
+    });
+  });
+  describe('more of the turn: another workspace, list, edits, restore, export', () => {
+    /** A workspace the Moderator of W moderates too. */
+    let x2 = '';
+    const c = { inX: '', inAdmin: '', otherOwn: '', write: '', noWrite: '' };
+    const tok = `${tag}h${randomUUID().slice(0, 6)}`;
+    /** A real 1x1 PNG, what the stand-in renderer draws. */
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const stateOf = async (id: string) =>
+      (
+        await x<{ rev: number; src: string; title: string }>(sql`
+          select p.rev, p.source as src, n.title from presents p
+            join nodes n on n.id = p.node_id where p.node_id = ${id}`)
+      )[0]!;
+    /** A second rev, saved by the system, so rev 1 can be brought back. */
+    const twoRevs = async (id: string) => {
+      const before = await stateOf(id);
+      await m.asSystem(
+        () =>
+          presents.savePresentSource(owner, id, {
+            source: before.src.replace('</p>', ' v2</p>'),
+            css: '',
+          }),
+        'test',
+      );
+      expect((await stateOf(id)).rev).toBe(2);
+    };
+    const fileHome = async (fileId: string) =>
+      (
+        await x<{ home: string | null; path: string }>(sql`
+          select g.workspace_id::text as home, n.path::text as path from nodes n
+            left join item_grants g on g.node_id = n.id and g.is_home
+           where n.id = ${fileId}`)
+      )[0];
+    const filesNamed = async (name: string) =>
+      (
+        await x<{ n: number }>(sql`select count(*)::int as n from nodes
+          where type = 'file' and data->>'filename' = ${name}`)
+      )[0]!.n;
+
+    beforeAll(async () => {
+      x2 = (
+        await su<{ id: string }>(sql`insert into workspaces (owner_id, name)
+          values (${owner}, ${`${tag} X`}) returning id::text as id`)
+      )[0]!.id;
+      await su(sql`delete from workspace_users where workspace_id = ${x2}`);
+      await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+        values (${x2}, ${mod}, true)`);
+      c.inX = await canvasIn(x2, `${tok} in x`, true);
+      c.inAdmin = await canvasIn(ws.admin, `${tok} in admin`, true);
+      c.otherOwn = await canvasIn(ws.otherOwn, `${tok} other own`, true);
+      c.write = await canvasIn(ws.w, `${tok} w write`, true);
+      c.noWrite = await canvasIn(ws.w, `${tok} w no write`, false);
+      for (const id of Object.values(c)) await twoRevs(id);
+      m.takeActorMisses();
+    }, 120_000);
+
+    it('a Moderator of X, in a turn of W, edits and restores nothing in X or Admin', async () => {
+      for (const id of [c.inX, c.inAdmin]) {
+        const before = await stateOf(id);
+        for (const [slug, input] of [
+          ['present_update', { id, title: `${tag} crossed` }],
+          ['present_update', { id, edits: [{ find: '</p>', replace: ' crossed</p>' }] }],
+          ['present_update', { id, source: canvas(`${tag} crossed`) }],
+          ['present_restore', { id, rev: 1 }],
+        ] as const) {
+          const r = await turn(mod, ws.w, [ws.w], slug, input);
+          expect(r.ok, `${slug} ${turnText(r)}`).toBe(false);
+        }
+        expect(await stateOf(id)).toEqual(before);
+      }
+      expect(m.takeActorMisses()).toEqual([]);
+    });
+
+    it('present_list in a turn of W shows no canvas the turn may not read', async () => {
+      const r = await turn(mod, ws.w, [ws.w], 'present_list', { query: tok });
+      expect(r.ok, turnText(r)).toBe(true);
+      const ids = ((r as { output: { id: string }[] }).output ?? []).map((p) => p.id);
+      expect(ids).toContain(c.write);
+      expect(ids).toContain(c.noWrite);
+      for (const hidden of [c.inX, c.inAdmin, c.otherOwn]) expect(ids).not.toContain(hidden);
+      const asUser = await turn(user, ws.w, [], 'present_list', { query: tok });
+      const userIds = ((asUser as { output: { id: string }[] }).output ?? []).map((p) => p.id);
+      for (const hidden of [c.inX, c.inAdmin, c.otherOwn]) expect(userIds).not.toContain(hidden);
+      expect(m.takeActorMisses()).toEqual([]);
+    });
+
+    it('edits and source: a Moderator and a Write grant change a canvas, a reader does not', async () => {
+      const r1 = await turn(mod, ws.w, [ws.w], 'present_update', {
+        id: c.noWrite,
+        edits: [{ find: '</p>', replace: ' by mod</p>' }],
+      });
+      expect(r1.ok, turnText(r1)).toBe(true);
+      expect((await stateOf(c.noWrite)).src).toContain(' by mod</p>');
+      const r2 = await turn(user, ws.w, [], 'present_update', {
+        id: c.write,
+        edits: [{ find: '</p>', replace: ' by user</p>' }],
+      });
+      expect(r2.ok, turnText(r2)).toBe(true);
+      expect((await stateOf(c.write)).src).toContain(' by user</p>');
+      const r3 = await turn(user, ws.w, [], 'present_update', {
+        id: c.write,
+        source: canvas(`${tok} w write source`),
+      });
+      expect(r3.ok, turnText(r3)).toBe(true);
+      expect((await stateOf(c.write)).src).toContain(`${tok} w write source`);
+
+      const before = await stateOf(c.noWrite);
+      for (const input of [
+        { id: c.noWrite, edits: [{ find: '</p>', replace: ' by reader</p>' }] },
+        { id: c.noWrite, source: canvas(`${tag} by reader`) },
+      ]) {
+        const r = await turn(user, ws.w, [], 'present_update', input);
+        expect(r.ok, turnText(r)).toBe(false);
+      }
+      expect(await stateOf(c.noWrite)).toEqual(before);
+      expect(m.takeActorMisses()).toEqual([]);
+    });
+
+    it('present_restore: a Write grant brings a version back, a reader does not', async () => {
+      const okBefore = await stateOf(c.write);
+      const ok = await turn(user, ws.w, [], 'present_restore', { id: c.write, rev: 1 });
+      expect(ok.ok, turnText(ok)).toBe(true);
+      expect((await stateOf(c.write)).rev).toBe(okBefore.rev + 1);
+      const before = await stateOf(c.noWrite);
+      const refused = await turn(user, ws.w, [], 'present_restore', { id: c.noWrite, rev: 1 });
+      expect(refused.ok, turnText(refused)).toBe(false);
+      expect(await stateOf(c.noWrite)).toEqual(before);
+      expect(m.takeActorMisses()).toEqual([]);
+    });
+
+    it('a turn with no user makes no canvas', async () => {
+      const token = `${tag}n${randomUUID().slice(0, 6)}`;
+      const r = await m.withTurnScope(
+        { kind: 'assistant', loginId: null, ws: [ws.w], modWs: [] },
+        () =>
+          tools.dispatchTool(
+            builtin('present_create'),
+            { title: token, source: canvas(token), look: false },
+            { caller: tools.turnCaller(), ownerId: owner },
+          ),
+        { writes: true },
+      );
+      expect(r.ok, turnText(r)).toBe(false);
+      expect(await madeCount(token)).toBe(0);
+      m.takeActorMisses();
+    });
+
+    it('present_export: where every export goes; overwrite keeps the file; an outsider exports nothing', async () => {
+      tools.registerCanvasRenderer(async () => ({
+        ok: true,
+        png: PNG,
+        mime: 'image/png' as const,
+        width: 1,
+        height: 1,
+        consoleErrors: [],
+        blocked: [],
+      }));
+      try {
+        const name = `${tok}-user.png`;
+        const r = await turn(user, ws.w, [], 'present_export', { id: c.write, filename: name });
+        expect(r.ok, turnText(r)).toBe(true);
+        const out = (r as { output: { file_id: string; parent_path: string; landedIn?: unknown } })
+          .output;
+        expect(out.parent_path).toBe('files');
+        expect(out.landedIn).toBeTruthy();
+        expect(await fileHome(out.file_id)).toEqual({ home: ws.userOwn, path: 'files' });
+        // No folder of its own: nothing like files.diagrams was made.
+        expect(
+          (
+            await x<{ n: number }>(sql`select count(*)::int as n from nodes
+              where type = 'branch' and path::text = 'files.diagrams'`)
+          )[0]!.n,
+        ).toBe(0);
+
+        // A Moderator's export in W's turn lands in W; the same name again
+        // with overwrite writes over that file (the id stays).
+        const modName = `${tok}-mod.png`;
+        const byMod = await turn(mod, ws.w, [ws.w], 'present_export', {
+          id: c.noWrite,
+          filename: modName,
+        });
+        expect(byMod.ok, turnText(byMod)).toBe(true);
+        const modFile = (byMod as { output: { file_id: string } }).output.file_id;
+        expect((await fileHome(modFile))?.home).toBe(ws.w);
+        const again = await turn(mod, ws.w, [ws.w], 'present_export', {
+          id: c.noWrite,
+          filename: modName,
+          overwrite: true,
+        });
+        expect(again.ok, turnText(again)).toBe(true);
+        expect((again as { output: { file_id: string } }).output.file_id).toBe(modFile);
+        expect(await filesNamed(modName)).toBe(1);
+        // Without overwrite, a taken name takes the next free one.
+        const next = await turn(mod, ws.w, [ws.w], 'present_export', {
+          id: c.noWrite,
+          filename: modName,
+        });
+        expect(next.ok, turnText(next)).toBe(true);
+        expect((next as { output: { filename: string } }).output.filename).toBe(
+          `${tok}-mod-2.png`.toLowerCase(),
+        );
+
+        // A member who does not read the canvas exports nothing.
+        const outsider = await turn(other, ws.otherOwn, [ws.otherOwn], 'present_export', {
+          id: c.write,
+          filename: `${tok}-other.png`,
+        });
+        expect(outsider.ok).toBe(false);
+        expect(await filesNamed(`${tok}-other.png`)).toBe(0);
+        expect(m.takeActorMisses()).toEqual([]);
+      } finally {
+        tools.registerCanvasRenderer(null);
+      }
+    });
+
+    it('present_export: a files.diagrams homed in another user’s workspace no longer stands in the way', async () => {
+      tools.registerCanvasRenderer(async () => ({
+        ok: true,
+        png: PNG,
+        mime: 'image/png' as const,
+        width: 1,
+        height: 1,
+        consoleErrors: [],
+        blocked: [],
+      }));
+      try {
+        // What the fixed folder did: another member's first export made it
+        // in that member's own workspace.
+        const files = await import('@mantle/files');
+        await m.asSystem(
+          () =>
+            m.withCreateHome({ createWs: ws.otherOwn, privateWs: null, quiet: true }, () =>
+              files.ensureFolderPath({ ownerId: owner, path: 'files.diagrams' }),
+            ),
+          'test',
+        );
+        for (const [login, turnWs, modWs, id] of [
+          [user, ws.w, [] as string[], c.write],
+          [mod, ws.w, [ws.w], c.noWrite],
+        ] as const) {
+          const name = `${tok}-${randomUUID().slice(0, 6)}.png`;
+          const r = await turn(login, turnWs, [...modWs], 'present_export', { id, filename: name });
+          expect(r.ok, turnText(r)).toBe(true);
+          const fileId = (r as { output: { file_id: string } }).output.file_id;
+          expect((await fileHome(fileId))?.path).toBe('files');
+        }
+        // Naming that folder is the caller's own choice, and refused.
+        const named = `${tok}-named.png`;
+        const r = await turn(user, ws.w, [], 'present_export', {
+          id: c.write,
+          filename: named,
+          parent_path: 'files.diagrams',
+        });
+        expect(r.ok, turnText(r)).toBe(false);
+        expect(await filesNamed(named)).toBe(0);
+        expect(m.takeActorMisses()).toEqual([]);
+      } finally {
+        tools.registerCanvasRenderer(null);
       }
     });
   });

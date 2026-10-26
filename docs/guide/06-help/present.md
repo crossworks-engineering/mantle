@@ -26,7 +26,7 @@ Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an 
 - A P&ID or a process flow is drawn from data by a layout template, so the result is neat and the same every time. Draftsman uses the same path for the diagrams it puts in pages.
 - To put a canvas in a page, ask for it, or type `/canvas` in the page and pick one. The page shows the canvas's latest picture. Click it to open the live canvas over the page; **Back to page** or Esc returns. A deck keeps its arrow keys and **Full screen**.
 - The picture is the one Presenter took at its last save. If the canvas changed since, the page says that a newer version exists; open it to see.
-- For outside Mantle (an email, a file to send), ask for a copy. The assistant exports a static copy into Files (`files/diagrams`). That copy does not follow later changes.
+- For outside Mantle (an email, a file to send), ask for a copy. The assistant exports a static copy into Files, where your other exports go, and says where it landed. That copy does not follow later changes.
 - Deleting a canvas is a deliberate step: the assistant asks first.
 
 ## Technical

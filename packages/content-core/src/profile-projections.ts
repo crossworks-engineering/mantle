@@ -526,6 +526,19 @@ export function projectAppOpens(raw: unknown): Record<string, AppOpenStat> | und
   return Object.fromEntries(rows.slice(0, APP_OPENS_MAX));
 }
 
+/** The content-kind groups granted per agent id (contentKindGroupsGranted):
+ *  uuid keys, each a list of group slugs; anything else is dropped. */
+export function projectGrantedGroups(raw: unknown): Record<string, string[]> | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const rows: [string, string[]][] = [];
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!UUID_RE.test(k) || !Array.isArray(v)) continue;
+    const slugs = [...new Set(v.filter((s): s is string => typeof s === 'string' && s !== ''))];
+    rows.push([k.toLowerCase(), slugs]);
+  }
+  return rows.length ? Object.fromEntries(rows) : undefined;
+}
+
 /** The house style a NEW brain starts with (Settings, Profile). Seeded only when
  *  a profile row is first created, so an owner who edits or clears it keeps
  *  their choice. The dash characters are escapes so the source holds none. */

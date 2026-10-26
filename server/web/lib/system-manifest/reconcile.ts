@@ -30,7 +30,7 @@
  *      links CONVERGE (add new + drop a retired manifest skill like rich_writing;
  *      operator-authored skills kept). See reconcilePersonaCapabilitiesByRole.
  *      Then the content-kind groups (Present) onto the assistant of EVERY
- *      workspace, add-only: reconcileAssistantContentKinds.
+ *      workspace, once per agent: reconcileAssistantContentKinds.
  *   4. Provision any specialist agent that this version of the manifest ships but
  *      the brain is MISSING (e.g. `appsmith` in 0.31) — create-only, and wire the
  *      persona's delegation to it. This closes the same gap step 1 closes for
@@ -130,6 +130,39 @@ const MANIFEST_NON_PERSONA_SLUGS: ReadonlySet<string> = new Set(
   MANIFEST_AGENTS.filter((a) => !a.isPersona).map((a) => a.slug),
 );
 
+/** The persona's default groups the persona reconcile unions: all but the
+ *  content-kind groups, which every workspace assistant (Admin's persona
+ *  too) is granted once instead (reconcileAssistantContentKinds). */
+const PERSONA_UNION_GROUP_SLUGS: readonly string[] = PERSONA_TOOL_GROUP_SLUGS.filter(
+  (g) => !ASSISTANT_CONTENT_KIND_GROUPS.includes(g),
+);
+
+/**
+ * Add `add` to an agent's tool groups, the ones it does not hold, in their
+ * order after its own: ONE update that reads the row it writes (an array
+ * union in SQL), so a Studio edit that lands between the reconcile's read
+ * and this write is never overwritten. Every reconcile grant goes through
+ * here. True when the row changed.
+ */
+async function addAgentGroups(agentId: string, add: readonly string[]): Promise<boolean> {
+  if (add.length === 0) return false;
+  const want = sql`ARRAY[${sql.join(
+    add.map((g) => sql`${g}`),
+    sql`, `,
+  )}]::text[]`;
+  const changed = await db
+    .update(agents)
+    .set({
+      toolGroupSlugs: sql`${agents.toolGroupSlugs} || array(
+        select g from unnest(${want}) with ordinality as u(g, i)
+         where not (g = any(${agents.toolGroupSlugs})) order by i)`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(agents.id, agentId), sql`not (${agents.toolGroupSlugs} @> ${want})`))
+    .returning({ id: agents.id });
+  return changed.length > 0;
+}
+
 /** The agents of `ownerId` with their workspace's kind: 'admin', 'other'
  *  (a live or archived workspace other than Admin), or 'none'. */
 async function agentRows(ownerId: string, roles?: ('responder' | 'assistant')[]) {
@@ -191,7 +224,7 @@ export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promi
   const changes: string[] = [];
   for (const a of responders) {
     const missingGroups = groupsForAgent(
-      missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS),
+      missingPersonaGroups(a.groups, PERSONA_UNION_GROUP_SLUGS),
       a,
       adminOnly,
     );
@@ -200,10 +233,13 @@ export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promi
     const skillsChanged =
       nextSkills.length !== curSkills.length || nextSkills.some((s, i) => s !== curSkills[i]);
     if (missingGroups.length === 0 && !skillsChanged) continue;
-    const set: Record<string, unknown> = { updatedAt: new Date() };
-    if (missingGroups.length) set.toolGroupSlugs = [...(a.groups ?? []), ...missingGroups];
-    if (skillsChanged) set.skillSlugs = nextSkills;
-    await db.update(agents).set(set).where(eq(agents.id, a.id));
+    await addAgentGroups(a.id, missingGroups);
+    if (skillsChanged) {
+      await db
+        .update(agents)
+        .set({ skillSlugs: nextSkills, updatedAt: new Date() })
+        .where(eq(agents.id, a.id));
+    }
     const added = [...missingGroups, ...nextSkills.filter((s) => !curSkills.includes(s))];
     const removed = curSkills.filter((s) => !nextSkills.includes(s));
     changes.push(
@@ -214,40 +250,68 @@ export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promi
 }
 
 /**
- * Add the content-kind groups (ASSISTANT_CONTENT_KIND_GROUPS: Present's
- * read and write) to the assistant of EVERY workspace: Admin's persona and
- * the assistants of the other workspaces, which were copied from the
- * persona before Present shipped and so hold neither. The persona
- * reconcile deliberately reaches Admin's assistants alone (the rest of the
- * persona's groups stay the workspace's own choice); this is the one
- * declared exception, for a workspace content kind every assistant writes
- * where its turn's login may (the row rules decide, not the group).
- * Add-only: a removal is never made, and an operator who drops one sees it
- * back on the next version (the persona's trade-off). Never an adminOnly
- * group outside Admin (groupsForAgent; none is, manifest.test.ts). Not a
- * responder or assistant on no workspace, and not a manifest agent with its
- * own entry (the team responder, the specialists): their entry owns their
- * groups. Returns the `slug:+added` strings changed.
+ * Grant the content-kind groups (ASSISTANT_CONTENT_KIND_GROUPS: Present's
+ * read and write) ONCE to the assistant of every workspace: Admin's
+ * persona and the assistants of the other workspaces, which were copied
+ * from the persona before Present shipped and so hold neither. The persona
+ * reconcile reaches Admin's assistants alone (the rest of the persona's
+ * groups stay each workspace's own choice); this is the one declared
+ * exception, for a workspace content kind every assistant writes where its
+ * turn's login may (the row rules decide, not the group).
+ *
+ * Grant once, never again (decision 2026-10-26): the anchor's preferences
+ * hold `contentKindGroupsGranted`, agent id to the groups this step has
+ * granted that agent. A group reaches an agent only while its id does not
+ * list it, and is listed then, added or already held. So:
+ *  - an owner who removes one later keeps it removed (it is listed);
+ *  - a group added to the list in a later release reaches every assistant
+ *    once (no id lists it yet);
+ *  - an assistant made after the first run, or attached to a workspace
+ *    later, gets them at the next reconcile (its id is not listed);
+ *  - a group it may not hold (adminOnly outside Admin, groupsForAgent) is
+ *    neither added nor listed, and ids of deleted agents are dropped.
+ * The persona union leaves these groups out (PERSONA_UNION_GROUP_SLUGS),
+ * so Admin's persona keeps an owner's removal too. The grant is one SQL
+ * array union per agent (addAgentGroups). Not a responder or assistant on
+ * no workspace, and not a manifest agent with its own entry (the team
+ * responder, the specialists): their entry owns their groups. Returns the
+ * `slug:+added` strings changed.
  */
 export async function reconcileAssistantContentKinds(ownerId: string): Promise<string[]> {
   const adminOnly = await adminOnlyGroups(ownerId);
   const assistants = (await agentRows(ownerId, ['responder', 'assistant'])).filter(
     (a) => !MANIFEST_NON_PERSONA_SLUGS.has(a.slug) && a.workspace !== 'none',
   );
+  const granted = (await loadProfilePreferences(ownerId)).contentKindGroupsGranted ?? {};
+  const next: Record<string, string[]> = { ...granted };
   const changes: string[] = [];
+  let marked = false;
   for (const a of assistants) {
-    const missing = groupsForAgent(
-      missingPersonaGroups(a.groups, ASSISTANT_CONTENT_KIND_GROUPS),
+    const listed = granted[a.id] ?? [];
+    const due = groupsForAgent(
+      ASSISTANT_CONTENT_KIND_GROUPS.filter((g) => !listed.includes(g)),
       a,
       adminOnly,
     );
-    if (missing.length === 0) continue;
-    await db
-      .update(agents)
-      .set({ toolGroupSlugs: [...(a.groups ?? []), ...missing], updatedAt: new Date() })
-      .where(eq(agents.id, a.id));
-    changes.push(`${a.slug}:+${missing.join(',')}`);
+    if (due.length === 0) continue;
+    const missing = missingPersonaGroups(a.groups, due);
+    if (await addAgentGroups(a.id, missing)) changes.push(`${a.slug}:+${missing.join(',')}`);
+    next[a.id] = [...listed, ...due];
+    marked = true;
   }
+  // Drop the ids of deleted agents (a disabled one keeps its list).
+  const live = new Set(
+    (await db.select({ id: agents.id }).from(agents).where(eq(agents.ownerId, ownerId))).map(
+      (r) => r.id,
+    ),
+  );
+  for (const id of Object.keys(next)) {
+    if (!live.has(id)) {
+      delete next[id];
+      marked = true;
+    }
+  }
+  if (marked) await updateProfilePreferences(ownerId, { contentKindGroupsGranted: next });
   return changes;
 }
 
@@ -283,10 +347,13 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     const skillsChanged =
       nextSkills.length !== curSkills.length || nextSkills.some((s, i) => s !== curSkills[i]);
     if (missingGroups.length === 0 && !skillsChanged) continue;
-    const set: Record<string, unknown> = { updatedAt: new Date() };
-    if (missingGroups.length) set.toolGroupSlugs = [...(row.groups ?? []), ...missingGroups];
-    if (skillsChanged) set.skillSlugs = nextSkills;
-    await db.update(agents).set(set).where(eq(agents.id, row.id));
+    await addAgentGroups(row.id, missingGroups);
+    if (skillsChanged) {
+      await db
+        .update(agents)
+        .set({ skillSlugs: nextSkills, updatedAt: new Date() })
+        .where(eq(agents.id, row.id));
+    }
     const added = [...missingGroups, ...nextSkills.filter((s) => !curSkills.includes(s))];
     const removed = curSkills.filter((s) => !nextSkills.includes(s));
     changes.push(

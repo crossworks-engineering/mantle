@@ -34,7 +34,13 @@ import {
 } from '@mantle/content/presents';
 import { nodeUrl } from '@mantle/content';
 import { guardNewFileIn } from '@mantle/content/tree';
-import { ensureFolderPath, listFiles, sanitizeFilename, upsertFile } from '@mantle/files';
+import {
+  ensureFolderPath,
+  listFiles,
+  sanitizeFilename,
+  saveExport,
+  upsertFile,
+} from '@mantle/files';
 import { db, nodes } from '@mantle/db';
 import { eq } from 'drizzle-orm';
 import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
@@ -77,9 +83,6 @@ const LOOKUP = 'present_list / search_nodes';
 const PRESENT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'present', lookup: LOOKUP },
 ];
-
-/** Where exports land unless the call names a folder. */
-export const EXPORT_FOLDER_PATH = 'files.diagrams';
 
 /** A picture past this is not shown to the model (a provider's per-image
  *  limit, with room for base64), only described. */
@@ -941,7 +944,7 @@ const present_export: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Export a canvas for a page',
   description:
-    'Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws (a drawing set: every page stacked, links printed as page references), any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
+    'Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws (a drawing set: every page stacked, links printed as page references), any other canvas a PNG picture. It is saved where every export goes (Auto-filed / Exports when the caller may change it, else the top of Files) unless `parent_path` names a folder; a taken name gets a `-2` suffix. Returns the file id, its name, landedIn and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -952,8 +955,8 @@ const present_export: BuiltinToolDef = {
       },
       parent_path: {
         type: 'string',
-        default: EXPORT_FOLDER_PATH,
-        description: "ltree path of the folder, e.g. 'files.diagrams'.",
+        description:
+          "ltree path of a folder to save in, e.g. 'files.diagrams'. Leave it out to save where every export goes (Auto-filed / Exports when the caller may change it, else the top of Files); the reply says where (landedIn).",
       },
       overwrite: {
         type: 'boolean',
@@ -1025,11 +1028,10 @@ const present_export: BuiltinToolDef = {
       }
       bytes = seen.result.png;
     }
+    const parentPath = strOptTrim(input.parent_path);
+    if (!parentPath) return exportHome(ctx, p, filename, ext, bytes, input.overwrite === true);
     try {
-      const folderPath = await ensureFolderPath({
-        ownerId: ctx.ownerId,
-        path: strOptTrim(input.parent_path) ?? EXPORT_FOLDER_PATH,
-      });
+      const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
       await guardNewFileIn(ctx.ownerId, folderPath, filename, { confirm: input.confirm === true });
       // An overwrite replaces only an earlier export of THIS canvas (its
       // file carries `exportOf`), never another file that has the name.
@@ -1055,8 +1057,8 @@ const present_export: BuiltinToolDef = {
           filename: row.filename,
           parent_path: folderPath,
           format: ext,
-          embed: `![${p.title.replace(/[[\]]/g, '')}](media:${row.id})`,
-          next: "Use `embed` where the copy goes. After a later present_update, export again with the same filename and overwrite: true. For a page in this brain, the canvas's page_embed follows it instead.",
+          embed: exportEmbed(p, row.id),
+          next: EXPORT_NEXT,
         },
         // No picture: the export is the canvas you already looked at, and a
         // picture would spend one of the turn's image slots for nothing.
@@ -1076,6 +1078,64 @@ const present_export: BuiltinToolDef = {
 /** Why an overwrite of `filename` in `folderPath` is refused: the file
  *  there is not an earlier export of canvas `canvasId`. Null when there is
  *  no such file (the write makes it) or it is that canvas's export. */
+/** The markdown of an exported copy (its title, never a bracket). */
+function exportEmbed(p: { title: string }, fileId: string): string {
+  return `![${p.title.replace(/[[\]]/g, '')}](media:${fileId})`;
+}
+
+const EXPORT_NEXT =
+  "Use `embed` where the copy goes. After a later present_update, export again with the same filename and overwrite: true. For a page in this brain, the canvas's page_embed follows it instead.";
+
+/**
+ * An export that names no folder goes where every export of the caller
+ * goes (@mantle/files saveExport: Auto-filed / Exports when the caller may
+ * change it, else the top of Files and the create home a new item takes;
+ * export-home.ts, the one rule). A fixed folder of its own made a member's
+ * first export create it in that member's private workspace, and every
+ * other default export then failed (one folder path per brain). A taken
+ * name takes the next free one, as every export; `overwrite: true` writes
+ * over this canvas's earlier export of that name wherever it is (the file
+ * id, so every embed, stays), and with none a new file is made: also when
+ * the call's scope does not read it (a plain user's export landed in its
+ * private workspace, and a turn of another workspace does not read that
+ * one). The reply names the file and where it landed.
+ */
+async function exportHome(
+  ctx: ToolHandlerContext,
+  p: PresentDetail,
+  filename: string,
+  ext: string,
+  bytes: Buffer,
+  overwrite: boolean,
+): Promise<ToolHandlerResult> {
+  try {
+    const { file, landedIn } = await saveExport({
+      ownerId: ctx.ownerId,
+      filename,
+      bytes,
+      data: { exportOf: p.id },
+      replaceEarlier: overwrite,
+    });
+    ctx.step?.setOutput({ fileId: file.id });
+    return {
+      ok: true,
+      output: {
+        id: p.id,
+        rev: p.rev,
+        file_id: file.id,
+        filename: file.filename,
+        parent_path: file.parentPath,
+        ...(landedIn ? { landedIn } : {}),
+        format: ext,
+        embed: exportEmbed(p, file.id),
+        next: EXPORT_NEXT,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: visibilityRefusal(err) ?? publicErrorText(err, 'present') };
+  }
+}
+
 async function exportClash(
   ownerId: string,
   folderPath: string,

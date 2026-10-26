@@ -289,15 +289,20 @@ A folder is an item with a home and grants like any other.
 - **It writes only for a user who could do it by hand**: a Moderator of the
   home, or a grant with Write on.
 - **Canvases (Present) are a content kind like pages and tables.** Every
-  workspace's assistant holds the Present tools: list, read and look,
-  make, change, bring back a version, export a copy. Deleting a canvas
-  stays a deliberate step (`present-admin`, on no assistant), as deleting
-  a page does. An upgrade adds the two groups (`present-read`, `present`)
-  to the assistant of every workspace, also one copied before Present;
-  it never removes a group. What the assistant may do with a canvas is
-  its user's right by the table in Items and grants: a canvas lands by
-  the home rule, a Moderator of its home or a grant with Write on edits
-  it, and a canvas in a user's private workspace is that user's.
+  enabled workspace assistant, the team responder aside, holds the
+  Present tools: list, read and look, make, change, bring back a version,
+  export a copy. Deleting a canvas stays a deliberate step
+  (`present-admin`, on no assistant), as deleting a page does. An upgrade
+  grants the two groups (`present-read`, `present`) to each such
+  assistant once, also one copied before Present; one made later gets
+  them at the next upgrade. An owner who removes either from an assistant
+  keeps it removed: no upgrade adds it back. What the assistant may do
+  with a canvas is its user's right by the table in Items and grants: a
+  canvas lands by the home rule, a Moderator of its home or a grant with
+  Write on edits it, and a canvas in a user's private workspace is that
+  user's. An export with no folder named goes where every export goes
+  (Auto-filed / Exports for an Admin user, else the top of Files and the
+  create home), and the reply says where.
 - **With no user** (a heartbeat, a scheduled run) an assistant only reads,
   except the Admin assistant, which acts for the owner.
 - **Each user reads only their own chats.** Every user has their own thread

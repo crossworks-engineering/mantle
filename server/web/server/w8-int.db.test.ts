@@ -113,7 +113,13 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
       await agent('admin-ws', 'responder', 'admin', adminWs);
       await rec.reconcilePersonaCapabilitiesByRole(owner);
       expect(await groupsOf('none-admin-level')).toEqual([]);
-      expect(await groupsOf('admin-ws')).toEqual([...manifest.PERSONA_TOOL_GROUP_SLUGS]);
+      // The content-kind groups aside: those are granted once, by their own
+      // step (reconcileAssistantContentKinds, content-kinds.db.test.ts).
+      expect(await groupsOf('admin-ws')).toEqual(
+        manifest.PERSONA_TOOL_GROUP_SLUGS.filter(
+          (g) => !manifest.ASSISTANT_CONTENT_KIND_GROUPS.includes(g),
+        ),
+      );
     });
   });
 });

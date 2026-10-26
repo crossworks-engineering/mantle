@@ -41,7 +41,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Skill **body** (`SKILL_INSTRUCTIONS`) | ✅ overwrite | `applyManifest` `skillMode` |
 | **Persona** skill links (by ROLE, reaches operator personas too) | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
 | Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
-| Content-kind groups (`ASSISTANT_CONTENT_KIND_GROUPS`: `present-read`, `present`) on **every workspace's** assistant | ✅ union (add-only), never an `adminOnly` group, never a manifest agent with its own entry | `reconcileAssistantContentKinds` |
+| Content-kind groups (`ASSISTANT_CONTENT_KIND_GROUPS`: `present-read`, `present`) on **every workspace's** assistant (Admin's persona too) | ✅ **once per agent**: each group reaches each assistant one time (recorded per agent id in the anchor's `contentKindGroupsGranted`), so an owner's later removal sticks; a later assistant or a group added to the list later gets it once; never an `adminOnly` group, never a manifest agent with its own entry; the persona union skips these groups | `reconcileAssistantContentKinds` |
 | New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
 | Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
@@ -71,7 +71,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   else is still add-only: removing a tool group from an agent, removing a skill/
   group/agent **row** entirely (the row lives on, disable to opt out, delete by
   operator action), and a default group an operator deliberately dropped (it
-  reappears).
+  reappears; the content-kind groups aside, which are granted once).
 - An **agent's or a tool group's level**: gone from the code since workspaces
   W8c (the columns stay in the database, frozen, until W10;
   `archive_tool_levels` keeps each as it was). An assistant reads its
@@ -82,8 +82,10 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   manifest agent with its own entry or another workspace's assistant. The
   one declared exception is `ASSISTANT_CONTENT_KIND_GROUPS` (a workspace
   content kind every assistant writes where its user may: Present): those
-  groups alone reach every workspace's assistant, add-only. Keep the list
-  to content-kind groups with no delete and no spend (manifest.test.ts).
+  groups alone reach every workspace's assistant, granted once per agent
+  (an owner's removal is kept, unlike the persona's default groups). Keep
+  the list to content-kind groups with no delete and no spend
+  (manifest.test.ts).
 - **Operator-authored** skills/agents (not in the manifest), never seen, never
   clobbered. (Named operator personas like `telegram-default`/Saskia are NOT
   manifest slugs.)

@@ -517,6 +517,11 @@ export type ProfilePreferences = {
    *  new image still gets new tools/skills/group-membership without running seed
    *  scripts. Equal to APP_VERSION ⇒ already reconciled, skip. */
   lastReconciledVersion?: string;
+  /** The content-kind tool groups the boot reconcile has granted, per agent
+   *  id (reconcileAssistantContentKinds): each group reaches an assistant
+   *  once, so one the owner removes later stays removed. Written by the
+   *  reconcile alone. */
+  contentKindGroupsGranted?: Record<string, string[]>;
   /** When true, outbound/egress tools (email_send, web_fetch, web_search)
    *  fired during an UNATTENDED heartbeat run park for operator approval
    *  instead of executing inline. Only tools that reach OUT are gated — the

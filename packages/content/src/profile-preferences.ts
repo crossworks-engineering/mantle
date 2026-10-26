@@ -38,6 +38,7 @@ import {
   projectDefaultMode,
   projectFontKey,
   projectFontSize,
+  projectGrantedGroups,
   projectHouseStyle,
   projectLogoKey,
   projectLogoType,
@@ -207,6 +208,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
         : undefined,
+    contentKindGroupsGranted: projectGrantedGroups(prefs.contentKindGroupsGranted),
   };
 }
 
@@ -425,6 +427,7 @@ export async function updateProfilePreferences(
     navFavorites: projectNavFavorites(merged.navFavorites),
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
+    contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
   };
 }
 

@@ -20,6 +20,13 @@
  * the same whoever holds it, and nothing in the reply or a refusal names
  * the file that holds it.
  *
+ * A tool whose export follows its source (present_export: one canvas, one
+ * file every embed shows) stamps the file with that source (`data`) and
+ * may ask to replace its earlier export (`replaceEarlier`): the newest file
+ * the caller reads that carries the same source and name is written over in
+ * place, wherever this rule put it (Auto-filed's month folders move on), so
+ * the file id and every embed of it stay. Found none, a new file as above.
+ *
  * The reply names where the file landed (landedIn), as a create's does: read
  * in the caller's scope; a turn of a workspace the caller only reads cannot
  * read its private workspace, so there it names the call's private create
@@ -28,9 +35,10 @@
  * caller's scope, and the database's create checks still run.
  */
 import { promises as fsp } from 'node:fs';
-import { currentCreateHome, landedIn } from '@mantle/db';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { currentCreateHome, db, landedIn, nodes } from '@mantle/db';
 import { ConflictError } from '@mantle/std';
-import { ensureAutoFiledFolder } from './auto-filed';
+import { AUTO_FILED_PATH, ensureAutoFiledFolder } from './auto-filed';
 import { discardSpooled, type SpooledUpload } from './disk';
 import { FILES_ROOT_LABEL } from './paths';
 import { sanitizeFilename } from './slug';
@@ -89,10 +97,15 @@ export async function saveExport(args: {
   filename: string;
   bytes?: Buffer;
   spooled?: SpooledUpload;
+  /** Keys merged onto the file's data: what it is an export of. */
+  data?: { exportOf?: string } & Record<string, unknown>;
+  /** Write over the caller's earlier export of `data.exportOf` with this
+   *  name, wherever it is (see the module comment). */
+  replaceEarlier?: boolean;
 }): Promise<SavedExport> {
   let saved: { file: FileRow; autoFiled: boolean };
   try {
-    saved = await saveUnderFreeName(args);
+    saved = (await replaceEarlierExport(args)) ?? (await saveUnderFreeName(args));
   } catch (err) {
     if (args.spooled) await discardSpooled(args.spooled);
     throw err;
@@ -108,11 +121,62 @@ export async function saveExport(args: {
   return { ...saved, landedIn: home ?? privateLanding(saved.autoFiled) };
 }
 
+/** The newest file the caller reads (the call's scope) that is an export
+ *  of `exportOf` named `filename`: its folder, or null. */
+export async function earlierExportFolder(
+  ownerId: string,
+  exportOf: string,
+  filename: string,
+): Promise<string | null> {
+  const name = sanitizeFilename(filename);
+  if (!name) return null;
+  const [hit] = await db
+    .select({ path: nodes.path })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'exportOf' = ${exportOf}`,
+        sql`${nodes.data}->>'filename' = ${name}`,
+      ),
+    )
+    .orderBy(desc(nodes.updatedAt))
+    .limit(1);
+  return hit ? String(hit.path) : null;
+}
+
+/** The earlier export written over in place, when asked for and found. */
+async function replaceEarlierExport(args: {
+  ownerId: string;
+  filename: string;
+  bytes?: Buffer;
+  spooled?: SpooledUpload;
+  data?: { exportOf?: string } & Record<string, unknown>;
+  replaceEarlier?: boolean;
+}): Promise<{ file: FileRow; autoFiled: boolean } | null> {
+  const of = args.data?.exportOf;
+  if (!args.replaceEarlier || !of) return null;
+  const folder = await earlierExportFolder(args.ownerId, of, args.filename);
+  if (!folder) return null;
+  const file = await upsertFile({
+    ownerId: args.ownerId,
+    parentPath: folder,
+    filename: args.filename,
+    ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
+    data: args.data,
+    overwrite: true,
+  });
+  const autoFiled = folder === AUTO_FILED_PATH || folder.startsWith(`${AUTO_FILED_PATH}.`);
+  return { file, autoFiled };
+}
+
 async function saveUnderFreeName(args: {
   ownerId: string;
   filename: string;
   bytes?: Buffer;
   spooled?: SpooledUpload;
+  data?: Record<string, unknown>;
 }): Promise<{ file: FileRow; autoFiled: boolean }> {
   const folder = await exportFolder(args.ownerId);
   for (const filename of exportNames(args.filename)) {
@@ -125,6 +189,7 @@ async function saveUnderFreeName(args: {
         parentPath: folder.path,
         filename,
         ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
+        ...(args.data ? { data: args.data } : {}),
       });
       return { file, autoFiled: folder.autoFiled };
     } catch (err) {
