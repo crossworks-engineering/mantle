@@ -53,10 +53,25 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   group and its External access through the area's own system door, after
   the area is asked again. Nothing widens: a login without the connectors
   area is still refused, and nothing is written.
+- **Fix:** the approval queue (`pending_tool_calls`) and the conversation
+  store (`assistant_messages`) are written as infrastructure on the system
+  handle (the narrow route in a scope) instead of as the caller's own
+  scoped write: every park of a call is one helper, and a call is claimed,
+  put back and settled with who may decide it in the statement, as before.
+  A turn row names its login whenever a login is bound, so a member's turn
+  can never land in the owner's thread, and a row naming another login is
+  refused. A cancelled turn's stamp keeps the full system route (its
+  settled row is one the narrow role never rewrites). No answer changes.
+- **Fix:** a named table covers a login's own write only: an assistant's,
+  a link's or a contact's scoped write to it is still counted.
+- **Ops:** a fail-open hit on a write names its table in the check
+  (`fail-open:typed-write:public.x`), and a busy table no longer hides a
+  new one; the box counts read the site from the check, so an older
+  image's rows still count.
 - **Tests:** the test setup now fails a test whose scoped typed write goes
-  to the system pool on a table that names no reason, except the two still
-  left to decide (`pending_tool_calls`, `assistant_messages`), so a new one
-  shows before the fail-closed step. New pin `scopedSystemWriteTables` (1).
+  to the system pool on a table that names no reason; none is left to
+  decide, so a new one shows before the fail-closed step. New pin
+  `scopedSystemWriteTables` (1).
 
 ## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
 
