@@ -1,4 +1,4 @@
-import { runInNewContext } from 'node:vm';
+import { runInContext, runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   buildCanvasEmbedCsp,
@@ -197,7 +197,7 @@ describe('the prelude', () => {
 
 describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
   /** The prelude run in a stand-in window; `nonce` '' is a render. */
-  function frame(nonce: string) {
+  function frame(nonce: string, canvas?: string) {
     const html = buildCanvasFrameHtml({
       source: '<html><body>x</body></html>',
       css: '',
@@ -212,12 +212,16 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     const prelude = /<script>(\(function\(\)\{[\s\S]*?\}\)\(\);)<\/script>/.exec(html)![1]!;
     const toParent: Record<string, unknown>[] = [];
     const handlers: Record<string, Array<(e: unknown) => void>> = {};
+    const options: Record<string, unknown[]> = {};
     const parent = Object.freeze({
       postMessage: (m: Record<string, unknown>) => toParent.push(m),
     });
     const win: Record<string, unknown> = {
       parent,
-      addEventListener: (k: string, f: (e: unknown) => void) => (handlers[k] ??= []).push(f),
+      addEventListener: (k: string, f: (e: unknown) => void, o?: unknown) => {
+        (handlers[k] ??= []).push(f);
+        (options[k] ??= []).push(o);
+      },
       innerWidth: 800,
       innerHeight: 600,
     };
@@ -241,6 +245,8 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       clearTimeout,
     };
     runInNewContext(prelude, ctx);
+    // What a canvas runs after the prelude, in the same realm.
+    if (canvas) runInContext(canvas, ctx);
     const api = (win.mantle as { data: Record<string, (...a: unknown[]) => Promise<unknown>> })
       .data;
     const load = () => {
@@ -249,10 +255,10 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     const reply = (source: unknown, data: unknown) => {
       for (const f of handlers.message ?? []) f({ source, data });
     };
-    const pagehide = () => {
-      for (const f of handlers.pagehide ?? []) f({});
+    const pagehide = (persisted = false) => {
+      for (const f of handlers.pagehide ?? []) f({ persisted });
     };
-    return { api, toParent, load, reply, parent, pagehide };
+    return { api, toParent, load, reply, parent, pagehide, options, ctx };
   }
 
   it('holds every call until ready has gone, and names no canvas and no login', async () => {
@@ -347,6 +353,59 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     r.load();
     r.pagehide();
     expect(r.toParent.filter((m) => m.kind === 'leaving')).toEqual([]);
+  });
+
+  it('says nothing when the page goes into the back-forward cache (persisted)', () => {
+    const f = frame('n5');
+    f.load();
+    f.pagehide(true);
+    expect(f.toParent.filter((m) => m.kind === 'leaving')).toEqual([]);
+    f.pagehide(false);
+    expect(f.toParent.filter((m) => m.kind === 'leaving')).toEqual([
+      { v: 1, kind: 'leaving', n: 'n5' },
+    ]);
+  });
+
+  it('takes pagehide in the capture phase, registered before the canvas runs', () => {
+    const f = frame('n6');
+    expect(f.options.pagehide).toEqual([{ capture: true }]);
+  });
+
+  it('keeps the nonce out of a held call: a canvas that patched push or an index setter reads none', async () => {
+    const f = frame(
+      'n7',
+      `globalThis.seen = '';
+       globalThis.hits = 0;
+       const push = Array.prototype.push;
+       Array.prototype.push = function (...a) { hits++; seen += JSON.stringify(a); return push.apply(this, a); };
+       for (const i of ['0', '1']) {
+         Object.defineProperty(Array.prototype, i, {
+           configurable: true,
+           set(v) {
+             hits++;
+             seen += JSON.stringify(v);
+             Object.defineProperty(this, i, { value: v, writable: true, enumerable: true, configurable: true });
+           },
+         });
+       }`,
+    );
+    const got = f.api.get!('marks');
+    const saved = f.api.set!('marks', 1, { bucket: 'mine' });
+    f.load();
+    // The canvas saw both held calls go by, and no nonce in either.
+    expect(runInContext('hits', f.ctx)).toBeGreaterThan(0);
+    const seen = runInContext('seen', f.ctx) as string;
+    expect(seen).toContain('marks');
+    expect(seen).not.toContain('n7');
+    // The parent still gets both calls, each with the nonce.
+    expect(f.toParent.filter((m) => m.kind === 'data')).toMatchObject([
+      { n: 'n7', id: 1, op: 'get', key: 'marks' },
+      { n: 'n7', id: 2, op: 'set', bucket: 'mine', json: '1' },
+    ]);
+    f.reply(f.parent, { v: 1, kind: 'data-reply', id: 1, ok: true, result: { value: 3 } });
+    f.reply(f.parent, { v: 1, kind: 'data-reply', id: 2, ok: true, result: {} });
+    await expect(got).resolves.toBe(3);
+    await expect(saved).resolves.toBeUndefined();
   });
 
   it('refuses a value that is not JSON without sending it', async () => {
