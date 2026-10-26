@@ -784,6 +784,7 @@ POST /api/tool-groups class=area scope=area:assistants caller=owner gone=false
 POST /api/tools class=area scope=area:assistants caller=owner gone=false
 POST /api/tree/:kind/folders class=content scope=content caller=owner gone=false
 POST /api/tree/:kind/move class=content scope=content caller=owner gone=false
+POST /api/tree/:kind/place class=content scope=content caller=owner gone=false
 POST /api/tree/items/:id/opened class=content scope=content caller=owner gone=false
 POST /api/updates/check class=area scope=area:settings caller=owner gone=false
 POST /api/updates/request class=area scope=area:settings caller=owner gone=false

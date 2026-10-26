@@ -41,6 +41,7 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
+import { RANK_RE } from '../rank';
 
 type FolderSqlRow = {
   id: string;
@@ -356,7 +357,54 @@ function sortOf(sort: TreeSort): { key: SQL; desc: boolean } {
         key: sql`(coalesce(${utcKey(sql`n.data->>'starts_at'`)}, '') collate "C")`,
         desc: false,
       };
+    case 'custom':
+      return { key: treeItemOrderKey('n'), desc: false };
   }
+}
+
+/** The custom order of the items aliased `alias`: the rank, then the name.
+ *  '~' (no rank) sorts after every rank digit, and the space after a whole
+ *  rank before any longer one. */
+export function treeItemOrderKey(alias: string): SQL {
+  return sql`((${rankOf(alias)} || ' ' || lower(${sql.identifier(alias)}.title)) collate "C")`;
+}
+
+/** The ORDER BY of a folder's items (aliased `n`) as the tree lists them in
+ *  `sort`, the id last. */
+export function treeItemOrderBy(sort: TreeSort): SQL {
+  const { key, desc } = sortOf(sort);
+  return desc ? sql`${key} desc, n.id desc` : sql`${key} asc, n.id asc`;
+}
+
+/** An item's place in its folder's custom order (`data.tree_rank`, its own
+ *  presentation key, 0335), or '~' when it has none or one that is not a
+ *  rank. */
+function rankOf(alias: string): SQL {
+  const rank = sql`${sql.identifier(alias)}.data->>'tree_rank'`;
+  return sql`(case when ${rank} ~ ${RANK_RE.source} then ${rank} else '~' end)`;
+}
+
+/** The order an unordered folder lists in under `custom`: the kind's first
+ *  other sort, the order it had before custom orders. */
+export function treeFallbackSort(kind: TreeKind): TreeSort {
+  return TREE_KIND_SPECS[kind].sorts.find((s) => s !== 'custom')!;
+}
+
+/** Whether the folder at `path` has a custom order: an item there that the
+ *  caller reads (and `ws` reads, when given) carries a `tree_rank`. */
+export async function hasCustomOrder(
+  ownerId: string,
+  kind: TreeKind,
+  path: string,
+  extra: SQL = sql``,
+): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    select 1 from nodes n
+     where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
+       and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')} ${extra}
+       and n.data->>'tree_rank' ~ ${RANK_RE.source}
+     limit 1`)) as unknown as unknown[];
+  return rows.length > 0;
 }
 
 /** A stored ISO date or time as a sortable UTC text key (the same function
@@ -383,7 +431,7 @@ export async function itemPage(
       ? sql`and (${key}, n.id) < (${cursor.key}, ${cursor.id}::uuid)`
       : sql`and (${key}, n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
-  const order = desc ? sql`${key} desc, n.id desc` : sql`${key} asc, n.id asc`;
+  const order = treeItemOrderBy(sort);
   const rows = (await db.execute(sql`
     select n.id, n.path::text as path, n.title, n.data, n.updated_at,
            ${key} as sort_key
@@ -451,6 +499,10 @@ export async function loadTreeFolder(
   // What the page's statements ask the definer: the folder itself and its
   // parent when they are on the way and not read (the folder's row and its
   // parent id), and the folders on the way one and two levels below it.
+  // `custom` lists by the folder's order when it has one, else as before.
+  const ordered =
+    sort === 'custom' && (await hasCustomOrder(ownerId, kind, path, readBy(opts.ws, 'n')));
+  const itemSort = sort === 'custom' && !ordered ? treeFallbackSort(kind) : sort;
   const trail: TrailAsk = {
     under: path,
     paths: path.split('.').length > 2 ? [treeParentPath(path), path] : [path],
@@ -489,7 +541,7 @@ export async function loadTreeFolder(
       ownerId,
       kind,
       path,
-      sort,
+      itemSort,
       opts.cursor,
       treePageLimit(opts.limit),
       readBy(opts.ws, 'n'),
@@ -506,6 +558,7 @@ export async function loadTreeFolder(
     folders,
     items: page.items,
     sort,
+    ...(sort === 'custom' ? { ordered } : {}),
     nextCursor: page.nextCursor,
     ...(elsewhere.length ? { elsewhere } : {}),
   };

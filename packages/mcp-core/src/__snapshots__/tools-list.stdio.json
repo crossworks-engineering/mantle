@@ -1531,7 +1531,7 @@
  },
  {
   "name": "tree_folder_update",
-  "description": "Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), change its icon or colour (`icon`, `color`; null clears), or any of these together. Everything inside comes along on a move. Refused for a system folder, a move into itself, a move that would nest deeper than 3 levels, and a name already taken where it lands.",
+  "description": "Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), change its icon or colour (`icon`, `color`; null clears), put it in order among its sibling folders (`after`: the folder it follows; null for first), or any of these together. The order is one for everyone: it needs Write on the folder that holds it (an Admin at the top level). Everything inside comes along on a move. Refused for a system folder, a move into itself, a move that would nest deeper than 3 levels, and a name already taken where it lands.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1579,6 +1579,13 @@
     },
     "color": {
      "description": "the tile colour; null for none",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "after": {
+     "description": "the sibling folder to place it right after (an id from `tree_folders`); null to place it first; omit to leave its place",
      "type": [
       "string",
       "null"
@@ -1645,6 +1652,50 @@
     "kind",
     "item_ids",
     "folder_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ },
+ {
+  "name": "tree_item_place",
+  "description": "Put an item (a note, an app, a task, ... id) in its folder's custom order, right after another item of the same folder (`after`; null for first). The order is one for everyone and shows in the tree's Custom order: use it for stages, steps or any sequence the folder's items are worked in. Needs Write on the folder (an Admin at the top level). Only the item's place in the order changes: not its folder, content or last-changed date. To file it into another folder use `tree_item_move` first; to order folders use `tree_folder_update` with `after`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "notes",
+      "pages",
+      "draw",
+      "tables",
+      "formulas",
+      "tasks",
+      "events",
+      "contacts",
+      "secrets",
+      "apps",
+      "recall",
+      "present"
+     ],
+     "description": "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps, recall (Recall maps) or present (Present canvases). Files use the folder_* tools."
+    },
+    "item_id": {
+     "type": "string",
+     "description": "the item to place"
+    },
+    "after": {
+     "description": "the item of the same folder it follows; null to place it first",
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "kind",
+    "item_id",
+    "after"
    ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   }

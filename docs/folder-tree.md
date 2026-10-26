@@ -40,9 +40,9 @@ older screen for the rest.
   Files, the directory name on disk. A rename re-derives the slug and moves the
   directory; a rename that only changes case or spacing keeps the path.
 - **Order.** Folders keep a manual order (`data.rank`, then name). Items follow
-  the chosen sort: name or last updated for most kinds; tasks by due date
-  (open tasks first, soonest due first, undated last, done tasks after);
-  events by start.
+  the chosen sort: the custom order (below, the default), name or last
+  updated for most kinds; tasks by due date (open tasks first, soonest due
+  first, undated last, done tasks after); events by start.
 - **What a row carries.** A title, the workspaces that hold it
   (`workspaces`) and whether it has a public link (`hasLink`; the item's
   level is no longer sent since W5b2), a short `subtype` for the
@@ -122,6 +122,46 @@ read. Any new step a read makes for itself must follow
 the same rule; `tree-readonly.db.test.ts` and `tree-readonly-routes.db.test.ts`
 run the reads as such a role and check that nothing was written.
 
+## Custom order
+
+People put a folder's items and its subfolders in the order they are worked
+in (stages, steps), by dragging. The order is one for everyone, never per
+login (owner decision 2026-10-26).
+
+- **Where it lives.** An item's place is its `data.tree_rank`, a
+  fractional key (`packages/content/src/rank.ts`); a folder's place among
+  its siblings is its `data.rank`, as before. Both are presentation keys
+  (0281, `tree_rank` since 0335): the database lets edit of the item or of
+  its folder change them, and nothing else of the row. `tree_rank` is the
+  tree's own: a task's board order (`rank`) never moves an item in the
+  tree, and a place never moves a card on a board. A place never touches
+  `updated_at` (`mantle.keep_updated_at`), so "last updated" and the
+  extractor ignore it.
+- **Who sets it.** Write on the folder orders what it holds, its items and
+  its subfolders; the top level is in no folder, so only an Admin scope
+  orders it. `placeTreeItem` and a folder's `after` ask it first
+  (`mayOrderFolder`, `TOP_LEVEL_ORDER_REFUSED`); a folder page says it
+  (`mayOrder`).
+- **Reading.** `custom` is every kind's first sort. A folder where an item
+  the reader reads carries a rank lists by rank, then by name, items with
+  no rank last (`ordered: true` on the page); one with none lists in the
+  kind's next sort, exactly as before (`treeFallbackSort`). So an untouched
+  folder looks the same, and an ordered one opens in its order for
+  everyone. A to Z and last updated stay a choice per browser.
+- **Writing.** `POST /api/tree/:kind/place` `{ id, after }` puts an item
+  right after another of its folder (null = first); the agents' tool is
+  `tree_item_place`, and `tree_folder_update` takes `after` for a folder.
+  A place writes the moved item only when its new neighbours both carry a
+  rank. Otherwise (a folder not ordered yet, or a key grown past 48
+  characters) it ranks the folder whole, evenly (`ranksSpread`), in the
+  order the tree shows it: the first drag moves one item and nothing else.
+  A whole ranking writes only rows the caller may write: never a read-only
+  snapshot copy (it keeps its place, and cannot be placed), and at the top
+  level only what the caller may edit. Items the caller does not read keep
+  their rank. Places in one folder run one at a time (an advisory lock on
+  the folder). A move to another folder keeps the item's rank, so it lands
+  by it there until someone places it.
+
 ## Pins, Recent and Most used
 
 `item_marks` holds one login's marks per item: a pin and an open counter.
@@ -165,6 +205,8 @@ open folders are still remembered per browser.
   writes racing cannot both pass a stale check.
 - `POST /api/tree/:kind/move` moves items into a folder (null = the root). Each
   item moves on its own; the answer lists any that could not.
+- `POST /api/tree/:kind/place` puts an item in its folder's custom order
+  (`after`: the item to follow, null = first; "Custom order" above).
 
 Every write NOTIFYs `tree_changed`; open clients get a realtime `tree` event
 with the kind and refetch the folders they show. Uploads and deletes of items

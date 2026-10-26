@@ -32,11 +32,21 @@
  */
 export const RECALL_V2 = true;
 
+/**
+ * The tree's custom order (docs/folder-tree.md, "Custom order"): the `custom`
+ * sort, a folder page's `ordered` and `mayOrder`, and POST
+ * /api/tree/:kind/place. A client offers drag ordering only when this is
+ * true: an older brain answers `sort=custom` with a 400. `features.test.ts`
+ * pins it to the route.
+ */
+export const TREE_CUSTOM_ORDER = true;
+
 export type ShellFeatures = {
   recallV2: boolean;
+  treeCustomOrder: boolean;
 };
 
 /** The flags for the owner shell. One object, so adding a flag is one line. */
 export function shellFeatures(): ShellFeatures {
-  return { recallV2: RECALL_V2 };
+  return { recallV2: RECALL_V2, treeCustomOrder: TREE_CUSTOM_ORDER };
 }

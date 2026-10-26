@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidRank, rankBetween, ranksAfter } from './rank';
+import { isValidRank, rankBetween, ranksAfter, ranksSpread } from './rank';
 
 describe('rankBetween', () => {
   it('produces a key with both ends open', () => {
@@ -84,5 +84,28 @@ describe('isValidRank', () => {
     // outside the bound ('0i' > '0' — the review's zero-tail case).
     expect(() => rankBetween(null, '0')).toThrow();
     expect(() => rankBetween('a', 'a0')).toThrow();
+  });
+});
+
+describe('ranksSpread', () => {
+  it('gives N valid keys in strict order, short at any length', () => {
+    for (const n of [1, 2, 5, 17, 36, 385, 1000, 5000]) {
+      const keys = ranksSpread(n);
+      expect(keys).toHaveLength(n);
+      for (const k of keys) expect(isValidRank(k)).toBe(true);
+      for (let i = 1; i < n; i++) expect(keys[i - 1]! < keys[i]!).toBe(true);
+      expect(keys.at(-1)!.length).toBeLessThanOrEqual(4);
+    }
+    expect(ranksSpread(0)).toEqual([]);
+  });
+
+  it('leaves room between neighbours and at both ends', () => {
+    const keys = ranksSpread(10);
+    expect(() => rankBetween(null, keys[0])).not.toThrow();
+    for (let i = 1; i < keys.length; i++) {
+      const mid = rankBetween(keys[i - 1], keys[i]);
+      expect(mid > keys[i - 1]! && mid < keys[i]!).toBe(true);
+    }
+    expect(rankBetween(keys.at(-1), null) > keys.at(-1)!).toBe(true);
   });
 });

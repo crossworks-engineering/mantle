@@ -735,6 +735,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/tree/visibility.ts mantle_ws_admin_id': 3,
   'packages/content/src/tree/visibility.ts mantle_ws_live': 2,
   'packages/content/src/tree/visibility.ts mantle_ws_names': 3,
+  'packages/content/src/tree/write.ts mantle_may_manage_home': 1,
   'packages/db/src/brain-answers.ts mantle_name_taken': 1,
   'packages/db/src/brain-answers.ts mantle_snapshot_bytes': 1,
   'packages/db/src/check-floor.ts mantle_check_note': 1,

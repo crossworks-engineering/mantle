@@ -69,3 +69,24 @@ export function ranksAfter(after: string | null | undefined, count: number): str
   }
   return out;
 }
+
+/**
+ * N keys in order, spread evenly over the shortest width that leaves room
+ * between neighbours: a list ranked whole (a folder's custom order) stays
+ * short however long it is, where ranksAfter grows one character every few
+ * keys. Never a key ending in '0'.
+ */
+export function ranksSpread(count: number): string[] {
+  if (count <= 0) return [];
+  let width = 1;
+  while (BASE ** width < 2 * (count + 1)) width++;
+  const step = BASE ** width / (count + 1);
+  const out: string[] = [];
+  for (let i = 1; i <= count; i++) {
+    const v = Math.floor(i * step);
+    const key = v.toString(BASE).padStart(width, '0');
+    // A step of 2 or more: the next value up is still below the next key.
+    out.push(key.endsWith('0') ? (v + 1).toString(BASE).padStart(width, '0') : key);
+  }
+  return out;
+}

@@ -785,6 +785,7 @@
 "POST /api/tools": {"class":"area","scope":{"kind":"area","area":"assistants"},"area":"assistants","effect":"write","caller":"owner"},
 "POST /api/tree/:kind/folders": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/tree/:kind/move": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","caller":"owner"},
+"POST /api/tree/:kind/place": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","caller":"owner"},
 "POST /api/tree/items/:id/opened": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","makesItems":false,"caller":"owner"},
 "POST /api/updates/check": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/updates/request": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},

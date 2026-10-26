@@ -44,8 +44,11 @@ export const TREE_FOLDER_NAME_MAX = 60;
 export const TREE_SEARCH_MAX = 200;
 
 /** The orders a folder's items can be listed in. Folders always keep their
- *  own manual order (rank, then name). */
-export const TREE_SORTS = ['name', 'updated', 'start', 'due'] as const;
+ *  own manual order (rank, then name). `custom` is the order people set by
+ *  dragging (`data.rank`, one for everyone): a folder that has one lists by
+ *  it, then by name; one that has none lists in the kind's first other sort,
+ *  so `custom` changes nothing until someone orders the folder. */
+export const TREE_SORTS = ['name', 'updated', 'start', 'due', 'custom'] as const;
 export type TreeSort = (typeof TREE_SORTS)[number];
 
 export function isTreeSort(v: unknown): v is TreeSort {
@@ -68,7 +71,9 @@ export type TreeKindSpec = {
   /** Whether a folder of this kind may be shared below admin. The kinds that
    *  are admin-only forever (the type ceiling) never are. */
   shareable: boolean;
-  /** The item orders offered, the first being the default. */
+  /** The item orders offered, the first being the default: `custom` first
+   *  for every kind, then the registry's own (the first of those is what an
+   *  unordered folder lists in). */
   sorts: readonly TreeSort[];
 };
 
@@ -87,7 +92,7 @@ export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = Object.
         root: tree.root,
         nodeType,
         shareable: tree.shareable,
-        sorts: tree.sorts,
+        sorts: ['custom', ...tree.sorts],
       },
     ]),
 ) as Record<TreeKind, TreeKindSpec>;
@@ -195,6 +200,15 @@ export type TreeFolderPage = {
   folders: TreeFolder[];
   items: TreeItem[];
   sort: TreeSort;
+  /** Asked with `sort=custom`: the folder has a custom order (an item it
+   *  lists carries a rank), so its items are in that order. Absent when they
+   *  are in the kind's other sort, and from a brain before it. */
+  ordered?: boolean;
+  /** The caller may set this folder's order, of its items and its
+   *  subfolders (POST /api/tree/:kind/place, a folder's `after`): Write on
+   *  the folder, or an Admin scope at the top level. Absent from a brain
+   *  before it. */
+  mayOrder?: boolean;
   /** Pass back as `cursor` for the next page of items; null at the end. */
   nextCursor: string | null;
   /** Asked with `?ws=<id>` (ListWsEcho): the items are only those that

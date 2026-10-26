@@ -469,8 +469,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // Present in Pages (+4 rows, +2 with a caller): the poster with its HEAD
     // (readerAsset), and the share's canvas snapshot (a link row, no caller).
     // The Desk (+1): PUT /api/profile/home-desk (self).
-    expect(rows.filter((r) => r.caller).length).toBe(776);
-    expect(rows.length).toBe(836);
+    // The tree's custom order (+1, with a caller): POST /api/tree/:kind/place.
+    expect(rows.filter((r) => r.caller).length).toBe(777);
+    expect(rows.length).toBe(837);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
