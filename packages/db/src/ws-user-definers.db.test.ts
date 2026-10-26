@@ -57,7 +57,7 @@ import {
   ensureTestAnchor,
   runWorkspacesSwitch,
 } from './test-support';
-import { OWNER_ROLE, RUNTIME_ROLE } from './runtime-role';
+import { OWNER_ROLE } from './runtime-role';
 import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -119,8 +119,6 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_set_contact: 'rule: the acting login, no system work (0309, S2b)',
   mantle_ws_set_landing: 'rule: the acting login, no system work (0309, S2b)',
   mantle_ws_archive: 'rule: the acting login, no system work (0309, S2b)',
-  mantle_bridge_login:
-    'exemption: demote only since 0330 (an older image writes role member, then calls it; it never adds), the runtime and narrow roles only',
   mantle_ws_team_normal: 'exemption: migrator only (the switch)',
   mantle_ws_review_off: 'exemption: migrator only (the switch)',
   mantle_ws_spaces_fold: 'exemption: migrator only (the switch)',
@@ -1089,7 +1087,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     expect(writers).toEqual(Object.keys(WRITERS).sort());
   });
 
-  it('catalog: the named exemptions hold (bridge_login runtime only; the switch`s steps and the bridge connector run by no app role; the guards are triggers)', async () => {
+  it('catalog: the named exemptions hold (the login bridge gone; the switch`s steps and the bridge connector run by no app role; the guards are triggers)', async () => {
     const mayRun = async (fn: string) =>
       (
         await sql<{ r: string }[]>`
@@ -1097,15 +1095,6 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
            where not r.rolsuper and r.rolname <> ${OWNER_ROLE}
              and has_function_privilege(r.oid, to_regprocedure(${fn}), 'EXECUTE') order by 1`
       ).map((x) => x.r);
-    const hasRuntime = (
-      await sql<{ on: boolean }[]>`select to_regrole(${RUNTIME_ROLE}) is not null as on`
-    )[0]!.on;
-    // The runtime role only (demote only since 0330, kept for an image one
-    // release back): the users area's new login and role change run the
-    // membership definers at the full-route spot login-credential.
-    expect(await mayRun('public.mantle_bridge_login(uuid)')).toEqual(
-      hasRuntime ? [RUNTIME_ROLE] : [],
-    );
     for (const fn of [
       'public.mantle_ws_team_normal(boolean)',
       'public.mantle_ws_review_off()',
@@ -1114,15 +1103,19 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
     ]) {
       expect(await mayRun(fn), fn).toEqual([]);
     }
-    // The bridges are gone (0330): their triggers and the connector bridge;
-    // the login bridge only demotes.
+    // The bridges are gone: their triggers and the connector bridge (0330),
+    // the login bridge (0334). The users area's new login and role change
+    // run the membership definers, and nothing writes an Admin row from the
+    // role.
     const [t] = await sql<{ n: number }[]>`
       select count(*)::int as n from pg_trigger
        where tgname in ('tool_groups_zz_bridge', 'users_zz_bridge')`;
     expect(t!.n).toBe(0);
-    const [gone] = await sql<{ fn: string | null }[]>`
-      select to_regprocedure('public.mantle_bridge_connector(uuid,text)')::text as fn`;
-    expect(gone!.fn).toBeNull();
+    const gone = await sql<{ fn: string | null }[]>`
+      select to_regprocedure(f)::text as fn
+        from unnest(array['public.mantle_bridge_connector(uuid,text)',
+                          'public.mantle_bridge_login(uuid)']) f`;
+    expect(gone.map((g) => g.fn)).toEqual([null, null]);
     const guards = await sql<{ name: string; trg: boolean }[]>`
       select p.proname::text as name, p.prorettype = 'trigger'::regtype as trg from pg_proc p
        where p.pronamespace = 'public'::regnamespace

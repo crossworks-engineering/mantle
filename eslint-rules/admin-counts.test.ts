@@ -555,10 +555,10 @@ describe('the repo', () => {
 
   it('reads the role column in the functions S8b must pin', () => {
     // mantle_login_is_admin_user is membership only since 0330; the
-    // membership definers write the column; mantle_bridge_login reads the
-    // role only to demote (round 4, M1), and the role guard reads none.
+    // membership definers write the column; mantle_bridge_login, which read
+    // the role to demote, is dropped (0334), and the role guard reads none.
     expect(detail.sqlRoleReaderFns).not.toContain('mantle_login_is_admin_user');
-    expect(detail.sqlRoleReaderFns).toContain('mantle_bridge_login');
+    expect(detail.sqlRoleReaderFns).not.toContain('mantle_bridge_login');
     expect(detail.sqlRoleReaderFns).not.toContain('mantle_login_role_guard');
     expect(detail.sqlRoleReaderFns).not.toContain('mantle_ws_add_user');
     expect(detail.sqlRoleReaderFns).not.toContain('mantle_ws_remove_user');

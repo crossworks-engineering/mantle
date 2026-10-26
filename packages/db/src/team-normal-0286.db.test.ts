@@ -120,7 +120,7 @@ describe.skipIf(!URL)('migration 0286: Team is a normal workspace', () => {
     expect(k).toEqual({ team: 'other', admin: 'admin' });
   });
 
-  it('the login bridge (a no-op since 0330) moves no row, and never touches Team', async () => {
+  it('a role written by hand moves no row (the login bridge is gone since 0334), and never touches Team', async () => {
     const z = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role)
       values (${z}, 'z@example.invalid', 'x', 'member')`;
@@ -130,21 +130,18 @@ describe.skipIf(!URL)('migration 0286: Team is a normal workspace', () => {
           select workspace_id::text as ws, moderator from workspace_users
            where login_id = ${z} order by moderator desc, workspace_id`
       ).map((r) => `${r.ws === admin ? 'A' : r.ws === team ? 'T' : '?'}:${r.moderator}`);
-    await sql`select mantle_bridge_login(${z})`;
     expect(await rows()).toEqual([]);
     // An Admin user put them in Team, not as a Moderator.
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${team}, ${z}, false)`;
     await sql`update auth.users set role = 'admin' where id = ${z}`;
-    await sql`select mantle_bridge_login(${z})`;
-    // S8b (0330): the bridge is a no-op; only the membership definers put a
-    // login in Admin (and write its role). A hand-written role is drift.
+    // S8b (0330): only the membership definers put a login in Admin (and
+    // write its role); the bridge is gone (0334). A hand-written role is
+    // drift.
     expect(await rows()).toEqual(['T:false']);
     await sql`update auth.users set role = 'member' where id = ${z}`;
-    await sql`select mantle_bridge_login(${z})`;
     expect(await rows()).toEqual(['T:false']);
     // The member's Team tick from the switch stays as it was.
-    await sql`select mantle_bridge_login(${member})`;
     const [m] = await sql<{ moderator: boolean }[]>`select moderator from workspace_users
       where workspace_id = ${team} and login_id = ${member}`;
     expect(m!.moderator).toBe(true);

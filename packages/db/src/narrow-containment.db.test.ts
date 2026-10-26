@@ -410,16 +410,17 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     expect(
       await run(nl, [acting(admin), `update auth.users set role = 'admin' where id = '${member}'`]),
     ).toBe('42501');
+    // The login bridge is gone (0334): nothing to call.
     expect(await run(nl, [acting(admin), `select mantle_bridge_login('${member}'::uuid)`])).toBe(
-      '42501',
+      '42883',
     );
     const item = `select * from mantle_structure_item('secrets-root', 'insert', '${member}'::uuid,
                     '${brain}'::uuid, null, '{"title": "S", "path": "secrets"}'::jsonb)`;
     expect(await run(nl, [acting(member), item])).toBe('42501');
     expect(await rights()).toBe(before);
     const [g] = await su<{ b: boolean }[]>`
-      select has_function_privilege('mantle_system_narrow', 'public.mantle_bridge_login(uuid)', 'EXECUTE') as b`;
-    expect(g!.b).toBe(false);
+      select to_regprocedure('public.mantle_bridge_login(uuid)') is null as b`;
+    expect(g!.b).toBe(true);
   });
 
   it('every definer that takes a login with no scope writes nothing for another login on the narrow login', async () => {
@@ -444,7 +445,6 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       'mantle_personal_space',
       'mantle_tg_login_moderates',
       'mantle_ws_remove_user',
-      'mantle_bridge_login',
       'mantle_structure_item',
       'mantle_space_settle_promotion',
       'mantle_agent_delete',

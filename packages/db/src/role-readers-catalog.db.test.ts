@@ -119,8 +119,6 @@ describe.skipIf(!URL)('the scoreboard reads the role readers of the live catalog
     const EXACT: Readonly<Record<string, string>> = {
       mantle_access_keys_seen: "shows each key's login role (display): the exact column",
       mantle_client_space_usage: 'counts by role: the exact column',
-      mantle_bridge_login:
-        "demote only (0330): an older image's demotion writes role member and calls it; the login leaves Admin, never joins it",
       mantle_member_space: "a member's personal space by role: the exact column",
       mantle_narrow_login_held:
         "whether the narrow role must leave a login's sign-in alone (0327): the owner, role admin OR a user of Admin, so it holds both answers while any drift is left (the stricter); with the column exact the two agree",

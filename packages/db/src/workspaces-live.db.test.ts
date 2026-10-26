@@ -15,7 +15,8 @@
  *  - no bridge: a level change is refused, a new item takes a home and its
  *    folder's rows, an app's read-only switch writes no grant, a moved item
  *    keeps its home;
- *  - a login joins the workspaces only by name (mantle_bridge_login);
+ *  - a login joins the workspaces only by name (the membership definers;
+ *    the login bridge is gone, 0334);
  *  - facts with a source follow their node (a grant change writes no fact),
  *    a deleted source freezes the fact's access, a cleared one too;
  *  - chat facts map to Admin.
@@ -401,16 +402,12 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
         .map((r) => (r.ws === admin ? 'A' : 'T'))
         .sort();
     expect(await where()).toEqual([]);
-    // What POST /api/users does after the insert: a member joins nothing
-    // (0286: no Team by itself).
-    await sql`select mantle_bridge_login(${z})`;
-    expect(await where()).toEqual([]);
+    // A member joins nothing by itself (0286: no Team by itself).
     await sql`update auth.users set role = 'admin' where id = ${z}`;
     expect(await where()).toEqual([]);
-    // S8b (0330): the bridge is a no-op; an admin joins Admin only through
-    // the membership definers (mantle_ws_add_user, which writes the role).
-    await sql`select mantle_bridge_login(${z})`;
-    expect(await where()).toEqual([]);
+    // S8b (0330): an admin joins Admin only through the membership definers
+    // (mantle_ws_add_user, which writes the role); the login bridge is gone
+    // (0334).
     const [e] = await sql<{ n: number }[]>`
       select count(*)::int as n from workspace_events where action = 'bridge.login' and subject->>'login' = ${z}`;
     expect(e!.n).toBe(0);

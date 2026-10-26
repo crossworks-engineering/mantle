@@ -509,11 +509,8 @@ describe('the narrow system role rights', () => {
     // The content and workspace writers among the definers (the a2
     // re-audit's 17; the onboarding attach left the narrow list in round
     // 13c: it needs the login, so it runs at the spot acting-login), each
-    // denied by name;
-    // mantle_bridge_login too (it runs at the spot
-    // login-credential with the role change).
+    // denied by name (the login bridge is gone since 0334).
     const writers = [
-      'mantle_bridge_login',
       'mantle_ws_add_user',
       'mantle_ws_remove_user',
       'mantle_ws_create',
@@ -530,7 +527,7 @@ describe('the narrow system role rights', () => {
       'mantle_share_close_admin',
       'mantle_share_contact_write_set',
     ];
-    expect(writers).toHaveLength(16);
+    expect(writers).toHaveLength(15);
     for (const body of writers) {
       expect(
         Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),

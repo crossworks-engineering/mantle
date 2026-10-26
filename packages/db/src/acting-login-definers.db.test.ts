@@ -193,7 +193,6 @@ describe.skipIf(!URL)('0315: with no scope, only the acting login from a system 
       'mantle_ws_private_for',
       'mantle_personal_space',
       'mantle_tg_login_moderates',
-      'mantle_bridge_login',
     ];
     /** Refused with no acting login: each writes only for the scope's own. */
     const refused = ['mantle_ws_private_workspace', 'mantle_ws_remove_user'];

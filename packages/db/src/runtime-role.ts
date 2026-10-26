@@ -197,8 +197,6 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "0321's assistant_messages guard: the trigger, as the narrow role, asks it whether a row it inserts is consistent (a read definer)",
   'public.mantle_actor_miss_log(text,text,text,text)':
     'gateway/pools.ts logActorMiss: an actor check miss row, as system(actor-check)',
-  'public.mantle_bridge_login(uuid)':
-    'demote only since the role follows Admin membership (0330): nothing in this image calls it; an image one release back does (login create, the role change, an invite), so it keeps EXECUTE until it is dropped',
   'public.mantle_check_box_mode(text)':
     'gateway/check-mode.ts EDIT_CHECK_DRIFT_SQL and check-floor.ts CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
@@ -376,8 +374,6 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "a member chat turn's slot given back (0326): the same rule as the claim; a narrow session may not clear any login's daily cap",
   'public.mantle_member_turn_settle(text,bigint)':
     "a member chat turn's tokens stamped on its slot (0327): the same rule as the claim; a narrow session may not lower its own count or raise another login's",
-  'public.mantle_bridge_login(uuid)':
-    "a login's Admin rows from its role (workspace_users, workspace_events), with no scope and no acting login: a rights write, run with the role change and a new login at the full-route spot login-credential, never a narrow statement (measured: no narrow caller)",
   'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
     "an owner's sharing switch with no Admin check: tests only, never a narrow reason",
   'public.mantle_contact_shares_revoke_rows(uuid,uuid)':

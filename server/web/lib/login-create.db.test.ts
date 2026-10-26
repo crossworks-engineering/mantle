@@ -145,9 +145,8 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
       );
     const roleOf = async () =>
       (await sys<{ role: string }>(sql`select role from auth.users where id = ${id}`))[0]!.role;
-    // The login bridge only demotes (0330): a role raised by hand moves no row.
+    // A role raised by hand moves no row (the login bridge is gone, 0334).
     await asSuperuser()(sql`update auth.users set role = 'admin' where id = ${id}`);
-    await sys(sql`select mantle_bridge_login(${id}::uuid)`);
     expect(await rowsOf()).toEqual([{ ws: other!.id, moderator: false }]);
     // ... and shows as drift until it is put back (the box count).
     expect(await sys(sql`select mantle_role_drift() as n`)).toEqual([{ n: 1 }]);

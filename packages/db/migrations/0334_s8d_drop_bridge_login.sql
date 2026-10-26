@@ -1,0 +1,25 @@
+-- The login bridge goes (workspaces arch plan v3.2, S8d; section 2.2
+-- point 5). Since 0330 membership decides and auth.users.role follows it,
+-- written only by the membership definers (mantle_ws_add_user and
+-- mantle_ws_remove_user on the Admin workspace) and held there by the
+-- role guard (users_role_guard). 0330 left mantle_bridge_login demote
+-- only, for the image one release back, which still called it right after
+-- its own role write. Nothing calls it since 0330's image: no TypeScript,
+-- no SQL function body and no trigger (0330 dropped users_zz_bridge and
+-- mantle_bridge_login_trg). Every box has run 0330's image for a release.
+--
+-- What it did, and why it is a no-op now: it took a login whose role is
+-- not admin out of the Admin workspace. The role is written in the same
+-- transaction as the Admin row, and 0330 refused its migrate while any
+-- login held an Admin seat without role admin, so no login it would touch
+-- exists: it deletes no row and writes no event on any box.
+--
+-- mantle_role_drift() stays as the box count (scripts/arch-scoreboard-box.sh):
+-- the column is written by the definers only, so a hand write shows up
+-- there.
+--
+-- Revert: packages/db/rollback/0334_s8d_drop_bridge_login.revert.sql
+-- (0330's body, its owner and rights back).
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_bridge_login"(uuid);

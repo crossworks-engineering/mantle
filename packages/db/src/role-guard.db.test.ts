@@ -9,9 +9,11 @@
  *    membership definers, run by the runtime role, write it; the first
  *    owner row (is_owner, role admin, the table empty) passes, a second
  *    one and any other admin insert do not; 0272's CHECK still holds;
- *  - mantle_bridge_login demotes only: a login whose role is not admin
- *    leaves Admin (the row, a 'bridge.login' event); a role admin login
- *    outside Admin is not added;
+ *  - mantle_bridge_login demoted only (0330, on a database stopped before
+ *    0334): a login whose role is not admin left Admin (the row, a
+ *    'bridge.login' event); a role admin login outside Admin was not
+ *    added; 0334 drops it, and 0334's revert puts 0330's body, owner and
+ *    rights back;
  *  - with no scope (an Admin area exit at the full-route spot), the
  *    membership definers act for the exit's acting login: the runtime
  *    role with an Admin user that holds the users area adds and removes
@@ -501,8 +503,8 @@ describe.skipIf(!URL)('the role guard: only the membership definers write the ro
   });
 });
 
-describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
-  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+describe.skipIf(!URL)('mantle_bridge_login demoted only (0330) until 0334 dropped it', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let adminWs = '';
   const tag = `rb${randomUUID().slice(0, 8)}`;
@@ -513,7 +515,8 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
   };
 
   beforeAll(async () => {
-    scratch = await createMigratedScratchDatabase(URL!);
+    // 0330's body, as a box one release back has it (0334 drops it).
+    scratch = await createScratchDatabaseBefore(URL!, '0334_s8d_drop_bridge_login');
     sql = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
     const brain = await ensureTestAnchor(sql);
     // The switch's Admin workspace, by its bridge key, as the bridge finds it.
@@ -590,6 +593,69 @@ describe.skipIf(!URL)('mantle_bridge_login demotes only (0330)', () => {
     // An Admin user with role admin is left as it is.
     await sql`select mantle_bridge_login(${L.adm}::uuid)`;
     expect(await state(L.adm)).toEqual({ row: true, events: 0 });
+  });
+
+  // S8d: nothing calls it since 0330's image, and on a box with no seat
+  // without role admin (0330's migrate refused one) it deletes nothing, so
+  // 0334 drops it. Its revert puts it back as 0330 left it.
+  it('0334 drops it and nothing else; its revert puts back 0330`s body, owner and rights', async () => {
+    const fact = async () =>
+      (
+        await sql<{ v: string | null }[]>`
+          select (select md5(p.prosrc) || ' ' || pg_get_userbyid(p.proowner) || ' ' ||
+                         p.prosecdef::text || ' ' ||
+                         has_function_privilege('public', p.oid, 'EXECUTE')::text || ' ' ||
+                         has_function_privilege(${RUNTIME_ROLE}, p.oid, 'EXECUTE')::text || ' ' ||
+                         has_function_privilege(${NARROW_ROLE}, p.oid, 'EXECUTE')::text
+                    from pg_proc p
+                   where p.oid = to_regprocedure('public.mantle_bridge_login(uuid)')) as v`
+      )[0]!.v;
+    const owner = async () =>
+      (
+        await sql<{ o: string }[]>`
+          select pg_get_userbyid(p.proowner)::text as o from pg_proc p
+           where p.oid = 'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)'::regprocedure`
+      )[0]!.o;
+    // A box's grants, as migrate leaves them: the runtime role may run it.
+    await applyRuntimeGrants(sql);
+    const before = await fact();
+    expect(before).toMatch(/ true false true false$/);
+    expect(before!.split(' ')[1]).toBe(await owner());
+    // The other functions are left as they were.
+    const others = async () =>
+      (
+        await sql<{ n: number; h: string }[]>`
+          select count(*)::int as n, md5(string_agg(p.oid::regprocedure::text || md5(p.prosrc), ','
+                   order by p.oid::regprocedure::text)) as h
+            from pg_proc p where p.pronamespace = 'public'::regnamespace
+             and p.proname <> 'mantle_bridge_login'`
+      )[0]!;
+    const rest = await others();
+    await scratch!.migrateRest();
+    expect(await fact()).toBeNull();
+    expect(await others()).toEqual(rest);
+    // No function body calls it (its comments aside).
+    const [named] = await sql<{ n: number }[]>`
+      select count(*)::int as n from pg_proc p
+       where p.pronamespace = 'public'::regnamespace
+         and regexp_replace(p.prosrc, '--[^\n]*', '', 'g') ilike '%mantle_bridge_login%'`;
+    expect(named!.n).toBe(0);
+    const REVERT = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'rollback',
+      '0334_s8d_drop_bridge_login.revert.sql',
+    );
+    const statements = readFileSync(REVERT, 'utf8')
+      .split('--> statement-breakpoint')
+      .map((st) => st.trim())
+      .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
+      // A scratch database has no drizzle ledger (its runner stamps none).
+      .filter((st) => !st.includes('"drizzle"."__drizzle_migrations"'));
+    await sql.begin(async (tx) => {
+      for (const st of statements) await tx.unsafe(st);
+    });
+    expect(await fact()).toBe(before);
   });
 });
 
@@ -792,12 +858,14 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
       'rollback',
       `${TAG}.revert.sql`,
     );
-    const statements = readFileSync(REVERT, 'utf8')
-      .split('--> statement-breakpoint')
-      .map((st) => st.trim())
-      .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
-      // A scratch database has no drizzle ledger (its runner stamps none).
-      .filter((st) => !st.includes('"drizzle"."__drizzle_migrations"'));
+    const revert = (tag: string) =>
+      readFileSync(join(dirname(REVERT), `${tag}.revert.sql`), 'utf8')
+        .split('--> statement-breakpoint')
+        .map((st) => st.trim())
+        .filter((st) => st.replace(/^--.*$/gm, '').trim() !== '')
+        // A scratch database has no drizzle ledger (its runner stamps none).
+        .filter((st) => !st.includes('"drizzle"."__drizzle_migrations"'));
+    const statements = revert(TAG);
     const catalog = async (sql: postgres.Sql) =>
       sql<{ what: string; v: string }[]>`
         select p.proname::text as what,
@@ -838,7 +906,10 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
           (await catalog(sql)).map((r) => r.what),
           String(switched),
         ).toEqual(['mantle_role_drift']);
+        // Below 0334 too: its revert first (it puts back the login bridge
+        // whose owner this revert reads), then this one.
         await sql.begin(async (tx) => {
+          for (const st of revert('0334_s8d_drop_bridge_login')) await tx.unsafe(st);
           for (const st of statements) await tx.unsafe(st);
         });
         expect(await catalog(sql), String(switched)).toEqual(before);

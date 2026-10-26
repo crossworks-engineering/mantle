@@ -2332,6 +2332,13 @@
       "when": 1790200140000,
       "tag": "0333_present_embeds",
       "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1790200200000,
+      "tag": "0334_s8d_drop_bridge_login",
+      "breakpoints": true
     }
   ]
 }
