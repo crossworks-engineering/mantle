@@ -13,13 +13,13 @@
     "./shutdown": "./src/shutdown.ts"
   },
   "dependencies": {
-    "undici": "^8.11.2"
+    "undici": "^8.12.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "typescript": "^5.9.3"
   }
 }
