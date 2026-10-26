@@ -17,8 +17,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   revert in Studio brings it back. A revert in Studio sticks: once a
   prompt's history holds any Studio save (an edit or a revert, even back
   to an old default's exact text), later upgrades leave that prompt
-  alone. This also fixes the team responder, whose reverted prompt was
-  moved forward again on every release. One agent that fails to move is
+  alone. From now on this also holds for the team responder, whose
+  reverted prompt was moved forward again on every release (a brain where
+  that already happened stays on the current default). Only a Studio
+  save counts as an owner edit. One agent that fails to move is
   logged and skipped; the others still move. The team responder also
   gains its missing Phase 6 member-chat default (v0.232.295 to v0.239.94).
   `server/web/scripts/retired-prompt-hashes.ts` prints every specialist's
