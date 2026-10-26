@@ -132,12 +132,20 @@ function styleText(css: string): string {
  *    `{v:1, kind:'data-reply', id, ok, result | error}` from the parent only.
  *    `n` is the nonce again, from this closure: the parent drops a data
  *    message without it, so a page the frame navigated to (the same window)
- *    sends nothing it takes. The message names no canvas and no login: the
+ *    sends nothing it takes. A call waiting for `ready` is held without it;
+ *    `n` goes on only in the object handed straight to the parent's
+ *    postMessage (captured first), so a canvas that patched a built-in
+ *    (Array.prototype.push, a setter on a prototype) never sees it. The
+ *    message names no canvas and no login: the
  *    parent binds both, and checks every field (canvas-sandbox.tsx). A
  *    canvas that never calls it sends nothing. With no parent (a render: no
  *    nonce) reads answer empty and writes refuse, at once.
- *  - Leaving: `{v:1, kind:'leaving', n}` as the document unloads (pagehide),
+ *  - Leaving: `{v:1, kind:'leaving', n}` as the document unloads (pagehide,
+ *    taken in the capture phase, registered before any canvas code runs),
  *    so the parent takes the frame down before a navigated-to page runs.
+ *    Not when the page goes into the back-forward cache (`persisted`): it
+ *    is kept, not left, and a canvas that never used the store keeps its
+ *    frame when the viewer goes Back.
  */
 function preludeScript(opts: {
   cls: string;
@@ -168,14 +176,17 @@ function preludeScript(opts: {
     try{Object.defineProperty(window,n,{value:undefined,writable:false,configurable:false});}catch(_){}});
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
   theme(cfg.cls,cfg.ct);
-  var waits={},seq=0,up=false,queue=[],noHost=!nonce;
+  var waits=Object.create(null),seq=0,up=false,queue=[],qn=0,noHost=!nonce;
+  window.addEventListener('pagehide',function(e){
+    if(nonce&&!(e&&e.persisted)){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}},{capture:true});
   window.addEventListener('message',function(e){
     if(e.source!==P)return;var m=e.data;if(!m||m.v!==1)return;
     if(m.kind==='theme'&&cfg.follow){theme(m.cls,m.colorTheme);}
     else if(m.kind==='data-reply'){var w=waits[m.id];if(!w)return;delete waits[m.id];clearTimeout(w.t);
       if(m.ok===true){w.ok(m.result);}else{w.no(new Error(typeof m.error==='string'?m.error.slice(0,300):'the canvas data store refused'));}}
   });
-  function send(m){try{P.postMessage(m,'*');}catch(_){var w=waits[m.id];if(w){delete waits[m.id];clearTimeout(w.t);w.no(new Error('the canvas data store is not available'));}}}
+  function send(r){try{P.postMessage({v:1,kind:'data',n:nonce,id:r.id,op:r.op,bucket:r.bucket,key:r.key,json:r.json,everyone:r.everyone,by:r.by},'*');}
+    catch(_){var w=waits[r.id];if(w){delete waits[r.id];clearTimeout(w.t);w.no(new Error('the canvas data store is not available'));}}}
   function call(op,a){return new Promise(function(ok,no){
     if(noHost){
       if(op==='get'){ok(null);}else if(op==='list'){ok([]);}
@@ -184,8 +195,8 @@ function preludeScript(opts: {
       return;}
     var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the canvas data store did not answer'));}},${CANVAS_DATA_CALL_TIMEOUT_MS + 5_000});
     waits[id]={ok:ok,no:no,t:t};
-    var m={v:1,kind:'data',n:nonce,id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone,by:a.by};
-    if(up){send(m);}else{queue.push(m);}
+    var r={id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone,by:a.by};
+    if(up){send(r);}else{queue[qn++]=r;}
   });}
   function bk(o){return o&&typeof o==='object'&&o.bucket!==undefined?o.bucket:'shared';}
   var data={
@@ -217,9 +228,7 @@ function preludeScript(opts: {
     report((e&&e.reason&&(e.reason.message||e.reason))||'the canvas failed');});
   window.addEventListener('load',function(){
     try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}
-    up=true;var q=queue;queue=[];for(var i=0;i<q.length;i++){send(q[i]);}});
-  window.addEventListener('pagehide',function(){
-    if(nonce){try{P.postMessage({v:1,kind:'leaving',n:nonce},'*');}catch(_){}}});
+    up=true;var q=queue,k=qn;queue=null;qn=0;for(var i=0;i<k;i++){send(q[i]);}});
 })();`;
 }
 
