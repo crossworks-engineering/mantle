@@ -48,6 +48,8 @@ export const UUID_COPY_ALLOWED = {
     'a published contract package: it takes no dependency (reads either case, as std)',
   'packages/content-core/src/profile-projections.ts':
     'a published contract package: it takes no dependency',
+  'packages/content-core/src/canvas-data.ts':
+    "a published contract package: it takes no dependency (a canvas data entry's by.id, checked on the host)",
   'server/sandboxd/src/main.ts': 'the sandbox daemon takes no workspace dependency',
 };
 

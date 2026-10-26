@@ -16,7 +16,10 @@
  *    the canvas writes it (the right a source save asks).
  *  - `mine`: every reader writes their own entries only. A plain reader reads
  *    their own; a user with Write on the canvas (its owner too) reads
- *    everyone's.
+ *    everyone's, may remove any of them and may clear the canvas's data.
+ *
+ * Who wrote an entry: a `shared` entry shows the writer's name to every
+ * reader, and the writer's login id only to a user with Write on the canvas.
  */
 
 export const CANVAS_DATA_BUCKETS = ['shared', 'mine'] as const;
@@ -32,28 +35,43 @@ export const CANVAS_DATA_CANVAS_MAX_KEYS = 1000;
  *  canvas's budget for everyone else. */
 export const CANVAS_DATA_MINE_MAX_BYTES = 256 * 1024;
 export const CANVAS_DATA_MINE_MAX_KEYS = 200;
+/** Every login's `mine` entries together on one canvas: 75% of the canvas's
+ *  caps, so readers never fill it and `shared` always keeps a quarter. */
+export const CANVAS_DATA_MINE_ALL_MAX_BYTES = (CANVAS_DATA_CANVAS_MAX_BYTES * 3) / 4;
+export const CANVAS_DATA_MINE_ALL_MAX_KEYS = (CANVAS_DATA_CANVAS_MAX_KEYS * 3) / 4;
+/** How deep a value's arrays and objects may nest. */
+export const CANVAS_DATA_MAX_DEPTH = 64;
 
 /** A key: 1 to 128 characters, a letter or digit first, then letters,
  *  digits and `_ - . : /`. Plain enough to show, log and put in a URL. */
 export const CANVAS_DATA_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/;
 
+/** A login id as the store gives it in `by.id`: a lowercase uuid. (This
+ *  published package takes no dependency, so not @mantle/std's UUID_RE.) */
+const LOGIN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** How long the host waits on the brain for one forwarded call, and the
+ *  frame on the host. */
+export const CANVAS_DATA_CALL_TIMEOUT_MS = 30_000;
+
 /** The operations a canvas may ask for. */
-export const CANVAS_DATA_OPS = ['get', 'set', 'delete', 'list', 'info'] as const;
+export const CANVAS_DATA_OPS = ['get', 'set', 'delete', 'list', 'info', 'clear'] as const;
 export type CanvasDataOp = (typeof CANVAS_DATA_OPS)[number];
 
 /** One stored entry as the brain answers it. `by` is the login that owns a
- *  `mine` entry (or last wrote a `shared` one); a name only where the reader
- *  may see who it is. */
+ *  `mine` entry (or last wrote a `shared` one). Its `id` is left out of a
+ *  `shared` entry for a reader without Write on the canvas: the name only. */
 export type CanvasDataEntry = {
   key: string;
   value: unknown;
   updatedAt: string;
-  by?: { id: string; name: string | null };
+  by?: { id?: string; name: string | null };
 };
 
 /** What the store says about the reader of this canvas. */
 export type CanvasDataInfo = {
-  /** The reader may write the `shared` bucket (Write on the canvas). */
+  /** The reader may write the `shared` bucket (Write on the canvas), remove
+   *  another viewer's `mine` entry and clear the canvas's data. */
   canWriteShared: boolean;
   /** The reader may list everyone's `mine` entries (Write on the canvas). */
   readsEveryone: boolean;
@@ -69,6 +87,11 @@ export function isCanvasDataBucket(v: unknown): v is CanvasDataBucket {
 
 export function isCanvasDataKey(v: unknown): v is string {
   return typeof v === 'string' && CANVAS_DATA_KEY_RE.test(v);
+}
+
+/** An entry's `by.id`, as `delete(key, { bucket: 'mine', by })` names it. */
+export function isCanvasDataLoginId(v: unknown): v is string {
+  return typeof v === 'string' && LOGIN_ID_RE.test(v);
 }
 
 export function isCanvasDataOp(v: unknown): v is CanvasDataOp {
@@ -94,9 +117,24 @@ export function utf8Bytes(s: string): number {
   return n;
 }
 
+/** Whether a JSON value nests deeper than `max` arrays and objects (walked
+ *  without recursion: the value is at most a value's size). */
+function nestsDeeper(value: unknown, max: number): boolean {
+  const stack: { v: unknown; d: number }[] = [{ v: value, d: 0 }];
+  while (stack.length > 0) {
+    const { v, d } = stack.pop()!;
+    if (v === null || typeof v !== 'object') continue;
+    if (d + 1 > max) return true;
+    for (const child of Array.isArray(v) ? v : Object.values(v as Record<string, unknown>)) {
+      if (child !== null && typeof child === 'object') stack.push({ v: child, d: d + 1 });
+    }
+  }
+  return false;
+}
+
 /**
  * A value's JSON text, checked: JSON only (what JSON.parse gives back), at
- * most CANVAS_DATA_VALUE_MAX_BYTES. `json` is the text a caller sent; the
+ * most CANVAS_DATA_VALUE_MAX_BYTES, nested at most CANVAS_DATA_MAX_DEPTH. `json` is the text a caller sent; the
  * answer is the parsed value and the canonical text the store keeps (its
  * size is what the caps count).
  */
@@ -128,7 +166,11 @@ export function canvasDataValue(
   if (text === undefined) return { ok: false, error: 'value must be JSON' };
   const bytes = utf8Bytes(text);
   if (bytes > CANVAS_DATA_VALUE_MAX_BYTES) return { ok: false, error: tooBig() };
-  return { ok: true, value: JSON.parse(text) as unknown, text, bytes };
+  const parsed = JSON.parse(text) as unknown;
+  if (nestsDeeper(parsed, CANVAS_DATA_MAX_DEPTH)) {
+    return { ok: false, error: `value nests deeper than ${CANVAS_DATA_MAX_DEPTH} levels` };
+  }
+  return { ok: true, value: parsed, text, bytes };
 }
 
 function tooBig(): string {
@@ -138,7 +180,8 @@ function tooBig(): string {
 /** The refusal when a write would pass a cap, the same words everywhere. */
 export const CANVAS_DATA_FULL_ERROR =
   `the canvas's data is full: ${CANVAS_DATA_CANVAS_MAX_BYTES / 1024 / 1024} MB and ` +
-  `${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas, ` +
+  `${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas (viewers' own entries together ` +
+  `${CANVAS_DATA_MINE_ALL_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_ALL_MAX_KEYS}), ` +
   `${CANVAS_DATA_MINE_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_MAX_KEYS} entries of your own`;
 
 /**
@@ -154,8 +197,9 @@ The frame gives every canvas \`mantle.data\` (no import, no network: the page ar
 
 - \`await mantle.data.get(key, { bucket })\`: the value, or \`undefined\`.
 - \`await mantle.data.set(key, value, { bucket })\`: save (made or replaced).
-- \`await mantle.data.delete(key, { bucket })\`.
-- \`await mantle.data.list({ bucket, everyone })\`: \`[{ key, value, updatedAt, by: { id, name } }]\`.
+- \`await mantle.data.delete(key, { bucket, by })\`: \`by\` (an entry's \`by.id\`) removes another viewer's \`'mine'\` entry: Write only.
+- \`await mantle.data.list({ bucket, everyone })\`: \`[{ key, value, updatedAt, by: { id, name } }]\`; a \`'shared'\` entry's \`by.id\` only for a user with Write.
+- \`await mantle.data.clear()\`: remove every entry of the canvas, both buckets: Write only.
 - \`await mantle.data.info()\`: \`{ canWriteShared, readsEveryone, me, readOnly }\`.
 
 Buckets (\`bucket\` defaults to \`'shared'\`):
@@ -165,7 +209,7 @@ Buckets (\`bucket\` defaults to \`'shared'\`):
 
 Rules:
 
-- Values are small JSON: at most ${CANVAS_DATA_VALUE_MAX_BYTES / 1024} KB each, ${CANVAS_DATA_CANVAS_MAX_BYTES / 1024 / 1024} MB and ${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas, ${CANVAS_DATA_MINE_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_MAX_KEYS} entries per viewer in \`'mine'\`. Keys: letters, digits and \`_ - . : /\`, up to 128, a letter or digit first.
+- Values are small JSON: at most ${CANVAS_DATA_VALUE_MAX_BYTES / 1024} KB each, ${CANVAS_DATA_CANVAS_MAX_BYTES / 1024 / 1024} MB and ${CANVAS_DATA_CANVAS_MAX_KEYS} entries per canvas (\`'mine'\` together at most ${CANVAS_DATA_MINE_ALL_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_ALL_MAX_KEYS}), ${CANVAS_DATA_MINE_MAX_BYTES / 1024} KB and ${CANVAS_DATA_MINE_MAX_KEYS} entries per viewer in \`'mine'\`. Keys: letters, digits and \`_ - . : /\`, up to 128, a letter or digit first.
 - Data arrives after the first paint: draw the canvas first, then fill it in. The picture a save returns, the poster and exports show the canvas with no data.
 - Every call returns a promise that can reject (no right, full, offline): catch it and say so on the canvas; never lose what the viewer typed.
 - Another viewer wrote what you read: show it as text (\`textContent\`), never as HTML.

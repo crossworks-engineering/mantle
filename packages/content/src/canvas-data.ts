@@ -11,15 +11,18 @@
  *  - `shared`: every reader reads; a write asks Write on the canvas, the
  *    right a source save asks (itemWriteRefusalOf edit);
  *  - `mine`: a reader reads and writes their own login's entries; a login
- *    with Write on the canvas reads everyone's (`everyone`);
+ *    with Write on the canvas reads everyone's (`everyone`), removes any of
+ *    them and clears the canvas's data (moderation);
+ *  - a `shared` entry names its writer to every reader, and gives the
+ *    writer's login id only to a login with Write on the canvas;
  *  - a read-only snapshot copy is never written.
  *
  * Reads run in the caller's scope, where the row rule (0336) holds the same
- * lines; the filters here say them again for unscoped work. Writes run on the
- * system pool after these checks (the access matrix's scopedSystemWrite, as
- * item_marks): the caps are counted over every row of the canvas in the same
- * statement, so a reader's scope, which sees only its own `mine` entries,
- * never decides them.
+ * lines; the filters here say them again for unscoped work. Writes are the
+ * two definers of 0336 (mantle_canvas_data_put and _delete), called in the
+ * caller's own scope: they take the login from the scope, check the canvas's
+ * rights and the caps under a lock on the canvas, and are the table's only
+ * writers (no role writes it itself).
  *
  * Saving data is never a canvas revision: nothing here touches `presents`.
  */
@@ -32,12 +35,10 @@ import {
   itemWriteRefusalOf,
   nodes,
 } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 import {
-  CANVAS_DATA_CANVAS_MAX_BYTES,
   CANVAS_DATA_CANVAS_MAX_KEYS,
   CANVAS_DATA_FULL_ERROR,
-  CANVAS_DATA_MINE_MAX_BYTES,
-  CANVAS_DATA_MINE_MAX_KEYS,
   canvasDataValue,
   isCanvasDataBucket,
   isCanvasDataKey,
@@ -71,7 +72,10 @@ const forbidden = (error: string) => ({ ok: false, reason: 'forbidden', error })
 const NO_SHARED_WRITE =
   "only a user with Write on this canvas may change its shared data; save to 'mine' instead";
 const NO_EVERYONE = "only a user with Write on this canvas reads everyone's entries";
+const NO_MODERATE = "only a user with Write on this canvas removes another viewer's entries";
+const NO_CLEAR = 'only a user with Write on this canvas clears its data';
 const READ_ONLY = 'this canvas is a read-only copy: nothing is saved';
+const READ_ONLY_CALLER = 'this sign-in is read only: nothing is saved';
 const NO_LOGIN = "'mine' needs a signed-in user";
 
 type Canvas = { id: string; readOnly: boolean };
@@ -94,20 +98,26 @@ async function writesCanvas(c: Canvas): Promise<boolean> {
   return (await itemWriteRefusalOf([c.id], 'edit')) === null;
 }
 
-function entryOf(r: {
-  key: string;
-  value: unknown;
-  updatedAt: Date;
-  updatedBy: string | null;
-  loginId: string | null;
-  byName: string | null;
-}): CanvasDataEntry {
+/** An entry as the reader sees it: a `shared` entry's writer by name, and
+ *  by login id only for a reader with Write on the canvas (`showsIds`). */
+function entryOf(
+  r: {
+    key: string;
+    value: unknown;
+    updatedAt: Date;
+    updatedBy: string | null;
+    loginId: string | null;
+    byName: string | null;
+  },
+  showsIds: boolean,
+): CanvasDataEntry {
   const by = r.loginId ?? r.updatedBy;
+  const showId = r.loginId !== null || showsIds;
   return {
     key: r.key,
     value: r.value,
     updatedAt: r.updatedAt.toISOString(),
-    ...(by ? { by: { id: by, name: r.byName } } : {}),
+    ...(by ? { by: showId ? { id: by, name: r.byName } : { name: r.byName } } : {}),
   };
 }
 
@@ -169,7 +179,8 @@ export async function getCanvasData(
     .from(canvasData)
     .where(and(bucketWhere(id, bucket, caller.loginId, false), eq(canvasData.key, key)))
     .limit(1);
-  return { ok: true, entry: row ? entryOf(row) : null };
+  if (!row) return { ok: true, entry: null };
+  return { ok: true, entry: entryOf(row, bucket === 'shared' && (await writesCanvas(c))) };
 }
 
 /** The entries of one bucket, oldest key first. `everyone` lists every
@@ -184,7 +195,8 @@ export async function listCanvasData(
   const c = await canvasOf(caller.ownerId, id);
   if (!c) return missing;
   const everyone = bucket === 'mine' && opts.everyone === true;
-  if (everyone && !(await writesCanvas(c))) return forbidden(NO_EVERYONE);
+  const writes = bucket === 'shared' || everyone ? await writesCanvas(c) : false;
+  if (everyone && !writes) return forbidden(NO_EVERYONE);
   if (bucket === 'mine' && !everyone && !caller.loginId) return invalid(NO_LOGIN);
   const rows = await db
     .select(entryColumns)
@@ -192,25 +204,46 @@ export async function listCanvasData(
     .where(bucketWhere(id, bucket, caller.loginId, everyone))
     .orderBy(asc(canvasData.createdAt), asc(canvasData.key))
     .limit(CANVAS_DATA_CANVAS_MAX_KEYS);
-  return { ok: true, entries: rows.map(entryOf) };
+  return { ok: true, entries: rows.map((r) => entryOf(r, writes)) };
 }
 
-/** Who may write `bucket` on canvas `c`: null when the caller may. */
-async function writeRefusal(
-  caller: CanvasDataCaller,
-  c: Canvas,
-  bucket: CanvasDataBucket,
-): Promise<CanvasDataRefusal | null> {
-  if (c.readOnly) return forbidden(READ_ONLY);
-  if (!caller.loginId) return invalid(NO_LOGIN);
-  if (bucket === 'shared' && !(await writesCanvas(c))) return forbidden(NO_SHARED_WRITE);
+/** What a definer answered (0336): 'ok', or why not. */
+type DefinerResult = 'ok' | 'missing' | 'forbidden' | 'read_only' | 'ro' | 'full' | 'invalid';
+
+/** The refusal for a definer's answer; `forbiddenWords` says what needed
+ *  Write. */
+function refusalOf(result: DefinerResult, forbiddenWords: string): CanvasDataRefusal {
+  switch (result) {
+    case 'missing':
+      return missing;
+    case 'forbidden':
+      return forbidden(forbiddenWords);
+    case 'read_only':
+      return forbidden(READ_ONLY);
+    case 'ro':
+      return forbidden(READ_ONLY_CALLER);
+    case 'full':
+      return { ok: false, reason: 'full', error: CANVAS_DATA_FULL_ERROR };
+    default:
+      return invalid('the canvas data store did not take this request');
+  }
+}
+
+/** A write runs only in a login's own scope: its definer takes the login
+ *  from there, never from an argument. */
+function writeScopeRefusal(caller: CanvasDataCaller): CanvasDataRefusal | null {
+  const scope = currentWorkspaceScope();
+  if (!caller.loginId || !scope?.loginId || scope.loginId !== caller.loginId) {
+    return invalid(NO_LOGIN);
+  }
   return null;
 }
 
 /**
- * Save one entry (made or replaced). The caps are checked in the insert's
- * own statement over every row of the canvas: nothing is written when the
- * canvas, or the caller's own `mine` entries, would pass one.
+ * Save one entry (made or replaced), by its definer (mantle_canvas_data_put,
+ * 0336) in the caller's own scope: the canvas's rights, the read-only copy
+ * and the caps are decided there, under a lock on the canvas, so two writes
+ * never both pass a cap and a canvas deleted meanwhile is `missing`.
  */
 export async function setCanvasData(
   caller: CanvasDataCaller,
@@ -223,90 +256,78 @@ export async function setCanvasData(
   if (!isCanvasDataKey(key)) return invalid('key is not a valid key');
   const checked = canvasDataValue(value);
   if (!checked.ok) return invalid(checked.error);
-  const c = await canvasOf(caller.ownerId, id);
-  if (!c) return missing;
-  const refused = await writeRefusal(caller, c, bucket);
-  if (refused) return refused;
-  const me = caller.loginId!;
-  const owner = bucket === 'mine' ? me : null;
-  const name = (caller.name ?? '').trim().slice(0, 200) || null;
-
-  // The row this write replaces, if any: left out of the sums.
-  const other = sql`not (d.bucket = ${bucket} and d.key = ${key} and d.login_id is not distinct from ${owner}::uuid)`;
-  const mineCaps =
-    bucket === 'mine'
-      ? sql` and (select coalesce(sum(d.bytes), 0) + ${checked.bytes}
-                    from canvas_data d
-                   where d.node_id = ${id}::uuid and d.bucket = 'mine'
-                     and d.login_id = ${me}::uuid and ${other}) <= ${CANVAS_DATA_MINE_MAX_BYTES}
-             and (select count(*) + 1
-                    from canvas_data d
-                   where d.node_id = ${id}::uuid and d.bucket = 'mine'
-                     and d.login_id = ${me}::uuid and ${other}) <= ${CANVAS_DATA_MINE_MAX_KEYS}`
-      : sql``;
-  // Every column, in the table's order (an insert from a select names them
-  // all): id, node_id, bucket, key, login_id, value, bytes, updated_by,
-  // by_name, created_at, updated_at.
-  const row = sql`select gen_random_uuid(), ${id}::uuid, ${bucket}, ${key}, ${owner}::uuid,
-      ${checked.text}::jsonb, ${checked.bytes}::int, ${me}::uuid, ${name}, now(), now()
-    where (select coalesce(sum(d.bytes), 0) + ${checked.bytes}
-             from canvas_data d where d.node_id = ${id}::uuid and ${other}) <= ${CANVAS_DATA_CANVAS_MAX_BYTES}
-      and (select count(*) + 1
-             from canvas_data d where d.node_id = ${id}::uuid and ${other}) <= ${CANVAS_DATA_CANVAS_MAX_KEYS}${mineCaps}`;
-  const set = {
-    value: sql`excluded.value`,
-    bytes: sql`excluded.bytes`,
-    updatedBy: sql`excluded.updated_by`,
-    byName: sql`excluded.by_name`,
-    updatedAt: sql`now()`,
-  };
-  const insert = db.insert(canvasData).select(row);
-  const saved = await (
-    bucket === 'shared'
-      ? insert.onConflictDoUpdate({
-          target: [canvasData.nodeId, canvasData.key],
-          targetWhere: sql`bucket = 'shared'`,
-          set,
-        })
-      : insert.onConflictDoUpdate({
-          target: [canvasData.nodeId, canvasData.loginId, canvasData.key],
-          targetWhere: sql`bucket = 'mine'`,
-          set,
-        })
-  ).returning({ updatedAt: canvasData.updatedAt });
-  const done = saved[0];
-  if (!done) return { ok: false, reason: 'full', error: CANVAS_DATA_FULL_ERROR };
-  return { ok: true, updatedAt: done.updatedAt.toISOString() };
+  const noScope = writeScopeRefusal(caller);
+  if (noScope) return noScope;
+  // A write: its own transaction, in the login's scope (the write role for
+  // a member, the system pool with the scope set for an Admin user).
+  const [row] = await db.transaction(
+    async (tx) =>
+      (await tx.execute(
+        sql`select result, saved_at from "public"."mantle_canvas_data_put"(${id}::uuid, ${bucket}, ${key}, ${checked.text})`,
+      )) as unknown as { result: DefinerResult; saved_at: Date | string | null }[],
+  );
+  if (!row || row.result !== 'ok' || !row.saved_at) {
+    return refusalOf(row?.result ?? 'invalid', NO_SHARED_WRITE);
+  }
+  return { ok: true, updatedAt: new Date(row.saved_at).toISOString() };
 }
 
-/** Remove one entry: `shared` with Write on the canvas, `mine` the caller's
- *  own only. `deleted` false when there was none. */
+/** One call of the delete definer (mantle_canvas_data_delete, 0336). */
+async function deleteRows(
+  id: string,
+  bucket: CanvasDataBucket | null,
+  key: string | null,
+  login: string | null,
+): Promise<{ result: DefinerResult; removed: number }> {
+  const [row] = await db.transaction(
+    async (tx) =>
+      (await tx.execute(
+        sql`select result, removed from "public"."mantle_canvas_data_delete"(${id}::uuid, ${bucket}, ${key}, ${login}::uuid)`,
+      )) as unknown as { result: DefinerResult; removed: number }[],
+  );
+  return row ?? { result: 'invalid', removed: 0 };
+}
+
+/** Remove one entry: `shared` with Write on the canvas; `mine` the caller's
+ *  own, or, with Write on the canvas, another login's (`by`: its login id,
+ *  moderation). `deleted` false when there was none. */
 export async function deleteCanvasData(
   caller: CanvasDataCaller,
   id: string,
   bucket: unknown,
   key: unknown,
+  opts: { by?: unknown } = {},
 ): Promise<{ ok: true; deleted: boolean } | CanvasDataRefusal> {
   if (!isCanvasDataBucket(bucket)) return invalid("bucket must be 'shared' or 'mine'");
   if (!isCanvasDataKey(key)) return invalid('key is not a valid key');
-  const c = await canvasOf(caller.ownerId, id);
-  if (!c) return missing;
-  const refused = await writeRefusal(caller, c, bucket);
-  if (refused) return refused;
-  const gone = await db
-    .delete(canvasData)
-    .where(
-      and(
-        eq(canvasData.nodeId, id),
-        eq(canvasData.bucket, bucket),
-        eq(canvasData.key, key),
-        bucket === 'mine'
-          ? eq(canvasData.loginId, caller.loginId!)
-          : sql`${canvasData.loginId} is null`,
-      ),
-    )
-    .returning({ id: canvasData.id });
-  return { ok: true, deleted: gone.length > 0 };
+  const by = opts.by ?? null;
+  if (by !== null && (typeof by !== 'string' || !UUID_RE.test(by) || bucket !== 'mine')) {
+    return invalid("by must be a viewer's id, for the 'mine' bucket");
+  }
+  const noScope = writeScopeRefusal(caller);
+  if (noScope) return noScope;
+  const other = by !== null && by !== caller.loginId;
+  const r = await deleteRows(id, bucket, key, by);
+  if (r.result !== 'ok') {
+    return refusalOf(
+      r.result,
+      bucket === 'shared' ? NO_SHARED_WRITE : other ? NO_MODERATE : NO_SHARED_WRITE,
+    );
+  }
+  return { ok: true, deleted: r.removed > 0 };
+}
+
+/** Remove every entry of the canvas, both buckets, every login: Write on
+ *  the canvas only. */
+export async function clearCanvasData(
+  caller: CanvasDataCaller,
+  id: string,
+): Promise<{ ok: true; removed: number } | CanvasDataRefusal> {
+  const noScope = writeScopeRefusal(caller);
+  if (noScope) return noScope;
+  const r = await deleteRows(id, null, null, null);
+  if (r.result !== 'ok') return refusalOf(r.result, NO_CLEAR);
+  return { ok: true, removed: r.removed };
 }
 
 /**

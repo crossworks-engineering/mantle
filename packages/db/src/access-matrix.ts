@@ -1234,13 +1234,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The canvas data store (0336, DWG phase 7a): a Present canvas's small
   // JSON values. Read by its row rule (a canvas the scope reads: `shared`,
   // the login's own `mine`, or everyone's with Write on the canvas); written
-  // by packages/content/src/canvas-data.ts after its checks, on the system
-  // pool, as item_marks.
-  {
-    ...userOnly('public.canvas_data', 'admin'),
-    scopedSystemWrite:
-      "a canvas's data: the canvas is read in scope first; `shared` asks Write on it (assertItemRight edit), `mine` writes only the caller's own login",
-  },
+  // only by its two definers (mantle_canvas_data_put and _delete, 0336),
+  // called in the login's own scope, which hold the rights and the caps.
+  // The runtime role reads it, never writes it.
+  { ...userOnly('public.canvas_data', 'admin'), runtime: 'read' },
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
@@ -1672,6 +1669,10 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a workspace’s landing app set or cleared by the acting login (0309, S2b)',
   'public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
     'a Telegram chat blocked or unpaired by its own login, a Moderator of its bot’s workspace or an Admin user with the users area (0313): the role holds no right on telegram_chats',
+  'public.mantle_canvas_data_put(uuid,text,text,text)':
+    'a canvas data entry saved by the scope’s own login, on the canvas’s rights and under its caps (0336): the role holds no right on canvas_data',
+  'public.mantle_canvas_data_delete(uuid,text,text,uuid)':
+    'a canvas data entry removed, or the canvas’s data cleared, by the scope’s own login, on the canvas’s rights (0336)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

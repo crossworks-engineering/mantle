@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CANVAS_DATA_CANVAS_MAX_BYTES,
+  CANVAS_DATA_CANVAS_MAX_KEYS,
+  CANVAS_DATA_MAX_DEPTH,
+  CANVAS_DATA_MINE_ALL_MAX_BYTES,
+  CANVAS_DATA_MINE_ALL_MAX_KEYS,
   CANVAS_DATA_VALUE_MAX_BYTES,
   canvasDataValue,
   isCanvasDataBucket,
@@ -89,5 +94,24 @@ describe('canvas data contract', () => {
     // A Date keeps its JSON form, as JSON.stringify writes it.
     const d = canvasDataValue({ at: new Date(0) });
     expect(d.ok && d.value).toEqual({ at: '1970-01-01T00:00:00.000Z' });
+  });
+
+  it('refuses a value nested deeper than the cap', () => {
+    const nest = (n: number) => '['.repeat(n) + ']'.repeat(n);
+    expect(readCanvasDataJson(nest(CANVAS_DATA_MAX_DEPTH)).ok).toBe(true);
+    expect(readCanvasDataJson(nest(CANVAS_DATA_MAX_DEPTH + 1))).toEqual({
+      ok: false,
+      error: `value nests deeper than ${CANVAS_DATA_MAX_DEPTH} levels`,
+    });
+    let deep: unknown = 1;
+    for (let i = 0; i < 100; i++) deep = { a: deep };
+    expect(canvasDataValue(deep).ok).toBe(false);
+    // Wide is fine: depth, not size.
+    expect(canvasDataValue({ a: [1, 2, 3], b: { c: [{}, []] } }).ok).toBe(true);
+  });
+
+  it('keeps readers to 75% of the canvas', () => {
+    expect(CANVAS_DATA_MINE_ALL_MAX_BYTES).toBe((CANVAS_DATA_CANVAS_MAX_BYTES * 3) / 4);
+    expect(CANVAS_DATA_MINE_ALL_MAX_KEYS).toBe((CANVAS_DATA_CANVAS_MAX_KEYS * 3) / 4);
   });
 });

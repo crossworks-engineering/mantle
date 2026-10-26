@@ -9,10 +9,14 @@
  *  GET    ?bucket=&key=                   one entry ({ entry } or null)
  *  GET    ?bucket=[&everyone=1]           the bucket's entries ({ entries })
  *  PUT    { bucket, key, value }          save one entry
- *  DELETE ?bucket=&key=                   remove one entry
+ *  DELETE ?bucket=&key=[&by=]             remove one entry
+ *  DELETE ?all=1                          clear the canvas's data
  *
  * `shared`: every reader reads, a write asks Write on the canvas. `mine`:
  * the login's own entries; `everyone=1` lists every login's, Write only.
+ * Moderation, Write only: `by=<login id>` removes another login's `mine`
+ * entry, and `all=1` removes every entry of the canvas. The writes are the
+ * store's definers (0336), in the login's own scope.
  * A write declares read, its lowest right; the shared bucket's edit runs
  * as its higher cells (a8-route-cells.ts).
  */
@@ -21,6 +25,7 @@ import { ownerLoginCaller } from '@/lib/auth';
 import type { Login } from '@/lib/auth/login';
 import {
   canvasDataInfo,
+  clearCanvasData,
   deleteCanvasData,
   getCanvasData,
   listCanvasData,
@@ -106,6 +111,15 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const who = callerOf(login);
   const { id } = await ctx.params;
   const q = new URL(req.url).searchParams;
-  const r = await deleteCanvasData(who, id, q.get('bucket'), q.get('key'));
+  if (q.get('all') === '1') {
+    if (q.has('bucket') || q.has('key') || q.has('by')) {
+      return NextResponse.json({ error: 'all=1 takes no bucket, key or by' }, { status: 400 });
+    }
+    const r = await clearCanvasData(who, id);
+    return r.ok ? NextResponse.json({ ok: true, removed: r.removed }) : refused(r);
+  }
+  const r = await deleteCanvasData(who, id, q.get('bucket'), q.get('key'), {
+    ...(q.has('by') ? { by: q.get('by') } : {}),
+  });
   return r.ok ? NextResponse.json({ ok: true, deleted: r.deleted }) : refused(r);
 }

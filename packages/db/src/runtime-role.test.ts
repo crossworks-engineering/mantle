@@ -667,9 +667,8 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // member_turn_ledger to read (0326: its definers write it).
 // presents and present_revisions read (0332: a Present canvas is content,
 // written by its editors' scope, never by narrow work).
-// canvas_data all (0336: an admin-writer table, as item_marks; its writes
-// are the system pool's after the content layer's checks).
-const NARROW_COUNTS = { all: 97, read: 39, none: 8 };
+// canvas_data read (0336: its two definers write it; the runtime role reads it).
+const NARROW_COUNTS = { all: 96, read: 40, none: 8 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
