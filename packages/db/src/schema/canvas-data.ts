@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -25,10 +26,11 @@ import { nodes } from './nodes';
  *    entry it is. Its login writes it; a login with Write on the canvas
  *    reads everyone's.
  *
- * `bytes` is the size of the value's JSON text, which the caps count.
- * `updated_by` is the login that last wrote the row, `by_name` its display
- * name then. A row goes with its
- * canvas, and a `mine` row with its login.
+ * `bytes` is the size of the value as stored (its jsonb's text), which
+ * every cap counts. `updated_by` is the login that last wrote the row,
+ * `by_name` its display name then. A row goes with its canvas, and a `mine`
+ * row with its login: the node_id, login_id and updated_by indexes keep
+ * those cascades (and the definers' cap queries) off a table scan.
  */
 export const canvasData = pgTable(
   'canvas_data',
@@ -58,6 +60,13 @@ export const canvasData = pgTable(
     uniqueIndex('canvas_data_mine_key_uq')
       .on(t.nodeId, t.loginId, t.key)
       .where(sql`${t.bucket} = 'mine'`),
+    index('canvas_data_node_idx').on(t.nodeId),
+    index('canvas_data_login_idx')
+      .on(t.loginId)
+      .where(sql`${t.loginId} IS NOT NULL`),
+    index('canvas_data_updated_by_idx')
+      .on(t.updatedBy)
+      .where(sql`${t.updatedBy} IS NOT NULL`),
     check(
       'canvas_data_bucket_ck',
       sql`(${t.bucket} = 'shared' AND ${t.loginId} IS NULL) OR (${t.bucket} = 'mine' AND ${t.loginId} IS NOT NULL)`,

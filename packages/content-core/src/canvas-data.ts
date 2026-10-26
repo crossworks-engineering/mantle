@@ -22,10 +22,15 @@
  * reader, and the writer's login id only to a user with Write on the canvas.
  */
 
+import { UUID_RE } from './uuid';
+
 export const CANVAS_DATA_BUCKETS = ['shared', 'mine'] as const;
 export type CanvasDataBucket = (typeof CANVAS_DATA_BUCKETS)[number];
 
-/** One value, as its JSON text, in UTF-8 bytes. */
+/** One value, in UTF-8 bytes, as the brain stores it (its JSON text with a
+ *  space after each `,` and `:`), which is what every cap counts. The
+ *  compact text checked here is never longer, so it is a first bound; the
+ *  brain's definer has the last word. */
 export const CANVAS_DATA_VALUE_MAX_BYTES = 64 * 1024;
 /** All values of one canvas, both buckets, every login. */
 export const CANVAS_DATA_CANVAS_MAX_BYTES = 1024 * 1024;
@@ -45,10 +50,6 @@ export const CANVAS_DATA_MAX_DEPTH = 64;
 /** A key: 1 to 128 characters, a letter or digit first, then letters,
  *  digits and `_ - . : /`. Plain enough to show, log and put in a URL. */
 export const CANVAS_DATA_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/;
-
-/** A login id as the store gives it in `by.id`: a lowercase uuid. (This
- *  published package takes no dependency, so not @mantle/std's UUID_RE.) */
-const LOGIN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** How long the host waits on the brain for one forwarded call, and the
  *  frame on the host. */
@@ -89,9 +90,10 @@ export function isCanvasDataKey(v: unknown): v is string {
   return typeof v === 'string' && CANVAS_DATA_KEY_RE.test(v);
 }
 
-/** An entry's `by.id`, as `delete(key, { bucket: 'mine', by })` names it. */
+/** An entry's `by.id`, as `delete(key, { bucket: 'mine', by })` names it:
+ *  a uuid as the store gives it, lowercase only. */
 export function isCanvasDataLoginId(v: unknown): v is string {
-  return typeof v === 'string' && LOGIN_ID_RE.test(v);
+  return typeof v === 'string' && UUID_RE.test(v) && v === v.toLowerCase();
 }
 
 export function isCanvasDataOp(v: unknown): v is CanvasDataOp {
@@ -135,8 +137,8 @@ function nestsDeeper(value: unknown, max: number): boolean {
 /**
  * A value's JSON text, checked: JSON only (what JSON.parse gives back), at
  * most CANVAS_DATA_VALUE_MAX_BYTES, nested at most CANVAS_DATA_MAX_DEPTH. `json` is the text a caller sent; the
- * answer is the parsed value and the canonical text the store keeps (its
- * size is what the caps count).
+ * answer is the parsed value and its compact text, which the brain's
+ * definer takes (and sizes again as it stores it: what the caps count).
  */
 export function readCanvasDataJson(
   json: unknown,
@@ -173,8 +175,12 @@ export function canvasDataValue(
   return { ok: true, value: parsed, text, bytes };
 }
 
+/** The refusal for a value over CANVAS_DATA_VALUE_MAX_BYTES, here or as
+ *  the brain stores it. */
+export const CANVAS_DATA_TOO_BIG_ERROR = `value is over ${CANVAS_DATA_VALUE_MAX_BYTES / 1024} KB`;
+
 function tooBig(): string {
-  return `value is over ${CANVAS_DATA_VALUE_MAX_BYTES / 1024} KB`;
+  return CANVAS_DATA_TOO_BIG_ERROR;
 }
 
 /** The refusal when a write would pass a cap, the same words everywhere. */

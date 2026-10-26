@@ -25,7 +25,17 @@
  *    a user with Write;
  *  - an Admin user (the owner) writes through the same definer;
  *  - a data write never changes the canvas (its rev and source stay);
- *  - an agent reads the store with present_get `data`, with the same rights.
+ *  - an agent reads the store with present_get `data`, with the same rights;
+ *  - a read-only copy (snapshot_of) refuses a write and a delete
+ *    (`read_only`), and so does a read-only caller (`ro`), each a 403 with
+ *    nothing changed;
+ *  - a canvas of one login's own (nodes.login_id): the definers compare the
+ *    scope's login, also on the system pool (mantle.scope_login only);
+ *  - a value counts as stored (the jsonb's text), for the 64 KB check and
+ *    the caps;
+ *  - the cascades (a canvas's or a login's delete, updated_by set NULL) and
+ *    the definer's cap query use an index (EXPLAIN, a generic plan, seq
+ *    scans off).
  *
  * The writes are the store's two definers (0335), run in the login's own
  * scope; fixtures that seed rows past the caps write as the superuser (the
@@ -38,6 +48,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Tool } from '@mantle/db';
 
@@ -59,6 +70,7 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
   let m: typeof import('@mantle/db');
   let presents: typeof import('@mantle/content/presents');
   let tools: typeof import('@mantle/tools');
+  let store: typeof import('@mantle/content/canvas-data');
   let runRoute: typeof import('./run-route').runRoute;
   let dir = '';
   const tag = `cvd${randomUUID().slice(0, 6)}`;
@@ -161,6 +173,7 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
     m = await import('@mantle/db');
     presents = await import('@mantle/content/presents');
     tools = await import('@mantle/tools');
+    store = await import('@mantle/content/canvas-data');
     runRoute = (await import('./run-route')).runRoute;
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -442,5 +455,139 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
       output: Record<string, unknown>;
     };
     expect('data' in bare.output).toBe(false);
+  });
+  it('a read-only copy refuses a write and a delete (read_only), and changes nothing', async () => {
+    const id = await canvasIn(ws.w, 'copy', true);
+    expect((await put(mod, id, 'shared', 'layout', 1)).status).toBe(200);
+    await su(sql`update nodes set data = coalesce(data, '{}'::jsonb)
+      || jsonb_build_object('snapshot_of', ${cv.write}::text) where id = ${id}::uuid`);
+    const w = await put(mod, id, 'shared', 'layout', 2);
+    expect(w.status, w.text).toBe(403);
+    expect(w.json.error).toMatch(/read-only copy/);
+    const d = await route(mod, 'DELETE', `${base(id)}?bucket=shared&key=layout`);
+    expect(d.status, d.text).toBe(403);
+    expect(d.json.error).toMatch(/read-only copy/);
+    const [row] = await x<{ value: unknown }>(
+      sql`select value from canvas_data where node_id = ${id}::uuid and key = 'layout'`,
+    );
+    expect(row?.value).toBe(1);
+  });
+
+  it('a read-only caller is refused a write and a delete (ro), and changes nothing', async () => {
+    const id = await canvasIn(ws.w, 'ro caller', true);
+    expect((await put(user, id, 'mine', 'vote', 'yes')).status).toBe(200);
+    const caller = { ownerId: owner, loginId: user, name: 'User' };
+    const asRo = <T>(fn: () => Promise<T>) =>
+      m.runAsActor(m.loginActor(user, 'ro'), () =>
+        m.withTurnScope({ kind: 'user', loginId: user, ws: [ws.w], modWs: [] }, fn, {
+          writes: true,
+        }),
+      );
+    const w = await asRo(() => store.setCanvasData(caller, id, 'mine', 'vote', 'no'));
+    expect(w).toMatchObject({
+      ok: false,
+      reason: 'forbidden',
+      error: expect.stringMatching(/read only/),
+    });
+    const d = await asRo(() => store.deleteCanvasData(caller, id, 'mine', 'vote'));
+    expect(d).toMatchObject({
+      ok: false,
+      reason: 'forbidden',
+      error: expect.stringMatching(/read only/),
+    });
+    const [row] = await x<{ value: unknown }>(
+      sql`select value from canvas_data where node_id = ${id}::uuid and key = 'vote'`,
+    );
+    expect(row?.value).toBe('yes');
+    m.takeActorMisses();
+  });
+
+  it("a canvas of one login's own, on the system pool: the definers compare the scope's login", async () => {
+    const id = await canvasIn(ws.w, 'own login', true);
+    await su(sql`update nodes set login_id = ${owner}::uuid where id = ${id}::uuid`);
+    // As the system pool runs a scoped write (system-tx.ts writeScopeSettings):
+    // the scope's login in mantle.scope_login, mantle.login_id not set.
+    const pg = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
+    const asScope = (login: string, q: string) =>
+      pg.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true),
+                        set_config('mantle.write_mode', 'rw', true),
+                        set_config('mantle.ws', ${`{${ws.w}}`}, true),
+                        set_config('mantle.mod_ws', '{}', true),
+                        set_config('mantle.scope_login', ${login}, true)`;
+        return [...(await tx.unsafe(q, [id]))] as Record<string, unknown>[];
+      });
+    try {
+      const put1 = `select result from mantle_canvas_data_put($1, 'shared', 'note', '"kept"')`;
+      const del1 = `select result, removed from mantle_canvas_data_delete($1, 'shared', 'note', null)`;
+      expect(await asScope(owner, put1)).toEqual([{ result: 'ok' }]);
+      // Another login of the same workspace: the canvas is not one it reads.
+      expect(await asScope(user, put1)).toEqual([{ result: 'missing' }]);
+      expect(await asScope(user, del1)).toEqual([{ result: 'missing', removed: 0 }]);
+      expect(await asScope(owner, del1)).toEqual([{ result: 'ok', removed: 1 }]);
+    } finally {
+      await pg.end();
+    }
+  });
+
+  it('a value counts as stored: its jsonb text, for the 64 KB check and the caps', async () => {
+    const id = await canvasIn(ws.w, 'stored size', true);
+    // 30000 ones: 60001 bytes compact, about 90000 as stored ("1, 1, ...").
+    const wide = Array.from({ length: 30_000 }, () => 1);
+    expect(JSON.stringify(wide).length).toBeLessThan(64 * 1024);
+    const big = await put(mod, id, 'shared', 'wide', wide);
+    expect(big.status, big.text).toBe(400);
+    expect(big.json.error).toMatch(/over 64 KB/);
+    expect(await count(id)).toBe(0);
+    const ok = await put(mod, id, 'shared', 'obj', { a: [1, 2], b: 'x' });
+    expect(ok.status, ok.text).toBe(200);
+    const [row] = await x<{ bytes: number; stored: number }>(
+      sql`select bytes, octet_length(value::text) as stored from canvas_data
+           where node_id = ${id}::uuid and key = 'obj'`,
+    );
+    expect(row!.bytes).toBe(row!.stored);
+    expect(row!.bytes).toBeGreaterThan(JSON.stringify({ a: [1, 2], b: 'x' }).length);
+  });
+
+  it("the cascades and the definer's cap query use an index", async () => {
+    const pg = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
+    const plans: Record<string, string> = {};
+    try {
+      await pg.begin(async (tx) => {
+        await tx`set local enable_seqscan = off`;
+        await tx`set local plan_cache_mode = force_generic_plan`;
+        const queries: Record<string, [string, string]> = {
+          // As the foreign keys' own actions run them (a generic plan, $1).
+          node: ['(uuid)', 'delete from only public.canvas_data where node_id = $1'],
+          login: ['(uuid)', 'delete from only public.canvas_data where login_id = $1'],
+          updatedBy: [
+            '(uuid)',
+            'update only public.canvas_data set updated_by = null where updated_by = $1',
+          ],
+          // The first cap query of mantle_canvas_data_put.
+          cap: [
+            '(uuid, text, text, uuid)',
+            `select coalesce(sum(d.bytes), 0), count(*) from public.canvas_data d
+              where d.node_id = $1
+                and not (d.bucket = $2 and d.key = $3 and d.login_id is not distinct from $4)`,
+          ],
+        };
+        for (const [name, [types, q]] of Object.entries(queries)) {
+          await tx.unsafe(`prepare p_${name} ${types} as ${q}`);
+          const args = types === '(uuid)' ? `('${owner}')` : `('${cv.write}', 'shared', 'k', null)`;
+          const rows = await tx.unsafe(`explain execute p_${name}${args}`);
+          plans[name] = rows.map((r) => String(Object.values(r)[0])).join('\n');
+        }
+      });
+    } finally {
+      await pg.end();
+    }
+    expect(plans.node).toMatch(/canvas_data_node_idx/);
+    expect(plans.login).toMatch(/canvas_data_login_idx/);
+    expect(plans.updatedBy).toMatch(/canvas_data_updated_by_idx/);
+    expect(plans.cap).toMatch(/canvas_data_node_idx/);
+    for (const [name, plan] of Object.entries(plans)) {
+      expect(plan, name).not.toMatch(/Seq Scan/);
+    }
   });
 });

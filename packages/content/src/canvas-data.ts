@@ -39,6 +39,7 @@ import { UUID_RE } from '@mantle/std';
 import {
   CANVAS_DATA_CANVAS_MAX_KEYS,
   CANVAS_DATA_FULL_ERROR,
+  CANVAS_DATA_TOO_BIG_ERROR,
   canvasDataValue,
   isCanvasDataBucket,
   isCanvasDataKey,
@@ -208,7 +209,8 @@ export async function listCanvasData(
 }
 
 /** What a definer answered (0335): 'ok', or why not. */
-type DefinerResult = 'ok' | 'missing' | 'forbidden' | 'read_only' | 'ro' | 'full' | 'invalid';
+type DefinerResult =
+  'ok' | 'missing' | 'forbidden' | 'read_only' | 'ro' | 'full' | 'too_big' | 'invalid';
 
 /** The refusal for a definer's answer; `forbiddenWords` says what needed
  *  Write. */
@@ -224,6 +226,8 @@ function refusalOf(result: DefinerResult, forbiddenWords: string): CanvasDataRef
       return forbidden(READ_ONLY_CALLER);
     case 'full':
       return { ok: false, reason: 'full', error: CANVAS_DATA_FULL_ERROR };
+    case 'too_big':
+      return invalid(CANVAS_DATA_TOO_BIG_ERROR);
     default:
       return invalid('the canvas data store did not take this request');
   }
