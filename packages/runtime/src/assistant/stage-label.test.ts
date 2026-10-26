@@ -63,5 +63,13 @@ describe('write/action tool labels', () => {
     expect(stageLabelForStep('tool: web_search')?.kind).toBe('web');
     expect(stageLabelForStep('tool: search_nodes')?.kind).toBe('brain');
     expect(stageLabelForStep('tool: mystery_tool')?.kind).toBe('tool');
+    // A canvas is a workspace content kind like a page (owner rule 2026-10-26).
+    expect(stageLabelForStep('tool: present_update')?.kind).toBe('write');
+    expect(
+      stageLabelForStep('tool: present_create', {
+        slug: 'present_create',
+        args: { title: 'Pump deck' },
+      })?.label,
+    ).toBe('Saving “Pump deck” as a canvas…');
   });
 });

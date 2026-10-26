@@ -107,6 +107,7 @@ const CREATE_NOUN: Record<string, string> = {
   folder: 'as a folder',
   file: 'to your files',
   page: 'as a page',
+  present: 'as a canvas',
 };
 
 /** Pick the icon bucket for a write/action tool from its slug, so each kind of
@@ -116,7 +117,7 @@ function actionKind(slug: string): StageLabel['kind'] {
   if (slug.startsWith('event')) return 'calendar';
   if (slug.startsWith('file')) return 'file';
   if (slug.startsWith('telegram') || slug.startsWith('email')) return 'message';
-  if (/^(note|task|journal|page|folder|table)/.test(slug)) return 'write';
+  if (/^(note|task|journal|page|folder|table|present)/.test(slug)) return 'write';
   return 'tool';
 }
 
