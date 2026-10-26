@@ -169,13 +169,13 @@ docker logs mantle_caddy 2>&1 | grep "automatic TLS"
 One domain, split by path, no CORS, no second certificate, and existing
 member cookies keep working because the origin never changes:
 
-| Path                                 | Served by                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `/api/*`                             | server app (Hono)                                                      |
-| `/s/*`, `/print/*`                   | server app, the server-rendered share + print surfaces                 |
-| `/share-runtime/*`, `/app-runtime/*` | server app, bundles those surfaces load                                |
-| `/.well-known/oauth-*`               | server app, MCP connector discovery                                    |
-| **everything else**                  | client app, owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
+| Path                                                      | Served by                                                              |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `/api/*`                                                  | server app (Hono)                                                      |
+| `/s/*`, `/print/*`                                        | server app, the server-rendered share + print surfaces                 |
+| `/share-runtime/*`, `/app-runtime/*`, `/canvas-runtime/*` | server app, bundles those surfaces and the Present canvas load         |
+| `/.well-known/oauth-*`                                    | server app, MCP connector discovery                                    |
+| **everything else**                                       | client app, owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
 
 **Split shape on v0.202.1 needs one extra thing:** the canonical compose
 does not forward the vhost variable to the Caddy container, so

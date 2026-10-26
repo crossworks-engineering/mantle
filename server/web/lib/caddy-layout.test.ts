@@ -30,6 +30,20 @@ describe('infra/caddy layout', () => {
     expect(read('infra/caddy/shapes/same-origin.caddy')).toContain('reverse_proxy client-web:3000');
   });
 
+  it('same-origin sends every runtime bundle the server serves to the server', () => {
+    // A runtime bundle is loaded by a sandboxed frame (a canvas, a mini app,
+    // a share island) that sends no cookies: on the client app it meets a
+    // login redirect and the frame stays blank. Every /<x>-runtime/* prefix
+    // static.ts serves must be a server path in the same-origin shape.
+    const served = [
+      ...read('server/web/server/static.ts').matchAll(/'\/([a-z]+-runtime)\/\*'/g),
+    ].map((m) => m[1]);
+    expect(new Set(served)).toEqual(new Set(['app-runtime', 'canvas-runtime', 'share-runtime']));
+    const line =
+      read('infra/caddy/shapes/same-origin.caddy').match(/^@server path (.+)$/m)?.[1] ?? '';
+    for (const prefix of served) expect(line.split(' ')).toContain(`/${prefix}/*`);
+  });
+
   it('compose mounts shapes + conf.d and passes the shape and body-cap env to caddy', () => {
     const compose = read('docker-compose.yml');
     expect(compose).toContain('./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro');
