@@ -26,6 +26,8 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
   let callers: typeof import('./gate-callers');
   const admin = randomUUID();
   const member = randomUUID();
+  // A user of Admin whose limits switch the connectors area off.
+  const limited = randomUUID();
   const tag = `atu${randomUUID().slice(0, 6)}`;
   const slug = `${tag}_tool`;
   const group = `${tag}-group`;
@@ -39,9 +41,12 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     su = ts.superuserClient(scratch.url);
     await su`insert into auth.users (id, email, password_hash, role) values
       (${admin}, ${`${tag}-a@example.invalid`}, 'x', 'admin'),
-      (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`;
+      (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
+      (${limited}, ${`${tag}-l@example.invalid`}, 'x', 'admin')`;
     anchor = await ts.ensureTestAnchor(su);
-    await ts.ensureAdminUsers(su, [admin]);
+    const adminWs = await ts.ensureAdminUsers(su, [admin]);
+    await su`insert into workspace_users (workspace_id, login_id, moderator, limits)
+      values (${adminWs}, ${limited}, false, ${JSON.stringify({ areas: { connectors: false } })}::jsonb)`;
     const [team] = await su<{ id: string }[]>`
       insert into workspaces (owner_id, name) values (${anchor}, ${`${tag} Team`}) returning id::text`;
     await su`insert into workspace_users (workspace_id, login_id, moderator)
@@ -90,9 +95,14 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
 
   it('a login without the connectors area: refused by the gate, nothing written', async () => {
     fo.resetFailOpenForTest();
-    const res = await update(member, { enabled: false, group_slug: group });
-    expect(res.ok).toBe(false);
-    expect(res.ok ? '' : String(res.error)).toMatch(/manages the brain's connectors/);
+    // A member (no Admin workspace), and an Admin user whose limits switch
+    // the area off.
+    const outside = await update(member, { enabled: false, group_slug: group });
+    expect(outside.ok).toBe(false);
+    expect(outside.ok ? '' : String(outside.error)).toMatch(/belongs to the Admin workspace/);
+    const off = await update(limited, { enabled: false, group_slug: group });
+    expect(off.ok).toBe(false);
+    expect(off.ok ? '' : String(off.error)).toMatch(/manages the brain's connectors/);
     expect(await toolRow()).toEqual({ enabled: true, in_group: false });
     expect(fo.takeFailOpenHits()).toEqual([]);
   });
