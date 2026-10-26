@@ -155,12 +155,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: "recordItemOpened, setItemPinned: the /api/tree/items/:id and /api/apps/:id/opened content routes: the login's own request scope (write gateway)",
   },
-  'packages/db/src/ai-workers-resolve.ts update public.ai_workers [last_used_at,updated_at,usage_count]':
-    {
-      n: 1,
-      tag: 'covered-across-files',
-      why: "bumpWorkerUsage (db): the workers (extractor, summarizer, reflector, Jev), the Telegram turn outside its scope, rule-in-query (full) or a login's turn or chat scope",
-    },
   'packages/runtime/src/agent/chat-archive.ts insert public.chat_threads': {
     n: 3,
     tag: 'covered-across-files',
