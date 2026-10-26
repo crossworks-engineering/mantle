@@ -571,7 +571,9 @@ describe('system manifest integrity', () => {
 
   // The hashes must be the defaults that actually shipped, or the upgrade
   // silently never fires. Checked against the commits that shipped them when
-  // the history is there (a shallow CI clone skips it).
+  // the history is there (a shallow CI clone skips it). Every specialist's
+  // list is checked by `pnpm -C server/web prompts:retired --check`, which
+  // reads all of prompts.ts's history and the seed scripts (too slow for here).
   it('the retired team-responder hashes are the defaults git shipped', () => {
     const shipped: [string, string][] = [
       // 2026-07-05, the 1:1 portal chat

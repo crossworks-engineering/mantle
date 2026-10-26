@@ -3,15 +3,18 @@
  *
  *   - upgradeUneditedPrompts: a specialist whose prompt is still an earlier
  *     shipped default gets the current default, through the Studio's prose
- *     versioning (the old text is v1, one revert away), a disabled one too;
- *     an edited prompt, an already-current one and the persona (even holding
- *     a retired default's exact text) are left alone; a second run does
- *     nothing.
+ *     versioning (the old text is v1, one revert away), a disabled one too,
+ *     and one whose history holds only earlier upgrades; an edited prompt and
+ *     an already-current one are left alone; the persona is filtered out even
+ *     when given a retired list here; a Studio revert to the old default (or
+ *     an edit, then a revert to the original) sticks across a version bump;
+ *     a second run does nothing.
  *   - disableRetiredManifestItems: the retired `team-notify` group and the
  *     builtin `team_member_list` / `team_notify` / `my_app_share` rows are
  *     disabled; an operator's own http tool that shares a slug is not.
  *
- * The real retired hashes are checked against git history in manifest.test.ts;
+ * The real retired hashes are checked against git history (manifest.test.ts,
+ * and scripts/retired-prompt-hashes.ts for every specialist);
  * here one synthetic old default is added to them, so the brains can be seeded
  * without copying an old prompt into the test.
  * Seeds its own brain rows; removes them.
@@ -30,16 +33,32 @@ const OLD_BY_SLUG: Record<string, string> = {
   appsmith: 'You are "Appsmith". A default from an earlier release.',
 };
 
+// The running version, bumped by a test (APP_VERSION is read per call).
+const version = vi.hoisted(() => ({ app: '0.400.12' }));
+vi.mock('@mantle/client-types/version', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/client-types/version')>()),
+  get APP_VERSION() {
+    return version.app;
+  },
+}));
+
 vi.mock('./manifest', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./manifest')>();
   const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
   return {
     ...actual,
+    // The persona gets a retired list and a default here too (the real one
+    // has neither), so the test shows the upgrade's persona filter, not a
+    // missing list, keeps its prompt.
     MANIFEST_AGENTS: actual.MANIFEST_AGENTS.map((a) =>
-      OLD_BY_SLUG[a.slug]
+      OLD_BY_SLUG[a.slug] || a.isPersona
         ? {
             ...a,
-            retiredPromptSha256: [...(a.retiredPromptSha256 ?? []), sha(OLD_BY_SLUG[a.slug]!)],
+            ...(a.isPersona ? { systemPrompt: 'A persona default from this release.' } : {}),
+            retiredPromptSha256: [
+              ...(a.retiredPromptSha256 ?? []),
+              sha(OLD_BY_SLUG[a.slug] ?? OLD),
+            ],
           }
         : a,
     ),
@@ -53,7 +72,14 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
   let rec: typeof import('./reconcile');
   let current = '';
-  const brains = { unedited: randomUUID(), edited: randomUUID(), fresh: randomUUID() };
+  const brains = {
+    unedited: randomUUID(),
+    edited: randomUUID(),
+    fresh: randomUUID(),
+    reverted: randomUUID(),
+    editedBack: randomUUID(),
+    upgradedBefore: randomUUID(),
+  };
   const EDITED = `${OLD} Always answer in Afrikaans.`;
 
   const agentOf = async (owner: string, slug = 'team-responder') =>
@@ -77,7 +103,14 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     current = (await import('./manifest')).MANIFEST_AGENTS.find(
       (a) => a.slug === 'team-responder',
     )!.systemPrompt!;
-    const prompts = { unedited: OLD, edited: EDITED, fresh: current };
+    const prompts = {
+      unedited: OLD,
+      edited: EDITED,
+      fresh: current,
+      reverted: OLD,
+      editedBack: OLD,
+      upgradedBefore: OLD,
+    };
     for (const [k, owner] of Object.entries(brains)) {
       await asSuperuser()`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`pu-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
@@ -86,10 +119,20 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
                   values (${owner}, 'team-responder', 'Team Responder', 'test/model',
                           ${prompts[k as keyof typeof prompts]})`;
     }
+    // A brain an earlier release already upgraded once (from a still older
+    // default to OLD): its history is the upgrade's own rows, the note as
+    // the fleet holds it, so it keeps following the product.
+    const ub = await agentOf(brains.upgradedBefore);
+    await admin`insert into prompt_versions (owner_id, entity_type, entity_id, field, version, body, note)
+                values (${brains.upgradedBefore}, 'agent', ${ub.id as string}, 'system_prompt', 1,
+                        'An even older default.', '(original)'),
+                       (${brains.upgradedBefore}, 'agent', ${ub.id as string}, 'system_prompt', 2,
+                        ${OLD}, 'Shipped default updated on upgrade to v0.232.295 (the prompt was unedited).')`;
     // The other specialists on the unedited brain: a DISABLED Draftsman still
     // on an old default (upgraded all the same), an Appsmith the owner edited
-    // (kept), and the persona holding a retired default's exact text (the
-    // persona's prompt is the operator's overlay: never touched).
+    // (kept), and the persona holding a retired default's exact text, with
+    // a retired list and a default the mock above gave it (the persona's
+    // prompt is the operator's overlay: never touched).
     const u0 = brains.unedited;
     await admin`insert into agents (owner_id, slug, name, model, system_prompt, enabled)
                 values (${u0}, 'diagrammer', 'Draftsman', 'test/model',
@@ -139,7 +182,9 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
       [1, OLD],
       [2, current],
     ]);
-    expect(String(v[1]!.note)).toMatch(/unedited/);
+    expect(String(v[1]!.note)).toBe(
+      'Shipped default updated on upgrade to v0.400.12 (the prompt was unedited).',
+    );
     // The disabled Draftsman moved too, the same way.
     const d = await agentOf(brains.unedited, 'diagrammer');
     const draftsman = await currentOf('diagrammer');
@@ -150,7 +195,7 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     ]);
   });
 
-  it("keeps an edited specialist's prompt and the persona's", async () => {
+  it("keeps an edited specialist's prompt, and the persona's even with a retired list", async () => {
     const app = await agentOf(brains.unedited, 'appsmith');
     expect(app.system_prompt).toBe(`${OLD_BY_SLUG.appsmith!} Prefer dark themes.`);
     expect(await versionsOf(app.id)).toEqual([]);
@@ -166,6 +211,57 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     expect(e.system_prompt).toBe(EDITED);
     expect(await versionsOf(e.id)).toEqual([]);
     expect((await agentOf(brains.fresh)).system_prompt).toBe(current);
+  });
+
+  it('a brain whose history is only earlier upgrades still moves', async () => {
+    expect(await rec.upgradeUneditedPrompts(brains.upgradedBefore)).toEqual(['team-responder']);
+    const a = await agentOf(brains.upgradedBefore);
+    expect(a.system_prompt).toBe(current);
+    expect((await versionsOf(a.id)).map((r) => r.version)).toEqual([1, 2, 3]);
+  });
+
+  it('a Studio revert to the old default sticks across a version bump', async () => {
+    const { revertProse } = await import('../studio/prompt-versions');
+    const owner = brains.reverted;
+    expect(await rec.upgradeUneditedPrompts(owner)).toEqual(['team-responder']);
+    const a = await agentOf(owner);
+    expect(a.system_prompt).toBe(current);
+    // What the Studio's revert route does: the signed-in owner is the author.
+    await revertProse({
+      ownerId: owner,
+      entityType: 'agent',
+      entityId: a.id as string,
+      field: 'system_prompt',
+      toVersion: 1,
+      author: owner,
+    });
+    expect((await agentOf(owner)).system_prompt).toBe(OLD);
+    const before = version.app;
+    version.app = '0.400.13';
+    try {
+      expect(await rec.upgradeUneditedPrompts(owner)).toEqual([]);
+    } finally {
+      version.app = before;
+    }
+    expect((await agentOf(owner)).system_prompt).toBe(OLD);
+    expect((await versionsOf(a.id)).map((r) => [r.version, r.body])).toEqual([
+      [1, OLD],
+      [2, current],
+      [3, OLD],
+    ]);
+  });
+
+  it('an owner edit, then a revert to the original text, sticks', async () => {
+    const { saveProse, revertProse } = await import('../studio/prompt-versions');
+    const owner = brains.editedBack;
+    const a = await agentOf(owner);
+    const at = { ownerId: owner, entityType: 'agent', entityId: a.id as string } as const;
+    await saveProse({ ...at, field: 'system_prompt', body: EDITED, author: owner });
+    await revertProse({ ...at, field: 'system_prompt', toVersion: 1, author: owner });
+    expect((await agentOf(owner)).system_prompt).toBe(OLD);
+    expect(await rec.upgradeUneditedPrompts(owner)).toEqual([]);
+    expect((await agentOf(owner)).system_prompt).toBe(OLD);
+    expect(await versionsOf(a.id)).toHaveLength(3);
   });
 
   it('a second run changes nothing', async () => {

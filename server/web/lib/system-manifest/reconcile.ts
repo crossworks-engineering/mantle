@@ -67,12 +67,16 @@ import {
   convergeManifestSkills,
   groupsForAgent,
   missingPersonaGroups,
+  promptHistoryIsShippedOnly,
   shippedPromptUpgrade,
+  shippedUpgradeNote,
   sameTopLevel,
   specialistParamsTarget,
 } from './reconcile-util';
-import { saveProse } from '../studio/prompt-versions';
+import { listProseVersions, saveProse } from '../studio/prompt-versions';
 import { env, feature } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 
 let ranThisProcess = false;
 
@@ -441,6 +445,12 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
  * through the Studio's prose versioning (saveProse), so the old default is
  * kept as v1 and one revert brings it back. Disabled agents are upgraded too:
  * the text is the same product default either way. Returns the slugs moved.
+ *
+ * The hash alone does not say "untouched": a Studio revert to the old default
+ * writes that exact text back. So a prompt whose prose history holds any row
+ * the upgrade did not write (an edit, a revert) is the owner's and is left
+ * alone for good: a revert in Studio sticks (promptHistoryIsShippedOnly). A
+ * row that fails is logged and skipped; the others still move.
  */
 export async function upgradeUneditedPrompts(ownerId: string): Promise<string[]> {
   const defs = MANIFEST_AGENTS.filter((a) => !a.isPersona && a.retiredPromptSha256?.length);
@@ -459,18 +469,29 @@ export async function upgradeUneditedPrompts(ownerId: string): Promise<string[]>
     );
   const upgraded: string[] = [];
   for (const row of rows) {
-    const def = defs.find((d) => d.slug === row.slug)!;
-    const next = shippedPromptUpgrade(row.systemPrompt, def.systemPrompt, def.retiredPromptSha256);
-    if (next === null) continue;
-    await saveProse({
-      ownerId,
-      entityType: 'agent',
-      entityId: row.id,
-      field: 'system_prompt',
-      body: next,
-      note: `Shipped default updated on upgrade to v${APP_VERSION} (the prompt was unedited).`,
-    });
-    upgraded.push(row.slug);
+    try {
+      const def = defs.find((d) => d.slug === row.slug)!;
+      const next = shippedPromptUpgrade(
+        row.systemPrompt,
+        def.systemPrompt,
+        def.retiredPromptSha256,
+      );
+      if (next === null) continue;
+      const history = await listProseVersions(ownerId, 'agent', row.id, 'system_prompt');
+      if (!promptHistoryIsShippedOnly(history)) continue;
+      await saveProse({
+        ownerId,
+        entityType: 'agent',
+        entityId: row.id,
+        field: 'system_prompt',
+        body: next,
+        note: shippedUpgradeNote(APP_VERSION),
+      });
+      upgraded.push(row.slug);
+    } catch (err) {
+      // The slug and the error only: never the prompt text.
+      log('reconcile').warn(`prompt upgrade skipped for ${row.slug}: ${errorMessage(err)}`);
+    }
   }
   return upgraded;
 }

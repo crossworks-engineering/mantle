@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 // The leaf module of the runtime's slugs: no assistant runtime loads here.
 import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/slugs';
+import { ORIGINAL_VERSION_NOTE } from '../studio/version-notes';
 
 /**
  * The shipped prompt an agent should move to on upgrade, or null to leave its
@@ -21,6 +22,44 @@ export function shippedPromptUpgrade(
   if (live == null || !current || !retiredSha256?.length || live === current) return null;
   const hash = createHash('sha256').update(live, 'utf8').digest('hex');
   return retiredSha256.includes(hash) ? current : null;
+}
+
+/** The start of the prose-version note the boot upgrade writes (reconcile.ts
+ *  upgradeUneditedPrompts). The same words since v0.232.295, so the rows the
+ *  fleet already holds carry it too. Never change it: the reader below keys
+ *  on it. */
+export const SHIPPED_UPGRADE_NOTE_PREFIX = 'Shipped default updated on upgrade';
+
+/** The note the boot upgrade writes on the version it adds. */
+export function shippedUpgradeNote(appVersion: string): string {
+  return `${SHIPPED_UPGRADE_NOTE_PREFIX} to v${appVersion} (the prompt was unedited).`;
+}
+
+/**
+ * Whether the boot upgrade may move an agent's prompt, from its prose history
+ * (prompt_versions rows of agent.system_prompt). A matching hash is not enough:
+ * an owner who reverts to an old default in the Studio writes that old text
+ * back (revertProse saves it as a new version), and it hashes to a retired
+ * default again. So the upgrade moves a prompt only while every row of its
+ * history is one the upgrade itself wrote: v1, the original text saveProse
+ * captured on the first save, and the versions it added. Any other row (an
+ * edit, a revert, a save of any kind from the Studio) is the owner's word,
+ * and the prompt is left as it is from then on: a revert in Studio sticks.
+ *
+ * A row is the upgrade's own when it has no author AND its note is the
+ * original's or starts with SHIPPED_UPGRADE_NOTE_PREFIX. The Studio route
+ * always saves with the signed-in author, so an owner's note can never pass
+ * for one. No history at all (never saved) is the untouched case.
+ */
+export function promptHistoryIsShippedOnly(
+  rows: readonly { note: string | null; author: string | null }[],
+): boolean {
+  return rows.every(
+    (r) =>
+      r.author === null &&
+      r.note !== null &&
+      (r.note === ORIGINAL_VERSION_NOTE || r.note.startsWith(SHIPPED_UPGRADE_NOTE_PREFIX)),
+  );
 }
 
 /**

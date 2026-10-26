@@ -46,7 +46,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
 | Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
 | Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs` |
-| Specialist **prompt still an earlier shipped default**, byte for byte (owner decision 2026-10-26; disabled agents too; never the persona, never an edited prompt) | ✅ moved to the current default, the old text kept as a prose version (one Studio revert) | `upgradeUneditedPrompts` + `retiredPromptSha256` |
+| Specialist **prompt still an earlier shipped default**, byte for byte, with no Studio save in its history (owner decision 2026-10-26; disabled agents too; never the persona, never an edited prompt; a revert in Studio sticks) | ✅ moved to the current default, the old text kept as a prose version (one Studio revert) | `upgradeUneditedPrompts` + `retiredPromptSha256` + `promptHistoryIsShippedOnly` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
@@ -59,6 +59,13 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   (Studio reset-to-default); fresh installs still seed the manifest defaults.
   The one exception is a specialist prompt nobody edited: it is the
   product's text, so it follows the product (`retiredPromptSha256`, above).
+  "Nobody edited" is the hash AND the prose history: a prompt whose
+  `prompt_versions` hold any row the upgrade did not write itself (the
+  `(original)` v1 and its own `Shipped default updated on upgrade` rows,
+  both with no author) is the owner's from then on. So a revert in Studio
+  sticks, even a revert to an old default's exact text, and so does an
+  edit later reverted to the original (`promptHistoryIsShippedOnly`,
+  reconcile-util.ts).
   (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
 - An existing **worker's model/provider**: operator cost choice; never overwritten.
 - Any agent's **thinking effort** (`agents.thinking_effort`, migration 0228):
@@ -111,7 +118,8 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   fresh installs and new provisions. A prompt rewrite reaches existing brains
   whose prompt is unedited: add the sha256 of the OLD default (the evaluated
   `AGENT_PROMPTS[slug]` string) to that agent's `retiredPromptSha256` in the
-  same change. An edited prompt is kept (Studio reset-to-default is the
+  same change (`pnpm -C server/web prompts:retired` prints every earlier
+  default's hash from git history and what the manifest lacks). An edited prompt is kept (Studio reset-to-default is the
   manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
   it by adding the slug to an agent's `toolGroupSlugs`. A group has no

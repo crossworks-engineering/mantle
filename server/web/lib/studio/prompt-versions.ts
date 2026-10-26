@@ -24,6 +24,7 @@ import {
 } from '@mantle/db';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { PROSE_REGISTRY, type ProseEntityType } from './registry';
+import { ORIGINAL_VERSION_NOTE } from './version-notes';
 
 export type { PromptVersion };
 
@@ -254,7 +255,7 @@ export async function saveProse(args: {
       field,
       version: 1,
       body: current,
-      note: '(original)',
+      note: ORIGINAL_VERSION_NOTE,
       author: null,
     });
     if (current.trim() === newBody.trim()) {

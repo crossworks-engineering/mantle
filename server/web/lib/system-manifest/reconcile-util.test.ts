@@ -5,8 +5,10 @@ import {
   convergeManifestSkills,
   groupsForAgent,
   missingPersonaGroups,
+  promptHistoryIsShippedOnly,
   sameTopLevel,
   shippedPromptUpgrade,
+  shippedUpgradeNote,
   specialistParamsTarget,
 } from './reconcile-util';
 
@@ -158,6 +160,34 @@ describe('shippedPromptUpgrade', () => {
     expect(shippedPromptUpgrade(OLD, NEW, [])).toBeNull();
     expect(shippedPromptUpgrade(null, NEW, [sha(OLD)])).toBeNull();
     expect(shippedPromptUpgrade(OLD, undefined, [sha(OLD)])).toBeNull();
+  });
+});
+
+describe('promptHistoryIsShippedOnly', () => {
+  const original = { note: '(original)', author: null };
+  const upgrade = { note: shippedUpgradeNote('0.400.12'), author: null };
+  // The note the fleet's rows already carry (v0.232.295 on).
+  const fleetRow = {
+    note: 'Shipped default updated on upgrade to v0.232.295 (the prompt was unedited).',
+    author: null,
+  };
+  const owner = '00000000-0000-4000-8000-000000000001';
+
+  it('no history, or only what the upgrade wrote, may move', () => {
+    expect(promptHistoryIsShippedOnly([])).toBe(true);
+    expect(promptHistoryIsShippedOnly([original, upgrade, fleetRow])).toBe(true);
+  });
+
+  it('a Studio edit or revert is the owner: never moved again', () => {
+    expect(
+      promptHistoryIsShippedOnly([original, upgrade, { note: 'revert to v1', author: owner }]),
+    ).toBe(false);
+    expect(promptHistoryIsShippedOnly([original, { note: null, author: owner }])).toBe(false);
+  });
+
+  it("an owner's note that copies the upgrade's is still the owner's", () => {
+    expect(promptHistoryIsShippedOnly([original, { ...upgrade, author: owner }])).toBe(false);
+    expect(promptHistoryIsShippedOnly([original, { note: null, author: null }])).toBe(false);
   });
 });
 
