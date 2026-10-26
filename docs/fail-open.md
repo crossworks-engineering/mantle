@@ -67,41 +67,60 @@ five calls that note a hit. S4b takes it to 0.
 
 `MANTLE_FAIL_OPEN_DUMP=<file>` makes `vitest.setup.ts` write every hit of a
 test run, one JSON line each (site, actor kind, table, test file). Under
-vitest a hit is kept before the lookup and with no stack, and it never fails
-a test. The list below was measured that way: the full vitest run on a
-throwaway database with the actor check in warn (`vitest.config.ts`).
+vitest a hit is kept before the lookup and with no stack. The lists below
+were measured that way: the full DB vitest run (two shards) on a throwaway
+database with the actor check in warn (`vitest.config.ts`).
+
+`vitest.setup.ts` also rehearses S4b: a `typed-write` hit fails its test
+unless its table is on the list still left to decide
+(`SCOPED_SYSTEM_WRITES_LEFT`, `packages/db/src/fail-open.ts`). A table that
+names a reason is no hit at all. So a new scoped typed write to a table
+the write role does not hold fails the suite before it can reach S4b. A
+cell that causes one on purpose takes it (`takeFailOpenHits`).
 
 ## The scoped writes that stay on the system pool
 
-S4b refuses a scoped typed write to a table the write role does not
-hold, unless the table's access matrix row names
-`scopedSystemWrite: '<reason>'` (`packages/db/src/access-matrix.ts`). These
-are the tables the vitest measurement found; the box counts add what it
-cannot see (below):
+S4b refuses a scoped typed write to a table the write role does not hold,
+unless the table's access matrix row names `scopedSystemWrite: '<reason>'`
+(`packages/db/src/access-matrix.ts`, read as `SCOPED_SYSTEM_WRITE`). The
+named tables are not counted (`noteScopedSystemWrite` skips them). Keep the
+list small: the pin `scopedSystemWriteTables` only goes down, or up with a
+reviewed note, and `access-matrix.test.ts` holds each reason non-empty and
+never on a write-role table.
 
-| Table                       | Site          | Who writes it                                                                                                                                                             | `scopedSystemWrite` reason (proposed) |
-| --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `public.item_marks`         | `typed-write` | a login's own open counts and pins, keyed by its login (`packages/content/src/tree/marks.ts`, `packages/content/src/tree/apps-nav.ts`, `packages/content/src/app-nav.ts`) | `'own-marks'`                         |
-| `public.pending_tool_calls` | `typed-write` | an elevated tool call queued for approval, and its status (`packages/tools/src/pending-queue.ts`, `packages/tools/src/pending.ts`)                                        | `'approval-queue'`                    |
-| `public.assistant_messages` | `typed-write` | the rows of a login's chat turn in the one conversation store (`packages/runtime/src/agent/conversation.ts`)                                                              | `'conversation-store'`                |
-| `public.traces`             | `typed-write` | the integrity screen's delete of a node's trace rows, in an Admin user's scope (`server/web/lib/integrity/landed.ts`; no vitest hit)                                      | `'integrity-repair'`                  |
+| Table               | `scopedSystemWrite` reason                                                 | Writers                                                                                           |
+| ------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `public.item_marks` | own marks: actor_id is the caller's login; the node is read in scope first | `packages/content/src/tree/marks.ts`, `tree/apps-nav.ts`, `app-nav.ts` (the owner's and members') |
 
-Measured 2026-10-18 at the S4a branch: 146 hits, all from a login actor, in
-`precheck-removal-http`, `w6a-route-sweep`, `w6b-fix1` (`item_marks`),
-`w7a-tool-sweep`, `a5-elevated-approval`, `a5-approval-recheck`
-(`pending_tool_calls`), `w7c-chat` and `a5-mcp-writes-smoke`
-(`assistant_messages`), all under `server/web/server/`. No other table.
-The `item_marks` writes are typed writes, so their hits count as
-`typed-write`. So is the integrity screen's delete of a node's
-`public.traces` rows (the `public.traces` row above, read from the code: no
-test reaches it with a login's scope): a box counts its hits, if any, as
-`typed-write`.
+Moved off the caller's scoped write instead of named (a reason on these
+tables would let every scoped configuration write through):
+
+- The use counters of an assistant and an AI worker
+  (`bumpAgentUsage`, `bumpWorkerUsage`): `systemDb`, the narrow route in a
+  scope; `ai_workers` holds `last_used_at` and `usage_count` in
+  `NARROW_WRITES`, as `agents` did.
+- `api_tool_update`'s tool row, group and External access (tools,
+  tool_groups, audit_log): `areaSystem('connectors', …)`, the area asked
+  again, as `api_tool_create` runs whole.
+
+Left to decide (`SCOPED_SYSTEM_WRITES_LEFT`; each is moved or named before
+S4b, else S4b refuses it):
+
+| Table                       | Measured in                                                                       | Writers                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `public.pending_tool_calls` | `a5-approval-recheck`, `a5-elevated-approval`, `w7a-tool-sweep` (79 hits, logins) | the approval queue: `packages/tools/src/pending-queue.ts`, `pending.ts`, `toolsmith/groups.ts` |
+| `public.assistant_messages` | `a5-mcp-writes-smoke`, `w7c-chat` (4 hits, logins)                                | a login's turn rows over MCP: `packages/runtime/src/agent/conversation.ts`                     |
+
+Measured 2026-10-26 on feat/s4a-list (both shards of the full DB run): no
+other table. The integrity screen's delete of a node's trace rows
+(`server/web/lib/integrity/landed.ts`) has no vitest hit.
 
 So the list is vitest plus the box counts. The vitest run cannot see the
 two production allows (tests and development throw there), the two
 unscoped yes (every test binds `system(test)`), a scoped write on a path no
-test reaches, or which table a box's writes name. The box counts see
-every site on real traffic but give numbers only: a site with a count above
-0 is read on that box (its `detail`, the calling file or the table) before
-S4b names or refuses it. S4b flips after one fleet release with every count
-at 0 or each row named here.
+test reaches, or which table a box's writes name. The box counts see every
+site on real traffic but give numbers only (`fail_open_misses:typed-write`
+is this site): a site with a count above 0 is read on that box (its
+`detail`, the calling file or the table) before S4b names or refuses it.
+S4b flips after one fleet release with every count at 0 or each table
+named here.

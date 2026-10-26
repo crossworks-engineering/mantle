@@ -33,6 +33,31 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   validator refuses the placeholder, and a none declaration on a workspace
   kind's item route must name its param.
 
+## Unreleased: the scoped writes that stay on the system pool, named
+
+- **Security:** the access matrix names the tables whose scoped typed
+  write (a login's, an assistant's, a link's or a contact's insert, update
+  or delete in a write scope) may stay on the system pool though the write
+  role holds no right on it, each with its reason (`scopedSystemWrite`).
+  It is the list the later fail-closed step reads before it refuses every
+  other such write. One table: `item_marks` (a login's own pins and opens;
+  the node is read in the caller's scope first). A named table's write is
+  no longer counted as a fail-open hit; no answer changes.
+- **Fix:** an assistant's and an AI worker's use counters (last used, use
+  count) are written as infrastructure on the system handle (the narrow
+  route in a scope) instead of as the caller's own scoped write, so
+  `invoke_agent` and the decider no longer count fail-open hits. The narrow
+  role may now write an AI worker's two counters, so the bump does not fail
+  silently there. No migration: the grants are applied at every migrate.
+- **Fix:** `api_tool_update` (connectors area) writes the tool row, its
+  group and its External access through the area's own system door, after
+  the area is asked again. Nothing widens: a login without the connectors
+  area is still refused, and nothing is written.
+- **Tests:** the test setup now fails a test whose scoped typed write goes
+  to the system pool on a table that names no reason, except the two still
+  left to decide (`pending_tool_calls`, `assistant_messages`), so a new one
+  shows before the fail-closed step. New pin `scopedSystemWriteTables` (1).
+
 ## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
 
 - **Security:** a request's login resolves to one shape: the brain, the
