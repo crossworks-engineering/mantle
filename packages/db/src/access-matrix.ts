@@ -113,6 +113,17 @@ export type TableAccess = {
    * wider than the derived one throws.
    */
   narrow?: NarrowAccess;
+  /**
+   * Why a scoped typed write (a login's, an assistant's, a link's or a
+   * contact's db.insert, update or delete in a write scope) to this table
+   * may stay on the system pool though the write role holds no right on it
+   * (gateway/write-route.ts typedWrite). The list S4b reads: it refuses
+   * such a write to any table that names no reason; until then the named
+   * ones are not counted (fail-open-sites.ts noteScopedSystemWrite).
+   * Keep it small: the reason says whose row it is and what was checked
+   * first (access-matrix.test.ts; the pin `scopedSystemWriteTables`).
+   */
+  scopedSystemWrite?: string;
 };
 
 /** What the narrow system role may do on a table (TableAccess.narrow). */
@@ -1207,9 +1218,15 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.member_turn_ledger', 'system'), runtime: 'read' },
   none('public.embedding_cache', 'system'),
   none('public.assistant_read_cursors', 'system'),
-  // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
-  // paths only for now; members get their own when the tree reaches them.
-  userOnly('public.item_marks', 'admin'),
+  // Per-login pins and opens of the item tree (docs/folder-tree.md): each
+  // login's own, the owner's and every member's (Recent, Most used, the
+  // opens of a mini app or a Present). A login's scoped write of its own
+  // marks stays on the system pool (scopedSystemWrite; the writers are
+  // packages/content/src/tree/marks.ts, tree/apps-nav.ts and app-nav.ts).
+  {
+    ...userOnly('public.item_marks', 'admin'),
+    scopedSystemWrite: "own marks: actor_id is the caller's login; the node is read in scope first",
+  },
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
@@ -1557,6 +1574,21 @@ export const WRITE_ROLE_TABLES: readonly string[] = ACCESS_MATRIX.filter(writeRo
 export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
   (t) => t.writer === 'content' && !writeRoleWrites(t),
 ).map((t) => t.table);
+
+/**
+ * The tables whose scoped typed writes stay on the system pool, each with
+ * its reason (TableAccess.scopedSystemWrite): the list S4b reads before it
+ * refuses every other scoped typed write to a table the write role does
+ * not hold. Never a write-role table (access-matrix.test.ts).
+ */
+export const SCOPED_SYSTEM_WRITE: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    ACCESS_MATRIX.filter((t) => t.scopedSystemWrite !== undefined).map((t) => [
+      t.table,
+      t.scopedSystemWrite ?? '',
+    ]),
+  ),
+);
 
 /**
  * The role the gap rerun ran a gap table's statement as (A2b2b fix round 2,

@@ -3,6 +3,7 @@
  * (member logins Phase 0b). Pure: the live grants are checked by
  * access-matrix.db.test.ts.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Table, getTableColumns, is } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
@@ -11,6 +12,8 @@ import {
   ACCESS_MATRIX,
   DRAFT_COLUMNS,
   NEVER_GRANTED_COLUMNS,
+  SCOPED_SYSTEM_WRITE,
+  WRITE_ROLE_TABLES,
   userReadFor,
   userGrantStatements,
 } from './access-matrix';
@@ -105,5 +108,25 @@ describe('access matrix', () => {
     expect(stmts.find((s) => s.includes('"public"."pages"'))).toMatch(
       /^GRANT SELECT \("node_id", "doc", /,
     );
+  });
+
+  // Plan v3.2 S4a: the list S4b reads before it refuses a scoped typed
+  // write to a table the write role does not hold.
+  it('names a reason for every scoped system write, on no write-role table, and keeps the list small', () => {
+    const listed = Object.entries(SCOPED_SYSTEM_WRITE);
+    for (const [table, why] of listed) {
+      expect(why.trim().length, `${table}: an empty scopedSystemWrite reason`).toBeGreaterThan(20);
+      expect(WRITE_ROLE_TABLES, `${table}: a write-role table needs no reason`).not.toContain(
+        table,
+      );
+    }
+    // The pin (scripts/arch-scoreboard.pins.json, scopedSystemWriteTables)
+    // only goes down, or up with a reviewed note: a new table on the list is
+    // a reviewed decision, never a quiet way past S4b.
+    const pins = JSON.parse(
+      readFileSync(new URL('../../../scripts/arch-scoreboard.pins.json', import.meta.url), 'utf8'),
+    ) as { scopedSystemWriteTables?: number };
+    expect(listed.length).toBe(pins.scopedSystemWriteTables);
+    expect(listed.length).toBeLessThanOrEqual(5);
   });
 });

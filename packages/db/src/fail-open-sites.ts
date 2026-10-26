@@ -6,6 +6,7 @@
  */
 import { getTableName, is } from 'drizzle-orm';
 import { PgTable, getTableConfig } from 'drizzle-orm/pg-core';
+import { SCOPED_SYSTEM_WRITE } from './access-matrix';
 import { currentActor, longStack, writeActorMissRow, type Actor } from './actor';
 import { noteFailOpen, setFailOpenWriter, type FailOpenSite } from './fail-open';
 import { requestWriteScope, systemDbCallerOf } from './viewer';
@@ -36,8 +37,9 @@ function failOpenCaller(): string | null {
  * never refused here. Scoped is loginWriteRoute's test
  * (gateway/write-route.ts: an actor the write role takes, its kinds
  * `writeRoleActors`, and a write scope), so system work, which binds a
- * system actor, is never a hit. S4b refuses it
- * unless the table's matrix row names scopedSystemWrite.
+ * system actor, is never a hit. A table whose matrix row names
+ * scopedSystemWrite (SCOPED_SYSTEM_WRITE, its reason) is no hit either:
+ * S4b refuses the rest.
  */
 export function noteScopedSystemWrite(
   site: FailOpenSite,
@@ -48,6 +50,7 @@ export function noteScopedSystemWrite(
   if (!actor || !writeRoleActors.has(actor.kind)) return;
   if (!requestWriteScope()) return;
   const name = typeof table === 'string' ? table : tableNameOf(table);
+  if (Object.hasOwn(SCOPED_SYSTEM_WRITE, name)) return;
   noteFailOpen(site, actor.kind, failOpenCaller, name);
 }
 

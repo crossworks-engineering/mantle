@@ -1037,6 +1037,23 @@ export function failOpenSiteCount(files) {
   return n;
 }
 
+/**
+ * The tables whose scoped typed writes stay on the system pool (plan v3.2
+ * S4a, the `scopedSystemWriteTables` pin): each access matrix row that
+ * names a `scopedSystemWrite` reason (packages/db/src/access-matrix.ts,
+ * comments blanked). The list S4b reads; it only goes down, or up with a
+ * reviewed reason (access-matrix.test.ts holds each reason non-empty).
+ */
+export function scopedSystemWriteCount(files) {
+  const ROW = /\bscopedSystemWrite\s*:\s*['"`]/g;
+  let n = 0;
+  for (const { path, text } of files) {
+    if (path !== 'packages/db/src/access-matrix.ts') continue;
+    n += (stripComments(text).match(ROW) ?? []).length;
+  }
+  return n;
+}
+
 /** The lines of one file (plan v3 section 6: dbClientLines). */
 function lineCount(root, path) {
   return readFileSync(join(root, path), 'utf8').split('\n').length - 1;
@@ -1367,6 +1384,7 @@ export function measure(root) {
       dbClientLines: lineCount(root, 'packages/db/src/client.ts'),
       ...gateway.numbers,
       failOpenSites: failOpenSiteCount(texts),
+      scopedSystemWriteTables: scopedSystemWriteCount(texts),
     },
     perFile: {
       asSystem,
