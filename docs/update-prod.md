@@ -1368,8 +1368,8 @@ keeps through `mantle.data` (meeting marks, saved layouts, suggestions,
 votes), with a row rule for the workspace role, and its only two writers,
 the definers `mantle_canvas_data_put` and `mantle_canvas_data_delete`
 (the write role runs them; the runtime role reads the table and never
-writes it). It only adds a table and two functions. Nothing to do before
-the roll.
+writes it). It only adds a table (with its indexes) and two functions.
+Nothing to do before the roll.
 
 - **What it changes for readers:** nothing until a canvas calls
   `mantle.data`. The owner UI forwards those calls once it pins the
@@ -1378,7 +1378,7 @@ the roll.
 - **Rolling back below it:** optional; the older image never reads the
   table nor calls its definers. The revert
   (`packages/db/rollback/0336_canvas_data.revert.sql`) takes 0336 off the
-  ledger and keeps every stored value and both functions.
+  ledger and keeps every stored value, the indexes and both functions.
 
 ## Rollback
 

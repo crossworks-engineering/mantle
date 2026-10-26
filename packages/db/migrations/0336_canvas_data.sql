@@ -5,12 +5,17 @@
 -- brain as the signed-in user, and binds the canvas.
 --
 -- One row per (canvas, key) in the `shared` bucket (login_id NULL), one per
--- (canvas, login, key) in `mine`. `bytes` is the size of the value's JSON
--- text, which the caps count (@mantle/content-core/canvas-data). NOT a canvas
+-- (canvas, login, key) in `mine`. `bytes` is the size of the value as
+-- stored (octet_length of the jsonb's text), which every cap counts
+-- (@mantle/content-core/canvas-data). NOT a canvas
 -- revision: nothing here touches `presents` or its rev. A row goes with its
 -- canvas (nodes cascade) and a `mine` row with its login. `updated_by` is the
 -- login that last wrote a row and `by_name` its display name then (a
--- snapshot: a member's scope reads no other login's profile).
+-- snapshot: a member's scope reads no other login's profile). Three plain
+-- indexes beside the two unique ones: node_id (a canvas's delete cascades,
+-- and the definers' cap queries read every row of one canvas), login_id
+-- and updated_by (a login's delete cascades and sets NULL), each so those
+-- never scan the table.
 --
 -- Rights, on the canvas's own item rights:
 --  - read (the row rule below, for the workspace role): a row of a canvas
@@ -30,13 +35,18 @@
 --    SHARE (a delete that ran first leaves no row: 'missing', never a
 --    foreign key error); it must be a canvas the scope reads (the nodes row
 --    rule: 'missing' otherwise, whether it exists or not), not a read-only
---    snapshot copy ('read_only'); `shared` asks Write on it
+--    snapshot copy ('read_only'); a canvas of one login's own (nodes
+--    login_id) is that login's only, the scope's login (`me`, also on the
+--    system pool, where mantle_login_id is NULL); `shared` asks Write on it
 --    (mantle_may_edit: 'forbidden'). Then the caps, over every row of the
 --    canvas but the one this write replaces ('full'): 1 MB and 1000 entries
 --    per canvas; every login's `mine` entries together at most 75% of
 --    those (768 KB, 750), so `shared` always keeps a quarter; one login's
---    `mine` entries 256 KB and 200. A value is JSON text of at most 64 KB
---    ('invalid' otherwise, and for a bucket or key the contract refuses).
+--    `mine` entries 256 KB and 200. A value is at most 64 KB as stored
+--    ('too_big'), JSON ('invalid' otherwise, and for a bucket or key the
+--    contract refuses). The caps count every value as stored: its jsonb's
+--    text, a space after each `,` and `:`, so never less than the compact
+--    text a caller sends (which bounds the parse first).
 --    The display name kept is the login's own (auth.users). Returns
 --    (result, saved_at): 'ok' and the time, or the refusal.
 -- 2. mantle_canvas_data_delete(canvas, bucket, key, login): remove entries.
@@ -81,6 +91,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS "canvas_data_shared_key_uq"
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "canvas_data_mine_key_uq"
   ON "public"."canvas_data" ("node_id", "login_id", "key") WHERE "bucket" = 'mine';
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "canvas_data_node_idx" ON "public"."canvas_data" ("node_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "canvas_data_login_idx"
+  ON "public"."canvas_data" ("login_id") WHERE "login_id" IS NOT NULL;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "canvas_data_updated_by_idx"
+  ON "public"."canvas_data" ("updated_by") WHERE "updated_by" IS NOT NULL;
 --> statement-breakpoint
 
 LOCK TABLE "public"."canvas_data" IN ACCESS EXCLUSIVE MODE;
@@ -131,8 +149,14 @@ BEGIN
   END IF;
   IF in_bucket IS NULL OR in_bucket NOT IN ('shared', 'mine')
      OR in_key IS NULL OR in_key !~ '^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$'
-     OR in_json IS NULL OR octet_length(in_json) > value_max THEN
+     OR in_json IS NULL THEN
     RETURN QUERY SELECT 'invalid'::text, NULL::timestamptz;
+    RETURN;
+  END IF;
+  -- A first bound, before the parse: the value as stored is never shorter
+  -- than the compact text the content layer sends.
+  IF octet_length(in_json) > value_max THEN
+    RETURN QUERY SELECT 'too_big'::text, NULL::timestamptz;
     RETURN;
   END IF;
   BEGIN
@@ -141,7 +165,12 @@ BEGIN
     RETURN QUERY SELECT 'invalid'::text, NULL::timestamptz;
     RETURN;
   END;
-  sz := octet_length(in_json);
+  -- The size every cap counts: the value as stored.
+  sz := octet_length(v::text);
+  IF sz > value_max THEN
+    RETURN QUERY SELECT 'too_big'::text, NULL::timestamptz;
+    RETURN;
+  END IF;
   -- One writer per canvas at a time: the caps below count what is there.
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('canvas-data:' || canvas::text, 0));
@@ -154,7 +183,7 @@ BEGIN
      FOR KEY SHARE OF n;
   IF NOT FOUND
      OR NOT coalesce(c.read_ws && "public"."mantle_scope_ws"(), false)
-     OR (c.login_id IS NOT NULL AND c.login_id IS DISTINCT FROM "public"."mantle_login_id"()) THEN
+     OR (c.login_id IS NOT NULL AND c.login_id IS DISTINCT FROM me) THEN
     RETURN QUERY SELECT 'missing'::text, NULL::timestamptz;
     RETURN;
   END IF;
@@ -260,7 +289,7 @@ BEGIN
    WHERE n."id" = canvas AND n."type" = 'present';
   IF NOT FOUND
      OR NOT coalesce(c.read_ws && "public"."mantle_scope_ws"(), false)
-     OR (c.login_id IS NOT NULL AND c.login_id IS DISTINCT FROM "public"."mantle_login_id"()) THEN
+     OR (c.login_id IS NOT NULL AND c.login_id IS DISTINCT FROM me) THEN
     RETURN QUERY SELECT 'missing'::text, 0;
     RETURN;
   END IF;

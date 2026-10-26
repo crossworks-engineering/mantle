@@ -946,7 +946,7 @@ with no SDK: the frame's prelude defines `window.mantle.data` (`get`, `set`,
 `delete`, `list`, `info`, `clear`), each a promise.
 
 - **Transport.** The frame posts `{v:1, kind:'data', n, id, op, bucket,
-  key, json, everyone, by}` to its parent, only after `ready` (the parent
+key, json, everyone, by}` to its parent, only after `ready` (the parent
   takes nothing before the nonce proof). `n` is the proof's nonce again,
   held in the prelude's closure: the parent (share-ui CanvasSandbox, with
   canvas-data-bridge.ts) takes a data message only from its own frame
@@ -961,7 +961,7 @@ with no SDK: the frame's prelude defines `window.mantle.data` (`get`, `set`,
   (a render, the poster, an export) reads answer empty and writes refuse.
 - **Storage.** `canvas_data` (migration 0336): one row per (canvas, key) in
   `shared`, per (canvas, login, key) in `mine`; jsonb values, at most 64 KB
-  each and 64 levels deep, 1 MB and 1000 entries per canvas, every login's
+  each as stored (what every cap counts) and 64 levels deep, 1 MB and 1000 entries per canvas, every login's
   `mine` together at most 75% of that (so `shared` always keeps a quarter),
   256 KB and 200 entries per login in `mine`
   (@mantle/content-core/canvas-data). Never a canvas revision: nothing
