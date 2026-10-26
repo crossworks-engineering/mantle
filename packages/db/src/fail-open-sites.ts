@@ -37,9 +37,11 @@ function failOpenCaller(): string | null {
  * never refused here. Scoped is loginWriteRoute's test
  * (gateway/write-route.ts: an actor the write role takes, its kinds
  * `writeRoleActors`, and a write scope), so system work, which binds a
- * system actor, is never a hit. A table whose matrix row names
- * scopedSystemWrite (SCOPED_SYSTEM_WRITE, its reason) is no hit either:
- * S4b refuses the rest.
+ * system actor, is never a hit. A login's write to a table whose matrix
+ * row names scopedSystemWrite (SCOPED_SYSTEM_WRITE, its reason) is no hit
+ * either: every reason names the caller's login as whose row it is, so an
+ * assistant's, a link's or a contact's write to it still counts. S4b
+ * refuses the rest.
  */
 export function noteScopedSystemWrite(
   site: FailOpenSite,
@@ -50,7 +52,7 @@ export function noteScopedSystemWrite(
   if (!actor || !writeRoleActors.has(actor.kind)) return;
   if (!requestWriteScope()) return;
   const name = typeof table === 'string' ? table : tableNameOf(table);
-  if (Object.hasOwn(SCOPED_SYSTEM_WRITE, name)) return;
+  if (actor.kind === 'login' && Object.hasOwn(SCOPED_SYSTEM_WRITE, name)) return;
   noteFailOpen(site, actor.kind, failOpenCaller, name);
 }
 

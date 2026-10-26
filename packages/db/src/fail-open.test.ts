@@ -5,13 +5,14 @@
  * answers stay what they were: every cell checks the site's answer too.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loginActor, runAsActor, runAsSystem, runWithoutActor } from './actor';
+import { loginActor, runAsActor, runAsSystem, runWithoutActor, type Actor } from './actor';
 import { closeDb, db, scopeHasArea, scopeHoldsAdmin } from './client';
 import {
   noteFailOpen,
   resetFailOpenForTest,
   setFailOpenWriter,
   takeFailOpenHits,
+  unnamedScopedWrites,
   type FailOpenRow,
 } from './fail-open';
 import { actorCheckMisses, itemMarks, nodes } from './schema';
@@ -209,13 +210,38 @@ describe('a scoped typed write to a table the write role does not hold (site typ
     expect(takeFailOpenHits()).toEqual([]);
   });
 
-  it('a table whose matrix row names scopedSystemWrite is not counted', async () => {
+  it("a login's write to a table whose matrix row names scopedSystemWrite is not counted", async () => {
     await inWriteRequest(async () => {
       tryIt(() => db.insert(itemMarks));
       tryIt(() => db.update(itemMarks));
     });
     expect(rows).toEqual([]);
     expect(takeFailOpenHits()).toEqual([]);
+  });
+
+  it("the reason covers a login only: an assistant's, a link's or a contact's write counts and fails the suite's guard", async () => {
+    const others: Actor[] = [
+      { kind: 'assistant', agentId: null },
+      { kind: 'link' },
+      { kind: 'contact', canWrite: true },
+    ];
+    for (const actor of others) {
+      await inWriteRequest(() =>
+        runAsActor(actor, async () => {
+          tryIt(() => db.insert(itemMarks));
+        }),
+      );
+    }
+    const hits = takeFailOpenHits();
+    expect(hits).toEqual(
+      ['assistant', 'link', 'contact'].map((kind) => ({
+        site: 'typed-write',
+        actor: kind,
+        table: 'public.item_marks',
+      })),
+    );
+    // vitest.setup.ts fails a test with such a hit (S4b refuses it).
+    expect(unnamedScopedWrites(hits)).toEqual(['public.item_marks']);
   });
 });
 

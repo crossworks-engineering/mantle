@@ -22,7 +22,7 @@ import {
   takeNarrowWrites,
   takeWriteRoleGaps,
 } from './packages/db/src/actor';
-import { SCOPED_SYSTEM_WRITES_LEFT, takeFailOpenHits } from './packages/db/src/fail-open';
+import { takeFailOpenHits, unnamedScopedWrites } from './packages/db/src/fail-open';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -50,14 +50,7 @@ afterEach(() => {
   if (failOpenDump) {
     appendFileSync(failOpenDump, hits.map((h) => `${JSON.stringify({ ...h, file })}\n`).join(''));
   }
-  const unnamed = [
-    ...new Set(
-      hits
-        .filter((h) => h.site === 'typed-write')
-        .map((h) => h.table ?? '?')
-        .filter((t) => !SCOPED_SYSTEM_WRITES_LEFT.includes(t)),
-    ),
-  ];
+  const unnamed = unnamedScopedWrites(hits);
   if (unnamed.length > 0) {
     throw new Error(
       `a scoped typed write went to the system pool on a table the write role does not hold, with no scopedSystemWrite reason (plan v3.2 S4a; S4b refuses it): ${unnamed.join(', ')}.\n` +

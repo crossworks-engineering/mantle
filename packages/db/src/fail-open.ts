@@ -110,6 +110,26 @@ export function takeFailOpenHits(): { site: FailOpenSite; actor: string; table?:
   return testHits.splice(0);
 }
 
+/**
+ * The suite's rehearsal of S4b (vitest.setup.ts, after each test): the
+ * tables of `hits` whose typed-write hit names no table still left to
+ * decide (SCOPED_SYSTEM_WRITES_LEFT). A test with any fails. A named
+ * table (scopedSystemWrite) is no hit for a login, so it is here only for
+ * another actor's write.
+ */
+export function unnamedScopedWrites(
+  hits: readonly { site: FailOpenSite; table?: string }[],
+): string[] {
+  return [
+    ...new Set(
+      hits
+        .filter((h) => h.site === 'typed-write')
+        .map((h) => h.table ?? '?')
+        .filter((t) => !SCOPED_SYSTEM_WRITES_LEFT.includes(t)),
+    ),
+  ];
+}
+
 /** Tests: forget the lookups and the rows written (a fresh process). */
 export function resetFailOpenForTest(): void {
   lastStack.clear();

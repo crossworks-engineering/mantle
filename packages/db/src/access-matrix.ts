@@ -119,7 +119,9 @@ export type TableAccess = {
    * may stay on the system pool though the write role holds no right on it
    * (gateway/write-route.ts typedWrite). The list S4b reads: it refuses
    * such a write to any table that names no reason; until then the named
-   * ones are not counted (fail-open-sites.ts noteScopedSystemWrite).
+   * ones are not counted (fail-open-sites.ts noteScopedSystemWrite). It
+   * covers a login actor's write only (the reason names the caller's
+   * login): an assistant's, a link's or a contact's write still counts.
    * Keep it small: the reason says whose row it is and what was checked
    * first (access-matrix.test.ts; the pin `scopedSystemWriteTables`).
    */
