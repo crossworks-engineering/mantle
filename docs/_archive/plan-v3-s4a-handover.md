@@ -210,3 +210,18 @@ matrix 8, runtime-role 3174, serial 1.
 - Pins: systemDbUses 70 to 77, systemDbFiles 22 to 23,
   systemDbUses_narrow 66 to 73, fullRouteSpots 31 to 32,
   fullRouteSpotCalls 122 to 118.
+
+Rebased onto main v0.400.8 (cc549badb, S11b); the CHANGELOG sections kept
+side by side. Gates on the Mac on the rebased head: pnpm -r typecheck 0,
+eslint on the changed files 0, format:check 0, docs:check 0, arch:check 0,
+web build 0, unit vitest 0 (12069 passed), test-deploy-scripts 0 (542).
+Workstation suites on ad7e7ea7e (the pushed rebased head before this
+docs-only note), each in its own clone, container and lane, all exit 0:
+DB vitest shard 1/2 6898 passed and 2/2 8359, test:actor-off 1667,
+actor-on 419, edit-on 591, matrix 9, runtime-role 3178, serial 1. With
+`MANTLE_FAIL_OPEN_DUMP` on in every suite the dump is empty: no scoped
+system-pool write left (the cells that cause one on purpose take it).
+The same eight were 0 on the pre-rebase head 51518619a.
+
+Open for S4b: refuse each site after one fleet release reads 0. The box
+query for the tables: docs/fail-open.md.
