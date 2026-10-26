@@ -61,7 +61,15 @@ import {
 } from '../../runtime/legend.ts';
 import { slugify, svgDocument } from '../../runtime/export.ts';
 import type { CheckEvidence, RenderResult } from '../../types.ts';
-import { imageCheckSummary, weakestState, type CheckState, type PidCheck } from './check.ts';
+import {
+  imageCheckSummary,
+  lineNoteSuffix,
+  markSuffix,
+  weakestState,
+  withoutMarkWords,
+  type CheckState,
+  type PidCheck,
+} from './check.ts';
 import { SERVICE_NAMES } from './profile.ts';
 import {
   BAND,
@@ -291,7 +299,34 @@ export type RenderPidOptions = {
   idPrefix?: string;
 };
 
-export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {}): RenderResult {
+/**
+ * The trust words, drawn from the marks in both styles (check.ts
+ * MARK_WORDS): any typed into a label are stripped first, as every save
+ * strips them (withoutMarkWords), then a marked connector's text takes its
+ * mark's word (markSuffix) and a line with marks its note's (lineNoteSuffix;
+ * the word alone when it has no note). A drawing with no mark comes back as
+ * it is, so it draws byte for byte as before.
+ */
+export function withMarkWordsDrawn(data: PidData): PidData {
+  const marked =
+    data.offpage.some((o) => o.check) ||
+    data.lines.some((l) => l.checks?.length || l.inline?.some((it) => it.check));
+  if (!marked) return data;
+  const d = withoutMarkWords(data);
+  return {
+    ...d,
+    offpage: d.offpage.map((o) =>
+      o.check ? { ...o, text: `${o.text ?? ''}${markSuffix(o.check)}`.trim() } : o,
+    ),
+    lines: d.lines.map((l) => {
+      const word = lineNoteSuffix(l);
+      return word ? { ...l, note: `${l.note ?? ''}${word}`.trim() } : l;
+    }),
+  };
+}
+
+export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = {}): RenderResult {
+  const data = withMarkWordsDrawn(given);
   const P = data.profile;
   const warnings: string[] = [];
   /** Style 2 (style.ts): the colour set and the label room. Style 1 is

@@ -166,6 +166,37 @@ describe('check fields in the data', () => {
   });
 });
 
+describe('the trust words are drawn from the marks', () => {
+  it.each([1, 2])(
+    'style %s: each marked label says its mark, once; typed words do not count',
+    (style) => {
+      const d = withChecks(style) as Record<string, any>;
+      // A typed claim the mark does not make: stripped, the mark's word drawn.
+      d.offpage[0].text = 'NEAR V-9 (CHECKED BY IMAGE)';
+      const r = render('pid', d, estimateMeasurer);
+      if (!r.ok) throw new Error(r.errors.join());
+      expect(r.svg).toContain('NEAR V-9 (GUESS)');
+      expect(r.svg).not.toContain('CHECKED BY IMAGE)');
+      expect(r.svg).not.toMatch(/\(GUESS\)\s*\(GUESS\)/);
+      // The line's joins: one open, none contradicted.
+      expect(r.svg).toContain('VALVE TYPE (GUESS)');
+      // Checked: the mark says so, whatever the text said.
+      d.offpage[0].check = { key: 'e1', kind: 'end', state: 'checked', answer: 'yes' };
+      d.offpage[0].text = 'NEAR V-9 (GUESS)';
+      const r2 = render('pid', d, estimateMeasurer);
+      if (!r2.ok) throw new Error(r2.errors.join());
+      expect(r2.svg).toContain('NEAR V-9 (CHECKED BY IMAGE)');
+    },
+  );
+
+  it('a drawing with no mark keeps its text as written', () => {
+    const r = render('pid', base(), estimateMeasurer);
+    if (!r.ok) throw new Error(r.errors.join());
+    expect(r.svg).toContain('NEAR V-9 (GUESS)');
+    expect(r.svg).toContain('VALVE TYPE (GUESS, IMAGE: NO)');
+  });
+});
+
 describe('the canvas carries the crops', () => {
   it('in an assets block, read back and replaced; never in the data', () => {
     const html = buildCanvas({

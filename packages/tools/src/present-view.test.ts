@@ -1,8 +1,8 @@
 /**
  * The view side of phase 6 on what the check side writes, through the
  * check side's exported contract only (@mantle/diagram-templates: the
- * PidCheck mark, mapImageChecks, markSealBody, provenanceSealBody;
- * @mantle/content/drawing-seal: drawingSeal and the save's
+ * PidCheck mark, mapImageChecks, signImageChecks, withoutMarkWords,
+ * provenanceSealBody; @mantle/content/drawing-seal: drawingSeal and the save's
  * honestCanvasSource): a traced circuit (synthetic sheets, the check
  * branch's fixtures), its marks answered and sealed as circuit_trace seals
  * them, passes the pid check, survives a save, and draws in both styles;
@@ -19,13 +19,14 @@ import {
   estimateMeasurer,
   imageCheckSummary,
   mapImageChecks,
-  markSealBody,
   provenanceSealBody,
   readCanvasAssets,
   readCanvasData,
   render,
+  signImageChecks,
   validate,
   withImageCheckSummary,
+  withoutMarkWords,
   type PidCheck,
 } from '@mantle/diagram-templates';
 import { drawingSeal, honestCanvasSource } from '@mantle/content/drawing-seal';
@@ -130,9 +131,9 @@ function traced(sheets: SheetInput[], answer: (i: number) => Answer): Obj {
   );
   const id = '0123456789abcdef';
   const provenance = { id, keys: [...new Set(keys)] };
-  const sealed = eachDrawing(answered, (d) =>
-    mapImageChecks(d, (m) => ({ ...(m as Obj), sig: drawingSeal(markSealBody(id, m as Obj)) })),
-  );
+  // Sealed where each mark sits, labels without trust words, as
+  // circuit_trace seals a drawing (the one sealing path).
+  const sealed = signImageChecks(withoutMarkWords(answered), id, drawingSeal);
   return {
     ...sealed,
     provenance: { ...provenance, sig: drawingSeal(provenanceSealBody(provenance)) },

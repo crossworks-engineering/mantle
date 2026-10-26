@@ -154,6 +154,6 @@ describe('a save keeps only sealed crops (honestCanvasSource)', () => {
       '</body>',
       '<script id="diagram-assets" type="application/json">{"crops":{}}</script></body>',
     );
-    expect(() => honestCanvasSource(sly)).toThrow(/assets block/);
+    expect(() => honestCanvasSource(sly)).toThrow(/pictures could not be checked/);
   });
 });
