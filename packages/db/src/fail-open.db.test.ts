@@ -145,13 +145,17 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
   it("an assistant's and an AI worker's use counters in a write request: systemDb, no hit", async () => {
     fo.resetFailOpenForTest();
     await su`delete from actor_check_misses`;
+    // The rows' owner: agents.owner_id names a login (auth.users).
+    const owner = randomUUID();
+    await su`insert into auth.users (id, email, password_hash, role)
+      values (${owner}, ${`fo-${owner.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
     const [w] = await su<{ id: string }[]>`
       insert into ai_workers (owner_id, slug, name, kind, provider, model)
-      values (${login}, ${`fo-${randomUUID().slice(0, 8)}`}, 'w', 'tts', 'openai', 'x')
+      values (${owner}, ${`fo-${randomUUID().slice(0, 8)}`}, 'w', 'tts', 'openai', 'x')
       returning id::text`;
     const [a] = await su<{ id: string }[]>`
       insert into agents (owner_id, slug, name, provider, model, system_prompt)
-      values (${login}, ${`fo-${randomUUID().slice(0, 8)}`}, 'a', 'openai', 'x', '')
+      values (${owner}, ${`fo-${randomUUID().slice(0, 8)}`}, 'a', 'openai', 'x', '')
       returning id::text`;
     await inWriteRequest(async () => {
       await m.bumpWorkerUsage(w!.id);
@@ -166,6 +170,7 @@ describe.skipIf(!URL)('fail-open miss rows (plan v3.2 S4a)', () => {
     expect(fo.takeFailOpenHits()).toEqual([]);
     await su`delete from ai_workers where id = ${w!.id}`;
     await su`delete from agents where id = ${a!.id}`;
+    await su`delete from auth.users where id = ${owner}`;
   });
 
   it('system work and an unscoped yes under a system actor: no row', async () => {
