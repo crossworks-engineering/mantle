@@ -7875,7 +7875,7 @@
  },
  {
   "name": "present_export",
-  "description": "Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws (a drawing set: every page stacked, links printed as page references), any other canvas a PNG picture. Returns the file id and `embed`, the markdown of that copy. To show a canvas in a page of this brain use its `page_embed` from `present_get` instead: it follows the canvas. To update an earlier export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates. The canvas stays the editable source: change it with `present_update`, then export again.",
+  "description": "Write a static copy of a canvas into Files for outside Mantle (an email, a file to send): a template canvas exports the SVG its data draws (a drawing set: every page stacked), any other canvas a PNG. It goes where every export goes unless `parent_path` names a folder; a taken name gets a `-2` suffix. Returns the file id, its name, landedIn and `embed`, the markdown of that copy. For a page of this brain use the canvas's `page_embed` from `present_get` instead: it follows the canvas. To update an export, pass the same `filename` with `overwrite: true`: the file id stays, so every embed updates.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7889,7 +7889,7 @@
     },
     "parent_path": {
      "type": "string",
-     "description": "ltree path of the folder, e.g. 'files.diagrams'."
+     "description": "ltree path of a folder to save in, e.g. 'files.diagrams'. Leave it out to save where every export goes (Auto-filed / Exports when the caller may change it, else the top of Files); the reply says where (landedIn)."
     },
     "overwrite": {
      "type": "boolean",
