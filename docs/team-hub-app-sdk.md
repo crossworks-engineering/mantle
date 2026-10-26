@@ -3,7 +3,7 @@
 > **The `/hub` host is retired (member logins Phase 6, 2026-09-28).** The
 > team-code `/hub` (and `/team`, and `/api/team/hub`) went with the team
 > portal; `/hub` now redirects to `/login`. The one host left is a
-> **workspace's landing page** (task d78e7bde): every login's Home runs the
+> **workspace's landing page** (task d78e7bde): every login's Desk runs the
 > home app of its current workspace, and `hub.get` answers from
 > `GET /api/home?ws=<id>` in the same `HubData` shape, kept to what that
 > workspace reads (who runs an app: [workspaces.md](workspaces.md), "Apps"
