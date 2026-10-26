@@ -5,8 +5,11 @@
  * matrix declaration) or exempt (its declaration is `none`, with a reason);
  * every write route that names its item (`item: { param, need }`) is in the
  * route cells (a8-route-cells.ts) or runs its refused cells only, with why
- * (exempt). What is in neither is uncovered, and so is a tool or a route
- * whose cells hold no allowed cell or no refused one.
+ * (exempt), and its declared need is the one its cells ask; a write that
+ * declares none and names an item in its path (`item: { none, param }`) is
+ * in the route cells by the guide action it is, or exempt by its reason,
+ * as a tool that declares none. What is in neither is uncovered, and so is
+ * a tool or a route whose cells hold no allowed cell or no refused one.
  *
  * Two pins in scripts/arch-scoreboard.pins.json: a8Uncovered (only down)
  * and a8Exempt (the count of the names below; a new exemption is reviewed
@@ -99,6 +102,8 @@ describe('A8 coverage: every kind, tool and item route is in a cell set or exemp
 
   it('every write route that names its item has cells, an allowed and a refused one', () => {
     expect(counts.routes.uncovered).toEqual({});
+    // The need a route declares is the one its cells ask (a8NeedOf).
+    expect(counts.routes.mismatched).toEqual({});
     // A spec of a route that names no item (or is gone) is a stale one.
     expect(counts.routes.stale).toEqual([]);
     for (const key of counts.routes.covered) {
@@ -114,6 +119,21 @@ describe('A8 coverage: every kind, tool and item route is in a cell set or exemp
     }
     // A hidden item answers as a random uuid: such cells exist.
     expect(counts.routes.cells.filter((c) => !c.reads).length).toBeGreaterThan(0);
+  });
+
+  it('a write that declares none and names an item in its path says its param', () => {
+    // A param that holds an item's id by its name: a none route with one
+    // says it (`item: { none, param }`), so the counts above see it.
+    const ITEM_PARAM = /^(nodeId|itemId|refId|mapId|pageId|tableId|appId|fileId|folderId)$/;
+    const unsaid: string[] = [];
+    for (const e of routeManifest as readonly A8ManifestEntry[]) {
+      for (const [method, p] of Object.entries(e.policy ?? {})) {
+        if (!p.item || p.item.none === undefined || p.item.param !== undefined) continue;
+        const params = e.pattern.split('/').filter((x) => x.startsWith(':'));
+        if (params.some((x) => ITEM_PARAM.test(x.slice(1)))) unsaid.push(`${method} ${e.pattern}`);
+      }
+    }
+    expect(unsaid).toEqual([]);
   });
 
   it('the exempt tools, kinds and routes, by name', () => {
@@ -140,18 +160,21 @@ describe('A8 coverage: every kind, tool and item route is in a cell set or exemp
 });
 
 /** The write routes that name their item and run their refused cells only
- *  (each its reason in A8_ROUTE_SPECS), by name: a new one is named here
- *  with the final audit's review line in the pins' _notes, and a8Exempt
- *  rises with it. */
+ *  (each its reason in A8_ROUTE_SPECS), and the ones that declare none and
+ *  name an item with no cells (each its reason in its route file), by name:
+ *  a new one is named here with the final audit's review line in the pins'
+ *  _notes, and a8Exempt rises with it. */
 const A8_EXEMPT_ROUTES: readonly string[] = [
+  'DELETE /api/workspaces/:id/resources/:kind/:refId',
   'PATCH /api/v1/pages/:id',
+  'PATCH /api/workspaces/:id/resources/:kind/:refId',
   'POST /api/apps/:id/db-broker',
-  'POST /api/apps/:id/frame-ticket',
   'POST /api/apps/:id/tool-broker',
   'POST /api/files/files/:id',
   'POST /api/files/folders/:id',
-  'POST /api/pages/:id/move',
-  'POST /api/tables/:id/import',
+  'POST /api/grants/:nodeId/:wsId/hand',
+  'POST /api/grants/:nodeId/:wsId/restore',
+  'POST /api/grants/:nodeId/embeds',
 ];
 
 /** The tools that declare `none` (each its reason in its policy), by name: a
