@@ -41,18 +41,3 @@ export function auditsAsWrite(method: string, effect: 'read' | 'write' | null): 
   // set a declaration's `audit` is checked against too.
   return auditsByMethod(method) || effect === 'write';
 }
-
-/**
- * What the item gate found an item through: its own id. The routes whose
- * `:id` named it through another row (W6a fix round 1, M1: a share, a
- * recall revision, a deleted app's last snapshot) are gone from the gate:
- * the recall revision in the pre-check removal part 2, the share and the
- * deleted app in plan v3.2 S6 c2, whose handlers ask in the login's scope
- * (lib/auth/item-answers.ts shareItemRefusal) and through the trash's
- * definer (mantle_app_trash_act, 0310).
- */
-export type ItemRef = 'node';
-
-/** What an item write needs of the item: to read it, to edit it
- *  (mantle_may_edit), or to manage it (mantle_may_manage). */
-export type ItemWriteNeed = 'read' | 'edit' | 'manage';

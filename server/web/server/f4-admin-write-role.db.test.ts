@@ -16,9 +16,9 @@
  * workspace) or the owner, on an
  * item homed in another workspace and granted to Admin with Write off (the
  * scope reads it, may not edit it), with Write on (it may), or not granted
- * to Admin at all (the scope does not read it). The pre-check (the item
- * the route names: routeItemTarget) is bypassed where a cell says so, so
- * only the database stands:
+ * to Admin at all (the scope does not read it). No route has the item
+ * pre-check now (plan v3.2 S11b took its reader out), so only the database
+ * and the handler stand, in every cell:
  *
  *   - on: the read-only edit and draft edit are refused by the database,
  *     the item unchanged, in the mapper's words; the editable ones are made
@@ -48,18 +48,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
-
-/** The TypeScript item pre-check (the item the route names), bypassed
- *  while `on` is false. */
-const pre = vi.hoisted(() => ({ on: true }));
-vi.mock('../lib/auth/route-policy', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../lib/auth/route-policy')>();
-  return {
-    ...real,
-    routeItemTarget: (...args: Parameters<typeof real.routeItemTarget>) =>
-      pre.on ? real.routeItemTarget(...args) : null,
-  };
-});
 
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -162,7 +150,7 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     who: Who,
     what: 'edit' | 'draft' | 'gated',
     grant: Grant,
-    precheck: boolean,
+    _precheck: boolean,
   ): Promise<Cell> => {
     const id = await makeItem(what === 'edit' ? 'note' : 'page', grant);
     // 'gated': a write through a route that keeps the pre-check (a link's
@@ -179,22 +167,16 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
       });
     }
     const before = await stateOf(id);
-    pre.on = precheck;
     m.takeActorMisses();
-    let res: { out: Response; who: string[] };
-    try {
-      res = await writersOf(() =>
-        what === 'edit'
-          ? runRoute(L[who], 'PATCH', `/api/notes/${id}`, { title: `${tag} edited ${name}` })
-          : what === 'gated'
-            ? runRoute(L[who], 'PATCH', `/api/shares/${shareId}`, { mode: 'view' })
-            : runRoute(L[who], 'PUT', `/api/pages/${id}/draft`, {
-                doc: { type: 'doc', content: [], f4: name },
-              }),
-      );
-    } finally {
-      pre.on = true;
-    }
+    const res: { out: Response; who: string[] } = await writersOf(() =>
+      what === 'edit'
+        ? runRoute(L[who], 'PATCH', `/api/notes/${id}`, { title: `${tag} edited ${name}` })
+        : what === 'gated'
+          ? runRoute(L[who], 'PATCH', `/api/shares/${shareId}`, { mode: 'view' })
+          : runRoute(L[who], 'PUT', `/api/pages/${id}/draft`, {
+              doc: { type: 'doc', content: [], f4: name },
+            }),
+    );
     const text = await res.out.text();
     const misses = m.takeActorMisses().map((x) => x.check);
     const changed = (await stateOf(id)) !== before;
@@ -282,7 +264,6 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
 
   afterAll(async () => {
     console.log(['F4 admin write role, each cell’s answer:', ...recorded].join('\n  '));
-    pre.on = true;
     process.env.MANTLE_ACTOR_CHECK = 'warn';
     vi.unstubAllGlobals();
     await raw?.end();

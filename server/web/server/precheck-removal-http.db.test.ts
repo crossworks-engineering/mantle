@@ -56,32 +56,22 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { READ_ONLY_COPY_MESSAGE } from '@mantle/std';
+import { sql as dsql } from 'drizzle-orm';
+import { READ_ONLY_COPY_MESSAGE, UUID_RE } from '@mantle/std';
+import { itemNotFound, itemRefused } from '../lib/auth/item-answers';
 import { rowAnswers } from './test-support';
 import { asSuperuser } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /**
- * The HTTP item pre-check (the item the route names), bypassed while `on`
- * is false. While it is on, a route whose entry part 2 removed gets the
- * target the lists named before part 2 (`old`, OLD_TARGET below), so `was`
- * is the old answer in every run, and the file records old and new side by
- * side.
+ * The HTTP item pre-check as the gate ran it before part 2 (session.ts
+ * itemWriteGate, its reader routeItemTarget; plan v3.2 S11b took both out
+ * of the app): `was` asks it here, of the target the lists named before
+ * part 2 (OLD_TARGET below), so `was` is the old answer in every run, and
+ * the file records old and new side by side.
  */
 type OldTarget = { id: string; need: 'read' | 'edit' | 'manage'; ref: 'node' };
-const pre = vi.hoisted(() => ({
-  on: true,
-  old: null as null | ((key: string, path: string) => OldTarget | null),
-}));
-vi.mock('../lib/auth/route-policy', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../lib/auth/route-policy')>();
-  return {
-    ...real,
-    routeItemTarget: (...args: Parameters<typeof real.routeItemTarget>) =>
-      pre.on ? (real.routeItemTarget(...args) ?? pre.old?.(args[0].key, args[1]) ?? null) : null,
-  };
-});
 
 /** The lists of server/web/lib/auth/route-scope.ts before part 2 (main
  *  v0.300.82), less ITEM_REF_PREFIXES (their entries stay or are proven by
@@ -1202,10 +1192,48 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
   const UUID_G = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
   const ids = (text: string) => text.replace(UUID_G, '<id>');
 
+  /**
+   * The old pre-check (`was`), where the gate stood: after the session
+   * guard (a member's write to a route open to Admin users only is the
+   * guard's 403 first), before the route. The item OLD_TARGET names, asked
+   * in the login's scope: one it does not read (or an id that is no uuid)
+   * the one 404; one it may not edit or manage the 403 item-workspace (a
+   * read-only copy's words for an edit of one). Null: the route answers.
+   */
+  const oldGate = async (route: Route, who: Who, path: string): Promise<Response | null> => {
+    if (who === 'member' && route.adminOnly) return null;
+    const target = OLD_TARGET(`${route.method} ${route.name.split(' ')[1]!}`, path);
+    if (!target) return null;
+    let nodeId: string;
+    try {
+      nodeId = decodeURIComponent(target.id);
+    } catch {
+      return itemNotFound();
+    }
+    if (!UUID_RE.test(nodeId)) return itemNotFound();
+    const rows = (await m.withViewer({ login: L[who] }, () =>
+      m.db.execute(dsql`
+        select ${m.mayEditSql('n')} as edit, ${m.mayManageSql('n')} as manage,
+               coalesce(n.data ? 'snapshot_of', false) as copy
+          from nodes n where n.id = ${nodeId}`),
+    )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
+    const row = rows[0];
+    if (!row) return itemNotFound();
+    if (target.need === 'read') return null;
+    const readOnlyCopy = row.copy === true && target.need === 'edit';
+    if (!readOnlyCopy && (target.need === 'edit' ? row.edit === true : row.manage === true)) {
+      return null;
+    }
+    return itemRefused(readOnlyCopy);
+  };
+
   /** One request as `who` on `id` (a random uuid when `id` is null). */
   const send = async (route: Route, who: Who, id: string, precheck: boolean) => {
-    pre.on = precheck;
-    try {
+    if (precheck) {
+      const refused = await oldGate(route, who, route.path(id));
+      if (refused) return refused;
+    }
+    {
       const login = route.viaKey ? { key: keyOf[who]! } : L[who];
       if (route.raw) {
         const { body, type } = route.raw();
@@ -1215,8 +1243,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         });
       }
       return await runRoute(login, route.method, route.path(id), route.body?.(id));
-    } finally {
-      pre.on = true;
     }
   };
 
@@ -1354,7 +1380,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       revoke all on function pch_probe(uuid) from public;`);
     await sys(() => fl.ensureFilesRootBranch(owner));
     m.takeActorMisses();
-    pre.old = OLD_TARGET;
   }, 300_000);
 
   afterAll(async () => {
@@ -1364,7 +1389,6 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         ...recorded,
       ].join('\n  '),
     );
-    pre.on = true;
     process.env.MANTLE_ACTOR_CHECK = 'warn';
     vi.unstubAllGlobals();
     await raw?.end();
@@ -1506,13 +1530,11 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 expect(was.changed).toBe(false);
               }
               const pattern = route.name.split(' ')[1]!;
-              // The item its row names (S9 part 3: off the row, the list
-              // gone): the row's own `item`, not routeItemTarget, which this
-              // file mocks to feed the old targets (main's itemWriteTarget
-              // was the real one, null for every route).
-              const target = rowAnswers().rowOf(route.method, pattern)?.item ?? null;
-              if (family.removed) expect(target, route.name).toBeNull();
-              else expect(target, route.name).not.toBeNull();
+              // Its row names no item for a pre-check: the row holds none
+              // (S11b: no route has one, and the gate's reader is gone).
+              const row = rowAnswers().rowOf(route.method, pattern);
+              expect(row, route.name).not.toHaveProperty('item');
+              expect(family.removed, route.name).toBe(true);
             }, 300_000);
           }
         }

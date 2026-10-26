@@ -52,7 +52,7 @@ import {
 } from './route-declaration';
 import { getRequestContext } from '../../server/request-context';
 import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
-import { auditsAsWrite, type ItemRef, type ItemWriteNeed, type RouteClass } from './route-scope';
+import { auditsAsWrite, type RouteClass } from './route-scope';
 
 /**
  * The class of a page of server/pages, as the page list says it when the
@@ -94,10 +94,6 @@ export type RoutePolicyClass = 'public' | 'link' | 'render' | 'self' | 'area' | 
  *  routes, the chat routes, the Telegram pairing routes, the member
  *  routes. */
 export type RouteLogins = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
-
-/** The item a write names (a declaration's `item`): what it needs of it,
- *  how the id names it, and the path segment the id is in. */
-export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: number }>;
 
 /** Whose answer the pipeline gives before a handler (RouteRow.caller): the
  *  guard of that kind, run once by the gate (session.ts answerRouteCaller).
@@ -275,11 +271,6 @@ export type RouteRow = Readonly<{
   creates: boolean;
   /** A write that may make an item (its private workspace may be made). */
   makesItems: boolean;
-  /** The item the gate checks before the handler (session.ts
-   *  itemWriteGate): null on every row, as no route has a pre-check (a
-   *  declared item states intent only). Only a test that stands in
-   *  routeItemTarget feeds the gate one, to record an old answer. */
-  item: RouteItem | null;
   /** The write logs its own audit event: the session guards' generic
    *  `api.write` row is not written for it (session.ts auditMutation reads
    *  this). 'own' only where the declaration says `audit: 'own'` and the
@@ -505,11 +496,6 @@ type RowFacts = Readonly<{
   effect: 'read' | 'write';
   creates: boolean;
   makesItems: boolean;
-  /** The item the gate checks before the handler (session.ts
-   *  itemWriteGate): null on every row, as no route has a pre-check (a
-   *  declared item states intent only). Only a test that stands in
-   *  routeItemTarget feeds the gate one, to record an old answer. */
-  item: RouteItem | null;
   key: Readonly<{ keyArea: AccessKeyArea | null; keySelf: boolean }> | null;
   alias: string | null;
   gates: RouteGates;
@@ -538,7 +524,6 @@ function pageFacts(m: string, pattern: string, path: string): RowFacts {
     effect: methodEffect(m),
     creates: false,
     makesItems: m !== 'DELETE',
-    item: null,
     key: null,
     alias: null,
     gates: {},
@@ -622,7 +607,7 @@ function declaredFacts(
         p.item === undefined
           ? 'none declared'
           : p.item.none !== undefined
-            ? `none: ${p.item.none}`
+            ? `none: ${p.item.none}${p.item.param === undefined ? '' : ` (${p.item.param})`}`
             : `${p.item.param} ${p.item.need}`;
       const field = (p: MethodPolicy, k: string): unknown =>
         Object.hasOwn(p, k) ? (p as Readonly<Record<string, unknown>>)[k] : undefined;
@@ -658,11 +643,10 @@ function declaredFacts(
   const ownMethod = m === answeredAs;
   // The item a write declares (`item: { param, need }`) states intent only,
   // as a tool's matrix declaration does: the right the handler asks of the
-  // item in the database, in the login's scope. The gate reads none: no
+  // item in the database, in the login's scope. The row holds none: no
   // route has an item pre-check, and a declaration does not bring one
   // back. The A8 route cells (server/web/server/test-support/a8-route-cells.ts) are
   // generated from it.
-  const item: RouteItem | null = null;
   // The key area an API key needs (an /api/v1 row only: the validator): the
   // one source since the key table went (S9 part 3). A v1 row that declares
   // none is not in the API (keyOnRow: 'not-in-api').
@@ -680,7 +664,6 @@ function declaredFacts(
     // makes: the method's own declaration says it, never its GET's.
     creates: ownMethod && from.creates === true,
     makesItems: !(m === 'DELETE' || (ownMethod && d.makesItems === false)),
-    item,
     key:
       keyArea === undefined
         ? null
@@ -883,7 +866,6 @@ export function buildRouteRow(
     effect,
     creates: facts.creates,
     makesItems: facts.makesItems,
-    item: facts.item,
     audit: facts.audit,
     ...(facts.key ? { keyArea: facts.key.keyArea, keySelf: facts.key.keySelf } : {}),
     aliasOf: alias,
@@ -1163,17 +1145,6 @@ export function keyOnRow(
   rawPath: string,
 ): ReturnType<typeof keyMayCall> {
   return keyMayCall(grant, requestKeyRoute(row, rawPath));
-}
-
-/** The item a write request names, from its row and path, or null. */
-export function routeItemTarget(
-  row: RouteRow,
-  path: string,
-): { id: string; need: ItemWriteNeed; ref: ItemRef } | null {
-  if (!row.item) return null;
-  const id = path.split('/')[row.item.seg];
-  if (!id) return null;
-  return { id, need: row.item.need, ref: row.item.ref };
 }
 
 /** A login outside Admin may read through this owner route. */

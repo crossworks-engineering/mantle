@@ -15,8 +15,6 @@ import {
   db,
   onFullSystemRoute,
   onLoginHoldSpot,
-  mayEditSql,
-  mayManageSql,
   accessKeys,
   authUsers,
   mobileTokens,
@@ -32,7 +30,6 @@ import {
   hasRequestSlot,
   loginScopeFor,
   createHomeIntent,
-  withViewer,
   noteRequestSystem,
   noteRequestCreateHome,
   noteRequestOwnRule,
@@ -44,7 +41,7 @@ import {
   type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
-import { AccessError, mapAccessError, UUID_RE } from '@mantle/std';
+import { AccessError, mapAccessError } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -65,7 +62,6 @@ import { lockOauthActor } from '../oauth-lock';
 import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
-import { itemNotFound, itemRefused } from './item-answers';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
@@ -75,7 +71,6 @@ import {
   keyOnRow,
   memberOpenRead,
   memberOpenWrite,
-  routeItemTarget,
   type RouteCaller,
   type RouteRow,
 } from './route-policy';
@@ -1840,8 +1835,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
 /**
  * A login's write request to brain items (W6b for a member; an Admin user's
  * since F4, which ran on the system pool with its reads unscoped before):
- * the item the route names is checked first (itemWriteGate), the create
- * home recorded (createHomeFor: an Admin user without ?ws= creates as
+ * the create home recorded (createHomeFor: an Admin user without ?ws= creates as
  * before, the folder's home else Admin; a member's private workspace is
  * its fallback), then the request runs in the login's scope for the rest
  * of the request, reads and writes alike: its reads on the workspace role,
@@ -1863,8 +1857,9 @@ async function enterLoginWrite(
   route: RouteRow,
   opts: { admin: boolean },
 ): Promise<NextResponse | null> {
-  const refused = await itemWriteGate(loginId, route);
-  if (refused) return refused;
+  // The item a route names is checked once, in the database, in the
+  // login's scope: no route has a TypeScript pre-check (a declared item
+  // states intent only, route-declaration.ts).
   // A create lands in the request's workspace (?ws=) when the login
   // moderates it (W6b); else by the login's default home rule.
   const home = await createHomeFor(loginId, route, !opts.admin);
@@ -1872,76 +1867,6 @@ async function enterLoginWrite(
   noteRequestCreateHome(home);
   await enterLoginScope(loginId, requestMode(true));
   return null;
-}
-
-/** The item id a path segment names: the segment decoded, the value the
- *  handler gets (Hono decodes the path and its params before routing), so
- *  an encoded id is checked as the id it names. Null when the segment does
- *  not decode or is not an item id. */
-function itemIdOf(segment: string): string | null {
-  let id: string;
-  try {
-    id = decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
-  return UUID_RE.test(id) ? id : null;
-}
-
-/**
- * A login's write to one item (W6a, plan S1; every login since W6b): allowed
- * only when the login's scope may edit the item (mantle_may_edit: a Moderator of its
- * home, or a Write grant to one of its workspaces), manage it for a delete
- * or a move (mantle_may_manage), or read it for its own marks and app runs.
- * An item the login's scope does not read is refused with the same 404 as
- * an id no row has, for every login (an Admin user too since F4, owner
- * decision D2: it was told to add itself to the item's workspace first, a
- * 403 that told the item existed), so no item's existence leaves its scope
- * (docs/workspaces.md: "not found", never "exists but no"; audit
- * 2026-10-12). The rule is the database's, asked in the login's scope; the
- * write itself then runs in that scope (enterLoginWrite), where the
- * database's own checks answer again. A read-only snapshot
- * copy (data.snapshot_of) is never edited, by anyone; its author may still
- * delete it (W6b fix round 1,
- * CEO decision 2). The item id is the decoded path segment (itemIdOf); one
- * that is not an item id is the not-found answer, for every login.
- *
- * No route names an item for it now (no row's `item` names one): the
- * pre-check removal part 2 took the item routes' entries, plan v3.2 S6 c2
- * the last two (a share, a deleted app: their handlers ask, shareItemRefusal
- * and mantle_app_trash_act). The pre-check removal cells still feed it the
- * old node targets (precheck-removal-http.db.test.ts) to record what it
- * answered.
- */
-async function itemWriteGate(loginId: string, route: RouteRow): Promise<NextResponse | null> {
-  const path = getRequestContext()?.path;
-  const target = path ? routeItemTarget(route, path) : null;
-  if (!target) return null;
-  const need = target.need;
-  // The id the handler gets. A segment that does not decode to an item id
-  // is refused with the not-found answer, never skipped: the check read the
-  // raw segment once, so an encoded id skipped it while the handler got
-  // the decoded one and wrote.
-  const nodeId = itemIdOf(target.id);
-  if (nodeId === null) return itemNotFound();
-  const rows = (await withViewer({ login: loginId }, () =>
-    db.execute(sql`
-      select ${mayEditSql('n')} as edit, ${mayManageSql('n')} as manage,
-             coalesce(n.data ? 'snapshot_of', false) as copy
-        from nodes n where n.id = ${nodeId}`),
-  )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
-  const row = rows[0];
-  // Not in the scope. A login is told nothing about an item it does not
-  // read, whatever the write needs: the same 404 as an id no row has (an
-  // Admin user too since F4, D2: it heard "Add yourself to it first", a 403
-  // that told the item existed).
-  if (!row) return itemNotFound();
-  if (need === 'read') return null;
-  // A read-only snapshot copy: deleted or filed by its home's Moderator
-  // (the database keeps it in its private workspace), never edited.
-  const readOnlyCopy = row.copy === true && need === 'edit';
-  if (!readOnlyCopy && (need === 'edit' ? row.edit === true : row.manage === true)) return null;
-  return itemRefused(readOnlyCopy);
 }
 
 /**

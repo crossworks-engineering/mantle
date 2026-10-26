@@ -4,7 +4,7 @@
  * file's declaration (plan v3.2 S9; the lists each field was folded from
  * went in part 3, and route-policy-declarations.test.ts holds every row to
  * __snapshots__/route-policy.rows.json). The guards read the row through these same readers
- * (memberOpenRead, memberOpenWrite, anyLoginRow, routeItemTarget); the
+ * (memberOpenRead, memberOpenWrite, anyLoginRow); the
  * HTTP sweeps (auth-sweep, role-sweep, member-sweep and the W6a route
  * sweep on a database) drive the real app per login kind.
  *

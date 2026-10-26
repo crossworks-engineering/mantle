@@ -29,12 +29,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
-import {
-  buildRoutePolicy,
-  memberOpenRead,
-  memberOpenWrite,
-  routeItemTarget,
-} from '../lib/auth/route-policy';
+import { buildRoutePolicy, memberOpenRead, memberOpenWrite } from '../lib/auth/route-policy';
 import { rowAnswers, type RowAnswers } from './test-support';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
 import { asSuperuser } from '@mantle/db/test-support';
@@ -420,11 +415,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   const isAnyLoginRoute = (m: string, p: string) => answers!.isAnyLoginRoute(m, p);
   const isReadRequest = (m: string, p: string) => answers!.isReadRequest(m, p);
   const routeClass = (p: string) => answers!.prefixClass(p);
-  // The item a write names, off its row (none since plan v3.2 S6 c2).
-  const itemWriteTarget = (m: string, p: string, path: string) => {
-    const row = answers!.rowOf(m, p);
-    return row ? routeItemTarget(row, path) : null;
-  };
+  // The item a write names for a pre-check: none since plan v3.2 S6 c2
+  // (S11b took the gate's reader, routeItemTarget, out). Every write is
+  // answered by its handler and the database.
+  const itemWriteTarget = (
+    _m: string,
+    _p: string,
+    _path: string,
+  ): { need: 'read' | 'edit' | 'manage'; ref: 'node' } | null => null;
 
   const isOwnerRoute = (method: string, pattern: string) =>
     pattern.startsWith('/api/') &&
