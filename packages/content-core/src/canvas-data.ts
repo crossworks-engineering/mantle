@@ -221,6 +221,7 @@ Rules:
 - Another viewer wrote what you read: show it as text (\`textContent\`), never as HTML.
 - Never store secrets, passwords or keys. A photo or a big file goes in Files; keep only its id here.
 - Saving data never changes the canvas or makes a new version of it.
+- A canvas with an element whose \`id\` or \`name\` is \`mantle\` has no \`mantle.data\`: the name stays that element's.
 
 \`\`\`html
 <textarea id="notes" class="h-40 w-full rounded-md border border-border bg-card p-4 text-xl"></textarea>
