@@ -392,14 +392,15 @@ async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse
 
 /** The member an `?at=` asset token in `url` was minted for (the member
  *  shell mints it with `act` = the login), with no effect, or null. The
- *  login is re-read, so a disabled login's token, or one that joined Admin,
- *  stops at once (membership: the role column follows it). */
+ *  login is re-read, so a disabled or demoted login's token stops at once.
+ *  It asks the role column AND membership (resolvedFor): a role=admin
+ *  login outside Admin (drift) is neither an Admin user nor taken here. */
 async function findMemberAsset(url: string): Promise<MemberCaller | null> {
   const at = new URL(url).searchParams.get('at');
   const claims = at ? verifyAssetToken(at) : null;
   if (!claims?.act) return null;
   const row = await loadLoginRow(claims.act);
-  if (!row || adminLogin(row) || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
+  if (!row || row.role !== 'member' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
     return null;
   }
   const resolved = await resolvedFor(row, 'web');
@@ -2039,12 +2040,12 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
 /**
  * Is this member login still allowed in (audit S8)? For work that outlives
  * the request that authenticated it, such as an open realtime stream: the
- * row is re-read, so a deactivated login, or one that joined Admin (a role
- * change: membership, which the role column follows), ends it.
+ * row is re-read, so a deactivated login, a role change or members turned
+ * off on the box all end it.
  */
 export async function memberLoginActive(loginId: string): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return !!row && !adminLogin(row) && loginUsable(row);
+  return !!row && row.role === 'member' && loginUsable(row);
 }
 
 /** Is this admin login still allowed in? For a frame document that a

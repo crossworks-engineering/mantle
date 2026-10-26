@@ -12,10 +12,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   gone (`loginCaller`, `chatLoginCaller`, `publicLoginCaller`,
   `ownerCallerWithLogin`, `legacyLogin`, `AnyLogin`); handlers read
   `anyLoginCaller()`, `chatCaller()` and `publicLoginItself()`, and a shown
-  role is `sessionRole(login)`. A member's asset token and a member's open
-  stream ask membership instead of the role column, which the definers keep
-  equal to it. No route or tool answers differently: the guard sweep's
-  recorded files are unchanged byte for byte.
+  role is `sessionRole(login)`. No route or tool answers differently: the
+  guard sweep's recorded files are unchanged byte for byte.
 - **Migration 0334:** drops `mantle_bridge_login`, unused since 0330's
   image (it deleted nothing on a box whose Admin seats all have role
   admin). Its revert puts 0330's body back (`docs/update-prod.md`, "Going
