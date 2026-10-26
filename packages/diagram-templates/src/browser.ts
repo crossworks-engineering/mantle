@@ -22,9 +22,10 @@
  * is never navigated (the canvas sandbox's rule).
  *
  * The data block is read once, when `mount()` runs, and a `pid` drawing's
- * image check marks are drawn as stored only when the block sits where
- * buildCanvas puts it; in any other document, and in `render` called by
- * script, every mark draws unchecked (data-read.ts).
+ * image check marks are drawn as stored only when the data names the
+ * template itself (`template: "pid"`, never the head's meta) and the block
+ * sits where buildCanvas puts it; in any other document, and in `render`
+ * called by script, every mark draws unchecked (data-read.ts).
  *
  * Zoom and pan (zoom.ts): a drawing that does not fit the frame at a
  * readable size gets zoom controls (the data's `view.zoom` forces them on
@@ -43,6 +44,7 @@
 import { render as renderTemplate, type RenderOptions, type RenderOutcome } from './index.ts';
 import { domMeasurer, type Measurer } from './runtime/text.ts';
 import { readDataBlock, unvouched } from './data-read.ts';
+import { isPidData } from './canvas.ts';
 export { domMeasurer };
 export type { RenderOutcome };
 
@@ -324,11 +326,15 @@ export function mount(doc: Document = document): DiagramApi {
       if (doc.fonts?.ready) await doc.fonts.ready;
       const meta =
         doc.querySelector('meta[name="diagram:template"]')?.getAttribute('content') ?? '';
-      const fromData = (data as { template?: unknown }).template;
+      const fromData = (data as { template?: unknown } | null)?.template;
       const template = typeof fromData === 'string' ? fromData : (meta.split('@')[0] ?? '');
-      // Marks only from a block where buildCanvas puts it: any other
-      // document is the author's own, and draws every mark unchecked.
-      const own = template === 'pid' && !read.canonical ? unvouched(data) : data;
+      // Marks only from data that names the template itself (isPidData,
+      // what a save holds to buildCanvas's shape; the head's meta only
+      // picks what to draw, never what to trust) in a block where
+      // buildCanvas puts it: any other document is the author's own, and
+      // draws every mark unchecked.
+      const trusted = read.canonical && isPidData(data);
+      const own = template === 'pid' && !trusted ? unvouched(data) : data;
       outcome = renderTemplate(template, own, domMeasurer(doc));
     }
     api.template = outcome!.template;
@@ -347,7 +353,7 @@ export function mount(doc: Document = document): DiagramApi {
       // Only on data read where buildCanvas puts it (data-read.ts): any
       // other document is the author's own, and shows no evidence.
       const evidence =
-        target && read.canonical && allChecks.length
+        target && read.canonical && isPidData(data) && allChecks.length
           ? mountEvidence(doc, target, readCrops(read.assets))
           : undefined;
       let zoom: ZoomController | undefined;

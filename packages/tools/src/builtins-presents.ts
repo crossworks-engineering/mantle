@@ -47,12 +47,12 @@ import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
 import { canvasLoadProblems } from '@mantle/content-core/canvas';
 import {
   buildCanvas,
+  canvasTemplate,
   checkStaticSvg,
   CURRENT_STYLE,
   estimateMeasurer,
   isTemplateName,
   readCanvasAssets,
-  readCanvasData,
   render as renderTemplate,
   replaceCanvasAssets,
   replaceCanvasData,
@@ -118,16 +118,13 @@ function compact(p: PresentRow) {
   };
 }
 
-/** The template and data of a template canvas, or null for any other. */
+/** The template and data of a template canvas, or null for any other:
+ *  decided as a save and the runtime decide it (@mantle/diagram-templates
+ *  canvasTemplate: the data block's `template`, never the head's meta),
+ *  for a canvas that carries the template's head. */
 function templateOf(source: string): { template: string; data: Record<string, unknown> } | null {
   if (!/<meta name="diagram:template"/.test(source)) return null;
-  try {
-    const data = readCanvasData(source);
-    const template = typeof data.template === 'string' ? data.template : '';
-    return isTemplateName(template) ? { template, data } : null;
-  } catch {
-    return null;
-  }
+  return canvasTemplate(source);
 }
 
 /** What `checkStaticSvg` does not look for. The templates write the SVG

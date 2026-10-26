@@ -48,14 +48,8 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
 } from '@mantle/db';
-import {
-  CANVAS_MAX_BYTES,
-  canvasImports,
-  canvasText,
-  parseCanvasHead,
-} from '@mantle/content-core/canvas';
-import { InputError } from '@mantle/std';
-import { honestCanvasSource } from './drawing-seal';
+import { canvasImports, canvasText, parseCanvasHead } from '@mantle/content-core/canvas';
+import { assertCanvasSize, storedCanvasSource } from './drawing-seal';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
 
@@ -142,18 +136,14 @@ function rowOf(
 }
 
 /** What a save reads off a canvas, without running it. Refuses a source
- *  over the size limit (a 413-shaped InputError, never a silent cut). */
+ *  over the size limit (./drawing-seal.ts assertCanvasSize). */
 export function readCanvas(source: string): {
   title: string;
   description: string;
   text: string;
   meta: PresentMeta;
 } {
-  if (Buffer.byteLength(source, 'utf8') > CANVAS_MAX_BYTES) {
-    throw new InputError(
-      `The canvas is over ${CANVAS_MAX_BYTES / 1_000_000} MB. Make it smaller (inline less data).`,
-    );
-  }
+  assertCanvasSize(source);
   const head = parseCanvasHead(source);
   const { modules, scripts } = canvasImports(source);
   return {
@@ -327,7 +317,7 @@ export async function createPresent(
   // Every save stores a diagram canvas's image checks as circuit_trace
   // sealed them, and their counts as its marks hold (./drawing-seal.ts):
   // whoever wrote the source, by whichever path.
-  const source = honestCanvasSource(input.source ?? EMPTY_CANVAS);
+  const source = storedCanvasSource(input.source ?? EMPTY_CANVAS);
   const read = readCanvas(source);
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
@@ -388,7 +378,7 @@ export async function savePresentSource(
   given: { source: string; css: string; ifRev?: number },
 ): Promise<SavePresentResult> {
   // As createPresent: the image checks as sealed, the counts as held.
-  const input = { ...given, source: honestCanvasSource(given.source) };
+  const input = { ...given, source: storedCanvasSource(given.source) };
   const read = readCanvas(input.source);
   const [node] = await db
     .select()

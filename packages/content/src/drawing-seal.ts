@@ -42,6 +42,7 @@ import {
   withHonestImageChecks,
   withSealedCanvasAssets,
 } from '@mantle/diagram-templates';
+import { CANVAS_MAX_BYTES } from '@mantle/content-core/canvas';
 import { InputError } from '@mantle/std';
 
 const SEAL_INFO = 'mantle drawing check seal v1';
@@ -223,4 +224,21 @@ export function honestCanvasSource(source: string): string {
     if (err instanceof CanvasShapeError) throw new InputError(NOT_A_PLAIN_DIAGRAM);
     throw err;
   }
+}
+
+/** Refuses a source over the size limit (a 413-shaped InputError, never a
+ *  silent cut). */
+export function assertCanvasSize(source: string): void {
+  if (Buffer.byteLength(source, 'utf8') > CANVAS_MAX_BYTES) {
+    throw new InputError(
+      `The canvas is over ${CANVAS_MAX_BYTES / 1_000_000} MB. Make it smaller (inline less data).`,
+    );
+  }
+}
+
+/** The source a save stores (createPresent, savePresentSource): the size
+ *  limit first, before any check reads the source, then honestCanvasSource. */
+export function storedCanvasSource(source: string): string {
+  assertCanvasSize(source);
+  return honestCanvasSource(source);
 }

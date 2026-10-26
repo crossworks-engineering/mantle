@@ -339,26 +339,30 @@ describe('the trust words: drawn from the mark, never typed into a label (MED-3)
       description: 'CHECKED BY IMAGE: a vision model saw it.',
     };
     const out = withoutMarkWords(typed) as Drawing;
-    expect(out.title).toBe('Traced');
+    // A typed claim on an element with no mark says GUESS (it is still one).
+    expect(out.title).toBe('Traced (GUESS)');
     // Only the view's bracketed forms are stripped: a word in prose stays.
     expect(out.equipment).toEqual([
-      { id: 'V-101', type: 'vertical-vessel', service: 'CHECKED-BY-IMAGE' },
+      { id: 'V-101 (GUESS)', type: 'vertical-vessel', service: 'CHECKED-BY-IMAGE' },
     ]);
     // A connector with a mark: its GUESS is the view's.
     expect((out.offpage as Drawing[]).map((o) => o.text)).toEqual(['NEAR V-9', 'TO S2']);
     // A line with no mark keeps GUESS (it claims no check), never IMAGE: NO;
     // references still name their element.
     expect(out.lines).toEqual([
-      { from: 'OPC-1', to: 'V-101', note: 'PUMP (GUESS)' },
-      { from: 'V-101', to: 'OPC-2', note: '3 JOINS (GUESS)' },
+      { from: 'OPC-1', to: 'V-101 (GUESS)', note: 'PUMP (GUESS)' },
+      { from: 'V-101 (GUESS)', to: 'OPC-2', note: '3 JOINS (GUESS)' },
     ]);
     // The prose description is not a label.
     expect(out.description).toBe(typed.description);
     // A clean drawing is the same object.
     expect(withoutMarkWords(d)).toBe(d);
-    // The save strips first, then checks the seals: the marks still hold.
-    const saved = honestImageChecks(typed, holds);
+    // The save strips first, then checks the seals: the marks still hold
+    // (under the drawing's own title: a title that now says GUESS is a
+    // renamed drawing, whose marks no longer hold).
+    const saved = honestImageChecks({ ...typed, title: d.title }, holds);
     expect(marksOf(saved)).toEqual(marksOf(d));
+    expect(marksOf(honestImageChecks(typed, holds))).not.toEqual(marksOf(d));
   });
 });
 

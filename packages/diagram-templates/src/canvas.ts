@@ -253,7 +253,12 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
 }
 
 /** HTML whitespace (the tokenizer's: tab, LF, FF, CR, space). */
-const WS = new Set(['\t', '\n', '\f', '\r', ' ']);
+const isWs = (c: number) => c === 9 || c === 10 || c === 12 || c === 13 || c === 32;
+const SLASH = 47;
+const GT = 62;
+const EQ = 61;
+const DQ = 34;
+const SQ = 39;
 
 /** An attribute value with its numeric character references decoded, as
  *  a browser reads it (with or without the closing `;`), and `&amp;`. */
@@ -269,59 +274,117 @@ function decodeRefs(value: string): string {
     .replace(/&amp;?/gi, '&');
 }
 
+/** One attribute as the tag scan read it: its name (lower case; '' for a
+ *  name longer than any this module asks about), its raw value (null: no
+ *  value; `undefined`: too costly to read, which every reader takes as a
+ *  match) and where the next attribute of its tag starts (-1: the tag
+ *  ends). */
+type ScannedAttr = { name: string; value: string | null | undefined; next: number };
+
 /**
- * The attributes of every start tag in `html`, read as the HTML tokenizer
- * reads a tag's attributes (any case, any order, quoted or not, `/`
- * between them), raw (references not decoded), one list per tag. A
- * superset: a tag is read at EVERY `<` followed by a letter, inside
- * comments, scripts and attribute values too, so no element the browser
- * makes is missed (text that only looks like a tag adds one); prose with
- * no `<` before it never counts.
+ * The start tags of `html`, read as the HTML tokenizer reads a tag's
+ * attributes (any case, any order, quoted or not, `/` between them), raw
+ * (references not decoded). A superset: a tag is read at EVERY `<`
+ * followed by a letter, inside comments, scripts and attribute values too,
+ * so no element the browser makes is missed (text that only looks like a
+ * tag adds one); prose with no `<` before it never counts.
+ *
+ * Linear in the length of `html`: where each run of name, value or white
+ * space ends is worked out once, right to left; an attribute is read once
+ * by where it starts (tags whose attributes meet share the rest: `attrs`
+ * is keyed by position, `tags` holds each tag's first); and the values a
+ * reader needs (ids, names, contents) are read within a budget of twice
+ * the document, a value past it reading as `undefined` (a match: a
+ * document built to be slow to read is refused, never misread).
  */
-function tagAttributes(html: string): [name: string, value: string | null][][] {
-  const tags: [string, string | null][][] = [];
+type TagScan = { attrs: Map<number, ScannedAttr>; tags: number[]; pidMeta?: boolean };
+let lastScan: { html: string; scan: TagScan } | null = null;
+const WANTED_NAMES = new Set(['id', 'name', 'content']);
+function scanTags(html: string): TagScan {
+  if (lastScan?.html === html) return lastScan.scan;
   const n = html.length;
-  for (let at = html.indexOf('<'); at !== -1; at = html.indexOf('<', at + 1)) {
-    if (!/[A-Za-z]/.test(html[at + 1] ?? '')) continue;
-    const attrs: [string, string | null][] = [];
-    let i = at + 1;
-    while (i < n && !WS.has(html[i]!) && html[i] !== '/' && html[i] !== '>') i += 1;
-    for (;;) {
-      while (i < n && (WS.has(html[i]!) || html[i] === '/')) i += 1;
-      if (i >= n || html[i] === '>') break;
+  const code = (i: number) => html.charCodeAt(i);
+  // Right to left: the first position at or after i where each run ends.
+  const tagNameEnd = new Int32Array(n + 1);
+  const attrNameEnd = new Int32Array(n + 1);
+  const bareEnd = new Int32Array(n + 1);
+  const pastWs = new Int32Array(n + 1);
+  const pastWsSlash = new Int32Array(n + 1);
+  const nextDq = new Int32Array(n + 1);
+  const nextSq = new Int32Array(n + 1);
+  tagNameEnd[n] = attrNameEnd[n] = bareEnd[n] = pastWs[n] = pastWsSlash[n] = n;
+  nextDq[n] = nextSq[n] = -1;
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const c = code(i);
+    const ws = isWs(c);
+    tagNameEnd[i] = ws || c === SLASH || c === GT ? i : tagNameEnd[i + 1]!;
+    attrNameEnd[i] = ws || c === SLASH || c === GT || c === EQ ? i : attrNameEnd[i + 1]!;
+    bareEnd[i] = ws || c === GT ? i : bareEnd[i + 1]!;
+    pastWs[i] = ws ? pastWs[i + 1]! : i;
+    pastWsSlash[i] = ws || c === SLASH ? pastWsSlash[i + 1]! : i;
+    nextDq[i] = c === DQ ? i : nextDq[i + 1]!;
+    nextSq[i] = c === SQ ? i : nextSq[i + 1]!;
+  }
+  let budget = 2 * n + 65_536;
+  const take = (from: number, to: number): string | undefined => {
+    if (to - from > budget) return undefined;
+    budget -= to - from;
+    return html.slice(from, to);
+  };
+  const attrs = new Map<number, ScannedAttr>();
+  /** Where an attribute starts after position i, or -1 when the tag ends. */
+  const after = (i: number) => {
+    const p = i < n ? pastWsSlash[i]! : n;
+    return p >= n || code(p) === GT ? -1 : p;
+  };
+  const read = (first: number) => {
+    for (let p = first; p !== -1 && !attrs.has(p);) {
       // The name: its first character may be `=`.
-      const start = i;
-      i += 1;
-      while (i < n && !WS.has(html[i]!) && !'/>='.includes(html[i]!)) i += 1;
-      const name = html.slice(start, i).toLowerCase();
-      while (i < n && WS.has(html[i]!)) i += 1;
-      let value: string | null = null;
-      if (html[i] === '=') {
-        i += 1;
-        while (i < n && WS.has(html[i]!)) i += 1;
-        const q = html[i];
-        if (q === '"' || q === "'") {
-          const end = html.indexOf(q, i + 1);
-          value = html.slice(i + 1, end === -1 ? n : end);
+      const nameEnd = p + 1 < n ? attrNameEnd[p + 1]! : n;
+      const name = nameEnd - p <= 7 ? html.slice(p, nameEnd).toLowerCase() : '';
+      let i = nameEnd < n ? pastWs[nameEnd]! : n;
+      let from = -1;
+      let to = -1;
+      if (i < n && code(i) === EQ) {
+        i = i + 1 < n ? pastWs[i + 1]! : n;
+        const q = i < n ? code(i) : -1;
+        if (q === DQ || q === SQ) {
+          const end = i + 1 < n ? (q === DQ ? nextDq : nextSq)[i + 1]! : -1;
+          from = i + 1;
+          to = end === -1 ? n : end;
           i = end === -1 ? n : end + 1;
         } else {
-          const start2 = i;
-          while (i < n && !WS.has(html[i]!) && html[i] !== '>') i += 1;
-          value = html.slice(start2, i);
+          from = i;
+          to = i < n ? bareEnd[i]! : n;
+          i = to;
         }
       }
-      attrs.push([name, value]);
+      const value = from === -1 ? null : WANTED_NAMES.has(name) ? take(from, to) : '';
+      const next = after(i);
+      attrs.set(p, { name, value, next });
+      p = next;
     }
-    tags.push(attrs);
+  };
+  const tags: number[] = [];
+  for (let at = html.indexOf('<'); at !== -1; at = html.indexOf('<', at + 1)) {
+    const c = at + 1 < n ? code(at + 1) : 0;
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122))) continue;
+    const first = after(tagNameEnd[at + 1]!);
+    read(first);
+    tags.push(first);
   }
-  return tags;
+  const scan: TagScan = { attrs, tags };
+  lastScan = { html, scan };
+  return scan;
 }
 
-/** The `id` attributes of every start tag in `html` (tagAttributes). */
-function idValues(html: string): string[] {
-  return tagAttributes(html).flatMap((attrs) =>
-    attrs.flatMap(([name, value]) => (name === 'id' && value !== null ? [value] : [])),
-  );
+/** The `id` values of every start tag in `html` (scanTags), each attribute
+ *  once; `undefined` for one too costly to read. */
+function idValues(html: string): (string | undefined)[] {
+  const out: (string | undefined)[] = [];
+  for (const a of scanTags(html).attrs.values())
+    if (a.name === 'id' && a.value !== null) out.push(a.value);
+  return out;
 }
 
 /** Whether an id could be the data block's to a browser. `loose` (a canvas
@@ -330,13 +393,19 @@ function idValues(html: string): string[] {
  *  diagram (a named reference this check does not decode). Otherwise only
  *  an id `document.getElementById` finds: its numeric references and
  *  `&amp;` decoded, exactly (no named reference decodes to a letter or to
- *  `-`, so `diagram&amp;chart` is not one). */
-function dataBlockId(value: string, loose: boolean, id: string = DATA_ID): boolean {
+ *  `-`, so `diagram&amp;chart` is not one). An id too costly to read
+ *  (`undefined`) is one. */
+function dataBlockId(value: string | undefined, loose: boolean, id: string = DATA_ID): boolean {
+  if (value === undefined) return true;
   const decoded = decodeRefs(value);
   if (!loose) return decoded === id;
   if (decoded.toLowerCase() === id) return true;
-  return value.includes('&') && /diagram/i.test(decoded.replace(/&[A-Za-z][A-Za-z0-9]*;?/g, ''));
+  return value.includes('&') && /diagram/i.test(decoded.replace(NAMED_REF, ''));
 }
+
+/** A named character reference (`&colon;`, `&commat`), which this module
+ *  does not decode. */
+const NAMED_REF = /&[A-Za-z][A-Za-z0-9]*;?/g;
 
 /**
  * How many elements of a canvas carry the data block's id, in any form a
@@ -376,33 +445,88 @@ export function canvasDataReadable(html: string): boolean {
 }
 
 /**
- * Whether a canvas claims the `pid` template, as the runtime could pick
- * it: its written data block names it (`data.template`), or any tag
- * carries a `diagram:template` name whose content names `pid` (read as
- * `tagAttributes` reads, references decoded, any case: a superset of the
- * runtime's `meta[name="diagram:template"]`). Such a canvas must be
- * exactly what buildCanvas writes (canonicalPidCanvas); any other canvas
- * is the author's own HTML.
+ * Whether `data` (a canvas's parsed data block) is a `pid` drawing's: its
+ * `template` is exactly `pid`. The one answer every reader gives: a save
+ * (claimsPidTemplate), the tools (@mantle/tools templateOf) and the
+ * runtime (browser.ts mount, which trusts a drawing's marks only then).
+ * The head's meta never decides it.
+ */
+export function isPidData(data: unknown): boolean {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    !Array.isArray(data) &&
+    (data as { template?: unknown }).template === 'pid'
+  );
+}
+
+/** A canvas's template, as every reader decides it: its data block's
+ *  `template` (a template name, `pid` exactly when isPidData), with the
+ *  parsed data; null for a canvas whose block is missing, unreadable or
+ *  names no template. Never the head's meta. */
+export function canvasTemplate(
+  html: string,
+): { template: TemplateName; data: Record<string, unknown> } | null {
+  let data: unknown;
+  try {
+    data = readCanvasData(html);
+  } catch {
+    return null;
+  }
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
+  const template = (data as { template?: unknown }).template;
+  return typeof template === 'string' && isTemplateName(template)
+    ? { template, data: data as Record<string, unknown> }
+    : null;
+}
+
+/** A head attribute value read loosely: its numeric references decoded,
+ *  any named one read as `&`, standing for whichever character it names
+ *  (no named reference is a letter or a digit), in lower case, trimmed. */
+const looseText = (v: string) => decodeRefs(v).replace(NAMED_REF, '&').trim().toLowerCase();
+
+/**
+ * Whether a save holds a canvas to the `pid` template: its data block
+ * names it (isPidData, the claim the runtime trusts), or, as a second
+ * claim, any tag carries a `diagram:template` name whose content names
+ * `pid` (read as `scanTags` reads, references decoded and named ones
+ * read as any character, any case: a superset of the runtime's
+ * `meta[name="diagram:template"]`). Such a canvas must be exactly what
+ * buildCanvas writes (canonicalPidCanvas); any other canvas is the
+ * author's own HTML, whose marks the runtime never trusts.
  */
 export function claimsPidTemplate(html: string): boolean {
-  for (const attrs of tagAttributes(html)) {
-    const named = attrs.some(
-      ([k, v]) =>
-        k === 'name' && v !== null && decodeRefs(v).trim().toLowerCase() === 'diagram:template',
-    );
-    if (
-      named &&
-      attrs.some(
-        ([k, v]) => k === 'content' && v !== null && /^\s*pid\s*(?:@|$)/i.test(decodeRefs(v)),
-      )
-    )
-      return true;
-  }
   try {
-    return readCanvasData(html).template === 'pid';
+    if (isPidData(readCanvasData(html))) return true;
   } catch {
-    return false;
+    // No readable block: the head may still claim it.
   }
+  const scan = scanTags(html);
+  return (scan.pidMeta ??= headClaimsPid(scan));
+}
+
+/** Whether a tag of the scan names the template and its content `pid`. */
+function headClaimsPid({ attrs, tags }: TagScan): boolean {
+  // Per attribute, whether its tag's attributes from here on name the
+  // template and its content `pid` (positions grow along a tag, so right
+  // to left each attribute reads its successor's answer).
+  const named = new Map<number, boolean>();
+  const pid = new Map<number, boolean>();
+  for (const p of [...attrs.keys()].sort((a, b) => b - a)) {
+    const a = attrs.get(p)!;
+    const v = a.value;
+    const isName =
+      a.name === 'name' &&
+      v !== null &&
+      (v === undefined || /^diagram[:\s&]*template$/.test(looseText(v)));
+    const isPid =
+      a.name === 'content' &&
+      v !== null &&
+      (v === undefined || /^[\s&]*pid[\s&]*(?:@|&|$)/.test(looseText(v)));
+    named.set(p, isName || (a.next !== -1 && named.get(a.next) === true));
+    pid.set(p, isPid || (a.next !== -1 && pid.get(a.next) === true));
+  }
+  return tags.some((t) => t !== -1 && named.get(t) === true && pid.get(t) === true);
 }
 
 /** A canvas that claims the `pid` template but is not exactly what

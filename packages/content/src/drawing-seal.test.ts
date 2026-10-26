@@ -19,6 +19,7 @@ import {
   honestCanvasSource,
   sealPayload,
   sealPayloadHolds,
+  storedCanvasSource,
 } from './drawing-seal';
 
 const OLD = 'drawing-seal-test-old';
@@ -237,5 +238,19 @@ describe('the purpose-labelled seal', () => {
       expect(sealPayloadHolds('pid-crop v1', bad, sealPayload('pid-crop v1', null))).toBe(false);
     }
     expect(sealPayloadHolds('pid-crop v1', null, sealPayload('pid-crop v1', null))).toBe(true);
+  });
+});
+
+describe('a save checks the size before it reads the source (round 5, M3)', () => {
+  it('a source over the limit is refused before any check reads it', () => {
+    const big = '<a'.repeat(550_001);
+    const t = performance.now();
+    expect(() => storedCanvasSource(big)).toThrow(/The canvas is over 1 MB/);
+    expect(performance.now() - t).toBeLessThan(200);
+  });
+
+  it('one within it is stored as honestCanvasSource writes it', () => {
+    const html = buildCanvas({ template: 'flow', data: { nodes: [] }, mode: 'import' });
+    expect(storedCanvasSource(html)).toBe(honestCanvasSource(html));
   });
 });

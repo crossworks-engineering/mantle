@@ -545,25 +545,37 @@ const CLAIM_FORM = new RegExp(
 const NO_FORM = /\s*\(\s*GUESS\s*[,;]\s*IMAGE\s*:\s*(?:\d+\s+)?NO\s*\)/gi;
 const GUESS_FORM = /\s*\(\s*GUESS\s*\)/gi;
 
-/**
- * A label without the view's bracketed trust words. On an element with no
- * mark (`marked` false), ` (CHECKED BY IMAGE)` and ` (FROM IMAGE)` go and
- * ` (GUESS, IMAGE: NO)` becomes ` (GUESS)`: GUESS claims no check. On a
- * marked element every form goes, ` (GUESS)` too (the view draws the
- * mark's own). GUESS is stripped before the claim words and the passes
- * repeat until nothing changes, so a word hidden inside another (`(CHECKED
- * BY (GUESS) IMAGE)`) never comes out whole. The same string when it holds
- * none.
- */
-function withoutWords(s: string, marked: boolean): string {
+/** `s` with the forms `forms` match taken out, pass after pass until
+ *  nothing changes (so a word hidden inside another, `(CHECKED BY (GUESS)
+ *  IMAGE)`, never comes out whole). */
+function stripForms(s: string, forms: readonly RegExp[]): string {
   let cur = s;
   for (let i = 0; i < 16; i += 1) {
-    let next = marked ? cur.replace(GUESS_FORM, '') : cur;
-    next = next.replace(NO_FORM, marked ? '' : ' (GUESS)').replace(CLAIM_FORM, '');
+    const next = forms.reduce((t, f) => t.replace(f, ''), cur);
     if (next === cur) break;
     cur = next;
   }
-  return cur === s ? s : cur.trim();
+  return cur;
+}
+const ALL_FORMS = [GUESS_FORM, NO_FORM, CLAIM_FORM] as const;
+
+/**
+ * A label without the view's bracketed trust words. On a marked element
+ * every form goes, ` (GUESS)` too (the view draws the mark's own). On an
+ * element with no mark (`marked` false), a label that holds a form claiming
+ * an image check (` (CHECKED BY IMAGE)`, ` (FROM IMAGE)`, ` (GUESS, IMAGE:
+ * NO)`, hidden inside another or not) loses every form and ends in one
+ * ` (GUESS)`: GUESS claims no check, and the element is still a guess (a
+ * drawing traced before the marks wrote its words into the label; without
+ * a word it would read as fact). A label with only ` (GUESS)` keeps it as
+ * written. The same string when it holds no claim.
+ */
+function withoutWords(s: string, marked: boolean): string {
+  const bare = stripForms(s, ALL_FORMS);
+  if (marked) return bare === s ? s : bare.trim();
+  // Only GUESS forms in it: no claim, nothing to change.
+  if (bare === stripForms(s, [GUESS_FORM])) return s;
+  return `${bare.trim()} (${MARK_WORDS.guess})`.trim();
 }
 
 /** Keys whose values are no label: the marks themselves, the seals, the
@@ -594,8 +606,8 @@ function mapLabels(v: unknown, fn: (s: string) => string): unknown {
  * the bracketed forms the view draws that claim an image check (`(CHECKED
  * BY IMAGE)`, `(FROM IMAGE)`, `(GUESS, IMAGE: NO)`, `(GUESS; IMAGE: n NO)`)
  * are stripped from every label, ids and references alike (one function
- * of the text, so a reference still names its element), a `NO` form
- * leaving ` (GUESS)`; on an element that carries a mark (a connector's
+ * of the text, so a reference still names its element), each leaving
+ * ` (GUESS)`; on an element that carries a mark (a connector's
  * text, an inline item's tag, the note of a line with marks) ` (GUESS)`
  * goes too, since the view draws the mark's word. GUESS stays on an
  * element with no mark: it claims no check, and a drawing traced before
@@ -800,10 +812,11 @@ export function honestImageChecks<T>(given: T, holds: SealCheck): T {
   }
   // The seal covers the key and the provenance id: a sealed mark past the
   // provenance's key cap still holds (only its count needs the list).
-  const fix = (c: unknown, site: MarkSite): unknown => {
+  const fix = (c: unknown, site: MarkSite, alone: boolean): unknown => {
     if (!isObj(c)) return c;
     if (
       prov &&
+      alone &&
       typeof c.key === 'string' &&
       typeof c.sig === 'string' &&
       SIG.test(c.sig) &&
@@ -826,6 +839,38 @@ export function honestImageChecks<T>(given: T, holds: SealCheck): T {
       const { provenance: _page, ...rest } = pd;
       pd = rest;
     }
-    return mapImageChecks(pd, fix, page);
+    // A mark holds only on an element its id names alone: a connector or
+    // a line copied with its marks (or one with no id) has the same site
+    // as its original, so neither copy's marks hold.
+    const shared = sharedIds(pd);
+    return mapImageChecks(
+      pd,
+      (c, site) =>
+        fix(
+          c,
+          site,
+          typeof site[2] === 'string' && !shared.has(`${String(site[0] === 'offpage')}:${site[2]}`),
+        ),
+      page,
+    );
   }) as T;
+}
+
+/** The ids more than one connector (`true:<id>`) or more than one line
+ *  (`false:<id>`) of a drawing carries. */
+function sharedIds(d: Obj): Set<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  const count = (list: unknown, offpage: boolean) => {
+    if (!Array.isArray(list)) return;
+    for (const x of list) {
+      if (!isObj(x) || typeof x.id !== 'string') continue;
+      const k = `${String(offpage)}:${x.id}`;
+      if (seen.has(k)) shared.add(k);
+      else seen.add(k);
+    }
+  };
+  count(d.offpage, true);
+  count(d.lines, false);
+  return shared;
 }

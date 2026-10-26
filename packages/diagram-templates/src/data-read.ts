@@ -22,10 +22,17 @@
  * (where a script's text reads differently), and no script but those at
  * all but one import map in the head (the Present frame's prelude
  * holds one, and its classic script removes itself as it runs: share-ui
- * canvas-frame-html.ts). Limit: a script that ran before the runtime and
- * removed itself leaves no trace in the document; a save never stores one
- * in a canvas that claims the template, and a canvas that does not is the
- * author's picture.
+ * canvas-frame-html.ts).
+ *
+ * And the marks are trusted only when the data itself names the template
+ * (`template: "pid"`, canvas.ts isPidData; browser.ts mount): the head's
+ * `diagram:template` meta may pick what to draw, never what to trust. A
+ * save rebuilds every canvas whose data block names `pid` exactly as
+ * buildCanvas writes it (claimsPidTemplate), whatever its meta says, so a
+ * script that ran before the runtime and removed itself (which leaves no
+ * trace in the document) is never in a canvas whose marks are trusted: one
+ * whose data names another template, or none, is the author's picture,
+ * its marks drawn unchecked.
  */
 import { ASSETS_ID, DATA_ID } from './canvas.ts';
 import { honestImageChecks, withImageCheckSummary } from './templates/pid/check.ts';

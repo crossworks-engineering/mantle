@@ -7,7 +7,16 @@
  */
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { estimateMeasurer, imageCheckSummary, render, validate } from '@mantle/diagram-templates';
+import {
+  buildCanvas,
+  estimateMeasurer,
+  imageCheckSummary,
+  readCanvasData,
+  render,
+  validate,
+  withImageCheckSummary,
+} from '@mantle/diagram-templates';
+import { honestCanvasSource } from '@mantle/content/drawing-seal';
 import type { DwgCropSpec } from '@mantle/files';
 import {
   ALT_WORDS,
@@ -1616,5 +1625,101 @@ describe('circuit_verify, held to once (fix round 2, L4)', () => {
     expect(asked).toBe(0);
     const dry = await verifyCircuit('o', { circuit: C, by: ME, dryRun: true }, deps);
     expect(dry.ok).toBe(true);
+  });
+});
+
+describe("the saved canvas draws each mark's words in its real SVG (round 5, H1)", () => {
+  /** A sealed row answering the first question of `kind`. */
+  const answeredRow = (
+    circuit: string,
+    sheets: SheetInput[],
+    kind: string,
+    answer: 'yes' | 'no',
+  ): StoredCheck => {
+    const r = traceCircuit(circuit, sheets);
+    const q = questionsFor(r.sheets, r.links, sheets, { max: Infinity }).questions.find(
+      (x) => x.kind === kind,
+    );
+    if (!q) throw new Error(`no ${kind} question`);
+    const row: StoredCheck = {
+      key: q.key,
+      kind: q.kind,
+      answer,
+      revision: 'rev1',
+      checkedAt: '2026-10-27T10:00:00.000Z',
+      model: 'm',
+      reason: 'r',
+      question: q.question,
+      trust: '',
+      circuit,
+      crops: '',
+    };
+    return { ...row, seal: sealOf(sealFieldsOf(q.tableId, row)) };
+  };
+  /** The trace, sealed as circuit_trace returns it, saved as a canvas by
+   *  the real save path (honestCanvasSource), its stored data drawn by the
+   *  template: the export SVG and every page's (the live view and the
+   *  poster draw a page's). No `shown` helper: the words are the SVG's. */
+  const savedSvgs = (circuit: string, sheets: SheetInput[], rows: StoredCheck[]) => {
+    const s = sheets.map((x) => ({ ...x, checks: rows }));
+    const r = traceCircuit(circuit, s, undefined, {
+      checks: (w, links) => appliedChecks(w, links, s, [], []),
+    });
+    const pid = withImageCheckSummary(sealedPid(r.pid, r.cutCheckKeys, r.limits));
+    const html = honestCanvasSource(buildCanvas({ template: 'pid', data: pid, mode: 'import' }));
+    const out = render('pid', readCanvasData(html), estimateMeasurer);
+    if (!out.ok) throw new Error(out.errors.join('; '));
+    return [out.svg, ...(out.pages ?? []).map((p) => p.svg)];
+  };
+  /** Each label drawn with a trust word: its text, then the word, drawn in
+   *  a style of its own (the template's mark-word tspan). */
+  const worded = (svg: string) =>
+    [...svg.matchAll(/>([^<>]*)<tspan data-part="mark-word"[^>]*>([^<]*)<\/tspan>/g)].map(
+      (m) => `${m[1]}${m[2]}`,
+    );
+
+  it('a connector says its mark: CHECKED BY IMAGE on a yes, GUESS, IMAGE: NO on a no', () => {
+    const s = [nearSheet()];
+    for (const [answer, word] of [
+      ['yes', '(CHECKED BY IMAGE)'],
+      ['no', '(GUESS, IMAGE: NO)'],
+    ] as const) {
+      const svgs = savedSvgs(C, s, [answeredRow(C, s, 'end', answer)]);
+      for (const svg of svgs) expect(worded(svg)).toContain(`NEAR V-201 ${word}`);
+    }
+    // Unanswered: a GUESS, drawn from the mark.
+    for (const svg of savedSvgs(C, s, [])) expect(worded(svg)).toContain('NEAR V-201 (GUESS)');
+  });
+
+  it("a line's note says its joins' marks", () => {
+    const s = [joinSheet()];
+    for (const svg of savedSvgs(C, s, [answeredRow(C, s, 'join', 'no')]))
+      expect(worded(svg).join('|')).toMatch(/JOIN \(GUESS, IMAGE: NO\)/);
+    for (const svg of savedSvgs(C, s, [answeredRow(C, s, 'join', 'yes')]))
+      expect(worded(svg).join('|')).toMatch(/JOIN \(CHECKED BY IMAGE\)/);
+  });
+
+  it("an inline valve's mark is said on its line's note (lineNoteSuffix), never typed into its tag", () => {
+    const generic = JSON.parse(
+      JSON.stringify(sheetOne()).replaceAll('GATE_VALVE', 'VALVE-GENERIC'),
+    ) as SheetInput;
+    generic.revision = 'rev1';
+    for (const [answer, word] of [
+      ['yes', '(CHECKED BY IMAGE)'],
+      ['no', '(GUESS, IMAGE: NO)'],
+    ] as const) {
+      const svgs = savedSvgs(
+        CIRCUIT,
+        [generic],
+        [answeredRow(CIRCUIT, [generic], 'valve', answer)],
+      );
+      for (const svg of svgs) {
+        expect(worded(svg)).toContain(`VALVE TYPE ${word}`);
+        // The words are only ever the mark's, drawn in their own tspan:
+        // never in a tag's or a label's own text.
+        const rest = svg.replace(/<tspan data-part="mark-word"[^>]*>[^<]*<\/tspan>/g, '');
+        expect(rest).not.toMatch(/\((?:CHECKED BY IMAGE|GUESS, IMAGE: NO)\)/);
+      }
+    }
   });
 });
