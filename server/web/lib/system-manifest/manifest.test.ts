@@ -580,7 +580,7 @@ describe('system manifest integrity', () => {
       toolsmith: 5,
       coder: 2,
       appsmith: 4,
-      'team-responder': 4,
+      'team-responder': 5,
       [DEFAULT_WORKER_SLUG]: 0,
     });
   });
@@ -600,7 +600,7 @@ describe('system manifest integrity', () => {
       ['c71f3636a', 'server/web'],
       // v0.232.295, the Phase 6 member-chat default, before W6b reworded it
       ['88ec82984', 'server/web'],
-      // v0.400.11, read-only with no hand-off (before workspace delegation)
+      // 2026-10-11 to v0.400.12, read-only with no hand-off (before workspace delegation)
       ['e600bec62', 'server/web'],
     ];
     const src = ([sha, dir]: [string, string]): string | null => {

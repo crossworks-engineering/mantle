@@ -1905,7 +1905,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
       '1bfb73a81b0513e88302a9c3d6b27dc0b05a083a8a3eab31a6758acb188889ab',
       '8b0afadf564ea0e8ea3880091aee3ba48209371434604235182cc695ef81531e',
-      // v0.400.11, read-only with no hand-off (before workspace delegation).
+      // 2026-10-11 to v0.400.12, read-only with no hand-off (before workspace delegation).
       '46d7a49616d0cf4539668cd2305f8b97d050a9c1e833482b82f4a6d00973ca03',
     ],
     // `team-read` is the bulk of its surface (see that group's description for
