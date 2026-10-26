@@ -429,6 +429,14 @@ const NAMED_CHANGES: Record<
   ],
   'rule-in-query': [
     {
+      cells: /^GET \/api\/shell (pending )?\w+$/,
+      reason:
+        "the shell names the login's Home desk (homeDesk, null until one is saved, read from " +
+        "the login's own row as navFavorites is). A new field only: every other byte answers " +
+        'as main.',
+      back: (now) => now.replace(',"homeDesk":null,', ','),
+    },
+    {
       // The pre-check removal part 2 (round 4): an app's PATCH asks the
       // caller's edit itself (assertItemRight, in every mode) where the
       // HTTP gate refused it; the one mapper answers the refusal, the same
