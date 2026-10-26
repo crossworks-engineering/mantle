@@ -222,7 +222,7 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
  * (workspaces.landing_app_id, set on the workspace screen by a Moderator),
  * honoured only while the workspace holds it, its published build is green
  * and the reader may run it. No share is needed: the grant is the access.
- * Null means the landing page shows the Built-in home.
+ * Null means the landing page shows the built-in Desk.
  */
 export async function resolveMemberHomeApp(
   anchorId: string,
@@ -236,7 +236,7 @@ export async function resolveMemberHomeApp(
 
 /** The home app id workspace `ws` names (workspaces.landing_app_id, task
  *  d78e7bde), read where the caller runs: in a login's scope the row rule
- *  answers null for a workspace it is not in. Null: the Built-in home. */
+ *  answers null for a workspace it is not in. Null: the built-in Desk. */
 export async function workspaceLandingAppId(anchorId: string, ws: string): Promise<string | null> {
   const [row] = await db
     .select({ appId: workspaces.landingAppId })
