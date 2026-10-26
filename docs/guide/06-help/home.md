@@ -20,7 +20,7 @@ Your desk follows your login: arrange it in one browser and it looks the same in
 
 Click **Customize** to open the desk's panel.
 
-- **Workspace items**: a switch per kind (notes, pages, tasks and the rest) puts its widget on the desk or takes it off. Each widget lists your pins first, then what you opened last; drag its slider to set how many items it shows. Notes show as sticky notes.
+- **Workspace items**: a switch per kind (notes, pages, tasks and the rest) puts its widget on the desk or takes it off. Each widget lists your pins first, then what you opened last, then the newest; in a workspace, pages and apps list your pins, then the workspace's newest, then what you opened last. Drag its slider to set how many items it shows. Notes show as sticky notes.
 - **Desk icons**: show your pinned items as icons, or hide them.
 - **Tools**: the clock, the calendar, a quick note, the theme, Drift, a focus timer and more. Switch one on and it lands in the first free spot.
 - **Tidy up** closes the gaps, moving every widget up as far as it goes. Left and right stay as they are.

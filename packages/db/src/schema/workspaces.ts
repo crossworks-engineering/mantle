@@ -55,8 +55,8 @@ export const workspaces = pgTable(
      *  the old built-in Team workspace until 0286 made it a normal one. */
     bridgeKey: text('bridge_key'),
     /** The workspace's home app (0276): its landing page shows it in place
-     *  of the Built-in home while the workspace holds the app and its
-     *  published build is green. NULL = the Built-in home. */
+     *  of the built-in Desk while the workspace holds the app and its
+     *  published build is green. NULL = the built-in Desk. */
     landingAppId: uuid('landing_app_id').references(() => nodes.id, { onDelete: 'set null' }),
     /** The workspace's look (0285), set by whoever may rename it: a tint
      *  key of the folder palette and an emoji or `lucide:<name>`. NULL =

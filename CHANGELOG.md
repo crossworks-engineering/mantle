@@ -71,6 +71,12 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   hashes of the 23 app tools, and the A8 surface cells' team-turn
   `app_delete` narrowing (now the oracle's answer).
 
+## Unreleased: the Desk label
+
+- **Change:** the menu's landing entry is **Desk**, not **Home**
+  (`packages/share-ui` nav-items), and the docs, the help page and the
+  contract comments call the built-in landing page the Desk.
+
 ## Unreleased: untouched specialist prompts follow the product
 
 - **Change:** a specialist whose prompt is still, byte for byte, an
