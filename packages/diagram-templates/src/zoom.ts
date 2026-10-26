@@ -23,7 +23,11 @@
  * in past the fit, and scrolls the page as before at the fit or once the
  * view reaches the drawing's edge (so a reader inside a page is never
  * trapped); drag pans, a double click zooms in (with Shift, out), two
- * fingers pinch and drag; the buttons are zoom out, zoom in, fit page and
+ * fingers pinch and drag; one finger drags the drawing only where it can
+ * move (touchAction): at the fit, or where the view meets the drawing's
+ * top or bottom edge, a swipe that way scrolls the page (on a phone a
+ * Page embed of a P&ID is zoomable at the fit, and a reader must still
+ * scroll past it); the buttons are zoom out, zoom in, fit page and
  * 100%; keys + and - zoom, 0 fits, the arrows pan once zoomed in past the
  * fit (at the fit they are left to the page: a set's arrows still step its
  * pages).
@@ -107,12 +111,15 @@ const CSS = `
 .diagram-zoom button:hover{background:#ececec}
 .diagram-zoom button:focus-visible{outline:2px solid #1d5fa8;outline-offset:1px}
 .diagram-zoom output{min-width:44px;text-align:center;color:#4f5d75}
-svg.diagram-zoomed{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;display:block}
+.diagram-zoom-said{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg.diagram-zoomed{cursor:grab;user-select:none;-webkit-user-select:none;display:block}
 svg.diagram-zoomed.diagram-dragging{cursor:grabbing}
 @media print{.diagram-zoom{display:none!important}}
 `.trim();
 
 const STYLE_ID = 'diagram-zoom-style';
+/** How long the zoom stays still before a screen reader hears the level. */
+export const READOUT_SETTLE_MS = 250;
 const BASE_ATTR = 'data-zoom-base';
 
 /** The smallest font size the drawing writes, in drawing units. */
@@ -123,6 +130,40 @@ function smallestText(svg: SVGSVGElement): number {
     if (Number.isFinite(n) && n > 0) min = Math.min(min, n);
   }
   return Number.isFinite(min) ? min : 12;
+}
+
+/** Whether this browser takes the one-way pan values (`pan-up`,
+ *  `pan-down`); where it does not, a view at one edge holds the swipe
+ *  (`none`) and only the fit, or a view that shows the whole height,
+ *  gives it to the page. */
+function oneWayPan(win: Window): boolean {
+  try {
+    const css = (win as unknown as { CSS?: { supports?(p: string, v: string): boolean } }).CSS;
+    return !!css?.supports?.('touch-action', 'pan-up');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The touch-action a zoomed SVG takes for this view: what a one-finger
+ * swipe that starts on it does. `pan-y` (the page scrolls up and down; a
+ * sideways drag and a two-finger pinch still reach the drawing) when the
+ * view cannot move up or down (at the fit, or the whole height shown);
+ * at the drawing's top edge `pan-up` (a swipe down scrolls the page up, a
+ * swipe up moves the drawing), at its bottom edge `pan-down`; `none`
+ * (the drawing takes every swipe) between them, or at one edge where the
+ * browser has no one-way values. Mirrors the plain wheel (wheelPan).
+ */
+export function touchActionFor(view: View, base: View, oneWay = true): string {
+  const eps = Math.max(1e-6, base.h * 1e-4);
+  const top = view.y <= base.y + eps;
+  const bottom = view.y + view.h >= base.y + base.h - eps;
+  if (top && bottom) return 'pan-y';
+  if (!oneWay) return 'none';
+  if (top) return 'pan-up';
+  if (bottom) return 'pan-down';
+  return 'none';
 }
 
 /** Where a plain wheel may take the view: on each axis no further out than
@@ -183,9 +224,15 @@ export function zoomable(
   };
   btn('−', 'Zoom out', () => api.zoomOut());
   const readout = doc.createElement('output');
-  readout.setAttribute('aria-live', 'polite');
   readout.setAttribute('aria-label', 'Zoom level');
   bar.appendChild(readout);
+  // What a screen reader hears: the level once the zoom settles, not every
+  // step of a pinch or a wheel (the readout itself is not live).
+  const spoken = doc.createElement('span');
+  spoken.className = 'diagram-zoom-said';
+  spoken.setAttribute('role', 'status');
+  spoken.setAttribute('aria-live', 'polite');
+  bar.appendChild(spoken);
   btn('+', 'Zoom in', () => api.zoomIn());
   btn('Fit', 'Fit page', () => api.fit());
   btn('100%', 'Actual size (100%)', () => api.actual());
@@ -217,16 +264,31 @@ export function zoomable(
     return { w, h };
   };
 
+  const oneWay = oneWayPan(win);
+  let readoutTimer = 0;
+  const say = (text: string) => {
+    if (readoutTimer) win.clearTimeout(readoutTimer);
+    readoutTimer = win.setTimeout(() => {
+      readoutTimer = 0;
+      spoken.textContent = `Zoom ${text}`;
+    }, READOUT_SETTLE_MS);
+  };
   const apply = () => {
     if (!svg || !view) return;
     svg.setAttribute('viewBox', viewBoxText(view));
-    readout.textContent = `${Math.round(scaleOf(view, vp) * 100)}%`;
+    if (base) svg.style.touchAction = touchActionFor(view, base, oneWay);
+    const text = `${Math.round(scaleOf(view, vp) * 100)}%`;
+    if (readout.textContent !== text) {
+      readout.textContent = text;
+      say(text);
+    }
   };
 
   const restore = () => {
     if (!svg || !base) return;
     svg.setAttribute('viewBox', viewBoxText(base));
     svg.classList.remove('diagram-zoomed', 'diagram-dragging');
+    svg.style.removeProperty('touch-action');
     svg.style.removeProperty('width');
     svg.style.removeProperty('height');
     svg.style.removeProperty('max-width');
@@ -322,6 +384,10 @@ export function zoomable(
   let dragFrom: { x: number; y: number } | null = null;
   let moved = false;
   let pinch: { d: number; mid: { x: number; y: number } } | null = null;
+  /** The touch-action a one-finger touch drag began under: the way it
+   *  leaves to the page is the page's, so the drawing never moves that way
+   *  in the moves before the browser takes the swipe. */
+  let touchWay = '';
   /** Forget every pointer: a pointerup the page never saw (released
    *  outside the frame, a lost capture) must not leave one behind, or the
    *  next drag would act as a pinch. */
@@ -337,6 +403,7 @@ export function zoomable(
     if (e.isPrimary) forget();
     pointers.set(e.pointerId, local(e));
     moved = false;
+    touchWay = e.pointerType === 'touch' ? svg.style.touchAction : '';
     if (pointers.size === 1) dragFrom = local(e);
     else if (pointers.size === 2) {
       const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
@@ -364,7 +431,14 @@ export function zoomable(
     }
     if (!dragFrom) return;
     const dx = p.x - dragFrom.x;
-    const dy = p.y - dragFrom.y;
+    const rawDy = p.y - dragFrom.y;
+    // A finger moving down shows what is above (the page's at pan-up).
+    const dy =
+      touchWay === 'pan-y' ||
+      (touchWay === 'pan-up' && rawDy > 0) ||
+      (touchWay === 'pan-down' && rawDy < 0)
+        ? 0
+        : rawDy;
     if (!moved && Math.hypot(dx, dy) < 4) return;
     if (!moved) {
       moved = true;
@@ -387,6 +461,12 @@ export function zoomable(
       dragFrom = null;
       svg?.classList.remove('diagram-dragging');
     }
+  };
+  // A touch is captured by the element it began on; a drag moves that
+  // capture to the SVG, and the element's lost capture is not the end of
+  // the drag (only the SVG's own is).
+  const onLost = (e: PointerEvent) => {
+    if (e.target === svg) onUp(e);
   };
   // A drag is not a click: the link or the evidence under the pointer at
   // the end of a drag does not open.
@@ -451,7 +531,7 @@ export function zoomable(
   container.addEventListener('pointermove', onMove);
   container.addEventListener('pointerup', onUp);
   container.addEventListener('pointercancel', onUp);
-  container.addEventListener('lostpointercapture', onUp);
+  container.addEventListener('lostpointercapture', onLost);
   container.addEventListener('pointerleave', onUp);
   container.addEventListener('click', onClick, true);
   container.addEventListener('dblclick', onDbl);
@@ -497,6 +577,7 @@ export function zoomable(
     },
     view: () => (active && view ? { ...view } : null),
     destroy: () => {
+      if (readoutTimer) win.clearTimeout(readoutTimer);
       if (active) restore();
       active = false;
       bar.remove();
@@ -505,7 +586,7 @@ export function zoomable(
       container.removeEventListener('pointermove', onMove);
       container.removeEventListener('pointerup', onUp);
       container.removeEventListener('pointercancel', onUp);
-      container.removeEventListener('lostpointercapture', onUp);
+      container.removeEventListener('lostpointercapture', onLost);
       container.removeEventListener('pointerleave', onUp);
       container.removeEventListener('click', onClick, true);
       container.removeEventListener('dblclick', onDbl);

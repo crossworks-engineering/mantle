@@ -39,6 +39,7 @@ import {
   arrowHead,
   num,
   orthoPath,
+  markedTextEl,
   simplify,
   textEl,
   type Pt,
@@ -64,6 +65,7 @@ import type { CheckEvidence, RenderResult } from '../../types.ts';
 import {
   imageCheckSummary,
   lineNoteSuffix,
+  MARK_WORDS,
   markSuffix,
   weakestState,
   withoutMarkWords,
@@ -294,9 +296,33 @@ export function stateColour(state: CheckState): string {
   return ROLE_COLOURS.guess;
 }
 
+/** The colour of a trust word the view draws (markSuffix, lineNoteSuffix),
+ *  read from the words themselves, so the colour never says other than
+ *  the words: any IMAGE: NO (a corrected mark that names no alternative
+ *  says it too) the contradicted colour, FROM IMAGE the corrected one,
+ *  CHECKED BY IMAGE the checked one, a GUESS the guess colour. */
+export function wordColour(word: string): string {
+  if (/IMAGE: (?:\d+ )?NO/.test(word)) return ROLE_COLOURS.contradicted;
+  if (word.includes(MARK_WORDS.image)) return ROLE_COLOURS.corrected;
+  if (word.includes(MARK_WORDS.checked)) return ROLE_COLOURS.checked;
+  return ROLE_COLOURS.guess;
+}
+
+/** The colour of one mark, by the words the view would draw for it. */
+export function markColour(mark: PidCheck): string {
+  return wordColour(markSuffix(mark));
+}
+
 export type RenderPidOptions = {
   /** The prefix of the drawing's ids; a set gives each page its own. */
   idPrefix?: string;
+};
+
+/** The trust word drawn after each marked element's label, by id: a
+ *  connector's (`offpage`) and a line note's (`lines`). */
+export type DrawnMarkWords = {
+  offpage: ReadonlyMap<string, string>;
+  lines: ReadonlyMap<string, string>;
 };
 
 /**
@@ -304,39 +330,53 @@ export type RenderPidOptions = {
  * MARK_WORDS): any typed into a label are stripped first, as every save
  * strips them (withoutMarkWords), then a marked connector's text takes its
  * mark's word (markSuffix) and a line with marks its note's (lineNoteSuffix;
- * the word alone when it has no note). A drawing with no mark comes back as
- * it is, so it draws byte for byte as before.
+ * the word alone when it has no note). `words` says which closing words of
+ * those labels the view drew, so they are drawn in a style of their own
+ * (bold, in their colour: markedTextEl), never as the label: a look-alike
+ * typed into a label stays in the label's style. A drawing with no mark
+ * comes back as it is, so it draws byte for byte as before.
  */
-export function withMarkWordsDrawn(data: PidData): PidData {
+export function withMarkWordsDrawn(data: PidData): { data: PidData; words: DrawnMarkWords } {
+  const offWords = new Map<string, string>();
+  const lineWords = new Map<string, string>();
+  const words = { offpage: offWords, lines: lineWords };
   const marked =
     data.offpage.some((o) => o.check) ||
     data.lines.some((l) => l.checks?.length || l.inline?.some((it) => it.check));
-  if (!marked) return data;
+  if (!marked) return { data, words };
   const d = withoutMarkWords(data);
   return {
-    ...d,
-    offpage: d.offpage.map((o) =>
-      o.check ? { ...o, text: `${o.text ?? ''}${markSuffix(o.check)}`.trim() } : o,
-    ),
-    lines: d.lines.map((l) => {
-      const word = lineNoteSuffix(l);
-      return word ? { ...l, note: `${l.note ?? ''}${word}`.trim() } : l;
-    }),
+    data: {
+      ...d,
+      offpage: d.offpage.map((o) => {
+        if (!o.check) return o;
+        const word = markSuffix(o.check);
+        offWords.set(o.id, word.trim());
+        return { ...o, text: `${o.text ?? ''}${word}`.trim() };
+      }),
+      lines: d.lines.map((l) => {
+        const word = lineNoteSuffix(l);
+        if (!word) return l;
+        lineWords.set(l.id, word.trim());
+        return { ...l, note: `${l.note ?? ''}${word}`.trim() };
+      }),
+    },
+    words,
   };
 }
 
 export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = {}): RenderResult {
-  const data = withMarkWordsDrawn(given);
+  const { data, words } = withMarkWordsDrawn(given);
   const P = data.profile;
   const warnings: string[] = [];
   /** Style 2 (style.ts): the colour set and the label room. Style 1 is
    *  every older drawing, drawn byte for byte as before. */
   const v2 = data.style >= 2;
   const C = ROLE_COLOURS;
-  /** A mark's colour by what the image check said (style 2). Without a
-   *  structured check, the words a traced drawing writes say it. */
-  const noteColour = (text: string, checks?: readonly PidCheck[]): string => {
-    if (checks?.length) return stateColour(weakestState(checks));
+  /** The colour of the words a drawing traced before the marks wrote into
+   *  an unmarked label (style 2). A marked element's words are drawn from
+   *  its mark, in their own colour (wordColour). */
+  const noteColour = (text: string): string => {
     if (/FROM IMAGE/.test(text)) return C.corrected;
     if (/IMAGE: NO|IMAGE SAYS NO/.test(text)) return C.contradicted;
     if (/CHECKED BY IMAGE/.test(text)) return C.checked;
@@ -1411,9 +1451,16 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
       id: `${l.id} note`,
       box,
       svg: (() => {
-        const t = textEl('sublabel', box.x + 2, box.y + 9, l.note, {
-          fill: v2 ? noteColour(l.note, l.checks) : PALETTE.ink,
-        });
+        const word = words.lines.get(l.id);
+        const t = markedTextEl(
+          'sublabel',
+          box.x + 2,
+          box.y + 9,
+          l.note,
+          word,
+          { fill: v2 && !word ? noteColour(l.note) : PALETTE.ink },
+          { fill: word ? wordColour(word) : undefined },
+        );
         return l.checks?.length ? el('g', { 'data-check': `line:${l.id}` }, t) : t;
       })(),
     });
@@ -1892,14 +1939,28 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
   // The image check's evidence: one entry per checked item, its key on the
   // drawn element (`data-check`), for the canvas to show on click.
   const evidence: CheckEvidence[] = [];
+  /** The colour each evidence item shows (its badge, the legend). */
+  const evidenceColours: string[] = [];
   const badges: string[] = [];
   const noteBoxOf = (id: string) => notes.find((n) => n.id === id)?.box;
-  const addCheck = (key: string, what: string, checks: readonly PidCheck[] | undefined, at: Pt) => {
+  const addCheck = (
+    key: string,
+    what: string,
+    checks: readonly PidCheck[] | undefined,
+    at: Pt,
+    word?: string,
+  ) => {
     if (!checks?.length) return;
     evidence.push({ key, what, checks: [...checks] });
+    // The colour of the words drawn for it (one mark: its own words).
+    const colour = word
+      ? wordColour(word)
+      : checks.length === 1
+        ? markColour(checks[0]!)
+        : stateColour(weakestState(checks));
+    evidenceColours.push(colour);
     // Style 2: a small "i" beside the item when there is something to see.
     if (!v2 || !checks.some((c) => c.answer || c.crops?.length || c.question)) return;
-    const colour = stateColour(weakestState(checks));
     badges.push(
       el('g', { 'data-check': key, 'data-part': 'check-badge' }, [
         el('circle', {
@@ -1997,6 +2058,7 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
         nb
           ? { x: nb.x + nb.w + 8, y: nb.y + nb.h / 2 }
           : { x: (s0[0].x + s0[1].x) / 2 + 10, y: (s0[0].y + s0[1].y) / 2 - 10 },
+        words.lines.get(l.id),
       );
     }
     // No arrowhead where a line joins a tee, stops, or meets its bubble.
@@ -2121,10 +2183,13 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
   for (const l of lineLabels) L.labels!.push(l.svg);
   for (const o of data.offpage) {
     const n = nodes.get(o.id)!;
-    addCheck(`offpage:${o.id}`, `connector ${o.text ?? o.id}`, o.check ? [o.check] : undefined, {
-      x: n.box.x + n.box.w + 4,
-      y: n.box.y - 4,
-    });
+    addCheck(
+      `offpage:${o.id}`,
+      `connector ${o.text ?? o.id}`,
+      o.check ? [o.check] : undefined,
+      { x: n.box.x + n.box.w + 4, y: n.box.y - 4 },
+      words.offpage.get(o.id),
+    );
     L.offpage!.push(
       el(
         'g',
@@ -2163,21 +2228,24 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
     }
     if (o.text) {
       const right = o.direction === 'out';
-      const t = textEl(
+      const word = words.offpage.get(o.id);
+      const t = markedTextEl(
         'eyebrow',
         right ? n.box.x : n.box.x + n.box.w,
         n.box.y + n.box.h + 12,
         o.text,
+        word,
         {
           'text-anchor': right ? 'start' : 'end',
           fill: !v2
             ? PALETTE.muted
-            : o.check || /GUESS|IMAGE/.test(o.text)
-              ? noteColour(o.text, o.check ? [o.check] : undefined)
+            : !word && /GUESS|IMAGE/.test(o.text)
+              ? noteColour(o.text)
               : o.link
                 ? C.link
                 : PALETTE.muted,
         },
+        { fill: word ? wordColour(word) : undefined },
       );
       L.labels!.push(o.check ? el('g', { 'data-check': `offpage:${o.id}` }, t) : t);
       const tw = measure(m, o.text, 'eyebrow');
@@ -2371,13 +2439,19 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
     if (v2) {
       // The marks the drawing uses, in their colour, named in words.
       const marks = [
-        ...data.lines.map((l) => (l.note ? noteColour(l.note, l.checks) : '')),
-        ...data.offpage.map((o) =>
-          o.check || (o.text && /GUESS|IMAGE/.test(o.text))
-            ? noteColour(o.text ?? '', o.check ? [o.check] : undefined)
-            : '',
-        ),
-        ...evidence.map((e) => stateColour(weakestState(e.checks))),
+        ...data.lines.map((l) => {
+          const word = words.lines.get(l.id);
+          return word ? wordColour(word) : l.note ? noteColour(l.note) : '';
+        }),
+        ...data.offpage.map((o) => {
+          const word = words.offpage.get(o.id);
+          return word
+            ? wordColour(word)
+            : o.text && /GUESS|IMAGE/.test(o.text)
+              ? noteColour(o.text)
+              : '';
+        }),
+        ...evidenceColours,
       ];
       const used = new Set(marks);
       for (const [colour, label] of [

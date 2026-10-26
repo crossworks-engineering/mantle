@@ -22,7 +22,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { estimateMeasurer, render, SET_NAV_HEIGHT, validate } from '@mantle/diagram-templates';
+import {
+  CURRENT_STYLE,
+  estimateMeasurer,
+  render,
+  SET_NAV_HEIGHT,
+  validate,
+} from '@mantle/diagram-templates';
 
 const h = vi.hoisted(() => ({
   getPresent: vi.fn(),
@@ -485,6 +491,38 @@ describe('diagram_render', () => {
     expect(renders[0]!.exportSvg).toBe(true);
     expect(renders[0]!.width).toBeGreaterThan(0);
     expect(h.createPresent).not.toHaveBeenCalled();
+  });
+});
+
+describe('diagram_render says the style it drew', () => {
+  const PID = JSON.parse(readFileSync(join(SAMPLES, 'pid-feed-drum.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  it('the current edition, and how to preview an older canvas, when the data names none', async () => {
+    withRenderer('<svg></svg>');
+    const out = await tool('diagram_render').handler({ template: 'pid', data: PID }, ctx);
+    expect(out.ok).toBe(true);
+    const o = (out as { output: Record<string, unknown> }).output;
+    expect(o.style).toBe(CURRENT_STYLE);
+    expect(o.style_note).toMatch(/keeps the style it was saved with/);
+  });
+
+  it("the data's own style, without the note", async () => {
+    withRenderer('<svg></svg>');
+    const out = await tool('diagram_render').handler(
+      { template: 'pid', data: { ...PID, style: 1 } },
+      ctx,
+    );
+    const o = (out as { output: Record<string, unknown> }).output;
+    expect(o.style).toBe(1);
+    expect(o.style_note).toBeUndefined();
+  });
+
+  it('a flow drawing has no style edition', async () => {
+    withRenderer('<svg></svg>');
+    const out = await tool('diagram_render').handler({ template: 'flow', data: FLOW }, ctx);
+    expect((out as { output: Record<string, unknown> }).output.style).toBeUndefined();
   });
 });
 

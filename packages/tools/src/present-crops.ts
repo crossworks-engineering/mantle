@@ -33,13 +33,21 @@
  *    not fit is said, and the guess shows its words without a picture.
  *
  * An update reuses the crops the canvas already carries for the ids still
- * named (their seals still hold), and reads only the new ones: an editor
- * who may not open a crop file keeps the picture an earlier save embedded.
+ * named (their seals still hold), and reads only the new ones. So a canvas
+ * can carry a picture its current author could not open: one an earlier
+ * save embedded for another author (an update by an editor, a copy of the
+ * canvas), kept because the mark that names it is still sealed. Rights
+ * are checked when a picture is first read, never again.
+ *
+ * Only the crops of sealed marks are read (`embedSealedCheckCrops`: the
+ * save's honest pass first): a mark the save would make unchecked never
+ * has its picture decoded, nor takes the room of a sealed one.
  *
  * A shared canvas (a public link) carries its crops like any other content
  * of the canvas.
  */
 import { createHash } from 'node:crypto';
+import { drawingSealHolds } from '@mantle/content/drawing-seal';
 import type { Readable } from 'node:stream';
 import { embeddableJpeg, fileById, isEmbeddableImage, openFileById } from '@mantle/files';
 import { CANVAS_MAX_BYTES } from '@mantle/content-core/canvas';
@@ -48,6 +56,7 @@ import {
   CROP_SEAL_PURPOSE,
   checkCropIds,
   cropSealPayload,
+  honestImageChecks,
   type CanvasAssets,
   type CanvasCrop,
 } from '@mantle/diagram-templates';
@@ -65,12 +74,6 @@ const ENTRY_COST = 140;
  *  it is `source`: the canvas cap less the drawing and a margin. */
 export function cropRoom(source: string): number {
   return Math.max(0, CANVAS_MAX_BYTES - Buffer.byteLength(source, 'utf8') - ROOM_MARGIN);
-}
-
-/** The sha256 (hex) of a crop data URL's bytes. */
-export function cropSha256(src: string): string {
-  const bytes = Buffer.from(src.slice(src.indexOf(',') + 1), 'base64');
-  return createHash('sha256').update(bytes).digest('hex');
 }
 
 export type CropFile = { bytes: Buffer; mimeType: string };
@@ -116,6 +119,20 @@ export function scopedCropRead(ownerId: string): CropRead {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const some = (ids: string[]) => `${ids.slice(0, 3).join(', ')}${ids.length > 3 ? ', ...' : ''}`;
+
+/**
+ * The crops a save of this data may keep, embedded: the data passed
+ * through the save's honest pass first (honestImageChecks with the
+ * drawing seal), so only a sealed mark's crops are read
+ * (`embedCheckCrops`). What present_create and present_update call.
+ */
+export function embedSealedCheckCrops(
+  data: unknown,
+  read: CropRead,
+  opts: { room: number; have?: CanvasAssets | null },
+): Promise<{ assets: CanvasAssets | null; notes: string[] }> {
+  return embedCheckCrops(honestImageChecks(data, drawingSealHolds), read, opts);
+}
 
 /**
  * The crops to embed for this data, and a note on any left out. `null`

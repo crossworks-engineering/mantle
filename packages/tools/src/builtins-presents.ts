@@ -82,7 +82,7 @@ import {
   type CanvasRenderRequest,
   type CanvasRenderResult,
 } from './canvas-render-bridge';
-import { cropRoom, embedCheckCrops, scopedCropRead } from './present-crops';
+import { cropRoom, embedSealedCheckCrops, scopedCropRead } from './present-crops';
 
 const LOOKUP = 'present_list / search_nodes';
 
@@ -680,12 +680,30 @@ const diagram_render: BuiltinToolDef = {
       canvasRequest(ctx.ownerId, source, '', readCanvas(source).meta, { exportSvg: true }),
     );
     const svg = seen.result?.ok ? seen.result.diagram?.svg : undefined;
+    // The style edition it drew: the current one unless the data named one.
+    // A saved canvas keeps its own (present_update), so the caller is told
+    // how to preview an older canvas as its update would draw it.
+    const style = template === 'pid' ? checked.data.style : undefined;
+    const named =
+      !!input.data &&
+      typeof input.data === 'object' &&
+      (input.data as Record<string, unknown>).style !== undefined;
     return {
       ok: true,
       output: {
         template,
         render: seen.report,
         ...(svg ? { export_problems: checkStaticSvg(svg) } : {}),
+        ...(typeof style === 'number'
+          ? {
+              style,
+              ...(named
+                ? {}
+                : {
+                    style_note: `Drawn in style ${style}, the edition a new canvas gets. A saved canvas keeps the style it was saved with: to preview an update of an existing canvas, pass the style its data carries (none means 1).`,
+                  }),
+            }
+          : {}),
       },
       ...(seen.modelImages ? { modelImages: seen.modelImages } : {}),
     };
@@ -760,9 +778,11 @@ const present_create: BuiltinToolDef = {
       if ('error' in checked) return { ok: false, error: checked.error };
       source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
       // The image check's crops travel inside the canvas (present-crops.ts),
-      // in the room the canvas cap leaves beside the drawing.
+      // in the room the canvas cap leaves beside the drawing: only those a
+      // sealed mark names (the save's honest pass, run first here, so an
+      // unsealed mark's crop is never read nor takes a sealed one's room).
       if (template === 'pid') {
-        const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
+        const crops = await embedSealedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
           room: cropRoom(source),
         });
         cropNotes = crops.notes;
@@ -883,7 +903,7 @@ const present_update: BuiltinToolDef = {
             // (their seals hold); only new ids are read, in this caller's
             // scope.
             const bare = replaceCanvasAssets(next, null);
-            const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
+            const crops = await embedSealedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
               room: cropRoom(bare),
               have: readCanvasAssets(cur.source),
             });

@@ -32,7 +32,7 @@ import {
 import { drawingSeal, honestCanvasSource } from '@mantle/content/drawing-seal';
 import { CIRCUIT, genericValveSheet, readingSheets } from './circuit-trace/fixtures';
 import { traceCircuit, type SheetInput } from './circuit-trace/walk';
-import { embedCheckCrops, type CropRead } from './present-crops';
+import { embedCheckCrops, embedSealedCheckCrops, type CropRead } from './present-crops';
 
 beforeEach(() => {
   vi.stubEnv('MANTLE_MASTER_KEY', 'present-view-test-key');
@@ -212,6 +212,38 @@ describe('the unchecked note is the marks own count', () => {
     const r = render('pid', lying, estimateMeasurer);
     if (!r.ok) throw new Error(r.errors.join('\n'));
     expect(r.svg).toMatch(new RegExp(`>${real.unchecked} GUESS(ES)? NOT CHECKED BY IMAGE<`));
+  });
+
+  it('only a sealed mark has its crop read: a mark written in beside it is not', async () => {
+    const pid = traced([genericValveSheet()], () => ['no', 'orifice']);
+    const FORGED = '99999999-8888-4777-8666-555555555555';
+    // A claimed check, no seal, written into the data by hand.
+    const lines = pid.lines as Obj[];
+    const forged = {
+      ...pid,
+      // On the last line, so the first line's sealed marks stay as sealed.
+      lines: lines.map((l, i) =>
+        i === lines.length - 1
+          ? {
+              ...l,
+              checks: [
+                ...((l.checks as Obj[]) ?? []),
+                { key: 'gz', kind: 'join', state: 'checked', answer: 'yes', crops: [FORGED] },
+              ],
+            }
+          : l,
+      ),
+    };
+    expect(lines.length).toBeGreaterThan(1);
+    expect(checkCropIds(forged)).toContain(FORGED);
+    const asked: string[] = [];
+    const counting: CropRead = async (fileId) => {
+      asked.push(fileId);
+      return read(fileId);
+    };
+    const { assets } = await embedSealedCheckCrops(forged, counting, { room: 900_000 });
+    expect(asked).toEqual([CROP]);
+    expect(Object.keys(assets!.crops)).toEqual([CROP]);
   });
 
   it('the crops the marks name are the ones a save embeds; a forged one is dropped', async () => {

@@ -166,34 +166,180 @@ describe('check fields in the data', () => {
   });
 });
 
+/** The label drawn with its trust word in a style of its own: the label
+ *  in the text's style, then the word as its own bold tspan. */
+const worded = (label: string, word: string, colour: string) =>
+  `${label}${label ? ' ' : ''}<tspan data-part="mark-word" font-weight="700" fill="${colour}">${word}</tspan></text>`;
+const words = (svg: string) =>
+  [...svg.matchAll(/<tspan data-part="mark-word"[^>]*>([^<]*)<\/tspan>/g)].map((m) => m[1]);
+
 describe('the trust words are drawn from the marks', () => {
   it.each([1, 2])(
-    'style %s: each marked label says its mark, once; typed words do not count',
+    'style %s: each marked label says its mark, once, in a style of its own; typed words do not count',
     (style) => {
       const d = withChecks(style) as Record<string, any>;
       // A typed claim the mark does not make: stripped, the mark's word drawn.
       d.offpage[0].text = 'NEAR V-9 (CHECKED BY IMAGE)';
       const r = render('pid', d, estimateMeasurer);
       if (!r.ok) throw new Error(r.errors.join());
-      expect(r.svg).toContain('NEAR V-9 (GUESS)');
+      expect(r.svg).toContain(worded('NEAR V-9', '(GUESS)', ROLE_COLOURS.guess));
       expect(r.svg).not.toContain('CHECKED BY IMAGE)');
       expect(r.svg).not.toMatch(/\(GUESS\)\s*\(GUESS\)/);
       // The line's joins: one open, none contradicted.
-      expect(r.svg).toContain('VALVE TYPE (GUESS)');
+      expect(r.svg).toContain(worded('VALVE TYPE', '(GUESS)', ROLE_COLOURS.guess));
+      expect(words(r.svg)).toEqual(['(GUESS)', '(GUESS)']);
       // Checked: the mark says so, whatever the text said.
       d.offpage[0].check = { key: 'e1', kind: 'end', state: 'checked', answer: 'yes' };
       d.offpage[0].text = 'NEAR V-9 (GUESS)';
       const r2 = render('pid', d, estimateMeasurer);
       if (!r2.ok) throw new Error(r2.errors.join());
-      expect(r2.svg).toContain('NEAR V-9 (CHECKED BY IMAGE)');
+      expect(r2.svg).toContain(worded('NEAR V-9', '(CHECKED BY IMAGE)', ROLE_COLOURS.checked));
     },
   );
 
-  it('a drawing with no mark keeps its text as written', () => {
+  it.each([1, 2])(
+    'style %s: a look-alike typed into a label stays in the label, never in the word',
+    (style) => {
+      const d = withChecks(style) as Record<string, any>;
+      // A Greek capital Iota for the I: not a trust word, so not stripped.
+      d.offpage[0].text = 'NEAR V-9 (CHECKED BY \u0399MAGE)';
+      const r = render('pid', d, estimateMeasurer);
+      if (!r.ok) throw new Error(r.errors.join());
+      const label = /<text [^>]*>(NEAR V-9 [^<]*)<tspan data-part="mark-word"[^>]*>([^<]*)</.exec(
+        r.svg,
+      )!;
+      expect(label[1]).toContain('\u0399MAGE');
+      expect(label[2]).toBe('(GUESS)');
+      // The label is drawn in the connector text's own colour, not a mark's.
+      const text = /<text [^>]*fill="([^"]+)"[^>]*>NEAR V-9 /.exec(r.svg)!;
+      expect(Object.values(ROLE_COLOURS).filter((c) => c !== ROLE_COLOURS.link)).not.toContain(
+        text[1],
+      );
+    },
+  );
+
+  // Every mark state, on a connector and on a line, and its words and colour.
+  const offpageCases: [string, Record<string, unknown>, string, keyof typeof ROLE_COLOURS][] = [
+    ['unchecked', { state: 'unchecked' }, '(GUESS)', 'guess'],
+    ['unsure', { state: 'unsure', answer: 'unsure' }, '(GUESS)', 'guess'],
+    ['checked', { state: 'checked', answer: 'yes' }, '(CHECKED BY IMAGE)', 'checked'],
+    ['contradicted', { state: 'contradicted', answer: 'no' }, '(GUESS, IMAGE: NO)', 'contradicted'],
+    [
+      'corrected with alt',
+      { state: 'corrected', answer: 'no', alt: 'nozzle N2 of V-2' },
+      '(FROM IMAGE)',
+      'corrected',
+    ],
+    [
+      'corrected without alt',
+      { state: 'corrected', answer: 'no' },
+      '(GUESS, IMAGE: NO)',
+      'contradicted',
+    ],
+  ];
+  const cases = [1, 2].flatMap((style) => offpageCases.map((c) => [style, ...c] as const));
+  it.each(cases)(
+    'style %s, a connector %s: its word and its colour agree',
+    (style, _name, mark, word, colour) => {
+      const d = base({ style }) as Record<string, any>;
+      d.lines[0].note = undefined;
+      d.offpage[0].check = { key: 'e1', kind: 'end', question: 'Near V-9?', ...mark };
+      const r = render('pid', d, estimateMeasurer);
+      if (!r.ok) throw new Error(r.errors.join());
+      expect(r.svg).toContain(worded('NEAR V-9', word, ROLE_COLOURS[colour]));
+      expect(words(r.svg)).toEqual([word]);
+      if (style === 2) {
+        // The badge and the legend say the same colour.
+        expect(r.svg).toMatch(
+          new RegExp(
+            `data-check="offpage:OPC-1" data-part="check-badge"><circle[^>]*stroke="${ROLE_COLOURS[colour]}"`,
+          ),
+        );
+        expect(r.svg).toMatch(new RegExp(`fill="${ROLE_COLOURS[colour]}">ABC</text>`));
+      }
+      if (colour !== 'corrected') expect(r.svg).not.toContain('>FROM IMAGE<');
+    },
+  );
+
+  const lineCases: [string, Record<string, unknown>, string, keyof typeof ROLE_COLOURS][] = [
+    [
+      'joins with two noes',
+      {
+        checks: [
+          { key: 'j1', kind: 'join', state: 'contradicted', answer: 'no' },
+          { key: 'j2', kind: 'join', state: 'contradicted', answer: 'no' },
+          { key: 'j3', kind: 'join', state: 'unchecked' },
+        ],
+      },
+      '(GUESS; IMAGE: 2 NO)',
+      'contradicted',
+    ],
+    [
+      'joins all checked',
+      {
+        checks: [
+          { key: 'j1', kind: 'join', state: 'checked', answer: 'yes' },
+          { key: 'j2', kind: 'join', state: 'checked', answer: 'yes' },
+        ],
+      },
+      '(CHECKED BY IMAGE)',
+      'checked',
+    ],
+    [
+      'only an inline valve, contradicted',
+      { valve: { key: 'v1', kind: 'valve', state: 'contradicted', answer: 'no' } },
+      '(GUESS, IMAGE: NO)',
+      'contradicted',
+    ],
+    [
+      'only an inline valve, corrected',
+      { valve: { key: 'v1', kind: 'valve', state: 'corrected', answer: 'no', alt: 'orifice' } },
+      '(FROM IMAGE)',
+      'corrected',
+    ],
+    [
+      'only an inline valve, checked',
+      { valve: { key: 'v1', kind: 'valve', state: 'checked', answer: 'yes' } },
+      '(CHECKED BY IMAGE)',
+      'checked',
+    ],
+  ];
+  const lcases = [1, 2].flatMap((style) => lineCases.map((c) => [style, ...c] as const));
+  it.each(lcases)(
+    'style %s, a line with %s: its note says the word, in its colour',
+    (style, _name, marks, word, colour) => {
+      const d = base({ style }) as Record<string, any>;
+      d.offpage[0].text = 'NEAR V-9';
+      d.lines[0].note = 'VALVE TYPE';
+      if (marks.checks) d.lines[0].checks = marks.checks;
+      if (marks.valve) d.lines[0].inline[0].check = marks.valve;
+      const r = render('pid', d, estimateMeasurer);
+      if (!r.ok) throw new Error(r.errors.join());
+      expect(r.svg).toContain(worded('VALVE TYPE', word, ROLE_COLOURS[colour]));
+      expect(words(r.svg)).toEqual([word]);
+      // The note's own text keeps the ink: only the word wears the colour.
+      expect(r.svg).toMatch(/fill="#2d3142">VALVE TYPE <tspan/);
+    },
+  );
+
+  it('a line with marks and no note draws the word alone', () => {
+    const d = base({ style: 2 }) as Record<string, any>;
+    d.lines[0].note = undefined;
+    d.lines[0].checks = [{ key: 'j1', kind: 'join', state: 'unchecked' }];
+    const r = render('pid', d, estimateMeasurer);
+    if (!r.ok) throw new Error(r.errors.join());
+    expect(r.svg).toContain(worded('', '(GUESS)', ROLE_COLOURS.guess));
+  });
+
+  it('a drawing with no mark keeps its text as written, with no word tspan', () => {
     const r = render('pid', base(), estimateMeasurer);
     if (!r.ok) throw new Error(r.errors.join());
     expect(r.svg).toContain('NEAR V-9 (GUESS)');
     expect(r.svg).toContain('VALVE TYPE (GUESS, IMAGE: NO)');
+    expect(r.svg).not.toContain('mark-word');
+    const r2 = render('pid', base({ style: 2 }), estimateMeasurer);
+    if (!r2.ok) throw new Error(r2.errors.join());
+    expect(r2.svg).not.toContain('mark-word');
   });
 });
 
@@ -360,6 +506,27 @@ describe('the live canvas opens the evidence', () => {
     parts.find((e) => e !== badge)!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     expect(doc.querySelector('[role="dialog"] img')!.getAttribute('src')).toBe(CROP);
   });
+
+  it.each([undefined, 1])(
+    'style %s (no badges): one tab stop per checked item, its first element',
+    async (style) => {
+      const { doc, win } = await open({ [CROP_ID]: SEALED }, style);
+      expect(doc.querySelector('[data-part="check-badge"]')).toBeNull();
+      for (const key of ['inline:L1:0', 'line:L1', 'offpage:OPC-1']) {
+        const parts = [...doc.querySelectorAll(`[data-check="${key}"]`)];
+        const stops = parts.filter((e) => e.getAttribute('tabindex') === '0');
+        expect(stops, key).toEqual([parts.find((e) => !e.hasAttribute('data-link'))]);
+        // Every part still opens it on a click.
+        for (const p of parts) {
+          p.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+          expect(doc.querySelector('.diagram-evidence')!.hasAttribute('hidden'), key).toBe(false);
+          doc.querySelector<HTMLButtonElement>('.diagram-evidence button')!.click();
+        }
+      }
+      // A line's path and its note are two parts of one item.
+      expect(doc.querySelectorAll('[data-check="line:L1"]').length).toBeGreaterThan(1);
+    },
+  );
 
   it('a bad crop in the assets block is never shown', async () => {
     const { doc, win } = await open({

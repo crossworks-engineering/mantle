@@ -23,7 +23,13 @@ import {
   widthView,
   zoomAt,
 } from './runtime/zoom-math.ts';
-import { RENDER_FLAG, zoomable, type ZoomController } from './zoom.ts';
+import {
+  READOUT_SETTLE_MS,
+  RENDER_FLAG,
+  touchActionFor,
+  zoomable,
+  type ZoomController,
+} from './zoom.ts';
 import { estimateMeasurer, render } from './index.ts';
 import { buildCanvas } from './canvas.ts';
 import { mount } from './browser.ts';
@@ -384,6 +390,129 @@ describe('zoomable in a page', () => {
     const v = vb(svg);
     near(v.x + v.w / 2, 1560);
     near(v.y + v.h / 2, 1976);
+  });
+});
+
+describe('a touch on a phone: the page scrolls past a drawing at the fit', () => {
+  let z: ZoomController | undefined;
+  afterEach(() => z?.destroy());
+  const base = { x: 0, y: 0, w: 1600, h: 2000 };
+
+  it('the touch-action follows the view, as the plain wheel does', () => {
+    // The whole height shows (the fit, or wider): the page has up and down.
+    expect(touchActionFor({ x: -100, y: -10, w: 1800, h: 2020 }, base)).toBe('pan-y');
+    // Zoomed in, between the edges: the drawing has every swipe.
+    expect(touchActionFor({ x: 0, y: 500, w: 800, h: 600 }, base)).toBe('none');
+    // At the top edge a swipe down is the page's; at the bottom a swipe up.
+    expect(touchActionFor({ x: 0, y: 0, w: 800, h: 600 }, base)).toBe('pan-up');
+    expect(touchActionFor({ x: 0, y: -40, w: 800, h: 600 }, base)).toBe('pan-up');
+    expect(touchActionFor({ x: 0, y: 1400, w: 800, h: 600 }, base)).toBe('pan-down');
+    // Where the browser has no one-way values, an edge keeps the swipe.
+    expect(touchActionFor({ x: 0, y: 0, w: 800, h: 600 }, base, false)).toBe('none');
+    expect(touchActionFor({ x: -100, y: -10, w: 1800, h: 2020 }, base, false)).toBe('pan-y');
+  });
+
+  const touchPage = (oneWay: boolean) => {
+    const p = page(1600, 2000);
+    Object.defineProperty(p.win, 'CSS', {
+      value: { supports: (prop: string, v: string) => oneWay && prop === 'touch-action' && !!v },
+      configurable: true,
+    });
+    const ptr = (type: string, x: number, y: number, target: Element = p.svg, id = 7) =>
+      target.dispatchEvent(
+        new p.win.PointerEvent(type, {
+          clientX: x,
+          clientY: y,
+          bubbles: true,
+          cancelable: true,
+          pointerId: id,
+          isPrimary: id === 7,
+          pointerType: 'touch',
+        }),
+      );
+    return { ...p, ptr };
+  };
+  const ta = (svg: SVGSVGElement) => svg.style.getPropertyValue('touch-action');
+
+  it('at the fit the SVG takes pan-y and a one-finger drag never moves it up or down', () => {
+    const { main, svg, ptr } = touchPage(true);
+    z = zoomable(main);
+    z.fit();
+    expect(ta(svg)).toBe('pan-y');
+    const fit = vb(svg);
+    // The moves the page sees before the browser takes the swipe.
+    ptr('pointerdown', 400, 400);
+    ptr('pointermove', 400, 300);
+    ptr('pointermove', 400, 200);
+    ptr('pointercancel', 400, 200);
+    near(vb(svg).y, fit.y);
+  });
+
+  it("zoomed in at the top: a swipe down is the page's, a swipe up moves the drawing", () => {
+    const { main, svg, ptr } = touchPage(true);
+    z = zoomable(main);
+    // Opens as wide as the frame, from the top: past the fit, at the edge.
+    expect(ta(svg)).toBe('pan-up');
+    const top = vb(svg);
+    ptr('pointerdown', 400, 200);
+    ptr('pointermove', 400, 300);
+    near(vb(svg).y, top.y);
+    ptr('pointerup', 400, 300);
+    ptr('pointerdown', 400, 400);
+    ptr('pointermove', 400, 300);
+    ptr('pointermove', 400, 200);
+    ptr('pointerup', 400, 200);
+    near(vb(svg).y, top.y + 200 / 0.5);
+    // Between the edges the drawing takes every swipe.
+    expect(ta(svg)).toBe('none');
+  });
+
+  it('without one-way values an edge keeps the swipe (none)', () => {
+    const { main, svg } = touchPage(false);
+    z = zoomable(main);
+    expect(ta(svg)).toBe('none');
+    z.fit();
+    expect(ta(svg)).toBe('pan-y');
+  });
+
+  it('a capture moved to the SVG does not end the drag; hidden, nothing is left set', () => {
+    const { main, svg, ptr, win } = touchPage(true);
+    z = zoomable(main);
+    z.zoomIn();
+    const text = svg.querySelector('text')!;
+    const at = vb(svg);
+    ptr('pointerdown', 400, 400, text);
+    ptr('pointermove', 400, 380, text);
+    // The element the touch began on loses its capture to the SVG.
+    text.dispatchEvent(
+      new win.PointerEvent('lostpointercapture', {
+        bubbles: true,
+        pointerId: 7,
+        pointerType: 'touch',
+      }),
+    );
+    ptr('pointermove', 400, 300);
+    ptr('pointerup', 400, 300);
+    expect(vb(svg).y).toBeGreaterThan(at.y + 50);
+    z.destroy();
+    z = undefined;
+    expect(ta(svg)).toBe('');
+  });
+
+  it('the level shows at once and is said once the zoom settles', async () => {
+    const { doc, main } = page(1600, 2000);
+    z = zoomable(main);
+    const out = doc.querySelector('.diagram-zoom output')!;
+    const said = doc.querySelector('.diagram-zoom [role="status"]')!;
+    expect(out.hasAttribute('aria-live')).toBe(false);
+    expect(said.getAttribute('aria-live')).toBe('polite');
+    await new Promise((r) => setTimeout(r, READOUT_SETTLE_MS + 50));
+    const first = said.textContent;
+    for (let i = 0; i < 4; i++) z.zoomIn();
+    expect(out.textContent).toBe(`${Math.round((800 / vb(main.querySelector('svg')!).w) * 100)}%`);
+    expect(said.textContent).toBe(first);
+    await new Promise((r) => setTimeout(r, READOUT_SETTLE_MS + 50));
+    expect(said.textContent).toBe(`Zoom ${out.textContent}`);
   });
 });
 

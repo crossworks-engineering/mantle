@@ -58,6 +58,19 @@ export function el(tag: string, attrs: Attrs = {}, children: string | string[] =
   return inner ? `<${tag}${attrText(attrs)}>${inner}</${tag}>` : `<${tag}${attrText(attrs)}/>`;
 }
 
+function textAttrs(f: FontSpec, x: number, y: number, extra: Attrs): Attrs {
+  return {
+    x,
+    y,
+    'font-family': f.family,
+    'font-size': f.size,
+    'font-weight': f.weight === 400 ? undefined : f.weight,
+    'letter-spacing': f.tracking ? f.tracking : undefined,
+    fill: '#2d3142',
+    ...extra,
+  };
+}
+
 export function textEl(
   role: TextRole | FontSpec,
   x: number,
@@ -66,19 +79,35 @@ export function textEl(
   extra: Attrs = {},
 ): string {
   const f = typeof role === 'string' ? ROLES[role] : role;
+  return el('text', textAttrs(f, x, y, extra), esc(f.upper ? content.toUpperCase() : content));
+}
+
+/**
+ * `textEl` whose closing words are a mark of their own: when `content`
+ * ends with `word`, the word is drawn as `<tspan data-part="mark-word">`,
+ * bold and with `wordAttrs` (its own colour), after the label in the
+ * text's own style. Without a word, exactly `textEl`. The width is the
+ * label's and the word's together, as measured (the text roles are
+ * monospaced: bold keeps the advance).
+ */
+export function markedTextEl(
+  role: TextRole | FontSpec,
+  x: number,
+  y: number,
+  content: string,
+  word: string | undefined,
+  extra: Attrs = {},
+  wordAttrs: Attrs = {},
+): string {
+  if (!word || !content.endsWith(word)) return textEl(role, x, y, content, extra);
+  const f = typeof role === 'string' ? ROLES[role] : role;
+  const up = (s: string) => (f.upper ? s.toUpperCase() : s);
+  const head = content.slice(0, content.length - word.length);
   return el(
     'text',
-    {
-      x,
-      y,
-      'font-family': f.family,
-      'font-size': f.size,
-      'font-weight': f.weight === 400 ? undefined : f.weight,
-      'letter-spacing': f.tracking ? f.tracking : undefined,
-      fill: '#2d3142',
-      ...extra,
-    },
-    esc(f.upper ? content.toUpperCase() : content),
+    textAttrs(f, x, y, extra),
+    esc(up(head)) +
+      el('tspan', { 'data-part': 'mark-word', 'font-weight': 700, ...wordAttrs }, esc(up(word))),
   );
 }
 

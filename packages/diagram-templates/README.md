@@ -260,7 +260,11 @@ the other pages draw.
   line, branch, deadleg, valve or instrument, guess, checked by image, image
   says no or from image, page link), each at least 4.5:1 on the paper and on
   white (computed in `src/colour-set.test.ts`), each also told apart in grey
-  by weight, dash or words (`ROLE_STROKES`). Style 2 also gives a connector
+  by weight, dash or words (`ROLE_STROKES`). Themed for a mini app, each
+  role takes one of the theme's inks (`THEME_ROLE_COLOURS`: share-ui's
+  `-ink` and `code-` tokens, solved to 4.5:1 on its surfaces), checked at
+  3:1 as a line and 4.5:1 as text on the card in every shipped theme, light
+  and dark (`src/colour-set.test.ts`). Style 2 also gives a connector
   the room of its text and page reference when it is placed, so notes,
   markers, line numbers and valves keep off them (`src/label-room.test.ts`
   on two synthetic sets). The tools stamp `style: 2` on every NEW drawing
@@ -271,9 +275,17 @@ the other pages draw.
   `check` on a connector or a valve, `checks[]` on a line (one per inferred
   join): `{ key, kind, state, guess, question, answer, alt, reason, model,
 checkedAt, crops, overview }`. Each marked element gets
-  `data-check="<kind>:<id>"`, style 2 a small "i" badge in its state's colour
-  (unchecked and unsure: guess; checked; contradicted; corrected each their
-  own), and the render returns the evidence (`checks`, per page in a set).
+  `data-check="<kind>:<id>"`, style 2 a small "i" badge, and the render
+  returns the evidence (`checks`, per page in a set). The trust words
+  (GUESS, CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE) are drawn from the marks
+  in both styles, after a connector's text and a line's note, as their own
+  `<tspan data-part="mark-word">`, bold and in the colour the words say
+  (`wordColour`: a corrected mark that names no alternative says IMAGE: NO
+  and takes the contradicted colour); the label before them keeps its own
+  style, so letters typed to look like a word never look like one. The
+  badge and the legend take the same colour. A drawing with no mark draws
+  byte for byte as before. In the canvas each item is one tab stop: its
+  badge, else its first element.
   The drawing prints `N GUESSES NOT CHECKED BY IMAGE` under its title,
   counted at render time from the marks (`imageCheckSummary`), never from a
   stored `checks`. In the canvas a click (or Enter) opens each check's
@@ -296,17 +308,21 @@ id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`, one
   frame's height, or its smallest text would draw under 6 px), judged again
   on resize and page switch; `view: { zoom: true | false }` in the data
   forces it. Hidden, wheel, drag and keys do nothing. Shown: Ctrl (or Cmd)
-  + wheel and a trackpad pinch zoom; a plain wheel pans while zoomed in past
-  the fit and scrolls the page at the fit or at the drawing's edge (a
-  canvas inside a page never traps its reader); drag, double click,
-  two-finger pinch and drag, the buttons (zoom out, zoom in, fit page,
-  100%), keys `+` `-` `0` and the arrows once zoomed in past the fit. A page
-  link zooms to its focus and outlines it. A headless render (the harness
-  sets `RENDER_FLAG` on its pages: a look, a poster, an export picture)
-  never shows it. A hand-made canvas opts in with one call:
-  `zoomable(document.querySelector('svg'), { mode: 'on' })`; the
-  canvas_authoring skill and `canvas_library` `zoom` say how
-  (`ZOOMABLE_HOWTO`, `src/zoom-howto.ts`).
+  - wheel and a trackpad pinch zoom; a plain wheel pans while zoomed in past
+    the fit and scrolls the page at the fit or at the drawing's edge (a
+    canvas inside a page never traps its reader); drag, double click,
+    two-finger pinch and drag; on a touch screen a one-finger swipe is the
+    page's at the fit (`touch-action: pan-y`) and, where the browser has the
+    one-way values, toward the page at the drawing's top or bottom edge
+    (`pan-up`, `pan-down`; `touchActionFor`), so a Page embed on a phone still
+    scrolls; the buttons (zoom out, zoom in, fit page,
+    100%), keys `+` `-` `0` and the arrows once zoomed in past the fit. A page
+    link zooms to its focus and outlines it. A headless render (the harness
+    sets `RENDER_FLAG` on its pages: a look, a poster, an export picture)
+    never shows it. A hand-made canvas opts in with one call:
+    `zoomable(document.querySelector('svg'), { mode: 'on' })`; the
+    canvas_authoring skill and `canvas_library` `zoom` say how
+    (`ZOOMABLE_HOWTO`, `src/zoom-howto.ts`).
 
 ### Site profile
 

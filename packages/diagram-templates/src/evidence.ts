@@ -176,19 +176,23 @@ export function mountEvidence(
   };
 
   /** Each checked item: one button that opens its evidence (one tab
-   *  stop). Its badge when it has one (style 2), else the element. A
-   *  connector that is also a page link stays a link; its badge opens the
-   *  evidence. The other parts still open it on a click. */
+   *  stop). Its badge when it has one (style 2), else the first of its
+   *  elements (a line's path and its note are one item). A connector that
+   *  is also a page link stays a link; its badge opens the evidence. The
+   *  other parts still open it on a click. */
   const label = () => {
     const badged = new Set<string>();
     for (const el of target.querySelectorAll('[data-part="check-badge"][data-check]'))
       badged.add(el.getAttribute('data-check') ?? '');
+    const stopped = new Set<string>();
     for (const el of target.querySelectorAll('[data-check]')) {
       if (el.hasAttribute('data-link')) continue;
       const key = el.getAttribute('data-check') ?? '';
       const ev = items.get(key);
       if (!ev) continue;
       if (badged.has(key) && el.getAttribute('data-part') !== 'check-badge') continue;
+      if (stopped.has(key)) continue;
+      stopped.add(key);
       el.setAttribute('tabindex', '0');
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', `Image check of ${ev.what}: ${summary(ev.checks)}`);

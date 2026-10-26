@@ -63,6 +63,126 @@ describe('the colour set', () => {
   });
 });
 
+/** A theme token's colour: `var()` with its fallback, `color-mix(in
+ *  oklab, a p%, b)` and `#rrggbb`, as a browser computes them (CSS Color 4,
+ *  Oklab with the gamut clipped). Enough for the role tokens, no more. */
+type Rgb = [number, number, number];
+const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const gam = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+const rgbOf = (hex: string): Rgb =>
+  [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Rgb;
+const hexOf = (c: Rgb) =>
+  `#${c
+    .map((v) =>
+      Math.round(Math.min(1, Math.max(0, v)) * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
+const toOklab = (c: Rgb): Rgb => {
+  const [r, g, b] = c.map(lin) as Rgb;
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+};
+const fromOklab = ([L, a, b]: Rgb): Rgb => {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ].map((v) => gam(Math.min(1, Math.max(0, v)))) as Rgb;
+};
+function resolveToken(expr: string, vars: Record<string, string>): string {
+  const e = expr.trim();
+  const v = /^var\(--([\w-]+)(?:,\s*([\s\S]*))?\)$/.exec(e);
+  if (v) {
+    const own = vars[v[1]!];
+    if (own !== undefined) return resolveToken(own, vars);
+    if (v[2] === undefined) throw new Error(`--${v[1]} is not set`);
+    return resolveToken(v[2], vars);
+  }
+  const mix = /^color-mix\(in oklab,\s*([\s\S]*)\)$/.exec(e);
+  if (mix) {
+    const body = mix[1]!;
+    let depth = 0;
+    let i = 0;
+    for (; i < body.length; i++) {
+      if (body[i] === '(') depth++;
+      else if (body[i] === ')') depth--;
+      else if (body[i] === ',' && depth === 0) break;
+    }
+    const first = /^([\s\S]*)\s+([\d.]+)%$/.exec(body.slice(0, i).trim())!;
+    const p = Number(first[2]) / 100;
+    const a = toOklab(rgbOf(resolveToken(first[1]!, vars)));
+    const b = toOklab(rgbOf(resolveToken(body.slice(i + 1), vars)));
+    return hexOf(fromOklab([0, 1, 2].map((k) => a[k]! * p + b[k]! * (1 - p)) as Rgb));
+  }
+  if (/^#[0-9a-f]{6}$/i.test(e)) return e;
+  throw new Error(`not a colour this test reads: ${e}`);
+}
+
+/** Every theme the apps ship (share-ui themes.css), light and dark, as
+ *  the tokens a drawing inside it sees (a dark block over its light one). */
+function shippedThemes(): { name: string; vars: Record<string, string> }[] {
+  const css = readFileSync(path.join(ROOT, '../share-ui/styles/themes.css'), 'utf8');
+  const blocks = [...css.matchAll(/^([^\n{@]+)\{([^}]*)\}/gm)].map((m) => ({
+    sel: m[1]!.trim(),
+    vars: Object.fromEntries(
+      [...m[2]!.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((x) => [x[1]!, x[2]!.trim()]),
+    ),
+  }));
+  const light = blocks.find((b) => b.sel.startsWith(':root'))!.vars;
+  const dark = blocks.find((b) => b.sel === '.dark')!.vars;
+  const out: { name: string; vars: Record<string, string> }[] = [];
+  const lightOf = new Map<string, Record<string, string>>();
+  for (const b of blocks) {
+    if (!b.vars.card) continue;
+    const theme = /data-color-theme="([^"]+)"/.exec(b.sel)?.[1] ?? 'default';
+    const isDark = b.sel.startsWith('.dark');
+    if (!isDark) lightOf.set(theme, b.vars);
+    const vars = isDark
+      ? { ...light, ...(lightOf.get(theme) ?? {}), ...dark, ...b.vars }
+      : { ...light, ...b.vars };
+    out.push({ name: `${theme} ${isDark ? 'dark' : 'light'}`, vars });
+  }
+  return out;
+}
+
+describe('the themed roles keep their contrast in every shipped theme', () => {
+  const themes = shippedThemes();
+  it('reads the themes, light and dark', () => {
+    expect(themes.length).toBeGreaterThan(20);
+    expect(themes.some((t) => t.name === 'default light')).toBe(true);
+    expect(themes.some((t) => t.name === 'default dark')).toBe(true);
+  });
+  it.each(themes.map((t) => [t.name, t.vars] as const))(
+    '%s: each role clears 3:1 as a line and 4.5:1 as text on the card',
+    (_name, vars) => {
+      const card = resolveToken('var(--card)', vars);
+      const low: string[] = [];
+      for (const [role, hex] of Object.entries(ROLE_COLOURS)) {
+        const token = THEME_ROLE_COLOURS[hex]!;
+        // themeCss: a line takes the token, text a quarter of the foreground.
+        const line = resolveToken(token, vars);
+        const text = resolveToken(`color-mix(in oklab, ${token} 75%, var(--foreground))`, vars);
+        if (contrastRatio(line, card) < 3)
+          low.push(`${role} line ${contrastRatio(line, card).toFixed(2)}`);
+        if (contrastRatio(text, card) < 4.5)
+          low.push(`${role} text ${contrastRatio(text, card).toFixed(2)}`);
+      }
+      expect(low).toEqual([]);
+    },
+  );
+});
+
 describe('style 2 draws in the colour set', () => {
   // A made-up loop: a main line with a control valve, a branch, a bubble.
   const data = {
@@ -118,7 +238,7 @@ describe('style 2 draws in the colour set', () => {
   it('themes the roles for a mini app, and only when used', () => {
     const themed = svgOf(data, { theme: 'tokens' }).svg;
     expect(themed).toContain(
-      `[stroke="${ROLE_COLOURS.main}"]{stroke:var(--diagram-main, var(--destructive))}`,
+      `[stroke="${ROLE_COLOURS.main}"]{stroke:var(--diagram-main, var(--destructive-ink, var(--destructive)))}`,
     );
     const classic = svgOf(load('test/pid-all-parts.json'), { theme: 'tokens' }).svg;
     expect(classic).not.toContain(ROLE_COLOURS.main);

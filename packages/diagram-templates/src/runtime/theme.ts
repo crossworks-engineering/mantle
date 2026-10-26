@@ -84,33 +84,38 @@ export const THEME_TEXT_COLOURS: Readonly<Record<string, string>> = Object.fromE
   ]),
 );
 
-/** A role's token: its own variable (an app may set it), else a mix of the
- *  theme's tokens in the role's hue. */
-const role = (name: string, fallback: string) => `var(--diagram-${name}, ${fallback})`;
+/** A role's token: its own variable (an app may set it), else the theme's
+ *  ink of the role's hue, else (a page without the inks) the plain token. */
+const role = (name: string, ink: string, plain: string) =>
+  `var(--diagram-${name}, ${ink.startsWith('color-mix') ? ink : `var(--${ink}, ${plain})`})`;
+/** Two inks mixed half and half (a role between two hues). */
+const between = (a: string, b: string) => `color-mix(in oklab, var(--${a}) 50%, var(--${b}))`;
 
 /** The colour set's roles (style 2) and their tokens: one each, no two the
- *  same (the five chart tokens and destructive, then mixes of them for the
- *  roles between: contradicted red-violet, corrected indigo, link teal),
- *  so a themed drawing tells the roles apart as the house colours do.
- *  Drawn only for a style 2 drawing (`themeSvg`), so a classic drawing, or
- *  a profile colour that happens to equal a role's, themes as before.
- *  Text takes a quarter of the foreground, as the series do. */
+ *  same. Each is one of the theme's inks (share-ui themes.css: every
+ *  `-ink` and `code-` token is solved to 4.5:1 on every neutral surface,
+ *  the card among them, in light and in dark), or half and half of two
+ *  (contradicted red-violet, link teal), so a role keeps the contrast a
+ *  line (3:1) and its text (4.5:1) need in every theme
+ *  (colour-set.test.ts reads them all). The chart ramp is tuned for fills
+ *  and falls short on some themes' cards. Drawn only for a style 2
+ *  drawing (`themeSvg`), so a classic drawing, or a profile colour that
+ *  happens to equal a role's, themes as before. Text takes a quarter of
+ *  the foreground, as the series do. */
 export const THEME_ROLE_COLOURS: Readonly<Record<string, string>> = {
-  [ROLE_COLOURS.main]: role('main', 'var(--destructive)'),
-  [ROLE_COLOURS.branch]: role('branch', 'var(--chart-2)'),
-  [ROLE_COLOURS.deadleg]: role('deadleg', 'var(--chart-3)'),
-  [ROLE_COLOURS.instrument]: role('instrument', 'var(--chart-5)'),
-  [ROLE_COLOURS.guess]: role('guess', 'var(--chart-4)'),
-  [ROLE_COLOURS.checked]: role('checked', 'var(--chart-1)'),
+  [ROLE_COLOURS.main]: role('main', 'destructive-ink', 'var(--destructive)'),
+  [ROLE_COLOURS.branch]: role('branch', 'info-ink', 'var(--chart-2)'),
+  [ROLE_COLOURS.deadleg]: role('deadleg', 'code-number', 'var(--chart-3)'),
+  [ROLE_COLOURS.instrument]: role('instrument', 'code-variable', 'var(--chart-5)'),
+  [ROLE_COLOURS.guess]: role('guess', 'warning-ink', 'var(--chart-4)'),
+  [ROLE_COLOURS.checked]: role('checked', 'success-ink', 'var(--chart-1)'),
   [ROLE_COLOURS.contradicted]: role(
     'contradicted',
-    'color-mix(in oklab, var(--destructive) 55%, var(--chart-5))',
+    between('destructive-ink', 'code-variable'),
+    'var(--destructive)',
   ),
-  [ROLE_COLOURS.corrected]: role(
-    'corrected',
-    'color-mix(in oklab, var(--chart-5) 50%, var(--chart-2))',
-  ),
-  [ROLE_COLOURS.link]: role('link', 'color-mix(in oklab, var(--chart-2) 50%, var(--chart-1))'),
+  [ROLE_COLOURS.corrected]: role('corrected', 'primary-ink', 'var(--primary)'),
+  [ROLE_COLOURS.link]: role('link', between('info-ink', 'success-ink'), 'var(--chart-2)'),
 };
 
 /** The attribute that marks a themed drawing; the stylesheet is scoped to it,

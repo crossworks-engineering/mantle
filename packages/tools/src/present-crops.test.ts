@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildCanvas, CROP_LIMITS, readCanvasAssets } from '@mantle/diagram-templates';
 import { cropSealHolds, honestCanvasSource } from '@mantle/content/drawing-seal';
 import { CANVAS_MAX_BYTES } from '@mantle/content-core/canvas';
-import { cropRoom, embedCheckCrops, type CropRead } from './present-crops';
+import { cropRoom, embedCheckCrops, embedSealedCheckCrops, type CropRead } from './present-crops';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 // A 1x1 PNG.
@@ -125,6 +125,17 @@ describe('embedCheckCrops', () => {
     const r = await embedCheckCrops({ title: 'None', lines: [] }, read, { room: ROOM });
     expect(r).toEqual({ assets: null, notes: [] });
     expect(reads).toEqual([]);
+  });
+});
+
+describe('embedSealedCheckCrops: the honest pass first', () => {
+  it('marks no seal vouches for have no crop read, so none takes the room', async () => {
+    reads.length = 0;
+    const r = await embedSealedCheckCrops(drawing([id(1), id(2), id(3), id(4)]), read, {
+      room: ROOM,
+    });
+    expect(reads).toEqual([]);
+    expect(r).toEqual({ assets: null, notes: [] });
   });
 });
 
