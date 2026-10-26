@@ -460,6 +460,9 @@
     "defaultMode": "light"
   },
   "PUT /api/profile/fonts": {},
+  "PUT /api/profile/home-desk": {
+    "homeDesk": { "v": 1, "items": [], "counts": {}, "icons": true, "clock": "digital" }
+  },
   "PUT /api/profile/logo": null,
   "DELETE /api/profile/logo": null,
   "PUT /api/profile/nav-favorites": {

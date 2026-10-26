@@ -521,330 +521,333 @@ w519 audits=["api.write PUT /api/profile/default-mode 44444444-4444-4444-8444-44
 w520 audits=["api.write PUT /api/profile/fonts 33333333-3333-4333-8333-333333333333"] home=-
 w521 audits=["api.write PUT /api/profile/fonts 55555555-5555-4555-8555-555555555555"] home=-
 w522 audits=["api.write PUT /api/profile/fonts 44444444-4444-4444-8444-444444444444"] home=-
-w523 audits=["api.write PUT /api/profile/logo 33333333-3333-4333-8333-333333333333"] home=-
-w524 audits=["api.write PUT /api/profile/logo 55555555-5555-4555-8555-555555555555"] home=-
-w525 audits=["api.write PUT /api/profile/logo 44444444-4444-4444-8444-444444444444"] home=-
-w526 audits=["api.write DELETE /api/profile/logo 33333333-3333-4333-8333-333333333333"] home=-
-w527 audits=["api.write DELETE /api/profile/logo 55555555-5555-4555-8555-555555555555"] home=-
-w528 audits=["api.write DELETE /api/profile/logo 44444444-4444-4444-8444-444444444444"] home=-
-w529 audits=["api.write PUT /api/profile/nav-favorites 33333333-3333-4333-8333-333333333333"] home=-
-w530 audits=["api.write PUT /api/profile/nav-favorites 55555555-5555-4555-8555-555555555555"] home=-
-w531 audits=["api.write PUT /api/profile/nav-favorites 44444444-4444-4444-8444-444444444444"] home=-
-w532 audits=["api.write PUT /api/profile/neat-background 33333333-3333-4333-8333-333333333333"] home=-
-w533 audits=["api.write PUT /api/profile/neat-background 55555555-5555-4555-8555-555555555555"] home=-
-w534 audits=["api.write PUT /api/profile/neat-background 44444444-4444-4444-8444-444444444444"] home=-
-w535 audits=["api.write PUT /api/profile/photo 33333333-3333-4333-8333-333333333333"] home=-
-w536 audits=["api.write PUT /api/profile/photo 55555555-5555-4555-8555-555555555555"] home=-
-w537 audits=["api.write PUT /api/profile/photo 44444444-4444-4444-8444-444444444444"] home=-
-w538 audits=["api.write DELETE /api/profile/photo 33333333-3333-4333-8333-333333333333"] home=-
-w539 audits=["api.write DELETE /api/profile/photo 55555555-5555-4555-8555-555555555555"] home=-
-w540 audits=["api.write DELETE /api/profile/photo 44444444-4444-4444-8444-444444444444"] home=-
-w541 audits=["api.write PUT /api/profile/reminder-channel 33333333-3333-4333-8333-333333333333"] home=-
-w542 audits=["api.write PUT /api/profile/reminder-channel 55555555-5555-4555-8555-555555555555"] home=-
-w543 audits=["api.write PUT /api/profile/reminder-channel 44444444-4444-4444-8444-444444444444"] home=-
-w544 audits=["api.write PUT /api/profile/share-neat 33333333-3333-4333-8333-333333333333"] home=-
-w545 audits=["api.write PUT /api/profile/share-neat 55555555-5555-4555-8555-555555555555"] home=-
-w546 audits=["api.write PUT /api/profile/share-neat 44444444-4444-4444-8444-444444444444"] home=-
-w547 audits=["api.write POST /api/push/connect 33333333-3333-4333-8333-333333333333"] home=-
-w548 audits=["api.write POST /api/push/connect 55555555-5555-4555-8555-555555555555"] home=-
-w549 audits=["api.write POST /api/push/connect 44444444-4444-4444-8444-444444444444"] home=-
-w550 audits=["api.write PUT /api/push/preferences 33333333-3333-4333-8333-333333333333"] home=-
-w551 audits=["api.write PUT /api/push/preferences 55555555-5555-4555-8555-555555555555"] home=-
-w552 audits=["api.write PUT /api/push/preferences 44444444-4444-4444-8444-444444444444"] home=-
-w553 audits=["api.write POST /api/push/reset 33333333-3333-4333-8333-333333333333"] home=-
-w554 audits=["api.write POST /api/push/reset 55555555-5555-4555-8555-555555555555"] home=-
-w555 audits=["api.write POST /api/push/reset 44444444-4444-4444-8444-444444444444"] home=-
-w556 audits=["api.write POST /api/push/subscriptions 33333333-3333-4333-8333-333333333333"] home=-
-w557 audits=["api.write POST /api/push/subscriptions 55555555-5555-4555-8555-555555555555"] home=-
-w558 audits=["api.write POST /api/push/subscriptions 44444444-4444-4444-8444-444444444444"] home=-
-w559 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w560 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w561 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w562 audits=["api.write POST /api/recall/maps 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w563 audits=["api.write POST /api/recall/maps 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w564 audits=["api.write POST /api/recall/maps 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w565 audits=["api.write POST /api/recall/maps 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w566 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w567 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w568 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w569 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w570 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w571 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w572 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w573 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w574 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w575 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w576 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w577 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w578 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w579 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w580 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w581 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w582 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w583 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w584 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w585 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w586 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w587 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w588 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w589 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w590 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w591 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w592 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w593 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w594 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w595 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w596 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w597 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w598 audits=["api.write POST /api/runners/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w599 audits=["api.write POST /api/runners/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w600 audits=["api.write POST /api/runs/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w601 audits=["api.write POST /api/runs/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w602 audits=["api.write DELETE /api/sandboxes/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w603 audits=["api.write DELETE /api/sandboxes/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w604 audits=["api.write POST /api/sandboxes/11111111-1111-4111-8111-111111111111/stop 33333333-3333-4333-8333-333333333333"] home=-
-w605 audits=["api.write POST /api/sandboxes/11111111-1111-4111-8111-111111111111/stop 55555555-5555-4555-8555-555555555555"] home=-
-w606 audits=["api.write POST /api/secrets 33333333-3333-4333-8333-333333333333"] home=-
-w607 audits=["api.write POST /api/secrets 55555555-5555-4555-8555-555555555555"] home=-
-w608 audits=["api.write PATCH /api/secrets/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w609 audits=["api.write PATCH /api/secrets/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w610 audits=["api.write DELETE /api/secrets/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w611 audits=["api.write DELETE /api/secrets/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w612 audits=["api.write POST /api/secrets/11111111-1111-4111-8111-111111111111/reveal 33333333-3333-4333-8333-333333333333"] home=-
-w613 audits=["api.write POST /api/secrets/11111111-1111-4111-8111-111111111111/reveal 55555555-5555-4555-8555-555555555555"] home=-
-w614 audits=["api.write POST /api/settings/worker-groups 33333333-3333-4333-8333-333333333333"] home=-
-w615 audits=["api.write POST /api/settings/worker-groups 55555555-5555-4555-8555-555555555555"] home=-
-w616 audits=["api.write PATCH /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w617 audits=["api.write PATCH /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w618 audits=["api.write DELETE /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w619 audits=["api.write DELETE /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w620 audits=["api.write POST /api/shares 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w621 audits=["api.write POST /api/shares 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w622 audits=["api.write POST /api/shares 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w623 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w624 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w625 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w626 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w627 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w628 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w629 audits=["api.write POST /api/shares/contacts 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w630 audits=["api.write POST /api/shares/contacts 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w631 audits=["api.write POST /api/shares/contacts 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w632 audits=["api.write POST /api/skills 33333333-3333-4333-8333-333333333333"] home=-
-w633 audits=["api.write POST /api/skills 55555555-5555-4555-8555-555555555555"] home=-
-w634 audits=["api.write PATCH /api/skills/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w635 audits=["api.write PATCH /api/skills/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w636 audits=["api.write DELETE /api/skills/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w637 audits=["api.write DELETE /api/skills/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w638 audits=["api.write POST /api/studio/prose 33333333-3333-4333-8333-333333333333"] home=-
-w639 audits=["api.write POST /api/studio/prose 55555555-5555-4555-8555-555555555555"] home=-
-w640 audits=["api.write POST /api/studio/reset 33333333-3333-4333-8333-333333333333"] home=-
-w641 audits=["api.write POST /api/studio/reset 55555555-5555-4555-8555-555555555555"] home=-
-w642 audits=["api.write POST /api/studio/sandbox 33333333-3333-4333-8333-333333333333"] home=-
-w643 audits=["api.write POST /api/studio/sandbox 55555555-5555-4555-8555-555555555555"] home=-
-w644 audits=["api.write POST /api/tables 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w645 audits=["api.write POST /api/tables 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w646 audits=["api.write POST /api/tables 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w647 audits=["api.write POST /api/tables 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w648 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w649 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w650 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w651 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w652 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w653 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w654 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w655 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w656 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w657 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w658 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w659 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w660 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w661 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w662 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w663 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w664 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w665 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w666 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w667 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w668 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w669 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w670 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w671 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w672 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w673 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w674 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w675 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w676 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w677 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w678 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w679 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w680 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w681 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w682 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w683 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w684 audits=["api.write POST /api/tasks 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w685 audits=["api.write POST /api/tasks 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w686 audits=["api.write POST /api/tasks 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w687 audits=["api.write POST /api/tasks 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w688 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w689 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w690 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w691 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w692 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w693 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w694 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w695 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w696 audits=["api.write POST /api/team-admin/invites 33333333-3333-4333-8333-333333333333"] home=-
-w697 audits=["api.write POST /api/team-admin/invites 55555555-5555-4555-8555-555555555555"] home=-
-w698 audits=["api.write DELETE /api/team-admin/invites/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w699 audits=["api.write DELETE /api/team-admin/invites/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w700 audits=["api.write PATCH /api/team-admin/settings 33333333-3333-4333-8333-333333333333"] home=-
-w701 audits=["api.write PATCH /api/team-admin/settings 55555555-5555-4555-8555-555555555555"] home=-
-w702 audits=["api.write PATCH /api/telegram/chats/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w703 audits=["api.write PATCH /api/telegram/chats/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w704 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 33333333-3333-4333-8333-333333333333"] home=-
-w705 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 55555555-5555-4555-8555-555555555555"] home=-
-w706 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 44444444-4444-4444-8444-444444444444"] home=-
-w707 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 33333333-3333-4333-8333-333333333333"] home=-
-w708 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 55555555-5555-4555-8555-555555555555"] home=-
-w709 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 44444444-4444-4444-8444-444444444444"] home=-
-w710 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w711 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w712 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w713 audits=["api.write POST /api/telegram/pair 33333333-3333-4333-8333-333333333333"] home=-
-w714 audits=["api.write POST /api/telegram/pair 55555555-5555-4555-8555-555555555555"] home=-
-w715 audits=["api.write POST /api/telegram/pair 44444444-4444-4444-8444-444444444444"] home=-
-w716 audits=["api.write POST /api/tool-groups 33333333-3333-4333-8333-333333333333"] home=-
-w717 audits=["api.write POST /api/tool-groups 55555555-5555-4555-8555-555555555555"] home=-
-w718 audits=["api.write PATCH /api/tool-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w719 audits=["api.write PATCH /api/tool-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w720 audits=["api.write DELETE /api/tool-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w721 audits=["api.write DELETE /api/tool-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w722 audits=["api.write POST /api/tools 33333333-3333-4333-8333-333333333333"] home=-
-w723 audits=["api.write POST /api/tools 55555555-5555-4555-8555-555555555555"] home=-
-w724 audits=["api.write PATCH /api/tools/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w725 audits=["api.write PATCH /api/tools/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w726 audits=["api.write DELETE /api/tools/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w727 audits=["api.write DELETE /api/tools/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w728 audits=["api.write PUT /api/tools/settings 33333333-3333-4333-8333-333333333333"] home=-
-w729 audits=["api.write PUT /api/tools/settings 55555555-5555-4555-8555-555555555555"] home=-
-w730 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w731 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w732 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w733 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w734 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w735 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w736 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w737 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w738 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w739 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w740 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w741 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w742 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w743 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w744 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w745 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w746 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w747 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w748 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w749 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w750 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w751 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w752 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w753 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w754 audits=["api.write POST /api/updates/check 33333333-3333-4333-8333-333333333333"] home=-
-w755 audits=["api.write POST /api/updates/check 55555555-5555-4555-8555-555555555555"] home=-
-w756 audits=["api.write POST /api/updates/request 33333333-3333-4333-8333-333333333333"] home=-
-w757 audits=["api.write POST /api/updates/request 55555555-5555-4555-8555-555555555555"] home=-
-w758 audits=["api.write POST /api/v1/events 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w759 audits=["api.write POST /api/v1/events 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w760 audits=["api.write POST /api/v1/events 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w761 audits=["api.write POST /api/v1/events 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w762 audits=["api.write POST /api/v1/events 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w763 audits=["api.write POST /api/v1/events 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w764 audits=["api.write POST /api/v1/files 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w765 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w766 audits=["api.write POST /api/v1/files 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w767 audits=["api.write POST /api/v1/files 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w768 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w769 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555 key:00000004"] home={"createWs":null,"privateWs":null}
-w770 audits=["api.write POST /api/v1/files 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w771 audits=["api.write POST /api/v1/journal 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w772 audits=["api.write POST /api/v1/journal 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w773 audits=["api.write POST /api/v1/journal 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w774 audits=["api.write POST /api/v1/journal 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w775 audits=["api.write POST /api/v1/notes 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w776 audits=["api.write POST /api/v1/notes 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w777 audits=["api.write POST /api/v1/notes 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w778 audits=["api.write POST /api/v1/notes 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w779 audits=["api.write POST /api/v1/notes 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w780 audits=["api.write POST /api/v1/notes 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w781 audits=["api.write POST /api/v1/pages 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w782 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w783 audits=["api.write POST /api/v1/pages 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w784 audits=["api.write POST /api/v1/pages 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w785 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w786 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555 key:00000004"] home={"createWs":null,"privateWs":null}
-w787 audits=["api.write POST /api/v1/pages 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w788 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w789 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w790 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w791 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home=-
-w792 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w793 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w794 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w795 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w796 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w797 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w798 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w799 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w800 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w801 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w802 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w803 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w804 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w805 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w806 audits=["api.write POST /api/v1/tasks 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w807 audits=["api.write POST /api/v1/tasks 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w808 audits=["api.write POST /api/v1/tasks 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w809 audits=["api.write POST /api/v1/tasks 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w810 audits=["api.write POST /api/v1/tasks 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w811 audits=["api.write POST /api/v1/tasks 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w812 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
-w813 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
-w814 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
-w815 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
-w816 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
-w817 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
-w818 audits=["api.write POST /api/workspaces 33333333-3333-4333-8333-333333333333"] home=-
-w819 audits=["api.write POST /api/workspaces 55555555-5555-4555-8555-555555555555"] home=-
-w820 audits=["api.write POST /api/workspaces 44444444-4444-4444-8444-444444444444"] home=-
-w821 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w822 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w823 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w824 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 33333333-3333-4333-8333-333333333333"] home=-
-w825 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 55555555-5555-4555-8555-555555555555"] home=-
-w826 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 44444444-4444-4444-8444-444444444444"] home=-
-w827 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 33333333-3333-4333-8333-333333333333"] home=-
-w828 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 55555555-5555-4555-8555-555555555555"] home=-
-w829 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 44444444-4444-4444-8444-444444444444"] home=-
-w830 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w831 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w832 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w833 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w834 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w835 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w836 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 33333333-3333-4333-8333-333333333333"] home=-
-w837 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 55555555-5555-4555-8555-555555555555"] home=-
-w838 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 44444444-4444-4444-8444-444444444444"] home=-
-w839 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w840 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w841 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
-w842 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
-w843 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
-w844 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w523 audits=["api.write PUT /api/profile/home-desk 33333333-3333-4333-8333-333333333333"] home=-
+w524 audits=["api.write PUT /api/profile/home-desk 55555555-5555-4555-8555-555555555555"] home=-
+w525 audits=["api.write PUT /api/profile/home-desk 44444444-4444-4444-8444-444444444444"] home=-
+w526 audits=["api.write PUT /api/profile/logo 33333333-3333-4333-8333-333333333333"] home=-
+w527 audits=["api.write PUT /api/profile/logo 55555555-5555-4555-8555-555555555555"] home=-
+w528 audits=["api.write PUT /api/profile/logo 44444444-4444-4444-8444-444444444444"] home=-
+w529 audits=["api.write DELETE /api/profile/logo 33333333-3333-4333-8333-333333333333"] home=-
+w530 audits=["api.write DELETE /api/profile/logo 55555555-5555-4555-8555-555555555555"] home=-
+w531 audits=["api.write DELETE /api/profile/logo 44444444-4444-4444-8444-444444444444"] home=-
+w532 audits=["api.write PUT /api/profile/nav-favorites 33333333-3333-4333-8333-333333333333"] home=-
+w533 audits=["api.write PUT /api/profile/nav-favorites 55555555-5555-4555-8555-555555555555"] home=-
+w534 audits=["api.write PUT /api/profile/nav-favorites 44444444-4444-4444-8444-444444444444"] home=-
+w535 audits=["api.write PUT /api/profile/neat-background 33333333-3333-4333-8333-333333333333"] home=-
+w536 audits=["api.write PUT /api/profile/neat-background 55555555-5555-4555-8555-555555555555"] home=-
+w537 audits=["api.write PUT /api/profile/neat-background 44444444-4444-4444-8444-444444444444"] home=-
+w538 audits=["api.write PUT /api/profile/photo 33333333-3333-4333-8333-333333333333"] home=-
+w539 audits=["api.write PUT /api/profile/photo 55555555-5555-4555-8555-555555555555"] home=-
+w540 audits=["api.write PUT /api/profile/photo 44444444-4444-4444-8444-444444444444"] home=-
+w541 audits=["api.write DELETE /api/profile/photo 33333333-3333-4333-8333-333333333333"] home=-
+w542 audits=["api.write DELETE /api/profile/photo 55555555-5555-4555-8555-555555555555"] home=-
+w543 audits=["api.write DELETE /api/profile/photo 44444444-4444-4444-8444-444444444444"] home=-
+w544 audits=["api.write PUT /api/profile/reminder-channel 33333333-3333-4333-8333-333333333333"] home=-
+w545 audits=["api.write PUT /api/profile/reminder-channel 55555555-5555-4555-8555-555555555555"] home=-
+w546 audits=["api.write PUT /api/profile/reminder-channel 44444444-4444-4444-8444-444444444444"] home=-
+w547 audits=["api.write PUT /api/profile/share-neat 33333333-3333-4333-8333-333333333333"] home=-
+w548 audits=["api.write PUT /api/profile/share-neat 55555555-5555-4555-8555-555555555555"] home=-
+w549 audits=["api.write PUT /api/profile/share-neat 44444444-4444-4444-8444-444444444444"] home=-
+w550 audits=["api.write POST /api/push/connect 33333333-3333-4333-8333-333333333333"] home=-
+w551 audits=["api.write POST /api/push/connect 55555555-5555-4555-8555-555555555555"] home=-
+w552 audits=["api.write POST /api/push/connect 44444444-4444-4444-8444-444444444444"] home=-
+w553 audits=["api.write PUT /api/push/preferences 33333333-3333-4333-8333-333333333333"] home=-
+w554 audits=["api.write PUT /api/push/preferences 55555555-5555-4555-8555-555555555555"] home=-
+w555 audits=["api.write PUT /api/push/preferences 44444444-4444-4444-8444-444444444444"] home=-
+w556 audits=["api.write POST /api/push/reset 33333333-3333-4333-8333-333333333333"] home=-
+w557 audits=["api.write POST /api/push/reset 55555555-5555-4555-8555-555555555555"] home=-
+w558 audits=["api.write POST /api/push/reset 44444444-4444-4444-8444-444444444444"] home=-
+w559 audits=["api.write POST /api/push/subscriptions 33333333-3333-4333-8333-333333333333"] home=-
+w560 audits=["api.write POST /api/push/subscriptions 55555555-5555-4555-8555-555555555555"] home=-
+w561 audits=["api.write POST /api/push/subscriptions 44444444-4444-4444-8444-444444444444"] home=-
+w562 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w563 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w564 audits=["api.write DELETE /api/push/subscriptions/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w565 audits=["api.write POST /api/recall/maps 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w566 audits=["api.write POST /api/recall/maps 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w567 audits=["api.write POST /api/recall/maps 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w568 audits=["api.write POST /api/recall/maps 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w569 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w570 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w571 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w572 audits=["api.write PATCH /api/recall/maps/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w573 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w574 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w575 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w576 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w577 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w578 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w579 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w580 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w581 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w582 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w583 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w584 audits=["api.write PUT /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w585 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w586 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w587 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w588 audits=["api.write DELETE /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w589 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w590 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w591 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w592 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/11111111-1111-4111-8111-111111111111/prompt 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w593 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w594 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w595 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w596 audits=["api.write POST /api/recall/maps/11111111-1111-4111-8111-111111111111/cards/reorder 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w597 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w598 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w599 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w600 audits=["api.write POST /api/recall/revisions/11111111-1111-4111-8111-111111111111/restore 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w601 audits=["api.write POST /api/runners/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w602 audits=["api.write POST /api/runners/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w603 audits=["api.write POST /api/runs/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w604 audits=["api.write POST /api/runs/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w605 audits=["api.write DELETE /api/sandboxes/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w606 audits=["api.write DELETE /api/sandboxes/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w607 audits=["api.write POST /api/sandboxes/11111111-1111-4111-8111-111111111111/stop 33333333-3333-4333-8333-333333333333"] home=-
+w608 audits=["api.write POST /api/sandboxes/11111111-1111-4111-8111-111111111111/stop 55555555-5555-4555-8555-555555555555"] home=-
+w609 audits=["api.write POST /api/secrets 33333333-3333-4333-8333-333333333333"] home=-
+w610 audits=["api.write POST /api/secrets 55555555-5555-4555-8555-555555555555"] home=-
+w611 audits=["api.write PATCH /api/secrets/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w612 audits=["api.write PATCH /api/secrets/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w613 audits=["api.write DELETE /api/secrets/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w614 audits=["api.write DELETE /api/secrets/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w615 audits=["api.write POST /api/secrets/11111111-1111-4111-8111-111111111111/reveal 33333333-3333-4333-8333-333333333333"] home=-
+w616 audits=["api.write POST /api/secrets/11111111-1111-4111-8111-111111111111/reveal 55555555-5555-4555-8555-555555555555"] home=-
+w617 audits=["api.write POST /api/settings/worker-groups 33333333-3333-4333-8333-333333333333"] home=-
+w618 audits=["api.write POST /api/settings/worker-groups 55555555-5555-4555-8555-555555555555"] home=-
+w619 audits=["api.write PATCH /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w620 audits=["api.write PATCH /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w621 audits=["api.write DELETE /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w622 audits=["api.write DELETE /api/settings/worker-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w623 audits=["api.write POST /api/shares 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w624 audits=["api.write POST /api/shares 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w625 audits=["api.write POST /api/shares 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w626 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w627 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w628 audits=["api.write PATCH /api/shares/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w629 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w630 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w631 audits=["api.write DELETE /api/shares/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w632 audits=["api.write POST /api/shares/contacts 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w633 audits=["api.write POST /api/shares/contacts 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w634 audits=["api.write POST /api/shares/contacts 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w635 audits=["api.write POST /api/skills 33333333-3333-4333-8333-333333333333"] home=-
+w636 audits=["api.write POST /api/skills 55555555-5555-4555-8555-555555555555"] home=-
+w637 audits=["api.write PATCH /api/skills/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w638 audits=["api.write PATCH /api/skills/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w639 audits=["api.write DELETE /api/skills/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w640 audits=["api.write DELETE /api/skills/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w641 audits=["api.write POST /api/studio/prose 33333333-3333-4333-8333-333333333333"] home=-
+w642 audits=["api.write POST /api/studio/prose 55555555-5555-4555-8555-555555555555"] home=-
+w643 audits=["api.write POST /api/studio/reset 33333333-3333-4333-8333-333333333333"] home=-
+w644 audits=["api.write POST /api/studio/reset 55555555-5555-4555-8555-555555555555"] home=-
+w645 audits=["api.write POST /api/studio/sandbox 33333333-3333-4333-8333-333333333333"] home=-
+w646 audits=["api.write POST /api/studio/sandbox 55555555-5555-4555-8555-555555555555"] home=-
+w647 audits=["api.write POST /api/tables 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w648 audits=["api.write POST /api/tables 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w649 audits=["api.write POST /api/tables 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w650 audits=["api.write POST /api/tables 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w651 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w652 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w653 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w654 audits=["api.write PATCH /api/tables/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w655 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w656 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w657 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w658 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w659 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w660 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w661 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w662 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w663 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w664 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w665 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w666 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/discard-draft 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w667 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w668 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w669 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w670 audits=["api.write PUT /api/tables/11111111-1111-4111-8111-111111111111/draft 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w671 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w672 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w673 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w674 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/draft-ops 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w675 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w676 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w677 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w678 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w679 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w680 audits=["api.write DELETE /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w681 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w682 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w683 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/history/11111111-1111-4111-8111-111111111111/restore 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w684 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w685 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w686 audits=["api.write POST /api/tables/11111111-1111-4111-8111-111111111111/import 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w687 audits=["api.write POST /api/tasks 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w688 audits=["api.write POST /api/tasks 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w689 audits=["api.write POST /api/tasks 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w690 audits=["api.write POST /api/tasks 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w691 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w692 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w693 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w694 audits=["api.write PATCH /api/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w695 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w696 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w697 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w698 audits=["api.write DELETE /api/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w699 audits=["api.write POST /api/team-admin/invites 33333333-3333-4333-8333-333333333333"] home=-
+w700 audits=["api.write POST /api/team-admin/invites 55555555-5555-4555-8555-555555555555"] home=-
+w701 audits=["api.write DELETE /api/team-admin/invites/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w702 audits=["api.write DELETE /api/team-admin/invites/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w703 audits=["api.write PATCH /api/team-admin/settings 33333333-3333-4333-8333-333333333333"] home=-
+w704 audits=["api.write PATCH /api/team-admin/settings 55555555-5555-4555-8555-555555555555"] home=-
+w705 audits=["api.write PATCH /api/telegram/chats/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w706 audits=["api.write PATCH /api/telegram/chats/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w707 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 33333333-3333-4333-8333-333333333333"] home=-
+w708 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 55555555-5555-4555-8555-555555555555"] home=-
+w709 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/block 44444444-4444-4444-8444-444444444444"] home=-
+w710 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 33333333-3333-4333-8333-333333333333"] home=-
+w711 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 55555555-5555-4555-8555-555555555555"] home=-
+w712 audits=["api.write POST /api/telegram/chats/11111111-1111-4111-8111-111111111111/unpair 44444444-4444-4444-8444-444444444444"] home=-
+w713 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w714 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w715 audits=["api.write DELETE /api/telegram/my-chats/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w716 audits=["api.write POST /api/telegram/pair 33333333-3333-4333-8333-333333333333"] home=-
+w717 audits=["api.write POST /api/telegram/pair 55555555-5555-4555-8555-555555555555"] home=-
+w718 audits=["api.write POST /api/telegram/pair 44444444-4444-4444-8444-444444444444"] home=-
+w719 audits=["api.write POST /api/tool-groups 33333333-3333-4333-8333-333333333333"] home=-
+w720 audits=["api.write POST /api/tool-groups 55555555-5555-4555-8555-555555555555"] home=-
+w721 audits=["api.write PATCH /api/tool-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w722 audits=["api.write PATCH /api/tool-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w723 audits=["api.write DELETE /api/tool-groups/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w724 audits=["api.write DELETE /api/tool-groups/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w725 audits=["api.write POST /api/tools 33333333-3333-4333-8333-333333333333"] home=-
+w726 audits=["api.write POST /api/tools 55555555-5555-4555-8555-555555555555"] home=-
+w727 audits=["api.write PATCH /api/tools/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w728 audits=["api.write PATCH /api/tools/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w729 audits=["api.write DELETE /api/tools/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w730 audits=["api.write DELETE /api/tools/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w731 audits=["api.write PUT /api/tools/settings 33333333-3333-4333-8333-333333333333"] home=-
+w732 audits=["api.write PUT /api/tools/settings 55555555-5555-4555-8555-555555555555"] home=-
+w733 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w734 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w735 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w736 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/folders 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w737 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w738 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w739 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w740 audits=["api.write PATCH /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w741 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w742 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w743 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w744 audits=["api.write DELETE /api/tree/11111111-1111-4111-8111-111111111111/folders/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w745 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w746 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w747 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w748 audits=["api.write POST /api/tree/11111111-1111-4111-8111-111111111111/move 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w749 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w750 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w751 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w752 audits=["api.write POST /api/tree/items/11111111-1111-4111-8111-111111111111/opened 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w753 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w754 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w755 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w756 audits=["api.write PUT /api/tree/items/11111111-1111-4111-8111-111111111111/pin 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w757 audits=["api.write POST /api/updates/check 33333333-3333-4333-8333-333333333333"] home=-
+w758 audits=["api.write POST /api/updates/check 55555555-5555-4555-8555-555555555555"] home=-
+w759 audits=["api.write POST /api/updates/request 33333333-3333-4333-8333-333333333333"] home=-
+w760 audits=["api.write POST /api/updates/request 55555555-5555-4555-8555-555555555555"] home=-
+w761 audits=["api.write POST /api/v1/events 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w762 audits=["api.write POST /api/v1/events 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w763 audits=["api.write POST /api/v1/events 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w764 audits=["api.write POST /api/v1/events 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w765 audits=["api.write POST /api/v1/events 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w766 audits=["api.write POST /api/v1/events 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w767 audits=["api.write POST /api/v1/files 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w768 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w769 audits=["api.write POST /api/v1/files 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w770 audits=["api.write POST /api/v1/files 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w771 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w772 audits=["api.write POST /api/v1/files 55555555-5555-4555-8555-555555555555 key:00000004"] home={"createWs":null,"privateWs":null}
+w773 audits=["api.write POST /api/v1/files 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w774 audits=["api.write POST /api/v1/journal 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w775 audits=["api.write POST /api/v1/journal 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w776 audits=["api.write POST /api/v1/journal 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w777 audits=["api.write POST /api/v1/journal 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w778 audits=["api.write POST /api/v1/notes 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w779 audits=["api.write POST /api/v1/notes 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w780 audits=["api.write POST /api/v1/notes 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w781 audits=["api.write POST /api/v1/notes 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w782 audits=["api.write POST /api/v1/notes 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w783 audits=["api.write POST /api/v1/notes 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w784 audits=["api.write POST /api/v1/pages 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w785 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w786 audits=["api.write POST /api/v1/pages 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w787 audits=["api.write POST /api/v1/pages 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w788 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w789 audits=["api.write POST /api/v1/pages 55555555-5555-4555-8555-555555555555 key:00000004"] home={"createWs":null,"privateWs":null}
+w790 audits=["api.write POST /api/v1/pages 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w791 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w792 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w793 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w794 audits=["api.write PATCH /api/v1/pages/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home=-
+w795 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w796 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w797 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w798 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w799 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w800 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/commit 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w801 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w802 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w803 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w804 audits=["api.write POST /api/v1/tables/11111111-1111-4111-8111-111111111111/rows 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w805 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w806 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w807 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w808 audits=["api.write PATCH /api/v1/tables/11111111-1111-4111-8111-111111111111/rows/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w809 audits=["api.write POST /api/v1/tasks 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w810 audits=["api.write POST /api/v1/tasks 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w811 audits=["api.write POST /api/v1/tasks 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w812 audits=["api.write POST /api/v1/tasks 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w813 audits=["api.write POST /api/v1/tasks 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w814 audits=["api.write POST /api/v1/tasks 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w815 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home={"createWs":null,"privateWs":null}
+w816 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home={"createWs":null,"privateWs":null}
+w817 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home={"createWs":null,"privateWs":null}
+w818 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222"] home={"createWs":null,"privateWs":null}
+w819 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555 key:00000002"] home={"createWs":null,"privateWs":null}
+w820 audits=["api.write PATCH /api/v1/tasks/11111111-1111-4111-8111-111111111111 22222222-2222-4222-8222-222222222222 key:00000005"] home={"createWs":null,"privateWs":null}
+w821 audits=["api.write POST /api/workspaces 33333333-3333-4333-8333-333333333333"] home=-
+w822 audits=["api.write POST /api/workspaces 55555555-5555-4555-8555-555555555555"] home=-
+w823 audits=["api.write POST /api/workspaces 44444444-4444-4444-8444-444444444444"] home=-
+w824 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w825 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w826 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w827 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 33333333-3333-4333-8333-333333333333"] home=-
+w828 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 55555555-5555-4555-8555-555555555555"] home=-
+w829 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/archive 44444444-4444-4444-8444-444444444444"] home=-
+w830 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 33333333-3333-4333-8333-333333333333"] home=-
+w831 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 55555555-5555-4555-8555-555555555555"] home=-
+w832 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/resources 44444444-4444-4444-8444-444444444444"] home=-
+w833 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w834 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w835 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w836 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w837 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w838 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/resources/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w839 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 33333333-3333-4333-8333-333333333333"] home=-
+w840 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 55555555-5555-4555-8555-555555555555"] home=-
+w841 audits=["api.write POST /api/workspaces/11111111-1111-4111-8111-111111111111/users 44444444-4444-4444-8444-444444444444"] home=-
+w842 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w843 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w844 audits=["api.write PATCH /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
+w845 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 33333333-3333-4333-8333-333333333333"] home=-
+w846 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
+w847 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
 
-# moved cells of a write: 3798
+# moved cells of a write: 3810
 first POST /api/access-keys owner-cookie=w1
 first POST /api/access-keys admin-cookie=w1
 first POST /api/access-keys limited-cookie=w1
@@ -2290,214 +2293,221 @@ first PUT /api/profile/fonts member-cookie=w1
 first PUT /api/profile/fonts admin-bearer=w521
 first PUT /api/profile/fonts member-bearer=w1
 first PUT /api/profile/fonts revoked-bearer=w1
-first PUT /api/profile/logo owner-cookie=w523
-first PUT /api/profile/logo admin-cookie=w524
-first PUT /api/profile/logo limited-cookie=w525
+first PUT /api/profile/home-desk owner-cookie=w523
+first PUT /api/profile/home-desk admin-cookie=w524
+first PUT /api/profile/home-desk limited-cookie=w525
+first PUT /api/profile/home-desk member-cookie=w1
+first PUT /api/profile/home-desk admin-bearer=w524
+first PUT /api/profile/home-desk member-bearer=w1
+first PUT /api/profile/home-desk revoked-bearer=w1
+first PUT /api/profile/logo owner-cookie=w526
+first PUT /api/profile/logo admin-cookie=w527
+first PUT /api/profile/logo limited-cookie=w528
 first PUT /api/profile/logo member-cookie=w1
-first PUT /api/profile/logo admin-bearer=w524
+first PUT /api/profile/logo admin-bearer=w527
 first PUT /api/profile/logo member-bearer=w1
 first PUT /api/profile/logo revoked-bearer=w1
-first DELETE /api/profile/logo owner-cookie=w526
-first DELETE /api/profile/logo admin-cookie=w527
-first DELETE /api/profile/logo limited-cookie=w528
+first DELETE /api/profile/logo owner-cookie=w529
+first DELETE /api/profile/logo admin-cookie=w530
+first DELETE /api/profile/logo limited-cookie=w531
 first DELETE /api/profile/logo member-cookie=w1
-first DELETE /api/profile/logo admin-bearer=w527
+first DELETE /api/profile/logo admin-bearer=w530
 first DELETE /api/profile/logo member-bearer=w1
 first DELETE /api/profile/logo revoked-bearer=w1
-first PUT /api/profile/nav-favorites owner-cookie=w529
-first PUT /api/profile/nav-favorites admin-cookie=w530
-first PUT /api/profile/nav-favorites limited-cookie=w531
+first PUT /api/profile/nav-favorites owner-cookie=w532
+first PUT /api/profile/nav-favorites admin-cookie=w533
+first PUT /api/profile/nav-favorites limited-cookie=w534
 first PUT /api/profile/nav-favorites member-cookie=w1
-first PUT /api/profile/nav-favorites admin-bearer=w530
+first PUT /api/profile/nav-favorites admin-bearer=w533
 first PUT /api/profile/nav-favorites member-bearer=w1
 first PUT /api/profile/nav-favorites revoked-bearer=w1
-first PUT /api/profile/neat-background owner-cookie=w532
-first PUT /api/profile/neat-background admin-cookie=w533
-first PUT /api/profile/neat-background limited-cookie=w534
+first PUT /api/profile/neat-background owner-cookie=w535
+first PUT /api/profile/neat-background admin-cookie=w536
+first PUT /api/profile/neat-background limited-cookie=w537
 first PUT /api/profile/neat-background member-cookie=w1
-first PUT /api/profile/neat-background admin-bearer=w533
+first PUT /api/profile/neat-background admin-bearer=w536
 first PUT /api/profile/neat-background member-bearer=w1
 first PUT /api/profile/neat-background revoked-bearer=w1
-first PUT /api/profile/photo owner-cookie=w535
-first PUT /api/profile/photo admin-cookie=w536
-first PUT /api/profile/photo limited-cookie=w537
+first PUT /api/profile/photo owner-cookie=w538
+first PUT /api/profile/photo admin-cookie=w539
+first PUT /api/profile/photo limited-cookie=w540
 first PUT /api/profile/photo member-cookie=w1
-first PUT /api/profile/photo admin-bearer=w536
+first PUT /api/profile/photo admin-bearer=w539
 first PUT /api/profile/photo member-bearer=w1
 first PUT /api/profile/photo revoked-bearer=w1
-first DELETE /api/profile/photo owner-cookie=w538
-first DELETE /api/profile/photo admin-cookie=w539
-first DELETE /api/profile/photo limited-cookie=w540
+first DELETE /api/profile/photo owner-cookie=w541
+first DELETE /api/profile/photo admin-cookie=w542
+first DELETE /api/profile/photo limited-cookie=w543
 first DELETE /api/profile/photo member-cookie=w1
-first DELETE /api/profile/photo admin-bearer=w539
+first DELETE /api/profile/photo admin-bearer=w542
 first DELETE /api/profile/photo member-bearer=w1
 first DELETE /api/profile/photo revoked-bearer=w1
-first PUT /api/profile/reminder-channel owner-cookie=w541
-first PUT /api/profile/reminder-channel admin-cookie=w542
-first PUT /api/profile/reminder-channel limited-cookie=w543
+first PUT /api/profile/reminder-channel owner-cookie=w544
+first PUT /api/profile/reminder-channel admin-cookie=w545
+first PUT /api/profile/reminder-channel limited-cookie=w546
 first PUT /api/profile/reminder-channel member-cookie=w1
-first PUT /api/profile/reminder-channel admin-bearer=w542
+first PUT /api/profile/reminder-channel admin-bearer=w545
 first PUT /api/profile/reminder-channel member-bearer=w1
 first PUT /api/profile/reminder-channel revoked-bearer=w1
-first PUT /api/profile/share-neat owner-cookie=w544
-first PUT /api/profile/share-neat admin-cookie=w545
-first PUT /api/profile/share-neat limited-cookie=w546
+first PUT /api/profile/share-neat owner-cookie=w547
+first PUT /api/profile/share-neat admin-cookie=w548
+first PUT /api/profile/share-neat limited-cookie=w549
 first PUT /api/profile/share-neat member-cookie=w1
-first PUT /api/profile/share-neat admin-bearer=w545
+first PUT /api/profile/share-neat admin-bearer=w548
 first PUT /api/profile/share-neat member-bearer=w1
 first PUT /api/profile/share-neat revoked-bearer=w1
-first POST /api/push/connect owner-cookie=w547
-first POST /api/push/connect admin-cookie=w548
-first POST /api/push/connect limited-cookie=w549
+first POST /api/push/connect owner-cookie=w550
+first POST /api/push/connect admin-cookie=w551
+first POST /api/push/connect limited-cookie=w552
 first POST /api/push/connect member-cookie=w1
-first POST /api/push/connect admin-bearer=w548
+first POST /api/push/connect admin-bearer=w551
 first POST /api/push/connect member-bearer=w1
 first POST /api/push/connect revoked-bearer=w1
-first PUT /api/push/preferences owner-cookie=w550
-first PUT /api/push/preferences admin-cookie=w551
-first PUT /api/push/preferences limited-cookie=w552
+first PUT /api/push/preferences owner-cookie=w553
+first PUT /api/push/preferences admin-cookie=w554
+first PUT /api/push/preferences limited-cookie=w555
 first PUT /api/push/preferences member-cookie=w1
-first PUT /api/push/preferences admin-bearer=w551
+first PUT /api/push/preferences admin-bearer=w554
 first PUT /api/push/preferences member-bearer=w1
 first PUT /api/push/preferences revoked-bearer=w1
-first POST /api/push/reset owner-cookie=w553
-first POST /api/push/reset admin-cookie=w554
-first POST /api/push/reset limited-cookie=w555
+first POST /api/push/reset owner-cookie=w556
+first POST /api/push/reset admin-cookie=w557
+first POST /api/push/reset limited-cookie=w558
 first POST /api/push/reset member-cookie=w1
-first POST /api/push/reset admin-bearer=w554
+first POST /api/push/reset admin-bearer=w557
 first POST /api/push/reset member-bearer=w1
 first POST /api/push/reset revoked-bearer=w1
-first POST /api/push/subscriptions owner-cookie=w556
-first POST /api/push/subscriptions admin-cookie=w557
-first POST /api/push/subscriptions limited-cookie=w558
+first POST /api/push/subscriptions owner-cookie=w559
+first POST /api/push/subscriptions admin-cookie=w560
+first POST /api/push/subscriptions limited-cookie=w561
 first POST /api/push/subscriptions member-cookie=w1
-first POST /api/push/subscriptions admin-bearer=w557
+first POST /api/push/subscriptions admin-bearer=w560
 first POST /api/push/subscriptions member-bearer=w1
 first POST /api/push/subscriptions revoked-bearer=w1
-first DELETE /api/push/subscriptions/:id owner-cookie=w559
-first DELETE /api/push/subscriptions/:id admin-cookie=w560
-first DELETE /api/push/subscriptions/:id limited-cookie=w561
+first DELETE /api/push/subscriptions/:id owner-cookie=w562
+first DELETE /api/push/subscriptions/:id admin-cookie=w563
+first DELETE /api/push/subscriptions/:id limited-cookie=w564
 first DELETE /api/push/subscriptions/:id member-cookie=w1
-first DELETE /api/push/subscriptions/:id admin-bearer=w560
+first DELETE /api/push/subscriptions/:id admin-bearer=w563
 first DELETE /api/push/subscriptions/:id member-bearer=w1
 first DELETE /api/push/subscriptions/:id revoked-bearer=w1
-first POST /api/recall/maps owner-cookie=w562
-first POST /api/recall/maps admin-cookie=w563
-first POST /api/recall/maps limited-cookie=w564
-first POST /api/recall/maps member-cookie=w565
-first POST /api/recall/maps admin-bearer=w563
-first POST /api/recall/maps member-bearer=w565
+first POST /api/recall/maps owner-cookie=w565
+first POST /api/recall/maps admin-cookie=w566
+first POST /api/recall/maps limited-cookie=w567
+first POST /api/recall/maps member-cookie=w568
+first POST /api/recall/maps admin-bearer=w566
+first POST /api/recall/maps member-bearer=w568
 first POST /api/recall/maps revoked-bearer=w1
-first PATCH /api/recall/maps/:id owner-cookie=w566
-first PATCH /api/recall/maps/:id admin-cookie=w567
-first PATCH /api/recall/maps/:id limited-cookie=w568
-first PATCH /api/recall/maps/:id member-cookie=w569
-first PATCH /api/recall/maps/:id admin-bearer=w567
-first PATCH /api/recall/maps/:id member-bearer=w569
+first PATCH /api/recall/maps/:id owner-cookie=w569
+first PATCH /api/recall/maps/:id admin-cookie=w570
+first PATCH /api/recall/maps/:id limited-cookie=w571
+first PATCH /api/recall/maps/:id member-cookie=w572
+first PATCH /api/recall/maps/:id admin-bearer=w570
+first PATCH /api/recall/maps/:id member-bearer=w572
 first PATCH /api/recall/maps/:id revoked-bearer=w1
-first DELETE /api/recall/maps/:id owner-cookie=w570
-first DELETE /api/recall/maps/:id admin-cookie=w571
-first DELETE /api/recall/maps/:id limited-cookie=w572
-first DELETE /api/recall/maps/:id member-cookie=w573
-first DELETE /api/recall/maps/:id admin-bearer=w571
-first DELETE /api/recall/maps/:id member-bearer=w573
+first DELETE /api/recall/maps/:id owner-cookie=w573
+first DELETE /api/recall/maps/:id admin-cookie=w574
+first DELETE /api/recall/maps/:id limited-cookie=w575
+first DELETE /api/recall/maps/:id member-cookie=w576
+first DELETE /api/recall/maps/:id admin-bearer=w574
+first DELETE /api/recall/maps/:id member-bearer=w576
 first DELETE /api/recall/maps/:id revoked-bearer=w1
-first POST /api/recall/maps/:id/cards owner-cookie=w574
-first POST /api/recall/maps/:id/cards admin-cookie=w575
-first POST /api/recall/maps/:id/cards limited-cookie=w576
-first POST /api/recall/maps/:id/cards member-cookie=w577
-first POST /api/recall/maps/:id/cards admin-bearer=w575
-first POST /api/recall/maps/:id/cards member-bearer=w577
+first POST /api/recall/maps/:id/cards owner-cookie=w577
+first POST /api/recall/maps/:id/cards admin-cookie=w578
+first POST /api/recall/maps/:id/cards limited-cookie=w579
+first POST /api/recall/maps/:id/cards member-cookie=w580
+first POST /api/recall/maps/:id/cards admin-bearer=w578
+first POST /api/recall/maps/:id/cards member-bearer=w580
 first POST /api/recall/maps/:id/cards revoked-bearer=w1
-first PUT /api/recall/maps/:id/cards/:card owner-cookie=w578
-first PUT /api/recall/maps/:id/cards/:card admin-cookie=w579
-first PUT /api/recall/maps/:id/cards/:card limited-cookie=w580
-first PUT /api/recall/maps/:id/cards/:card member-cookie=w581
-first PUT /api/recall/maps/:id/cards/:card admin-bearer=w579
-first PUT /api/recall/maps/:id/cards/:card member-bearer=w581
+first PUT /api/recall/maps/:id/cards/:card owner-cookie=w581
+first PUT /api/recall/maps/:id/cards/:card admin-cookie=w582
+first PUT /api/recall/maps/:id/cards/:card limited-cookie=w583
+first PUT /api/recall/maps/:id/cards/:card member-cookie=w584
+first PUT /api/recall/maps/:id/cards/:card admin-bearer=w582
+first PUT /api/recall/maps/:id/cards/:card member-bearer=w584
 first PUT /api/recall/maps/:id/cards/:card revoked-bearer=w1
-first DELETE /api/recall/maps/:id/cards/:card owner-cookie=w582
-first DELETE /api/recall/maps/:id/cards/:card admin-cookie=w583
-first DELETE /api/recall/maps/:id/cards/:card limited-cookie=w584
-first DELETE /api/recall/maps/:id/cards/:card member-cookie=w585
-first DELETE /api/recall/maps/:id/cards/:card admin-bearer=w583
-first DELETE /api/recall/maps/:id/cards/:card member-bearer=w585
+first DELETE /api/recall/maps/:id/cards/:card owner-cookie=w585
+first DELETE /api/recall/maps/:id/cards/:card admin-cookie=w586
+first DELETE /api/recall/maps/:id/cards/:card limited-cookie=w587
+first DELETE /api/recall/maps/:id/cards/:card member-cookie=w588
+first DELETE /api/recall/maps/:id/cards/:card admin-bearer=w586
+first DELETE /api/recall/maps/:id/cards/:card member-bearer=w588
 first DELETE /api/recall/maps/:id/cards/:card revoked-bearer=w1
-first POST /api/recall/maps/:id/cards/:card/prompt owner-cookie=w586
-first POST /api/recall/maps/:id/cards/:card/prompt admin-cookie=w587
-first POST /api/recall/maps/:id/cards/:card/prompt limited-cookie=w588
-first POST /api/recall/maps/:id/cards/:card/prompt member-cookie=w589
-first POST /api/recall/maps/:id/cards/:card/prompt admin-bearer=w587
-first POST /api/recall/maps/:id/cards/:card/prompt member-bearer=w589
+first POST /api/recall/maps/:id/cards/:card/prompt owner-cookie=w589
+first POST /api/recall/maps/:id/cards/:card/prompt admin-cookie=w590
+first POST /api/recall/maps/:id/cards/:card/prompt limited-cookie=w591
+first POST /api/recall/maps/:id/cards/:card/prompt member-cookie=w592
+first POST /api/recall/maps/:id/cards/:card/prompt admin-bearer=w590
+first POST /api/recall/maps/:id/cards/:card/prompt member-bearer=w592
 first POST /api/recall/maps/:id/cards/:card/prompt revoked-bearer=w1
-first POST /api/recall/maps/:id/cards/reorder owner-cookie=w590
-first POST /api/recall/maps/:id/cards/reorder admin-cookie=w591
-first POST /api/recall/maps/:id/cards/reorder limited-cookie=w592
-first POST /api/recall/maps/:id/cards/reorder member-cookie=w593
-first POST /api/recall/maps/:id/cards/reorder admin-bearer=w591
-first POST /api/recall/maps/:id/cards/reorder member-bearer=w593
+first POST /api/recall/maps/:id/cards/reorder owner-cookie=w593
+first POST /api/recall/maps/:id/cards/reorder admin-cookie=w594
+first POST /api/recall/maps/:id/cards/reorder limited-cookie=w595
+first POST /api/recall/maps/:id/cards/reorder member-cookie=w596
+first POST /api/recall/maps/:id/cards/reorder admin-bearer=w594
+first POST /api/recall/maps/:id/cards/reorder member-bearer=w596
 first POST /api/recall/maps/:id/cards/reorder revoked-bearer=w1
-first POST /api/recall/revisions/:id/restore owner-cookie=w594
-first POST /api/recall/revisions/:id/restore admin-cookie=w595
-first POST /api/recall/revisions/:id/restore limited-cookie=w596
-first POST /api/recall/revisions/:id/restore member-cookie=w597
-first POST /api/recall/revisions/:id/restore admin-bearer=w595
-first POST /api/recall/revisions/:id/restore member-bearer=w597
+first POST /api/recall/revisions/:id/restore owner-cookie=w597
+first POST /api/recall/revisions/:id/restore admin-cookie=w598
+first POST /api/recall/revisions/:id/restore limited-cookie=w599
+first POST /api/recall/revisions/:id/restore member-cookie=w600
+first POST /api/recall/revisions/:id/restore admin-bearer=w598
+first POST /api/recall/revisions/:id/restore member-bearer=w600
 first POST /api/recall/revisions/:id/restore revoked-bearer=w1
-first POST /api/runners/:id owner-cookie=w598
-first POST /api/runners/:id admin-cookie=w599
+first POST /api/runners/:id owner-cookie=w601
+first POST /api/runners/:id admin-cookie=w602
 first POST /api/runners/:id limited-cookie=w1
 first POST /api/runners/:id member-cookie=w1
-first POST /api/runners/:id admin-bearer=w599
+first POST /api/runners/:id admin-bearer=w602
 first POST /api/runners/:id member-bearer=w1
 first POST /api/runners/:id revoked-bearer=w1
-first POST /api/runs/:id owner-cookie=w600
-first POST /api/runs/:id admin-cookie=w601
+first POST /api/runs/:id owner-cookie=w603
+first POST /api/runs/:id admin-cookie=w604
 first POST /api/runs/:id limited-cookie=w1
 first POST /api/runs/:id member-cookie=w1
-first POST /api/runs/:id admin-bearer=w601
+first POST /api/runs/:id admin-bearer=w604
 first POST /api/runs/:id member-bearer=w1
 first POST /api/runs/:id revoked-bearer=w1
-first DELETE /api/sandboxes/:id owner-cookie=w602
-first DELETE /api/sandboxes/:id admin-cookie=w603
+first DELETE /api/sandboxes/:id owner-cookie=w605
+first DELETE /api/sandboxes/:id admin-cookie=w606
 first DELETE /api/sandboxes/:id limited-cookie=w1
 first DELETE /api/sandboxes/:id member-cookie=w1
-first DELETE /api/sandboxes/:id admin-bearer=w603
+first DELETE /api/sandboxes/:id admin-bearer=w606
 first DELETE /api/sandboxes/:id member-bearer=w1
 first DELETE /api/sandboxes/:id revoked-bearer=w1
-first POST /api/sandboxes/:id/stop owner-cookie=w604
-first POST /api/sandboxes/:id/stop admin-cookie=w605
+first POST /api/sandboxes/:id/stop owner-cookie=w607
+first POST /api/sandboxes/:id/stop admin-cookie=w608
 first POST /api/sandboxes/:id/stop limited-cookie=w1
 first POST /api/sandboxes/:id/stop member-cookie=w1
-first POST /api/sandboxes/:id/stop admin-bearer=w605
+first POST /api/sandboxes/:id/stop admin-bearer=w608
 first POST /api/sandboxes/:id/stop member-bearer=w1
 first POST /api/sandboxes/:id/stop revoked-bearer=w1
-first POST /api/secrets owner-cookie=w606
-first POST /api/secrets admin-cookie=w607
+first POST /api/secrets owner-cookie=w609
+first POST /api/secrets admin-cookie=w610
 first POST /api/secrets limited-cookie=w1
 first POST /api/secrets member-cookie=w1
-first POST /api/secrets admin-bearer=w607
+first POST /api/secrets admin-bearer=w610
 first POST /api/secrets member-bearer=w1
 first POST /api/secrets revoked-bearer=w1
-first PATCH /api/secrets/:id owner-cookie=w608
-first PATCH /api/secrets/:id admin-cookie=w609
+first PATCH /api/secrets/:id owner-cookie=w611
+first PATCH /api/secrets/:id admin-cookie=w612
 first PATCH /api/secrets/:id limited-cookie=w1
 first PATCH /api/secrets/:id member-cookie=w1
-first PATCH /api/secrets/:id admin-bearer=w609
+first PATCH /api/secrets/:id admin-bearer=w612
 first PATCH /api/secrets/:id member-bearer=w1
 first PATCH /api/secrets/:id revoked-bearer=w1
-first DELETE /api/secrets/:id owner-cookie=w610
-first DELETE /api/secrets/:id admin-cookie=w611
+first DELETE /api/secrets/:id owner-cookie=w613
+first DELETE /api/secrets/:id admin-cookie=w614
 first DELETE /api/secrets/:id limited-cookie=w1
 first DELETE /api/secrets/:id member-cookie=w1
-first DELETE /api/secrets/:id admin-bearer=w611
+first DELETE /api/secrets/:id admin-bearer=w614
 first DELETE /api/secrets/:id member-bearer=w1
 first DELETE /api/secrets/:id revoked-bearer=w1
-first POST /api/secrets/:id/reveal owner-cookie=w612
-first POST /api/secrets/:id/reveal admin-cookie=w613
+first POST /api/secrets/:id/reveal owner-cookie=w615
+first POST /api/secrets/:id/reveal admin-cookie=w616
 first POST /api/secrets/:id/reveal limited-cookie=w1
 first POST /api/secrets/:id/reveal member-cookie=w1
-first POST /api/secrets/:id/reveal admin-bearer=w613
+first POST /api/secrets/:id/reveal admin-bearer=w616
 first POST /api/secrets/:id/reveal member-bearer=w1
 first POST /api/secrets/:id/reveal revoked-bearer=w1
 first POST /api/services/:name owner-cookie=w1
@@ -2507,291 +2517,291 @@ first POST /api/services/:name member-cookie=w1
 first POST /api/services/:name admin-bearer=w1
 first POST /api/services/:name member-bearer=w1
 first POST /api/services/:name revoked-bearer=w1
-first POST /api/settings/worker-groups owner-cookie=w614
-first POST /api/settings/worker-groups admin-cookie=w615
+first POST /api/settings/worker-groups owner-cookie=w617
+first POST /api/settings/worker-groups admin-cookie=w618
 first POST /api/settings/worker-groups limited-cookie=w1
 first POST /api/settings/worker-groups member-cookie=w1
-first POST /api/settings/worker-groups admin-bearer=w615
+first POST /api/settings/worker-groups admin-bearer=w618
 first POST /api/settings/worker-groups member-bearer=w1
 first POST /api/settings/worker-groups revoked-bearer=w1
-first PATCH /api/settings/worker-groups/:id owner-cookie=w616
-first PATCH /api/settings/worker-groups/:id admin-cookie=w617
+first PATCH /api/settings/worker-groups/:id owner-cookie=w619
+first PATCH /api/settings/worker-groups/:id admin-cookie=w620
 first PATCH /api/settings/worker-groups/:id limited-cookie=w1
 first PATCH /api/settings/worker-groups/:id member-cookie=w1
-first PATCH /api/settings/worker-groups/:id admin-bearer=w617
+first PATCH /api/settings/worker-groups/:id admin-bearer=w620
 first PATCH /api/settings/worker-groups/:id member-bearer=w1
 first PATCH /api/settings/worker-groups/:id revoked-bearer=w1
-first DELETE /api/settings/worker-groups/:id owner-cookie=w618
-first DELETE /api/settings/worker-groups/:id admin-cookie=w619
+first DELETE /api/settings/worker-groups/:id owner-cookie=w621
+first DELETE /api/settings/worker-groups/:id admin-cookie=w622
 first DELETE /api/settings/worker-groups/:id limited-cookie=w1
 first DELETE /api/settings/worker-groups/:id member-cookie=w1
-first DELETE /api/settings/worker-groups/:id admin-bearer=w619
+first DELETE /api/settings/worker-groups/:id admin-bearer=w622
 first DELETE /api/settings/worker-groups/:id member-bearer=w1
 first DELETE /api/settings/worker-groups/:id revoked-bearer=w1
-first POST /api/shares owner-cookie=w620
-first POST /api/shares admin-cookie=w621
-first POST /api/shares limited-cookie=w622
+first POST /api/shares owner-cookie=w623
+first POST /api/shares admin-cookie=w624
+first POST /api/shares limited-cookie=w625
 first POST /api/shares member-cookie=w1
-first POST /api/shares admin-bearer=w621
+first POST /api/shares admin-bearer=w624
 first POST /api/shares member-bearer=w1
 first POST /api/shares revoked-bearer=w1
-first PATCH /api/shares/:id owner-cookie=w623
-first PATCH /api/shares/:id admin-cookie=w624
-first PATCH /api/shares/:id limited-cookie=w625
+first PATCH /api/shares/:id owner-cookie=w626
+first PATCH /api/shares/:id admin-cookie=w627
+first PATCH /api/shares/:id limited-cookie=w628
 first PATCH /api/shares/:id member-cookie=w1
-first PATCH /api/shares/:id admin-bearer=w624
+first PATCH /api/shares/:id admin-bearer=w627
 first PATCH /api/shares/:id member-bearer=w1
 first PATCH /api/shares/:id revoked-bearer=w1
-first DELETE /api/shares/:id owner-cookie=w626
-first DELETE /api/shares/:id admin-cookie=w627
-first DELETE /api/shares/:id limited-cookie=w628
+first DELETE /api/shares/:id owner-cookie=w629
+first DELETE /api/shares/:id admin-cookie=w630
+first DELETE /api/shares/:id limited-cookie=w631
 first DELETE /api/shares/:id member-cookie=w1
-first DELETE /api/shares/:id admin-bearer=w627
+first DELETE /api/shares/:id admin-bearer=w630
 first DELETE /api/shares/:id member-bearer=w1
 first DELETE /api/shares/:id revoked-bearer=w1
-first POST /api/shares/contacts owner-cookie=w629
-first POST /api/shares/contacts admin-cookie=w630
-first POST /api/shares/contacts limited-cookie=w631
+first POST /api/shares/contacts owner-cookie=w632
+first POST /api/shares/contacts admin-cookie=w633
+first POST /api/shares/contacts limited-cookie=w634
 first POST /api/shares/contacts member-cookie=w1
-first POST /api/shares/contacts admin-bearer=w630
+first POST /api/shares/contacts admin-bearer=w633
 first POST /api/shares/contacts member-bearer=w1
 first POST /api/shares/contacts revoked-bearer=w1
-first POST /api/skills owner-cookie=w632
-first POST /api/skills admin-cookie=w633
+first POST /api/skills owner-cookie=w635
+first POST /api/skills admin-cookie=w636
 first POST /api/skills limited-cookie=w1
 first POST /api/skills member-cookie=w1
-first POST /api/skills admin-bearer=w633
+first POST /api/skills admin-bearer=w636
 first POST /api/skills member-bearer=w1
 first POST /api/skills revoked-bearer=w1
-first PATCH /api/skills/:id owner-cookie=w634
-first PATCH /api/skills/:id admin-cookie=w635
+first PATCH /api/skills/:id owner-cookie=w637
+first PATCH /api/skills/:id admin-cookie=w638
 first PATCH /api/skills/:id limited-cookie=w1
 first PATCH /api/skills/:id member-cookie=w1
-first PATCH /api/skills/:id admin-bearer=w635
+first PATCH /api/skills/:id admin-bearer=w638
 first PATCH /api/skills/:id member-bearer=w1
 first PATCH /api/skills/:id revoked-bearer=w1
-first DELETE /api/skills/:id owner-cookie=w636
-first DELETE /api/skills/:id admin-cookie=w637
+first DELETE /api/skills/:id owner-cookie=w639
+first DELETE /api/skills/:id admin-cookie=w640
 first DELETE /api/skills/:id limited-cookie=w1
 first DELETE /api/skills/:id member-cookie=w1
-first DELETE /api/skills/:id admin-bearer=w637
+first DELETE /api/skills/:id admin-bearer=w640
 first DELETE /api/skills/:id member-bearer=w1
 first DELETE /api/skills/:id revoked-bearer=w1
-first POST /api/studio/prose owner-cookie=w638
-first POST /api/studio/prose admin-cookie=w639
+first POST /api/studio/prose owner-cookie=w641
+first POST /api/studio/prose admin-cookie=w642
 first POST /api/studio/prose limited-cookie=w1
 first POST /api/studio/prose member-cookie=w1
-first POST /api/studio/prose admin-bearer=w639
+first POST /api/studio/prose admin-bearer=w642
 first POST /api/studio/prose member-bearer=w1
 first POST /api/studio/prose revoked-bearer=w1
-first POST /api/studio/reset owner-cookie=w640
-first POST /api/studio/reset admin-cookie=w641
+first POST /api/studio/reset owner-cookie=w643
+first POST /api/studio/reset admin-cookie=w644
 first POST /api/studio/reset limited-cookie=w1
 first POST /api/studio/reset member-cookie=w1
-first POST /api/studio/reset admin-bearer=w641
+first POST /api/studio/reset admin-bearer=w644
 first POST /api/studio/reset member-bearer=w1
 first POST /api/studio/reset revoked-bearer=w1
-first POST /api/studio/sandbox owner-cookie=w642
-first POST /api/studio/sandbox admin-cookie=w643
+first POST /api/studio/sandbox owner-cookie=w645
+first POST /api/studio/sandbox admin-cookie=w646
 first POST /api/studio/sandbox limited-cookie=w1
 first POST /api/studio/sandbox member-cookie=w1
-first POST /api/studio/sandbox admin-bearer=w643
+first POST /api/studio/sandbox admin-bearer=w646
 first POST /api/studio/sandbox member-bearer=w1
 first POST /api/studio/sandbox revoked-bearer=w1
-first POST /api/tables owner-cookie=w644
-first POST /api/tables admin-cookie=w645
-first POST /api/tables limited-cookie=w646
-first POST /api/tables member-cookie=w647
-first POST /api/tables admin-bearer=w645
-first POST /api/tables member-bearer=w647
+first POST /api/tables owner-cookie=w647
+first POST /api/tables admin-cookie=w648
+first POST /api/tables limited-cookie=w649
+first POST /api/tables member-cookie=w650
+first POST /api/tables admin-bearer=w648
+first POST /api/tables member-bearer=w650
 first POST /api/tables revoked-bearer=w1
-first PATCH /api/tables/:id owner-cookie=w648
-first PATCH /api/tables/:id admin-cookie=w649
-first PATCH /api/tables/:id limited-cookie=w650
-first PATCH /api/tables/:id member-cookie=w651
-first PATCH /api/tables/:id admin-bearer=w649
-first PATCH /api/tables/:id member-bearer=w651
+first PATCH /api/tables/:id owner-cookie=w651
+first PATCH /api/tables/:id admin-cookie=w652
+first PATCH /api/tables/:id limited-cookie=w653
+first PATCH /api/tables/:id member-cookie=w654
+first PATCH /api/tables/:id admin-bearer=w652
+first PATCH /api/tables/:id member-bearer=w654
 first PATCH /api/tables/:id revoked-bearer=w1
-first DELETE /api/tables/:id owner-cookie=w652
-first DELETE /api/tables/:id admin-cookie=w653
-first DELETE /api/tables/:id limited-cookie=w654
-first DELETE /api/tables/:id member-cookie=w655
-first DELETE /api/tables/:id admin-bearer=w653
-first DELETE /api/tables/:id member-bearer=w655
+first DELETE /api/tables/:id owner-cookie=w655
+first DELETE /api/tables/:id admin-cookie=w656
+first DELETE /api/tables/:id limited-cookie=w657
+first DELETE /api/tables/:id member-cookie=w658
+first DELETE /api/tables/:id admin-bearer=w656
+first DELETE /api/tables/:id member-bearer=w658
 first DELETE /api/tables/:id revoked-bearer=w1
-first POST /api/tables/:id/commit owner-cookie=w656
-first POST /api/tables/:id/commit admin-cookie=w657
-first POST /api/tables/:id/commit limited-cookie=w658
-first POST /api/tables/:id/commit member-cookie=w659
-first POST /api/tables/:id/commit admin-bearer=w657
-first POST /api/tables/:id/commit member-bearer=w659
+first POST /api/tables/:id/commit owner-cookie=w659
+first POST /api/tables/:id/commit admin-cookie=w660
+first POST /api/tables/:id/commit limited-cookie=w661
+first POST /api/tables/:id/commit member-cookie=w662
+first POST /api/tables/:id/commit admin-bearer=w660
+first POST /api/tables/:id/commit member-bearer=w662
 first POST /api/tables/:id/commit revoked-bearer=w1
-first POST /api/tables/:id/discard-draft owner-cookie=w660
-first POST /api/tables/:id/discard-draft admin-cookie=w661
-first POST /api/tables/:id/discard-draft limited-cookie=w662
-first POST /api/tables/:id/discard-draft member-cookie=w663
-first POST /api/tables/:id/discard-draft admin-bearer=w661
-first POST /api/tables/:id/discard-draft member-bearer=w663
+first POST /api/tables/:id/discard-draft owner-cookie=w663
+first POST /api/tables/:id/discard-draft admin-cookie=w664
+first POST /api/tables/:id/discard-draft limited-cookie=w665
+first POST /api/tables/:id/discard-draft member-cookie=w666
+first POST /api/tables/:id/discard-draft admin-bearer=w664
+first POST /api/tables/:id/discard-draft member-bearer=w666
 first POST /api/tables/:id/discard-draft revoked-bearer=w1
-first PUT /api/tables/:id/draft owner-cookie=w664
-first PUT /api/tables/:id/draft admin-cookie=w665
-first PUT /api/tables/:id/draft limited-cookie=w666
-first PUT /api/tables/:id/draft member-cookie=w667
-first PUT /api/tables/:id/draft admin-bearer=w665
-first PUT /api/tables/:id/draft member-bearer=w667
+first PUT /api/tables/:id/draft owner-cookie=w667
+first PUT /api/tables/:id/draft admin-cookie=w668
+first PUT /api/tables/:id/draft limited-cookie=w669
+first PUT /api/tables/:id/draft member-cookie=w670
+first PUT /api/tables/:id/draft admin-bearer=w668
+first PUT /api/tables/:id/draft member-bearer=w670
 first PUT /api/tables/:id/draft revoked-bearer=w1
-first POST /api/tables/:id/draft-ops owner-cookie=w668
-first POST /api/tables/:id/draft-ops admin-cookie=w669
-first POST /api/tables/:id/draft-ops limited-cookie=w670
-first POST /api/tables/:id/draft-ops member-cookie=w671
-first POST /api/tables/:id/draft-ops admin-bearer=w669
-first POST /api/tables/:id/draft-ops member-bearer=w671
+first POST /api/tables/:id/draft-ops owner-cookie=w671
+first POST /api/tables/:id/draft-ops admin-cookie=w672
+first POST /api/tables/:id/draft-ops limited-cookie=w673
+first POST /api/tables/:id/draft-ops member-cookie=w674
+first POST /api/tables/:id/draft-ops admin-bearer=w672
+first POST /api/tables/:id/draft-ops member-bearer=w674
 first POST /api/tables/:id/draft-ops revoked-bearer=w1
-first POST /api/tables/:id/history owner-cookie=w672
-first POST /api/tables/:id/history admin-cookie=w673
-first POST /api/tables/:id/history limited-cookie=w674
+first POST /api/tables/:id/history owner-cookie=w675
+first POST /api/tables/:id/history admin-cookie=w676
+first POST /api/tables/:id/history limited-cookie=w677
 first POST /api/tables/:id/history member-cookie=w1
-first POST /api/tables/:id/history admin-bearer=w673
+first POST /api/tables/:id/history admin-bearer=w676
 first POST /api/tables/:id/history member-bearer=w1
 first POST /api/tables/:id/history revoked-bearer=w1
-first DELETE /api/tables/:id/history/:sid owner-cookie=w675
-first DELETE /api/tables/:id/history/:sid admin-cookie=w676
-first DELETE /api/tables/:id/history/:sid limited-cookie=w677
+first DELETE /api/tables/:id/history/:sid owner-cookie=w678
+first DELETE /api/tables/:id/history/:sid admin-cookie=w679
+first DELETE /api/tables/:id/history/:sid limited-cookie=w680
 first DELETE /api/tables/:id/history/:sid member-cookie=w1
-first DELETE /api/tables/:id/history/:sid admin-bearer=w676
+first DELETE /api/tables/:id/history/:sid admin-bearer=w679
 first DELETE /api/tables/:id/history/:sid member-bearer=w1
 first DELETE /api/tables/:id/history/:sid revoked-bearer=w1
-first POST /api/tables/:id/history/:sid/restore owner-cookie=w678
-first POST /api/tables/:id/history/:sid/restore admin-cookie=w679
-first POST /api/tables/:id/history/:sid/restore limited-cookie=w680
+first POST /api/tables/:id/history/:sid/restore owner-cookie=w681
+first POST /api/tables/:id/history/:sid/restore admin-cookie=w682
+first POST /api/tables/:id/history/:sid/restore limited-cookie=w683
 first POST /api/tables/:id/history/:sid/restore member-cookie=w1
-first POST /api/tables/:id/history/:sid/restore admin-bearer=w679
+first POST /api/tables/:id/history/:sid/restore admin-bearer=w682
 first POST /api/tables/:id/history/:sid/restore member-bearer=w1
 first POST /api/tables/:id/history/:sid/restore revoked-bearer=w1
-first POST /api/tables/:id/import owner-cookie=w681
-first POST /api/tables/:id/import admin-cookie=w682
-first POST /api/tables/:id/import limited-cookie=w683
+first POST /api/tables/:id/import owner-cookie=w684
+first POST /api/tables/:id/import admin-cookie=w685
+first POST /api/tables/:id/import limited-cookie=w686
 first POST /api/tables/:id/import member-cookie=w1
-first POST /api/tables/:id/import admin-bearer=w682
+first POST /api/tables/:id/import admin-bearer=w685
 first POST /api/tables/:id/import member-bearer=w1
 first POST /api/tables/:id/import revoked-bearer=w1
-first POST /api/tasks owner-cookie=w684
-first POST /api/tasks admin-cookie=w685
-first POST /api/tasks limited-cookie=w686
-first POST /api/tasks member-cookie=w687
-first POST /api/tasks admin-bearer=w685
-first POST /api/tasks member-bearer=w687
+first POST /api/tasks owner-cookie=w687
+first POST /api/tasks admin-cookie=w688
+first POST /api/tasks limited-cookie=w689
+first POST /api/tasks member-cookie=w690
+first POST /api/tasks admin-bearer=w688
+first POST /api/tasks member-bearer=w690
 first POST /api/tasks revoked-bearer=w1
-first PATCH /api/tasks/:id owner-cookie=w688
-first PATCH /api/tasks/:id admin-cookie=w689
-first PATCH /api/tasks/:id limited-cookie=w690
-first PATCH /api/tasks/:id member-cookie=w691
-first PATCH /api/tasks/:id admin-bearer=w689
-first PATCH /api/tasks/:id member-bearer=w691
+first PATCH /api/tasks/:id owner-cookie=w691
+first PATCH /api/tasks/:id admin-cookie=w692
+first PATCH /api/tasks/:id limited-cookie=w693
+first PATCH /api/tasks/:id member-cookie=w694
+first PATCH /api/tasks/:id admin-bearer=w692
+first PATCH /api/tasks/:id member-bearer=w694
 first PATCH /api/tasks/:id revoked-bearer=w1
-first DELETE /api/tasks/:id owner-cookie=w692
-first DELETE /api/tasks/:id admin-cookie=w693
-first DELETE /api/tasks/:id limited-cookie=w694
-first DELETE /api/tasks/:id member-cookie=w695
-first DELETE /api/tasks/:id admin-bearer=w693
-first DELETE /api/tasks/:id member-bearer=w695
+first DELETE /api/tasks/:id owner-cookie=w695
+first DELETE /api/tasks/:id admin-cookie=w696
+first DELETE /api/tasks/:id limited-cookie=w697
+first DELETE /api/tasks/:id member-cookie=w698
+first DELETE /api/tasks/:id admin-bearer=w696
+first DELETE /api/tasks/:id member-bearer=w698
 first DELETE /api/tasks/:id revoked-bearer=w1
-first POST /api/team-admin/invites owner-cookie=w696
-first POST /api/team-admin/invites admin-cookie=w697
+first POST /api/team-admin/invites owner-cookie=w699
+first POST /api/team-admin/invites admin-cookie=w700
 first POST /api/team-admin/invites limited-cookie=w1
 first POST /api/team-admin/invites member-cookie=w1
-first POST /api/team-admin/invites admin-bearer=w697
+first POST /api/team-admin/invites admin-bearer=w700
 first POST /api/team-admin/invites member-bearer=w1
 first POST /api/team-admin/invites revoked-bearer=w1
-first DELETE /api/team-admin/invites/:id owner-cookie=w698
-first DELETE /api/team-admin/invites/:id admin-cookie=w699
+first DELETE /api/team-admin/invites/:id owner-cookie=w701
+first DELETE /api/team-admin/invites/:id admin-cookie=w702
 first DELETE /api/team-admin/invites/:id limited-cookie=w1
 first DELETE /api/team-admin/invites/:id member-cookie=w1
-first DELETE /api/team-admin/invites/:id admin-bearer=w699
+first DELETE /api/team-admin/invites/:id admin-bearer=w702
 first DELETE /api/team-admin/invites/:id member-bearer=w1
 first DELETE /api/team-admin/invites/:id revoked-bearer=w1
-first PATCH /api/team-admin/settings owner-cookie=w700
-first PATCH /api/team-admin/settings admin-cookie=w701
+first PATCH /api/team-admin/settings owner-cookie=w703
+first PATCH /api/team-admin/settings admin-cookie=w704
 first PATCH /api/team-admin/settings limited-cookie=w1
 first PATCH /api/team-admin/settings member-cookie=w1
-first PATCH /api/team-admin/settings admin-bearer=w701
+first PATCH /api/team-admin/settings admin-bearer=w704
 first PATCH /api/team-admin/settings member-bearer=w1
 first PATCH /api/team-admin/settings revoked-bearer=w1
-first PATCH /api/telegram/chats/:id owner-cookie=w702
-first PATCH /api/telegram/chats/:id admin-cookie=w703
+first PATCH /api/telegram/chats/:id owner-cookie=w705
+first PATCH /api/telegram/chats/:id admin-cookie=w706
 first PATCH /api/telegram/chats/:id limited-cookie=w1
 first PATCH /api/telegram/chats/:id member-cookie=w1
-first PATCH /api/telegram/chats/:id admin-bearer=w703
+first PATCH /api/telegram/chats/:id admin-bearer=w706
 first PATCH /api/telegram/chats/:id member-bearer=w1
 first PATCH /api/telegram/chats/:id revoked-bearer=w1
-first POST /api/telegram/chats/:id/block owner-cookie=w704
-first POST /api/telegram/chats/:id/block admin-cookie=w705
-first POST /api/telegram/chats/:id/block limited-cookie=w706
+first POST /api/telegram/chats/:id/block owner-cookie=w707
+first POST /api/telegram/chats/:id/block admin-cookie=w708
+first POST /api/telegram/chats/:id/block limited-cookie=w709
 first POST /api/telegram/chats/:id/block member-cookie=w1
-first POST /api/telegram/chats/:id/block admin-bearer=w705
+first POST /api/telegram/chats/:id/block admin-bearer=w708
 first POST /api/telegram/chats/:id/block member-bearer=w1
 first POST /api/telegram/chats/:id/block revoked-bearer=w1
-first POST /api/telegram/chats/:id/unpair owner-cookie=w707
-first POST /api/telegram/chats/:id/unpair admin-cookie=w708
-first POST /api/telegram/chats/:id/unpair limited-cookie=w709
+first POST /api/telegram/chats/:id/unpair owner-cookie=w710
+first POST /api/telegram/chats/:id/unpair admin-cookie=w711
+first POST /api/telegram/chats/:id/unpair limited-cookie=w712
 first POST /api/telegram/chats/:id/unpair member-cookie=w1
-first POST /api/telegram/chats/:id/unpair admin-bearer=w708
+first POST /api/telegram/chats/:id/unpair admin-bearer=w711
 first POST /api/telegram/chats/:id/unpair member-bearer=w1
 first POST /api/telegram/chats/:id/unpair revoked-bearer=w1
-first DELETE /api/telegram/my-chats/:id owner-cookie=w710
-first DELETE /api/telegram/my-chats/:id admin-cookie=w711
-first DELETE /api/telegram/my-chats/:id limited-cookie=w712
+first DELETE /api/telegram/my-chats/:id owner-cookie=w713
+first DELETE /api/telegram/my-chats/:id admin-cookie=w714
+first DELETE /api/telegram/my-chats/:id limited-cookie=w715
 first DELETE /api/telegram/my-chats/:id member-cookie=w1
-first DELETE /api/telegram/my-chats/:id admin-bearer=w711
+first DELETE /api/telegram/my-chats/:id admin-bearer=w714
 first DELETE /api/telegram/my-chats/:id member-bearer=w1
 first DELETE /api/telegram/my-chats/:id revoked-bearer=w1
-first POST /api/telegram/pair owner-cookie=w713
-first POST /api/telegram/pair admin-cookie=w714
-first POST /api/telegram/pair limited-cookie=w715
+first POST /api/telegram/pair owner-cookie=w716
+first POST /api/telegram/pair admin-cookie=w717
+first POST /api/telegram/pair limited-cookie=w718
 first POST /api/telegram/pair member-cookie=w1
-first POST /api/telegram/pair admin-bearer=w714
+first POST /api/telegram/pair admin-bearer=w717
 first POST /api/telegram/pair member-bearer=w1
 first POST /api/telegram/pair revoked-bearer=w1
-first POST /api/tool-groups owner-cookie=w716
-first POST /api/tool-groups admin-cookie=w717
+first POST /api/tool-groups owner-cookie=w719
+first POST /api/tool-groups admin-cookie=w720
 first POST /api/tool-groups limited-cookie=w1
 first POST /api/tool-groups member-cookie=w1
-first POST /api/tool-groups admin-bearer=w717
+first POST /api/tool-groups admin-bearer=w720
 first POST /api/tool-groups member-bearer=w1
 first POST /api/tool-groups revoked-bearer=w1
-first PATCH /api/tool-groups/:id owner-cookie=w718
-first PATCH /api/tool-groups/:id admin-cookie=w719
+first PATCH /api/tool-groups/:id owner-cookie=w721
+first PATCH /api/tool-groups/:id admin-cookie=w722
 first PATCH /api/tool-groups/:id limited-cookie=w1
 first PATCH /api/tool-groups/:id member-cookie=w1
-first PATCH /api/tool-groups/:id admin-bearer=w719
+first PATCH /api/tool-groups/:id admin-bearer=w722
 first PATCH /api/tool-groups/:id member-bearer=w1
 first PATCH /api/tool-groups/:id revoked-bearer=w1
-first DELETE /api/tool-groups/:id owner-cookie=w720
-first DELETE /api/tool-groups/:id admin-cookie=w721
+first DELETE /api/tool-groups/:id owner-cookie=w723
+first DELETE /api/tool-groups/:id admin-cookie=w724
 first DELETE /api/tool-groups/:id limited-cookie=w1
 first DELETE /api/tool-groups/:id member-cookie=w1
-first DELETE /api/tool-groups/:id admin-bearer=w721
+first DELETE /api/tool-groups/:id admin-bearer=w724
 first DELETE /api/tool-groups/:id member-bearer=w1
 first DELETE /api/tool-groups/:id revoked-bearer=w1
-first POST /api/tools owner-cookie=w722
-first POST /api/tools admin-cookie=w723
+first POST /api/tools owner-cookie=w725
+first POST /api/tools admin-cookie=w726
 first POST /api/tools limited-cookie=w1
 first POST /api/tools member-cookie=w1
-first POST /api/tools admin-bearer=w723
+first POST /api/tools admin-bearer=w726
 first POST /api/tools member-bearer=w1
 first POST /api/tools revoked-bearer=w1
-first PATCH /api/tools/:id owner-cookie=w724
-first PATCH /api/tools/:id admin-cookie=w725
+first PATCH /api/tools/:id owner-cookie=w727
+first PATCH /api/tools/:id admin-cookie=w728
 first PATCH /api/tools/:id limited-cookie=w1
 first PATCH /api/tools/:id member-cookie=w1
-first PATCH /api/tools/:id admin-bearer=w725
+first PATCH /api/tools/:id admin-bearer=w728
 first PATCH /api/tools/:id member-bearer=w1
 first PATCH /api/tools/:id revoked-bearer=w1
-first DELETE /api/tools/:id owner-cookie=w726
-first DELETE /api/tools/:id admin-cookie=w727
+first DELETE /api/tools/:id owner-cookie=w729
+first DELETE /api/tools/:id admin-cookie=w730
 first DELETE /api/tools/:id limited-cookie=w1
 first DELETE /api/tools/:id member-cookie=w1
-first DELETE /api/tools/:id admin-bearer=w727
+first DELETE /api/tools/:id admin-bearer=w730
 first DELETE /api/tools/:id member-bearer=w1
 first DELETE /api/tools/:id revoked-bearer=w1
 first PUT /api/tools/:id/external-access owner-cookie=w1
@@ -2801,67 +2811,67 @@ first PUT /api/tools/:id/external-access member-cookie=w1
 first PUT /api/tools/:id/external-access admin-bearer=w1
 first PUT /api/tools/:id/external-access member-bearer=w1
 first PUT /api/tools/:id/external-access revoked-bearer=w1
-first PUT /api/tools/settings owner-cookie=w728
-first PUT /api/tools/settings admin-cookie=w729
+first PUT /api/tools/settings owner-cookie=w731
+first PUT /api/tools/settings admin-cookie=w732
 first PUT /api/tools/settings limited-cookie=w1
 first PUT /api/tools/settings member-cookie=w1
-first PUT /api/tools/settings admin-bearer=w729
+first PUT /api/tools/settings admin-bearer=w732
 first PUT /api/tools/settings member-bearer=w1
 first PUT /api/tools/settings revoked-bearer=w1
-first POST /api/tree/:kind/folders owner-cookie=w730
-first POST /api/tree/:kind/folders admin-cookie=w731
-first POST /api/tree/:kind/folders limited-cookie=w732
-first POST /api/tree/:kind/folders member-cookie=w733
-first POST /api/tree/:kind/folders admin-bearer=w731
-first POST /api/tree/:kind/folders member-bearer=w733
+first POST /api/tree/:kind/folders owner-cookie=w733
+first POST /api/tree/:kind/folders admin-cookie=w734
+first POST /api/tree/:kind/folders limited-cookie=w735
+first POST /api/tree/:kind/folders member-cookie=w736
+first POST /api/tree/:kind/folders admin-bearer=w734
+first POST /api/tree/:kind/folders member-bearer=w736
 first POST /api/tree/:kind/folders revoked-bearer=w1
-first PATCH /api/tree/:kind/folders/:id owner-cookie=w734
-first PATCH /api/tree/:kind/folders/:id admin-cookie=w735
-first PATCH /api/tree/:kind/folders/:id limited-cookie=w736
-first PATCH /api/tree/:kind/folders/:id member-cookie=w737
-first PATCH /api/tree/:kind/folders/:id admin-bearer=w735
-first PATCH /api/tree/:kind/folders/:id member-bearer=w737
+first PATCH /api/tree/:kind/folders/:id owner-cookie=w737
+first PATCH /api/tree/:kind/folders/:id admin-cookie=w738
+first PATCH /api/tree/:kind/folders/:id limited-cookie=w739
+first PATCH /api/tree/:kind/folders/:id member-cookie=w740
+first PATCH /api/tree/:kind/folders/:id admin-bearer=w738
+first PATCH /api/tree/:kind/folders/:id member-bearer=w740
 first PATCH /api/tree/:kind/folders/:id revoked-bearer=w1
-first DELETE /api/tree/:kind/folders/:id owner-cookie=w738
-first DELETE /api/tree/:kind/folders/:id admin-cookie=w739
-first DELETE /api/tree/:kind/folders/:id limited-cookie=w740
-first DELETE /api/tree/:kind/folders/:id member-cookie=w741
-first DELETE /api/tree/:kind/folders/:id admin-bearer=w739
-first DELETE /api/tree/:kind/folders/:id member-bearer=w741
+first DELETE /api/tree/:kind/folders/:id owner-cookie=w741
+first DELETE /api/tree/:kind/folders/:id admin-cookie=w742
+first DELETE /api/tree/:kind/folders/:id limited-cookie=w743
+first DELETE /api/tree/:kind/folders/:id member-cookie=w744
+first DELETE /api/tree/:kind/folders/:id admin-bearer=w742
+first DELETE /api/tree/:kind/folders/:id member-bearer=w744
 first DELETE /api/tree/:kind/folders/:id revoked-bearer=w1
-first POST /api/tree/:kind/move owner-cookie=w742
-first POST /api/tree/:kind/move admin-cookie=w743
-first POST /api/tree/:kind/move limited-cookie=w744
-first POST /api/tree/:kind/move member-cookie=w745
-first POST /api/tree/:kind/move admin-bearer=w743
-first POST /api/tree/:kind/move member-bearer=w745
+first POST /api/tree/:kind/move owner-cookie=w745
+first POST /api/tree/:kind/move admin-cookie=w746
+first POST /api/tree/:kind/move limited-cookie=w747
+first POST /api/tree/:kind/move member-cookie=w748
+first POST /api/tree/:kind/move admin-bearer=w746
+first POST /api/tree/:kind/move member-bearer=w748
 first POST /api/tree/:kind/move revoked-bearer=w1
-first POST /api/tree/items/:id/opened owner-cookie=w746
-first POST /api/tree/items/:id/opened admin-cookie=w747
-first POST /api/tree/items/:id/opened limited-cookie=w748
-first POST /api/tree/items/:id/opened member-cookie=w749
-first POST /api/tree/items/:id/opened admin-bearer=w747
-first POST /api/tree/items/:id/opened member-bearer=w749
+first POST /api/tree/items/:id/opened owner-cookie=w749
+first POST /api/tree/items/:id/opened admin-cookie=w750
+first POST /api/tree/items/:id/opened limited-cookie=w751
+first POST /api/tree/items/:id/opened member-cookie=w752
+first POST /api/tree/items/:id/opened admin-bearer=w750
+first POST /api/tree/items/:id/opened member-bearer=w752
 first POST /api/tree/items/:id/opened revoked-bearer=w1
-first PUT /api/tree/items/:id/pin owner-cookie=w750
-first PUT /api/tree/items/:id/pin admin-cookie=w751
-first PUT /api/tree/items/:id/pin limited-cookie=w752
-first PUT /api/tree/items/:id/pin member-cookie=w753
-first PUT /api/tree/items/:id/pin admin-bearer=w751
-first PUT /api/tree/items/:id/pin member-bearer=w753
+first PUT /api/tree/items/:id/pin owner-cookie=w753
+first PUT /api/tree/items/:id/pin admin-cookie=w754
+first PUT /api/tree/items/:id/pin limited-cookie=w755
+first PUT /api/tree/items/:id/pin member-cookie=w756
+first PUT /api/tree/items/:id/pin admin-bearer=w754
+first PUT /api/tree/items/:id/pin member-bearer=w756
 first PUT /api/tree/items/:id/pin revoked-bearer=w1
-first POST /api/updates/check owner-cookie=w754
-first POST /api/updates/check admin-cookie=w755
+first POST /api/updates/check owner-cookie=w757
+first POST /api/updates/check admin-cookie=w758
 first POST /api/updates/check limited-cookie=w1
 first POST /api/updates/check member-cookie=w1
-first POST /api/updates/check admin-bearer=w755
+first POST /api/updates/check admin-bearer=w758
 first POST /api/updates/check member-bearer=w1
 first POST /api/updates/check revoked-bearer=w1
-first POST /api/updates/request owner-cookie=w756
-first POST /api/updates/request admin-cookie=w757
+first POST /api/updates/request owner-cookie=w759
+first POST /api/updates/request admin-cookie=w760
 first POST /api/updates/request limited-cookie=w1
 first POST /api/updates/request member-cookie=w1
-first POST /api/updates/request admin-bearer=w757
+first POST /api/updates/request admin-bearer=w760
 first POST /api/updates/request member-bearer=w1
 first POST /api/updates/request revoked-bearer=w1
 first POST /api/users owner-cookie=w1
@@ -2913,166 +2923,166 @@ first POST /api/users/:id/password member-cookie=w1
 first POST /api/users/:id/password admin-bearer=w1
 first POST /api/users/:id/password member-bearer=w1
 first POST /api/users/:id/password revoked-bearer=w1
-first POST /api/v1/events owner-cookie=w758
-first POST /api/v1/events admin-cookie=w759
-first POST /api/v1/events limited-cookie=w760
-first POST /api/v1/events member-cookie=w761
-first POST /api/v1/events admin-bearer=w759
-first POST /api/v1/events member-bearer=w761
+first POST /api/v1/events owner-cookie=w761
+first POST /api/v1/events admin-cookie=w762
+first POST /api/v1/events limited-cookie=w763
+first POST /api/v1/events member-cookie=w764
+first POST /api/v1/events admin-bearer=w762
+first POST /api/v1/events member-bearer=w764
 first POST /api/v1/events revoked-bearer=w1
-first POST /api/v1/events key-write=w762
-first POST /api/v1/events key-member=w763
-first POST /api/v1/files owner-cookie=w764
-first POST /api/v1/files admin-cookie=w765
-first POST /api/v1/files limited-cookie=w766
-first POST /api/v1/files member-cookie=w767
-first POST /api/v1/files admin-bearer=w765
-first POST /api/v1/files member-bearer=w767
+first POST /api/v1/events key-write=w765
+first POST /api/v1/events key-member=w766
+first POST /api/v1/files owner-cookie=w767
+first POST /api/v1/files admin-cookie=w768
+first POST /api/v1/files limited-cookie=w769
+first POST /api/v1/files member-cookie=w770
+first POST /api/v1/files admin-bearer=w768
+first POST /api/v1/files member-bearer=w770
 first POST /api/v1/files revoked-bearer=w1
-first POST /api/v1/files key-write=w768
-first POST /api/v1/files key-write-area=w769
-first POST /api/v1/files key-member=w770
-first POST /api/v1/journal owner-cookie=w771
-first POST /api/v1/journal admin-cookie=w772
-first POST /api/v1/journal limited-cookie=w773
+first POST /api/v1/files key-write=w771
+first POST /api/v1/files key-write-area=w772
+first POST /api/v1/files key-member=w773
+first POST /api/v1/journal owner-cookie=w774
+first POST /api/v1/journal admin-cookie=w775
+first POST /api/v1/journal limited-cookie=w776
 first POST /api/v1/journal member-cookie=w1
-first POST /api/v1/journal admin-bearer=w772
+first POST /api/v1/journal admin-bearer=w775
 first POST /api/v1/journal member-bearer=w1
 first POST /api/v1/journal revoked-bearer=w1
-first POST /api/v1/journal key-write=w774
+first POST /api/v1/journal key-write=w777
 first POST /api/v1/journal key-member=w1
-first POST /api/v1/notes owner-cookie=w775
-first POST /api/v1/notes admin-cookie=w776
-first POST /api/v1/notes limited-cookie=w777
-first POST /api/v1/notes member-cookie=w778
-first POST /api/v1/notes admin-bearer=w776
-first POST /api/v1/notes member-bearer=w778
+first POST /api/v1/notes owner-cookie=w778
+first POST /api/v1/notes admin-cookie=w779
+first POST /api/v1/notes limited-cookie=w780
+first POST /api/v1/notes member-cookie=w781
+first POST /api/v1/notes admin-bearer=w779
+first POST /api/v1/notes member-bearer=w781
 first POST /api/v1/notes revoked-bearer=w1
-first POST /api/v1/notes key-write=w779
-first POST /api/v1/notes key-member=w780
-first POST /api/v1/pages owner-cookie=w781
-first POST /api/v1/pages admin-cookie=w782
-first POST /api/v1/pages limited-cookie=w783
-first POST /api/v1/pages member-cookie=w784
-first POST /api/v1/pages admin-bearer=w782
-first POST /api/v1/pages member-bearer=w784
+first POST /api/v1/notes key-write=w782
+first POST /api/v1/notes key-member=w783
+first POST /api/v1/pages owner-cookie=w784
+first POST /api/v1/pages admin-cookie=w785
+first POST /api/v1/pages limited-cookie=w786
+first POST /api/v1/pages member-cookie=w787
+first POST /api/v1/pages admin-bearer=w785
+first POST /api/v1/pages member-bearer=w787
 first POST /api/v1/pages revoked-bearer=w1
-first POST /api/v1/pages key-write=w785
-first POST /api/v1/pages key-write-area=w786
-first POST /api/v1/pages key-member=w787
-first PATCH /api/v1/pages/:id owner-cookie=w788
-first PATCH /api/v1/pages/:id admin-cookie=w789
-first PATCH /api/v1/pages/:id limited-cookie=w790
-first PATCH /api/v1/pages/:id member-cookie=w791
-first PATCH /api/v1/pages/:id admin-bearer=w789
-first PATCH /api/v1/pages/:id member-bearer=w791
+first POST /api/v1/pages key-write=w788
+first POST /api/v1/pages key-write-area=w789
+first POST /api/v1/pages key-member=w790
+first PATCH /api/v1/pages/:id owner-cookie=w791
+first PATCH /api/v1/pages/:id admin-cookie=w792
+first PATCH /api/v1/pages/:id limited-cookie=w793
+first PATCH /api/v1/pages/:id member-cookie=w794
+first PATCH /api/v1/pages/:id admin-bearer=w792
+first PATCH /api/v1/pages/:id member-bearer=w794
 first PATCH /api/v1/pages/:id revoked-bearer=w1
-first POST /api/v1/tables/:id/commit owner-cookie=w792
-first POST /api/v1/tables/:id/commit admin-cookie=w793
-first POST /api/v1/tables/:id/commit limited-cookie=w794
-first POST /api/v1/tables/:id/commit member-cookie=w795
-first POST /api/v1/tables/:id/commit admin-bearer=w793
-first POST /api/v1/tables/:id/commit member-bearer=w795
+first POST /api/v1/tables/:id/commit owner-cookie=w795
+first POST /api/v1/tables/:id/commit admin-cookie=w796
+first POST /api/v1/tables/:id/commit limited-cookie=w797
+first POST /api/v1/tables/:id/commit member-cookie=w798
+first POST /api/v1/tables/:id/commit admin-bearer=w796
+first POST /api/v1/tables/:id/commit member-bearer=w798
 first POST /api/v1/tables/:id/commit revoked-bearer=w1
-first POST /api/v1/tables/:id/commit key-write=w796
-first POST /api/v1/tables/:id/commit key-member=w797
-first POST /api/v1/tables/:id/rows owner-cookie=w798
-first POST /api/v1/tables/:id/rows admin-cookie=w799
-first POST /api/v1/tables/:id/rows limited-cookie=w800
+first POST /api/v1/tables/:id/commit key-write=w799
+first POST /api/v1/tables/:id/commit key-member=w800
+first POST /api/v1/tables/:id/rows owner-cookie=w801
+first POST /api/v1/tables/:id/rows admin-cookie=w802
+first POST /api/v1/tables/:id/rows limited-cookie=w803
 first POST /api/v1/tables/:id/rows member-cookie=w1
-first POST /api/v1/tables/:id/rows admin-bearer=w799
+first POST /api/v1/tables/:id/rows admin-bearer=w802
 first POST /api/v1/tables/:id/rows member-bearer=w1
 first POST /api/v1/tables/:id/rows revoked-bearer=w1
-first POST /api/v1/tables/:id/rows key-write=w801
+first POST /api/v1/tables/:id/rows key-write=w804
 first POST /api/v1/tables/:id/rows key-member=w1
-first PATCH /api/v1/tables/:id/rows/:rowId owner-cookie=w802
-first PATCH /api/v1/tables/:id/rows/:rowId admin-cookie=w803
-first PATCH /api/v1/tables/:id/rows/:rowId limited-cookie=w804
+first PATCH /api/v1/tables/:id/rows/:rowId owner-cookie=w805
+first PATCH /api/v1/tables/:id/rows/:rowId admin-cookie=w806
+first PATCH /api/v1/tables/:id/rows/:rowId limited-cookie=w807
 first PATCH /api/v1/tables/:id/rows/:rowId member-cookie=w1
-first PATCH /api/v1/tables/:id/rows/:rowId admin-bearer=w803
+first PATCH /api/v1/tables/:id/rows/:rowId admin-bearer=w806
 first PATCH /api/v1/tables/:id/rows/:rowId member-bearer=w1
 first PATCH /api/v1/tables/:id/rows/:rowId revoked-bearer=w1
-first PATCH /api/v1/tables/:id/rows/:rowId key-write=w805
+first PATCH /api/v1/tables/:id/rows/:rowId key-write=w808
 first PATCH /api/v1/tables/:id/rows/:rowId key-member=w1
-first POST /api/v1/tasks owner-cookie=w806
-first POST /api/v1/tasks admin-cookie=w807
-first POST /api/v1/tasks limited-cookie=w808
-first POST /api/v1/tasks member-cookie=w809
-first POST /api/v1/tasks admin-bearer=w807
-first POST /api/v1/tasks member-bearer=w809
+first POST /api/v1/tasks owner-cookie=w809
+first POST /api/v1/tasks admin-cookie=w810
+first POST /api/v1/tasks limited-cookie=w811
+first POST /api/v1/tasks member-cookie=w812
+first POST /api/v1/tasks admin-bearer=w810
+first POST /api/v1/tasks member-bearer=w812
 first POST /api/v1/tasks revoked-bearer=w1
-first POST /api/v1/tasks key-write=w810
-first POST /api/v1/tasks key-member=w811
-first PATCH /api/v1/tasks/:id owner-cookie=w812
-first PATCH /api/v1/tasks/:id admin-cookie=w813
-first PATCH /api/v1/tasks/:id limited-cookie=w814
-first PATCH /api/v1/tasks/:id member-cookie=w815
-first PATCH /api/v1/tasks/:id admin-bearer=w813
-first PATCH /api/v1/tasks/:id member-bearer=w815
+first POST /api/v1/tasks key-write=w813
+first POST /api/v1/tasks key-member=w814
+first PATCH /api/v1/tasks/:id owner-cookie=w815
+first PATCH /api/v1/tasks/:id admin-cookie=w816
+first PATCH /api/v1/tasks/:id limited-cookie=w817
+first PATCH /api/v1/tasks/:id member-cookie=w818
+first PATCH /api/v1/tasks/:id admin-bearer=w816
+first PATCH /api/v1/tasks/:id member-bearer=w818
 first PATCH /api/v1/tasks/:id revoked-bearer=w1
-first PATCH /api/v1/tasks/:id key-write=w816
-first PATCH /api/v1/tasks/:id key-member=w817
-first POST /api/workspaces owner-cookie=w818
-first POST /api/workspaces admin-cookie=w819
-first POST /api/workspaces limited-cookie=w820
+first PATCH /api/v1/tasks/:id key-write=w819
+first PATCH /api/v1/tasks/:id key-member=w820
+first POST /api/workspaces owner-cookie=w821
+first POST /api/workspaces admin-cookie=w822
+first POST /api/workspaces limited-cookie=w823
 first POST /api/workspaces member-cookie=w1
-first POST /api/workspaces admin-bearer=w819
+first POST /api/workspaces admin-bearer=w822
 first POST /api/workspaces member-bearer=w1
 first POST /api/workspaces revoked-bearer=w1
-first PATCH /api/workspaces/:id owner-cookie=w821
-first PATCH /api/workspaces/:id admin-cookie=w822
-first PATCH /api/workspaces/:id limited-cookie=w823
+first PATCH /api/workspaces/:id owner-cookie=w824
+first PATCH /api/workspaces/:id admin-cookie=w825
+first PATCH /api/workspaces/:id limited-cookie=w826
 first PATCH /api/workspaces/:id member-cookie=w1
-first PATCH /api/workspaces/:id admin-bearer=w822
+first PATCH /api/workspaces/:id admin-bearer=w825
 first PATCH /api/workspaces/:id member-bearer=w1
 first PATCH /api/workspaces/:id revoked-bearer=w1
-first POST /api/workspaces/:id/archive owner-cookie=w824
-first POST /api/workspaces/:id/archive admin-cookie=w825
-first POST /api/workspaces/:id/archive limited-cookie=w826
+first POST /api/workspaces/:id/archive owner-cookie=w827
+first POST /api/workspaces/:id/archive admin-cookie=w828
+first POST /api/workspaces/:id/archive limited-cookie=w829
 first POST /api/workspaces/:id/archive member-cookie=w1
-first POST /api/workspaces/:id/archive admin-bearer=w825
+first POST /api/workspaces/:id/archive admin-bearer=w828
 first POST /api/workspaces/:id/archive member-bearer=w1
 first POST /api/workspaces/:id/archive revoked-bearer=w1
-first POST /api/workspaces/:id/resources owner-cookie=w827
-first POST /api/workspaces/:id/resources admin-cookie=w828
-first POST /api/workspaces/:id/resources limited-cookie=w829
+first POST /api/workspaces/:id/resources owner-cookie=w830
+first POST /api/workspaces/:id/resources admin-cookie=w831
+first POST /api/workspaces/:id/resources limited-cookie=w832
 first POST /api/workspaces/:id/resources member-cookie=w1
-first POST /api/workspaces/:id/resources admin-bearer=w828
+first POST /api/workspaces/:id/resources admin-bearer=w831
 first POST /api/workspaces/:id/resources member-bearer=w1
 first POST /api/workspaces/:id/resources revoked-bearer=w1
-first PATCH /api/workspaces/:id/resources/:kind/:refId owner-cookie=w830
-first PATCH /api/workspaces/:id/resources/:kind/:refId admin-cookie=w831
-first PATCH /api/workspaces/:id/resources/:kind/:refId limited-cookie=w832
+first PATCH /api/workspaces/:id/resources/:kind/:refId owner-cookie=w833
+first PATCH /api/workspaces/:id/resources/:kind/:refId admin-cookie=w834
+first PATCH /api/workspaces/:id/resources/:kind/:refId limited-cookie=w835
 first PATCH /api/workspaces/:id/resources/:kind/:refId member-cookie=w1
-first PATCH /api/workspaces/:id/resources/:kind/:refId admin-bearer=w831
+first PATCH /api/workspaces/:id/resources/:kind/:refId admin-bearer=w834
 first PATCH /api/workspaces/:id/resources/:kind/:refId member-bearer=w1
 first PATCH /api/workspaces/:id/resources/:kind/:refId revoked-bearer=w1
-first DELETE /api/workspaces/:id/resources/:kind/:refId owner-cookie=w833
-first DELETE /api/workspaces/:id/resources/:kind/:refId admin-cookie=w834
-first DELETE /api/workspaces/:id/resources/:kind/:refId limited-cookie=w835
+first DELETE /api/workspaces/:id/resources/:kind/:refId owner-cookie=w836
+first DELETE /api/workspaces/:id/resources/:kind/:refId admin-cookie=w837
+first DELETE /api/workspaces/:id/resources/:kind/:refId limited-cookie=w838
 first DELETE /api/workspaces/:id/resources/:kind/:refId member-cookie=w1
-first DELETE /api/workspaces/:id/resources/:kind/:refId admin-bearer=w834
+first DELETE /api/workspaces/:id/resources/:kind/:refId admin-bearer=w837
 first DELETE /api/workspaces/:id/resources/:kind/:refId member-bearer=w1
 first DELETE /api/workspaces/:id/resources/:kind/:refId revoked-bearer=w1
-first POST /api/workspaces/:id/users owner-cookie=w836
-first POST /api/workspaces/:id/users admin-cookie=w837
-first POST /api/workspaces/:id/users limited-cookie=w838
+first POST /api/workspaces/:id/users owner-cookie=w839
+first POST /api/workspaces/:id/users admin-cookie=w840
+first POST /api/workspaces/:id/users limited-cookie=w841
 first POST /api/workspaces/:id/users member-cookie=w1
-first POST /api/workspaces/:id/users admin-bearer=w837
+first POST /api/workspaces/:id/users admin-bearer=w840
 first POST /api/workspaces/:id/users member-bearer=w1
 first POST /api/workspaces/:id/users revoked-bearer=w1
-first PATCH /api/workspaces/:id/users/:loginId owner-cookie=w839
-first PATCH /api/workspaces/:id/users/:loginId admin-cookie=w840
-first PATCH /api/workspaces/:id/users/:loginId limited-cookie=w841
+first PATCH /api/workspaces/:id/users/:loginId owner-cookie=w842
+first PATCH /api/workspaces/:id/users/:loginId admin-cookie=w843
+first PATCH /api/workspaces/:id/users/:loginId limited-cookie=w844
 first PATCH /api/workspaces/:id/users/:loginId member-cookie=w1
-first PATCH /api/workspaces/:id/users/:loginId admin-bearer=w840
+first PATCH /api/workspaces/:id/users/:loginId admin-bearer=w843
 first PATCH /api/workspaces/:id/users/:loginId member-bearer=w1
 first PATCH /api/workspaces/:id/users/:loginId revoked-bearer=w1
-first DELETE /api/workspaces/:id/users/:loginId owner-cookie=w842
-first DELETE /api/workspaces/:id/users/:loginId admin-cookie=w843
-first DELETE /api/workspaces/:id/users/:loginId limited-cookie=w844
+first DELETE /api/workspaces/:id/users/:loginId owner-cookie=w845
+first DELETE /api/workspaces/:id/users/:loginId admin-cookie=w846
+first DELETE /api/workspaces/:id/users/:loginId limited-cookie=w847
 first DELETE /api/workspaces/:id/users/:loginId member-cookie=w1
-first DELETE /api/workspaces/:id/users/:loginId admin-bearer=w843
+first DELETE /api/workspaces/:id/users/:loginId admin-bearer=w846
 first DELETE /api/workspaces/:id/users/:loginId member-bearer=w1
 first DELETE /api/workspaces/:id/users/:loginId revoked-bearer=w1
 more POST /api/access-keys disabled-cookie=w1
@@ -4098,6 +4108,11 @@ more PUT /api/profile/fonts bumped-cookie=w1
 more PUT /api/profile/fonts gone-cookie=w1
 more PUT /api/profile/fonts rotated-bearer=w1
 more PUT /api/profile/fonts expired-bearer=w1
+more PUT /api/profile/home-desk disabled-cookie=w1
+more PUT /api/profile/home-desk bumped-cookie=w1
+more PUT /api/profile/home-desk gone-cookie=w1
+more PUT /api/profile/home-desk rotated-bearer=w1
+more PUT /api/profile/home-desk expired-bearer=w1
 more PUT /api/profile/logo disabled-cookie=w1
 more PUT /api/profile/logo bumped-cookie=w1
 more PUT /api/profile/logo gone-cookie=w1

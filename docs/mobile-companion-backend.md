@@ -361,8 +361,8 @@ and the payload's `v` stays `1`.
 now answers every login with the SAME shape (`Shell` in
 `@mantle/client-types`). It names the login: `role` (`admin` or
 `member`), `loginId` and `isOwner`. It carries the login's own face
-(`displayName`, `email`, `avatar`, `avatarPhotoVersion`, `navFavorites`)
-and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
+(`displayName`, `email`, `avatar`, `avatarPhotoVersion`, `navFavorites`,
+`homeDesk`) and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
 `workspaces` and `treeKinds`. `areas` is always `[]` outside the Admin
 workspace; for a member `onboarded` is always true and `pendingApprovals`
 always 0. `GET /api/member/shell` answers

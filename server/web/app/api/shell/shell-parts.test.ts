@@ -268,6 +268,7 @@ describe('shell chrome reads never fail the shell', () => {
         onboarded: true,
         pendingApprovals: 0,
         navFavorites: [],
+        homeDesk: null,
         maxUploadBytes: 1024,
         features: { recallV2: true },
       });

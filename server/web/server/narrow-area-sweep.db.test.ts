@@ -758,6 +758,7 @@ describe.skipIf(!URL)(
       'self PUT /api/profile/color-theme': ['profile-row'],
       'self PUT /api/profile/default-mode': ['profile-row'],
       'self PUT /api/profile/fonts': ['profile-row'],
+      'self PUT /api/profile/home-desk': ['profile-row'],
       'self PUT /api/profile/nav-favorites': ['profile-row'],
       'self PUT /api/profile/neat-background': ['profile-row'],
       'self PUT /api/profile/reminder-channel': ['profile-row'],

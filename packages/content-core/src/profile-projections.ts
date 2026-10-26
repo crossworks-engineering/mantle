@@ -18,6 +18,8 @@
  */
 
 import type {
+  HomeDesk,
+  HomeDeskItem,
   OnboardingModelChoices,
   ProfilePreferences,
   ReminderChannel,
@@ -507,6 +509,56 @@ export function projectNavFavorites(raw: unknown): string[] | undefined {
     if (out.length >= NAV_FAVORITES_MAX) break;
   }
   return out.length > 0 ? out : undefined;
+}
+
+/** The Home desk's bounds. Generous (a full desk is a few KB); they bound
+ *  the stored jsonb, not the layout. */
+export const HOME_DESK_ITEMS_MAX = 400;
+export const HOME_DESK_ID_MAX = 160;
+export const HOME_DESK_COUNTS_MAX = 32;
+export const HOME_DESK_COORD_MAX = 10_000;
+export const HOME_DESK_BYTES_MAX = 32_768;
+
+const deskCoord = (n: unknown): n is number =>
+  typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= HOME_DESK_COORD_MAX;
+
+/**
+ * Project stored `homeDesk`. Loose on purpose: the client owns what a widget
+ * id means and each widget's bounds (and parses again on read), so the brain
+ * keeps only the SHAPE sound. Each item is checked on its own (one bad entry
+ * drops that widget, not the desk), repeats of an id keep the first, and the
+ * whole is capped. Undefined for anything that is not a v1 desk.
+ */
+export function projectHomeDesk(raw: unknown): HomeDesk | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const d = raw as Record<string, unknown>;
+  if (d.v !== 1 || !Array.isArray(d.items)) return undefined;
+  const items: HomeDeskItem[] = [];
+  const seen = new Set<string>();
+  for (const v of d.items as unknown[]) {
+    if (typeof v !== 'object' || v === null) continue;
+    const { id, x, y, w, h } = v as Record<string, unknown>;
+    if (typeof id !== 'string' || id.length === 0 || id.length > HOME_DESK_ID_MAX) continue;
+    if (seen.has(id) || ![x, y, w, h].every(deskCoord)) continue;
+    seen.add(id);
+    items.push({ id, x: x as number, y: y as number, w: w as number, h: h as number });
+    if (items.length >= HOME_DESK_ITEMS_MAX) break;
+  }
+  const counts: Record<string, number> = {};
+  if (typeof d.counts === 'object' && d.counts !== null && !Array.isArray(d.counts)) {
+    for (const [k, n] of Object.entries(d.counts as Record<string, unknown>)) {
+      if (Object.keys(counts).length >= HOME_DESK_COUNTS_MAX) break;
+      if (k.length > 0 && k.length <= 32 && deskCoord(n)) counts[k] = n;
+    }
+  }
+  const desk: HomeDesk = {
+    v: 1,
+    items,
+    counts,
+    icons: d.icons !== false,
+    clock: d.clock === 'analog' ? 'analog' : 'digital',
+  };
+  return JSON.stringify(desk).length <= HOME_DESK_BYTES_MAX ? desk : undefined;
 }
 
 /** Project stored `appOpens`: well-formed counters only, keeping the
