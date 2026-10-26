@@ -37,7 +37,7 @@ A folder shares what is in it: open **Access…** from the folder's menu in the 
 
 ## Pick the landing page
 
-Each workspace has a landing page: what its people see at **Home**. A Moderator picks the **Built-in home** or a published app the workspace holds, under **Landing page**. See [Workspace home apps](../07-api/07-member-home-apps.md).
+Each workspace has a landing page: what its people see at **Desk**. A Moderator picks **Desk** or a published app the workspace holds, under **Landing page**. See [Workspace home apps](../07-api/07-member-home-apps.md).
 
 ## Take access away
 
