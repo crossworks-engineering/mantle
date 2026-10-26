@@ -28,7 +28,7 @@ import {
   a8ToolPlan,
   a8UncoveredKinds,
 } from '@mantle/db/matrix/a8-tool-cells';
-import { a8RoutePlan, A8_ROUTE_MODES, type A8ManifestEntry } from './a8-route-cells';
+import { a8RoutePlan, A8_ROUTE_MODES, type A8ManifestEntry } from './test-support/a8-route-cells';
 import { a8AllTools } from './a8-tools.list';
 import { routeManifest } from './route-manifest.gen';
 

@@ -287,7 +287,7 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   and the A8 grid read the registry. `handKindLists` fails a hand list.
 - **A route**: a policy row; `route-scope.test.ts` fails an unclassified
   route, the gate refuses one with no row; its route file declares it. A write naming its
-  item gets A8 route cells (`a8-route-cells.ts`, a request per route), or runs refused cells only.
+  item gets A8 route cells (`server/web/server/test-support/a8-route-cells.ts`), or runs refused cells only.
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
   declares its `clientSourced` rule (unset, a client-sourced call waits),
   `itemArgs` and A8 `matrix` (action and argument, or `none` and why; an

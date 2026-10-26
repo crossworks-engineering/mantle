@@ -660,7 +660,7 @@ function declaredFacts(
   // as a tool's matrix declaration does: the right the handler asks of the
   // item in the database, in the login's scope. The gate reads none: no
   // route has an item pre-check, and a declaration does not bring one
-  // back. The A8 route cells (server/web/server/a8-route-cells.ts) are
+  // back. The A8 route cells (server/web/server/test-support/a8-route-cells.ts) are
   // generated from it.
   const item: RouteItem | null = null;
   // The key area an API key needs (an /api/v1 row only: the validator): the

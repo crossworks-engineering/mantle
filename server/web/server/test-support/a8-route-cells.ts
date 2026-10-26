@@ -35,7 +35,7 @@ import {
   type GuideSurface,
   GUIDE_PLACEMENTS,
 } from '@mantle/db/matrix/guide-oracle';
-import type { MethodPolicy } from '../lib/auth/route-declaration';
+import type { MethodPolicy } from '../../lib/auth/route-declaration';
 
 /** The roles the route cells run as (plan v3.2 section 5 item 3; the owner
  *  is an Admin user, the admin role stands for every one). */
@@ -427,6 +427,9 @@ export type A8RoutePlan = {
   stale: string[];
 };
 
+/** The grid roles that are Admin users (the owner is one too). */
+const ADMIN_USERS: ReadonlySet<GuideRole> = new Set(['owner', 'admin']);
+
 /** Whether the oracle allows (a not-applicable answer is never a cell). */
 export const allows = (w: GuideAnswer): boolean => 'allow' in w && w.allow;
 
@@ -476,7 +479,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
         let want = a8RouteWant(spec, role, placement);
         if ('na' in want) continue;
         let narrowed: string | undefined;
-        if (role !== 'admin' && allows(want)) {
+        if (!ADMIN_USERS.has(role) && allows(want)) {
           if (!memberOpen(r.key)) narrowed = 'the route is open to Admin users only';
           else if (spec.adminOnly) narrowed = spec.adminOnly;
           if (narrowed) want = { allow: false, why: narrowed };

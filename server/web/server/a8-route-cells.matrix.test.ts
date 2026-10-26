@@ -65,12 +65,12 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
   let g: typeof import('@mantle/db/matrix/a8-grid');
   let tc: typeof import('@mantle/db/matrix/a8-tool-cells');
   let tc2: typeof import('@mantle/db/matrix/a8-tool-content');
-  let rc: typeof import('./a8-route-cells');
+  let rc: typeof import('./test-support/a8-route-cells');
   let runRoute: typeof import('./run-route').runRoute;
   let contentDeps: import('@mantle/db/matrix/a8-tool-content').A8ContentDeps;
   let actorMode: typeof import('../../../packages/db/src/actor');
   let fx: import('@mantle/db/matrix/a8-grid').A8Fixture;
-  let manifest: readonly import('./a8-route-cells').A8ManifestEntry[];
+  let manifest: readonly import('./test-support/a8-route-cells').A8ManifestEntry[];
   let dir = '';
   /** Each role's read-write API key (the /api/v1 routes). */
   const keyRw: Partial<Record<GuideRole, string>> = {};
@@ -110,7 +110,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
     g = await import('@mantle/db/matrix/a8-grid');
     tc = await import('@mantle/db/matrix/a8-tool-cells');
     tc2 = await import('@mantle/db/matrix/a8-tool-content');
-    rc = await import('./a8-route-cells');
+    rc = await import('./test-support/a8-route-cells');
     runRoute = (await import('./run-route')).runRoute;
     manifest = (await import('./route-manifest.gen')).routeManifest as never;
     const tdb = await import('@mantle/tabledb');
@@ -193,7 +193,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
   /** A fresh item of the cell's kind and placement, with its route's
    *  content (a tool's seed), and what its request is built from. */
   const freshItem = async (
-    spec: import('./a8-route-cells').A8RouteSpec,
+    spec: import('./test-support/a8-route-cells').A8RouteSpec,
     placement: import('@mantle/db/matrix/guide-oracle').GuidePlacement,
   ) => {
     const seeded = spec.seed
@@ -205,7 +205,8 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
       : null;
     if (spec.seed && !seeded) throw new Error(`no content seed ${spec.seed}`);
     const item = seeded?.item ?? (await g.makeA8Item(raw, fx, spec.kind, placement));
-    if (spec.prepSql) {
+    // A snapshot copy is read only, to the fixture too: its content stays.
+    if (spec.prepSql && placement !== 'snapshot') {
       await raw.begin(async (tx) => {
         await tx.unsafe(g.FIXTURE_ACTOR);
         await tx.unsafe(spec.prepSql!, [item.id]);
@@ -213,7 +214,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
     }
     const [v] = await raw<{ version: number }[]>`
       select version from recall_maps where id = ${item.id}`;
-    const ctx: import('./a8-route-cells').A8RouteCtx = {
+    const ctx: import('./test-support/a8-route-cells').A8RouteCtx = {
       id: item.id,
       tag: fx.tag,
       input: seeded?.input ?? {},
@@ -224,7 +225,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
 
   const call = async (
     role: GuideRole,
-    spec: import('./a8-route-cells').A8RouteSpec,
+    spec: import('./test-support/a8-route-cells').A8RouteSpec,
     method: string,
     p: string,
     body: unknown,
