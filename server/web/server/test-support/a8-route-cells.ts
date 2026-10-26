@@ -141,6 +141,9 @@ export type A8RouteSpec = {
   allowedStatus?: { status: number; why: string };
   /** The request that asks the higher right of the route, its own cells. */
   higher?: A8RouteHigher;
+  /** The placements its cells run on (every one of its kind when unset),
+   *  with why the others are left out. */
+  placements?: { only: readonly GuidePlacement[]; why: string };
   /** In warn, the edit of a login that reads the item and may not edit it
    *  is made and logged as an actor miss: the route's edit is one
    *  statement, the database's check alone (docs/edit-check.md, "The
@@ -307,14 +310,16 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     kind: 'recall',
     action: 'edit',
     body: (c) => ({ title: 'A8 map', version: c.version }),
+    warnMade: true,
   },
   'DELETE /api/recall/maps/:id': { kind: 'recall', action: 'delete', adminOnly: RECALL_OWNER },
-  'POST /api/recall/maps/:id/cards': { kind: 'recall', action: 'edit', body: card },
+  'POST /api/recall/maps/:id/cards': { kind: 'recall', action: 'edit', body: card, warnMade: true },
   'PUT /api/recall/maps/:id/cards/:card': {
     kind: 'recall',
     action: 'edit',
     params: () => ({ card: 'card' }),
     body: card,
+    warnMade: true,
   },
   'DELETE /api/recall/maps/:id/cards/:card': {
     kind: 'recall',
@@ -322,6 +327,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     seed: 'recall_cards_reorder',
     params: () => ({ card: 'card' }),
     query: (c) => `version=${c.version}`,
+    warnMade: true,
   },
   'POST /api/recall/maps/:id/cards/:card/prompt': {
     kind: 'recall',
@@ -472,6 +478,10 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'writeSwitch',
     params: (c) => ({ wsId: c.ws.R }),
     body: () => ({ write: true, confirm: true }),
+    placements: {
+      only: ['root'],
+      why: 'in folder F its grant of R comes from the folder (a derived row: Change here first, 409), which the guide oracle does not model',
+    },
   },
   'DELETE /api/grants/:nodeId/:wsId': {
     kind: 'note',
@@ -667,6 +677,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
           if (role === A8_ADMIN_WRITE_GRANT && !ADMIN_WRITE_GRANT_PLACEMENTS.includes(placement)) {
             continue;
           }
+          if (spec.placements && !spec.placements.only.includes(placement)) continue;
           let want = a8RouteWant({ ...spec, action }, role, placement);
           if ('na' in want) continue;
           let narrowed: string | undefined;
@@ -759,8 +770,8 @@ export type A8RouteJudge = {
   spec: A8RouteSpec;
   mode: A8RouteMode;
   out: A8RouteOutcome;
-  /** The actor misses the request logged. */
-  misses: number;
+  /** The actor misses the request logged (their checks). */
+  misses: readonly string[];
   /** The item's row (a8_probe: 'gone' once deleted) and its content, and
    *  the count of the brain's nodes, before and after. */
   before: { row: string; content: string; nodes: number };
@@ -790,9 +801,18 @@ export function a8WarnMade(cell: A8RouteCell, spec: A8RouteSpec, mode: A8RouteMo
   );
 }
 
+/** In warn the heads lock reports the ids of a lock the scope does not
+ *  read, and locks them all (docs/edit-check.md, "The heads locks filter by
+ *  the scope"): a caller that does not read the item may log it there. */
+const HEADS_LOCK_REPORT = /^edit: heads lock: /;
+
 /** Judge one route cell: null when it passes, else why it fails. */
 export function judgeA8RouteCell(a: A8RouteJudge): string | null {
   const { cell, spec, out, before, after, random } = a;
+  const misses =
+    a.mode === 'warn' && !cell.reads
+      ? a.misses.filter((m) => !HEADS_LOCK_REPORT.test(m)).length
+      : a.misses.length;
   const allowed = allows(cell.want);
   const changed =
     before.row !== after.row || before.content !== after.content || before.nodes !== after.nodes;
@@ -804,10 +824,10 @@ export function judgeA8RouteCell(a: A8RouteJudge): string | null {
     if (!ok)
       return `warn: refused, the edit check only reports: ${out.status} ${out.text.slice(0, 160)}`;
     if (!changed) return 'warn: answered ok, nothing changed';
-    if (!a.misses) return 'warn: the write was made and logged no actor miss';
+    if (!misses) return 'warn: the write was made and logged no actor miss';
     return null;
   }
-  if (a.misses) return `${a.misses} actor miss(es)`;
+  if (misses) return `${misses} actor miss(es)`;
   if (!allowed && changed)
     return `changed, the oracle denies (${out.status} ${out.text.slice(0, 100)})`;
   if (crash) return `a crash, not a refusal: ${out.status} ${out.text.slice(0, 160)}`;

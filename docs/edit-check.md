@@ -301,6 +301,11 @@ other route's own check refuse in both modes.
 - PATCH `/api/notes/:id`, `/api/tasks/:id`, `/api/v1/tasks/:id`,
   `/api/events/:id`, `/api/formulas/:id`, `/api/presents/:id`,
   `/api/draws/:id`, `/api/pages/:id`, `/api/tables/:id`
+- a Recall map's edit and its cards' writes: PATCH `/api/recall/maps/:id`,
+  POST `/api/recall/maps/:id/cards`, PUT and DELETE
+  `/api/recall/maps/:id/cards/:card` (the map is locked in the login's
+  scope first, and the edit check on `recall_maps` and `recall_nodes`
+  decides)
 
 A box below `on` is an emergency: the check floor of migration 0301
 (`0301_check_mode_floor`) keeps every fleet box on.
