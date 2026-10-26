@@ -93,7 +93,11 @@ export type A8RouteCtx = {
 };
 
 /** A route's request that asks a higher right than the route declares (a
- *  code restore on a route whose data restore asks edit): its own cells. */
+ *  code restore on a route whose data restore asks edit, a move or a
+ *  description on a route whose rename asks edit): its own cells. Every
+ *  route with more than one right runs it (route-declaration.ts: a route
+ *  declares the lowest right its handler accepts, and its cells test the
+ *  higher one). */
 export type A8RouteHigher = {
   /** Why the route takes it. */
   why: string;
@@ -344,7 +348,16 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     body: (c) => ({ slugs: c.input.slugs, version: c.version }),
     adminOnly: RECALL_OWNER,
   },
-  'PATCH /api/apps/:id': { kind: 'app', action: 'edit', body: () => ({ name: 'A8 app' }) },
+  'PATCH /api/apps/:id': {
+    kind: 'app',
+    action: 'edit',
+    body: () => ({ name: 'A8 app' }),
+    higher: {
+      why: 'a description asks manage (it lives on the manifest, the app’s code: updateAppMeta)',
+      action: 'editDraft',
+      body: () => ({ name: 'A8 app d', description: 'a8' }),
+    },
+  },
   'DELETE /api/apps/:id': { kind: 'app', action: 'delete' },
   'PUT /api/apps/:id/draft': {
     kind: 'app',
@@ -429,6 +442,12 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'edit',
     seed: 'file_rename',
     body: (c) => ({ rename: `${String(c.input.new_stem)}.csv` }),
+    higher: {
+      why: 'a move asks manage, and its destination’s Moderator (the guide’s move, H to T)',
+      action: 'move',
+      seed: 'file_move',
+      body: (c) => ({ move: String(c.input.dest_path), confirm: true }),
+    },
   },
   'DELETE /api/files/files/:id': { kind: 'file', action: 'delete', seed: 'file_rename' },
   'POST /api/files/files/:id': {
@@ -443,6 +462,12 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'edit',
     seed: 'folder_rename',
     body: (c) => ({ rename: String(c.input.new_name) }),
+    higher: {
+      why: 'a move asks manage, and its destination’s Moderator (the guide’s move, H to T)',
+      action: 'move',
+      seed: 'folder_move',
+      body: (c) => ({ move: String(c.input.dest_parent_path), confirm: true }),
+    },
   },
   'DELETE /api/files/folders/:id': { kind: 'branch', action: 'delete', seed: 'folder_rename' },
   'POST /api/files/folders/:id': {
@@ -457,6 +482,12 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'edit',
     params: () => ({ kind: treeKind }),
     body: (c) => ({ name: `a8 ${c.id.slice(0, 8)}` }),
+    higher: {
+      why: 'a move asks manage, and its destination’s Moderator (the guide’s move, H to T)',
+      action: 'move',
+      seed: 'tree_folder_move',
+      body: (c) => ({ parentId: String(c.input.parent_id), confirm: true }),
+    },
   },
   'DELETE /api/tree/:kind/folders/:id': {
     kind: 'branch',
@@ -467,7 +498,10 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'PUT /api/tree/items/:id/pin': { kind: 'note', action: 'read', body: () => ({ pinned: true }) },
   // The grant changes (each declares none: its rule asks two workspaces,
   // and the guide action it is decides the cell): add T, switch Write on
-  // for R, remove R.
+  // for R, remove R, and, on a grant of R the item takes from its folder,
+  // "Change here" and taking "Removed here" away (each by the Write
+  // switch's rule: Moderator of its home and of R; grants.ts handGrant,
+  // restoreGrant).
   'POST /api/grants/:nodeId': {
     kind: 'note',
     action: 'grantAdd',
@@ -488,6 +522,36 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'grantRemove',
     params: (c) => ({ wsId: c.ws.R }),
     query: () => 'confirm=1',
+  },
+  'POST /api/grants/:nodeId/:wsId/hand': {
+    kind: 'note',
+    action: 'writeSwitch',
+    params: (c) => ({ wsId: c.ws.R }),
+    placements: {
+      only: ['folder'],
+      why: 'only a grant the item takes from its folder is made its own (at the root its grant of R is set on the item: 409 not_derived)',
+    },
+    blind: 'the folder’s grant becomes one set on the item: nobody gains or loses access, and the probe reads access',
+  },
+  // R's grant from folder F, removed here first ("Remove from this
+  // workspace": excluded), as the grants panel makes it; the restore brings
+  // R back, which the probe sees. A read grant's member no longer reads the
+  // item then: its refusal is a 404, as a 403 passes.
+  'POST /api/grants/:nodeId/:wsId/restore': {
+    kind: 'note',
+    action: 'writeSwitch',
+    params: (c) => ({ wsId: c.ws.R }),
+    query: () => 'confirm=1',
+    prepSql: `with h as materialized (select mantle_lock_heads(array[$1::uuid], 'update'))
+              update item_grants g
+                 set excluded = true, write = false, via_folder_id = null
+                from h
+               where g.node_id = $1 and g.via_folder_id is not null
+                 and not g.is_home and not g.write`,
+    placements: {
+      only: ['folder'],
+      why: 'only a grant the item takes from its folder is removed here and restored (at the root a removal deletes the row)',
+    },
   },
 };
 

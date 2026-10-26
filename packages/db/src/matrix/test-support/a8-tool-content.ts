@@ -699,6 +699,13 @@ export const A8_TOOL_CONTENT: Readonly<
     filesBranch: true,
     seed: async (s) => ({ dest_parent_path: (await a8MoveTarget(s.sql, s.fx, 'file')).path }),
   },
+  // No tool: the route cells' move of a notes-tree folder (PATCH
+  // /api/tree/:kind/folders/:id with a parentId), into a folder of the
+  // notes tree homed in T (the grid's folders are in the notes tree).
+  tree_folder_move: {
+    needs: 'a notes-tree folder homed in T',
+    seed: async (s) => ({ parent_id: (await a8MoveTarget(s.sql, s.fx, 'note')).id }),
+  },
   tree_item_move: {
     needs: 'a folder homed in T',
     seed: async (s) => {

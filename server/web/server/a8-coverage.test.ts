@@ -172,8 +172,6 @@ const A8_EXEMPT_ROUTES: readonly string[] = [
   'POST /api/apps/:id/tool-broker',
   'POST /api/files/files/:id',
   'POST /api/files/folders/:id',
-  'POST /api/grants/:nodeId/:wsId/hand',
-  'POST /api/grants/:nodeId/:wsId/restore',
   'POST /api/grants/:nodeId/embeds',
 ];
 
