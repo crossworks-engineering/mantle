@@ -1,6 +1,6 @@
 # Workspace home apps
 
-Every workspace has a landing page: what its users see at **Home** while it is their current workspace. By default it is the **Built-in home**. Make one of your mini-apps the landing page of a workspace instead, and feed it that workspace's pages, apps and counts through `host.hub`.
+Every workspace has a landing page: what its users see at **Desk** while it is their current workspace. By default it is the built-in **Desk**. Make one of your mini-apps the landing page of a workspace instead, and feed it that workspace's pages, apps and counts through `host.hub`.
 
 ## Before you start
 
@@ -13,9 +13,9 @@ Every workspace has a landing page: what its users see at **Home** while it is t
 2. Open **Settings > Workspaces** and pick the workspace.
 3. Under **Landing page**, pick the app.
 
-Only apps the workspace holds, with a working published build, are in the list. Picking changes no grant. Users always get the published build. If the build breaks, the landing page shows the **Built-in home** until the build works again. If the app is deleted or no longer shared with the workspace, the pick is cleared: sharing it again does not bring it back, so pick it again. Pick **Built-in home** to go back by hand.
+Only apps the workspace holds, with a working published build, are in the list. Picking changes no grant. Users always get the published build. If the build breaks, the landing page shows the built-in **Desk** until the build works again. If the app is deleted or no longer shared with the workspace, the pick is cleared: sharing it again does not bring it back, so pick it again. Pick **Desk** to go back by hand.
 
-Each workspace has its own landing page. A user in two workspaces sees the other workspace's landing page after they switch. **All my workspaces** in the switcher always shows the Built-in home.
+Each workspace has its own landing page. A user in two workspaces sees the other workspace's landing page after they switch. **All my workspaces** in the switcher always shows the built-in Desk.
 
 ## Read the workspace's data
 
@@ -35,7 +35,7 @@ const hub = await host.hub.get();
 | `counts` | How many items of each kind the workspace reads (`page`, `note`, `draw`, `table`, `file`) |
 | `apps` | The other apps the workspace holds that the user may run: `token`, `title`, `description` |
 
-Everything is kept to what the workspace reads and to what the user may read. The Built-in home shows the same data.
+Everything is kept to what the workspace reads and to what the user may read. The built-in Desk shows the same data.
 
 The app asks the shell to open things. It never opens them itself:
 

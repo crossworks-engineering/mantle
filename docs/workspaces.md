@@ -114,24 +114,24 @@ answers 404, never 403.
 ## The landing page
 
 Every workspace has a landing page. It is what a user sees at the root of
-the app (**Home**) while that workspace is their current workspace. When
+the app (**Desk**) while that workspace is their current workspace. When
 they switch, the landing page changes with it.
 
-- **The Built-in home** is the default, for every workspace, Admin
+- **The built-in Desk** is the default, for every workspace, Admin
   included. It shows that workspace's data: its newest pages, how many
   items of each kind it reads, and the apps it holds that the user may run.
-- **A home app** replaces the Built-in home. A Moderator of the workspace
+- **A home app** replaces the built-in Desk. A Moderator of the workspace
   sets it on the workspace screen, under **Landing page**. Only an app the
   workspace holds (share it with the workspace in Grant Access first) with
   a working published build can be picked. Picking makes no grant.
 - If the workspace stops holding the app (its grant is removed, by any
-  path), the brain forgets the pick: the landing page is the Built-in home
+  path), the brain forgets the pick: the landing page is the built-in Desk
   again, and sharing the app again does not bring it back. Only a Moderator
   picks it again. If the app's build breaks, the pick stays and the landing
-  page shows the Built-in home until the build is green.
+  page shows the built-in Desk until the build is green.
 - The screen names the home app only to the users of the workspace. An
   Admin user outside it sees that one is set, not which.
-- **All my workspaces** in the switcher shows the Built-in home over every
+- **All my workspaces** in the switcher shows the built-in Desk over every
   workspace of the user. It never shows a home app. A user who never picked
   a workspace lands here; the browser remembers each pick after that.
 - **Who sets it.** Every Moderator of the workspace. A pick opens for every
@@ -144,13 +144,13 @@ they switch, the landing page changes with it.
 - The brain health **Dashboard** is no landing page. Admin users with the
   settings area open it from the menu.
 - The landing page always reads in the user's own workspaces: an Admin
-  user's Home never shows the whole brain.
+  user's Desk never shows the whole brain.
 
 A home app reads the same data through `host.hub.get()`, kept to the
 workspace: [Workspace home apps](./guide/07-api/07-member-home-apps.md).
 On the wire: `GET /api/home?ws=<id>` answers the landing page (no `ws`:
 all my workspaces), and `PATCH /api/workspaces/:id` with `landingAppId`
-sets it (`null`: the Built-in home).
+sets it (`null`: the built-in Desk).
 
 ## Search and the switcher
 

@@ -869,7 +869,7 @@ the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
 ## Home apps (an app as a workspace's landing page)
 
 Each workspace may name one published app as its **home app**: its users
-get it full-screen at **Home** while the workspace is their current one
+get it full-screen at **Desk** while the workspace is their current one
 (`GET /api/home?ws=<id>`; who runs an app: [workspaces.md](workspaces.md),
 "Apps" and "The landing page") while the workspace holds it with a green
 published build. A Moderator of the workspace sets it on the workspace

@@ -15,7 +15,7 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 
 | Item | What it is for |
 |---|---|
-| [Home](../06-help/home.md) | The landing page of your current workspace. |
+| [Desk](../06-help/home.md) | The landing page of your current workspace. |
 | [Journal](../06-help/journal.md) | Facts about you, and what agents learned. |
 | [Email](../06-help/inbox.md) | Mail from your contacts, by account and folder. |
 | [Files](../06-help/files.md) | Your folder tree, read into the brain. |

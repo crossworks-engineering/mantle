@@ -104,8 +104,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Workspace',
     items: [
       // Every login's landing page: the current workspace's home app or the
-      // Built-in home (task d78e7bde). The brain health Dashboard is System.
-      { name: 'Home', href: '/', icon: LayoutDashboard, exact: true },
+      // built-in Desk (task d78e7bde). The brain health Dashboard is System.
+      { name: 'Desk', href: '/', icon: LayoutDashboard, exact: true },
       { name: 'Journal', href: '/journal', icon: NotebookPen },
       { name: 'Email', href: '/inbox', icon: Inbox },
       { name: 'Files', href: '/files', icon: FolderTree },
