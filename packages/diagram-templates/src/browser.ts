@@ -34,7 +34,8 @@
  *
  * The image check's evidence (evidence.ts): a click on a checked guess
  * shows its crop (embedded in the canvas's assets block), the question,
- * the answer and the model.
+ * the answer and the model; only in a canvas laid out as buildCanvas
+ * writes it, both blocks read once at mount (data-read.ts).
  *
  * Bad data shows its errors in the page and throws one error, which the
  * Present frame reports to its host as `{v:1, kind:'error'}`.
@@ -343,8 +344,12 @@ export function mount(doc: Document = document): DiagramApi {
         ...(pages ?? []).flatMap((p) => p.checks ?? []),
       ];
       // The evidence first: its keys come before the zoom's and the bar's.
+      // Only on data read where buildCanvas puts it (data-read.ts): any
+      // other document is the author's own, and shows no evidence.
       const evidence =
-        target && allChecks.length ? mountEvidence(doc, target, readCrops(doc)) : undefined;
+        target && read.canonical && allChecks.length
+          ? mountEvidence(doc, target, readCrops(read.assets))
+          : undefined;
       let zoom: ZoomController | undefined;
       const live: Live = { zoom: () => zoom, ...(evidence ? { evidence } : {}) };
       // The SVG is built from escaped strings by the template (no markup

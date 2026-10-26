@@ -17,6 +17,7 @@ import {
   checkCropIds,
   checkStaticSvg,
   estimateMeasurer,
+  honestImageChecks,
   imageCheckSummary,
   mapImageChecks,
   provenanceSealBody,
@@ -29,7 +30,7 @@ import {
   withoutMarkWords,
   type PidCheck,
 } from '@mantle/diagram-templates';
-import { drawingSeal, honestCanvasSource } from '@mantle/content/drawing-seal';
+import { drawingSeal, drawingSealHolds, honestCanvasSource } from '@mantle/content/drawing-seal';
 import { CIRCUIT, genericValveSheet, readingSheets } from './circuit-trace/fixtures';
 import { traceCircuit, type SheetInput } from './circuit-trace/walk';
 import { embedCheckCrops, embedSealedCheckCrops, type CropRead } from './present-crops';
@@ -136,7 +137,7 @@ function traced(sheets: SheetInput[], answer: (i: number) => Answer): Obj {
   const sealed = signImageChecks(withoutMarkWords(answered), id, drawingSeal);
   return {
     ...sealed,
-    provenance: { ...provenance, sig: drawingSeal(provenanceSealBody(provenance)) },
+    provenance: { ...provenance, sig: drawingSeal(provenanceSealBody(provenance, sealed)) },
   };
 }
 
@@ -236,6 +237,20 @@ describe('the unchecked note is the marks own count', () => {
     };
     expect(lines.length).toBeGreaterThan(1);
     expect(checkCropIds(forged)).toContain(FORGED);
+    // A line's marks are sealed with the ordered keys of all its marks: the
+    // forged one unseals its own line's marks (and is itself unchecked),
+    // while the other lines' sealed marks still hold.
+    const honest = honestImageChecks(forged, drawingSealHolds) as Obj;
+    const states = (l: Obj) =>
+      [
+        ...((l.checks as Obj[]) ?? []),
+        ...((l.inline as Obj[]) ?? []).flatMap((it) => (it.check ? [it.check as Obj] : [])),
+      ].map((c) => c.state);
+    const after = honest.lines as Obj[];
+    expect(new Set(states(after[after.length - 1]!))).toEqual(new Set(['unchecked']));
+    const before = lines.slice(0, -1).flatMap(states);
+    expect(after.slice(0, -1).flatMap(states)).toEqual(before);
+    expect(before.some((st) => st !== 'unchecked')).toBe(true);
     const asked: string[] = [];
     const counting: CropRead = async (fileId) => {
       asked.push(fileId);

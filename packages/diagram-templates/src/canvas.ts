@@ -87,7 +87,13 @@ export const RUNTIME_SPECIFIER = '@mantle/diagram-templates/browser';
  *  in a script's text, which a server reading the raw text would not), and
  *  no U+2028/2029. JSON.parse reads the escapes back as the same text. */
 export function scriptJson(value: unknown): string {
-  return JSON.stringify(value, null, 2)
+  return scriptSafe(JSON.stringify(value, null, 2));
+}
+
+/** JSON text escaped as scriptJson escapes it (the assets block's is
+ *  written on one line). */
+function scriptSafe(json: string): string {
+  return json
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
@@ -115,12 +121,11 @@ export type BuildCanvasInput = {
   assets?: CanvasAssets;
 };
 
+/** The assets block as this package writes it (scriptJson's escapes, so
+ *  it reads alike everywhere), or '' for no crops. */
 function assetsBlock(assets: CanvasAssets | null | undefined): string {
   if (!assets || !Object.keys(assets.crops).length) return '';
-  const json = JSON.stringify({ crops: assets.crops })
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
+  const json = scriptSafe(JSON.stringify({ crops: assets.crops }));
   return `<script type="application/json" id="${ASSETS_ID}">${json}</script>`;
 }
 
@@ -326,10 +331,10 @@ function idValues(html: string): string[] {
  *  an id `document.getElementById` finds: its numeric references and
  *  `&amp;` decoded, exactly (no named reference decodes to a letter or to
  *  `-`, so `diagram&amp;chart` is not one). */
-function dataBlockId(value: string, loose: boolean): boolean {
+function dataBlockId(value: string, loose: boolean, id: string = DATA_ID): boolean {
   const decoded = decodeRefs(value);
-  if (!loose) return decoded === DATA_ID;
-  if (decoded.toLowerCase() === DATA_ID) return true;
+  if (!loose) return decoded === id;
+  if (decoded.toLowerCase() === id) return true;
   return value.includes('&') && /diagram/i.test(decoded.replace(/&[A-Za-z][A-Za-z0-9]*;?/g, ''));
 }
 
@@ -417,9 +422,10 @@ const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * The shape of a `pid` canvas as buildCanvas writes it, its variable parts
  * captured, white space between tags free: the head's title text (1) and
  * description (2, absent when the canvas has none), the data block's JSON
- * (3) and the runtime (4: the
- * import of the shipped runtime, or one inline classic script, which a
- * save replaces with the import). Built from the one writer
+ * (3), the assets block's JSON (4, absent when the canvas embeds no
+ * crops; right after the data block) and the runtime (5: the import of
+ * the shipped runtime, or one inline classic script, which a save
+ * replaces with the import). Built from the one writer
  * (canvasDocument), so the two cannot drift. Built on first use (index.ts
  * and this module import each other).
  */
@@ -435,13 +441,18 @@ function shapeOfPid(): RegExp {
       titleHtml: mark('T'),
       descriptionHtml: mark('D'),
       dataJson: mark('J'),
-      assetsHtml: '',
+      assetsHtml: mark('A'),
       runtime: mark('R'),
     }),
   );
   const desc = literal(`\n<meta name="description" content="${mark('D')}">`);
+  const assets = literal(`\n${mark('A')}`);
   src = src
     .replace(desc, '(?:\\s*<meta name="description" content="([^"<>]*)">)?')
+    .replace(
+      assets,
+      `(?:\\s*${literal(`<script type="application/json" id="${ASSETS_ID}">`)}([^<]*)<\\/script>)?`,
+    )
     .replace(mark('T'), '([^<]*)')
     .replace(mark('J'), '([^<]*)')
     .replace(
@@ -457,7 +468,9 @@ function shapeOfPid(): RegExp {
  * A `pid` canvas rebuilt as buildCanvas writes it from `data` (the honest
  * data a save stores), keeping the canvas's own head title and description
  * text as written (text a browser shows as the frame's title, never
- * markup) and the shipped runtime by import. Null when `html` holds
+ * markup), its embedded crops as `parseCanvasAssets` reads them (a save
+ * then keeps only the sealed ones a kept mark names:
+ * withSealedCanvasAssets) and the shipped runtime by import. Null when `html` holds
  * anything buildCanvas does not write: another script, markup around or
  * inside the drawing's elements, any other head or body content.
  */
@@ -471,7 +484,7 @@ export function canonicalPidCanvas(html: string, data: Record<string, unknown>):
     titleHtml: m[1]!,
     descriptionHtml: m[2] ?? null,
     dataJson: scriptJson({ template: t.name, version: t.version, ...data }),
-    assetsHtml: '',
+    assetsHtml: m[4] !== undefined ? assetsBlock(parseCanvasAssets(m[4])) : '',
     runtime: IMPORT_RUNTIME,
   });
 }
@@ -577,18 +590,18 @@ export function replaceCanvasAssets(html: string, assets: CanvasAssets | null): 
 }
 
 /** As `dataBlockCount`, for the assets block: how many elements carry its
- *  id in any form a browser reads (the same tag reading, `idValues`), and
- *  how many blocks it holds as this package writes them. A save refuses a
- *  canvas where they differ (the frame reads the first element with that
- *  id: one written another way would show pictures no save checked); the
- *  blocks it can read it rewrites in its own form
- *  (withSealedCanvasAssets). */
-export function assetsBlockCount(html: string): { any: number; written: number } {
-  const any = idValues(html).filter((v) => {
-    const decoded = decodeRefs(v);
-    if (decoded.toLowerCase() === ASSETS_ID) return true;
-    return v.includes('&') && /diagram/i.test(decoded.replace(/&[A-Za-z][A-Za-z0-9]*;?/g, ''));
-  }).length;
+ *  id in any form a browser reads (the same tag reading, `idValues`; the
+ *  same `loose`, the default, for a canvas that claims the `pid`
+ *  template), and how many blocks it holds as this package writes them. A
+ *  save refuses a canvas where they differ (one written another way would
+ *  hold pictures no save checked); the blocks it can read it rewrites in
+ *  its own form (withSealedCanvasAssets). */
+export function assetsBlockCount(
+  html: string,
+  opts: { loose?: boolean } = {},
+): { any: number; written: number } {
+  const loose = opts.loose ?? true;
+  const any = idValues(html).filter((v) => dataBlockId(v, loose, ASSETS_ID)).length;
   const written = html.match(new RegExp(ASSETS_BLOCK_SRC, 'g'));
   return { any, written: written?.length ?? 0 };
 }

@@ -15,7 +15,7 @@
  */
 import type { CheckEvidence } from './types.ts';
 import type { CheckState, PidCheck } from './templates/pid/check.ts';
-import { ASSETS_ID, parseCanvasAssets } from './canvas.ts';
+import { parseCanvasAssets } from './canvas.ts';
 
 const WORDS: Record<CheckState, string> = {
   unchecked: 'Guess, not checked by image',
@@ -36,11 +36,13 @@ const summary = (checks: readonly PidCheck[]) =>
     ? (WORDS[checks[0]!.state] ?? checks[0]!.state)
     : `${checks.length} guesses: ${[...new Set(checks.map((c) => WORDS[c.state] ?? c.state))].join('; ')}`;
 
-/** The crops a canvas carries, by file id: the pictures only (the seals
- *  were checked by the save that stored them), each one `safeCropUrl`
- *  passed (canvas.ts parseCanvasAssets, the one reader). */
-export function readCrops(doc: Document): Map<string, string> {
-  const { crops } = parseCanvasAssets(doc.getElementById(ASSETS_ID)?.textContent);
+/** The crops a canvas carries, by file id, from its assets block's text
+ *  as the runtime read it at start (data-read.ts readDataBlock: only from
+ *  where buildCanvas puts it): the pictures only (the seals were checked
+ *  by the save that stored them), each one `safeCropUrl` passed (canvas.ts
+ *  parseCanvasAssets, the one reader). */
+export function readCrops(assets: string | null): Map<string, string> {
+  const { crops } = parseCanvasAssets(assets);
   return new Map(Object.entries(crops).map(([id, c]) => [id, c.src]));
 }
 

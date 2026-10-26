@@ -84,6 +84,12 @@ const CANONICAL_BODY = (data: Spec = DATA()): Spec[] => [
   data,
   { tag: 'script', type: 'module' },
 ];
+const ASSETS = (text = '{"crops":{}}'): Spec => ({
+  tag: 'script',
+  type: 'application/json',
+  id: 'diagram-assets',
+  text,
+});
 /** The Present frame's prelude in the head, once its classic script ran
  *  (it removes itself). */
 const PRELUDE: Spec[] = [
@@ -98,8 +104,39 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
     expect(readDataBlock(doc(PRELUDE, CANONICAL_BODY(DATA('{"a":1}'))))).toEqual({
       text: '{"a":1}',
       canonical: true,
+      assets: null,
     });
     expect(readDataBlock(doc([{ tag: 'title' }], CANONICAL_BODY())).canonical).toBe(true);
+  });
+
+  it('the assets block, between the data block and the runtime, is read with it', () => {
+    const body = (assets: Spec): Spec[] => [
+      { tag: 'main', id: 'diagram' },
+      { tag: 'div', id: 'diagram-errors' },
+      DATA('{"a":1}'),
+      assets,
+      { tag: 'script', type: 'module' },
+    ];
+    expect(readDataBlock(doc(PRELUDE, body(ASSETS('{"crops":{}}'))))).toEqual({
+      text: '{"a":1}',
+      canonical: true,
+      assets: '{"crops":{}}',
+    });
+    // Not as a div, not under another id, not after the runtime, not in a
+    // document that is not canonical.
+    const notAssets: [string, Document][] = [
+      ['a div', doc(PRELUDE, body({ ...ASSETS(), tag: 'div' }))],
+      ['another id', doc(PRELUDE, body({ ...ASSETS(), id: 'diagram-other' }))],
+      ['a classic script', doc(PRELUDE, body({ tag: 'script', id: 'diagram-assets' }))],
+      ['after the runtime', doc(PRELUDE, [...CANONICAL_BODY(), ASSETS()])],
+      ['an SVG element anywhere', doc([...PRELUDE, { tag: 'svg', ns: SVG }], body(ASSETS()))],
+    ];
+    for (const [why, d] of notAssets) {
+      expect(readDataBlock(d), why).toMatchObject({ canonical: false, assets: null });
+    }
+    // An assets id elsewhere is never read: the canonical place only.
+    const elsewhere = readDataBlock(doc([...PRELUDE, ASSETS('{"x":1}')], CANONICAL_BODY()));
+    expect(elsewhere.assets).toBeNull();
   });
 
   it('anything else is not: an author script, foreign content, another place', () => {
@@ -152,7 +189,11 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
       ],
     ];
     for (const [why, d] of cases) expect(readDataBlock(d).canonical, why).toBe(false);
-    expect(readDataBlock(doc(PRELUDE, []))).toEqual({ text: null, canonical: false });
+    expect(readDataBlock(doc(PRELUDE, []))).toEqual({
+      text: null,
+      canonical: false,
+      assets: null,
+    });
   });
 });
 
@@ -194,7 +235,9 @@ describe('data no save vouched for draws every mark unchecked', () => {
     const r = render('pid', forged, estimateMeasurer);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.svg).not.toContain('CHECKED BY IMAGE');
+    // The count line says how many are NOT CHECKED BY IMAGE; no mark says
+    // it was.
+    expect(r.svg.replace(/NOT CHECKED BY IMAGE/g, '')).not.toContain('CHECKED BY IMAGE');
     // Drawn exactly as the same drawing with every mark unchecked.
     const plain = renderIndex('pid', unvouched(forged), estimateMeasurer);
     expect(plain.ok && plain.svg).toBe(r.svg);

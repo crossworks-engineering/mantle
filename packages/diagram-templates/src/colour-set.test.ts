@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PALETTE, ROLE_COLOURS, ROLE_STROKES, contrastRatio, luminance } from './runtime/style.ts';
 import { THEME_ROLE_COLOURS } from './runtime/theme.ts';
+import { lineNoteSuffix, markSuffix } from './templates/pid/check.ts';
+import { wordColour } from './templates/pid/render.ts';
 import { buildCanvas, checkStaticSvg, estimateMeasurer, render, validate } from './index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -294,5 +296,40 @@ describe('older drawings keep their output', () => {
     const r = validate('pid', { ...load('samples/pid-feed-drum.json'), style: 3 });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.join('\n')).toMatch(/style: 3 is not a style edition/);
+  });
+});
+
+describe('the trust words take their colour from the words the view draws', () => {
+  it('every word markSuffix and lineNoteSuffix can draw has its role colour', () => {
+    const C = ROLE_COLOURS;
+    const marks: [Parameters<typeof markSuffix>[0], string][] = [
+      ['unchecked', C.guess],
+      ['unsure', C.guess],
+      ['checked', C.checked],
+      ['contradicted', C.contradicted],
+      [{ state: 'corrected', alt: 'orifice' }, C.corrected],
+      [{ state: 'corrected' }, C.contradicted],
+    ];
+    for (const [m, colour] of marks)
+      expect(wordColour(markSuffix(m)), JSON.stringify(m)).toBe(colour);
+    const join = (state: string) => ({ key: 'g', kind: 'join', state });
+    const valve = (state: string) => ({ check: { key: 'v', kind: 'valve', state } });
+    const lines: [unknown, string][] = [
+      [{ checks: [join('checked')] }, C.checked],
+      [{ checks: [join('unchecked')] }, C.guess],
+      [{ checks: [join('contradicted')] }, C.contradicted],
+      [{ checks: [join('contradicted'), join('contradicted')] }, C.contradicted],
+      [{ inline: [valve('contradicted')] }, C.contradicted],
+      [{ inline: [valve('corrected')] }, C.corrected],
+      [{ inline: [valve('checked')] }, C.checked],
+    ];
+    for (const [l, colour] of lines) {
+      const word = lineNoteSuffix(l);
+      expect(word, JSON.stringify(l)).not.toBe('');
+      expect(wordColour(word), word).toBe(colour);
+    }
+    expect(lineNoteSuffix({ checks: [join('contradicted'), join('contradicted')] })).toBe(
+      ' (GUESS; IMAGE: 2 NO)',
+    );
   });
 });

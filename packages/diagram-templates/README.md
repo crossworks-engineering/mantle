@@ -291,10 +291,15 @@ checkedAt, crops, overview }`. Each marked element gets
   stored `checks`. In the canvas a click (or Enter) opens each check's
   crops, guess, question, answer and model (`src/evidence.ts`). The crops
   (file ids) are embedded when the canvas is saved, in an assets block
-  beside the data block (`<script type="application/json"
-id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`, one
-  reader `parseCanvasAssets`): the frame loads nothing, and shows only a
-  base64 PNG, JPEG or WebP data URL. Each crop is `{ src, sig }`: the
+  right after the data block (`<script type="application/json"
+  id="diagram-assets">`, written with `scriptJson`'s escapes,
+  `readCanvasAssets` / `replaceCanvasAssets`, one reader
+  `parseCanvasAssets`; part of the shape a `pid` canvas is held to, so it
+  survives a save's canonical rebuild): the frame loads nothing, and shows
+  only a base64 PNG, JPEG or WebP data URL. The runtime reads the assets
+  block with the data block, once at mount and only from where
+  `buildCanvas` puts it (`src/data-read.ts`); in any other document the
+  evidence view does not run. Each crop is `{ src, sig }`: the
   server seals its file id and the sha256 of its bytes (`cropSealPayload`,
   CROP_SEAL_PURPOSE) when it embeds it, and every save keeps a crop only
   when that seal holds and a kept mark still names it

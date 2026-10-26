@@ -12,15 +12,19 @@ import { describe, expect, it } from 'vitest';
 import {
   assetsBlockCount,
   buildCanvas,
+  canonicalPidCanvas,
+  CanvasShapeError,
   checkCropIds,
   checkStaticSvg,
   estimateMeasurer,
   parseCanvasAssets,
   readCanvasAssets,
+  readCanvasData,
   render,
   replaceCanvasAssets,
   safeCropUrl,
   validate,
+  withHonestImageChecks,
   withSealedCanvasAssets,
   type CanvasCrop,
 } from './index.ts';
@@ -433,16 +437,73 @@ describe('the canvas carries the crops', () => {
     const sly = kept.replace('</body>', '<div id=diagram-assets></div></body>');
     expect(assetsBlockCount(sly)).toEqual({ any: 2, written: 1 });
   });
+
+  it('a pid canvas with crops is the template: the assets block survives the rebuild, in its place only', () => {
+    const data = withChecks(2);
+    const html = buildCanvas({
+      template: 'pid',
+      data,
+      mode: 'import',
+      assets: { crops: { [CROP_ID]: SEALED } },
+    });
+    // The rebuild writes the same canvas, the block right after the data.
+    expect(canonicalPidCanvas(html, readCanvasData(html))).toBe(html);
+    expect(readCanvasAssets(canonicalPidCanvas(html, readCanvasData(html))!)).toEqual({
+      crops: { [CROP_ID]: SEALED },
+    });
+    // White space between the tags is free.
+    expect(
+      canonicalPidCanvas(
+        html.replace(
+          '\n<script type="application/json" id="diagram-assets">',
+          '\n\n  <script type="application/json" id="diagram-assets">',
+        ),
+        readCanvasData(html),
+      ),
+    ).toBe(html);
+    const block = html.match(
+      /<script type="application\/json" id="diagram-assets">[^<]*<\/script>\n/,
+    )![0];
+    // Anywhere else, or in another form, it is not the template.
+    const moved = html.replace(block, '').replace('</body>', `${block}</body>`);
+    const asDiv = html.replace(block, '<div id="diagram-assets">{}</div>\n');
+    const twice = html.replace(block, `${block}${block}`);
+    for (const [why, bad] of [
+      ['after the runtime', moved],
+      ['as a div', asDiv],
+      ['twice', twice],
+    ] as const) {
+      expect(canonicalPidCanvas(bad, data), why).toBeNull();
+      expect(() => withHonestImageChecks(bad, () => true), why).toThrow(CanvasShapeError);
+    }
+    // The assets JSON is written with scriptJson's escapes.
+    const odd = buildCanvas({
+      template: 'pid',
+      data,
+      mode: 'import',
+      assets: { crops: { [CROP_ID]: { src: CROP, sig: '<&>' } } },
+    });
+    const text = odd.match(/id="diagram-assets">([^<]*)<\/script>/)![1]!;
+    expect(text).not.toMatch(/[<>&]/);
+    expect(text).toContain('\\u003c\\u0026\\u003e');
+  });
 });
 
 describe('the live canvas opens the evidence', () => {
-  const open = async (crops: Record<string, CanvasCrop>, style?: number) => {
-    const html = buildCanvas({
-      template: 'pid',
-      data: withChecks(style),
-      mode: 'import',
-      assets: { crops },
-    }).replace(/<script type="module">[\s\S]*?<\/script>/, '');
+  const open = async (
+    crops: Record<string, CanvasCrop>,
+    style?: number,
+    edit: (html: string) => string = (h) => h,
+  ) => {
+    // The runtime's script stays in its place, inert (the test mounts).
+    const html = edit(
+      buildCanvas({
+        template: 'pid',
+        data: withChecks(style),
+        mode: 'import',
+        assets: { crops },
+      }).replace(/<script type="module">[\s\S]*?<\/script>/, '<script type="module"></script>'),
+    );
     const dom = new JSDOM(html, { pretendToBeVisual: true });
     const win = dom.window;
     (win.SVGElement.prototype as unknown as { getBBox: () => DOMRect }).getBBox = function (
@@ -479,6 +540,15 @@ describe('the live canvas opens the evidence', () => {
     expect(text).toContain('example/vision-1');
     doc.body.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(dialog.closest('.diagram-evidence')!.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('only where buildCanvas puts the blocks: an author document shows no evidence', async () => {
+    const { doc } = await open({ [CROP_ID]: SEALED }, undefined, (h) =>
+      h.replace('</body>', '<p>mine</p>\n</body>'),
+    );
+    expect(doc.querySelector('[role="dialog"]')).toBeNull();
+    expect(doc.querySelector('[data-check][tabindex]')).toBeNull();
+    expect(doc.body.innerHTML).not.toContain('CHECKED BY IMAGE)');
   });
 
   it('Enter on a focused guess opens it; a crop not embedded is said, not fetched', async () => {

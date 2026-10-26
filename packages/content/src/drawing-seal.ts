@@ -189,14 +189,14 @@ export function cropSealHolds(fileId: string, src: string, sig: string): boolean
  * seals and its counts recounted (@mantle/diagram-templates
  * withHonestImageChecks), keeping its head title and description; one
  * holding anything else (another script, foreign content, the author's own
- * HTML) is refused; then its embedded crops are kept only where the
- * server's seal holds and a kept mark names them (withSealedCanvasAssets),
- * and a canvas whose assets block is written another way is refused. Any
- * other canvas with a data block keeps everything
- * but the block, written again from its parsed JSON with `&`, `<` and `>`
- * escaped (so inside `<svg>` or `<math>`, where a browser decodes
- * character references, it still reads as stored). A canvas whose data
- * block the runtime could read in a form this check does not (a second
+ * HTML) is refused. Its embedded crops are kept only where the server's
+ * seal holds and a kept mark names them (withSealedCanvasAssets: sealed
+ * crops survive the rebuild, unsealed ones are dropped), and a canvas
+ * whose assets block is written another way is refused. Any other canvas
+ * with a data block keeps everything but the block, written again from
+ * its parsed JSON with `&`, `<` and `>` escaped (so inside `<svg>` or
+ * `<math>`, where a browser decodes character references, it still reads
+ * as stored). A canvas whose data block the runtime could read in a form this check does not (a second
  * block, one written another way, or one block that does not read as a
  * JSON object) is refused: the view would show data no save looked at.
  * The threat model (templates/pid/check.ts): a canvas's own HTML is the
@@ -213,7 +213,7 @@ export function honestCanvasSource(source: string): string {
   if (blocks.any !== 1 || blocks.written !== 1 || !canvasDataReadable(source)) {
     throw new InputError(pid ? UNREADABLE_DIAGRAM : UNREADABLE_CANVAS);
   }
-  const assets = assetsBlockCount(source);
+  const assets = assetsBlockCount(source, { loose: pid });
   if (assets.any !== assets.written) {
     throw new InputError(UNREADABLE_CROPS);
   }
