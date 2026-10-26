@@ -36,8 +36,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 ## Unreleased: the scoped writes that stay on the system pool, named
 
 - **Security:** the access matrix names the tables whose scoped typed
-  write (a login's, an assistant's, a link's or a contact's insert, update
-  or delete in a write scope) may stay on the system pool though the write
+  write (a login's insert, update or delete in a write scope; never an
+  assistant's, a link's or a contact's) may stay on the system pool though the write
   role holds no right on it, each with its reason (`scopedSystemWrite`).
   It is the list the later fail-closed step reads before it refuses every
   other such write. One table: `item_marks` (a login's own pins and opens;
@@ -72,6 +72,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   to the system pool on a table that names no reason; none is left to
   decide, so a new one shows before the fail-closed step. New pin
   `scopedSystemWriteTables` (1).
+
+- **Narrower, pinned:** a turn row written with a login actor bound and no
+  login id now lands in that login's own thread (it used to be stamped into
+  the owner's), and a row naming another login is refused
+  (`w7c-chat.db.test.ts`). No production caller hits either.
 
 ## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
 
