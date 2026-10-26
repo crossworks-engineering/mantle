@@ -65,7 +65,7 @@ export const typed = [
   }),
   routePolicy({
     // @ts-expect-error an excess key in an item
-    POST: { class: 'content', item: { none: 'x', param: 'id' } },
+    POST: { class: 'content', item: { none: 'x', need: 'edit' } },
   }),
   routePolicy({
     // @ts-expect-error an excess key in the limits
@@ -179,6 +179,21 @@ describe('validateMethodPolicy: the one validator', () => {
         'DELETE',
       ),
     ).toThrow(/placeholder: decide it/);
+    // A none whose path names an item says its param, a param of its pattern.
+    expect(() =>
+      validateMethodPolicy(
+        { class: 'content', item: { none: 'why', param: 'id' } },
+        '/api/x/:id',
+        'POST',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateMethodPolicy(
+        { class: 'content', item: { none: 'why', param: 'nodeId' } },
+        '/api/x/:id',
+        'POST',
+      ),
+    ).toThrow(/no param of its pattern/);
   });
 
   it('an effect exception: read only on a POST, write only on a GET or HEAD', () => {

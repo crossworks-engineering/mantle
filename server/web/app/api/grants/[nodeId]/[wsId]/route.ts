@@ -11,6 +11,7 @@ export const policy = routePolicy({
     open: 'any',
     item: {
       none: "a grant change: its rule asks two workspaces (the item's home and the grant's), no one right of the item; the grants panel's definers decide it",
+      param: 'nodeId',
     },
   },
   DELETE: {
@@ -19,6 +20,7 @@ export const policy = routePolicy({
     open: 'any',
     item: {
       none: "a grant change: its rule asks two workspaces (the item's home and the grant's), no one right of the item; the grants panel's definers decide it",
+      param: 'nodeId',
     },
   },
 });

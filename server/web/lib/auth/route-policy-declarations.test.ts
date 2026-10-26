@@ -48,7 +48,6 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   logins: null,
   creates: false,
   makesItems: true,
-  item: null,
   audit: null,
   aliasOf: null,
   cors: false,
@@ -206,8 +205,8 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
       effect: 'write',
       creates: true,
       makesItems: true,
-      item: null,
     });
+    expect(rows.get('POST /api/notes')).not.toHaveProperty('item');
   });
 
   it('an effect exception, stated with its reason, is the row’s effect (and its HEAD’s)', () => {
@@ -315,7 +314,8 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
       /no param/,
     );
     bad('/api/notes/:id', { class: 'content', item: { param: 'id', need: 'edit', x: 1 } }, /key x/);
-    bad('/api/notes/:id', { class: 'content', item: { none: 'x', param: 'id' } }, /key param/);
+    bad('/api/notes/:id', { class: 'content', item: { none: 'x', need: 'edit' } }, /key need/);
+    bad('/api/notes/:id', { class: 'content', item: { none: 'x', param: 'nodeId' } }, /no param/);
     bad('/api/notes/:id', { class: 'content', item: { none: '' } }, /none with no reason/);
     bad('/api/notes/:id', { class: 'content', item: null }, /item that is no object/);
     bad('/api/notes/:id', { class: 'content', item: ['id'] }, /item that is no object/);
@@ -596,7 +596,8 @@ describe('S9: a declaration that cannot hold is refused at boot', () => {
         PATCH: { class: 'content', item: { param: 'id', need: 'edit' } },
       }),
     );
-    expect(rows.get('PATCH /api/notes/:id')?.item).toBeNull();
+    // The row holds no item: no route has an item pre-check.
+    expect(rows.get('PATCH /api/notes/:id')).not.toHaveProperty('item');
   });
 });
 

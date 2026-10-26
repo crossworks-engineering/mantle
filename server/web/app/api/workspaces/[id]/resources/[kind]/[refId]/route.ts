@@ -8,13 +8,19 @@ export const policy = routePolicy({
     class: 'self',
     scope: null,
     open: 'any',
-    item: { none: 'a workspace, not an item: its definers decide by the workspace seats' },
+    item: {
+      none: 'a workspace’s assistant or connector, no workspace item kind: its definers decide by the workspace seats',
+      param: 'refId',
+    },
   },
   DELETE: {
     class: 'self',
     scope: null,
     open: 'any',
-    item: { none: 'a workspace, not an item: its definers decide by the workspace seats' },
+    item: {
+      none: 'a workspace’s assistant or connector, no workspace item kind: its definers decide by the workspace seats',
+      param: 'refId',
+    },
   },
 });
 

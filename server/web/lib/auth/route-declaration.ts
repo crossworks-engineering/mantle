@@ -92,11 +92,18 @@ export const DECLARED_CLASSES = ['public', 'link', 'self', 'area', 'content'] as
 export const DECLARED_OPEN = ['owner', 'any', 'chat', 'telegram', 'member'] as const;
 export type DeclaredOpen = (typeof DECLARED_OPEN)[number];
 
-/** What a write needs of the item its path names. */
+/** What a write needs of the item its path names. A route whose writes
+ *  ask different rights (a rename and a move on one PATCH, a data restore
+ *  and a code restore on one POST) declares the lowest right its handler
+ *  accepts; the A8 route cells test the higher one as its own cell
+ *  (a8-route-cells.ts, a spec's `higher`). */
 export const ITEM_NEEDS = ['read', 'edit', 'manage'] as const;
-/** The keys of an item a write names, and of an item it does not. */
+/** The keys of an item a write names, and of an item it does not. A write
+ *  with no one need whose path still names an item (a grant change) says
+ *  none and the param that holds the item's id: the A8 coverage counts it
+ *  (cells by the guide action it is, or a8Exempt). */
 export const ITEM_KEYS = ['param', 'need'] as const;
-export const ITEM_NONE_KEYS = ['none'] as const;
+export const ITEM_NONE_KEYS = ['none', 'param'] as const;
 
 /** The reason part 1 wrote where the facts gave none: a write whose path
  *  names an item no check read yet. Each is decided now (a param and
@@ -109,7 +116,7 @@ export const ITEM_NONE_PLACEHOLDER = 'not decided yet: the write names an item n
  *  write says one (plan v3.2 S11b); a read says none. */
 export type DeclaredItem =
   | Readonly<{ param: string; need: (typeof ITEM_NEEDS)[number]; none?: never }>
-  | Readonly<{ none: string; param?: never; need?: never }>;
+  | Readonly<{ none: string; param?: string; need?: never }>;
 
 /** The keys of `limits` (RouteRow `crossSite` and `rateLimit`). */
 export const LIMIT_KEYS = ['crossSite', 'rateLimit'] as const;
@@ -382,6 +389,12 @@ export function validateMethodPolicy(raw: unknown, pattern: string, method: stri
       if (typeof it.none !== 'string' || !it.none.trim()) bad('item none with no reason');
       // Each was decided: the placeholder is no reason.
       if (it.none === ITEM_NONE_PLACEHOLDER) bad('item none with the placeholder: decide it');
+      if (
+        Object.hasOwn(it, 'param') &&
+        (typeof it.param !== 'string' || !pattern.split('/').includes(`:${it.param}`))
+      ) {
+        bad(`its item in ${String(it.param)}, which is no param of its pattern`);
+      }
     } else {
       const e = exactObject(it, ITEM_KEYS);
       if (e) bad(`an item that ${e}`);
