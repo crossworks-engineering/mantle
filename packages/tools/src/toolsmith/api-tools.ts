@@ -535,7 +535,10 @@ export const api_tool_update: BuiltinToolDef = {
     }
 
     try {
-      const updated = await updateTool(ctx.ownerId, row.id, patch);
+      // The tool row, its group and its External access are this area's
+      // own system tables (no workspace role writes them): areaSystem, the
+      // area asked again, as api_tool_create's whole run is.
+      const updated = await areaSystem('connectors', () => updateTool(ctx.ownerId, row.id, patch));
       if (!updated) return { ok: false, error: `tool '${slug}' not found` };
       const warnings =
         updated.handler.kind === 'http'
@@ -547,18 +550,20 @@ export const api_tool_update: BuiltinToolDef = {
         );
       }
       if (group) {
-        await addToolToGroup(ctx.ownerId, group.slug, slug);
+        await areaSystem('connectors', () => addToolToGroup(ctx.ownerId, group.slug, slug));
         if (group.integration) {
           warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
         }
       }
       let externalAccess = updated.externalAccess ?? null;
       if (input.external_access === true || input.external_access === false) {
-        const set = await setToolExternalAccess(ctx.ownerId, row.id, {
-          allow: input.external_access === true,
-          readOnlyConfirmed: input.read_only_confirmed === true,
-          by: externalAccessActor ?? externalAccessOffActor(ctx),
-        });
+        const set = await areaSystem('connectors', () =>
+          setToolExternalAccess(ctx.ownerId, row.id, {
+            allow: input.external_access === true,
+            readOnlyConfirmed: input.read_only_confirmed === true,
+            by: externalAccessActor ?? externalAccessOffActor(ctx),
+          }),
+        );
         if (!set.ok) return { ok: false, error: set.error };
         externalAccess = externalAccessSummary(set.tool);
       }
