@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Present is a workspace content kind
+
+- **Feature:** every workspace's assistant reads and writes Present
+  canvases where its user may, as it does pages and tables: the persona
+  holds `present` beside `present-read`, and the boot reconcile adds both
+  groups to the assistant of every workspace (also one copied before
+  Present), add-only, never an Admin-only group, never a manifest agent with
+  its own entry (`reconcileAssistantContentKinds`,
+  `ASSISTANT_CONTENT_KIND_GROUPS`). Deleting a canvas stays the deliberate
+  `present-admin` group, on no assistant, as `page-admin` is; `circuits`
+  (it spends) stays with the specialists. The routing skill lets the
+  assistant make a small change to a canvas itself; a new one still goes
+  to Presenter when it is there. No migration: the grants are data the
+  reconcile writes.
+- **Security (tests):** a Moderator of a workspace makes a canvas in it
+  and edits one it holds, a Write grant edits, a read grant does not,
+  nobody makes one in a workspace they do not moderate (named: refused,
+  nothing made; unnamed: their own private workspace, and MCP says where),
+  and a user's own canvas is theirs to edit and answers another member as
+  a random uuid does: through the assistant turn, the routes and MCP
+  (`present-ws-rights.db.test.ts`); `present_create` joins the turn home
+  cases. The MCP surface and its snapshots are unchanged: the Present
+  tools were already on it for every login.
+- **Fix:** the chat trail names a canvas save like a page save.
+
 ## Unreleased: a member's Apps and Present screens are trees
 
 - **Fix:** apps and Present canvases join the reader tree kinds

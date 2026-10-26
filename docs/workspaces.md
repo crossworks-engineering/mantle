@@ -288,6 +288,16 @@ A folder is an item with a home and grants like any other.
   in that workspace.
 - **It writes only for a user who could do it by hand**: a Moderator of the
   home, or a grant with Write on.
+- **Canvases (Present) are a content kind like pages and tables.** Every
+  workspace's assistant holds the Present tools: list, read and look,
+  make, change, bring back a version, export a copy. Deleting a canvas
+  stays a deliberate step (`present-admin`, on no assistant), as deleting
+  a page does. An upgrade adds the two groups (`present-read`, `present`)
+  to the assistant of every workspace, also one copied before Present;
+  it never removes a group. What the assistant may do with a canvas is
+  its user's right by the table in Items and grants: a canvas lands by
+  the home rule, a Moderator of its home or a grant with Write on edits
+  it, and a canvas in a user's private workspace is that user's.
 - **With no user** (a heartbeat, a scheduled run) an assistant only reads,
   except the Admin assistant, which acts for the owner.
 - **Each user reads only their own chats.** Every user has their own thread
@@ -324,7 +334,9 @@ login may change. There is no per-login MCP switch.
   area. A tool the caller may not call is not listed, and a direct call is
   refused too.
 - A create tool takes an optional `workspace` (one the caller moderates).
-  Without it the home rule applies.
+  Without it the home rule applies. `present_create` is one of them: the
+  Present tools are on the surface for every login, each call held to
+  the login's rights like a page's.
 - **A login that is not in the Admin workspace gets no spending tools on
   direct MCP**: web search, images, summaries, crawls, route maps,
   extraction and the tools that run another agent spend on the owner's

@@ -18,7 +18,9 @@ The latest save is always what you see. There is no draft and no commit step.
 
 ## Assistant
 
-Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. You change a canvas the same way: ask for the change. There are no drawing tools.
+Present is agent driven. Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and the assistant hands it to **Presenter**. You change a canvas the same way: ask for the change; the assistant makes a small change itself. There are no drawing tools.
+
+- Canvases belong to workspaces, like pages and tables. Every workspace's assistant, and your own MCP client, can read and change canvases where you can: a new canvas lands in the workspace you moderate (else your private one), and you edit a canvas when you moderate its workspace or have Write on it.
 
 - Presenter looks at every canvas it saves, in a real browser, and fixes what it sees before it reports.
 - A P&ID or a process flow is drawn from data by a layout template, so the result is neat and the same every time. Draftsman uses the same path for the diagrams it puts in pages.

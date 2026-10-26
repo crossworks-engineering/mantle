@@ -12,10 +12,12 @@
  *    `?ws=`, the W assistant's turn) and edits one W holds with no Write;
  *  - a plain user of W with Write on a canvas edits it; one without Write
  *    on it does not (no change, no crash);
- *  - nobody makes a canvas in a workspace it does not moderate: named,
- *    it is refused and nothing is made; unnamed, it lands in the caller's
- *    own private workspace (the turn and the route as for a page), and the
- *    MCP reply says where (`landedIn`);
+ *  - nobody makes a canvas in a workspace it does not moderate: MCP's
+ *    `workspace` naming it is refused and nothing is made; the route's
+ *    `?ws=` naming one the login only reads is as if none was named, one
+ *    it is not in is refused; unnamed, a create lands in the caller's own
+ *    private workspace (each as for a page), and the MCP reply says where
+ *    (`landedIn`);
  *  - a user's own canvas (its private workspace) is the user's to edit,
  *    on every way in, and another member who does not read it gets what a
  *    random uuid gets (the id aside).
@@ -330,7 +332,7 @@ describe.skipIf(!URL)('Present rights follow the workspace roles on every way in
   });
 
   describe('the routes', () => {
-    it('a Moderator makes a canvas in W with ?ws=; a plain user is refused there, and lands in its own without', async () => {
+    it('a Moderator makes a canvas in W with ?ws=; a reader of W lands in its own, an outsider is refused', async () => {
       const t1 = `${tag}r${randomUUID().slice(0, 6)}`;
       const made = await route(mod, 'POST', `/api/presents?ws=${ws.w}`, {
         title: t1,
@@ -339,14 +341,22 @@ describe.skipIf(!URL)('Present rights follow the workspace roles on every way in
       expect(made.status, made.text).toBe(201);
       expect(await homeOf(t1)).toBe(ws.w);
 
+      // The route rule, as for a page: a ?ws= the login only reads is as if
+      // none was named (its private workspace); one it is not in is refused.
       const t2 = `${tag}r${randomUUID().slice(0, 6)}`;
-      const refused = await route(user, 'POST', `/api/presents?ws=${ws.w}`, {
+      const asReader = await route(user, 'POST', `/api/presents?ws=${ws.w}`, {
         title: t2,
         source: canvas(t2),
       });
-      expect(refused.status, refused.text).toBeGreaterThanOrEqual(400);
-      expect(refused.status, refused.text).toBeLessThan(500);
-      expect(await madeCount(t2)).toBe(0);
+      expect(asReader.status, asReader.text).toBe(201);
+      expect(await homeOf(t2)).toBe(ws.userOwn);
+      const t2b = `${tag}r${randomUUID().slice(0, 6)}`;
+      const refused = await route(other, 'POST', `/api/presents?ws=${ws.w}`, {
+        title: t2b,
+        source: canvas(t2b),
+      });
+      expect(refused.status, refused.text).toBe(403);
+      expect(await madeCount(t2b)).toBe(0);
 
       const t3 = `${tag}r${randomUUID().slice(0, 6)}`;
       const own = await route(user, 'POST', '/api/presents', { title: t3, source: canvas(t3) });
