@@ -1,10 +1,12 @@
 /**
- * The A8 coverage (plan v3.2 section 5 item 4; S11a: tools and kinds, the
- * routes come with S11b), no database: every registry kind is in the grid
- * or in A8_EXEMPT with a reason, and every tool is in a generated cell set
- * (a8-tool-cells.ts, from its matrix declaration) or exempt (its declaration
- * is `none`, with a reason). What is in neither is uncovered, and so is a
- * tool whose cells hold no allowed cell or no refused one.
+ * The A8 coverage (plan v3.2 section 5 item 4: kinds, tools and routes), no
+ * database: every registry kind is in the grid or in A8_EXEMPT with a
+ * reason; every tool is in a generated cell set (a8-tool-cells.ts, from its
+ * matrix declaration) or exempt (its declaration is `none`, with a reason);
+ * every write route that names its item (`item: { param, need }`) is in the
+ * route cells (a8-route-cells.ts) or runs its refused cells only, with why
+ * (exempt). What is in neither is uncovered, and so is a tool or a route
+ * whose cells hold no allowed cell or no refused one.
  *
  * Two pins in scripts/arch-scoreboard.pins.json: a8Uncovered (only down)
  * and a8Exempt (the count of the names below; a new exemption is reviewed
@@ -26,7 +28,9 @@ import {
   a8ToolPlan,
   a8UncoveredKinds,
 } from '@mantle/db/matrix/a8-tool-cells';
+import { a8RoutePlan, A8_ROUTE_MODES, type A8ManifestEntry } from './a8-route-cells';
 import { a8AllTools } from './a8-tools.list';
+import { routeManifest } from './route-manifest.gen';
 
 const PINS = join(__dirname, '../../../scripts/arch-scoreboard.pins.json');
 
@@ -34,19 +38,31 @@ const PINS = join(__dirname, '../../../scripts/arch-scoreboard.pins.json');
  *  adds its pairwise cells; past this the matrix run is too slow for CI. */
 const A8_TOOL_RUN_CEILING = 9000;
 
-/** The A8 counts S11a pins (a8Uncovered, a8Exempt), and what makes them. */
+/** The route cells' size ceiling: cells x check modes (each a request, a
+ *  hidden one two). */
+const A8_ROUTE_RUN_CEILING = 3000;
+
+/** The A8 counts (a8Uncovered, a8Exempt), and what makes them. */
 function a8Counts() {
   const plan = a8ToolPlan(a8AllTools().map(a8ToolDecl));
+  const routes = a8RoutePlan(routeManifest as readonly A8ManifestEntry[]);
   const kindsUncovered = a8UncoveredKinds();
   return {
     plan,
+    routes,
     kindsUncovered,
-    a8Uncovered: Object.keys(plan.uncovered).length + kindsUncovered.length,
-    a8Exempt: Object.keys(plan.exempt).length + Object.keys(A8_EXEMPT).length,
+    a8Uncovered:
+      Object.keys(plan.uncovered).length +
+      kindsUncovered.length +
+      Object.keys(routes.uncovered).length,
+    a8Exempt:
+      Object.keys(plan.exempt).length +
+      Object.keys(A8_EXEMPT).length +
+      Object.keys(routes.exempt).length,
   };
 }
 
-describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
+describe('A8 coverage: every kind, tool and item route is in a cell set or exempt', () => {
   const counts = a8Counts();
 
   it('every registry kind is in the grid or exempt with a reason', () => {
@@ -81,9 +97,29 @@ describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
     }
   });
 
-  it('the exempt tools and kinds, by name', () => {
+  it('every write route that names its item has cells, an allowed and a refused one', () => {
+    expect(counts.routes.uncovered).toEqual({});
+    // A spec of a route that names no item (or is gone) is a stale one.
+    expect(counts.routes.stale).toEqual([]);
+    for (const key of counts.routes.covered) {
+      const ofIt = counts.routes.cells.filter((c) => c.key === key);
+      // Member-negative (plan rule 5): the outsider and the read grant's
+      // member are refused wherever they meet the item.
+      for (const role of ['outsider', 'readGrant'] as const) {
+        expect(
+          ofIt.some((c) => c.role === role),
+          `${key}: a ${role} cell`,
+        ).toBe(true);
+      }
+    }
+    // A hidden item answers as a random uuid: such cells exist.
+    expect(counts.routes.cells.filter((c) => !c.reads).length).toBeGreaterThan(0);
+  });
+
+  it('the exempt tools, kinds and routes, by name', () => {
     expect(Object.keys(counts.plan.exempt).sort()).toEqual(A8_EXEMPT_TOOLS);
     expect(Object.keys(A8_EXEMPT).sort()).toEqual(A8_EXEMPT_KINDS);
+    expect(Object.keys(counts.routes.exempt).sort()).toEqual(A8_EXEMPT_ROUTES);
   });
 
   it('the pins: a8Uncovered only down, a8Exempt at its cap', () => {
@@ -95,11 +131,29 @@ describe('A8 coverage: every kind and tool is in a cell set or exempt', () => {
     expect(counts.a8Exempt, msg('a8Exempt')).toBe(pins.a8Exempt);
   });
 
-  it('the budget: the tool cells stay under their ceiling', () => {
+  it('the budget: the tool and route cells stay under their ceilings', () => {
     const runs = counts.plan.cells.length * A8_TOOL_SURFACES.length * A8_TOOL_MODES.length;
     expect(runs).toBeLessThanOrEqual(A8_TOOL_RUN_CEILING);
+    const routeRuns = counts.routes.cells.length * A8_ROUTE_MODES.length;
+    expect(routeRuns).toBeLessThanOrEqual(A8_ROUTE_RUN_CEILING);
   });
 });
+
+/** The write routes that name their item and run their refused cells only
+ *  (each its reason in A8_ROUTE_SPECS), by name: a new one is named here
+ *  with the final audit's review line in the pins' _notes, and a8Exempt
+ *  rises with it. */
+const A8_EXEMPT_ROUTES: readonly string[] = [
+  'PATCH /api/v1/pages/:id',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/tool-broker',
+  'POST /api/files/files/:id',
+  'POST /api/files/folders/:id',
+  'POST /api/pages/:id/move',
+  'POST /api/tables/:id/draft-ops',
+  'POST /api/tables/:id/import',
+];
 
 /** The tools that declare `none` (each its reason in its policy), by name: a
  *  new one is named here with the final audit's review line in the pins'
