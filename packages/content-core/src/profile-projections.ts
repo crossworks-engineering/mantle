@@ -558,7 +558,15 @@ export function projectHomeDesk(raw: unknown): HomeDesk | undefined {
     icons: d.icons !== false,
     clock: d.clock === 'analog' ? 'analog' : 'digital',
   };
-  return JSON.stringify(desk).length <= HOME_DESK_BYTES_MAX ? desk : undefined;
+  // The cap is BYTES as stored (UTF-8), not UTF-16 code units: an id of
+  // non-Latin text is up to 3 bytes a character.
+  return utf8Bytes(JSON.stringify(desk)) <= HOME_DESK_BYTES_MAX ? desk : undefined;
+}
+
+const utf8 = new TextEncoder();
+/** The UTF-8 size of `s` in bytes (TextEncoder: in Node and the browser). */
+function utf8Bytes(s: string): number {
+  return utf8.encode(s).length;
 }
 
 /** Project stored `appOpens`: well-formed counters only, keeping the

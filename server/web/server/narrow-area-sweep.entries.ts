@@ -298,10 +298,6 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
   'PUT /api/profile/color-theme': { as: 'owner', body: { colorTheme: 'sweep' } },
   'PUT /api/profile/default-mode': { as: 'owner', body: { defaultMode: 'light' } },
   'PUT /api/profile/fonts': { as: 'owner', body: { fontUi: 'sweep', fontSize: 'md' } },
-  'PUT /api/profile/home-desk': {
-    as: 'owner',
-    body: { homeDesk: { v: 1, items: [], counts: {}, icons: true, clock: 'digital' } },
-  },
   'PUT /api/profile/nav-favorites': { as: 'owner', body: { navFavorites: [] } },
   'PUT /api/profile/neat-background': { as: 'owner', body: { neatBackground: 'sweep' } },
   'PUT /api/profile/reminder-channel': { as: 'owner', body: { reminderChannel: 'telegram' } },

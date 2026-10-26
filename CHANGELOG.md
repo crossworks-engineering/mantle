@@ -13,11 +13,20 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   used to live in one browser's storage; like nav favourites, it now follows
   the person to another browser, machine or the desktop app. The brain checks
   the shape and the size only (`projectHomeDesk`: a v1 desk, at most 400
-  items and 32 KB, one bad item dropped on its own); the client owns what a
-  widget is, so a new widget needs no brain release. A desk that does not
-  project is a 400, never a silent clear.
+  items and 32 KB counted in UTF-8 bytes, one bad item dropped on its own);
+  the client owns what a widget is, so a new widget needs no brain release.
+  A desk that does not project is a 400, never a silent clear.
+- **Every login saves its own desk:** the route is an any-login row
+  (`open: 'any'`, `anyLoginCaller`), so a member saves its desk as an Admin
+  user does. The write runs in the login's scope, where the profile write
+  rule (`mantle_profile_writable`) holds it to the login's own row; an API
+  key, a peer and a share link never reach it.
+- **The shell leaves `homeDesk` out** when the login's own row could not be
+  read, so a failed read is never taken for "never saved".
 - **Internal:** the route joins the route rows, the A4 guard sweep, the A10
-  body sweep and the narrow-area sweep (a `profile-row` write).
+  body sweep and the any-login rows with no limit (`UNLIMITED_NON_OWNER_ROWS`,
+  docs/request-plumbing.md); a member-save database test
+  (`home-desk-route.db.test.ts`).
 
 ## Unreleased: workspace delegation
 

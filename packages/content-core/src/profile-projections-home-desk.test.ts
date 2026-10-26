@@ -78,4 +78,26 @@ describe('projectHomeDesk', () => {
     expect(JSON.stringify(desk({ items: big })).length).toBeGreaterThan(HOME_DESK_BYTES_MAX);
     expect(projectHomeDesk(desk({ items: big }))).toBeUndefined();
   });
+
+  it('counts the size cap in UTF-8 bytes, not characters', () => {
+    const items = (ch: string) =>
+      Array.from({ length: 150 }, (_, i) => ({
+        id: `${ch.repeat(100)}${i}`,
+        x: 0,
+        y: i,
+        w: 1,
+        h: 1,
+      }));
+    // The same character count either way: under the cap as characters.
+    const wide = desk({ items: items('\u20ac') });
+    const narrow = desk({ items: items('e') });
+    expect(JSON.stringify(wide).length).toBe(JSON.stringify(narrow).length);
+    expect(JSON.stringify(wide).length).toBeLessThan(HOME_DESK_BYTES_MAX);
+    expect(new TextEncoder().encode(JSON.stringify(wide)).length).toBeGreaterThan(
+      HOME_DESK_BYTES_MAX,
+    );
+    // Three bytes a euro sign: over the cap as stored, so refused whole.
+    expect(projectHomeDesk(wide)).toBeUndefined();
+    expect(projectHomeDesk(narrow)?.items).toHaveLength(150);
+  });
 });
