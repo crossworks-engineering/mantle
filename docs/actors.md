@@ -191,7 +191,7 @@ Owner rules (each holds today unless "Known limits" says otherwise):
   `mantle_set_edit_check` (they switch the triggers with the setting), as
   the superuser that runs migrations ([update-prod.md](./update-prod.md),
   "The checks' floor").
-- **Fail-open counts** (S4a): six branches fail open, counted. S4b refuses them; a scoped typed write
+- **Fail-open counts** (S4a): five branches fail open, counted. S4b refuses them; a scoped typed write
   unless its matrix row names a `scopedSystemWrite` reason ([fail-open.md](./fail-open.md)).
 
 ## 8. Exits

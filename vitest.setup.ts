@@ -40,8 +40,13 @@ beforeEach(() => enterTestActor());
 // And S4b's refusal, rehearsed: a scoped typed write to a table the write
 // role does not hold fails its test unless the table names
 // scopedSystemWrite (it is then no hit) or is one of the tables still left
-// to decide (SCOPED_SYSTEM_WRITES_LEFT). A new such write cannot reach S4b
-// unseen. A cell that causes one on purpose takes it (takeFailOpenHits).
+// to decide (SCOPED_SYSTEM_WRITES_LEFT). A cell that causes one on purpose
+// takes it (takeFailOpenHits). What this guard does not see: a hit in an
+// afterAll hook, or from fire-and-forget work that lands after its file's
+// last afterEach (one that lands earlier fails the test running then), and
+// a hit a cell drains itself (takeFailOpenHits, resetFailOpenForTest: the
+// test files that call either are pinned in fail-open.test.ts, so a new
+// drain is reviewed). The box counts cover what vitest cannot reach.
 const failOpenDump = process.env.MANTLE_FAIL_OPEN_DUMP;
 afterEach(() => {
   const hits = takeFailOpenHits();

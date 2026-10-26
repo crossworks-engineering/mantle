@@ -79,7 +79,9 @@ export function setFailOpenWriter(fn: (row: FailOpenRow) => boolean): void {
  * `caller` takes the stack and names the calling file; it runs only after
  * the site's map lookup lets it. `table`: the table a write site sent to
  * the system pool. Under vitest every hit is also kept, before the lookup
- * and with no stack (takeFailOpenHits); a hit never fails a test.
+ * and with no stack (takeFailOpenHits): vitest.setup.ts fails a test whose
+ * typed-write hit names a table neither left nor named
+ * (unnamedScopedWrites); any other hit fails none.
  */
 export function noteFailOpen(
   site: FailOpenSite,

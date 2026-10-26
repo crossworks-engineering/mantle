@@ -4,6 +4,10 @@
  * write, outside a scoped write), and a repeat hit takes no stack. The
  * answers stay what they were: every cell checks the site's answer too.
  */
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loginActor, runAsActor, runAsSystem, runWithoutActor, type Actor } from './actor';
 import { closeDb, db, scopeHasArea, scopeHoldsAdmin } from './client';
@@ -297,6 +301,31 @@ describe('the production allows in a turn scope (sites turn-exit, system-db)', (
       inTurn(async () => assertSystemDbCaller('Error\n    at f (/app/x/y.ts:1:1)')),
     ).rejects.toThrow();
     expect(rows).toEqual([]);
+  });
+});
+
+describe("the suite's guard (vitest.setup.ts) is drained only where reviewed", () => {
+  it('the test files that take or reset the hits themselves are these three', () => {
+    // A cell that drains the hits hides them from the guard: each such file
+    // is reviewed here, so a new one is seen. A hit in an afterAll hook or
+    // from fire-and-forget work after the file's last test is the guard's
+    // other blind spot (vitest.setup.ts says so); the box counts see both.
+    const root = fileURLToPath(new URL('../../..', import.meta.url));
+    const files = execFileSync('git', ['ls-files', '*.test.ts', '*.test.tsx'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean)
+      .filter((f) =>
+        /\b(?:takeFailOpenHits|resetFailOpenForTest)\(/.test(readFileSync(join(root, f), 'utf8')),
+      )
+      .sort();
+    expect(files).toEqual([
+      'packages/db/src/fail-open.db.test.ts',
+      'packages/db/src/fail-open.test.ts',
+      'packages/tools/src/api-tool-update-area.db.test.ts',
+    ]);
   });
 });
 
