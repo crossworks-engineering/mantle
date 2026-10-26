@@ -72,6 +72,8 @@ export {
   projectTeamHubTags,
   projectAppPins,
   projectNavFavorites,
+  projectHomeDesk,
+  HOME_DESK_BYTES_MAX,
   projectAppOpens,
   projectAppNav,
   TEAM_HUB_TAGS_MAX,

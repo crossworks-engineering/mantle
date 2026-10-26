@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the Home desk follows the person
+
+- **Feature:** `PUT /api/profile/home-desk { homeDesk }` saves the login's
+  Home desk (where each widget and desk icon sits, the kind widgets' counts,
+  desk icons on or off, the clock face) on its own profile row, and
+  `GET /api/shell` returns it as `homeDesk` (null until one is saved). It
+  used to live in one browser's storage; like nav favourites, it now follows
+  the person to another browser, machine or the desktop app. The brain checks
+  the shape and the size only (`projectHomeDesk`: a v1 desk, at most 400
+  items and 32 KB, one bad item dropped on its own); the client owns what a
+  widget is, so a new widget needs no brain release. A desk that does not
+  project is a 400, never a silent clear.
+- **Internal:** the route joins the route rows, the A4 guard sweep, the A10
+  body sweep and the narrow-area sweep (a `profile-row` write).
+
 ## Unreleased: workspace delegation
 
 - **Feature (owner decision 2026-10-26):** the assistant of a workspace

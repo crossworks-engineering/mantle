@@ -39,6 +39,7 @@ import {
   projectFontKey,
   projectFontSize,
   projectGrantedGroups,
+  projectHomeDesk,
   projectHouseStyle,
   projectLogoKey,
   projectLogoType,
@@ -203,6 +204,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
     navFavorites: projectNavFavorites(prefs.navFavorites),
+    homeDesk: projectHomeDesk(prefs.homeDesk),
     appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
@@ -355,6 +357,13 @@ export async function updateProfilePreferences(
   if (patch.navFavorites !== undefined) {
     patch = { ...patch, navFavorites: projectNavFavorites(patch.navFavorites) ?? [] };
   }
+  if (patch.homeDesk !== undefined) {
+    // A desk that does not project is refused, not stored as nothing: saving
+    // one is a whole-desk replace, and a silent clear would lose the layout.
+    const homeDesk = projectHomeDesk(patch.homeDesk);
+    if (!homeDesk) throw new InputError('homeDesk must be a v1 desk within the size cap.');
+    patch = { ...patch, homeDesk };
+  }
 
   const merge = JSON.stringify(patch);
   const [row] = await profileWrite(() =>
@@ -426,6 +435,7 @@ export async function updateProfilePreferences(
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
     navFavorites: projectNavFavorites(merged.navFavorites),
+    homeDesk: projectHomeDesk(merged.homeDesk),
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
