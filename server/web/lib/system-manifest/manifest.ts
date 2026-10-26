@@ -117,12 +117,14 @@ export type ManifestAgent = {
   /** Verbatim system prompt (from ./prompts) — specialists only; the persona
    *  carries none (its prompt is built from the persona bank). */
   systemPrompt?: string;
-  /** SHA-256 (hex) of every EARLIER shipped default of `systemPrompt`. The
-   *  boot reconcile replaces a live prompt with the current default only when
-   *  it hashes to one of these: the operator never edited it. An edited prompt
-   *  hashes to none of them and is kept (prompts are operator-owned; see
-   *  CLAUDE.md). Add the old default's hash here in the change that rewrites a
-   *  prompt, when existing brains should get the rewrite. */
+  /** SHA-256 (hex) of every EARLIER shipped default of `systemPrompt` (the
+   *  evaluated string, UTF-8). The boot reconcile replaces a live prompt with
+   *  the current default only when it hashes to one of these: the operator
+   *  never edited it. An edited prompt hashes to none of them and is kept
+   *  (prompts are operator-owned; see CLAUDE.md). Owner decision 2026-10-26:
+   *  every specialist lists all of its earlier defaults, so an untouched old
+   *  prompt follows the product on every box. Add the old default's hash here
+   *  in the change that rewrites a prompt. */
   retiredPromptSha256?: readonly string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
@@ -1529,6 +1531,30 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
+    retiredPromptSha256: [
+      // The pre-manifest seed script: its 2026-05-27 drafts, then 2026-05-29
+      // (the first manifest kept that one)
+      '89a6e49a1f0c962c9d9d03ecfc45be09e0520fc467ebee825359e29f64d1afe0',
+      '10c5a59554f6518c8bbd3992b0ce719e855f28910ac2bd130ab6e708f02365fd',
+      'aa7a50bed84332b6024af2e5fdf5b0785efa44c8750af9c166f5f819e91cd53b',
+      '66d5ba3e1fb0e2c38ac30f71aaea4fc9132435f1e1041477bbe7adfef1cb5922',
+      '2a2605b118ba4fd426960e46f190a2fc37c1c4445979205842f2a609712da624',
+      'cb9c0d530a4b8c7d4ab83039fffb9268ada74275e3dac3dd87f52a19ee6c423d',
+      '6a6f8efb1524fb464152031ad7277c8459421a2b10747182cb8b2b64e452268b',
+      'c90c46796ac9dc932e5eef713ad6420c58191bc57e824f5e4c06df24942591bd',
+      // 2026-06-06 and 06-07, the open-source passes before the first tag
+      'b0f680f2fe6d5987ec117e8cb40ba4b9e73d66c13b94bbb50f0d42addff81241',
+      '56c33bfd1690430a4caa958f2655fbe742bac30f5f1c5473cb936248eced8e47',
+      'd044500f3b6ac58b834c9e3ea84504f0b89923389ded197713315ee263e2d3fe',
+      // v0.20.43 to v0.117
+      '480f15a556c037f0bc06136db50afb8e8a7982f5249593dbbe975dc41735e78e',
+      // v0.118
+      '96709fe279152d52e8261d872a2f6beeccab7bba5d708fb079d06598bd760552',
+      // v0.119 to v0.209
+      'ea7c81224fddfc487d5d6ecf2c8fbd24c7554b26c6fdbf1ab274dd930ed7185c',
+      // v0.210 to v0.232.364
+      '56a905636ca0534b1f407d165f37a69a24bff10f632c027fcdeb6ef2eabc7271',
+    ],
     // P6: full page capability via groups — `pages` (authoring) + `page-admin`
     // (delete/overwrite) + `page-share` reassemble the complete PAGE_TOOL_SLUGS
     // set; `files`/`memory-core` cover source reads + cross-context lookups.
@@ -1561,6 +1587,16 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
+    retiredPromptSha256: [
+      // The pre-manifest seed script, 2026-06-02 (the first manifest kept the last)
+      '6ffeb0bbd71067fc1ea46d5faa696c56fb085407a664d6dbba92e70198803233',
+      'e10267f75c47527293b26b69f835406a36912091ed9456617a26c0cb9e6bfcb8',
+      '0aed5b2ba99f30f8a3c9fa671b5fdbb20532953d25a6b4d0bca3ffdaa1a1f218',
+      // 2026-06-06, before the first tag
+      'eda278d0a73e48bf442f0135e06f1890720ec2c3a9e5c53e248450271ff7f037',
+      // v0.20.43 to v0.234.3
+      'a61eeb003046ba0e8c4657bba5420d1c5bdd4a6d6b65fb3d5e360ecda7a1f1fa',
+    ],
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups. Page
     // sharing is Pages' job, not Ledger's — no `page-share` here.
@@ -1588,6 +1624,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'DIAGRAMMER_MODEL',
     systemPrompt: AGENT_PROMPTS['diagrammer']!,
+    retiredPromptSha256: [
+      // v0.230.57 to v0.232.2
+      'f8a8ae0fc2290015711d41148dd681590f5402bbcff875b12121be99e6444a57',
+      // v0.232.3 to v0.300.143
+      '84a33b9bf10ca5997428f8f397a3227d2aab65258900f734bbe18bb055538b35',
+      // 2026-10-23, a draft on the way to v0.400.0
+      '083f490d655511e03364a8f3a2f365831c69a75599a8bd59c2ca4541df351641',
+    ],
     // `diagram` for the type list + per-type drawing guides (read from the
     // guide files in the image, never the docs collection), `pages` for the
     // spec block + embed edits, `files` for the SVG upload (file_create) +
@@ -1639,6 +1683,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
+    retiredPromptSha256: [
+      // The pre-manifest seed script, 2026-05-23 (the first manifest kept it)
+      'c536a6301c8e0350dbdf48c39332ee03009821e2fc15e1716b2384595947d30c',
+      // 2026-06-06, before the first tag
+      '75dbd14b130af37e9b4758770170186aea60f0610a9e1c261bdb608cd41d1f78',
+      // v0.20.43 to v0.232.56
+      '02ee12efc47394a2919bc6cc2b16cf6a2055f086c597baf989b076afb1d9baa3',
+    ],
     // P6: `replay` (replay_window) + `replay-search` (find_window, Remy's specialty) +
     // `memory-core` for the node lookups it cites.
     toolGroupSlugs: ['replay', 'replay-search', 'memory-core'],
@@ -1655,6 +1707,13 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
+    retiredPromptSha256: [
+      // The pre-manifest seed script, 2026-05-23 (the first manifest kept it)
+      'c1ae2dc1f2e0304bc2211b87446a5d1a4f12343852b5d6ff9bacfd45d78da079',
+      // 2026-06-06 and 06-07, before the first tag
+      'c3037c459650a03bc734443d403a003b014f32144de2a40c73d83193ce877d07',
+      '59bdaec554e8d00862695f6aac2b428ef3cefc7e3b49c377ba74c324234efc84',
+    ],
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
     toolGroupSlugs: ['research', 'memory-core'],
     skillSlugs: [],
@@ -1673,6 +1732,11 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CURATOR_MODEL',
     systemPrompt: AGENT_PROMPTS['curator']!,
+    retiredPromptSha256: [
+      // 2026-08-22: a same-day draft, then v0.232.45 to v0.232.47
+      '52c31e9739cf8656aecb2cb3ef9a96c745f574af90647393dcd3b02f1245b2e9',
+      '1943dddbadc3ae67b2977286c7a02fd5303b272394aadfc3b9e34507824fa11b',
+    ],
     toolGroupSlugs: ['model-curation'],
     skillSlugs: [],
     isDelegate: true,
@@ -1730,6 +1794,18 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TOOLSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['toolsmith']!,
+    retiredPromptSha256: [
+      // v0.22
+      '9360c5256c23df763017c1a07a699d072353c8d2f1f8efcd5315af489ca77376',
+      // v0.23 to v0.89
+      '6f3e46ddf3240864461fc0350f23eadd67cad370acff2649c7217f648256457b',
+      // 2026-06-28, a draft on the way to v0.90
+      '3d6c1317b4e9d130e48b15dcd0acd0d37bcce33fa38cfd5e2253acd31fc0e800',
+      // v0.90 to v0.205.0
+      'b279a20a14a912f996fb11e3139dda266cf51cae5bd0f1edb9e7ced4e0e0a5ad',
+      // 2026-07-26, a draft on the way to v0.205.1
+      'c186f7b0c8fdbf80a5e663f948423ac74edd5248171133f926b6953ce4db5f21',
+    ],
     // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it
     // can locate a service's docs when given only a name. Deliberately NOT
     // memory-core — it works from docs + the registry, not the user's brain.
@@ -1749,6 +1825,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
+    retiredPromptSha256: [
+      // The pre-manifest seed script, 2026-05-21 (the first manifest kept it)
+      '78d600152edf3c98671b93ea277f96ee0ed2860632bc85ba48f98d57c757f544',
+      // v0.20.43 to v0.206.2
+      '3ca4c0c7002207978d729050129ef8294436c87a71f5159c6f231a1286ebd745',
+    ],
     // P6: `terminal` (unrestricted shell) + `sandboxes` (contained shell) +
     // `files` + `memory-core`.
     toolGroupSlugs: ['terminal', 'sandboxes', 'files', 'memory-core'],
@@ -1766,6 +1848,15 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'APPSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['appsmith']!,
+    retiredPromptSha256: [
+      // v0.31.7 to v0.38.0
+      'be5e344335df997de71410b165c5c4601f2a98e146059f72cf2f665e1cd25b1b',
+      // 2026-06-23, two drafts on the way to v0.38.1
+      'abc211b899a0b7cc58be2e5118f5fe7333441af0023a4cf049bba1196e318d47',
+      '1eaa5a31ad6f988cd82bf52b97d6f341204f07a161062465d93ce82d4edaec13',
+      // v0.38.1 to v0.234.3
+      'd21ca10d528ec474d055866ea3e31ba754385e7512cff524fd3316114ef9b6ac',
+    ],
     // `apps` (authoring) + `app-admin` (delete/publish) reassemble the full
     // APP_TOOL_SLUGS set; `files`/`memory-core` for source reads + lookups;
     // `delegation` so it can hand data-tool work to the toolsmith; `research`
@@ -1805,11 +1896,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // 1:1 portal chat, 2026-07-05, and the forum, 2026-07-17). A brain whose
     // prompt is still one of them gets the member-chat rewrite on upgrade.
     // And the one before workspaces W7b, which filed change requests with
-    // team_request_create (retired with builtins-team.ts).
+    // team_request_create (retired with builtins-team.ts). The last is the
+    // Phase 6 member-chat default itself (v0.232.295 to v0.239.94), before
+    // W6b reworded it.
     retiredPromptSha256: [
       '60f5262a299ecaefe17696d89fba1234cf03d76de1283aed8c61f62d2cb305b1',
       '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
       '1bfb73a81b0513e88302a9c3d6b27dc0b05a083a8a3eab31a6758acb188889ab',
+      '8b0afadf564ea0e8ea3880091aee3ba48209371434604235182cc695ef81531e',
     ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it

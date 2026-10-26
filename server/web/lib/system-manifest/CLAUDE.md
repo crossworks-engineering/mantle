@@ -46,6 +46,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
 | Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
 | Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs` |
+| Specialist **prompt still an earlier shipped default**, byte for byte (owner decision 2026-10-26; disabled agents too; never the persona, never an edited prompt) | ✅ moved to the current default, the old text kept as a prose version (one Studio revert) | `upgradeUneditedPrompts` + `retiredPromptSha256` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
@@ -54,8 +55,10 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 - **Any agent's prompt / model / provider / key** (decision 2026-07-29): the
   route and the prompt are operator-owned on specialists too, a model switch
   (Models tab) or prompt edit survives upgrades. Shipped prompt/model
-  improvements reach existing brains only via the operator's own pull
+  improvements reach an EDITED prompt only via the operator's own pull
   (Studio reset-to-default); fresh installs still seed the manifest defaults.
+  The one exception is a specialist prompt nobody edited: it is the
+  product's text, so it follows the product (`retiredPromptSha256`, above).
   (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
 - An existing **worker's model/provider**: operator cost choice; never overwritten.
 - Any agent's **thinking effort** (`agents.thinking_effort`, migration 0228):
@@ -104,9 +107,12 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   (e.g. `rich_writing` stays for Pages). Operator-authored links are never touched.
 - **Add/change a specialist:** edit its `MANIFEST_AGENTS` entry (+ `AGENT_PROMPTS`).
   Params/memoryConfig tuning syncs; groups + skills union; a brand-new specialist
-  is auto-provisioned with delegation wired. Prompt/model changes reach only
-  fresh installs and new provisions, existing brains keep the operator's
-  prompt/route (Studio reset-to-default is the manual pull).
+  is auto-provisioned with delegation wired. A model change reaches only
+  fresh installs and new provisions. A prompt rewrite reaches existing brains
+  whose prompt is unedited: add the sha256 of the OLD default (the evaluated
+  `AGENT_PROMPTS[slug]` string) to that agent's `retiredPromptSha256` in the
+  same change. An edited prompt is kept (Studio reset-to-default is the
+  manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
   it by adding the slug to an agent's `toolGroupSlugs`. A group has no
   level (W8c): it is system-wide, or Admin only (`MANIFEST_ADMIN_ONLY_GROUPS`).

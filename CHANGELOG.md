@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: untouched specialist prompts follow the product
+
+- **Change:** a specialist whose prompt is still, byte for byte, an
+  earlier shipped default moves to the current default on upgrade
+  (Draftsman, Appsmith, Pages, Ledger, Remy, Researcher, Curator,
+  Toolsmith, Coder and the team responder; every earlier default from
+  git history, the pre-manifest seed scripts included, is listed in the
+  agent's `retiredPromptSha256`). Disabled agents move too. An edited
+  prompt and the persona's are never touched. The write goes through
+  the Studio's prose versioning, so the old text stays a version and one
+  revert in Studio brings it back. The team responder also gains its
+  missing Phase 6 member-chat default (v0.232.295 to v0.239.94).
+
 ## Unreleased: Present is a workspace content kind
 
 - **Feature:** every enabled workspace assistant (the team responder

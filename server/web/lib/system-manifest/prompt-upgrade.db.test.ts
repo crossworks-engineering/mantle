@@ -1,10 +1,12 @@
 /**
  * The boot reconcile's two Phase 6 steps on Postgres:
  *
- *   - upgradeUneditedPrompts: a team-responder whose prompt is still an
- *     earlier shipped default gets the current default, through the Studio's
- *     prose versioning (the old text is v1, one revert away); an edited prompt
- *     and an already-current one are left alone; a second run does nothing.
+ *   - upgradeUneditedPrompts: a specialist whose prompt is still an earlier
+ *     shipped default gets the current default, through the Studio's prose
+ *     versioning (the old text is v1, one revert away), a disabled one too;
+ *     an edited prompt, an already-current one and the persona (even holding
+ *     a retired default's exact text) are left alone; a second run does
+ *     nothing.
  *   - disableRetiredManifestItems: the retired `team-notify` group and the
  *     builtin `team_member_list` / `team_notify` / `my_app_share` rows are
  *     disabled; an operator's own http tool that shares a slug is not.
@@ -21,15 +23,24 @@ import { asSuperuser } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const OLD = 'You are the Team Responder. A default from an earlier release.';
+// One synthetic earlier default per specialist under test.
+const OLD_BY_SLUG: Record<string, string> = {
+  'team-responder': OLD,
+  diagrammer: 'You are "Draftsman". A default from an earlier release.',
+  appsmith: 'You are "Appsmith". A default from an earlier release.',
+};
 
 vi.mock('./manifest', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./manifest')>();
-  const old = createHash('sha256').update(OLD, 'utf8').digest('hex');
+  const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
   return {
     ...actual,
     MANIFEST_AGENTS: actual.MANIFEST_AGENTS.map((a) =>
-      a.slug === 'team-responder'
-        ? { ...a, retiredPromptSha256: [...(a.retiredPromptSha256 ?? []), old] }
+      OLD_BY_SLUG[a.slug]
+        ? {
+            ...a,
+            retiredPromptSha256: [...(a.retiredPromptSha256 ?? []), sha(OLD_BY_SLUG[a.slug]!)],
+          }
         : a,
     ),
   };
@@ -45,11 +56,13 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
   const brains = { unedited: randomUUID(), edited: randomUUID(), fresh: randomUUID() };
   const EDITED = `${OLD} Always answer in Afrikaans.`;
 
-  const agentOf = async (owner: string) =>
+  const agentOf = async (owner: string, slug = 'team-responder') =>
     (
       await admin<Row[]>`select id, system_prompt from agents
-                          where owner_id = ${owner} and slug = 'team-responder'`
+                          where owner_id = ${owner} and slug = ${slug}`
     )[0]!;
+  const currentOf = async (slug: string) =>
+    (await import('./manifest')).MANIFEST_AGENTS.find((a) => a.slug === slug)!.systemPrompt!;
   const versionsOf = async (agentId: unknown) =>
     admin<Row[]>`select version, body, note from prompt_versions
                   where entity_type = 'agent' and entity_id = ${agentId as string}
@@ -73,6 +86,19 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
                   values (${owner}, 'team-responder', 'Team Responder', 'test/model',
                           ${prompts[k as keyof typeof prompts]})`;
     }
+    // The other specialists on the unedited brain: a DISABLED Draftsman still
+    // on an old default (upgraded all the same), an Appsmith the owner edited
+    // (kept), and the persona holding a retired default's exact text (the
+    // persona's prompt is the operator's overlay: never touched).
+    const u0 = brains.unedited;
+    await admin`insert into agents (owner_id, slug, name, model, system_prompt, enabled)
+                values (${u0}, 'diagrammer', 'Draftsman', 'test/model',
+                        ${OLD_BY_SLUG.diagrammer!}, false)`;
+    await admin`insert into agents (owner_id, slug, name, model, system_prompt)
+                values (${u0}, 'appsmith', 'Appsmith', 'test/model',
+                        ${`${OLD_BY_SLUG.appsmith!} Prefer dark themes.`})`;
+    await admin`insert into agents (owner_id, slug, name, role, model, system_prompt)
+                values (${u0}, 'assistant', 'Assistant', 'responder', 'test/model', ${OLD})`;
     // Retired items: on the unedited brain, the builtin rows and the group; on
     // the edited brain, an operator's own http tool that shares a slug.
     const u = brains.unedited;
@@ -102,7 +128,10 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
   });
 
   it('moves an unedited default to the current one, keeping the old as v1', async () => {
-    expect(await rec.upgradeUneditedPrompts(brains.unedited)).toEqual(['team-responder']);
+    expect((await rec.upgradeUneditedPrompts(brains.unedited)).sort()).toEqual([
+      'diagrammer',
+      'team-responder',
+    ]);
     const a = await agentOf(brains.unedited);
     expect(a.system_prompt).toBe(current);
     const v = await versionsOf(a.id);
@@ -111,6 +140,23 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
       [2, current],
     ]);
     expect(String(v[1]!.note)).toMatch(/unedited/);
+    // The disabled Draftsman moved too, the same way.
+    const d = await agentOf(brains.unedited, 'diagrammer');
+    const draftsman = await currentOf('diagrammer');
+    expect(d.system_prompt).toBe(draftsman);
+    expect((await versionsOf(d.id)).map((r) => [r.version, r.body])).toEqual([
+      [1, OLD_BY_SLUG.diagrammer],
+      [2, draftsman],
+    ]);
+  });
+
+  it("keeps an edited specialist's prompt and the persona's", async () => {
+    const app = await agentOf(brains.unedited, 'appsmith');
+    expect(app.system_prompt).toBe(`${OLD_BY_SLUG.appsmith!} Prefer dark themes.`);
+    expect(await versionsOf(app.id)).toEqual([]);
+    const persona = await agentOf(brains.unedited, 'assistant');
+    expect(persona.system_prompt).toBe(OLD);
+    expect(await versionsOf(persona.id)).toEqual([]);
   });
 
   it('keeps an edited prompt, and one that is already current', async () => {

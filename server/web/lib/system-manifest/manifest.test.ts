@@ -530,15 +530,46 @@ describe('system manifest integrity', () => {
 
   it("a retired prompt hash is never the agent's current default (no upgrade loop)", () => {
     const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
-    const withHistory = MANIFEST_AGENTS.filter((a) => a.retiredPromptSha256?.length);
-    expect(withHistory.map((a) => a.slug)).toContain('team-responder');
-    for (const a of withHistory) {
-      for (const h of a.retiredPromptSha256!) expect(h, a.slug).toMatch(/^[0-9a-f]{64}$/);
-      expect(a.retiredPromptSha256, a.slug).not.toContain(sha(a.systemPrompt!));
+    for (const a of MANIFEST_AGENTS.filter((x) => !x.isPersona)) {
+      const retired = a.retiredPromptSha256 ?? [];
+      for (const h of retired) expect(h, a.slug).toMatch(/^[0-9a-f]{64}$/);
+      expect(new Set(retired).size, `${a.slug}: duplicate retired hash`).toBe(retired.length);
+      expect(retired, a.slug).not.toContain(sha(a.systemPrompt!));
     }
+    // The persona's prompt is the operator's overlay: never upgraded.
+    expect(MANIFEST_AGENTS.find((a) => a.isPersona)!.retiredPromptSha256).toBeUndefined();
   });
 
-  // The two hashes must be the defaults that actually shipped, or the upgrade
+  // Owner decision 2026-10-26: every specialist lists ALL of its earlier
+  // shipped defaults (prompts.ts history, and the pre-manifest seed scripts),
+  // so an untouched old prompt follows the product on every box. Pinned so a
+  // list is not dropped by accident; a prompt rewrite adds one to its count.
+  it('every specialist carries its earlier shipped defaults', () => {
+    const counts = Object.fromEntries(
+      MANIFEST_AGENTS.filter((a) => !a.isPersona).map((a) => [
+        a.slug,
+        a.retiredPromptSha256?.length ?? 0,
+      ]),
+    );
+    expect(counts).toMatchObject({
+      pages: 15,
+      tables: 5,
+      diagrammer: 3,
+      presenter: 0,
+      remy: 3,
+      researcher: 3,
+      curator: 2,
+      mathematician: 0,
+      reader: 0,
+      toolsmith: 5,
+      coder: 2,
+      appsmith: 4,
+      'team-responder': 4,
+      [DEFAULT_WORKER_SLUG]: 0,
+    });
+  });
+
+  // The hashes must be the defaults that actually shipped, or the upgrade
   // silently never fires. Checked against the commits that shipped them when
   // the history is there (a shallow CI clone skips it).
   it('the retired team-responder hashes are the defaults git shipped', () => {
@@ -549,6 +580,8 @@ describe('system manifest integrity', () => {
       ['5dc930df4bca33f1c7025b25f296857ffc24d9ef', 'apps/web'],
       // v0.239.95, the member chat with team_request_create (retired in W7b)
       ['c71f3636a', 'server/web'],
+      // v0.232.295, the Phase 6 member-chat default, before W6b reworded it
+      ['88ec82984', 'server/web'],
     ];
     const src = ([sha, dir]: [string, string]): string | null => {
       try {
