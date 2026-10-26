@@ -22,8 +22,9 @@ import {
   type CheckKind,
 } from './circuit-trace/check';
 import { storeChecks, storeRefusal } from './circuit-trace/checks-store';
+import { sealedPid } from './circuit-trace/check-seal';
 import { verifyCircuit } from './circuit-trace/verify';
-import { bumpWorkerUsage, type AiWorker } from '@mantle/db';
+import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { mediaDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
@@ -181,14 +182,16 @@ export async function circuitTraceHandler(
     const applied: AppliedCheck[] = [];
     const checkLimits: string[] = [];
     const result = traceCircuit(circuit, sheets, register, {
-      checks: (walked, links) => appliedChecks(walked, links, sheets, applied, checkLimits),
+      checks: (walked, links) =>
+        appliedChecks(walked, links, sheets, applied, checkLimits, register),
     });
     result.limits.push(...cut, ...read.limits, ...checkLimits);
     const { estimateMeasurer, render, validate, withImageCheckSummary, imageCheckSummary } =
       await import('@mantle/diagram-templates');
-    // The image check counts, from the drawing's own marks (every author's
-    // save counts them the same way: present_create, present_update).
-    const pid = withImageCheckSummary(result.pid);
+    // The marks sealed (a save keeps only these: @mantle/content
+    // drawing-seal), then the image check counts from the drawing's own
+    // marks, as every save counts them.
+    const pid = withImageCheckSummary(sealedPid(result.pid, result.cutCheckKeys, result.limits));
     const imageCheck = imageCheckReport(imageCheckSummary(pid));
     const checked = validate('pid', pid);
     // The data check, then the layout of every page with the estimate
@@ -381,6 +384,9 @@ export async function circuitVerifyHandler(
     }
     max = Math.min(Math.floor(n), VERIFY_MAX.questions);
   }
+  // Who calls: the Checks rows' By column, which the guard against a second
+  // call reads (verify.ts verifyAgainRefusal).
+  const by = callerOf();
   // The resolved worker and its key, for the asks of this call only.
   let route: { worker: AiWorker; credential: ProviderCredential } | null = null;
   try {
@@ -393,6 +399,7 @@ export async function circuitVerifyHandler(
         maxQuestions: max,
         dryRun: verifyFlag(input.dry_run),
         recheck: verifyFlag(input.recheck),
+        by,
       },
       {
         readSheets: readCircuitSheets,
@@ -454,7 +461,8 @@ export async function circuitVerifyHandler(
           return r;
         },
         storable: storeRefusal,
-        store: storeChecks,
+        store: (owner, sheet, c, answers, overview, checkedAt) =>
+          storeChecks(owner, sheet, c, answers, overview, checkedAt, by),
         now: () => new Date(),
       },
     );
@@ -462,6 +470,26 @@ export async function circuitVerifyHandler(
     return r;
   } catch (err) {
     return { ok: false, error: `circuit_verify failed: ${errorMessage(err)}` };
+  }
+}
+
+/** Who runs a circuit_verify call, as its Checks rows record it: the login
+ *  (`login:<id>`), an assistant, the system, or the kind of caller. Never
+ *  empty, so rows filed before the By column (empty) are nobody's. */
+export function callerOf(): string {
+  const a = currentActor();
+  if (!a) return 'owner';
+  switch (a.kind) {
+    case 'login':
+      return `login:${a.loginId}`;
+    case 'assistant':
+      return `assistant:${a.agentId ?? 'none'}`;
+    case 'system':
+      return `system:${a.reason}`;
+    case 'peer':
+      return `peer:${a.peerId ?? 'none'}`;
+    default:
+      return a.kind;
   }
 }
 
@@ -488,8 +516,7 @@ const circuit_verify: BuiltinToolDef = {
     clientSourced: CS.always("spends the owner's vision key and writes check rows"),
   },
   name: 'Check a traced circuit with an image model',
-  description:
-    "Check the guesses of `circuit_trace` on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name is a yes/no question on a close-up crop; a no names what it is from a closed list. Stores each answer with its crops in the drawing table's Checks tab; trace again to draw them (CHECKED BY IMAGE, FROM IMAGE), never certain. **Spends the owner's vision key**: the step between `circuit_trace` and saving, never automatic; `dry_run` lists the questions free. At most once per trace in a turn, never again for guesses it left out (not_asked, a cap, a time limit): save and report how many are unchecked.",
+  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to draw them, never certain. **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
   inputSchema: {
     type: 'object',
     properties: {

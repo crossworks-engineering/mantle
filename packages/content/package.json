@@ -32,6 +32,7 @@
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",
     "./presents": "./src/presents.ts",
+    "./drawing-seal": "./src/drawing-seal.ts",
     "./calculate": "./src/calculate.ts",
     "./tree": "./src/tree/index.ts",
     "./test-support": "./src/test-support.ts"
@@ -45,6 +46,7 @@
     "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/diagram-templates": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/std": "workspace:*",

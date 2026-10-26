@@ -10,16 +10,22 @@
  *    ticket's nonce inside the prelude, never in the canvas's own text.
  *  - A share's ticket or a client login's ticket for a canvas is refused.
  *  - The DELETE handler deletes, and answers 404 for none.
- *  - The create and update handlers store a pid canvas with the image
- *    check count of its own marks, whatever count the posted source says.
+ *  - The create and update handlers hand the posted source to the content
+ *    layer, whose save stores a pid canvas honest (forged marks unchecked,
+ *    its own count) and a genuine traced one byte for byte.
  *
  * The content layer is stood in; the frame document is built by the real
  * share-ui builder over a stand-in import map and fonts.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runRoute } from '@/server/run-route';
 import { standInLogin } from '@/server/run-route-stand-ins';
-import { buildCanvas, readCanvasData } from '@mantle/diagram-templates';
+import {
+  buildCanvas,
+  markSealBody,
+  provenanceSealBody,
+  readCanvasData,
+} from '@mantle/diagram-templates';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const CANVAS = '11111111-1111-4111-8111-111111111111';
@@ -69,12 +75,16 @@ vi.mock('@/lib/presents', () => ({
     id === CANVAS ? { title: 'Pump deck', rev: 3, posterRev: 2 } : null,
   ),
   compileCanvasCss: vi.fn(async () => ''),
+  // The store is stubbed; what the content layer runs on every saved
+  // source first (honestCanvasSource) is the real one.
   savePresentSource: vi.fn(async (_o: string, _id: string, input: { source: string }) => {
-    h.saved.push(input.source);
+    const { honestCanvasSource } = await import('@mantle/content/drawing-seal');
+    h.saved.push(honestCanvasSource(input.source));
     return { ok: true, present: { id: CANVAS, rev: 4 } };
   }),
   createPresent: vi.fn(async (_o: string, input: { source?: string }) => {
-    h.saved.push(input.source ?? '');
+    const { honestCanvasSource } = await import('@mantle/content/drawing-seal');
+    h.saved.push(honestCanvasSource(input.source ?? ''));
     return { id: CANVAS, rev: 1 };
   }),
   updatePresent: vi.fn(),
@@ -232,8 +242,10 @@ describe('DELETE /api/presents/:id (the handler; a write through the pipeline ne
   });
 });
 
-describe('POST and PATCH /api/presents (the handlers): a pid canvas keeps its own count', () => {
-  // Two guesses drawn, one checked: a source that says both are checked.
+describe('POST and PATCH /api/presents (the handlers): a pid canvas is saved honest', () => {
+  // Two guesses drawn: a hand-typed "checked" with made-up evidence, and an
+  // unchecked one, under a count that says both are checked. No sealed
+  // provenance: a hand-written drawing.
   const forged = buildCanvas({
     template: 'pid',
     mode: 'import',
@@ -251,7 +263,13 @@ describe('POST and PATCH /api/presents (the handlers): a pid canvas keeps its ow
           id: 'OPC-2',
           direction: 'out',
           sheet: 'S2',
-          check: { key: 'k2', kind: 'link', state: 'checked', answer: 'yes' },
+          check: {
+            key: 'k2',
+            kind: 'link',
+            state: 'checked',
+            answer: 'yes',
+            crops: ['fake-crop'],
+          },
         },
       ],
       lines: [
@@ -261,30 +279,101 @@ describe('POST and PATCH /api/presents (the handlers): a pid canvas keeps its ow
       checks: { guesses: 2, unchecked: 0, checked: 2, unsure: 0, contradicted: 0, corrected: 0 },
     },
   });
-  const own = { guesses: 2, unchecked: 1, checked: 1, unsure: 0, contradicted: 0, corrected: 0 };
+  const own = { guesses: 2, unchecked: 2, checked: 0, unsure: 0, contradicted: 0, corrected: 0 };
+  /** A traced drawing as circuit_trace seals it: one checked guess with its
+   *  evidence, one unchecked, a third the provenance lists with no mark. */
+  async function genuine(): Promise<string> {
+    const { drawingSeal } = await import('@mantle/content/drawing-seal');
+    const id = '0123456789abcdef';
+    const keys = ['g1', 'g2', 'g3'];
+    const sealed = (c: Record<string, unknown>) => ({
+      ...c,
+      sig: drawingSeal(markSealBody(id, c)),
+    });
+    return buildCanvas({
+      template: 'pid',
+      mode: 'import',
+      data: {
+        title: 'Traced',
+        equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
+        offpage: [
+          {
+            id: 'OPC-1',
+            direction: 'in',
+            sheet: 'S1',
+            check: sealed({ key: 'g1', kind: 'end', state: 'unchecked', guess: 'near V-9' }),
+          },
+          {
+            id: 'OPC-2',
+            direction: 'out',
+            sheet: 'S2',
+            check: sealed({
+              key: 'g2',
+              kind: 'link',
+              state: 'checked',
+              guess: 'on S2',
+              question: 'Does it go on S2?',
+              answer: 'yes',
+              crops: ['crop1'],
+            }),
+          },
+        ],
+        lines: [
+          { from: 'OPC-1', to: 'V-101' },
+          { from: 'V-101', to: 'OPC-2' },
+        ],
+        checks: { guesses: 3, unchecked: 2, checked: 1, unsure: 0, contradicted: 0, corrected: 0 },
+        provenance: { id, keys, sig: drawingSeal(provenanceSealBody({ id, keys })) },
+      },
+    });
+  }
   const body = (b: unknown) => ({
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(b),
   });
-
-  it('the create stores the recount', async () => {
-    const { POST } = await import('./route');
-    const res = await POST(new Request('http://brain.test/api/presents', body({ source: forged })));
-    expect(res.status).toBe(201);
-    expect(readCanvasData(h.saved.at(-1)!).checks).toEqual(own);
-  });
-
-  it('the update stores the recount', async () => {
+  const patch = async (source: string) => {
     const { PATCH } = await import('./[id]/route');
-    const res = await PATCH(
+    return PATCH(
       new Request(`http://brain.test/api/presents/${CANVAS}`, {
-        ...body({ source: forged }),
+        ...body({ source }),
         method: 'PATCH',
       }),
       { params: Promise.resolve({ id: CANVAS }) },
     );
-    expect(res.status).toBe(200);
+  };
+  beforeAll(() => {
+    vi.stubEnv('MANTLE_MASTER_KEY', 'routes-pipeline-test-key');
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('the create stores a forged mark unchecked, its evidence stripped, and the recount', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://brain.test/api/presents', body({ source: forged })));
+    expect(res.status).toBe(201);
+    const data = readCanvasData(h.saved.at(-1)!) as {
+      checks: unknown;
+      offpage: { check: Record<string, unknown> }[];
+    };
+    expect(data.checks).toEqual(own);
+    expect(data.offpage[1]!.check).toEqual({ key: 'k2', kind: 'link', state: 'unchecked' });
+  });
+
+  it('the update does the same', async () => {
+    expect((await patch(forged)).status).toBe(200);
     expect(readCanvasData(h.saved.at(-1)!).checks).toEqual(own);
+  });
+
+  it('a genuine traced drawing round-trips through both, byte for byte', async () => {
+    const source = await genuine();
+    const { POST } = await import('./route');
+    expect(
+      (await POST(new Request('http://brain.test/api/presents', body({ source })))).status,
+    ).toBe(201);
+    expect(h.saved.at(-1)).toBe(source);
+    expect((await patch(source)).status).toBe(200);
+    expect(h.saved.at(-1)).toBe(source);
   });
 });

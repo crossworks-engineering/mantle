@@ -231,6 +231,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/diagram-templates':
+        specifier: workspace:*
+        version: link:../diagram-templates
       '@mantle/files':
         specifier: workspace:*
         version: link:../files

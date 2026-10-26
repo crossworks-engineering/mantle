@@ -26,6 +26,26 @@
  *     `guess` keeps what the geometry read.
  * `crops` and `overview` are file ids of the stored crop images (the
  * evidence in the drawing table's Checks tab).
+ *
+ * Sealed marks (phase 6): a Write user or a client could type
+ * `state: "checked"` with made-up evidence, or drop every mark so no "not
+ * checked" note shows. So circuit_trace signs what it draws: each mark
+ * carries `sig`, an HMAC over `markSealBody`, and the drawing (a set: the
+ * set) carries `provenance` { id, keys, sig }: the keys of every guess the
+ * trace drew (and the ones a cap left off), sealed with `provenanceSealBody`.
+ * The key is the drawing check seal's (the brain's master key, HKDF, the
+ * same key path as the Checks tab's rows); this package never holds it.
+ * Every save normalizes the data (`honestImageChecks`, with a verifier the
+ * content layer passes): without a valid provenance every mark is
+ * `unchecked` with no evidence (a hand-written drawing never shows a check
+ * it did not get); with one, a mark whose seal does not hold is made
+ * `unchecked` with its evidence stripped, and a guess key with no mark
+ * still counts, as unchecked (`imageCheckSummary`). The stored data is
+ * then honest, and the view trusts it without verifying anything.
+ *
+ * The far end of a corrected sheet link shows the asked end's state
+ * (corrected) without `alt`: the alternative names where the ASKED end
+ * continues, nothing about the far one.
  */
 import {
   checkKeys,
@@ -67,7 +87,15 @@ export type PidCheck = {
   /** File ids of the crops the model saw, and of the sheet overview. */
   crops?: string[];
   overview?: string;
+  /** circuit_trace's seal of the mark (`markSealBody`); a save drops a mark
+   *  whose seal does not hold to `unchecked`. */
+  sig?: string;
 };
+
+/** Which guesses a traced drawing (a set: the whole set) draws, sealed:
+ *  `keys` lists every guess the trace drew, the ones a cap left off too, so
+ *  a dropped mark still counts as unchecked. */
+export type PidProvenance = { id: string; keys: string[]; sig: string };
 
 /** The count of a drawing's guesses by their check state. */
 export type PidChecksSummary = {
@@ -89,6 +117,8 @@ export const CHECK_LIMITS = {
   checkedAt: 40,
   crops: 8,
   fileId: 64,
+  /** Most guess keys a provenance lists. */
+  provenanceKeys: 4000,
 } as const;
 
 const CHECK_KEYS = [
@@ -104,9 +134,14 @@ const CHECK_KEYS = [
   'checkedAt',
   'crops',
   'overview',
+  'sig',
 ];
 const SUMMARY_KEYS = ['guesses', 'unchecked', 'checked', 'unsure', 'contradicted', 'corrected'];
 const FILE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** A seal: an HMAC-SHA256, hex. */
+const SIG = /^[0-9a-f]{64}$/;
+/** A provenance id: random hex. */
+const PROVENANCE_ID = /^[0-9a-f]{16,32}$/;
 
 /** An element's `check`, read: undefined when absent or unusable (its
  *  problems are errors on `issues`). */
@@ -146,6 +181,7 @@ export function checkOf(
     pattern: FILE_ID,
     patternText: 'a file id',
   });
+  const sig = str(c, 'sig', p, issues, { max: 64, pattern: SIG, patternText: 'a seal' });
   let crops: string[] | undefined;
   if (c.crops !== undefined) {
     if (
@@ -156,8 +192,9 @@ export function checkOf(
       issues.errors.push(`${p}.crops: at most ${CHECK_LIMITS.crops} file ids of the crops.`);
     else crops = [...(c.crops as string[])];
   }
-  if (state === 'corrected' && !alt)
-    issues.errors.push(`${p}.alt: a corrected guess names what the image says it is instead.`);
+  // A corrected guess names what the image says it is instead (`alt`),
+  // except at the far end of a corrected sheet link, which shows the asked
+  // end's state without it (see the header).
   if (state && state !== 'unchecked' && !answer)
     issues.errors.push(
       `${p}.answer: a ${state} guess carries the image's answer (yes, no, unsure).`,
@@ -176,7 +213,34 @@ export function checkOf(
     ...(checkedAt ? { checkedAt } : {}),
     ...(crops?.length ? { crops } : {}),
     ...(overview ? { overview } : {}),
+    ...(sig ? { sig } : {}),
   };
+}
+
+/** A drawing's (or a set's) `provenance`, read: undefined when absent or
+ *  unusable (its problems are errors on `issues`). Its seal is checked on
+ *  save (`honestImageChecks`), never here. */
+export function provenanceOf(d: Obj, path: string, issues: Issues): PidProvenance | undefined {
+  if (d.provenance === undefined) return undefined;
+  const p = path ? `${path}.provenance` : 'provenance';
+  const v = d.provenance;
+  if (
+    !isObj(v) ||
+    typeof v.id !== 'string' ||
+    !PROVENANCE_ID.test(v.id) ||
+    typeof v.sig !== 'string' ||
+    !SIG.test(v.sig) ||
+    !Array.isArray(v.keys) ||
+    v.keys.length > CHECK_LIMITS.provenanceKeys ||
+    !v.keys.every((k) => typeof k === 'string' && k.length > 0 && k.length <= CHECK_LIMITS.key)
+  ) {
+    issues.errors.push(
+      `${p}: must be { id, keys, sig } as circuit_trace writes it (the guesses it drew, sealed); keep it unchanged or leave it out.`,
+    );
+    return undefined;
+  }
+  checkKeys(v, ['id', 'keys', 'sig'], p, issues);
+  return { id: v.id, keys: [...(v.keys as string[])], sig: v.sig };
 }
 
 /** Most checks a line carries (one per inferred join its note counts). */
@@ -246,6 +310,13 @@ function checksIn(d: unknown): Pick<PidCheck, 'key' | 'state'>[] {
   return out;
 }
 
+/** The guess keys a drawing's `provenance` lists, read loosely. */
+function provenanceKeys(d: Obj): string[] {
+  const p = d.provenance;
+  if (!isObj(p) || !Array.isArray(p.keys)) return [];
+  return p.keys.filter((k): k is string => typeof k === 'string' && k.length > 0);
+}
+
 /** The weakest state wins when one guess is drawn twice with two states
  *  (an edited copy): unchecked before anything answered. */
 const RANK: Readonly<Record<CheckState, number>> = {
@@ -273,6 +344,10 @@ export function imageCheckSummary(data: unknown): PidChecksSummary | null {
       const had = byKey.get(c.key);
       if (had === undefined || RANK[c.state] < RANK[had]) byKey.set(c.key, c.state);
     }
+  // A guess the trace drew whose mark is gone (dropped by hand, or cut by a
+  // cap) is still a guess: unchecked. The provenance is the stored one,
+  // honest once a save normalized it (honestImageChecks).
+  for (const k of provenanceKeys(data)) if (!byKey.has(k)) byKey.set(k, 'unchecked');
   if (!byKey.size) return null;
   const out: PidChecksSummary = {
     guesses: byKey.size,
@@ -325,4 +400,123 @@ export function imageChecksStale(data: unknown): boolean {
     for (const p of data.pages)
       if (isObj(p) && isObj(p.data) && !same(p.data.checks, imageCheckSummary(p.data))) return true;
   return false;
+}
+
+// ------------------------------------------------------------- the seals
+
+/** What circuit_trace seals of one mark: every field the view shows, under
+ *  the provenance it was drawn with (a mark cannot move to another trace's
+ *  drawing). Raw values, so a changed type breaks the seal too. */
+export function markSealBody(provenanceId: string, c: Obj): string {
+  return JSON.stringify([
+    'pid-check v1',
+    provenanceId,
+    ...CHECK_KEYS.filter((k) => k !== 'sig').map((k) => c[k] ?? null),
+  ]);
+}
+
+/** What circuit_trace seals of a drawing's provenance. */
+export function provenanceSealBody(p: Pick<PidProvenance, 'id' | 'keys'>): string {
+  return JSON.stringify(['pid-provenance v1', p.id, p.keys]);
+}
+
+/** Whether `sig` is the brain's seal of `body` (the content layer passes
+ *  it; this package holds no key). */
+export type SealCheck = (body: string, sig: string) => boolean;
+
+/** One drawing's raw data with each mark passed through `fn`: its
+ *  connectors', its lines' and their inline items'. The same object comes
+ *  back when `fn` changed nothing (so an honest canvas stays byte for
+ *  byte); raw data is walked loosely. */
+export function mapImageChecks(d: Obj, fn: (mark: unknown) => unknown): Obj {
+  const mapList = (v: unknown, f: (x: unknown) => unknown): unknown => {
+    if (!Array.isArray(v)) return v;
+    const out = v.map(f);
+    return out.some((x, i) => x !== v[i]) ? out : v;
+  };
+  const one = (o: unknown): unknown => {
+    if (!isObj(o) || o.check === undefined) return o;
+    const next = fn(o.check);
+    return next === o.check ? o : { ...o, check: next };
+  };
+  const offpage = mapList(d.offpage, one);
+  const lines = mapList(d.lines, (l) => {
+    if (!isObj(l)) return l;
+    const checks = mapList(l.checks, fn);
+    const inline = mapList(l.inline, one);
+    return checks === l.checks && inline === l.inline ? l : { ...l, checks, inline };
+  });
+  return offpage === d.offpage && lines === d.lines ? d : { ...d, offpage, lines };
+}
+
+/** The fields of a mark that are evidence of an answer (all but what names
+ *  the guess). */
+const EVIDENCE = CHECK_KEYS.filter((k) => !['key', 'kind', 'state', 'guess'].includes(k));
+
+/** A mark that claims nothing: unchecked, the guess only. */
+function unclaimed(c: Obj): Obj {
+  return {
+    ...(c.key !== undefined ? { key: c.key } : {}),
+    ...(c.kind !== undefined ? { kind: c.kind } : {}),
+    state: 'unchecked',
+    ...(c.guess !== undefined ? { guess: c.guess } : {}),
+  };
+}
+
+/**
+ * The data as a save stores it (`pid` data, one drawing or a set): its
+ * provenance kept only when its seal holds (a set's on the set; one on a
+ * set's page is dropped), and each mark kept only when it claims nothing
+ * (unchecked, no evidence) or circuit_trace's seal of it holds under that
+ * provenance and names one of its keys; any other mark becomes unchecked,
+ * its evidence stripped. Without a provenance (a hand-written drawing)
+ * every mark is unchecked. The same object comes back when nothing
+ * changed. The `checks` counts are not touched (withImageCheckSummary).
+ */
+export function honestImageChecks<T>(data: T, holds: SealCheck): T {
+  if (!isObj(data)) return data;
+  const p = data.provenance;
+  let prov: { id: string; keys: Set<string> } | null = null;
+  if (p !== undefined) {
+    const issues: Issues = { errors: [], warnings: [] };
+    const read = provenanceOf(data, '', issues);
+    if (read && !issues.errors.length && holds(provenanceSealBody(read), read.sig))
+      prov = { id: read.id, keys: new Set(read.keys) };
+  }
+  const fix = (c: unknown): unknown => {
+    if (!isObj(c)) return c;
+    if (
+      prov &&
+      typeof c.key === 'string' &&
+      prov.keys.has(c.key) &&
+      typeof c.sig === 'string' &&
+      SIG.test(c.sig) &&
+      holds(markSealBody(prov.id, c), c.sig)
+    )
+      return c;
+    if (c.state === 'unchecked' && !EVIDENCE.some((k) => c[k] !== undefined)) return c;
+    return unclaimed(c);
+  };
+  let out: Obj = data;
+  if (p !== undefined && !prov) {
+    const { provenance: _drop, ...rest } = data;
+    out = rest;
+  }
+  if (Array.isArray(out.pages)) {
+    let any = false;
+    const pages = out.pages.map((pg) => {
+      if (!isObj(pg) || !isObj(pg.data)) return pg;
+      let pd: Obj = pg.data;
+      if (pd.provenance !== undefined) {
+        const { provenance: _page, ...rest } = pd;
+        pd = rest;
+      }
+      pd = mapImageChecks(pd, fix);
+      if (pd === pg.data) return pg;
+      any = true;
+      return { ...pg, data: pd };
+    });
+    if (any) out = { ...out, pages };
+  } else out = mapImageChecks(out, fix);
+  return out as T;
 }

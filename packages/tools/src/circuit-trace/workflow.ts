@@ -16,10 +16,17 @@
  */
 import type { PidChecksSummary } from '@mantle/diagram-templates';
 
+/** The server's guard on circuit_verify (verify.ts verifyAgainRefusal):
+ *  a second call on a circuit by the same caller at the same revision of
+ *  its drawings is refused for `againMinutes` unless `recheck`, and a
+ *  recheck at most `perHour` times an hour on a circuit, counting every
+ *  call that filed answers. */
+export const VERIFY_GUARD = { againMinutes: 10, perHour: 3 } as const;
+
 /** How often circuit_verify runs: one call per trace in a turn, never a
- *  loop over what it left out (each call spends the owner's vision key). */
-export const VERIFY_ONCE =
-  'Call `circuit_verify` at most once per trace in a turn: never again in the same turn for guesses it left out (its not_asked, or ones cut by a cap or a time limit); if guesses stay unchecked after that one call, save the drawing and report how many are unchecked.';
+ *  loop over what it left out (each call spends the owner's vision key).
+ *  The server holds callers to it (VERIFY_GUARD). */
+export const VERIFY_ONCE = `Call \`circuit_verify\` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and report how many are unchecked. A second call within ${VERIFY_GUARD.againMinutes} minutes is refused unless \`recheck\`.`;
 
 /** The steps, said the same way to every author. */
 export const CIRCUIT_DRAWING_STEPS =

@@ -6,6 +6,19 @@
  * (dwg-reindex), node numbers need not.
  */
 import { createHash } from 'node:crypto';
+import type { CheckKind } from './check';
+
+/** The words an image check's no may name for each kind, past the
+ *  drawing's own names (check.ts asks with them, pid.ts draws them): here,
+ *  away from the trace's modules, so both read one list. */
+export const ALT_WORDS = {
+  join: ['separate', 'crossing', 'gap', 'other'],
+  end: ['break', 'continues', 'open', 'other'],
+  link: ['none', 'other'],
+  valve: ['instrument', 'not-a-valve', 'other'],
+} as const satisfies Record<CheckKind, readonly string[]>;
+/** An end word the drawing draws (every end word but "other"). */
+export type EndWord = Exclude<(typeof ALT_WORDS.end)[number], 'other'>;
 
 /** Longest key kept as text; past it the handle list is hashed. */
 const KEY_MAX = 200;

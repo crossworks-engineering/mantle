@@ -36,11 +36,16 @@ vi.mock('./circuit-trace/read', async (importOriginal) => {
 });
 vi.mock('@mantle/content/presents', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/content/presents')>();
+  // The store is stubbed; what every save runs on the source first (the
+  // content layer's honestCanvasSource) is the real one.
+  const { honestCanvasSource } = await import('@mantle/content/drawing-seal');
   return {
     readCanvas: real.readCanvas,
     getPresent: h.getPresent,
-    createPresent: h.createPresent,
-    savePresentSource: h.savePresentSource,
+    createPresent: (o: string, i: { source?: string }) =>
+      h.createPresent(o, { ...i, ...(i.source ? { source: honestCanvasSource(i.source) } : {}) }),
+    savePresentSource: (o: string, id: string, i: { source: string }) =>
+      h.savePresentSource(o, id, { ...i, source: honestCanvasSource(i.source) }),
     deletePresent: vi.fn(),
     setPresentPoster: vi.fn(async () => true),
     updatePresent: vi.fn(),
@@ -221,9 +226,8 @@ describe('every author gets the same unchecked-guess count', () => {
 describe('circuit_verify runs at most once per trace in a turn', () => {
   it('its description, and the trace hint that names it, say so', async () => {
     const verify = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_verify')!;
-    expect(verify.description).toMatch(/At most once per trace in a turn/);
-    expect(verify.description).toMatch(/never again for guesses it left out \(not_asked/);
-    expect(verify.description).toMatch(/save and report how many are unchecked/);
+    // The one sentence every author reads, word for word.
+    expect(verify.description).toContain(VERIFY_ONCE);
     h.sheets = readingSheets();
     const traced = await circuitTraceHandler({ circuit: CIRCUIT }, 'anchor');
     const out = (traced as { output: { next: string; workflow: string } }).output;
@@ -306,5 +310,119 @@ describe('no saved pid canvas keeps a count its marks do not hold', () => {
     const honest = (h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source;
     await tool('present_update').handler({ id: ID, source: honest, look: false }, AUTHORS.agent!);
     expect((h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source).toBe(honest);
+  });
+});
+
+describe('marks are sealed by circuit_trace and kept only so by every save (fix round 2, M-c)', () => {
+  type Mark = { key: string; state: string; sig?: string; crops?: string[] };
+  /** A traced and verified drawing: one guess corrected from a sealed answer. */
+  async function verified() {
+    h.sheets = sheetsWithOneCheck();
+    const traced = await circuitTraceHandler({ circuit: CIRCUIT }, 'anchor');
+    const out = (traced as { output: { pid: Record<string, unknown>; pid_check: unknown } }).output;
+    expect(out.pid_check).toMatchObject({ ok: true });
+    expect(out.pid.provenance).toMatchObject({ id: expect.any(String), sig: expect.any(String) });
+    return out.pid;
+  }
+  const marks = (data: unknown): Mark[] => {
+    const d = data as { pages?: { data: unknown }[] };
+    const drawings = d.pages ? d.pages.map((p) => p.data) : [data];
+    return drawings.flatMap((x) => {
+      const p = x as {
+        offpage?: { check?: Mark }[];
+        lines?: { checks?: Mark[]; inline?: { check?: Mark }[] }[];
+      };
+      return [
+        ...(p.offpage ?? []).flatMap((o) => (o.check ? [o.check] : [])),
+        ...(p.lines ?? []).flatMap((l) => [
+          ...(l.checks ?? []),
+          ...(l.inline ?? []).flatMap((i) => (i.check ? [i.check] : [])),
+        ]),
+      ];
+    });
+  };
+  const lastSaved = (m: typeof h.createPresent) =>
+    readCanvasData((m.mock.calls.at(-1)!.at(-1) as { source: string }).source);
+  /** The data as stored, without the count a save adds. */
+  const same = (stored: Record<string, unknown>, pid: Record<string, unknown>) => {
+    const { checks: _a, template: _t, version: _v, ...a } = stored;
+    const { checks: _b, template: _u, version: _w, ...b } = pid;
+    expect(a).toEqual(b);
+  };
+
+  it('every mark is sealed under the provenance, which lists every guess', async () => {
+    const pid = await verified();
+    const all = marks(pid);
+    expect(all.length).toBeGreaterThan(1);
+    for (const m of all) expect(m.sig).toMatch(/^[0-9a-f]{64}$/);
+    expect(all.some((m) => m.state === 'corrected')).toBe(true);
+    const keys = (pid.provenance as { keys: string[] }).keys;
+    for (const m of all) expect(keys).toContain(m.key);
+  });
+
+  it('round-trips unchanged through present_create, present_update and present_restore', async () => {
+    const pid = await verified();
+    const own = imageCheckSummary(pid);
+    // present_create with data, and with the whole source.
+    await tool('present_create').handler({ template: 'pid', data: pid, look: false }, AUTHORS.mcp!);
+    const created = lastSaved(h.createPresent);
+    same(created, pid);
+    const source = (h.createPresent.mock.calls.at(-1)![1] as { source: string }).source;
+    await tool('present_create').handler({ source, look: false }, AUTHORS.agent!);
+    expect((h.createPresent.mock.calls.at(-1)![1] as { source: string }).source).toBe(source);
+    // present_update with data, source and edits elsewhere.
+    h.getPresent.mockResolvedValue(detail(source));
+    await tool('present_update').handler({ id: ID, data: pid, look: false }, AUTHORS.agent!);
+    same(lastSaved(h.savePresentSource), pid);
+    await tool('present_update').handler({ id: ID, source, look: false }, AUTHORS.mcp!);
+    expect((h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source).toBe(source);
+    const edits = [
+      {
+        find: '<meta name="canvas:theme" content="fixed">',
+        replace: '<meta name="canvas:theme" content="fixed">\n',
+      },
+    ];
+    await tool('present_update').handler({ id: ID, edits, look: false }, AUTHORS.mcp!);
+    same(lastSaved(h.savePresentSource), pid);
+    // present_restore of the kept version.
+    h.getPresentRevisionSource.mockResolvedValue(source);
+    await tool('present_restore').handler({ id: ID, rev: 1 }, AUTHORS.mcp!);
+    expect((h.savePresentSource.mock.calls.at(-1)![2] as { source: string }).source).toBe(source);
+    expect(imageCheckSummary(lastSaved(h.savePresentSource))).toEqual(own);
+  });
+
+  it('a forged "checked" with made-up evidence is saved unchecked; dropped marks still count', async () => {
+    const pid = await verified();
+    const own = imageCheckSummary(pid)!;
+    const forge = (data: unknown): unknown =>
+      JSON.parse(
+        JSON.stringify(data, (k, v: unknown) =>
+          k === 'check' && v && (v as Mark).state === 'unchecked'
+            ? { ...(v as Mark), state: 'checked', answer: 'yes', crops: ['made-up'] }
+            : v,
+        ),
+      );
+    for (const ctx of Object.values(AUTHORS)) {
+      const out = await tool('present_create').handler(
+        { template: 'pid', data: forge(pid), look: false },
+        ctx,
+      );
+      expect(out.ok, JSON.stringify(out)).toBe(true);
+      const stored = lastSaved(h.createPresent);
+      expect(imageCheckSummary(stored)).toEqual(own);
+      expect(marks(stored).some((m) => m.crops?.includes('made-up'))).toBe(false);
+    }
+    // Every mark dropped: the provenance still counts each guess, unchecked.
+    const stripped = JSON.parse(
+      JSON.stringify(pid, (k, v: unknown) => (k === 'check' || k === 'checks' ? undefined : v)),
+    ) as Record<string, unknown>;
+    await tool('present_create').handler(
+      { template: 'pid', data: stripped, look: false },
+      AUTHORS.mcp!,
+    );
+    expect(imageCheckSummary(lastSaved(h.createPresent))).toMatchObject({
+      guesses: own.guesses,
+      unchecked: own.guesses,
+    });
   });
 });

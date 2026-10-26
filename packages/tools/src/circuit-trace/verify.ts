@@ -37,6 +37,7 @@ import {
   parseAnswers,
   questionsFor,
   quoted,
+  sealedRow,
   TRUST,
   VERIFY_MAX,
   type CheckKind,
@@ -44,7 +45,7 @@ import {
   type Verdict,
 } from './check';
 import type { ChainRole } from './pid';
-import { VERIFY_NEXT } from './workflow';
+import { VERIFY_GUARD, VERIFY_NEXT, VERIFY_ONCE } from './workflow';
 import { traceCircuit, type RegisterInput, type SheetInput } from './walk';
 
 export type VerifyWorker = {
@@ -118,7 +119,56 @@ export type VerifyInput = {
   dryRun?: boolean;
   /** Ask again guesses already answered at the drawing's current revision. */
   recheck?: boolean;
+  /** Who calls (callerOf in builtins-circuits.ts): the guard against a
+   *  second call reads it off the Checks rows' By column. */
+  by?: string;
 };
+
+const MINUTE = 60_000;
+
+/**
+ * Why this call may not run now (VERIFY_ONCE, held by the server), or
+ * null: read off the circuit's sealed Checks rows (each call files its
+ * rows under one `Checked at`), so no store of its own. Without `recheck`,
+ * a call within VERIFY_GUARD.againMinutes of one by the same caller on the
+ * same circuit at the same revision of a sheet is refused; with it, a
+ * call is refused once VERIFY_GUARD.perHour calls on the circuit filed
+ * answers in the last hour, whoever ran them. Rows without the seal (typed
+ * by hand) never count. A dry run is never refused.
+ */
+export function verifyAgainRefusal(
+  sheets: readonly SheetInput[],
+  circuit: string,
+  opts: { by?: string; recheck?: boolean; now: Date },
+): string | null {
+  const now = opts.now.getTime();
+  const runs = new Set<string>();
+  let recent: string | null = null;
+  for (const s of sheets) {
+    for (const r of s.checks ?? []) {
+      if (r.circuit !== circuit || !sealedRow(s.tableId, r)) continue;
+      const t = Date.parse(r.checkedAt);
+      if (!Number.isFinite(t) || t > now + MINUTE) continue;
+      if (now - t < 60 * MINUTE) runs.add(r.checkedAt);
+      if (
+        opts.by &&
+        r.by === opts.by &&
+        r.revision === (s.revision ?? '') &&
+        now - t < VERIFY_GUARD.againMinutes * MINUTE &&
+        (recent === null || r.checkedAt > recent)
+      )
+        recent = r.checkedAt;
+    }
+  }
+  if (!opts.recheck && recent) {
+    const ago = Math.max(0, Math.round((now - Date.parse(recent)) / MINUTE));
+    return `circuit_verify asked nothing and spent nothing: you checked circuit ${circuit} ${ago} minute${ago === 1 ? '' : 's'} ago at this revision of its drawings. ${VERIFY_ONCE} Call circuit_trace and save its pid; pass recheck: true only to ask again on purpose.`;
+  }
+  if (opts.recheck && runs.size >= VERIFY_GUARD.perHour) {
+    return `circuit_verify asked nothing and spent nothing: circuit ${circuit} was checked ${runs.size} times in the last hour, and a recheck runs at most ${VERIFY_GUARD.perHour} times an hour on a circuit. Save the drawing and report how many guesses are unchecked; try again later.`;
+  }
+  return null;
+}
 
 /** The trace's own limits (a sheet's capped tab, a partial read, a
  *  missing column) as the result carries them: each once, each clipped,
@@ -184,6 +234,7 @@ export async function verifyCircuit(
     kinds: input.kinds,
     max: input.maxQuestions,
     ...(input.recheck ? {} : { answered: (q) => currentAnswer(latest, q) !== undefined }),
+    ...(input.register ? { register: input.register } : {}),
   });
   if (answered) {
     limits.push(
@@ -257,6 +308,14 @@ export async function verifyCircuit(
       error: `circuit_verify asked nothing and spent nothing: no sheet of circuit ${circuit} can be checked now. ${refusedLines.join(' ')} Use dry_run to list the questions.`,
     };
   }
+  // VERIFY_ONCE, held by the server: before the worker is resolved or
+  // anything is cropped.
+  const again = verifyAgainRefusal(read.sheets, circuit, {
+    ...(input.by ? { by: input.by } : {}),
+    ...(input.recheck ? { recheck: true } : {}),
+    now: deps.now(),
+  });
+  if (again) return { ok: false, error: again };
 
   const resolved = await deps.worker(ownerId);
   if (!resolved.ok) return { ok: false, error: resolved.error };

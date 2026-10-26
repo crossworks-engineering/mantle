@@ -269,6 +269,43 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     expect(await presents.getPresentRevisionSource(randomUUID(), p.id, 1)).toBeNull();
   });
 
+  it('every save stores a diagram canvas honest: a forged check unchecked, its own count (fix round 2, M-c)', async () => {
+    const { buildCanvas, readCanvasData } = await import('@mantle/diagram-templates');
+    const forged = buildCanvas({
+      template: 'pid',
+      mode: 'import',
+      data: {
+        title: `${tag} Forged`,
+        equipment: [{ id: 'V-101', type: 'vertical-vessel' }],
+        offpage: [
+          {
+            id: 'OPC-1',
+            direction: 'out',
+            sheet: 'S2',
+            check: { key: 'g1', kind: 'link', state: 'checked', answer: 'yes', crops: ['x1'] },
+          },
+        ],
+        lines: [{ from: 'V-101', to: 'OPC-1' }],
+        checks: { guesses: 1, unchecked: 0, checked: 1, unsure: 0, contradicted: 0, corrected: 0 },
+      },
+    });
+    const honest = { key: 'g1', kind: 'link', state: 'unchecked' };
+    const stored = async (id: string) => {
+      const [row] = await admin<{ source: string }[]>`
+        select source from presents where node_id = ${id}`;
+      return readCanvasData(row!.source) as {
+        offpage: { check: unknown }[];
+        checks: { unchecked: number };
+      };
+    };
+    const p = await presents.createPresent(owner, { source: forged, css: '' });
+    expect((await stored(p.id)).offpage[0]!.check).toEqual(honest);
+    expect((await stored(p.id)).checks.unchecked).toBe(1);
+    const saved = await presents.savePresentSource(owner, p.id, { source: forged, css: '' });
+    expect(saved.ok).toBe(true);
+    expect((await stored(p.id)).offpage[0]!.check).toEqual(honest);
+  });
+
   it('refuses a source over the size limit', async () => {
     const big = canvas(`${tag} Big`, 'x'.repeat(1_000_100));
     await expect(presents.createPresent(owner, { source: big })).rejects.toThrow(/over 1 MB/);

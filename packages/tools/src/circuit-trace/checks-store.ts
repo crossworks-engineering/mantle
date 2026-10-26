@@ -153,6 +153,8 @@ export async function storeChecks(
   answers: CheckAnswer[],
   overview: Buffer | null,
   checkedAt: string,
+  /** Who runs the call (the By column, verify.ts callerOf). */
+  by = '',
 ): Promise<StoreResult> {
   const before = await tableState(sheet.tableId);
   if (!before) return { error: 'the table is gone' };
@@ -295,6 +297,7 @@ export async function storeChecks(
         crops,
         alt,
       }),
+      By: by,
     };
     ops.push({
       op: 'row_add',

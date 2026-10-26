@@ -235,6 +235,9 @@ export type TraceResult = {
   sheets: TraceSheet[];
   links: SheetLink[];
   pid: Record<string, unknown>;
+  /** Guess ids a cap left unmarked on the drawing (pid.ts buildPid
+   *  `cutKeys`): sealed into its provenance, they count as unchecked. */
+  cutCheckKeys: string[];
   register?: { source: string; discrepancies: Discrepancy[] };
   guesses: string[];
   limits: string[];
@@ -2233,6 +2236,7 @@ export function traceCircuit(
     }
   }
   const checked = opts.checks?.(sheets, links);
+  const cutCheckKeys: string[] = [];
   const pid = buildPid(
     {
       circuit,
@@ -2258,6 +2262,7 @@ export function traceCircuit(
     },
     guesses,
     limits,
+    cutCheckKeys,
   );
   const discrepancies = register ? compareRegister(register, walks, limits) : undefined;
   const runs = sheets.reduce((a, s) => a + s.runs.length, 0);
@@ -2282,6 +2287,7 @@ export function traceCircuit(
     sheets,
     links,
     pid,
+    cutCheckKeys,
     ...(discrepancies
       ? { register: { source: clip(register?.source?.trim() || 'register'), discrepancies } }
       : {}),

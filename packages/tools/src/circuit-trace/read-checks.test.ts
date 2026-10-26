@@ -100,6 +100,7 @@ describe('the Checks tab read', () => {
       Revision: 'rev1',
       File: 'f-1',
       Crops: 'overview c0 c1',
+      By: 'login:11111111-1111-4111-8111-111111111111',
     };
     const seal = sealOf(sealFieldsOf(table.id, storedCheckOf({ ...fields, Seal: '' })));
     const { deps, statements } = fakeRead({ ...fields, Seal: seal });

@@ -34,9 +34,16 @@
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
 import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
 import { VALVE_TYPES } from '@mantle/diagram-templates';
-import { endKey, guessId, joinKey, linkKey, valveKey } from './check-keys';
+import { ALT_WORDS, endKey, guessId, joinKey, linkKey, valveKey } from './check-keys';
 import { sealHolds, type SealedFields } from './check-seal';
-import type { ChainRole, GuessCheck, PidChecks, Verdict } from './pid';
+import {
+  registerNames,
+  registerTagsOf,
+  type ChainRole,
+  type GuessCheck,
+  type PidChecks,
+  type Verdict,
+} from './pid';
 import { readTag, type SegRow, type SheetInput, type SheetLink, type TraceSheet } from './walk';
 
 export type { Verdict } from './pid';
@@ -92,13 +99,9 @@ export type CheckQuestion = {
   altAsk: string;
 };
 
-/** The words a no may name for each kind, past the drawing's own names. */
-export const ALT_WORDS = {
-  join: ['separate', 'crossing', 'gap', 'other'],
-  end: ['break', 'continues', 'open', 'other'],
-  link: ['none', 'other'],
-  valve: ['instrument', 'not-a-valve', 'other'],
-} as const satisfies Record<CheckKind, readonly string[]>;
+/** The words a no may name for each kind, past the drawing's own names
+ *  (./check-keys.ts, where the drawing reads them too). */
+export { ALT_WORDS } from './check-keys';
 /** Most equipment tags (or sheets) an end (or link) question lists. */
 export const ALT_NAMES_MAX = 8;
 /** An alternative as the store and the drawing keep it. */
@@ -304,9 +307,14 @@ export function questionsFor(
     /** A guess already answered (its key and question at the current
      *  revision): not asked again, counted in `answered`. */
     answered?: (q: Pick<CheckQuestion, 'tableId' | 'key' | 'question'>) => boolean;
+    /** The register's from and to: an end only near a tag it names is
+     *  drawn at that tag whatever the image says (pid.ts), so it is no
+     *  question. */
+    register?: { from?: string; to?: string };
   } = {},
 ): { questions: CheckQuestion[]; left: number; answered: number } {
   const kinds = new Set(opts.kinds?.length ? opts.kinds : CHECK_KINDS);
+  const registerTags = registerTagsOf(opts.register);
   // `max: Infinity` is every guess (circuit_trace matching stored checks);
   // asking is capped at VERIFY_MAX.questions.
   const max =
@@ -373,7 +381,11 @@ export function questionsFor(
       for (const e of run.ends) {
         const handle = endHandle(e.node);
         const at = pt(e.x, e.y);
-        if (kinds.has('end') && e.equipmentUnconfirmed) {
+        if (
+          kinds.has('end') &&
+          e.equipmentUnconfirmed &&
+          !registerNames(registerTags, e.equipmentUnconfirmed)
+        ) {
           const far = e.reading?.distance ?? 0;
           const pad = Math.min(Math.max(4 * near, far * 1.25), 15 * near);
           const tags = equipmentNear(input, at, pad, e.equipmentUnconfirmed, e.reading);
@@ -764,6 +776,7 @@ export const CHECK_COLUMNS = [
   'File',
   'Crops',
   'Seal',
+  'By',
 ] as const;
 export type CheckColumn = (typeof CHECK_COLUMNS)[number];
 
@@ -792,6 +805,10 @@ export type StoredCheck = {
   /** What the image said it is instead, after a no (phase 6; '' on older
    *  rows and on a yes or unsure). */
   alt?: string;
+  /** Who ran the call that filed it (verify.ts callerOf: `login:<id>`, an
+   *  assistant, the system); '' on older rows. Not sealed: only the guard
+   *  against a second call reads it (verify.ts verifyAgainRefusal). */
+  by?: string;
 };
 
 /** Each Checks column and the stored check's field it reads into: every
@@ -815,6 +832,7 @@ export const CHECK_FIELD = {
   File: 'file',
   Crops: 'crops',
   Seal: 'seal',
+  By: 'by',
 } as const satisfies Record<CheckColumn, keyof StoredCheck>;
 
 /** One Checks row (column name to value) as a stored check: every column
@@ -964,10 +982,15 @@ export function appliedChecks(
   inputs: readonly SheetInput[],
   applied: AppliedCheck[],
   limits: string[],
+  /** The register the trace was given (questionsFor `register`). */
+  register?: { from?: string; to?: string },
 ): PidChecks | undefined {
   const { latest, notes } = latestBySheet(inputs);
   limits.push(...notes);
-  const { questions } = questionsFor(sheets, links, inputs, { max: Infinity });
+  const { questions } = questionsFor(sheets, links, inputs, {
+    max: Infinity,
+    ...(register ? { register } : {}),
+  });
   const near = new Map<string, Verdict>();
   const link = new Map<string, Verdict>();
   const joins = new Map<string, Verdict>();

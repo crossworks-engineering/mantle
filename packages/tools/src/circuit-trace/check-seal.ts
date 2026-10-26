@@ -6,7 +6,8 @@
  * column): an HMAC over the table, the key, the circuit, the question, the
  * answer, its reason, the model, the revision, the time and the crop ids,
  * with a key derived from the brain's master key (HKDF, a fixed label),
- * which no table editor holds. circuit_trace applies only rows whose seal
+ * which no table editor holds: the drawing check seal of
+ * @mantle/content/drawing-seal, which seals circuit_trace's marks too. circuit_trace applies only rows whose seal
  * checks; a row written or changed by hand is kept in the tab, never
  * applied, and said.
  *
@@ -34,31 +35,17 @@
  * the model was right: CHECKED BY IMAGE stays "a vision model saw it",
  * never certain. Without a master key nothing is sealed or trusted.
  */
-import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
-import { env } from '@mantle/config';
-
-const SEAL_INFO = 'mantle drawing check seal v1';
-const derived = new Map<string, Buffer>();
-
-/** The seal keys, the one new rows are sealed under first: the staged
- *  MANTLE_MASTER_KEY_NEXT during a rotation, then MANTLE_MASTER_KEY. */
-function sealKeys(): Buffer[] {
-  const masters = [env('MANTLE_MASTER_KEY_NEXT'), env('MANTLE_MASTER_KEY')].filter(
-    (m): m is string => !!m,
-  );
-  const out: Buffer[] = [];
-  for (const m of [...new Set(masters)]) {
-    // Two derived keys stay cached at most (current and staged).
-    let k = derived.get(m);
-    if (!k) {
-      k = Buffer.from(hkdfSync('sha256', Buffer.from(m, 'utf8'), Buffer.alloc(0), SEAL_INFO, 32));
-      if (derived.size >= 2) derived.clear();
-      derived.set(m, k);
-    }
-    out.push(k);
-  }
-  return out;
-}
+import { randomBytes } from 'node:crypto';
+import { drawingSeal, drawingSealHolds } from '@mantle/content/drawing-seal';
+/** The purpose-labelled seal helpers (one key path for every drawing
+ *  evidence seal), re-exported for the tools. */
+export { sealPayload, sealPayloadHolds } from '@mantle/content/drawing-seal';
+import {
+  CHECK_LIMITS,
+  mapImageChecks,
+  markSealBody,
+  provenanceSealBody,
+} from '@mantle/diagram-templates';
 
 /** What a seal covers. */
 export type SealedFields = {
@@ -77,8 +64,9 @@ export type SealedFields = {
   alt?: string;
 };
 
-function hmac(k: Buffer, f: SealedFields): string {
-  const body = JSON.stringify([
+/** What a row's seal is made over. */
+function bodyOf(f: SealedFields): string {
+  return JSON.stringify([
     f.tableId.toLowerCase(),
     f.key,
     f.circuit,
@@ -92,20 +80,73 @@ function hmac(k: Buffer, f: SealedFields): string {
     // Only when there is one: a row without it seals as before phase 6.
     ...(f.alt ? [f.alt] : []),
   ]);
-  return createHmac('sha256', k).update(body, 'utf8').digest('hex');
 }
 
 /** The seal of one row under the key new rows take, or '' when the brain
  *  has no master key. */
 export function sealOf(f: SealedFields): string {
-  const k = sealKeys()[0];
-  return k ? hmac(k, f) : '';
+  return drawingSeal(bodyOf(f));
 }
 
 /** Whether `seal` is this brain's seal of the row, under its current or
  *  its staged next master key. */
 export function sealHolds(f: SealedFields, seal: string): boolean {
-  if (!/^[0-9a-f]{64}$/.test(seal)) return false;
-  const got = Buffer.from(seal, 'hex');
-  return sealKeys().some((k) => timingSafeEqual(Buffer.from(hmac(k, f), 'hex'), got));
+  return drawingSealHolds(bodyOf(f), seal);
+}
+
+/**
+ * circuit_trace's drawing, sealed (phase 6): each image check
+ * mark carries `sig`, the drawing check seal of its fields under a fresh
+ * provenance id, and the drawing (a set: the set) carries `provenance`
+ * { id, keys, sig }: every guess it marks, then `cutKeys` (guesses a cap
+ * left unmarked), so a mark dropped later, or never drawn, still counts as
+ * unchecked. A save keeps only marks whose seal holds
+ * (@mantle/content/drawing-seal honestCanvasSource). Without a master key
+ * nothing is sealed: the drawing comes back as it was, and a save shows
+ * every mark unchecked (no answer applies without one either).
+ */
+export function sealedPid(
+  pid: Record<string, unknown>,
+  cutKeys: readonly string[],
+  limits: string[],
+): Record<string, unknown> {
+  const id = randomBytes(8).toString('hex');
+  const drawings: Record<string, unknown>[] = Array.isArray(pid.pages)
+    ? (pid.pages as { data?: Record<string, unknown> }[]).flatMap((p) => (p?.data ? [p.data] : []))
+    : [pid];
+  const seen = new Set<string>();
+  for (const d of drawings)
+    mapImageChecks(d, (c) => {
+      const key = (c as { key?: unknown } | null)?.key;
+      if (typeof key === 'string') seen.add(key);
+      return c;
+    });
+  for (const k of cutKeys) seen.add(k);
+  const all = [...seen];
+  const keys = all.slice(0, CHECK_LIMITS.provenanceKeys);
+  if (all.length > keys.length)
+    limits.push(
+      `the drawing lists ${keys.length} of its ${all.length} guesses in its sealed provenance; a save counts the rest only while their marks stay on it.`,
+    );
+  const sig = drawingSeal(provenanceSealBody({ id, keys }));
+  if (!sig) return pid;
+  const seal = (d: Record<string, unknown>) =>
+    mapImageChecks(d, (c) =>
+      c && typeof c === 'object' && !Array.isArray(c)
+        ? { ...c, sig: drawingSeal(markSealBody(id, c as Record<string, unknown>)) }
+        : c,
+    );
+  const provenance = { id, keys, sig };
+  if (Array.isArray(pid.pages)) {
+    return {
+      ...pid,
+      pages: (pid.pages as Record<string, unknown>[]).map((p) =>
+        p && typeof p.data === 'object' && p.data
+          ? { ...p, data: seal(p.data as Record<string, unknown>) }
+          : p,
+      ),
+      provenance,
+    };
+  }
+  return { ...seal(pid), provenance };
 }

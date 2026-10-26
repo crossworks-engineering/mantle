@@ -58,8 +58,6 @@ import {
   validate as validateTemplate,
   TEMPLATES,
   imageCheckSummary,
-  withImageCheckSummary,
-  withOwnImageChecks,
 } from '@mantle/diagram-templates';
 import { imageCheckReport } from './circuit-trace/workflow';
 import type { PresentMeta } from '@mantle/db';
@@ -421,10 +419,10 @@ function checkedData(
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { error: 'data must be an object: the template data, e.g. {"title": …, "nodes": […]}.' };
   }
-  // A traced P&ID's image check counts are the drawing's own: recounted
-  // from its marks, whatever `checks` the author passed (@mantle/diagram-
-  // templates pid/check.ts). Data with no marks keeps no `checks`.
-  const own = (template === 'pid' ? withImageCheckSummary(data) : data) as Record<string, unknown>;
+  // A traced P&ID's image check marks and counts are normalized by the
+  // save itself (@mantle/content drawing-seal honestCanvasSource), whatever
+  // the author passed.
+  const own = data as Record<string, unknown>;
   const checked = validateTemplate(template, { ...own, template });
   if (!checked.ok) {
     return {
@@ -743,9 +741,6 @@ const present_create: BuiltinToolDef = {
         error: 'source is empty: pass the whole HTML document, or template + data.',
       };
     }
-    // A pid canvas keeps the image check count of its own marks, whatever
-    // count a pasted source carries (the view counts the marks too).
-    source = withOwnImageChecks(source);
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {
@@ -851,9 +846,6 @@ const present_update: BuiltinToolDef = {
           if (!next.trim())
             return { ok: false, error: 'source is empty: pass the whole document.' };
         }
-        // Whichever way the source changed (edits, a whole source, data),
-        // a pid canvas keeps the count of its own marks.
-        next = withOwnImageChecks(next);
         const refused = loadRefusal(next);
         if (refused) return refused;
         css = await cssOf(next);
@@ -931,9 +923,9 @@ const present_restore: BuiltinToolDef = {
         error: `canvas ${id} keeps no version ${String(input.rev)}. List the kept ones with present_revisions.`,
       };
     }
-    // A kept version saved before its marks were recounted (or edited by
-    // hand) comes back with the count of its own marks.
-    const source = withOwnImageChecks(kept);
+    // The save normalizes its image checks as any save does (a kept version
+    // whose marks' seals no longer hold comes back with them unchecked).
+    const source = kept;
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {

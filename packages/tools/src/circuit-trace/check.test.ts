@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { estimateMeasurer, render, validate } from '@mantle/diagram-templates';
+import { estimateMeasurer, imageCheckSummary, render, validate } from '@mantle/diagram-templates';
 import type { DwgCropSpec } from '@mantle/files';
 import {
   ALT_WORDS,
@@ -28,9 +28,10 @@ import {
   type StoredCheck,
 } from './check';
 import { endKey, joinKey, linkKey } from './check-keys';
-import { sealOf } from './check-seal';
+import { sealedPid, sealOf } from './check-seal';
 import { CIRCUIT, overviewOf, sheetOne } from './fixtures';
-import { verifyCircuit, type CheckAnswer, type VerifyDeps } from './verify';
+import { verifyAgainRefusal, verifyCircuit, type CheckAnswer, type VerifyDeps } from './verify';
+import { VERIFY_ONCE } from './workflow';
 import { traceCircuit } from './walk';
 import type { BlockRow, NodeRow, SegRow, SheetInput, TextRow } from './walk';
 
@@ -1321,10 +1322,19 @@ describe('a no that names what it is (phase 6) on links and joins', () => {
     const near = offpage.find((o) => o.text === 'TO PID-9713 (FROM IMAGE)');
     expect(near?.check).toMatchObject({ kind: 'link', state: 'corrected', alt: 'PID-9713' });
     // The far end, on PID-9712, does not come FROM PID-9713: it shows the
-    // link it was guessed with, contradicted.
+    // link it was guessed with, in the asked end's state (one guess, one
+    // state: the count says corrected, never contradicted) without the
+    // alternative, which names where the asked end goes.
     const far = offpage.find((o) => /^FROM PID-971/.test(o.text ?? ''));
     expect(far?.text).toBe('FROM PID-9711 (GUESS, IMAGE: NO)');
-    expect(far?.check).toMatchObject({ state: 'contradicted', answer: 'no' });
+    expect(far?.check).toMatchObject({ key: near?.check?.key, state: 'corrected', answer: 'no' });
+    expect(far?.check?.alt).toBeUndefined();
+    const rows = [answeredAlt(sheets, LINK, 'PID-9713')];
+    const withRows = sheets.map((x) => ({ ...x, checks: rows }));
+    const r = traceCircuit(C, withRows, undefined, {
+      checks: (w, l) => appliedChecks(w, l, withRows, [], []),
+    });
+    expect(imageCheckSummary(r.pid)).toMatchObject({ corrected: 1, contradicted: 0 });
   });
 
   it('a stored alternative the question no longer offers is dropped when applied', () => {
@@ -1355,5 +1365,154 @@ describe('a no that names what it is (phase 6) on links and joins', () => {
     expect(line.checks).toEqual([
       expect.objectContaining({ kind: 'join', state: 'contradicted', alt: 'crossing' }),
     ]);
+  });
+});
+
+describe('a line with more inferred joins than the template marks (fix round 2, M-a)', () => {
+  /** One run of 31 pieces on the circuit layer, joined end to end through
+   *  30 short PROCESS gaps: 30 inferred joins, one line number. */
+  const manyJoins = () => {
+    const main: SegRow[] = [];
+    const net: SegRow[] = [];
+    const blocks: BlockRow[] = [];
+    for (let i = 0; i < 31; i++) {
+      const x = i * 30;
+      main.push(sg(M, `S${i}`, x, 0, x + 20, 0, 2 * i + 1, 2 * i + 2));
+      net.push(sg(PIPE, `p${i}`, x, 0, x + 20, 0, 2 * i + 1, 2 * i + 2));
+      if (i < 30) net.push(sg(PIPE, `g${i}`, x + 20, 0, x + 30, 0, 2 * i + 2, 2 * i + 3));
+      blocks.push(lineNo(`L${i}`, x + 10, 1, 'N500-1'));
+    }
+    return sheet('PID-9801', main, net, [], blocks);
+  };
+
+  it('30 joins: at most 24 marks on the line, the rest counted unchecked and said', () => {
+    const s = [manyJoins()];
+    const r = traceCircuit(C, s, undefined, {
+      checks: (w, l) => appliedChecks(w, l, s, [], []),
+    });
+    const joins = r.sheets.flatMap((x) => x.joins).filter((j) => j.inferred);
+    expect(joins).toHaveLength(30);
+    const lines = (overviewOf(r.pid) as { lines: { checks?: { key: string }[] }[] }).lines;
+    const marked = lines.flatMap((l) => l.checks ?? []);
+    for (const l of lines) expect((l.checks ?? []).length).toBeLessThanOrEqual(24);
+    expect(new Set(marked.map((c) => c.key)).size).toBe(marked.length);
+    expect(r.cutCheckKeys.length).toBe(30 - marked.length);
+    expect(r.cutCheckKeys.length).toBeGreaterThan(0);
+    expect(r.limits.join(' ')).toMatch(/past 24 on one line .* not marked on it/);
+    // The drawing validates (no pid_check refusal), and once sealed the
+    // count holds all 30 joins, the cut ones unchecked.
+    expect(validate('pid', r.pid).ok).toBe(true);
+    const pid = sealedPid(r.pid, r.cutCheckKeys, []);
+    expect(validate('pid', pid).ok).toBe(true);
+    expect(imageCheckSummary(pid)).toMatchObject({ guesses: 30, unchecked: 30 });
+  });
+});
+
+describe('an end the register names is no question (fix round 2, L2)', () => {
+  it('questionsFor skips it; an end near another tag is still asked', () => {
+    const s = [nearSheet()];
+    const r = traceCircuit(C, s);
+    const all = questionsFor(r.sheets, r.links, s, { max: Infinity }).questions;
+    expect(all.filter((q) => q.kind === 'end')).toHaveLength(1);
+    for (const register of [{ to: 'V-201' }, { from: 'v-201/R2' }]) {
+      const skipped = questionsFor(r.sheets, r.links, s, { max: Infinity, register }).questions;
+      expect(skipped.filter((q) => q.kind === 'end')).toHaveLength(0);
+    }
+    const other = questionsFor(r.sheets, r.links, s, { max: Infinity, register: { to: 'V-999' } });
+    expect(other.questions.filter((q) => q.kind === 'end')).toHaveLength(1);
+  });
+});
+
+describe('circuit_verify, held to once (fix round 2, L4)', () => {
+  const NOW = new Date('2026-10-25T12:00:00.000Z');
+  const ME = 'login:11111111-1111-4111-8111-111111111111';
+  /** A sealed row as circuit_verify files it, `ago` minutes before NOW. */
+  const filed = (s: SheetInput, ago: number, by: string, revision = 'rev1'): StoredCheck => {
+    const r: StoredCheck = {
+      key: 'end:A@20.0,0.0',
+      kind: 'end',
+      answer: 'yes',
+      revision,
+      checkedAt: new Date(NOW.getTime() - ago * 60_000).toISOString(),
+      model: 'm',
+      reason: 'r',
+      question: 'q',
+      trust: '',
+      circuit: C,
+      crops: '',
+      by,
+    };
+    return { ...r, seal: sealOf(sealFieldsOf(s.tableId, r)) };
+  };
+  const withRows = (rows: (s: SheetInput) => StoredCheck[]) => {
+    const s = nearSheet();
+    return [{ ...s, checks: rows(s) }];
+  };
+
+  it('a second call by the same caller within 10 minutes is refused unless recheck', () => {
+    const sheets = withRows((s) => [filed(s, 4, ME)]);
+    expect(verifyAgainRefusal(sheets, C, { by: ME, now: NOW })).toMatch(
+      /4 minutes ago .* refused unless `recheck`/,
+    );
+    expect(verifyAgainRefusal(sheets, C, { by: ME, recheck: true, now: NOW })).toBeNull();
+    // Another caller, another revision, an older call, another circuit, or
+    // a row typed by hand (no seal): not refused.
+    expect(verifyAgainRefusal(sheets, C, { by: 'login:other', now: NOW })).toBeNull();
+    expect(
+      verifyAgainRefusal(
+        withRows((s) => [filed(s, 4, ME, 'rev0')]),
+        C,
+        { by: ME, now: NOW },
+      ),
+    ).toBeNull();
+    expect(
+      verifyAgainRefusal(
+        withRows((s) => [filed(s, 11, ME)]),
+        C,
+        { by: ME, now: NOW },
+      ),
+    ).toBeNull();
+    expect(verifyAgainRefusal(sheets, 'C-OTHER', { by: ME, now: NOW })).toBeNull();
+    const typed = withRows((s) => [{ ...filed(s, 4, ME), seal: '' }]);
+    expect(verifyAgainRefusal(typed, C, { by: ME, now: NOW })).toBeNull();
+  });
+
+  it('a recheck runs at most 3 times an hour on a circuit, whoever ran the calls', () => {
+    const three = withRows((s) => [filed(s, 50, 'a'), filed(s, 30, 'b'), filed(s, 20, ME)]);
+    expect(verifyAgainRefusal(three, C, { by: ME, recheck: true, now: NOW })).toMatch(
+      /3 times in the last hour/,
+    );
+    const two = withRows((s) => [filed(s, 70, 'a'), filed(s, 30, 'b'), filed(s, 20, ME)]);
+    expect(verifyAgainRefusal(two, C, { by: ME, recheck: true, now: NOW })).toBeNull();
+  });
+
+  it('verifyCircuit refuses before any crop or model call; a dry run is never refused', async () => {
+    const sheets = withRows((s) => [filed(s, 2, ME)]);
+    let asked = 0;
+    const deps: VerifyDeps = {
+      readSheets: async () => ({ sheets, limits: [] }),
+      fileBytes: async () => BYTES,
+      crop: async () => {
+        asked += 1;
+        throw new Error('no crop expected');
+      },
+      worker: async () => {
+        asked += 1;
+        throw new Error('no worker expected');
+      },
+      ask: async () => {
+        asked += 1;
+        throw new Error('no ask expected');
+      },
+      storable: async () => null,
+      store: async () => ({ stored: 0 }),
+      now: () => NOW,
+    };
+    const r = await verifyCircuit('o', { circuit: C, by: ME, recheck: false }, deps);
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain(VERIFY_ONCE);
+    expect(asked).toBe(0);
+    const dry = await verifyCircuit('o', { circuit: C, by: ME, dryRun: true }, deps);
+    expect(dry.ok).toBe(true);
   });
 });

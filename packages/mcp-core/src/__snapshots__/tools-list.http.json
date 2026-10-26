@@ -7483,7 +7483,7 @@
  },
  {
   "name": "circuit_verify",
-  "description": "Check the guesses of `circuit_trace` on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name is a yes/no question on a close-up crop; a no names what it is from a closed list. Stores each answer with its crops in the drawing table's Checks tab; trace again to draw them (CHECKED BY IMAGE, FROM IMAGE), never certain. **Spends the owner's vision key**: the step between `circuit_trace` and saving, never automatic; `dry_run` lists the questions free. At most once per trace in a turn, never again for guesses it left out (not_asked, a cap, a time limit): save and report how many are unchecked.",
+  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to draw them, never certain. **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and report how many are unchecked. A second call within 10 minutes is refused unless `recheck`.",
   "inputSchema": {
    "type": "object",
    "properties": {

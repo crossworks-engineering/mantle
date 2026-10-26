@@ -45,7 +45,12 @@ import {
   type LinkSite,
   type PidData,
 } from './schema.ts';
-import { checksSummaryOf, type PidChecksSummary } from './check.ts';
+import {
+  checksSummaryOf,
+  provenanceOf,
+  type PidChecksSummary,
+  type PidProvenance,
+} from './check.ts';
 
 export type PidPage = { id: string; title: string; data: PidData };
 export type PidSet = {
@@ -55,6 +60,8 @@ export type PidSet = {
   pages: PidPage[];
   /** The image check counts over every page, each guess once (./check.ts). */
   checks?: PidChecksSummary;
+  /** The guesses circuit_trace drew on the set, sealed (./check.ts). */
+  provenance?: PidProvenance;
 };
 /** What the `pid` template takes: one drawing, or a set of them. */
 export type PidInput = PidData | PidSet;
@@ -74,6 +81,7 @@ const SET_KEYS = [
   'showTitle',
   'pages',
   'checks',
+  'provenance',
 ];
 const INHERITED = ['profile', 'legendNames', 'legend', 'showTitle'] as const;
 /** A drawing's own fields, which belong in a page's data, not on the set. */
@@ -126,6 +134,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       'description: add one sentence on what the set shows (screen readers read it).',
     );
   const checks = checksSummaryOf(d, '', issues);
+  const provenance = provenanceOf(d, '', issues);
   const rawPages = objects(
     list(d, 'pages', '', issues, { required: true, max: SET_LIMITS.pages }),
     'pages',
@@ -239,6 +248,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
     ...(description ? { description } : {}),
     pages: read.map((r) => ({ id: r.id, title: r.title, data: r.data! })),
     ...(checks ? { checks } : {}),
+    ...(provenance ? { provenance } : {}),
   });
 }
 

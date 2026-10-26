@@ -33,8 +33,10 @@ import {
   checkListOf,
   checkOf,
   checksSummaryOf,
+  provenanceOf,
   type PidCheck,
   type PidChecksSummary,
+  type PidProvenance,
 } from './check.ts';
 
 export const PID_VERSION = 1;
@@ -209,6 +211,8 @@ export type PidData = {
   circuits: Circuit[];
   /** The image check counts of the drawing's guesses (./check.ts). */
   checks?: PidChecksSummary;
+  /** The guesses circuit_trace drew, sealed (./check.ts). */
+  provenance?: PidProvenance;
 };
 
 /** Hard limits (errors) and the guide's complexity budget (warnings). */
@@ -264,6 +268,7 @@ const TOP_KEYS = [
   'signals',
   'circuits',
   'checks',
+  'provenance',
 ];
 const PROFILE_KEYS = [
   'name',
@@ -494,6 +499,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   const showTitle = bool(d, 'showTitle', '', issues) ?? true;
   const legend = bool(d, 'legend', '', issues) ?? true;
   const checks = checksSummaryOf(d, '', issues);
+  const provenance = provenanceOf(d, '', issues);
   let legendNames: PidData['legendNames'];
   if (d.legendNames !== undefined) {
     if (!isObj(d.legendNames))
@@ -1039,5 +1045,6 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     ...(sheet ? { sheet } : {}),
     ...(legendNames ? { legendNames } : {}),
     ...(checks ? { checks } : {}),
+    ...(provenance ? { provenance } : {}),
   });
 }

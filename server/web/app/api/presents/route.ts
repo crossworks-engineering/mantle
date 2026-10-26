@@ -6,7 +6,6 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { withOwnImageChecks } from '@mantle/diagram-templates';
 import { capped } from '@/lib/list-workspaces';
 import { ownerCaller } from '@/lib/auth';
 import {
@@ -68,11 +67,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { title, tags } = parsed.data;
-  // A pid canvas keeps the image check count of its own marks, whatever
-  // count the posted source carries (@mantle/diagram-templates).
-  const source =
-    parsed.data.source !== undefined ? withOwnImageChecks(parsed.data.source) : undefined;
+  const { title, source, tags } = parsed.data;
   const css = source !== undefined ? await compileCanvasCss(source) : '';
   const row = await createPresent(user.id, {
     ...(title !== undefined ? { title } : {}),

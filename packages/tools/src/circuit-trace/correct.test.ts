@@ -244,6 +244,30 @@ describe('the trace corrects from the image', () => {
   });
 });
 
+describe("a word answer's connector names no sheet (fix round 2, M-b)", () => {
+  it('break, open and continues: the sheet box says the word, never the tag the image said no to', () => {
+    const startEnd = questionOf(readingSheets(), 'end', 1);
+    for (const [alt, text, sheet] of [
+      ['break', 'BREAK (FROM IMAGE)', 'BRK'],
+      ['open', 'OPEN END (FROM IMAGE)', 'OPEN'],
+      ['continues', 'CONTINUES (FROM IMAGE)', 'CONT'],
+    ] as const) {
+      const sheets = readingSheets();
+      sheets[0]!.checks = [row(startEnd, 'no', alt)];
+      const { r } = traced(sheets);
+      const pages = (r.pid as { pages?: { data: unknown }[] }).pages?.map((p) => p.data) ?? [r.pid];
+      const conns = pages.flatMap(
+        (p) => (p as { offpage: { text?: string; sheet: string }[] }).offpage,
+      );
+      const it = conns.find((o) => o.text === text);
+      expect(it, alt).toBeDefined();
+      expect(it!.sheet, alt).toBe(sheet);
+      expect(conns.filter((o) => o.text === text).every((o) => o.sheet !== 'E-101')).toBe(true);
+      expect(validate('pid', r.pid).ok).toBe(true);
+    }
+  });
+});
+
 describe('the unchecked count', () => {
   it('counts each guess once across a set, by state, from the drawing marks', () => {
     const sheets = readingSheets();

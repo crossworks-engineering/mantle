@@ -21,7 +21,12 @@ import { esc } from './runtime/svg.ts';
 import { messageOf } from './runtime/validate.ts';
 import { PALETTE } from './runtime/style.ts';
 import { TEMPLATES, isTemplateName, type TemplateName } from './index.ts';
-import { imageChecksStale, withImageCheckSummary } from './templates/pid/check.ts';
+import {
+  honestImageChecks,
+  imageChecksStale,
+  withImageCheckSummary,
+  type SealCheck,
+} from './templates/pid/check.ts';
 
 /** `inline`: the runtime is inside the file (works anywhere, offline, from
  *  file://; about 110 KB). `import`: the file imports the runtime by name
@@ -147,28 +152,76 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
 }
 
 /**
- * A `pid` canvas with the image check counts its data stores (`checks`, and
- * each set page's) recounted from the drawing's own marks (pid/check.ts).
- * Every save path runs a source through it (present_create / present_update
- * / present_restore, the HTTP create and update), so no saved canvas keeps a
- * count its marks do not hold, whoever wrote the source. The marks are
- * author data; what an image really answered is the drawing table's sealed
- * Checks tab. Byte for byte unchanged when the count already matches, the
- * canvas is no pid template, or its data block does not parse; only the
- * data block changes otherwise.
+ * How many times a canvas names the data block's id as an attribute, in any
+ * form a browser reads (`document.getElementById`, which the runtime uses:
+ * any tag, any attribute order, case or quoting; matched loosely, so text
+ * that only looks like one counts too), and how many data blocks it holds
+ * as this package writes them (`readCanvasData` reads the first). A save
+ * normalizes a canvas's image checks through `readCanvasData`, so a canvas
+ * where the two are not both 0 or both 1 (a second block, or one in
+ * another form) could show the view data no save looked at: the content
+ * layer refuses to store it. Limit: a canvas is HTML its writer controls,
+ * and one that draws its own marks with its own script is not a drawing
+ * this check vouches for; this closes the data block the runtime reads.
  */
-export function withOwnImageChecks(html: string): string {
-  if (!/<meta name="diagram:template" content="pid@/.test(html)) return html;
-  let data: Record<string, unknown>;
+export function dataBlockCount(html: string): { any: number; written: number } {
+  const any = html.match(new RegExp(`\\bid\\s*=\\s*["']?${DATA_ID}(?![\\w-])`, 'gi'));
+  const written = html.match(new RegExp(DATA_BLOCK.source, 'g'));
+  return { any: any?.length ?? 0, written: written?.length ?? 0 };
+}
+
+/** The data of a canvas whose data block may draw a `pid` (pid/check.ts):
+ *  keyed off the data block itself, as the runtime picks its template
+ *  (`data.template`, else the head's diagram:template meta). Data naming
+ *  another template is not; data naming none is taken (whatever the meta
+ *  says, the marks are normalized: a superset, never a miss). Null when
+ *  there is no data block or it does not parse (the runtime draws nothing
+ *  from it then either). */
+function pidDataOf(html: string): Record<string, unknown> | null {
+  let data: unknown;
   try {
     data = readCanvasData(html);
   } catch {
-    return html;
+    return null;
   }
-  if (data.template !== 'pid' || !imageChecksStale(data)) return html;
-  const own = withImageCheckSummary(data);
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
+  const t = (data as { template?: unknown }).template;
+  return t === undefined || t === 'pid' ? (data as Record<string, unknown>) : null;
+}
+
+/**
+ * A `pid` canvas with the image check counts its data stores (`checks`, and
+ * each set page's) recounted from the drawing's own marks (pid/check.ts).
+ * The content layer runs it on every save (withHonestImageChecks, which
+ * also normalizes the marks). Byte for byte unchanged when the count
+ * already matches, the data block draws no pid, or it does not parse; only
+ * the data block changes otherwise.
+ */
+export function withOwnImageChecks(html: string): string {
+  const data = pidDataOf(html);
+  if (!data || !imageChecksStale(data)) return html;
+  return withData(html, withImageCheckSummary(data));
+}
+
+/**
+ * A `pid` canvas as every save stores it (@mantle/content presents.ts
+ * createPresent and savePresentSource): its marks normalized against
+ * circuit_trace's seals (`honestImageChecks`: a mark whose seal does not
+ * hold is unchecked, its evidence stripped; without a sealed provenance
+ * every mark is), then its counts recounted. Byte for byte unchanged when
+ * nothing changes; only the data block changes otherwise.
+ */
+export function withHonestImageChecks(html: string, holds: SealCheck): string {
+  const data = pidDataOf(html);
+  if (!data) return html;
+  const honest = honestImageChecks(data, holds);
+  const own = imageChecksStale(honest) ? withImageCheckSummary(honest) : honest;
+  return own === data ? html : withData(html, own);
+}
+
+function withData(html: string, data: unknown): string {
   return html.replace(
     DATA_BLOCK,
-    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(own)}\n${close}`,
+    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
   );
 }

@@ -24,6 +24,12 @@
  * flushDuePresentIndex, on the agent runtime's timer, re-indexes the item
  * once that period passes. A save whose text is unchanged (a colour, a
  * layout) costs nothing.
+ *
+ * Every save (createPresent, savePresentSource; present_create,
+ * present_update, present_restore and the HTTP routes all reach one) runs
+ * the source through honestCanvasSource (./drawing-seal.ts): a diagram
+ * canvas's image check marks are kept only as circuit_trace sealed them,
+ * and its counts are its own marks'.
  */
 import { and, asc, desc, eq, ilike, isNotNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import {
@@ -49,6 +55,7 @@ import {
   parseCanvasHead,
 } from '@mantle/content-core/canvas';
 import { InputError } from '@mantle/std';
+import { honestCanvasSource } from './drawing-seal';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
 
@@ -317,7 +324,10 @@ export async function createPresent(
   ownerId: string,
   input: CreatePresentInput,
 ): Promise<PresentDetail> {
-  const source = input.source ?? EMPTY_CANVAS;
+  // Every save stores a diagram canvas's image checks as circuit_trace
+  // sealed them, and their counts as its marks hold (./drawing-seal.ts):
+  // whoever wrote the source, by whichever path.
+  const source = honestCanvasSource(input.source ?? EMPTY_CANVAS);
   const read = readCanvas(source);
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
@@ -375,8 +385,10 @@ export type SavePresentResult =
 export async function savePresentSource(
   ownerId: string,
   id: string,
-  input: { source: string; css: string; ifRev?: number },
+  given: { source: string; css: string; ifRev?: number },
 ): Promise<SavePresentResult> {
+  // As createPresent: the image checks as sealed, the counts as held.
+  const input = { ...given, source: honestCanvasSource(given.source) };
   const read = readCanvas(input.source);
   const [node] = await db
     .select()
