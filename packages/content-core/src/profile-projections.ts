@@ -11,8 +11,8 @@
  * can project a value without pulling @mantle/db — and `postgres` — into the
  * browser bundle. content-core keeps its ZERO-runtime-dependency rule: the only
  * import here is `import type` from @mantle/client-types, which the compiler
- * erases entirely, and the one UUID regex is inlined rather than reaching for
- * @mantle/std (runtime code, and this file needs five characters of it).
+ * erases entirely, and the UUID regex is content-core's own (./uuid) rather
+ * than @mantle/std's (runtime code, and this file needs five characters of it).
  *
  * @mantle/content re-exports every name below, so nothing downstream moved.
  */
@@ -36,6 +36,7 @@ import {
 } from './thinking-tiers';
 import { FRESH_APPEARANCE } from '@mantle/client-types/fresh-appearance';
 import { DRIFT_SPEC_MAX, decodeDriftSpec } from './drift-spec';
+import { UUID_RE } from './uuid';
 import {
   APP_OPENS_MAX,
   APP_PINS_MAX,
@@ -47,9 +48,6 @@ import {
 export { projectAppNav } from './app-nav';
 
 export type { OnboardingModelChoices, ProfilePreferences, ReminderChannel, ThoughtTrailMode };
-
-/** Inlined from @mantle/std: content-core takes no runtime dependencies. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Resolve the live-streaming preference to a definite boolean — ON unless the
  *  user explicitly turned it off. Use this everywhere instead of reading the
