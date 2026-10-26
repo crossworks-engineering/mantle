@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 import { A8_KINDS } from '@mantle/db/matrix/a8-grid';
 import {
   A8_EXEMPT,
@@ -134,6 +134,37 @@ describe('A8 coverage: every kind, tool and item route is in a cell set or exemp
       }
     }
     expect(unsaid).toEqual([]);
+  });
+
+  it('a write that declares none on a workspace kind’s item route says its param', () => {
+    // An `:id` is any id: the guard above names it by the route's prefix.
+    // A kind's item route (its content or /api/v1 prefix, then `:id`) that
+    // declares none names its param, unless the kind is one the grid makes
+    // no item of (A8_EXEMPT: an Admin-only kind, the one reason class).
+    const prefixes = ITEM_KIND_NAMES.flatMap((kind) => {
+      const r = (
+        ITEM_KINDS as Record<string, { route: { content: string | null; v1: string | null } }>
+      )[kind]!.route;
+      return [r.content, r.v1].filter((p): p is string => !!p).map((p) => ({ kind, p }));
+    });
+    const unsaid: string[] = [];
+    const byClass: string[] = [];
+    for (const e of routeManifest as readonly A8ManifestEntry[]) {
+      for (const [method, p] of Object.entries(e.policy ?? {})) {
+        if (!p.item || p.item.none === undefined || p.item.param !== undefined) continue;
+        const of = prefixes.find(
+          (x) => e.pattern === `${x.p}/:id` || e.pattern.startsWith(`${x.p}/:id/`),
+        );
+        if (!of) continue;
+        const key = `${method} ${e.pattern}`;
+        if (A8_KINDS.includes(of.kind) || !(of.kind in A8_EXEMPT)) unsaid.push(`${key} (${of.kind})`);
+        else byClass.push(key);
+      }
+    }
+    expect(unsaid).toEqual([]);
+    // The guard reads `:id`: the Admin-only kinds' routes are the ones it
+    // lets by, each by its class.
+    expect(byClass.length).toBeGreaterThan(0);
   });
 
   it('the exempt tools, kinds and routes, by name', () => {
