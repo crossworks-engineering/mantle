@@ -820,7 +820,7 @@ PUT /api/profile/backgrounds class=self scope=self caller=owner gone=false
 PUT /api/profile/color-theme class=self scope=self caller=owner gone=false
 PUT /api/profile/default-mode class=self scope=self caller=owner gone=false
 PUT /api/profile/fonts class=self scope=self caller=owner gone=false
-PUT /api/profile/home-desk class=self scope=self caller=owner gone=false
+PUT /api/profile/home-desk class=self scope=- caller=login gone=false
 PUT /api/profile/logo class=self scope=self caller=owner gone=false
 PUT /api/profile/nav-favorites class=self scope=self caller=owner gone=false
 PUT /api/profile/neat-background class=self scope=self caller=owner gone=false

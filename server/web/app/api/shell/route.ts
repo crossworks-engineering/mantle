@@ -66,11 +66,11 @@ async function handleGET(login: Login) {
   // routes brain keys to the anchor regardless), while everything else here
   // (brand, fonts, onboarding) stays on the anchor read above. Same row
   // when the login IS the anchor.
-  const personal: Prefs =
+  const ownRead =
     loginId === anchorId
-      ? prefs
-      : ((await shellPart('shell', 'own preferences', () => loadPreferencesFor(loginId), null)) ??
-        ({} as Prefs));
+      ? read
+      : await shellPart('shell', 'own preferences', () => loadPreferencesFor(loginId), null);
+  const personal: Prefs = ownRead ?? ({} as Prefs);
   // Gated on the SEED, which is this login's own, not on the style, which is
   // the brain's: a human opting out to initials is a real choice the profile
   // screen offers, so no seed means initials rather than a default avatar.
@@ -132,8 +132,11 @@ async function handleGET(login: Login) {
     // across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
     // The login's Home desk, likewise per LOGIN. null until one is saved:
-    // the client lays out its default and moves a local desk up once.
-    homeDesk: personal.homeDesk ?? null,
+    // the client lays out its default and moves a local desk up once. Left
+    // out when the login's own row could not be read: a failed read is not
+    // "never saved", so the client keeps this browser's desk for the visit
+    // rather than taking it for an empty profile.
+    ...(ownRead ? { homeDesk: ownRead.homeDesk ?? null } : {}),
     // The kinds served as the item tree: the admin tree for an admin, the
     // read-only reader tree for a member or a client.
     treeKinds: admin ? [...TREE_LIVE_KINDS] : [...READER_TREE_KINDS],

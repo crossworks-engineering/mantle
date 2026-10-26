@@ -365,7 +365,14 @@ now answers every login with the SAME shape (`Shell` in
 `homeDesk`) and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
 `workspaces` and `treeKinds`. `areas` is always `[]` outside the Admin
 workspace; for a member `onboarded` is always true and `pendingApprovals`
-always 0. `GET /api/member/shell` answers
+always 0. `homeDesk` is null until the login saves one, and left out when
+the brain could not read the login's own row (a client then keeps the desk
+it has, never taking the gap for "never saved"). Every login, a member as
+an Admin user, saves its own desk with `PUT /api/profile/home-desk
+{ homeDesk }` (an any-login route, `open: 'any'`: the write runs in the
+login's scope and lands on its own profile row only). A save replaces the
+whole desk, so the last save wins; a client refreshes it when it comes
+back after a while. `GET /api/member/shell` answers
 410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every
 login's shell. The old `/api/client/*` routes (shell, chat, unread, push,
 bytes) answer every signed-in login 410 code gone.

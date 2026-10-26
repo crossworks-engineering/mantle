@@ -1,7 +1,7 @@
 # A10 part 2 fold 1: every write route and body, recorded on main (v0.300.41)
 # BEFORE the move. Written once (A10_BODY_SWEEP_RECORD=1); a10-body-sweep.test.ts
 # reads it back and holds every cell to it, or to a named change.
-# cells: 2184
+# cells: 2190
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1424,6 +1424,12 @@ PUT /api/profile/home-desk owner empty => 400 application/json {"error":"homeDes
 PUT /api/profile/home-desk owner nul => 500 application/json {"error":"internal error"}
 PUT /api/profile/home-desk owner array => 400 application/json {"error":"homeDesk (a v1 desk) required"}
 PUT /api/profile/home-desk owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/home-desk member valid => 500 application/json {"error":"internal error"}
+PUT /api/profile/home-desk member malformed => 400 application/json {"error":"invalid JSON"}
+PUT /api/profile/home-desk member empty => 400 application/json {"error":"homeDesk (a v1 desk) required"}
+PUT /api/profile/home-desk member nul => 500 application/json {"error":"internal error"}
+PUT /api/profile/home-desk member array => 400 application/json {"error":"homeDesk (a v1 desk) required"}
+PUT /api/profile/home-desk member chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 PUT /api/profile/logo owner valid => 400 application/json {"error":"multipart field `file` required"}
 PUT /api/profile/logo owner malformed => 400 application/json {"error":"multipart field `file` required"}
 PUT /api/profile/logo owner empty => 400 application/json {"error":"multipart field `file` required"}

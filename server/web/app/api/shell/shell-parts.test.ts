@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   gate: 'pass' as 'pass' | 'refuse',
   role: 'admin' as 'admin' | 'member',
   minted: [] as Array<{ anchorId: string; loginId: string; ttlSeconds?: number }>,
+  /** The login's saved Home desk on its own row (undefined: never saved). */
+  desk: undefined as Record<string, unknown> | undefined,
 }));
 
 const boom = (part: string) => {
@@ -120,7 +122,7 @@ vi.mock('@mantle/content', () => ({
     boom(id === '33333333-3333-4333-8333-333333333333' ? 'brand' : 'own preferences');
     return id === '33333333-3333-4333-8333-333333333333'
       ? { siteName: 'Brand', onboardedAt: '2026-01-01' }
-      : { avatarSeed: 'seed' };
+      : { avatarSeed: 'seed', ...(h.desk ? { homeDesk: h.desk } : {}) };
   },
   logoVersion: (key: string | undefined) => (key ? 'v1' : null),
 }));
@@ -211,6 +213,10 @@ describe('shell chrome reads never fail the shell', () => {
         if (part === 'onboarding') expect(body.onboarded).toBe(true);
         if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
         if (part === 'own preferences') expect(body.avatar).toBeNull();
+        // A failed read of the login's own row leaves the desk out: never
+        // read as "never saved" (null), which would move a stale local desk up.
+        if (part === 'own preferences') expect(body).not.toHaveProperty('homeDesk');
+        else expect(body.homeDesk).toBeNull();
         if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
         expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`[shell] ${part}`));
       },
@@ -288,10 +294,24 @@ describe('shell chrome reads never fail the shell', () => {
         expect(body).toMatchObject({ role, loginId: LOGIN });
         if (part === 'brand') expect(body.siteName).toBeNull();
         if (part === 'own preferences') expect(body.avatar).toBeNull();
+        if (part === 'own preferences') expect(body).not.toHaveProperty('homeDesk');
+        else expect(body.homeDesk).toBeNull();
         if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
         if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
       },
     );
+
+    it("answers the login's own saved desk", async () => {
+      const desk = { v: 1, items: [], counts: {}, icons: false, clock: 'analog' };
+      h.desk = desk;
+      try {
+        const { status, body } = await shell();
+        expect(status).toBe(200);
+        expect(body.homeDesk).toEqual(desk);
+      } finally {
+        h.desk = undefined;
+      }
+    });
 
     it('never catches a missing login', async () => {
       h.gate = 'refuse';
