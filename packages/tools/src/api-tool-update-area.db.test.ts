@@ -46,7 +46,7 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     anchor = await ts.ensureTestAnchor(su);
     const adminWs = await ts.ensureAdminUsers(su, [admin]);
     await su`insert into workspace_users (workspace_id, login_id, moderator, limits)
-      values (${adminWs}, ${limited}, false, ${JSON.stringify({ areas: { connectors: false } })}::jsonb)`;
+      values (${adminWs}, ${limited}, false, '{"areas":{"connectors":false}}'::jsonb)`;
     const [team] = await su<{ id: string }[]>`
       insert into workspaces (owner_id, name) values (${anchor}, ${`${tag} Team`}) returning id::text`;
     await su`insert into workspace_users (workspace_id, login_id, moderator)
