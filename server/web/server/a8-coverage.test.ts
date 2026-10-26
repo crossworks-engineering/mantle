@@ -151,7 +151,6 @@ const A8_EXEMPT_ROUTES: readonly string[] = [
   'POST /api/files/files/:id',
   'POST /api/files/folders/:id',
   'POST /api/pages/:id/move',
-  'POST /api/tables/:id/draft-ops',
   'POST /api/tables/:id/import',
 ];
 

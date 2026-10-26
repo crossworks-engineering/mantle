@@ -47,8 +47,11 @@ export const A8_ROUTE_ROLES: readonly GuideRole[] = [
   'admin',
 ];
 
-/** The check modes the route cells run in (rising, as the tool cells). */
-export const A8_ROUTE_MODES = ['warn', 'on'] as const;
+/** The check mode the route cells run in: on, as every fleet box. In warn
+ *  the edit check only warns, so a route whose write is one statement (the
+ *  database's check alone) makes a write the database would refuse
+ *  (docs/edit-check.md); its refused cells answer only in on. */
+export const A8_ROUTE_MODES = ['on'] as const;
 
 /** What a cell's request is built from: the fresh item, what its content
  *  seed handed back, and the fixture's bits a route reads. */
@@ -63,7 +66,7 @@ export type A8RouteCtx = {
 
 /** The request a route takes in a cell, and the guide action it is. */
 export type A8RouteSpec = {
-  /** The A8 kind of the item the route names. */
+  /** The kind of the item the route names (a kind of the grid). */
   kind: string;
   /** The guide's action the route is (the oracle's answer is read by it). */
   action: GuideAction;
@@ -81,6 +84,14 @@ export type A8RouteSpec = {
   /** An allowed write whose change the probe cannot see, why: it passes on
    *  its success alone. */
   blind?: string;
+  /** The route's handler leaves it to an Admin user, why: a member the
+   *  guide would allow is refused (a narrowed deny the oracle cannot see). */
+  adminOnly?: string;
+  /** A query the request carries, from the ctx. */
+  query?: (c: A8RouteCtx) => string;
+  /** SQL run on the fresh item before the request ($1: its id), as the
+   *  fixture: the content the route needs that no seed makes. */
+  prepSql?: string;
 };
 
 const title = (c: A8RouteCtx) => ({ title: `${c.tag} a8 route ${c.id.slice(0, 8)}` });
@@ -94,6 +105,10 @@ const treeKind = (ITEM_KINDS as Record<string, { tree: { kind: string } | null }
  *  roles do not each hold; the tool cells of the same function cover the
  *  destination's answers (file_copy, folder_copy, page_move). */
 const DEST = 'its allowed request also asks a destination right the cells do not set per role';
+/** The Recall map acts its handler leaves to the owner (an Admin user). */
+const RECALL_OWNER =
+  'the owner’s act in its handler: an agent or a member writes the cards instead';
+
 /** An app run's broker answers a built app's runtime, which the fresh
  *  fixture app has none of. */
 const RUNTIME = 'its allowed request needs a built app runtime the fixture app has none of';
@@ -123,23 +138,29 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'editDraft',
     body: () => ({ scene: { elements: [] } }),
   },
-  'POST /api/draws/:id/discard-draft': { kind: 'draw', action: 'editDraft' },
+  'POST /api/draws/:id/discard-draft': {
+    kind: 'draw',
+    action: 'editDraft',
+    prepSql: `update draws set draft_scene = '{"v":1}' where node_id = $1`,
+  },
   'PATCH /api/pages/:id': { kind: 'page', action: 'edit', body: title },
   'DELETE /api/pages/:id': { kind: 'page', action: 'delete' },
   'PATCH /api/v1/pages/:id': {
     kind: 'page',
     action: 'edit',
     key: true,
-    body: title,
+    body: () => ({ doc }),
     refusedOnly:
       'every page of the fixture is read by others (an open link), and a key may not change one: the oracle allows no cell',
   },
   'PUT /api/pages/:id/draft': { kind: 'page', action: 'editDraft', body: () => ({ doc }) },
   'POST /api/pages/:id/commit': { kind: 'page', action: 'editDraft', body: () => ({ doc }) },
   'POST /api/pages/:id/discard-draft': { kind: 'page', action: 'editDraft', seed: 'page_commit' },
+  // A move within its home (no folder named): its home's Moderator, the
+  // guide's standing of a delete.
   'POST /api/pages/:id/move': {
     kind: 'page',
-    action: 'move',
+    action: 'delete',
     body: () => ({ folderId: null, confirm: true }),
     refusedOnly: DEST,
   },
@@ -148,7 +169,6 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'PUT /api/tables/:id/draft': {
     kind: 'table',
     action: 'editDraft',
-    seed: 'table_commit',
     body: () => ({ data: { sheets: [] } }),
   },
   'POST /api/tables/:id/commit': { kind: 'table', action: 'editDraft', seed: 'table_commit' },
@@ -166,9 +186,8 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'POST /api/tables/:id/draft-ops': {
     kind: 'table',
     action: 'editDraft',
-    seed: 'table_commit',
-    body: () => ({ ops: [] }),
-    refusedOnly: 'its allowed request needs a table op batch the cells do not build',
+    seed: 'table_cell_set',
+    body: () => ({ ops: [{ op: 'row_add' }] }),
   },
   'POST /api/tables/:id/import': {
     kind: 'table',
@@ -214,7 +233,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'edit',
     body: (c) => ({ title: 'A8 map', version: c.version }),
   },
-  'DELETE /api/recall/maps/:id': { kind: 'recall', action: 'delete' },
+  'DELETE /api/recall/maps/:id': { kind: 'recall', action: 'delete', adminOnly: RECALL_OWNER },
   'POST /api/recall/maps/:id/cards': { kind: 'recall', action: 'edit', body: card },
   'PUT /api/recall/maps/:id/cards/:card': {
     kind: 'recall',
@@ -227,19 +246,22 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     action: 'edit',
     seed: 'recall_cards_reorder',
     params: () => ({ card: 'card' }),
-    body: (c) => ({ version: c.version }),
+    query: (c) => `version=${c.version}`,
   },
   'POST /api/recall/maps/:id/cards/:card/prompt': {
     kind: 'recall',
     action: 'edit',
     params: () => ({ card: 'card' }),
+    prepSql: `update recall_nodes set use_when = 'a8' where map_id = $1 and slug = 'card'`,
     body: (c) => ({ confirm: true, version: c.version }),
+    adminOnly: RECALL_OWNER,
   },
   'POST /api/recall/maps/:id/cards/reorder': {
     kind: 'recall',
     action: 'edit',
     seed: 'recall_cards_reorder',
     body: (c) => ({ slugs: c.input.slugs, version: c.version }),
+    adminOnly: RECALL_OWNER,
   },
   'PATCH /api/apps/:id': { kind: 'app', action: 'edit', body: () => ({ name: 'A8 app' }) },
   'DELETE /api/apps/:id': { kind: 'app', action: 'delete' },
@@ -253,8 +275,8 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'POST /api/apps/:id/build': { kind: 'app', action: 'editDraft', seed: 'app_build' },
   'POST /api/apps/:id/format': {
     kind: 'app',
-    action: 'editDraft',
-    seed: 'app_build',
+    action: 'edit',
+    blind: 'it formats the text it is sent and saves nothing',
     body: () => ({ path: 'App.tsx', content: 'export default () => null;\n' }),
   },
   'POST /api/apps/:id/publish': { kind: 'app', action: 'editDraft', seed: 'app_publish' },
@@ -270,6 +292,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     seed: 'app_snapshot_delete',
     params: (c) => ({ sid: String(c.input.snapshot_id) }),
     body: () => ({ note: 'a8' }),
+    blind: 'a snapshot’s note is not in the probe',
   },
   'DELETE /api/apps/:id/snapshots/:sid': {
     kind: 'app',
@@ -301,7 +324,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'POST /api/apps/:id/tool-broker': {
     kind: 'app',
     action: 'read',
-    body: () => ({ tool: 'calculate', input: { expression: '1+1' } }),
+    body: () => ({ slug: 'calculate', input: { expression: '1+1' } }),
     refusedOnly: RUNTIME,
   },
   'PATCH /api/files/files/:id': {
@@ -378,6 +401,9 @@ export function a8ItemRoutes(manifest: readonly A8ManifestEntry[]): A8ItemRoute[
 /** One route cell. `reads`: the caller reads the item (else its refusal is a
  *  random uuid's, byte for byte). */
 export type A8RouteCell = {
+  /** A deny the oracle cannot see, why: the route is open to Admin users
+   *  only, or its handler leaves the act to one. */
+  narrowed?: string;
   key: string;
   method: string;
   pattern: string;
@@ -424,6 +450,18 @@ export function a8RouteWant(
 export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
   const plan: A8RoutePlan = { cells: [], covered: [], exempt: {}, uncovered: {}, stale: [] };
   const routes = a8ItemRoutes(manifest);
+  const policyOf = (key: string): MethodPolicy | undefined => {
+    const at = key.indexOf(' ');
+    const e = manifest.find((x) => x.pattern === key.slice(at + 1));
+    return e?.policy?.[key.slice(0, at)];
+  };
+  // Whom the route opens to beyond Admin: its own `open`, or its /api/v1
+  // base's (an alias or a base runs as its base admits).
+  const memberOpen = (key: string): boolean => {
+    const p = policyOf(key);
+    const base = p?.aliasOf ?? p?.base;
+    return (base ? policyOf(base)?.open : p?.open) === 'owner';
+  };
   const named = new Set(routes.map((r) => r.key));
   plan.stale = Object.keys(A8_ROUTE_SPECS).filter((k) => !named.has(k));
   for (const r of routes) {
@@ -435,11 +473,18 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
     const cells: A8RouteCell[] = [];
     for (const role of A8_ROUTE_ROLES) {
       for (const placement of GUIDE_PLACEMENTS) {
-        const want = a8RouteWant(spec, role, placement);
+        let want = a8RouteWant(spec, role, placement);
         if ('na' in want) continue;
+        let narrowed: string | undefined;
+        if (role !== 'admin' && allows(want)) {
+          if (!memberOpen(r.key)) narrowed = 'the route is open to Admin users only';
+          else if (spec.adminOnly) narrowed = spec.adminOnly;
+          if (narrowed) want = { allow: false, why: narrowed };
+        }
         if (spec.refusedOnly && allows(want)) continue;
         const read = a8RouteWant({ ...spec, action: 'read' }, role, placement);
         cells.push({
+          ...(narrowed ? { narrowed } : {}),
           key: r.key,
           method: r.method,
           pattern: r.pattern,
@@ -479,11 +524,13 @@ export function a8RoutePath(
   id = c.id,
 ): string {
   const params: Record<string, string> = { ...(spec.params?.(c) ?? {}), [route.param]: id };
-  return route.pattern.replace(/:([A-Za-z0-9_]+)/g, (_, p: string) => {
-    const v = params[p];
-    if (v === undefined) throw new Error(`a8RoutePath: ${route.pattern} needs :${p}`);
+  const p = route.pattern.replace(/:([A-Za-z0-9_]+)/g, (_, name: string) => {
+    const v = params[name];
+    if (v === undefined) throw new Error(`a8RoutePath: ${route.pattern} needs :${name}`);
     return encodeURIComponent(v);
   });
+  const q = spec.query?.(c);
+  return q ? `${p}?${q}` : p;
 }
 
 /** What a route answered, and what the probes saw around it. */

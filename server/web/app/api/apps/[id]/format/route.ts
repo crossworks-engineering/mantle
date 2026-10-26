@@ -23,7 +23,7 @@ export const policy = routePolicy({
   POST: {
     class: 'content',
     open: 'owner',
-    item: { param: 'id', need: 'manage' },
+    item: { param: 'id', need: 'edit' },
   },
 });
 

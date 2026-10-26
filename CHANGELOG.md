@@ -19,6 +19,22 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   admin). Its revert puts 0330's body back (`docs/update-prod.md`, "Going
   up to 0334"). `mantle_role_drift()` stays as the box count.
 
+## Unreleased: the A8 matrix covers the routes
+
+- **Security (tests):** every write route that names its item now runs A8
+  route cells (`server/web/server/a8-route-cells.matrix.test.ts`, in
+  `pnpm test:matrix`): the outsider, a read grant's member, a Write grant's
+  member, the home's Moderator and an Admin user, on each placement of the
+  item, through the full HTTP pipeline with the checks on. A hidden item
+  answers as a random uuid does, byte for byte. Eight routes whose allowed
+  request the cells cannot stand up run their refused cells only, each with
+  why (`a8Exempt` 104 to 112, for the final audit's review).
+- **Internal:** the 113 route declarations that said "not decided yet" each
+  name their item (`{ param, need }`, the right the handler asks) or say
+  why none (`itemNonePlaceholders` 113 to 0); the declaration states intent
+  only, so no item pre-check comes back and no answer changes. The
+  validator refuses the placeholder.
+
 ## Unreleased: the trace's guesses checked by an image model
 
 - **Feature:** `circuit_verify(circuit, register?, kinds?, max_questions?,

@@ -3,9 +3,10 @@
  * declaration names its item (`item: { param, need }`), through the full
  * HTTP pipeline (runRoute: the gate, the route row, the caller, the
  * handler), as the five roles of the plan (outsider, readGrant, writeGrant,
- * homeModerator, an Admin user) on each placement of its kind, in check
- * modes warn and on (the actor check and the edit check both, as a box runs
- * them). The cells are generated from the declarations and the request each
+ * homeModerator, an Admin user) on each placement of its kind, with the
+ * actor check and the edit check on, as every fleet box runs them (in warn
+ * the edit check lets through a write the database would refuse: see
+ * A8_ROUTE_MODES). The cells are generated from the declarations and the request each
  * route takes (a8-route-cells.ts); the fixture is the A8 grid's
  * (a8-grid.ts), seeded once, and each cell gets a fresh item of its kind and
  * placement, with the content its route needs (a8-tool-content.ts).
@@ -52,8 +53,9 @@ vi.mock('@mantle/storage/write', async (importOriginal) => ({
   },
 }));
 
-/** The time the route cells may take, both modes (the budget cell). */
-const A8_ROUTE_TIME_CEILING_MS = 360_000;
+/** The time the route cells may take (the budget cell): about 25 s on the
+ *  workstation alone, so a loaded box has room and a slow cell still shows. */
+const A8_ROUTE_TIME_CEILING_MS = 120_000;
 
 describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s answer', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -203,6 +205,12 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
       : null;
     if (spec.seed && !seeded) throw new Error(`no content seed ${spec.seed}`);
     const item = seeded?.item ?? (await g.makeA8Item(raw, fx, spec.kind, placement));
+    if (spec.prepSql) {
+      await raw.begin(async (tx) => {
+        await tx.unsafe(g.FIXTURE_ACTOR);
+        await tx.unsafe(spec.prepSql!, [item.id]);
+      });
+    }
     const [v] = await raw<{ version: number }[]>`
       select version from recall_maps where id = ${item.id}`;
     const ctx: import('./a8-route-cells').A8RouteCtx = {
@@ -234,7 +242,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
     }
   };
 
-  it('every cell gives the oracle’s answer, in check modes warn and on', async () => {
+  it('every cell gives the oracle’s answer, in check mode on', async () => {
     const plan = rc.a8RoutePlan(manifest);
     const routes = new Map(rc.a8ItemRoutes(manifest).map((r) => [r.key, r]));
     expect(plan.uncovered, 'routes that name their item and have no cells').toEqual({});
@@ -316,11 +324,16 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
       );
     }
     const elapsed = Date.now() - started;
+    const narrowed: Record<string, number> = {};
+    for (const c of plan.cells) {
+      if (c.narrowed) narrowed[c.narrowed] = (narrowed[c.narrowed] ?? 0) + 1;
+    }
     console.log(
       [
         `A8 route cells: ${plan.cells.length} cells of ${plan.covered.length} routes ` +
           `(${Object.keys(plan.exempt).length} refused only) over ` +
           `${rc.A8_ROUTE_MODES.length} check modes in ${(elapsed / 1000).toFixed(1)} s`,
+        ...Object.entries(narrowed).map(([why, n]) => `  narrowed ${n}: ${why}`),
         ...lines,
       ].join('\n'),
     );

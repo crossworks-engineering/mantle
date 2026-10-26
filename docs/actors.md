@@ -263,8 +263,8 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   actor and scope, narrow by surface, the Admin step, the create home,
   run, map a refusal. Listing equals calling.
 - A write handler reads its item in the caller's scope first, or asks
-  `assertItemRight` (`packages/db/src/item-rights.ts`) before any side
-  effect. A hidden item is the 404 of none.
+  `assertItemRight` (`packages/db/src/item-rights.ts`) before any side effect;
+  a hidden item is the 404 of none. Its row's `item` says which right, or none and why (intent only).
 
 ## 11. Tools
 
@@ -286,12 +286,13 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
 - **A kind**: add it to `ITEM_KINDS`; the route lists, the access matrix
   and the A8 grid read the registry. `handKindLists` fails a hand list.
 - **A route**: a policy row; `route-scope.test.ts` fails an unclassified
-  route, the gate refuses one with no row; its route file declares it.
+  route, the gate refuses one with no row; its route file declares it. A write naming its
+  item gets A8 route cells (`a8-route-cells.ts`, a request per route), or runs refused cells only.
 - **A tool**: a `ToolPolicy` (typecheck fails without one); a write
   declares its `clientSourced` rule (unset, a client-sourced call waits),
   `itemArgs` and A8 `matrix` (action and argument, or `none` and why; an
   id-taking read too), read by no gate: the tool cells (one allowed, one
-  refused at least); `a8-coverage.test.ts` pins `a8Uncovered` 0, `a8Exempt` 105.
+  refused at least); `a8-coverage.test.ts` pins `a8Uncovered` 0, `a8Exempt` 112.
 - **A table**: a row in `packages/db/src/access-matrix.ts` (with none no
   scoped role may touch it); an item table gets the actor trigger
   (`actor-trigger-coverage.db.test.ts`).
@@ -336,7 +337,6 @@ Each ends in the step of plan v3.2 (2026-10-17) named.
   system pool: the write role holds no EXECUTE on them yet. S7.
 - The system pool is the whole runtime role; the narrow role exists, unused. S7.
 - Route policy is spread over lists, not declared per route. S9.
-- The A8 matrix covers every kind and tool, not yet the routes. S11b.
 - Five branches fail open, counted since S4a (section 7, Fail-open counts). S4.
 - Five checks still ask the role column, each only narrowing while drift is 0:
   `findMemberAsset`, `memberLoginActive`, `mcp-auth.ts` (2), `login-notices.ts`. S8 follow-up.
