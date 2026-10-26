@@ -208,6 +208,12 @@ vi.mock('@mantle/db', () => ({
   // The full-route spot (a parked call, pending-park): no route here, the
   // write runs as it is.
   onFullSystemRoute: vi.fn(async (_spot: string, fn: () => Promise<unknown>) => fn()),
+  // The approval queue's one park (packages/db pending-calls.ts): the row
+  // it is handed, recorded as the insert recorded it.
+  parkPendingCall: vi.fn(async (row: Record<string, unknown>) => {
+    insertedPendingArgs.push(row);
+    return `pending-${insertedPendingArgs.length}`;
+  }),
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn

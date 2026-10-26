@@ -128,7 +128,37 @@ vi.mock('@mantle/db', async () => ({
     h.elevatedRejects += 1;
     return h.elevatedRow ? { ...h.elevatedRow, status: 'rejected' } : null;
   },
+  // The approval queue's writes (pending-calls.ts): on the fake, the same
+  // update each made as a scoped write before.
+  decidePendingCall: async (a: { decision: string }) =>
+    (
+      await fakeUpdate()
+        .set({ status: a.decision, decidedAt: new Date(), updatedAt: new Date() })
+        .where({ __expr: true })
+        .returning()
+    )[0] ?? null,
+  revertPendingCall: async (_id: string, error: string) =>
+    (
+      await fakeUpdate()
+        .set({ status: 'pending', decidedAt: null, error, updatedAt: new Date() })
+        .where({ __expr: true })
+        .returning()
+    )[0] ?? null,
+  unclaimPendingCall: async () => {
+    await fakeUpdate()
+      .set({ status: 'pending', decidedAt: null, updatedAt: new Date() })
+      .where({ __expr: true });
+  },
+  settlePendingCall: async (_id: string, set: Record<string, unknown>) =>
+    (await fakeUpdate().set(set).where({ __expr: true }).returning())[0] ?? null,
 }));
+
+/** The fake's update of pending_tool_calls, as the module made it. */
+type FakeWhere = PromiseLike<unknown> & { returning: () => Promise<Row[]> };
+function fakeUpdate(): { set: (v: unknown) => { where: (w: unknown) => FakeWhere } } {
+  const update = (h.db as { update: (t: unknown) => ReturnType<typeof fakeUpdate> }).update;
+  return update({ __table: 'pending_tool_calls' });
+}
 vi.mock('@mantle/tracing', () => ({
   startTrace: async (_i: unknown, fn: () => Promise<unknown>) => fn(),
   step: async (_i: unknown, fn: (handle: unknown) => Promise<unknown>) =>

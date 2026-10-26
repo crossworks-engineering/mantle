@@ -1590,7 +1590,6 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   'packages/content/src/member-turn-ledger.ts',
-  'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];

@@ -181,9 +181,9 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/heartbeat-maker.ts': ['heartbeat-maker'],
   'server/web/lib/skills.ts': ['skill-text'],
   'packages/tools/src/toolsmith/docs.ts': ['skill-text'],
-  'packages/runtime/src/agent/tool-loop/execute-call.ts': ['pending-park'],
-  'packages/tools/src/pending-queue.ts': ['pending-park'],
-  'server/web/app/api/dev-tools/queue-approval/route.ts': ['pending-park'],
+  // The approval queue's one park (the turn's confirm gate, an agent's
+  // queued call, the toolsmith, the dev console all call parkPendingCall).
+  'packages/db/src/pending-calls.ts': ['pending-park'],
   'packages/files/src/docs.ts': ['docs-root'],
   // A content feed switched on (0324: enabled only off on the narrow login).
   'packages/calendar/src/manage.ts': ['feed-enable'],
@@ -197,12 +197,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
     'heartbeat-maker',
   ],
   'packages/runs/src/worker.ts': ['assistant-grant'],
-  'packages/tools/src/toolsmith/groups.ts': [
-    'assistant-grant',
-    'tool-group-grant',
-    'pending-park',
-    'model-route',
-  ],
+  'packages/tools/src/toolsmith/groups.ts': ['assistant-grant', 'tool-group-grant', 'model-route'],
   'server/web/lib/tool-groups.ts': ['tool-group-grant', 'tool-config'],
   'server/web/app/api/tools/route.ts': ['tool-group-grant'],
   'packages/tools/src/toolsmith/common.ts': ['tool-group-grant'],

@@ -5,7 +5,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, agents, onFullSystemRoute, pendingToolCalls, toolGroups } from '@mantle/db';
+import { db, agents, onFullSystemRoute, parkPendingCall, toolGroups } from '@mantle/db';
 import { appUrl } from '@mantle/content';
 import { listToolsForOwner } from '../crud';
 import { notifyPendingCreated } from '../pending-notify';
@@ -281,23 +281,18 @@ export const tool_group_ensure: BuiltinToolDef = {
           .from(agents)
           .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
           .limit(1);
-        const [pending] = await onFullSystemRoute('pending-park', async () =>
-          db
-            .insert(pendingToolCalls)
-            .values({
-              ownerId: ctx.ownerId,
-              agentId: requester?.id ?? null,
-              toolSlug: 'tool_group_ensure',
-              args: input,
-              // The scope the asking turn runs in (A5 step 6c, 0288).
-              origin: await pendingOriginNow(ctx.surface),
-            })
-            .returning({ id: pendingToolCalls.id }),
-        );
-        if (pending?.id) {
+        const pendingId = await parkPendingCall({
+          ownerId: ctx.ownerId,
+          agentId: requester?.id ?? null,
+          toolSlug: 'tool_group_ensure',
+          args: input,
+          // The scope the asking turn runs in (A5 step 6c, 0288).
+          origin: await pendingOriginNow(ctx.surface),
+        });
+        if (pendingId) {
           void notifyPendingCreated({
             ownerId: ctx.ownerId,
-            pendingId: pending.id,
+            pendingId,
             toolSlug: 'tool_group_ensure',
             args: input,
             via: `agent ${ctx.agent.slug}`,
@@ -307,7 +302,7 @@ export const tool_group_ensure: BuiltinToolDef = {
           ok: true,
           output: {
             status: 'queued_for_approval',
-            pending_id: pending?.id ?? null,
+            pending_id: pendingId,
             message:
               `'${slug}' is held by an assistant of another workspace than Admin: changing its tools needs operator approval. ` +
               `Queued at /pending; it applies once approved. Do not retry this turn.`,
@@ -607,23 +602,18 @@ export const agent_grant_tool_group: BuiltinToolDef = {
         .from(agents)
         .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
         .limit(1);
-      const [pending] = await onFullSystemRoute('pending-park', async () =>
-        db
-          .insert(pendingToolCalls)
-          .values({
-            ownerId: ctx.ownerId,
-            agentId: requester?.id ?? null,
-            toolSlug: 'agent_grant_tool_group',
-            args: grantArgs,
-            // The scope the asking turn runs in (A5 step 6c, 0288).
-            origin: await pendingOriginNow(ctx.surface),
-          })
-          .returning({ id: pendingToolCalls.id }),
-      );
-      if (pending?.id) {
+      const pendingId = await parkPendingCall({
+        ownerId: ctx.ownerId,
+        agentId: requester?.id ?? null,
+        toolSlug: 'agent_grant_tool_group',
+        args: grantArgs,
+        // The scope the asking turn runs in (A5 step 6c, 0288).
+        origin: await pendingOriginNow(ctx.surface),
+      });
+      if (pendingId) {
         void notifyPendingCreated({
           ownerId: ctx.ownerId,
-          pendingId: pending.id,
+          pendingId,
           toolSlug: 'agent_grant_tool_group',
           args: grantArgs,
           via: `agent ${ctx.agent.slug}`,
@@ -633,7 +623,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
         ok: true,
         output: {
           status: 'queued_for_approval',
-          pending_id: pending?.id ?? null,
+          pending_id: pendingId,
           message:
             `Granting '${groupSlug}' to agent '${agentSlug}' needs operator approval. ` +
             `Queued at /pending; it applies once approved. Do not retry this turn.`,
@@ -732,23 +722,18 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
         .from(agents)
         .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
         .limit(1);
-      const [pending] = await onFullSystemRoute('pending-park', async () =>
-        db
-          .insert(pendingToolCalls)
-          .values({
-            ownerId: ctx.ownerId,
-            agentId: requester?.id ?? null,
-            toolSlug: 'agent_set_thinking_effort',
-            args,
-            // The scope the asking turn runs in (A5 step 6c, 0288).
-            origin: await pendingOriginNow(ctx.surface),
-          })
-          .returning({ id: pendingToolCalls.id }),
-      );
-      if (pending?.id) {
+      const pendingId = await parkPendingCall({
+        ownerId: ctx.ownerId,
+        agentId: requester?.id ?? null,
+        toolSlug: 'agent_set_thinking_effort',
+        args,
+        // The scope the asking turn runs in (A5 step 6c, 0288).
+        origin: await pendingOriginNow(ctx.surface),
+      });
+      if (pendingId) {
         void notifyPendingCreated({
           ownerId: ctx.ownerId,
-          pendingId: pending.id,
+          pendingId,
           toolSlug: 'agent_set_thinking_effort',
           args,
           via: `agent ${ctx.agent.slug}`,
@@ -758,7 +743,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
         ok: true,
         output: {
           status: 'queued_for_approval',
-          pending_id: pending?.id ?? null,
+          pending_id: pendingId,
           message:
             `Setting agent '${agentSlug}' to thinking effort '${raw}' needs operator approval. ` +
             `Queued at /pending; it applies once approved. Do not retry this turn.`,

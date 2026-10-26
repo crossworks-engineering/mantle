@@ -181,6 +181,14 @@ export {
   rejectElevatedPendingCall,
 } from './pending-elevated';
 export {
+  decidePendingCall,
+  parkPendingCall,
+  revertPendingCall,
+  settlePendingCall,
+  unclaimPendingCall,
+  type PendingSettle,
+} from './pending-calls';
+export {
   registerCallAudit,
   startCallAudit,
   stopCallAudit,

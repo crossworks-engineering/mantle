@@ -60,7 +60,7 @@ const h = vi.hoisted(() => {
     select: vi.fn(() => selectChain),
     update: vi.fn(() => ({ set: updateSet })),
     updateSet,
-    insert: vi.fn(() => ({ values: insertValues })),
+    insert: vi.fn((_table: unknown) => ({ values: insertValues })),
     insertValues,
     insertReturning,
   };
@@ -71,6 +71,14 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { ...actual.db, select: h.select, update: h.update, insert: h.insert },
+    // The approval queue's one park (packages/db pending-calls.ts): the same
+    // insert on the stub, so the cells below read it as before.
+    parkPendingCall: async (values: Record<string, unknown>) => {
+      const [row] = (await h.insert(actual.pendingToolCalls).values(values).returning()) as {
+        id?: string;
+      }[];
+      return row?.id ?? null;
+    },
   };
 });
 vi.mock('@mantle/api-keys', async (importOriginal) => {

@@ -25,7 +25,7 @@ import {
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
-import { systemDb, pendingToolCalls, type Tool, onFullSystemRoute } from '@mantle/db';
+import { parkPendingCall, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
 import type { ToolLoopArgs, ToolValidationMode } from '../tool-loop';
 import { REPEATED_FAILURE_LIMIT, type TurnGuards } from './guards';
@@ -171,25 +171,20 @@ export async function executeToolCall(p: {
         // args to /pending until they're approved or rejected. That's
         // an acceptable single-user tradeoff; if multi-tenant ever
         // happens, pendingToolCalls.args needs to be sealed too.
-        // systemDb: the approval queue is infrastructure (written under any viewer).
-        const [pending] = await onFullSystemRoute('pending-park', async () =>
-          systemDb
-            .insert(pendingToolCalls)
-            .values({
-              ownerId: args.ownerId,
-              agentId: args.agentId ?? null,
-              toolSlug: slug,
-              args: input,
-              traceId,
-              ...(queue.elevated ? { elevated: queue.elevated } : {}),
-              ...(clientSourced ? { clientSourced } : {}),
-              // The scope this turn asked in (A5 step 6c, 0288): its approval
-              // judges the call again, and runs it, there (pending-origin.ts).
-              origin: await pendingOriginNow(args.surface),
-            })
-            .returning({ id: pendingToolCalls.id }),
-        );
-        const pendingId = pending?.id ?? null;
+        // The approval queue is infrastructure: parked on the system pool
+        // (packages/db pending-calls.ts), written under any viewer.
+        const pendingId = await parkPendingCall({
+          ownerId: args.ownerId,
+          agentId: args.agentId ?? null,
+          toolSlug: slug,
+          args: input,
+          traceId,
+          ...(queue.elevated ? { elevated: queue.elevated } : {}),
+          ...(clientSourced ? { clientSourced } : {}),
+          // The scope this turn asked in (A5 step 6c, 0288): its approval
+          // judges the call again, and runs it, there (pending-origin.ts).
+          origin: await pendingOriginNow(args.surface),
+        });
         if (pendingId) {
           p.pendingIds.push(pendingId);
           // Surface the approval wherever the operator is: live badge

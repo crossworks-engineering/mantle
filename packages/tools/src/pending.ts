@@ -8,6 +8,10 @@ import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   pendingToolCalls,
+  decidePendingCall,
+  revertPendingCall,
+  settlePendingCall,
+  unclaimPendingCall,
   runAsActor,
   type PendingToolCall,
   type Tool,
@@ -173,11 +177,7 @@ function formQuestionCount(row: PendingToolCall): number {
  *  either way — the engine's completeItem/cancelRun CAS makes a re-settle
  *  of an already-applied decision a no-op that expires the row. */
 async function revertToPending(rowId: string, error: string): Promise<PendingSummary | null> {
-  const [reverted] = await db
-    .update(pendingToolCalls)
-    .set({ status: 'pending', decidedAt: null, error, updatedAt: new Date() })
-    .where(eq(pendingToolCalls.id, rowId))
-    .returning();
+  const reverted = await revertPendingCall(rowId, error);
   return reverted ? toSummary(reverted) : null;
 }
 
@@ -193,11 +193,10 @@ async function settleAskHuman(
 ): Promise<PendingSummary | null> {
   const itemId = askHumanItemId(row);
   if (!itemId) {
-    const [errRow] = await db
-      .update(pendingToolCalls)
-      .set({ error: 'ask_human row has no item_id ref — cannot apply', updatedAt: new Date() })
-      .where(eq(pendingToolCalls.id, row.id))
-      .returning();
+    const errRow = await settlePendingCall(row.id, {
+      error: 'ask_human row has no item_id ref — cannot apply',
+      updatedAt: new Date(),
+    });
     return errRow ? toSummary(errRow) : null;
   }
   // A QUESTIONNAIRE CANNOT BE ANSWERED BY A BARE "YES". Approve/reject-only
@@ -244,33 +243,25 @@ async function settleAskHuman(
     // was never touched, so hand the decision back with the teaching error
     // instead of expiring a row the operator can still answer properly.
     if (res.reason === 'invalid_answers') return revertToPending(row.id, res.error);
-    const [expiredRow] = await db
-      .update(pendingToolCalls)
-      .set({
-        status: 'expired',
-        error: res.error,
-        executedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(pendingToolCalls.id, row.id))
-      .returning();
+    const expiredRow = await settlePendingCall(row.id, {
+      status: 'expired',
+      error: res.error,
+      executedAt: new Date(),
+      updatedAt: new Date(),
+    });
     return expiredRow ? toSummary(expiredRow) : null;
   }
   await enqueueRunActionsSafe(res.actions);
-  const [updated] = await db
-    .update(pendingToolCalls)
-    .set({
-      result: {
-        item_id: itemId,
-        item_state: res.state,
-        ...(answer?.trim() ? { answer } : {}),
-        ...(answers?.length ? { answers } : {}),
-      },
-      executedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(pendingToolCalls.id, row.id))
-    .returning();
+  const updated = await settlePendingCall(row.id, {
+    result: {
+      item_id: itemId,
+      item_state: res.state,
+      ...(answer?.trim() ? { answer } : {}),
+      ...(answers?.length ? { answers } : {}),
+    },
+    executedAt: new Date(),
+    updatedAt: new Date(),
+  });
   return updated ? toSummary(updated) : null;
 }
 
@@ -283,11 +274,10 @@ async function settleBudget(
 ): Promise<PendingSummary | null> {
   const runId = budgetRunId((row.args ?? null) as Record<string, unknown> | null);
   if (!runId) {
-    const [errRow] = await db
-      .update(pendingToolCalls)
-      .set({ error: 'run_budget row has no run_id ref — cannot apply', updatedAt: new Date() })
-      .where(eq(pendingToolCalls.id, row.id))
-      .returning();
+    const errRow = await settlePendingCall(row.id, {
+      error: 'run_budget row has no run_id ref — cannot apply',
+      updatedAt: new Date(),
+    });
     return errRow ? toSummary(errRow) : null;
   }
   let res: Awaited<ReturnType<typeof applyBudgetDecision>>;
@@ -308,27 +298,24 @@ async function settleBudget(
     );
   }
   if (!res.ok) {
-    const [expiredRow] = await db
-      .update(pendingToolCalls)
-      .set({ status: 'expired', error: res.error, executedAt: new Date(), updatedAt: new Date() })
-      .where(eq(pendingToolCalls.id, row.id))
-      .returning();
+    const expiredRow = await settlePendingCall(row.id, {
+      status: 'expired',
+      error: res.error,
+      executedAt: new Date(),
+      updatedAt: new Date(),
+    });
     return expiredRow ? toSummary(expiredRow) : null;
   }
   if (res.outcome === 'raised') await enqueueRunActionsSafe(res.actions);
-  const [updated] = await db
-    .update(pendingToolCalls)
-    .set({
-      result: {
-        run_id: runId,
-        outcome: res.outcome,
-        ...(res.outcome === 'raised' ? { new_budget_micro_usd: res.newBudgetMicroUsd } : {}),
-      },
-      executedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(pendingToolCalls.id, row.id))
-    .returning();
+  const updated = await settlePendingCall(row.id, {
+    result: {
+      run_id: runId,
+      outcome: res.outcome,
+      ...(res.outcome === 'raised' ? { new_budget_micro_usd: res.newBudgetMicroUsd } : {}),
+    },
+    executedAt: new Date(),
+    updatedAt: new Date(),
+  });
   return updated ? toSummary(updated) : null;
 }
 
@@ -385,22 +372,14 @@ export async function rejectPendingCall(
   /** The login rejecting it, when a route names one (deciderFilter). */
   deciderLoginId?: string,
 ): Promise<PendingSummary | null> {
-  let [row] = await db
-    .update(pendingToolCalls)
-    .set({
-      status: 'rejected',
-      decidedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(pendingToolCalls.id, id),
-        eq(pendingToolCalls.ownerId, ownerId),
-        eq(pendingToolCalls.status, 'pending'),
-        deciderFilter(ownerId, deciderLoginId),
-      ),
-    )
-    .returning();
+  // On the system pool with the rule in the WHERE (pending-calls.ts).
+  let row =
+    (await decidePendingCall({
+      ownerId,
+      id,
+      decision: 'rejected',
+      decider: deciderFilter(ownerId, deciderLoginId),
+    })) ?? undefined;
   if (!row) {
     // An elevated call another login may approve (6d L3): it may reject it
     // too, read and flipped on the system pool as its approval is.
@@ -461,13 +440,6 @@ export async function approvePendingCall(
   // Who approves (deciderOf): the scope's login, else the one the path
   // names, else the owner. Named in the call's audit row on every path.
   const approver = deciderOf(ownerId, opts?.approverLoginId);
-  const decides = and(
-    eq(pendingToolCalls.id, id),
-    eq(pendingToolCalls.ownerId, ownerId),
-    eq(pendingToolCalls.status, 'pending'),
-    isNull(pendingToolCalls.elevated),
-    deciderFilter(ownerId, opts?.approverLoginId),
-  );
   // The approval re-check (A5 step 6c), before the claim: a call stamped
   // with the scope it was asked in (0288) is judged again there, met with
   // its asker's rights now (originApproval); a refusal throws
@@ -494,11 +466,15 @@ export async function approvePendingCall(
   }
   // Atomic claim: only act if still pending. Every call but an elevated
   // one: by whose calls the approver decides (deciderFilter), as before.
-  let [claimed] = await db
-    .update(pendingToolCalls)
-    .set({ status: 'approved', decidedAt: new Date(), updatedAt: new Date() })
-    .where(decides)
-    .returning();
+  // On the system pool with the rule in the WHERE (pending-calls.ts).
+  let claimed =
+    (await decidePendingCall({
+      ownerId,
+      id,
+      decision: 'approved',
+      decider: deciderFilter(ownerId, opts?.approverLoginId),
+      notElevated: true,
+    })) ?? undefined;
   // A call queued with more rights than its asker's scope (owner decision
   // 1a, 0287) meets the approval rule first (elevatedApproval), before it
   // is claimed, so a refused approver (its asker, or a login without write
@@ -526,10 +502,7 @@ export async function approvePendingCall(
   // judging it (not read, or decided between the read and the claim) is put
   // back, pending, and refused: it never runs by the legacy rule.
   if (claimed.origin && !runnerRow(claimed.toolSlug) && !origin && !elevated) {
-    await db
-      .update(pendingToolCalls)
-      .set({ status: 'pending', decidedAt: null, updatedAt: new Date() })
-      .where(and(eq(pendingToolCalls.id, claimed.id), eq(pendingToolCalls.status, 'approved')));
+    await unclaimPendingCall(claimed.id);
     throw new ApprovalRefusedError(PENDING_NOT_RECHECKED_ERROR);
   }
   // Status has flipped to 'approved' — repaint the badge now, before the
@@ -552,15 +525,11 @@ export async function approvePendingCall(
   // call runs the tool it was judged with.
   const tool = origin ? judgedTool : await enabledTool(ownerId, claimed.toolSlug);
   if (!tool) {
-    const [errRow] = await db
-      .update(pendingToolCalls)
-      .set({
-        error: `tool '${claimed.toolSlug}' is not registered or disabled`,
-        executedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(pendingToolCalls.id, claimed.id))
-      .returning();
+    const errRow = await settlePendingCall(claimed.id, {
+      error: `tool '${claimed.toolSlug}' is not registered or disabled`,
+      executedAt: new Date(),
+      updatedAt: new Date(),
+    });
     return errRow ? toSummary(errRow) : null;
   }
 
@@ -644,16 +613,12 @@ export async function approvePendingCall(
     },
   );
 
-  const [updated] = await db
-    .update(pendingToolCalls)
-    .set({
-      result: outputJson,
-      error: errorText,
-      executedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(pendingToolCalls.id, claimed.id))
-    .returning();
+  const updated = await settlePendingCall(claimed.id, {
+    result: outputJson,
+    error: errorText,
+    executedAt: new Date(),
+    updatedAt: new Date(),
+  });
   return updated ? toSummary(updated) : null;
 }
 

@@ -25,7 +25,6 @@ export const SYSTEM_DB_ALLOWLIST = [
   // The member chat traces' token sums (audit F09); the ledger itself is
   // written through its definers (0326, login-definer.ts).
   'packages/content/src/member-turn-ledger.ts',
-  'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
@@ -105,11 +104,13 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/db/src/mixed-summaries.ts': 'narrow',
   // The approval queue, decided in the approver's scope.
   'packages/db/src/pending-elevated.ts': 'narrow',
+  // The approval queue's park (at the full-route spot pending-park), claim,
+  // return and settle, in the asking or deciding scope (S4a list).
+  'packages/db/src/pending-calls.ts': 'narrow',
   // An embed or extract failure, in a turn's embed as in the workers.
   'packages/db/src/provider-alerts.ts': 'narrow',
   // The embedding cache, in a turn's embed as in the workers.
   'packages/embeddings/src/index.ts': 'narrow',
-  'packages/runtime/src/agent/tool-loop/execute-call.ts': 'narrow',
   'packages/tools/src/tool-results.ts': 'narrow',
   'packages/tracing/src/store.ts': 'narrow',
   'packages/turn-stream/src/publish.ts': 'narrow',

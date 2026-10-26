@@ -5,7 +5,7 @@
  * the change applies. The caller has validated the call already.
  */
 import { and, eq } from 'drizzle-orm';
-import { agents, db, pendingToolCalls, onFullSystemRoute } from '@mantle/db';
+import { agents, db, parkPendingCall } from '@mantle/db';
 import { notifyPendingCreated } from './pending-notify';
 import { pendingOriginNow } from './pending-origin';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
@@ -21,23 +21,20 @@ export async function queueAgentCallForApproval(
     .from(agents)
     .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
     .limit(1);
-  const [pending] = await onFullSystemRoute('pending-park', async () =>
-    db
-      .insert(pendingToolCalls)
-      .values({
-        ownerId: ctx.ownerId,
-        agentId: requester?.id ?? null,
-        toolSlug,
-        args,
-        // The scope the asking turn runs in (A5 step 6c, 0288).
-        origin: await pendingOriginNow(ctx.surface),
-      })
-      .returning({ id: pendingToolCalls.id }),
-  );
-  if (pending?.id) {
+  // The approval queue is infrastructure: parked on the system pool
+  // (packages/db pending-calls.ts), never by this caller's scoped write.
+  const pendingId = await parkPendingCall({
+    ownerId: ctx.ownerId,
+    agentId: requester?.id ?? null,
+    toolSlug,
+    args,
+    // The scope the asking turn runs in (A5 step 6c, 0288).
+    origin: await pendingOriginNow(ctx.surface),
+  });
+  if (pendingId) {
     void notifyPendingCreated({
       ownerId: ctx.ownerId,
-      pendingId: pending.id,
+      pendingId,
       toolSlug,
       args,
       via: `agent ${ctx.agent.slug}`,
@@ -47,7 +44,7 @@ export async function queueAgentCallForApproval(
     ok: true,
     output: {
       status: 'queued_for_approval',
-      pending_id: pending?.id ?? null,
+      pending_id: pendingId,
       message: `${message} Queued at /pending; it applies once approved. Do not retry this turn.`,
     },
   };

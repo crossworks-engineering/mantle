@@ -16,7 +16,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, pendingToolCalls, onFullSystemRoute } from '@mantle/db';
+import { parkPendingCall } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
@@ -55,17 +55,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
-  const [pending] = await onFullSystemRoute('pending-park', () =>
-    db
-      .insert(pendingToolCalls)
-      .values({
-        ownerId: user.id,
-        toolSlug: parsed.data.slug,
-        args: parsed.data.input,
-      })
-      .returning({ id: pendingToolCalls.id }),
-  );
-  if (!pending) {
+  // The approval queue's one park (packages/db pending-calls.ts).
+  const pendingId = await parkPendingCall({
+    ownerId: user.id,
+    toolSlug: parsed.data.slug,
+    args: parsed.data.input,
+  });
+  if (!pendingId) {
     return NextResponse.json({ error: 'failed to queue' }, { status: 500 });
   }
 
@@ -73,11 +69,11 @@ export async function POST(req: Request) {
   // a Telegram approval card to the paired chat (if one is paired).
   await notifyPendingCreated({
     ownerId: user.id,
-    pendingId: pending.id,
+    pendingId,
     toolSlug: parsed.data.slug,
     args: parsed.data.input,
     via: 'dev test',
   });
 
-  return NextResponse.json({ ok: true, pendingId: pending.id });
+  return NextResponse.json({ ok: true, pendingId });
 }
