@@ -23,7 +23,7 @@ import {
   widthView,
   zoomAt,
 } from './runtime/zoom-math.ts';
-import { zoomable, type ZoomController } from './zoom.ts';
+import { RENDER_FLAG, zoomable, type ZoomController } from './zoom.ts';
 import { estimateMeasurer, render } from './index.ts';
 import { buildCanvas } from './canvas.ts';
 import { mount } from './browser.ts';
@@ -187,17 +187,19 @@ describe('zoomable in a page', () => {
     const { doc, main, svg, win } = page(1600, 2000);
     z = zoomable(main);
     const s0 = 800 / vb(svg).w;
+    // Ctrl + wheel (a trackpad pinch too) zooms, one step at most.
     const wheel = new win.WheelEvent('wheel', {
       deltaY: -200,
       clientX: 100,
       clientY: 100,
+      ctrlKey: true,
       bubbles: true,
       cancelable: true,
     });
     svg.querySelector('text')!.dispatchEvent(wheel);
     expect(wheel.defaultPrevented).toBe(true);
     const s1 = 800 / vb(svg).w;
-    expect(s1).toBeGreaterThan(s0);
+    expect(s1).toBeCloseTo(s0 * 1.25, 3);
 
     const press = (key: string) => {
       const e = new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
@@ -260,6 +262,93 @@ describe('zoomable in a page', () => {
     expect(clicked).toBe(0);
     near(vb(svg).x, at.x - 60 / 2);
     near(vb(svg).y, at.y - 40 / 2);
+  });
+
+  it("a plain wheel pans while zoomed in, and is the page's at the edge and at the fit", () => {
+    const { main, svg, win } = page(1600, 2000);
+    z = zoomable(main);
+    const wheel = (deltaY: number) => {
+      const e = new win.WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true });
+      svg.querySelector('text')!.dispatchEvent(e);
+      return e;
+    };
+    // Opens as wide as the frame, from the top (scale 0.5, past the fit).
+    const top = vb(svg);
+    near(top.y, 0);
+    // Up at the top: the drawing cannot move, the page scrolls.
+    expect(wheel(-100).defaultPrevented).toBe(false);
+    near(vb(svg).y, 0);
+    // Down: the drawing pans, the page stays.
+    expect(wheel(100).defaultPrevented).toBe(true);
+    near(vb(svg).y, 200);
+    near(800 / vb(svg).w, 0.5);
+    // To the bottom edge, then the page has it again.
+    for (let i = 0; i < 40; i++) wheel(100);
+    const bottom = vb(svg);
+    near(bottom.y + bottom.h, 2000);
+    expect(wheel(100).defaultPrevented).toBe(false);
+    // At the fit every plain wheel is the page's.
+    z.fit();
+    const fit = vb(svg);
+    expect(wheel(100).defaultPrevented).toBe(false);
+    expect(wheel(-100).defaultPrevented).toBe(false);
+    expect(vb(svg)).toEqual(fit);
+  });
+
+  it('a stale pointer (its pointerup never came) does not turn the next drag into a pinch', () => {
+    const { main, svg, win } = page(1600, 2000);
+    z = zoomable(main);
+    z.actual();
+    const P = win.PointerEvent ?? win.MouseEvent;
+    const ptr = (type: string, id: number, x: number, y: number, isPrimary = true) =>
+      svg.dispatchEvent(
+        new P(type, {
+          clientX: x,
+          clientY: y,
+          bubbles: true,
+          cancelable: true,
+          pointerId: id,
+          isPrimary,
+          button: 0,
+          pointerType: 'mouse',
+        } as PointerEventInit),
+      );
+    // A press whose release happened outside the frame.
+    ptr('pointerdown', 1, 100, 100);
+    const at = vb(svg);
+    // A new press: a plain drag, at the same scale.
+    ptr('pointerdown', 2, 100, 100);
+    ptr('pointermove', 2, 160, 100);
+    ptr('pointerup', 2, 160, 100);
+    near(800 / vb(svg).w, 800 / at.w);
+    near(vb(svg).x, at.x - 60);
+  });
+
+  it('a headless render (the harness flag) never shows the controls', () => {
+    const { doc, main, svg, win } = page(1600, 2000);
+    Object.defineProperty(win, RENDER_FLAG, { value: true });
+    z = zoomable(main, { mode: 'on' });
+    expect(z.active).toBe(false);
+    expect(doc.querySelector('.diagram-zoom')!.hasAttribute('hidden')).toBe(true);
+    expect(svg.getAttribute('viewBox')).toBe('0 0 1600 2000');
+  });
+
+  it('a resize judges again once per frame', async () => {
+    const { main, svg, win } = page(1600, 2000);
+    z = zoomable(main);
+    z.zoomIn();
+    let reads = 0;
+    const was = svg.setAttribute.bind(svg);
+    svg.setAttribute = (n: string, v: string) => {
+      if (n === 'viewBox') reads++;
+      was(n, v);
+    };
+    for (let i = 0; i < 5; i++) win.dispatchEvent(new win.Event('resize'));
+    expect(reads).toBe(0);
+    await new Promise((r) => win.requestAnimationFrame(() => r(null)));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toBeGreaterThan(0);
+    expect(reads).toBeLessThanOrEqual(3);
   });
 
   it('a print shows the whole drawing; the view comes back after', () => {

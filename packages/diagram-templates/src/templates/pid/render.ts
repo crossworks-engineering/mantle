@@ -61,7 +61,7 @@ import {
 } from '../../runtime/legend.ts';
 import { slugify, svgDocument } from '../../runtime/export.ts';
 import type { CheckEvidence, RenderResult } from '../../types.ts';
-import { imageCheckSummary, type CheckState, type PidCheck } from './check.ts';
+import { imageCheckSummary, weakestState, type CheckState, type PidCheck } from './check.ts';
 import { SERVICE_NAMES } from './profile.ts';
 import {
   BAND,
@@ -284,22 +284,6 @@ export function stateColour(state: CheckState): string {
   if (state === 'contradicted') return ROLE_COLOURS.contradicted;
   if (state === 'corrected') return ROLE_COLOURS.corrected;
   return ROLE_COLOURS.guess;
-}
-
-/** The weakest state of several checks (a line's joins): unchecked before
- *  anything answered, as check.ts counts a guess drawn twice. */
-const STATE_RANK: Readonly<Record<CheckState, number>> = {
-  unchecked: 0,
-  contradicted: 1,
-  unsure: 2,
-  corrected: 3,
-  checked: 4,
-};
-export function weakestState(checks: readonly PidCheck[]): CheckState {
-  return checks.reduce<CheckState>(
-    (w, c) => (STATE_RANK[c.state] < STATE_RANK[w] ? c.state : w),
-    'checked',
-  );
 }
 
 export type RenderPidOptions = {

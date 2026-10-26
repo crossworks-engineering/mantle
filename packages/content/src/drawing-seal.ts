@@ -25,16 +25,22 @@
  * `honestCanvasSource` is what every save of a canvas runs
  * (createPresent, savePresentSource): a `pid` canvas is stored exactly as
  * buildCanvas writes it, keeping only the marks circuit_trace sealed and
- * the counts of its own marks.
+ * the counts of its own marks, and the embedded crops present_create /
+ * present_update sealed (`sealPayload`, CROP_SEAL_PURPOSE) that a kept
+ * mark still names.
  */
-import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
 import {
+  assetsBlockCount,
   canvasDataReadable,
   CanvasShapeError,
   claimsPidTemplate,
+  CROP_SEAL_PURPOSE,
+  cropSealPayload,
   dataBlockCount,
   withHonestImageChecks,
+  withSealedCanvasAssets,
 } from '@mantle/diagram-templates';
 import { InputError } from '@mantle/std';
 
@@ -159,6 +165,22 @@ const UNREADABLE_CANVAS =
 const NOT_A_PLAIN_DIAGRAM =
   "This diagram was not saved: a P&ID diagram holds only its data and the diagram's own page, and this source has something else in it (another script, or markup around the drawing). Undo the change to the diagram's source, or edit the diagram's data instead, and save again. For a page of your own design, start a new canvas that does not use the P&ID template.";
 
+/** Why a save refuses a canvas whose pictures it cannot check. */
+const UNREADABLE_CROPS =
+  "This diagram was not saved: its pictures could not be checked. A diagram keeps the close-ups of its checks in one block that the editor writes; this one has another element with the same name. Undo the change to the diagram's source, or edit the diagram's data instead (the pictures are embedded again for you), and save again.";
+
+/** Whether `sig` is the server's seal of this crop: its file id and the
+ *  sha256 of the picture's bytes (@mantle/tools present-crops.ts seals
+ *  them). */
+export function cropSealHolds(fileId: string, src: string, sig: string): boolean {
+  const comma = src.indexOf(',');
+  if (comma < 0) return false;
+  const sha = createHash('sha256')
+    .update(Buffer.from(src.slice(comma + 1), 'base64'))
+    .digest('hex');
+  return sealPayloadHolds(CROP_SEAL_PURPOSE, cropSealPayload(fileId, sha), sig);
+}
+
 /**
  * A canvas source as a save stores it. A canvas that claims the `pid`
  * template (its data block or its head names it) is rebuilt exactly as
@@ -167,7 +189,10 @@ const NOT_A_PLAIN_DIAGRAM =
  * seals and its counts recounted (@mantle/diagram-templates
  * withHonestImageChecks), keeping its head title and description; one
  * holding anything else (another script, foreign content, the author's own
- * HTML) is refused. Any other canvas with a data block keeps everything
+ * HTML) is refused; then its embedded crops are kept only where the
+ * server's seal holds and a kept mark names them (withSealedCanvasAssets),
+ * and a canvas whose assets block is written another way is refused. Any
+ * other canvas with a data block keeps everything
  * but the block, written again from its parsed JSON with `&`, `<` and `>`
  * escaped (so inside `<svg>` or `<math>`, where a browser decodes
  * character references, it still reads as stored). A canvas whose data
@@ -188,8 +213,12 @@ export function honestCanvasSource(source: string): string {
   if (blocks.any !== 1 || blocks.written !== 1 || !canvasDataReadable(source)) {
     throw new InputError(pid ? UNREADABLE_DIAGRAM : UNREADABLE_CANVAS);
   }
+  const assets = assetsBlockCount(source);
+  if (assets.any !== assets.written) {
+    throw new InputError(UNREADABLE_CROPS);
+  }
   try {
-    return withHonestImageChecks(source, drawingSealHolds);
+    return withSealedCanvasAssets(withHonestImageChecks(source, drawingSealHolds), cropSealHolds);
   } catch (err) {
     if (err instanceof CanvasShapeError) throw new InputError(NOT_A_PLAIN_DIAGRAM);
     throw err;

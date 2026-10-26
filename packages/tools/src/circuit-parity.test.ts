@@ -343,9 +343,11 @@ describe('marks are sealed by circuit_trace and kept only so by every save (fix 
   };
   const lastSaved = (m: typeof h.createPresent) =>
     readCanvasData((m.mock.calls.at(-1)!.at(-1) as { source: string }).source);
-  /** The data as stored, without the count a save adds. */
+  /** The data as stored, without the count a save adds, and the style
+   *  edition present_create stamps on a new drawing (diagram-templates
+   *  style.ts). */
   const same = (stored: Record<string, unknown>, pid: Record<string, unknown>) => {
-    const { checks: _a, template: _t, version: _v, ...a } = stored;
+    const { checks: _a, template: _t, version: _v, style: _s, ...a } = stored;
     const { checks: _b, template: _u, version: _w, ...b } = pid;
     expect(a).toEqual(b);
   };

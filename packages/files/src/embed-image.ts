@@ -10,8 +10,11 @@
  * null (the caller says the picture was not embedded).
  */
 const EMBEDDABLE = /^image\/(png|jpe?g|webp)$/i;
-/** A source this large is not decoded (a crop is far smaller). */
-export const EMBED_SOURCE_MAX_BYTES = 12 * 1024 * 1024;
+/** Whether a file of this type is one `embeddableJpeg` decodes: a caller
+ *  asks before it reads the bytes. */
+export function isEmbeddableImage(mimeType: string): boolean {
+  return EMBEDDABLE.test(mimeType.split(';')[0]!.trim());
+}
 /** A source past this many pixels is not decoded (a crop is at most about
  *  2000 x 2000). */
 const EMBED_SOURCE_MAX_PIXELS = 25_000_000;
@@ -27,10 +30,12 @@ const STEPS: readonly [number, number][] = [
 export async function embeddableJpeg(
   bytes: Buffer,
   mimeType: string,
-  opts: { maxDim?: number; maxBytes: number },
+  /** `maxSourceBytes`: a larger source is not decoded (the caller's own
+   *  limit, e.g. CROP_LIMITS.sourceBytes). */
+  opts: { maxDim?: number; maxBytes: number; maxSourceBytes: number },
 ): Promise<Buffer | null> {
-  if (!EMBEDDABLE.test(mimeType.split(';')[0]!.trim())) return null;
-  if (!bytes.byteLength || bytes.byteLength > EMBED_SOURCE_MAX_BYTES) return null;
+  if (!isEmbeddableImage(mimeType)) return null;
+  if (!bytes.byteLength || bytes.byteLength > opts.maxSourceBytes) return null;
   try {
     const { createCanvas, loadImage } = await import('@napi-rs/canvas');
     const img = await loadImage(bytes);

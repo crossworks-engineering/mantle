@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser } from 'puppeteer-core';
-import { CANVAS_LIBRARIES, guideFile } from '../builtins-canvas-library';
+import { CANVAS_LIBRARIES, canvasZoomGuide, guideFile } from '../builtins-canvas-library';
 import { findChrome } from './find-chrome';
 
 const ROOT = path.resolve(__dirname, '../../../..');
@@ -148,4 +148,19 @@ describe.skipIf(!chrome || !runtimeBuilt)('canvas_library examples in a real bro
       expect(await colours(r.png, r.mime), `${lib.name} is blank`).toBeGreaterThan(3);
     }, 60_000);
   }
+
+  it('zoom: the guide example renders clean and not blank', async () => {
+    const source = exampleOf(canvasZoomGuide());
+    const css = await buildCanvasCss(source).catch(() => '');
+    const r = await render({
+      ownerId: '00000000-0000-4000-8000-000000000000',
+      canvas: { source, css, meta: readCanvas(source).meta },
+      atSeconds: 2,
+    });
+    expect(r.ok, r.ok ? '' : r.error).toBe(true);
+    if (!r.ok) return;
+    expect(r.consoleErrors, 'zoom console').toEqual([]);
+    expect(r.blocked, 'zoom blocked').toEqual([]);
+    expect(await colours(r.png, r.mime), 'zoom is blank').toBeGreaterThan(1);
+  }, 60_000);
 });

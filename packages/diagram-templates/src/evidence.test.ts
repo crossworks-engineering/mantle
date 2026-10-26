@@ -10,22 +10,30 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import {
+  assetsBlockCount,
   buildCanvas,
+  checkCropIds,
   checkStaticSvg,
   estimateMeasurer,
+  parseCanvasAssets,
   readCanvasAssets,
   render,
   replaceCanvasAssets,
+  safeCropUrl,
   validate,
+  withSealedCanvasAssets,
+  type CanvasCrop,
 } from './index.ts';
 import { mount } from './browser.ts';
-import { safeCropUrl } from './evidence.ts';
 import { ROLE_COLOURS } from './runtime/style.ts';
 
 const CROP_ID = '11111111-2222-4333-8444-555555555555';
 // A 1x1 PNG.
 const CROP =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+/** A made-up seal: the content layer checks real ones (drawing-seal.ts). */
+const SIG = 'a'.repeat(64);
+const SEALED: CanvasCrop = { src: CROP, sig: SIG };
 
 const base = (extra: Record<string, unknown> = {}) => ({
   title: 'Evidence check',
@@ -164,19 +172,26 @@ describe('the canvas carries the crops', () => {
       template: 'pid',
       data: withChecks(2),
       mode: 'import',
-      assets: { crops: { [CROP_ID]: CROP } },
+      assets: { crops: { [CROP_ID]: SEALED } },
     });
-    expect(readCanvasAssets(html)).toEqual({ crops: { [CROP_ID]: CROP } });
+    expect(readCanvasAssets(html)).toEqual({ crops: { [CROP_ID]: SEALED } });
     expect(html.indexOf('id="diagram-assets"')).toBeGreaterThan(html.indexOf('id="diagram-data"'));
     const without = replaceCanvasAssets(html, null);
     expect(without).not.toContain('diagram-assets');
-    expect(replaceCanvasAssets(without, { crops: { [CROP_ID]: CROP } })).toBe(html);
+    expect(replaceCanvasAssets(without, { crops: { [CROP_ID]: SEALED } })).toBe(html);
+    // Every block goes, not only the first.
+    const twice = html.replace(
+      '</body>',
+      `${html.match(/<script type="application\/json" id="diagram-assets">[^<]*<\/script>/)![0]}\n</body>`,
+    );
+    expect(assetsBlockCount(twice)).toEqual({ any: 2, written: 2 });
+    expect(replaceCanvasAssets(twice, null)).not.toContain('diagram-assets');
     // A value that could close the script is escaped.
     const odd = buildCanvas({
       template: 'pid',
       data: base(),
       mode: 'import',
-      assets: { crops: { [CROP_ID]: '</script><b>' } },
+      assets: { crops: { [CROP_ID]: { src: '</script><b>', sig: SIG } } },
     });
     expect(odd).not.toContain('</script><b>');
   });
@@ -188,13 +203,66 @@ describe('the canvas carries the crops', () => {
     expect(safeCropUrl('data:image/png;base64,AAAA"onerror="x')).toBeNull();
     expect(safeCropUrl(`data:image/png;base64,${'A'.repeat(700_000)}`)).toBeNull();
   });
-});
 
-describe('the live canvas opens the evidence', () => {
-  const open = async (crops: Record<string, string>) => {
+  it('one reader: a file id key, a picture the view may show, a seal', () => {
+    const text = JSON.stringify({
+      crops: {
+        [CROP_ID.toUpperCase()]: SEALED,
+        'not-an-id': SEALED,
+        '22222222-2222-4333-8444-555555555555': {
+          src: 'data:image/svg+xml;base64,PHN2Zz4=',
+          sig: SIG,
+        },
+        '33333333-2222-4333-8444-555555555555': { src: CROP },
+        '44444444-2222-4333-8444-555555555555': CROP,
+      },
+    });
+    expect(parseCanvasAssets(text)).toEqual({ crops: { [CROP_ID]: SEALED } });
+    expect(parseCanvasAssets('not json')).toEqual({ crops: {} });
+    expect(parseCanvasAssets(null)).toEqual({ crops: {} });
+  });
+
+  it('a save keeps a crop only when its seal holds and a mark still names it', () => {
+    const OTHER = '99999999-2222-4333-8444-555555555555';
     const html = buildCanvas({
       template: 'pid',
       data: withChecks(2),
+      mode: 'import',
+      assets: { crops: { [CROP_ID]: SEALED, [OTHER]: SEALED } },
+    });
+    expect(checkCropIds(withChecks(2))).toEqual([CROP_ID]);
+    const seen: string[] = [];
+    const holds = (id: string, src: string, sig: string) => {
+      seen.push(id);
+      return src === CROP && sig === SIG;
+    };
+    // OTHER is named by no mark: gone, its seal never asked.
+    const kept = withSealedCanvasAssets(html, holds);
+    expect(readCanvasAssets(kept)).toEqual({ crops: { [CROP_ID]: SEALED } });
+    expect(seen).toEqual([CROP_ID]);
+    // Already honest: byte for byte.
+    expect(withSealedCanvasAssets(kept, holds)).toBe(kept);
+    // A swapped picture under the same seal: dropped.
+    const swapped = kept.replace(CROP, `${CROP.slice(0, -4)}AAA=`);
+    expect(readCanvasAssets(withSealedCanvasAssets(swapped, holds))).toEqual({ crops: {} });
+    expect(withSealedCanvasAssets(swapped, holds)).not.toContain('diagram-assets');
+    // A second block is folded into one.
+    const block = kept.match(
+      /<script type="application\/json" id="diagram-assets">[^<]*<\/script>/,
+    )![0];
+    const twice = kept.replace('</body>', `${block}\n</body>`);
+    expect(assetsBlockCount(withSealedCanvasAssets(twice, holds))).toEqual({ any: 1, written: 1 });
+    // A block written another way is counted, for the save to refuse.
+    const sly = kept.replace('</body>', '<div id=diagram-assets></div></body>');
+    expect(assetsBlockCount(sly)).toEqual({ any: 2, written: 1 });
+  });
+});
+
+describe('the live canvas opens the evidence', () => {
+  const open = async (crops: Record<string, CanvasCrop>, style?: number) => {
+    const html = buildCanvas({
+      template: 'pid',
+      data: withChecks(style),
       mode: 'import',
       assets: { crops },
     }).replace(/<script type="module">[\s\S]*?<\/script>/, '');
@@ -218,7 +286,7 @@ describe('the live canvas opens the evidence', () => {
   };
 
   it('a click shows the crop, the question, the answer and the model; Escape closes', async () => {
-    const { doc, win } = await open({ [CROP_ID]: CROP });
+    const { doc, win } = await open({ [CROP_ID]: SEALED });
     const valve = doc.querySelector('[data-check="inline:L1:0"]')!;
     expect(valve.getAttribute('role')).toBe('button');
     expect(valve.getAttribute('tabindex')).toBe('0');
@@ -251,8 +319,21 @@ describe('the live canvas opens the evidence', () => {
     expect(dialog.querySelector('img')).toBeNull();
   });
 
+  it('style 2: one tab stop per checked item, its badge', async () => {
+    const { doc, win } = await open({ [CROP_ID]: SEALED }, 2);
+    const parts = [...doc.querySelectorAll('[data-check="inline:L1:0"]')];
+    const badge = parts.find((e) => e.getAttribute('data-part') === 'check-badge')!;
+    expect(badge.getAttribute('tabindex')).toBe('0');
+    expect(parts.filter((e) => e.getAttribute('tabindex') === '0')).toEqual([badge]);
+    // The drawn item still opens it on a click.
+    parts.find((e) => e !== badge)!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    expect(doc.querySelector('[role="dialog"] img')!.getAttribute('src')).toBe(CROP);
+  });
+
   it('a bad crop in the assets block is never shown', async () => {
-    const { doc, win } = await open({ [CROP_ID]: 'data:image/svg+xml;base64,PHN2Zz4=' });
+    const { doc, win } = await open({
+      [CROP_ID]: { src: 'data:image/svg+xml;base64,PHN2Zz4=', sig: SIG },
+    });
     doc
       .querySelector('[data-check="inline:L1:0"]')!
       .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));

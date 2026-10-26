@@ -53,8 +53,13 @@ describe('the colour set', () => {
     expect(deadleg.dash).toBeTruthy();
   });
 
-  it('every role has a theme token for a mini app', () => {
-    for (const v of Object.values(ROLE_COLOURS)) expect(THEME_ROLE_COLOURS[v]).toBeTruthy();
+  it('every role has its own theme token for a mini app, no two the same', () => {
+    const tokens = Object.values(ROLE_COLOURS).map((v) => THEME_ROLE_COLOURS[v]);
+    for (const t of tokens) expect(t).toBeTruthy();
+    expect(new Set(tokens).size).toBe(tokens.length);
+    // Each falls back to a different expression too, not only a different name.
+    const fallbacks = tokens.map((t) => /^var\(--diagram-[a-z]+, (.*)\)$/.exec(t!)?.[1]);
+    expect(new Set(fallbacks).size).toBe(tokens.length);
   });
 });
 
@@ -112,9 +117,28 @@ describe('style 2 draws in the colour set', () => {
 
   it('themes the roles for a mini app, and only when used', () => {
     const themed = svgOf(data, { theme: 'tokens' }).svg;
-    expect(themed).toContain(`[stroke="${ROLE_COLOURS.main}"]{stroke:var(--destructive)}`);
+    expect(themed).toContain(
+      `[stroke="${ROLE_COLOURS.main}"]{stroke:var(--diagram-main, var(--destructive))}`,
+    );
     const classic = svgOf(load('test/pid-all-parts.json'), { theme: 'tokens' }).svg;
     expect(classic).not.toContain(ROLE_COLOURS.main);
+  });
+
+  it('a classic drawing whose profile names a role colour keeps it as the author set it', () => {
+    // A circuit coloured with the main line's hex, in a style 1 drawing.
+    const own = {
+      ...data,
+      style: 1,
+      circuits: [{ id: 'C1', colour: ROLE_COLOURS.main, lines: ['L1'] }],
+    };
+    const themed = svgOf(own, { theme: 'tokens' }).svg;
+    expect(themed).toContain(ROLE_COLOURS.main);
+    expect(themed).not.toContain(`[stroke="${ROLE_COLOURS.main}"]{`);
+  });
+
+  it('a themed set of style 2 themes its roles', () => {
+    const r = svgOf({ ...load('test/pid-set.json'), style: 2 }, { theme: 'tokens' });
+    expect(r.pages![0]!.svg + r.svg).toContain('--diagram-');
   });
 });
 

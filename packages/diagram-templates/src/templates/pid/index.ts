@@ -38,6 +38,7 @@ export {
   signImageChecks,
   withoutMarkWords,
   provenanceSealBody,
+  weakestState,
   withImageCheckSummary,
   type PidCheck,
   type PidChecksSummary,

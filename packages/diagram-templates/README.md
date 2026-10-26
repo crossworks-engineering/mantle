@@ -280,8 +280,14 @@ checkedAt, crops, overview }`. Each marked element gets
   crops, guess, question, answer and model (`src/evidence.ts`). The crops
   (file ids) are embedded when the canvas is saved, in an assets block
   beside the data block (`<script type="application/json"
-id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`): the
-  frame loads nothing, and shows only a base64 PNG, JPEG or WebP data URL.
+id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`, one
+  reader `parseCanvasAssets`): the frame loads nothing, and shows only a
+  base64 PNG, JPEG or WebP data URL. Each crop is `{ src, sig }`: the
+  server seals its file id and the sha256 of its bytes (`cropSealPayload`,
+  CROP_SEAL_PURPOSE) when it embeds it, and every save keeps a crop only
+  when that seal holds and a kept mark still names it
+  (`withSealedCanvasAssets`), so an edit can remove a crop, never swap its
+  picture. Every crop limit is in `CROP_LIMITS` (`src/canvas.ts`).
 - **Zoom and pan** (`src/zoom.ts`, `zoomable(target, options)` from
   `@mantle/diagram-templates/browser`): a view of the live SVG through its
   `viewBox`, never the export (`exportSvg`, `exportPageSvg` and a print are
@@ -289,12 +295,18 @@ id="diagram-assets">`, `readCanvasAssets` / `replaceCanvasAssets`): the
   the drawing does not fit the frame at a readable size (it runs past the
   frame's height, or its smallest text would draw under 6 px), judged again
   on resize and page switch; `view: { zoom: true | false }` in the data
-  forces it. Hidden, wheel, drag and keys do nothing. Shown: wheel or
-  pinch, drag, double click, two-finger pinch and drag, the buttons (zoom
-  out, zoom in, fit page, 100%), keys `+` `-` `0` and the arrows once zoomed
-  in past the fit. A page link zooms to its focus and outlines it. A
-  hand-made canvas opts in with one call:
-  `zoomable(document.querySelector('svg'), { mode: 'on' })`.
+  forces it. Hidden, wheel, drag and keys do nothing. Shown: Ctrl (or Cmd)
+  + wheel and a trackpad pinch zoom; a plain wheel pans while zoomed in past
+  the fit and scrolls the page at the fit or at the drawing's edge (a
+  canvas inside a page never traps its reader); drag, double click,
+  two-finger pinch and drag, the buttons (zoom out, zoom in, fit page,
+  100%), keys `+` `-` `0` and the arrows once zoomed in past the fit. A page
+  link zooms to its focus and outlines it. A headless render (the harness
+  sets `RENDER_FLAG` on its pages: a look, a poster, an export picture)
+  never shows it. A hand-made canvas opts in with one call:
+  `zoomable(document.querySelector('svg'), { mode: 'on' })`; the
+  canvas_authoring skill and `canvas_library` `zoom` say how
+  (`ZOOMABLE_HOWTO`, `src/zoom-howto.ts`).
 
 ### Site profile
 

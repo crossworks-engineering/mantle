@@ -14,13 +14,19 @@
  *    on every resize and every refresh (a set's page switch).
  *  - 'on': always; 'off': never.
  * Hidden, it does nothing at all: wheel, drag and keys reach the page as
- * before, so nothing zooms by surprise.
+ * before, so nothing zooms by surprise. A headless render (a look, a
+ * poster, an export picture: the render harness marks its pages, RENDER_FLAG)
+ * is always 'off': the picture is the whole drawing, never the toolbar.
  *
- * Shown: wheel or trackpad pinch zooms about the pointer, drag pans, a
- * double click zooms in (with Shift, out), two fingers pinch and drag; the
- * buttons are zoom out, zoom in, fit page and 100%; keys + and - zoom, 0
- * fits, the arrows pan once zoomed in past the fit (at the fit they are
- * left to the page: a set's arrows still step its pages).
+ * Shown: Ctrl (or Cmd) + wheel and a trackpad pinch (a wheel with ctrlKey)
+ * zoom about the pointer; a plain wheel pans the drawing while it is zoomed
+ * in past the fit, and scrolls the page as before at the fit or once the
+ * view reaches the drawing's edge (so a reader inside a page is never
+ * trapped); drag pans, a double click zooms in (with Shift, out), two
+ * fingers pinch and drag; the buttons are zoom out, zoom in, fit page and
+ * 100%; keys + and - zoom, 0 fits, the arrows pan once zoomed in past the
+ * fit (at the fit they are left to the page: a set's arrows still step its
+ * pages).
  *
  * Inside the canvas sandbox: no network, nothing stored, nothing outside
  * this document touched.
@@ -46,6 +52,20 @@ import {
 } from './runtime/zoom-math.ts';
 
 export type ZoomMode = 'auto' | 'on' | 'off';
+
+/** The global the canvas render harness sets on every page it draws
+ *  (@mantle/tools canvas-render RENDER_INIT, and this package's own
+ *  scripts/render.ts): a headless render, where the zoom stays off. */
+export const RENDER_FLAG = '__mantleRender';
+
+/** Whether this window is a headless render (RENDER_FLAG). */
+export function isHeadlessRender(win: Window | null | undefined): boolean {
+  try {
+    return (win as unknown as Record<string, unknown> | null)?.[RENDER_FLAG] === true;
+  } catch {
+    return false;
+  }
+}
 
 export type ZoomOptions = {
   /** 'auto' (default): only when the drawing does not fit at a readable
@@ -105,6 +125,24 @@ function smallestText(svg: SVGSVGElement): number {
   return Number.isFinite(min) ? min : 12;
 }
 
+/** Where a plain wheel may take the view: on each axis no further out than
+ *  the drawing's edge at the viewport's edge (a view already past it stays,
+ *  and only comes back), and nowhere on an axis the whole drawing already
+ *  shows. When it cannot move, the wheel is the page's. */
+function wheelPan(prev: View, next: View, base: View): View {
+  const axis = (p: number, n: number, size: number, from: number, len: number) => {
+    if (size >= len) return p;
+    const lo = Math.min(from, p);
+    const hi = Math.max(from + len - size, p);
+    return Math.min(hi, Math.max(lo, n));
+  };
+  return {
+    ...next,
+    x: axis(prev.x, next.x, prev.w, base.x, base.w),
+    y: axis(prev.y, next.y, prev.h, base.y, base.h),
+  };
+}
+
 export function zoomable(
   target: HTMLElement | SVGSVGElement,
   options: ZoomOptions = {},
@@ -115,7 +153,8 @@ export function zoomable(
   const container: HTMLElement = isSvg
     ? (target.parentElement as HTMLElement)
     : (target as HTMLElement);
-  const mode = options.mode ?? 'auto';
+  // A render's picture is the whole drawing, whatever the data asks.
+  const mode = isHeadlessRender(win) ? 'off' : (options.mode ?? 'auto');
   const placement = options.controls ?? 'frame';
 
   if (!doc.getElementById(STYLE_ID)) {
@@ -253,22 +292,49 @@ export function zoomable(
   };
 
   // Gestures: each acts only while the controls show.
+  const atFit = () => !view || !base || scaleOf(view, vp) <= scaleOf(fitView(base, vp), vp) * 1.01;
   const onWheel = (e: WheelEvent) => {
-    if (!active || !svg || !svg.contains(e.target as Node)) return;
-    e.preventDefault();
+    if (!active || !svg || !view || !base || !svg.contains(e.target as Node)) return;
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.h : 1;
-    const dy = e.deltaY * unit;
-    // A trackpad pinch arrives as a wheel with ctrlKey and small deltas.
-    const factor = Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.002));
-    const p = local(e);
-    zoomBy(factor, p.x, p.y);
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd + wheel zooms; a trackpad pinch arrives as a wheel with
+      // ctrlKey and small deltas. One event zooms at most one step (a
+      // mouse wheel's tick is a large delta).
+      e.preventDefault();
+      const most = Math.log(ZOOM_STEP);
+      const factor = Math.exp(Math.max(-most, Math.min(most, -e.deltaY * unit * 0.01)));
+      const p = local(e);
+      zoomBy(factor, p.x, p.y);
+      return;
+    }
+    // A plain wheel is the page's at the fit, and once the view cannot move
+    // that way (the drawing's edge): it scrolls the page as before.
+    if (atFit()) return;
+    const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit;
+    const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * unit;
+    const next = wheelPan(view, panBy(view, vp, -dx, -dy), base);
+    if (Math.abs(next.x - view.x) < 1e-6 && Math.abs(next.y - view.y) < 1e-6) return;
+    e.preventDefault();
+    view = next;
+    apply();
   };
   const pointers = new Map<number, { x: number; y: number }>();
   let dragFrom: { x: number; y: number } | null = null;
   let moved = false;
   let pinch: { d: number; mid: { x: number; y: number } } | null = null;
+  /** Forget every pointer: a pointerup the page never saw (released
+   *  outside the frame, a lost capture) must not leave one behind, or the
+   *  next drag would act as a pinch. */
+  const forget = () => {
+    pointers.clear();
+    pinch = null;
+    dragFrom = null;
+    svg?.classList.remove('diagram-dragging');
+  };
   const onDown = (e: PointerEvent) => {
     if (!active || !svg || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    // A new first touch or click starts afresh.
+    if (e.isPrimary) forget();
     pointers.set(e.pointerId, local(e));
     moved = false;
     if (pointers.size === 1) dragFrom = local(e);
@@ -314,6 +380,7 @@ export function zoomable(
     apply();
   };
   const onUp = (e: PointerEvent) => {
+    if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     if (pointers.size === 0) {
@@ -359,7 +426,16 @@ export function zoomable(
     } else return;
     e.preventDefault();
   };
-  const onResize = () => judge(false);
+  // A resize judges again once per frame, not once per event.
+  let resizeFrame = 0;
+  const onResize = () => {
+    if (resizeFrame) return;
+    const raf = win.requestAnimationFrame?.bind(win) ?? ((f: () => void) => win.setTimeout(f, 16));
+    resizeFrame = raf(() => {
+      resizeFrame = 0;
+      judge(false);
+    });
+  };
   // A print is the whole drawing, never the view.
   const onBeforePrint = () => {
     printing = true;
@@ -375,6 +451,8 @@ export function zoomable(
   container.addEventListener('pointermove', onMove);
   container.addEventListener('pointerup', onUp);
   container.addEventListener('pointercancel', onUp);
+  container.addEventListener('lostpointercapture', onUp);
+  container.addEventListener('pointerleave', onUp);
   container.addEventListener('click', onClick, true);
   container.addEventListener('dblclick', onDbl);
   // Capture: before a set's own arrow keys, which then see defaultPrevented.
@@ -427,6 +505,8 @@ export function zoomable(
       container.removeEventListener('pointermove', onMove);
       container.removeEventListener('pointerup', onUp);
       container.removeEventListener('pointercancel', onUp);
+      container.removeEventListener('lostpointercapture', onUp);
+      container.removeEventListener('pointerleave', onUp);
       container.removeEventListener('click', onClick, true);
       container.removeEventListener('dblclick', onDbl);
       doc.removeEventListener('keydown', onKey, true);

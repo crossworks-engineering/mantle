@@ -7929,7 +7929,7 @@
  },
  {
   "name": "canvas_library",
-  "description": "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
+  "description": "Return the guide to one library a Present canvas can import, for the exact version this brain serves: the import line, the core API, what changed from versions you may know, the canvas rules (no network, theme tokens, reduced motion) and one complete example canvas that renders. Call it before writing a canvas that uses that library; plain SVG and JS need none, and `zoom` gives zoom and pan for a big SVG. For a mini app pass `for: 'app'`: the import as an app writes it, the React pattern (mount in an effect, clean up, resize, theme) and one complete App.tsx; a library apps cannot use says why. Reads only; changes nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {

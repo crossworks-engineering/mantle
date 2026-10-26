@@ -20,6 +20,7 @@ import {
   guideVersion,
   resolveCanvasLibrary,
 } from './builtins-canvas-library';
+import { ZOOMABLE_HOWTO } from '@mantle/diagram-templates/zoom-howto';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const GUIDES = path.join(ROOT, 'docs/canvas-libraries');
@@ -80,6 +81,19 @@ describe('the canvas_library tool', () => {
     }
     // The largest reply today is three.js, about 5.5 KB of JSON.
     expect(largest).toBeLessThan(8 * 1024);
+  });
+
+  it("zoom: the skill's own zoomable() section, and a whole canvas that loads", async () => {
+    for (const name of ['zoom', 'zoomable', 'Pan']) {
+      const res = await tool.handler({ name }, ctx);
+      expect(res.ok, name).toBe(true);
+      const out = (res as { output: { library: string; guide: string } }).output;
+      expect(out.library).toBe('zoom');
+      expect(out.guide).toContain(ZOOMABLE_HOWTO);
+      const example = exampleOf(out.guide);
+      expect(canvasLoadProblems(example, CANVAS_MODULE_SPECIFIERS)).toEqual([]);
+      expect(Buffer.byteLength(JSON.stringify(out))).toBeLessThan(8 * 1024);
+    }
   });
 
   it('names the valid libraries for an unknown one', async () => {

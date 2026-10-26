@@ -85,7 +85,7 @@ export function render(
   try {
     // The registry pairs each validate with its own render.
     const out = (t.render as (d: unknown, m: Measurer) => RenderResult)(checked.data, m);
-    if (opts.theme === 'tokens') out.svg = themeSvg(out.svg);
+    if (opts.theme === 'tokens') out.svg = themeSvg(out.svg, styleOf(checked.data));
     return {
       ok: true,
       template,
@@ -105,6 +105,19 @@ export function render(
   }
 }
 
+/** A drawing's style edition (style.ts): its own `style`, or a set's
+ *  highest page's (every page takes the set's); 1 when absent. */
+function styleOf(data: unknown): number {
+  const own = (d: unknown) => {
+    const s = (d as { style?: unknown } | null)?.style;
+    return typeof s === 'number' ? s : 1;
+  };
+  const pages = (data as { pages?: unknown } | null)?.pages;
+  return Array.isArray(pages)
+    ? Math.max(own(data), ...pages.map((p) => own((p as { data?: unknown } | null)?.data)))
+    : own(data);
+}
+
 export function validate(template: string, data: unknown): Checked<unknown> {
   if (!isTemplateName(template)) {
     return { ok: false, errors: [`template: '${template}' is not a template.`], warnings: [] };
@@ -117,19 +130,29 @@ export { THEME_COLOURS, THEME_TEXT_COLOURS, THEME_ATTR } from './runtime/theme.t
 export { estimateMeasurer, domMeasurer, clipText, type Measurer } from './runtime/text.ts';
 export {
   ASSETS_ID,
+  assetsBlockCount,
   buildCanvas,
   canonicalPidCanvas,
   CanvasShapeError,
   claimsPidTemplate,
+  checkCropIds,
+  CROP_LIMITS,
+  CROP_SEAL_PURPOSE,
+  cropSealPayload,
+  parseCanvasAssets,
   readCanvasAssets,
   readCanvasData,
   replaceCanvasAssets,
   replaceCanvasData,
   dataBlockCount,
   canvasDataReadable,
+  safeCropUrl,
   withHonestImageChecks,
+  withSealedCanvasAssets,
   type CanvasAssets,
+  type CanvasCrop,
   type CanvasMode,
+  type CropSealCheck,
 } from './canvas.ts';
 export type { CheckEvidence, PageFailure, RenderResult } from './types.ts';
 export {
@@ -161,6 +184,7 @@ export {
   signImageChecks,
   withoutMarkWords,
   provenanceSealBody,
+  weakestState,
   withImageCheckSummary,
   type PidCheck,
   type PidChecksSummary,
@@ -171,3 +195,5 @@ export {
   type CheckGuessKind,
 } from './templates/pid/index.ts';
 export { pageRef, stackPages, SET_NAV_HEIGHT, type StackPage } from './runtime/pages.ts';
+export { RENDER_FLAG } from './zoom.ts';
+export { ZOOMABLE_HOWTO } from './zoom-howto.ts';

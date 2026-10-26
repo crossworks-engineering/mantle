@@ -51,6 +51,7 @@ import {
   CURRENT_STYLE,
   estimateMeasurer,
   isTemplateName,
+  readCanvasAssets,
   readCanvasData,
   render as renderTemplate,
   replaceCanvasAssets,
@@ -81,7 +82,7 @@ import {
   type CanvasRenderRequest,
   type CanvasRenderResult,
 } from './canvas-render-bridge';
-import { embedCheckCrops, scopedCropRead } from './present-crops';
+import { cropRoom, embedCheckCrops, scopedCropRead } from './present-crops';
 
 const LOOKUP = 'present_list / search_nodes';
 
@@ -757,18 +758,16 @@ const present_create: BuiltinToolDef = {
         ),
       );
       if ('error' in checked) return { ok: false, error: checked.error };
-      // The image check's crops travel inside the canvas (present-crops.ts).
-      const crops =
-        template === 'pid'
-          ? await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId))
-          : { assets: null, notes: [] };
-      cropNotes = crops.notes;
-      source = buildCanvas({
-        template: template as never,
-        data: checked.data,
-        mode: 'import',
-        ...(crops.assets ? { assets: crops.assets } : {}),
-      });
+      source = buildCanvas({ template: template as never, data: checked.data, mode: 'import' });
+      // The image check's crops travel inside the canvas (present-crops.ts),
+      // in the room the canvas cap leaves beside the drawing.
+      if (template === 'pid') {
+        const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
+          room: cropRoom(source),
+        });
+        cropNotes = crops.notes;
+        source = replaceCanvasAssets(source, crops.assets);
+      }
     }
     if (!source.trim()) {
       return {
@@ -880,9 +879,16 @@ const present_update: BuiltinToolDef = {
           if ('error' in checked) return { ok: false, error: checked.error };
           next = replaceCanvasData(cur.source, checked.data);
           if (tpl.template === 'pid') {
-            const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId));
+            // The crops the canvas carries are kept for the ids still named
+            // (their seals hold); only new ids are read, in this caller's
+            // scope.
+            const bare = replaceCanvasAssets(next, null);
+            const crops = await embedCheckCrops(checked.data, scopedCropRead(ctx.ownerId), {
+              room: cropRoom(bare),
+              have: readCanvasAssets(cur.source),
+            });
             cropNotes = crops.notes;
-            next = replaceCanvasAssets(next, crops.assets);
+            next = replaceCanvasAssets(bare, crops.assets);
           }
         } else if (input.edits !== undefined) {
           const edited = applyEdits(cur.source, input.edits);

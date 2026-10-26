@@ -2,6 +2,7 @@
  *  and skills. The single home for these bodies; the manifest references them. */
 import { FONT_LIBRARY } from '@mantle/client-types/display-fonts';
 import { CIRCUIT_DRAWING_STEPS } from '@mantle/tools/circuit-workflow';
+import { ZOOMABLE_HOWTO } from '@mantle/diagram-templates/zoom-howto';
 
 /** The faces a canvas may name, from the Appearance registry (so the skill
  *  never lists a font the frame does not load). */
@@ -1049,7 +1050,7 @@ Bare names, in a \`<script type="module">\`. The brain serves them; there is not
 - \`katex\`: formulas.
 - \`alpinejs\`: tabs, toggles, step-throughs.
 - Plotly (a classic script, no guide): \`<script src="/canvas-runtime/plotly/plotly.min.js"></script>\`, then \`Plotly.newPlot(el, data, layout)\`.
-- \`@mantle/diagram-templates/browser\`: only inside a template canvas, which the tools write for you (below).
+- \`@mantle/diagram-templates/browser\`: a template canvas, which the tools write for you (below), and \`zoomable\` in any canvas (Zoom and pan, below).
 
 ## Look and feel
 
@@ -1088,6 +1089,10 @@ For a P&ID first draft or a boxes-and-arrows process flow, do NOT hand-write SVG
 3. \`present_create\` with the same \`template\` and \`data\` saves the canvas. Change it later with \`present_update\` \`data\` (the whole new data); never edit a template canvas's source.
 
 A circuit drawn from the uploaded P&IDs: its \`pid\` object is the data (add the site profile), its \`register\` input is filled from a site register tool when the brain has one, and every link it marks \`guessed\` stays labelled as a guess in the drawing and the report. Never add a line or a connection the trace did not find. ${CIRCUIT_DRAWING_STEPS}
+
+## Zoom and pan
+
+${ZOOMABLE_HOWTO}
 
 ## Pages, print and shares
 

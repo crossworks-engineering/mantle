@@ -377,6 +377,12 @@ const RANK: Readonly<Record<CheckState, number>> = {
   checked: 4,
 };
 
+/** The weakest state of one item's checks (a line's joins): what its one
+ *  colour and badge show. */
+export function weakestState(checks: readonly { state: CheckState }[]): CheckState {
+  return checks.reduce<CheckState>((w, c) => (RANK[c.state] < RANK[w] ? c.state : w), 'checked');
+}
+
 /**
  * The image check counts of `pid` data (one drawing, or a set: every page,
  * each guess once by its key), counted from the elements' own `check`

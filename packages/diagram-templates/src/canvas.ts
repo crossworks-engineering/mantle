@@ -22,8 +22,11 @@ import { messageOf } from './runtime/validate.ts';
 import { PALETTE } from './runtime/style.ts';
 import { TEMPLATES, isTemplateName, type TemplateName } from './index.ts';
 import {
+  CHECK_LIMITS,
   honestImageChecks,
   imageChecksStale,
+  mapDrawings,
+  mapImageChecks,
   withImageCheckSummary,
   type SealCheck,
 } from './templates/pid/check.ts';
@@ -38,7 +41,44 @@ export const DATA_ID = 'diagram-data';
 /** The assets block: pictures the drawing shows on request (the image
  *  check's crops, by file id), embedded so the frame loads nothing. */
 export const ASSETS_ID = 'diagram-assets';
-export type CanvasAssets = { crops: Record<string, string> };
+/** One embedded crop: its picture (a base64 JPEG, PNG or WebP data URL)
+ *  and the server's seal of it (`cropSealPayload`), which every save checks
+ *  (withSealedCanvasAssets): a picture the server did not embed for that
+ *  file id never reaches the view. */
+export type CanvasCrop = { src: string; sig: string };
+export type CanvasAssets = { crops: Record<string, CanvasCrop> };
+
+/** The one home of the crop limits (CHECK_LIMITS, pid/check.ts, holds the
+ *  rest of the image check's). */
+export const CROP_LIMITS = (() => {
+  const bytes = 90_000;
+  return {
+    /** Crop file ids one check names. */
+    perCheck: CHECK_LIMITS.crops,
+    /** Crops embedded per canvas. */
+    count: 24,
+    /** Crop files a save tries to read, at most (an unreadable or
+     *  non-picture id counts too). */
+    reads: 48,
+    /** One crop, as embedded JPEG bytes. */
+    bytes,
+    /** All crops of one canvas, as JPEG bytes (base64 adds a third). */
+    totalBytes: 480_000,
+    /** A crop file larger than this is not read (a crop is far smaller). */
+    sourceBytes: 12 * 1024 * 1024,
+    /** The longest crop data URL the view shows: one crop in base64. */
+    urlChars: 'data:image/jpeg;base64,'.length + Math.ceil(bytes / 3) * 4,
+  } as const;
+})();
+
+/** The purpose a crop is sealed under (@mantle/content sealPayload). */
+export const CROP_SEAL_PURPOSE = 'canvas-crop v1';
+/** What the server seals of one crop: the file id it was read from and the
+ *  sha256 (hex) of the picture's bytes. Not the canvas: a copied canvas
+ *  keeps its crops. */
+export function cropSealPayload(fileId: string, sha256: string): [string, string] {
+  return [fileId.toLowerCase(), sha256];
+}
 export const RUNTIME_SPECIFIER = '@mantle/diagram-templates/browser';
 
 /** JSON that cannot close its `<script>` tag, and that every parser reads
@@ -477,35 +517,130 @@ function withData(html: string, data: unknown): string {
   return out;
 }
 
-const ASSETS_BLOCK = new RegExp(
-  `<script type="application/json" id="${ASSETS_ID}">[\\s\\S]*?</script>\\n?`,
-);
+/** Every assets block as this package writes it. */
+const ASSETS_BLOCK_SRC = `<script type="application/json" id="${ASSETS_ID}">([\\s\\S]*?)</script>`;
+const ASSETS_BLOCKS = new RegExp(`${ASSETS_BLOCK_SRC}\\n?`, 'g');
 
-/** The canvas's embedded pictures, or none. */
-export function readCanvasAssets(html: string): CanvasAssets {
-  const m = new RegExp(
-    `<script type="application/json" id="${ASSETS_ID}">([\\s\\S]*?)</script>`,
-  ).exec(html);
-  if (!m) return { crops: {} };
-  try {
-    const v = JSON.parse(m[1]!) as { crops?: unknown };
-    const crops: Record<string, string> = {};
-    if (v.crops && typeof v.crops === 'object')
-      for (const [k, u] of Object.entries(v.crops)) if (typeof u === 'string') crops[k] = u;
-    return { crops };
-  } catch {
-    return { crops: {} };
-  }
+/** A crop data URL the view may show, or null: a base64 PNG, JPEG or WebP
+ *  under the size cap, nothing else (no SVG, no markup, no URL). */
+const CROP_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+export function safeCropUrl(v: unknown): string | null {
+  return typeof v === 'string' && v.length <= CROP_LIMITS.urlChars && CROP_URL.test(v) ? v : null;
 }
 
-/** The same canvas with its embedded pictures replaced (none: the block
- *  goes). The block sits right after the data block. */
+/** A file id as the brain writes one (36 hex digits and dashes). */
+const FILE_ID = /^[0-9a-f-]{36}$/i;
+
+/**
+ * An assets block's text, read: each crop keyed by its file id (lower
+ * case), kept only when its id is a file id and its picture one the view
+ * may show (`safeCropUrl`). The one reader: the save (readCanvasAssets,
+ * withSealedCanvasAssets) and the frame (evidence.ts readCrops) both use
+ * it. The seal is read, not checked: a save checks it, the frame trusts
+ * what a save stored.
+ */
+export function parseCanvasAssets(text: string | null | undefined): CanvasAssets {
+  const crops: Record<string, CanvasCrop> = {};
+  if (!text) return { crops };
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { crops };
+  }
+  const raw = (v as { crops?: unknown } | null)?.crops;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { crops };
+  for (const [id, c] of Object.entries(raw as Record<string, unknown>)) {
+    if (!FILE_ID.test(id) || !c || typeof c !== 'object') continue;
+    const src = safeCropUrl((c as { src?: unknown }).src);
+    const sig = (c as { sig?: unknown }).sig;
+    if (src && typeof sig === 'string' && sig.length <= 128) crops[id.toLowerCase()] = { src, sig };
+  }
+  return { crops };
+}
+
+/** The canvas's embedded pictures (its first assets block), or none. */
+export function readCanvasAssets(html: string): CanvasAssets {
+  return parseCanvasAssets(new RegExp(ASSETS_BLOCK_SRC).exec(html)?.[1]);
+}
+
+/** The same canvas with its embedded pictures replaced (none: the blocks
+ *  go, every one). The block sits right after the data block. */
 export function replaceCanvasAssets(html: string, assets: CanvasAssets | null): string {
-  const out = html.replace(ASSETS_BLOCK, '');
+  const out = html.replace(ASSETS_BLOCKS, '');
   const block = assetsBlock(assets);
   if (!block) return out;
   const m = DATA_BLOCK.exec(out);
   if (!m) throw new Error('canvas: no data block to put the assets after');
   const end = m.index + m[0].length;
   return `${out.slice(0, end)}\n${block}${out.slice(end)}`;
+}
+
+/** As `dataBlockCount`, for the assets block: how many elements carry its
+ *  id in any form a browser reads (the same tag reading, `idValues`), and
+ *  how many blocks it holds as this package writes them. A save refuses a
+ *  canvas where they differ (the frame reads the first element with that
+ *  id: one written another way would show pictures no save checked); the
+ *  blocks it can read it rewrites in its own form
+ *  (withSealedCanvasAssets). */
+export function assetsBlockCount(html: string): { any: number; written: number } {
+  const any = idValues(html).filter((v) => {
+    const decoded = decodeRefs(v);
+    if (decoded.toLowerCase() === ASSETS_ID) return true;
+    return v.includes('&') && /diagram/i.test(decoded.replace(/&[A-Za-z][A-Za-z0-9]*;?/g, ''));
+  }).length;
+  const written = html.match(new RegExp(ASSETS_BLOCK_SRC, 'g'));
+  return { any, written: written?.length ?? 0 };
+}
+
+/** Every crop file id the checks in `pid` data name (one drawing or a
+ *  set: a connector's and an inline item's `check.crops`, a line's
+ *  `checks[].crops`), in order, each once, lower case. Only file ids. */
+export function checkCropIds(data: unknown): string[] {
+  const out: string[] = [];
+  const take = (check: unknown) => {
+    const crops = (check as { crops?: unknown } | null)?.crops;
+    if (!Array.isArray(crops)) return;
+    for (const id of crops)
+      if (typeof id === 'string' && FILE_ID.test(id) && !out.includes(id.toLowerCase()))
+        out.push(id.toLowerCase());
+  };
+  mapDrawings(data, (d) => mapImageChecks(d, (c) => (take(c), c)));
+  return out;
+}
+
+/** Whether `sig` is the server's seal of a crop (`cropSealPayload` under
+ *  CROP_SEAL_PURPOSE) for this file id and picture; the content layer
+ *  passes it (it hashes the bytes and holds the key). */
+export type CropSealCheck = (fileId: string, src: string, sig: string) => boolean;
+
+/**
+ * A canvas's assets as a save stores them (@mantle/content honestCanvasSource,
+ * after withHonestImageChecks): every written assets block folded into
+ * one, keeping only crops a surviving mark of the data names (the marks
+ * the save kept: an unsealed claim lost its crops) and whose seal holds.
+ * Byte for byte unchanged when nothing is dropped. The caller refuses a
+ * canvas with an assets block written another way first
+ * (`assetsBlockCount`).
+ */
+export function withSealedCanvasAssets(html: string, holds: CropSealCheck): string {
+  const blocks = [...html.matchAll(new RegExp(ASSETS_BLOCK_SRC, 'g'))];
+  if (!blocks.length) return html;
+  // Crops only a `pid` canvas's marks name (any other canvas keeps none).
+  let data: unknown = null;
+  if (claimsPidTemplate(html)) {
+    try {
+      data = readCanvasData(html);
+    } catch {
+      data = null;
+    }
+  }
+  const named = new Set(checkCropIds(data));
+  const crops: Record<string, CanvasCrop> = {};
+  for (const b of blocks)
+    for (const [id, c] of Object.entries(parseCanvasAssets(b[1]).crops))
+      if (!(id in crops) && named.has(id) && holds(id, c.src, c.sig)) crops[id] = c;
+  const kept: CanvasAssets | null = Object.keys(crops).length ? { crops } : null;
+  if (blocks.length === 1 && blocks[0]![0] === assetsBlock(kept)) return html;
+  return DATA_BLOCK.test(html) ? replaceCanvasAssets(html, kept) : html.replace(ASSETS_BLOCKS, '');
 }
