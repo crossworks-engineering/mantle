@@ -129,7 +129,17 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     await su(sql`update workspace_users set moderator = false
                  where workspace_id = ${admin} and login_id = ${adm2}`);
     // The kind roots a fresh brain makes on the first read of a tree.
-    for (const root of ['files', 'notes', 'pages', 'tasks', 'events', 'tables', 'apps', 'recall']) {
+    for (const root of [
+      'files',
+      'notes',
+      'pages',
+      'tasks',
+      'events',
+      'tables',
+      'apps',
+      'recall',
+      'present',
+    ]) {
       await x(sql`insert into nodes (owner_id, type, title, path)
                   select ${owner}, 'branch', ${root}, ${root}::ltree
                    where not exists (select 1 from nodes where owner_id = ${owner}
@@ -165,6 +175,17 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     ['file_create', (n) => ({ parent_path: 'files', filename: `${n}.md`, content: 'x' }), 'file'],
     ['event_create', (n) => ({ title: n, startsAt: '2026-11-01T10:00:00Z' }), 'event'],
     ['task_create', (n) => ({ title: n }), 'task'],
+    // A Present canvas, a workspace content kind like a page (owner rule
+    // 2026-10-26). No picture: the renderer is outside the test.
+    [
+      'present_create',
+      (n) => ({
+        title: n,
+        source: `<!doctype html><html><head><title>${n}</title></head><body><p>x</p></body></html>`,
+        look: false,
+      }),
+      'present',
+    ],
   ];
 
   it.each(CREATES)('%s from a workspace turn follows the home rule', async (slug, input, type) => {
