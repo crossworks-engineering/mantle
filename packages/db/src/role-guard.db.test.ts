@@ -626,14 +626,20 @@ describe.skipIf(!URL)('mantle_bridge_login demoted only (0330) until 0334 droppe
     const before = await fact();
     expect(before).toMatch(/ true false true false$/);
     expect(before!.split(' ')[1]).toBe(await owner());
-    // The other functions are left as they were.
+    // The other functions are left as they were (a later migration, which
+    // migrateRest runs too, may add its own: only those already here count).
+    const names = (
+      await sql<{ f: string }[]>`
+        select p.oid::regprocedure::text as f from pg_proc p
+         where p.pronamespace = 'public'::regnamespace and p.proname <> 'mantle_bridge_login'`
+    ).map((r) => r.f);
     const others = async () =>
       (
         await sql<{ n: number; h: string }[]>`
           select count(*)::int as n, md5(string_agg(p.oid::regprocedure::text || md5(p.prosrc), ','
                    order by p.oid::regprocedure::text)) as h
             from pg_proc p where p.pronamespace = 'public'::regnamespace
-             and p.proname <> 'mantle_bridge_login'`
+             and p.oid::regprocedure::text = any(${names}::text[])`
       )[0]!;
     const rest = await others();
     await scratch!.migrateRest();
