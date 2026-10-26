@@ -78,6 +78,9 @@ export type A8RouteSpec = {
   /** The allowed request cannot be stood up here, why: the route runs its
    *  refused cells only, and counts in a8Exempt. */
   refusedOnly?: string;
+  /** An allowed write whose change the probe cannot see, why: it passes on
+   *  its success alone. */
+  blind?: string;
 };
 
 const title = (c: A8RouteCtx) => ({ title: `${c.tag} a8 route ${c.id.slice(0, 8)}` });
@@ -481,4 +484,60 @@ export function a8RoutePath(
     if (v === undefined) throw new Error(`a8RoutePath: ${route.pattern} needs :${p}`);
     return encodeURIComponent(v);
   });
+}
+
+/** What a route answered, and what the probes saw around it. */
+export type A8RouteOutcome = { status: number; text: string };
+
+/** A crash, never a refusal (the tool cells' list): a raw database or
+ *  runtime text in a reply. */
+export type A8RouteJudge = {
+  cell: A8RouteCell;
+  spec: A8RouteSpec;
+  out: A8RouteOutcome;
+  /** The item's row (a8_probe: 'gone' once deleted) and its content, and
+   *  the count of the brain's nodes, before and after. */
+  before: { row: string; content: string; nodes: number };
+  after: { row: string; content: string; nodes: number };
+  /** The same request on a random uuid, for a caller that does not read
+   *  the item. */
+  random: { out: A8RouteOutcome; id: string } | null;
+  itemId: string;
+  generic: RegExp;
+};
+
+const normal = (text: string, id: string) => text.split(id).join('<id>');
+
+/** Judge one route cell: null when it passes, else why it fails. */
+export function judgeA8RouteCell(a: A8RouteJudge): string | null {
+  const { cell, spec, out, before, after, random } = a;
+  const allowed = allows(cell.want);
+  const changed =
+    before.row !== after.row || before.content !== after.content || before.nodes !== after.nodes;
+  const ok = out.status >= 200 && out.status < 300;
+  const crash = out.status >= 500 || a.generic.test(out.text);
+  if (!allowed && changed)
+    return `changed, the oracle denies (${out.status} ${out.text.slice(0, 100)})`;
+  if (crash) return `a crash, not a refusal: ${out.status} ${out.text.slice(0, 160)}`;
+  if (allowed) {
+    if (!ok) return `refused, the oracle allows: ${out.status} ${out.text.slice(0, 160)}`;
+    if (cell.action === 'delete' && after.row !== 'gone') return 'answered ok, not deleted';
+    if ((cell.action === 'edit' || cell.action === 'editDraft') && !changed && !spec.blind) {
+      return 'answered ok, nothing changed';
+    }
+    return null;
+  }
+  if (ok)
+    return `answered ${out.status}, the oracle denies (${'why' in cell.want ? cell.want.why : ''})`;
+  if (out.status !== 403 && out.status !== 404) {
+    return `refused with ${out.status}, not 403 or 404: ${out.text.slice(0, 100)}`;
+  }
+  // A caller that does not read the item gets a random uuid's answer.
+  if (random) {
+    const r = random.out;
+    if (r.status !== out.status || normal(r.text, random.id) !== normal(out.text, a.itemId)) {
+      return `not a random uuid's answer: ${out.status} ${out.text.slice(0, 100)} | ${r.status} ${r.text.slice(0, 100)}`;
+    }
+  }
+  return null;
 }
