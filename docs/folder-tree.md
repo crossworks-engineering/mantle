@@ -232,6 +232,20 @@ History: the launcher (`GET /api/member/apps`, and the client launcher
 arch A7, leaving a member's Apps screen a flat card list until apps
 joined the reader kinds.
 
+### Present for members
+
+Present canvases are a reader tree kind too, named with apps
+(`READER_SCREEN_KINDS` in `packages/content/src/tree/kinds.ts`), not by
+flipping the registry's `library` flag, which drives the Library lists.
+A member's shell names `present` in `treeKinds`, and its Present screen
+is the tree: the canvases its row rule reads (the rows `GET
+/api/presents` lists for it) and the folders on the way to them, as for
+apps. A canvas of a workspace the member is not in, or one homed in
+Admin, is absent, and `GET /api/presents/:id` and its frame ticket
+answer 404 for it; a canvas in a folder nobody shared still shows in its
+folder. The frame (`GET /api/presents/:id/frame`) reads the canvas again
+in the ticket's login scope.
+
 ## Sharing a folder (workspaces)
 
 A folder is an item with a home and grants like any other

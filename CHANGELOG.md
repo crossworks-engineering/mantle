@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a member's Apps and Present screens are trees
+
+- **Fix:** apps and Present canvases join the reader tree kinds
+  (`READER_TREE_KINDS`, named explicitly, not by the registry's `library`
+  flag), so a member's `GET /api/shell` names `apps` and `present` in
+  `treeKinds` and the client shows their folder trees instead of a flat
+  list. The trees read the rows the login's row rule reads (the same as
+  `GET /api/apps` and `GET /api/presents`), drafts included, and the
+  folders on the way to them; an item of a workspace the member is not in,
+  or one homed in Admin, stays absent. No route opens anything new: every
+  `/api/tree/:kind` route already answered a member on these kinds.
+- **Internal:** a member's Apps read no longer runs the pre-tree layout
+  move (`backfill:app-nav`), the brain's own housekeeping: it waits for an
+  Admin user's read. The w6a sweep reads `GET /api/tree/apps` as a member
+  and pins its writes (the kind root and its own app marks).
+
 ## Unreleased: the A8 matrix covers the routes
 
 - **Security (tests):** every write route that names its item now runs A8

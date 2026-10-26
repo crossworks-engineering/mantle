@@ -94,7 +94,15 @@ describe('kind lists derived from the registry', () => {
   });
 
   it('READER_TREE_KINDS keeps its order', () => {
-    expect(READER_TREE_KINDS).toEqual(['files', 'notes', 'pages', 'draw', 'tables', 'apps']);
+    expect(READER_TREE_KINDS).toEqual([
+      'files',
+      'notes',
+      'pages',
+      'draw',
+      'tables',
+      'apps',
+      'present',
+    ]);
   });
 
   it('TEAM_PRIVATE_CORPUS_TYPES and TEAM_NEVER_TYPES', () => {

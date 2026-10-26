@@ -61,6 +61,15 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
+// A canvas frame's document needs the built canvas runtime, which a test
+// clone lacks: the frame answers the canvas it read, as is (the canvas
+// cell asks which canvas the frame reads, not how it renders).
+vi.mock('../lib/canvas-frame', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/canvas-frame')>()),
+  renderCanvasFrame: async (_req: Request, _ownerId: string, canvas: { source: string }) =>
+    new Response(canvas.source, { status: 200, headers: { 'content-type': 'text/html' } }),
+}));
+
 // The object store (RustFS) is outside this box's test: an app build puts
 // its bundle there. Content-addressed keys, nothing kept (A0 fix round 2,
 // M-3: the member sweep runs the build route on a real app).
@@ -1013,6 +1022,66 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(o.status, o.text.slice(0, 200)).toBe(200);
     noteWrites('admin', 'GET /api/tree/apps', o.writes);
     expect(typeof (await rootData()).appNavMigratedAt).toBe('string');
+  });
+
+  it('a member’s canvases: its Present tree, frame ticket and frame read its own row rule', async () => {
+    // A canvas of Team (the member's), one of Side (mem2's only) and one
+    // homed in Admin. Through the real routes as the member: the tree and
+    // the list show the Team canvas only; GET by id, the frame ticket and
+    // the frame answer the Team canvas and 404 the others; a ticket of one
+    // canvas opens no other.
+    const canvas = { team: randomUUID(), side: randomUUID(), admin: randomUUID() };
+    for (const [key, id] of Object.entries(canvas)) {
+      await x(sql`insert into nodes (id, owner_id, type, title, path)
+                  values (${id}, ${owner}, 'present', ${`${tag} ${key} canvas`}, 'present')`);
+      await x(sql`insert into presents (node_id, source, meta)
+                  values (${id}, '<div>w6a</div>', '{}'::jsonb)`);
+    }
+    await alsoIn(canvas.team, team);
+    await homeIn(canvas.side, side);
+    const note = (key: string, r: { writes: readonly string[] }) =>
+      noteWrites('member', key, r.writes);
+
+    const treeRead = await call('/api/tree/present', mem);
+    note('GET /api/tree/:kind', treeRead);
+    expect(treeRead.status, treeRead.text.slice(0, 200)).toBe(200);
+    expect(treeRead.outcome?.kind).toBe('user');
+    const list = await call('/api/presents', mem);
+    note('GET /api/presents', list);
+    expect(list.status, list.text.slice(0, 200)).toBe(200);
+    for (const r of [treeRead, list]) {
+      expect(r.text).toContain(canvas.team);
+      expect(r.text).not.toContain(canvas.side);
+      expect(r.text).not.toContain(canvas.admin);
+    }
+
+    const get = async (id: string) => {
+      const r = await call(`/api/presents/${id}`, mem);
+      note('GET /api/presents/:id', r);
+      return r.status;
+    };
+    const ticket = async (id: string) => {
+      const r = await call(`/api/presents/${id}/frame-ticket`, mem, 'POST', {});
+      note('POST /api/presents/:id/frame-ticket', r);
+      return r;
+    };
+    expect(await get(canvas.team)).toBe(200);
+    expect(await get(canvas.side)).toBe(404);
+    expect(await get(canvas.admin)).toBe(404);
+    const own = await ticket(canvas.team);
+    expect(own.status, own.text.slice(0, 200)).toBe(200);
+    expect((await ticket(canvas.side)).status).toBe(404);
+    expect((await ticket(canvas.admin)).status).toBe(404);
+
+    const t = encodeURIComponent((JSON.parse(own.text) as { ticket: string }).ticket);
+    const frame = await call(`/api/presents/${canvas.team}/frame?t=${t}`, null);
+    expect(frame.status, frame.text.slice(0, 200)).toBe(200);
+    expect(frame.text).toContain('w6a');
+    for (const other of [canvas.side, canvas.admin]) {
+      const r = await call(`/api/presents/${other}/frame?t=${t}`, null);
+      expect(r.status, `${other} ${r.text.slice(0, 120)}`).toBe(401);
+      expect(r.text).not.toContain('w6a');
+    }
   });
 
   it('L2: the system-pool writes of request scopes are the pinned list', () => {
