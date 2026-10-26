@@ -14,9 +14,22 @@
  *  - a login that does not read the canvas gets 404 and writes nothing;
  *  - the caps: a value over 64 KB is a 400; past the canvas's 1 MB, or a
  *    login's own 200 entries, a new key is a 413 (a replace of an existing
- *    key still fits);
+ *    key still fits); every login's `mine` together stops at 75% of the
+ *    canvas, and `shared` still has room; N parallel writes never pass a
+ *    cap (the definer's lock);
+ *  - a canvas deleted while writes run: each write is a 200 or a clean 404,
+ *    never a 500;
+ *  - moderation: a user with Write removes another login's `mine` entry and
+ *    clears the canvas's data; a plain reader may do neither;
+ *  - a `shared` entry names its writer to every reader, by login id only to
+ *    a user with Write;
+ *  - an Admin user (the owner) writes through the same definer;
  *  - a data write never changes the canvas (its rev and source stay);
  *  - an agent reads the store with present_get `data`, with the same rights.
+ *
+ * The writes are the store's two definers (0335), run in the login's own
+ * scope; fixtures that seed rows past the caps write as the superuser (the
+ * runtime role only reads the table).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/canvas-data-rights.db.test.ts
  */
@@ -100,6 +113,14 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
     x<{ bucket: string; key: string; login_id: string | null }>(sql`
       select bucket, key, login_id::text as login_id from canvas_data
        where node_id = ${id} order by bucket, key, login_id`);
+  const count = async (id: string, extra = sql``) =>
+    Number(
+      (
+        await x<{ n: string }>(
+          sql`select count(*)::text as n from canvas_data where node_id = ${id} ${extra}`,
+        )
+      )[0]!.n,
+    );
 
   const builtin = (slug: string) =>
     ({
@@ -270,7 +291,7 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
 
   it('keeps the caps: a login’s own 200 entries, the canvas’s 1 MB', async () => {
     const id = await canvasIn(ws.w, 'caps', true);
-    await x(sql`insert into canvas_data (node_id, bucket, key, login_id, value, bytes, updated_by)
+    await su(sql`insert into canvas_data (node_id, bucket, key, login_id, value, bytes, updated_by)
       select ${id}::uuid, 'mine', 'k' || g, ${user}::uuid, '1'::jsonb, 1, ${user}::uuid
         from generate_series(1, 200) g`);
     expect((await put(user, id, 'mine', 'k201', 1)).status).toBe(413);
@@ -278,11 +299,109 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
     // Another login still has room of its own.
     expect((await put(mod, id, 'mine', 'k1', 1)).status).toBe(200);
 
-    await x(sql`insert into canvas_data (node_id, bucket, key, value, bytes, updated_by)
+    await su(sql`insert into canvas_data (node_id, bucket, key, value, bytes, updated_by)
       values (${id}::uuid, 'shared', 'big', '"x"'::jsonb, ${1024 * 1024 - 300}, ${mod}::uuid)`);
     const full = await put(mod, id, 'shared', 'more', 'x'.repeat(400));
     expect(full.status, full.text).toBe(413);
     expect((await rows(id)).some((r) => r.key === 'more')).toBe(false);
+  });
+
+  it("every login's mine entries together stop at 75% of the canvas; shared keeps its quarter", async () => {
+    const id = await canvasIn(ws.w, 'mine all', false);
+    // Other logins' entries, 768 KB less 100 bytes (seeded past the
+    // per-login cap: only the sum matters here).
+    await su(sql`insert into canvas_data (node_id, bucket, key, login_id, value, bytes, updated_by)
+      values (${id}::uuid, 'mine', 'bulk', ${mod}::uuid, '1'::jsonb, ${768 * 1024 - 100}, ${mod}::uuid)`);
+    const reader = await put(user, id, 'mine', 'idea', 'x'.repeat(400));
+    expect(reader.status, reader.text).toBe(413);
+    // A small one still fits under the 75%.
+    expect((await put(user, id, 'mine', 'tiny', 'x')).status).toBe(200);
+    // Shared has the rest of the canvas.
+    const shared = await put(mod, id, 'shared', 'layout', 'x'.repeat(60 * 1024));
+    expect(shared.status, shared.text).toBe(200);
+  });
+
+  it('N parallel writes never pass a cap', async () => {
+    const id = await canvasIn(ws.w, 'parallel', false);
+    await su(sql`insert into canvas_data (node_id, bucket, key, login_id, value, bytes, updated_by)
+      select ${id}::uuid, 'mine', 'k' || g, ${user}::uuid, '1'::jsonb, 1, ${user}::uuid
+        from generate_series(1, 195) g`);
+    const res = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => put(user, id, 'mine', `new${i}`, i)),
+    );
+    const codes = res.map((r) => r.status);
+    expect(
+      codes.filter((c) => c === 200),
+      JSON.stringify(codes),
+    ).toHaveLength(5);
+    expect(codes.filter((c) => c === 413)).toHaveLength(15);
+    expect(await count(id, sql`and login_id = ${user}::uuid`)).toBe(200);
+  });
+
+  it('a canvas deleted while writes run: a 200 or a clean 404, never a 500', async () => {
+    const id = await canvasIn(ws.w, 'deleted', true);
+    const writes = Array.from({ length: 12 }, (_, i) => put(mod, id, 'shared', `k${i}`, i));
+    const gone = route(mod, 'DELETE', `/api/presents/${id}`);
+    const res = await Promise.all([...writes, gone]);
+    expect(res.at(-1)!.status, res.at(-1)!.text).toBe(200);
+    for (const r of res.slice(0, -1)) expect([200, 404], r.text).toContain(r.status);
+    expect((await put(mod, id, 'shared', 'after', 1)).status).toBe(404);
+    expect((await put(user, id, 'mine', 'after', 1)).status).toBe(404);
+    expect(await count(id)).toBe(0);
+  });
+
+  it("moderation: Write removes another login's mine entry and clears; a plain reader may not", async () => {
+    const id = await canvasIn(ws.w, 'moderation', false);
+    expect((await put(user, id, 'mine', 'idea', 'spam')).status).toBe(200);
+    expect((await put(mod, id, 'mine', 'idea', 'keep')).status).toBe(200);
+    expect((await put(mod, id, 'shared', 'layout', 1)).status).toBe(200);
+
+    // A plain reader: not another login's entry, not a clear.
+    const notTheirs = await route(user, 'DELETE', `${base(id)}?bucket=mine&key=idea&by=${mod}`);
+    expect(notTheirs.status, notTheirs.text).toBe(403);
+    const noClear = await route(user, 'DELETE', `${base(id)}?all=1`);
+    expect(noClear.status, noClear.text).toBe(403);
+    expect(await count(id)).toBe(3);
+    // Its own entry by its own id is a plain delete.
+    expect((await put(user, id, 'mine', 'mine2', 1)).status).toBe(200);
+    const ownBy = await route(user, 'DELETE', `${base(id)}?bucket=mine&key=mine2&by=${user}`);
+    expect(ownBy.json).toEqual({ ok: true, deleted: true });
+
+    // The Moderator removes the reader's entry, then clears everything.
+    const removed = await route(mod, 'DELETE', `${base(id)}?bucket=mine&key=idea&by=${user}`);
+    expect(removed.json).toEqual({ ok: true, deleted: true });
+    expect((await rows(id)).map((r) => `${r.bucket}:${r.key}:${r.login_id}`)).toEqual([
+      `mine:idea:${mod}`,
+      'shared:layout:null',
+    ]);
+    const bad = await route(mod, 'DELETE', `${base(id)}?all=1&bucket=mine`);
+    expect(bad.status).toBe(400);
+    const cleared = await route(mod, 'DELETE', `${base(id)}?all=1`);
+    expect(cleared.json).toEqual({ ok: true, removed: 2 });
+    expect(await count(id)).toBe(0);
+  });
+
+  it("a shared entry's writer: by name to every reader, by login id to Write only", async () => {
+    const id = await canvasIn(ws.w, 'by', false);
+    expect((await put(mod, id, 'shared', 'marks', [1])).status).toBe(200);
+    const plain = await route(user, 'GET', `${base(id)}?bucket=shared`);
+    expect(plain.json.entries).toEqual([
+      expect.objectContaining({ key: 'marks', by: { name: 'Mod' } }),
+    ]);
+    const one = await route(user, 'GET', `${base(id)}?bucket=shared&key=marks`);
+    expect((one.json.entry as { by: unknown }).by).toEqual({ name: 'Mod' });
+    const writer = await route(mod, 'GET', `${base(id)}?bucket=shared`);
+    expect(writer.json.entries).toEqual([
+      expect.objectContaining({ key: 'marks', by: { id: mod, name: 'Mod' } }),
+    ]);
+  });
+
+  it('an Admin user writes through the same definer', async () => {
+    const r = await put(owner, cv.write, 'shared', 'owner-note', { by: 'owner' });
+    expect(r.status, r.text).toBe(200);
+    const mine = await put(owner, cv.write, 'mine', 'owner-vote', 1);
+    expect(mine.status, mine.text).toBe(200);
+    expect(await count(cv.write, sql`and login_id = ${owner}::uuid`)).toBe(1);
   });
 
   it('a data write never changes the canvas', async () => {

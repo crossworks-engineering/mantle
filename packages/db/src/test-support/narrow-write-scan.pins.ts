@@ -67,16 +67,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: "saveAppPins: only PUT /api/app-nav/pins, a content route: the login's own request scope (the login write gateway)",
   },
-  'packages/content/src/canvas-data.ts delete public.canvas_data': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: "deleteCanvasData: only DELETE /api/presents/:id/data, a content route: the login's own request scope (the login write gateway)",
-  },
-  'packages/content/src/canvas-data.ts insert public.canvas_data': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: "setCanvasData: only PUT /api/presents/:id/data, a content route: the login's own request scope (the login write gateway)",
-  },
   'packages/content/src/contact-share-codes.ts insert public.share_access_log': {
     n: 1,
     tag: 'covered-across-files',
@@ -517,6 +507,10 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_trash_act:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
+  mantle_canvas_data_delete:
+    "the write role's (WRITE_ROLE_FUNCTIONS): a canvas's data removed in the login's own scope (DELETE /api/presents/:id/data, a content route), never a narrow statement; on the narrow role the identity readers answer no login, so it refuses",
+  mantle_canvas_data_put:
+    "the write role's (WRITE_ROLE_FUNCTIONS): a canvas's data saved in the login's own scope (PUT /api/presents/:id/data, a content route), never a narrow statement; on the narrow role the identity readers answer no login, so it refuses",
   mantle_check_note:
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_client_sourced_among:
@@ -726,6 +720,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/admin-acts.ts mantle_share_with_contacts': 1,
   'packages/content/src/app-table-exports.ts mantle_mark_export_client_sourced': 1,
   'packages/content/src/app-trash.ts mantle_deleted_apps': 1,
+  'packages/content/src/canvas-data.ts mantle_canvas_data_delete': 1,
+  'packages/content/src/canvas-data.ts mantle_canvas_data_put': 1,
   'packages/content/src/contact-share-codes.ts mantle_contact_sharing_rows': 1,
   'packages/content/src/contact-shares.ts mantle_contact_shares_revoke_rows': 1,
   'packages/content/src/contact-shares.ts mantle_share_with_contacts_rows': 1,

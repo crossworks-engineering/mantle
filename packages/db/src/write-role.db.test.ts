@@ -268,6 +268,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_ws_set_landing(uuid,uuid,uuid)']!,
   'mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)':
     WRITE_ROLE_FUNCTIONS['public.mantle_tg_chat_set(uuid,uuid,uuid,text,uuid)']!,
+  'mantle_canvas_data_put(uuid,text,text,text)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_canvas_data_put(uuid,text,text,text)']!,
+  'mantle_canvas_data_delete(uuid,text,text,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_canvas_data_delete(uuid,text,text,uuid)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

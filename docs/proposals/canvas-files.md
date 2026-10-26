@@ -943,29 +943,50 @@ save with a look drew) and opens the canvas itself.
 A canvas runs with no network, no cookies and no storage, so it could not
 keep anything a viewer adds. Phase 7a gives it a small store, brain side,
 with no SDK: the frame's prelude defines `window.mantle.data` (`get`, `set`,
-`delete`, `list`, `info`), each a promise.
+`delete`, `list`, `info`, `clear`), each a promise.
 
-- **Transport.** The frame posts `{v:1, kind:'data', id, op, bucket, key,
-  json, everyone}` to its parent, only after `ready` (the parent takes
-  nothing before the nonce proof). The parent (share-ui CanvasSandbox, with
-  canvas-data-bridge.ts) takes it only from its own frame (`e.source`),
-  checks every field, and forwards it to this canvas's own API
-  (`/api/presents/:id/data`) with its own credential. The message names no
-  canvas and no login; the canvas never holds a token. A canvas that never
-  calls it sends nothing. With no parent (a render, the poster, an export)
-  reads answer empty and writes refuse.
+- **Transport.** The frame posts `{v:1, kind:'data', n, id, op, bucket,
+  key, json, everyone, by}` to its parent, only after `ready` (the parent
+  takes nothing before the nonce proof). `n` is the proof's nonce again,
+  held in the prelude's closure: the parent (share-ui CanvasSandbox, with
+  canvas-data-bridge.ts) takes a data message only from its own frame
+  (`e.source`), after the proof, and only with that nonce, so a page the
+  frame navigated to (the same window) sends nothing it takes. The served
+  document also says `leaving` (with the nonce) as it unloads, and the
+  parent takes the frame down then, before the next page runs. The parent
+  checks every field and forwards the call to this canvas's own API
+  (`/api/presents/:id/data`) with its own credential, at most 8 at once and
+  30 s each. The message names no canvas and no login; the canvas never
+  holds a token. A canvas that never calls it sends nothing. With no parent
+  (a render, the poster, an export) reads answer empty and writes refuse.
 - **Storage.** `canvas_data` (migration 0335): one row per (canvas, key) in
   `shared`, per (canvas, login, key) in `mine`; jsonb values, at most 64 KB
-  each, 1 MB and 1000 entries per canvas, 256 KB and 200 entries per login
-  in `mine` (@mantle/content-core/canvas-data). Never a canvas revision:
-  nothing touches `presents`.
+  each and 64 levels deep, 1 MB and 1000 entries per canvas, every login's
+  `mine` together at most 75% of that (so `shared` always keeps a quarter),
+  256 KB and 200 entries per login in `mine`
+  (@mantle/content-core/canvas-data). Never a canvas revision: nothing
+  touches `presents`.
 - **Rights.** The canvas's own. `shared`: every reader reads; writing asks
   Write on the canvas (the right a source save asks). `mine`: every reader
   writes and reads their own entries; a user with Write on the canvas (its
-  Moderators and Write grants; the owner) lists everyone's. A read-only
-  copy is never written. Reads run in the caller's scope under the row
-  rule; writes run on the system pool after the content layer's checks
-  (packages/content/src/canvas-data.ts), as item_marks.
+  Moderators and Write grants; the owner) lists everyone's, removes any of
+  them, and may clear the canvas's data (moderation). A `shared` entry
+  names its writer (`by.name`) to every reader, and gives the writer's
+  login id (`by.id`) only to a user with Write. A read-only copy is never
+  written. Reads run in the caller's scope under the row rule. Writes are
+  two SECURITY DEFINER functions (mantle_canvas_data_put and
+  mantle_canvas_data_delete), called in the login's own scope
+  (packages/content/src/canvas-data.ts): they take the login from the
+  scope, check the canvas's rights and the caps under an advisory lock on
+  the canvas, and hold the canvas row against a delete until they commit.
+  No role writes the table itself.
+- **Accepted risk: a hostile canvas source.** A user with Write on the
+  canvas can change its source, and that source can read the store (every
+  reader's view of it, as each opens the canvas) and navigate its frame out
+  with what it read in the URL. Write already reads everything this store
+  holds (it lists everyone's `mine`), and the host's `frame-src` blocks a
+  navigation off the brain; the rest (another page of the brain's own
+  origin) is the same exposure as any canvas Write can author (5.3).
 - **Agents.** `present_get` with `data: true` returns `shared`, the user's
   own `mine` and, with Write, `everyone`. The canvas_authoring skill and
   canvas_library `data` (what an MCP client reads) carry one text
