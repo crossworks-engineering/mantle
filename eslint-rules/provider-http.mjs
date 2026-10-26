@@ -30,6 +30,8 @@ export const INLINE_TIMEOUT_ALLOWED = {
   'packages/std/src/http.ts': 'timeoutSignal itself: the one place the platform deadline is made',
   'scripts/status.mjs':
     'a dependency-free CLI the operator runs from a bare checkout; it cannot import the workspace packages',
+  'packages/share-ui/src/canvas-sandbox.tsx':
+    'a published browser package that may depend only on client-types and content-core: the deadline of a forwarded canvas data call, named there (CANVAS_DATA_CALL_TIMEOUT_MS)',
 };
 
 /** @type {AllowList} */

@@ -249,7 +249,10 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     const reply = (source: unknown, data: unknown) => {
       for (const f of handlers.message ?? []) f({ source, data });
     };
-    return { api, toParent, load, reply, parent };
+    const pagehide = () => {
+      for (const f of handlers.pagehide ?? []) f({});
+    };
+    return { api, toParent, load, reply, parent, pagehide };
   }
 
   it('holds every call until ready has gone, and names no canvas and no login', async () => {
@@ -264,32 +267,38 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       {
         v: 1,
         kind: 'data',
+        n: 'n1',
         id: 1,
         op: 'get',
         bucket: 'shared',
         key: 'marks',
         json: undefined,
         everyone: undefined,
+        by: undefined,
       },
       {
         v: 1,
         kind: 'data',
+        n: 'n1',
         id: 2,
         op: 'set',
         bucket: 'mine',
         key: 'marks',
         json: '{"a":[1,2]}',
         everyone: undefined,
+        by: undefined,
       },
     ]);
     for (const c of calls) {
       expect(Object.keys(c).sort()).toEqual([
         'bucket',
+        'by',
         'everyone',
         'id',
         'json',
         'key',
         'kind',
+        'n',
         'op',
         'v',
       ]);
@@ -311,6 +320,35 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     await expect(saved).rejects.toThrow('no right');
   });
 
+  it('sends a moderation delete and a clear, each with the nonce', async () => {
+    const f = frame('n3');
+    f.load();
+    const by = '00000000-0000-4000-8000-000000000001';
+    const del = f.api.delete!('vote', { bucket: 'mine', by });
+    const clr = f.api.clear!();
+    const calls = f.toParent.filter((m) => m.kind === 'data');
+    expect(calls).toMatchObject([
+      { n: 'n3', op: 'delete', bucket: 'mine', key: 'vote', by },
+      { n: 'n3', op: 'clear' },
+    ]);
+    f.reply(f.parent, { v: 1, kind: 'data-reply', id: 1, ok: true, result: { deleted: true } });
+    f.reply(f.parent, { v: 1, kind: 'data-reply', id: 2, ok: true, result: { removed: 4 } });
+    await expect(del).resolves.toBe(true);
+    await expect(clr).resolves.toBe(4);
+  });
+
+  it('says leaving, with the nonce, as the document unloads', () => {
+    const f = frame('n4');
+    f.load();
+    f.pagehide();
+    expect(f.toParent.at(-1)).toEqual({ v: 1, kind: 'leaving', n: 'n4' });
+    // A render (no nonce) says nothing.
+    const r = frame('');
+    r.load();
+    r.pagehide();
+    expect(r.toParent.filter((m) => m.kind === 'leaving')).toEqual([]);
+  });
+
   it('refuses a value that is not JSON without sending it', async () => {
     const f = frame('n2');
     f.load();
@@ -326,6 +364,7 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     await expect(f.api.list!()).resolves.toEqual([]);
     await expect(f.api.info!()).resolves.toMatchObject({ canWriteShared: false, readOnly: true });
     await expect(f.api.set!('k', 1)).rejects.toThrow('picture');
+    await expect(f.api.clear!()).rejects.toThrow('picture');
     expect(f.toParent.filter((m) => m.kind === 'data')).toEqual([]);
   });
 });

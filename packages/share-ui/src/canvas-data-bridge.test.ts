@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANVAS_DATA_VALUE_MAX_BYTES } from '@mantle/content-core/canvas-data';
-import { canvasDataReply, readCanvasDataMessage } from './canvas-data-bridge';
+import { acceptsDataMessage, canvasDataReply, readCanvasDataMessage } from './canvas-data-bridge';
 
 const ok = (m: unknown) => {
   const r = readCanvasDataMessage(m);
@@ -88,6 +88,77 @@ describe('the host reads a frame data message as hostile', () => {
     expect(ok({ id: 1, op: 'set', bucket: 'shared', key: 'k', json: ' { "a" : 1 } ' }).body).toBe(
       '{"bucket":"shared","key":"k","value":{"a":1}}',
     );
+  });
+});
+
+describe('the host takes a data message only from the proven document of this load', () => {
+  const state = { proven: true, nonce: 'abc123' };
+  const msg = { v: 1, kind: 'data', id: 1, op: 'info' };
+
+  it('takes one with the nonce', () => {
+    expect(acceptsDataMessage({ ...msg, n: 'abc123' }, state)).toBe(true);
+  });
+
+  it('ignores the right shape with no nonce, a wrong one, or one of another type', () => {
+    for (const n of [
+      undefined,
+      null,
+      '',
+      'abc124',
+      'ABC123',
+      ['abc123'],
+      { toString: () => 'abc123' },
+    ]) {
+      expect(acceptsDataMessage({ ...msg, n }, state), String(n)).toBe(false);
+    }
+  });
+
+  it('ignores every message before the proof, after a take-down, or with no nonce to hold', () => {
+    expect(acceptsDataMessage({ ...msg, n: 'abc123' }, { proven: false, nonce: 'abc123' })).toBe(
+      false,
+    );
+    expect(acceptsDataMessage({ ...msg, n: null }, { proven: true, nonce: null })).toBe(false);
+    expect(acceptsDataMessage({ ...msg, n: '' }, { proven: true, nonce: '' })).toBe(false);
+    expect(acceptsDataMessage(null, state)).toBe(false);
+  });
+});
+
+describe('moderation and clear', () => {
+  const by = '00000000-0000-4000-8000-000000000001';
+  it("removes another viewer's mine entry by its id, and clears with all=1", () => {
+    expect(ok({ id: 1, op: 'delete', bucket: 'mine', key: 'v', by })).toMatchObject({
+      method: 'DELETE',
+      path: `/data?bucket=mine&key=v&by=${by}`,
+    });
+    expect(ok({ id: 1, op: 'delete', bucket: 'mine', key: 'v', by: null }).path).toBe(
+      '/data?bucket=mine&key=v',
+    );
+    expect(ok({ id: 1, op: 'clear', bucket: 'x', key: '../', by: 'y' })).toEqual({
+      id: 1,
+      op: 'clear',
+      method: 'DELETE',
+      path: '/data?all=1',
+    });
+  });
+
+  it('refuses a by that is not a login id, or on shared', () => {
+    for (const bad of [
+      'me',
+      `${by}&all=1`,
+      'ABCDEF00-0000-4000-8000-000000000001',
+      7,
+      { id: by },
+    ]) {
+      expect(no({ id: 1, op: 'delete', bucket: 'mine', key: 'v', by: bad }).error).toMatch(/by/);
+    }
+    expect(no({ id: 1, op: 'delete', bucket: 'shared', key: 'v', by }).error).toMatch(/by/);
+  });
+
+  it('passes what clear returns', () => {
+    expect(canvasDataReply('clear', 200, { removed: 3 })).toEqual({
+      ok: true,
+      result: { removed: 3 },
+    });
   });
 });
 
