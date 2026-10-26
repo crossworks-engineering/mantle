@@ -117,14 +117,14 @@ export type WorkspaceDetailResponse = {
    *  or removed, only cloned to use elsewhere. */
   hasHistory: boolean;
   /** The workspace's landing page (task d78e7bde): its home app, or null
-   *  for the Built-in home. Absent from an older brain. */
+   *  for the built-in Desk. Absent from an older brain. */
   landingApp?: WorkspaceLandingApp | null;
 };
 
 /**
  * A workspace's home app, as its screen shows it. `held`: the workspace
  * still holds the app; false is a pointer left from before (the landing
- * page shows the Built-in home), with no id or title: only a clear
+ * page shows the built-in Desk), with no id or title: only a clear
  * (`landingAppId: null`) makes sense then. `appId` and `title` are named
  * only to a user of the workspace (an Admin user outside it gets null for
  * both). `ready`: a green published build, so the landing page shows it.
@@ -145,7 +145,7 @@ export type WorkspaceLandingApp = {
  *  user (assistant: area 'assistants'). The landing page (`landingAppId`): a Moderator of this
  *  workspace only, to an app the workspace holds with a green published
  *  build (409 `landing_app_not_held` or `landing_app_not_ready`). `null`
- *  clears (the Built-in home). Answers the updated Workspace. */
+ *  clears (the built-in Desk). Answers the updated Workspace. */
 export type WorkspacePatchBody = {
   name?: string;
   description?: string;

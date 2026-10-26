@@ -4,10 +4,10 @@
  * is its current pick. GET /api/home?ws=<id> answers it for every login;
  * GET /api/member/home answers the Team workspace's for an older app.
  *
- * The landing page is the Built-in home, showing that workspace's data,
+ * The landing page is the built-in Desk, showing that workspace's data,
  * unless the workspace names a home app (workspaces.landing_app_id, set on
  * the workspace screen by a Moderator, lib/workspaces.ts). Without a
- * workspace it is "All my workspaces": the Built-in home over every
+ * workspace it is "All my workspaces": the built-in Desk over every
  * workspace of the login, never a home app.
  *
  * Every read runs in the login's scope (withViewer: the row rules show what
