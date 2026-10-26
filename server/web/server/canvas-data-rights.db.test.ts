@@ -236,8 +236,8 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
     // The row rule alone: the plain user's scope sees no other login's entry.
     const seen = await m.withTurnScope(
       { kind: 'assistant', loginId: user, ws: [ws.w], modWs: [] },
-      () =>
-        m.db.execute(sql`select login_id::text as l from canvas_data
+      async () =>
+        await m.db.execute(sql`select login_id::text as l from canvas_data
           where node_id = ${cv.noWrite} and bucket = 'mine'`),
     );
     expect((seen as unknown as { l: string }[]).map((r) => r.l)).toEqual([user]);
@@ -397,6 +397,9 @@ describe.skipIf(!URL)('the canvas data store follows the canvas rights', () => {
   });
 
   it('an Admin user writes through the same definer', async () => {
+    // The owner is an Admin user; a user of W too, so its scope reads the canvas.
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.w}, ${owner}, false) on conflict do nothing`);
     const r = await put(owner, cv.write, 'shared', 'owner-note', { by: 'owner' });
     expect(r.status, r.text).toBe(200);
     const mine = await put(owner, cv.write, 'mine', 'owner-vote', 1);

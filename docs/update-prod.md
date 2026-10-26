@@ -1365,16 +1365,20 @@ nothing). Nothing to do before the roll.
 
 Migration 0335 adds `canvas_data`: the small JSON values a Present canvas
 keeps through `mantle.data` (meeting marks, saved layouts, suggestions,
-votes), with a row rule for the workspace role. It only adds a table.
-Nothing to do before the roll.
+votes), with a row rule for the workspace role, and its only two writers,
+the definers `mantle_canvas_data_put` and `mantle_canvas_data_delete`
+(the write role runs them; the runtime role reads the table and never
+writes it). It only adds a table and two functions. Nothing to do before
+the roll.
 
 - **What it changes for readers:** nothing until a canvas calls
   `mantle.data`. The owner UI forwards those calls once it pins the
   share-ui release that carries the bridge (CanvasSandbox); before that a
   canvas's data calls are not answered and time out.
 - **Rolling back below it:** optional; the older image never reads the
-  table. The revert (`packages/db/rollback/0335_canvas_data.revert.sql`)
-  takes 0335 off the ledger and keeps every stored value.
+  table nor calls its definers. The revert
+  (`packages/db/rollback/0335_canvas_data.revert.sql`) takes 0335 off the
+  ledger and keeps every stored value and both functions.
 
 ## Rollback
 
