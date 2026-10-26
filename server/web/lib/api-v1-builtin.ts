@@ -1,23 +1,21 @@
 /**
  * Run one builtin tool for a /api/v1 route (lib/api-v1.ts) through dispatch
  * and the one gate (workspaces arch A5 step 4), as the owner on the `api`
- * path: the tool's declared policy, its preconditions and the items its
- * write names (the gate's item pre-check), then the handler. The route has
- * already checked the caller (getOwnerOr401) and the key's scope (the HTTP
- * gate, A4), so the call names the process caller of a route
- * (apiV1Caller): no key or peer narrowing past what the request's own gate
- * judged. A refusal (the tool's, or a gate step's) is the tool's own
- * teaching message, answered as 400; but an item the edit check refuses
- * (the gate's item pre-check, or the database) goes on to app.onError as
- * the database's refusal, its 403 item-workspace or 404 (A5 step 4 fix
- * round 2). The request's HTTP item gate (itemWriteGate, lib/auth/session.ts)
- * answers such a write first, with its own 403 or 404, as on main; the
- * pre-check answers one that got past it, as the handler's write met the
- * edit check on main. An error the handler or a check
- * throws is thrown on, to app.onError, which answers it as before the route
- * ran through dispatch (A5 step 4 fix round 1, M1): an edit check refusal
- * its 403 or 404, a database or any other error the opaque 500, never its
- * text (api-v1-builtin.test.ts).
+ * path: the tool's declared policy and its preconditions, then the handler.
+ * The HTTP gate has already answered the caller and the key's scope (A4),
+ * so the call names the process caller of a route (apiV1Caller): no key or
+ * peer narrowing past what the request's own gate judged. A refusal (the
+ * tool's, or a gate step's) is the tool's own teaching message, answered
+ * as 400; but an item the edit check refuses (the library's
+ * assertItemRight, or the database) goes on to app.onError as the edit
+ * check's refusal, its 403 item-workspace or 404 (A5 step 4 fix round 2).
+ * No HTTP item gate answers such a write first (plan v3.2 S11b took
+ * itemWriteGate out): the route, or the tool, asks the item's right
+ * itself. An error the handler or a check throws is thrown on, to
+ * app.onError, which answers it as before the route ran through dispatch
+ * (A5 step 4 fix round 1, M1): an edit check refusal its 403 or 404, a
+ * database or any other error the opaque 500, never its text
+ * (api-v1-builtin.test.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { apiV1Caller, dispatchTool, getBuiltin } from '@mantle/tools';

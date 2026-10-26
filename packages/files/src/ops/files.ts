@@ -1421,11 +1421,11 @@ export type BulkDeleteRefusal = {
 
 /**
  * The item check of a bulk delete (F4 fix round 2): every id the body names
- * passes the manage check the single delete's route gate asks
- * (itemWriteGate), in the caller's scope, before anything is deleted: the
- * ones that pass, and a refusal for each that does not. Before, an id the
- * scope did not read or manage came back not found from the delete and was
- * left out of the answer, silently.
+ * passes the manage check the single delete asks (DELETE
+ * /api/files/files/:id, assertItemRight), in the caller's scope, before
+ * anything is deleted: the ones that pass, and a refusal for each that does
+ * not. Before, an id the scope did not read or manage came back not found
+ * from the delete and was left out of the answer, silently.
  */
 export async function bulkDeleteGate(
   fileIds: readonly string[],

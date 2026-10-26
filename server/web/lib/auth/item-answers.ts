@@ -1,8 +1,9 @@
 /**
- * The item write gate's two answers (session.ts itemWriteGate), byte for
- * byte, for the handlers that ask its question themselves since the gate's
- * share and deleted-app pre-checks went (plan v3.2 S6 c2: /api/shares/:id,
- * /api/apps/deleted/:id). One text for both, so the answers cannot drift.
+ * The two answers the item write gate gave (session.ts itemWriteGate, until
+ * plan v3.2 S11b took it out), byte for byte, for the handlers that ask its
+ * question themselves since the gate's share and deleted-app pre-checks
+ * went (plan v3.2 S6 c2: /api/shares/:id, /api/apps/deleted/:id). One text
+ * for both, so the answers cannot drift.
  */
 import { sql } from 'drizzle-orm';
 import { db, mayEditSql, mayManageSql } from '@mantle/db';

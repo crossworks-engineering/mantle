@@ -251,10 +251,10 @@ function beforeHandler(row: RouteRow, req: Request): Response | null {
  *
  * The one rule (arch A4; docs/actors.md): this ROUTED row is the request's
  * only row. enterCall runs with it, the request context carries it
- * (currentRoute()), the key scope (requestKeyRoute) and the item a write
- * names (routeItemTarget) read it. A check on the raw path as sent (the
- * credential view below, requestKeyRoute) only FILTERS this row: it may
- * decide the row does not answer, never pick a different one.
+ * (currentRoute()), and the key scope (requestKeyRoute) reads it. A check
+ * on the raw path as sent (the credential view below, requestKeyRoute)
+ * only FILTERS this row: it may decide the row does not answer, never pick
+ * a different one.
  */
 export function requestRow(route: ServedRoute | null, method: string): RouteRow | null {
   return route?.rows.get(method.toUpperCase()) ?? null;

@@ -9,9 +9,8 @@
  * reads but may not change, 404 for one it does not read. (Fix round 2
  * pinned the gate's item pre-check here; the pre-check removal took it, so
  * the refusal is the library's, assertItemRight, or the database's, one
- * error for both. In the running app the HTTP item gate, itemWriteGate in
- * lib/auth/session.ts, answers such a write first with its own 403 or 404;
- * this file stands the HTTP gate aside.)
+ * error for both. No HTTP item gate answers such a write first since plan
+ * v3.2 S11b took itemWriteGate out; this file stands the HTTP gate aside.)
  * Since pre-check removal part 2 the HTTP gate names no table route: the
  * route reads the table in the key's scope and asks its edit
  * (assertItemRight) before the tool runs, pinned last here.
