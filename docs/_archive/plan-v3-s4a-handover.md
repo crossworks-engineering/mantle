@@ -178,3 +178,35 @@ unit vitest 0 (one harness timeout under load in deploy-scripts.test.ts,
 before this docs-only note), all exit 0: DB vitest shard 1/2 6889 passed
 and 2/2 8349 passed, test:actor-off 1652, actor-on 419, edit-on 591,
 matrix 8, runtime-role 3174, serial 1.
+
+## The list's fix round 1 (audit of 44e39726a)
+
+- MED-1: a `scopedSystemWrite` reason covers a login's write only
+  (`noteScopedSystemWrite`): an assistant's, a link's or a contact's
+  scoped typed write to `item_marks` still counts and fails the suite's
+  guard (`unnamedScopedWrites`, fail-open.test.ts).
+- The owner's direction, both tables left moved to the system pool
+  helpers, nothing named: `pending_tool_calls` through
+  `packages/db/src/pending-calls.ts` (one `parkPendingCall` at the spot
+  `pending-park` for all six parks, execute-call.ts and the dev console
+  included; `decidePendingCall`, `unclaimPendingCall`,
+  `revertPendingCall`, `settlePendingCall` with `deciderFilter` in the
+  WHERE); `assistant_messages` through
+  `packages/db/src/conversation-writes.ts` (`threadLoginFor`: with a login
+  actor bound the row is that login's, another refused). The supersede
+  stamps a settled inbound row, which 0323 never lets the narrow role
+  rewrite, so it runs at a new full-route spot `turn-supersede` (the
+  system pool it ran on): the one place the order's "narrow" could not be
+  kept without a refusal. No grant added; no answer changed (an owner's
+  row names the anchor's id, as the stamp gave). `SCOPED_SYSTEM_WRITES_LEFT`
+  is empty, pinned empty.
+- LOW-1 to LOW-3: noteFailOpen's comment, five branches in actors.md and
+  the scoreboard label; the three test files that drain the hits pinned;
+  the guard's blind spots named in vitest.setup.ts.
+- LOW-4: a write site's minute gate is per site and table and its check
+  names the table (`fail-open:typed-write:public.x`); the box's per-site
+  counts read `split_part(check_name, ':', 2)`; docs/fail-open.md gives
+  the numbers-only query of the tables.
+- Pins: systemDbUses 70 to 77, systemDbFiles 22 to 23,
+  systemDbUses_narrow 66 to 73, fullRouteSpots 31 to 32,
+  fullRouteSpotCalls 122 to 118.
