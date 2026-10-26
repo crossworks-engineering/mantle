@@ -278,8 +278,8 @@ no TS writes the four workspace tables; named: login bridge, bridge connector, t
   at run time. Tool item pre-checks (policy lists): none. The database
   decides a tool's write; the library asks `assertItemRight` first only for
   a clear answer before a side effect (section 10). So both checks run on.
-- An approved pending call runs in the scope it was asked in, judged
-  again with its asker's rights now (`pending-approval.ts`).
+- An approved pending call runs in the scope it was asked in, judged again with its asker's rights
+  now (`pending-approval.ts`); a delegated child in its caller's ([workspaces.md](./workspaces.md)).
 
 ## 12. Adding a kind, route, tool, table, exit or definer
 

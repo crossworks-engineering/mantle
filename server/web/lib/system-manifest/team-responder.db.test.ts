@@ -4,11 +4,12 @@
  * 410 stub went in arch A7) and left the code in W8c (the seeder writes none, the
  * reconcile reads none). What is left to hold:
  *  - a FRESH install (onboarding's applyManifest) ships the responder with
- *    `team-read`, `team-read-admin` and `formulas-eval`, and only
+ *    `team-read`, `team-read-admin`, `formulas-eval` and `delegation`, and only
  *    `team-read-admin` is adminOnly;
  *  - the boot reconcile (reconcileOwner) never puts `team-read-admin` back on
  *    the assistant of the Team workspace (groupsForAgent: by the workspace,
- *    no longer by the level);
+ *    no longer by the level), and gives it `delegation` once (the workspace
+ *    delegates, owner decision 2026-10-26);
  *  - a member's chat with no assistant named goes to the assistant of their
  *    oldest workspace beyond Admin that holds one (defaultWorkspaceAssistant;
  *    the built-in Team's until 0286, a normal workspace's now).
@@ -154,7 +155,8 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     });
     expect(await agent(brains.fresh, 'team-responder')).toMatchObject({
       enabled: true,
-      tool_group_slugs: ['team-read', 'team-read-admin', 'formulas-eval'],
+      // `delegation` (owner decision 2026-10-26): the workspace delegates.
+      tool_group_slugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation'],
     });
     expect(await memberChatAgent(brains.fresh)).toBeNull();
   }, 120_000);
@@ -163,9 +165,12 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     const row = await agent(brains.opened, 'team-responder');
     await teamHolds(brains.opened, row.id as string);
     await rec.reconcileOwner(brains.opened);
+    // Its `delegation` (an older brain's responder holds none) is granted
+    // once, as a workspace's assistant (reconcileWorkspaceDelegation).
     expect((await agent(brains.opened, 'team-responder')).tool_group_slugs).toEqual([
       'team-read',
       'formulas-eval',
+      'delegation',
     ]);
   }, 240_000);
 

@@ -34,6 +34,41 @@ export function ownerSurfaceLoginId(surface: ToolHandlerContext['surface']): str
   return typeof surface.loginId === 'string' && surface.loginId !== '' ? surface.loginId : null;
 }
 
+/** The login a workspace turn answers on the team surface (a login's web
+ *  chat with a workspace assistant, its run, a delegated child of either),
+ *  or null: a team surface naming no login (a workspace assistant's
+ *  heartbeat) and every other surface. Set by the runtime, never from
+ *  model arguments. */
+export function loginTurnSurfaceId(surface: ToolHandlerContext['surface']): string | null {
+  return surface?.kind === 'team' && typeof surface.loginId === 'string' && surface.loginId !== ''
+    ? surface.loginId
+    : null;
+}
+
+/** The login a call acts for: the one an owner surface names, else a
+ *  workspace turn's (loginTurnSurfaceId), else null. Where a tool records
+ *  its author or deleter, it is this login, never the brain owner in its
+ *  place. */
+export function actingLoginId(surface: ToolHandlerContext['surface']): string | null {
+  return ownerSurfaceLoginId(surface) ?? loginTurnSurfaceId(surface);
+}
+
+/** What the gate reads of a call's surface (gateCallerFor's facts): whether
+ *  it is the owner's (the owner-only narrower), and the login a workspace
+ *  turn's team surface names, which a `loginTurns` tool admits too when the
+ *  call's turn scope answers that same login (gateCallerFor). One reading
+ *  for dispatch, the turn listing and the queue-time check, so listing
+ *  equals calling. */
+export function surfaceGateFacts(surface: ToolHandlerContext['surface']): {
+  ownerSurface: boolean;
+  loginTurnId: string | null;
+} {
+  return {
+    ownerSurface: isOwnerSurface(surface),
+    loginTurnId: loginTurnSurfaceId(surface),
+  };
+}
+
 /** The refusal an owner-only tool returns to anyone else. */
 export const OWNER_ONLY_ERROR =
   'owner-side tool: not available here (it runs only for the brain owner).';

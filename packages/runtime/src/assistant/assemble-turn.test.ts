@@ -20,6 +20,24 @@ const h = vi.hoisted(() => ({
   maxImageBytes: 1000,
   catalogWarms: 0,
   thinkingBudget: 2048,
+  /** The open workspace scope the assembly reads (null: none), and
+   *  whether it holds the Admin workspace. */
+  scope: null as null | {
+    kind: 'assistant';
+    loginId: string | null;
+    ws: string[];
+    modWs: string[];
+  },
+  holdsAdmin: true,
+}));
+
+vi.mock('@mantle/db/viewer', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  currentWorkspaceScope: () => h.scope,
+}));
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  scopeHoldsAdmin: async () => h.holdsAdmin,
 }));
 
 vi.mock('@mantle/decisions', () => ({
@@ -145,6 +163,8 @@ const BASE = {
 } as const;
 
 beforeEach(() => {
+  h.scope = null;
+  h.holdsAdmin = true;
   h.identity = '';
   h.identityError = null;
   h.openHeartbeats = [];
@@ -427,12 +447,25 @@ describe('assembleResponderTurn — budgets, delegation, loop overrides', () => 
     });
   });
 
-  it('allowDelegation=false (team fail-closed) empties delegate_to', async () => {
+  it('allowDelegation=false empties delegate_to', async () => {
     const cfg = { memoryConfig: { delegate_to: ['researcher'] } };
     const on = await assembleResponderTurn({ ...BASE, agent: agent(cfg) });
     const off = await assembleResponderTurn({ ...BASE, agent: agent(cfg), allowDelegation: false });
     expect(on.delegateTo).toEqual(['researcher']);
     expect(off.delegateTo).toEqual([]);
+  });
+
+  it('a workspace turn is shown its workspace delegates only; an Admin turn its whole list', async () => {
+    const cfg = {
+      memoryConfig: { delegate_to: ['researcher', 'presenter', 'toolsmith', 'appsmith', 'coder'] },
+    };
+    h.scope = { kind: 'assistant', loginId: 'u1', ws: ['w1'], modWs: [] };
+    h.holdsAdmin = false;
+    const ws = await assembleResponderTurn({ ...BASE, agent: agent(cfg) });
+    expect(ws.delegateTo).toEqual(['presenter', 'appsmith']);
+    h.holdsAdmin = true;
+    const admin = await assembleResponderTurn({ ...BASE, agent: agent(cfg) });
+    expect(admin.delegateTo).toEqual(cfg.memoryConfig.delegate_to);
   });
 });
 

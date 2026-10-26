@@ -172,10 +172,17 @@ const spendingNarrower: Narrower = (caller, policy) =>
  * dispatch refused it before the gate, so a tool loop listed it and the
  * call was refused; first in the order, it answers the same calls in the
  * same words. A caller that does not say (an MCP connection, whose surface
- * is the owner's) is not narrowed.
+ * is the owner's) is not narrowed. A tool whose policy also says
+ * `loginTurns` (the app tools) is not narrowed on a login's workspace turn
+ * either (`facts.loginTurn`, gateCallerFor: a team surface naming the login
+ * its turn scope answers): the turn's scope and the database decide, as on
+ * the login's own MCP connection (owner rule 2026-10-26: a user's agents may
+ * write what the user may, never more).
  */
 const ownerOnlyNarrower: Narrower = (caller, policy) =>
-  policy.fields?.ownerOnly === true && caller.facts?.ownerSurface === false
+  policy.fields?.ownerOnly === true &&
+  caller.facts?.ownerSurface === false &&
+  !(policy.fields?.loginTurns === true && caller.facts?.loginTurn === true)
     ? OWNER_ONLY_ERROR
     : null;
 

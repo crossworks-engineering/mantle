@@ -180,8 +180,9 @@ plus `none`, with each agent's description as the criterion (`remy` and
 `none` carry tightened contrastive wording). State: the message and the
 previous user message, and `open_surface: { kind, title }` when the user has
 something open. Skipped for messages under 8 words (3 when a surface is
-open), for surfaces that cannot delegate (team, forum), and when the roster
-is empty.
+open), for surfaces that pass no message (team, forum: a workspace turn's
+roster is its workspace delegates alone, `turnDelegates`), and when the
+roster is empty.
 
 `open_surface` (v2) is read off the note the web UI appends to a sent message
 ("On screen right now … - page "Title" (node …)", jackdaw

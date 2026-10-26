@@ -73,17 +73,97 @@ export function checkAgentDepth(
 export type AllowlistCheckResult = { ok: true } | { ok: false; reason: string };
 
 /**
- * Verify the parent agent is permitted to delegate to `targetSlug`.
+ * The specialists a WORKSPACE turn may delegate to (owner decision
+ * 2026-10-26): Draftsman, Presenter and Appsmith. A workspace turn is a turn
+ * whose scope does not hold the Admin workspace, or that is not on an owner
+ * surface (a team surface, a missing one): the assistant of any workspace
+ * other than Admin, the shipped Team responder, and a delegated child of
+ * either. Such a turn delegates only to a slug in BOTH this list and its
+ * agent's `delegate_to`, and the child runs in the parent's scope with the
+ * parent's surface: the login's own rights in that one workspace, never
+ * Admin's. Each one writes a workspace content kind (a page or diagram, a
+ * canvas, an app) where the login may, so its agents may too, never more.
+ * The system manifest re-exports and pins it (WORKSPACE_DELEGATE_SLUGS).
+ */
+export const WORKSPACE_DELEGATE_SLUGS: readonly string[] = Object.freeze([
+  'diagrammer',
+  'presenter',
+  'appsmith',
+]);
+
+/** What the delegation gateway knows of the turn a delegation starts in. */
+export type DelegationTurn = {
+  /** A workspace turn (see WORKSPACE_DELEGATE_SLUGS). */
+  workspaceTurn: boolean;
+  /** The login the turn answers: its scope's. A workspace turn that answers
+   *  none (a workspace assistant's heartbeat, a run planned with no login)
+   *  delegates nothing. */
+  loginId: string | null;
+};
+
+/** The refusal of a workspace turn's delegation to a slug off the list. */
+export const WORKSPACE_DELEGATE_ERROR = (slug: string): string =>
+  `'${slug}' cannot be delegated to from a workspace: a workspace's assistant (and the ` +
+  `specialists it hands work to) delegates only to Draftsman (diagrammer), Presenter ` +
+  `(presenter) and Appsmith (appsmith). Do the work yourself, or tell the user it needs ` +
+  `the Admin assistant.`;
+
+/** The refusal of a workspace turn that answers no login. */
+export const WORKSPACE_NO_LOGIN_DELEGATE_ERROR =
+  'this workspace turn answers no user, so it delegates nothing: a specialist works with ' +
+  'the rights of the user who asked, and there is none here.';
+
+/**
+ * The delegates a turn may name: the agent's own allowlist, cut to
+ * WORKSPACE_DELEGATE_SLUGS in a workspace turn (in the allowlist's order).
+ * What the model is shown (the invoke_agent enum and roster, the decider's
+ * delegation hint) is this list; checkDelegationAllowed enforces the same
+ * rule at the call, whatever a caller showed.
+ */
+export function turnDelegates(
+  allowlist: readonly string[] | null | undefined,
+  turn: Pick<DelegationTurn, 'workspaceTurn'>,
+): string[] {
+  const list = Array.isArray(allowlist) ? allowlist.filter((s) => typeof s === 'string') : [];
+  return turn.workspaceTurn ? list.filter((s) => WORKSPACE_DELEGATE_SLUGS.includes(s)) : list;
+}
+
+/**
+ * The workspace half of the gateway: in a workspace turn, a target off
+ * WORKSPACE_DELEGATE_SLUGS, or a turn that answers no login, is refused.
+ * checkDelegationAllowed asks it; the runtime invoker asks it again before
+ * the child starts (it does not know the parent's allowlist), as it
+ * re-checks the depth.
+ */
+export function checkWorkspaceDelegate(
+  targetSlug: string,
+  turn: DelegationTurn,
+): AllowlistCheckResult {
+  if (!turn.workspaceTurn) return { ok: true };
+  if (!WORKSPACE_DELEGATE_SLUGS.includes(targetSlug)) {
+    return { ok: false, reason: WORKSPACE_DELEGATE_ERROR(targetSlug) };
+  }
+  if (!turn.loginId) return { ok: false, reason: WORKSPACE_NO_LOGIN_DELEGATE_ERROR };
+  return { ok: true };
+}
+
+/**
+ * Verify the parent agent is permitted to delegate to `targetSlug`: the
+ * delegation gateway (invoke_agent's handler and the runtime invoker both
+ * ask it).
  *
  * Permission lives on the parent agent's `memory_config.delegate_to`
  * — a list of agent slugs. Missing / empty list = no delegation
  * allowed (fail closed). Self-delegation is always refused even when
- * the slug is in the list.
+ * the slug is in the list. In a workspace turn (`turn`), the target must
+ * also be in WORKSPACE_DELEGATE_SLUGS, and the turn must answer a login.
+ * Omitting `turn` is the Admin turn's rule (the allowlist alone).
  */
 export function checkDelegationAllowed(
   parentAgentSlug: string,
   targetSlug: string,
   allowlist: readonly string[] | null | undefined,
+  turn?: DelegationTurn,
 ): AllowlistCheckResult {
   if (!targetSlug || typeof targetSlug !== 'string') {
     return { ok: false, reason: 'agent_slug is required' };
@@ -95,6 +175,10 @@ export function checkDelegationAllowed(
         `an agent cannot invoke itself ('${parentAgentSlug}') — do this work directly ` +
         `in your own turn, or delegate to a DIFFERENT specialist from your allowlist`,
     };
+  }
+  if (turn) {
+    const ws = checkWorkspaceDelegate(targetSlug, turn);
+    if (!ws.ok) return ws;
   }
   if (!Array.isArray(allowlist) || allowlist.length === 0) {
     return {

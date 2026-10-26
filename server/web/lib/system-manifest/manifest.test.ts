@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
+  WORKSPACE_DELEGATE_SLUGS,
   MANIFEST_AGENTS,
   MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
@@ -240,13 +241,22 @@ describe('system manifest integrity', () => {
     expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);
   });
 
-  it('the team responder is read-only + one write, with the documented exclusions', () => {
+  it('the team responder is read-only + one hand-off, with the documented exclusions', () => {
     // The team-responder serves EXTERNAL members — its security boundary is that
-    // team-read grants brain reads + exactly ONE write (team_request_create) and
-    // nothing that writes, deletes, delegates, sends, or bulk-exports. This guard
-    // fails CI if a future edit re-adds a dangerous slug to the group.
+    // team-read grants brain reads and nothing that writes, deletes, sends, or
+    // bulk-exports. Its one hand-off (owner decision 2026-10-26) is
+    // invoke_agent, to the workspace delegates only, which run with the
+    // member's own rights (the delegation gateway). This guard fails CI if a
+    // future edit re-adds a dangerous slug to its groups.
     const team = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
     const grant = effectiveTools(team);
+    expect(grant.has('invoke_agent'), 'it hands work to the workspace delegates').toBe(true);
+    expect(team.memoryConfig?.delegate_to).toEqual([...WORKSPACE_DELEGATE_SLUGS]);
+    // Everything else it holds is team-read's own.
+    const own = effectiveTools({
+      ...team,
+      toolGroupSlugs: (team.toolGroupSlugs ?? []).filter((g) => g !== 'delegation'),
+    });
     // No write at all since W7b: team_request_create was retired (a member
     // changes what it may edit, in its own scope).
     expect(grant.has('team_request_create'), 'no write tool').toBe(false);
@@ -254,7 +264,7 @@ describe('system manifest integrity', () => {
     for (const forbidden of [
       'export_node', // bulk exfiltration ease
       'replay_window', // replays the OWNER's private conversations
-      'invoke_agent', // no delegation
+      'invoke_agent', // no delegation of its own groups' (the `delegation` group alone)
       'run_terminal',
       'sandbox_exec',
       'email_send',
@@ -267,7 +277,8 @@ describe('system manifest integrity', () => {
       'contact_delete',
       'journal_delete',
     ]) {
-      expect(grant.has(forbidden), `team-read must NOT grant ${forbidden}`).toBe(false);
+      expect(own.has(forbidden), `team-read must NOT grant ${forbidden}`).toBe(false);
+      if (forbidden !== 'invoke_agent') expect(grant.has(forbidden), forbidden).toBe(false);
     }
     // The private-corpus reads ARE in the group but gated at runtime by the
     // teamPrivateReads switch (run-team-turn.ts). They must stay present here so
@@ -351,11 +362,16 @@ describe('system manifest integrity', () => {
     const team = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
     const groups = team.toolGroupSlugs ?? [];
     const adminOnly = new Set(MANIFEST_ADMIN_ONLY_GROUPS);
-    expect(groups.filter((g) => !adminOnly.has(g))).toEqual(['team-read', 'formulas-eval']);
+    expect(groups.filter((g) => !adminOnly.has(g))).toEqual([
+      'team-read',
+      'formulas-eval',
+      'delegation',
+    ]);
     expect(groups.filter((g) => adminOnly.has(g))).toEqual(['team-read-admin']);
     expect(groupsForAgent(groups, { workspace: 'other', role: team.role }, adminOnly)).toEqual([
       'team-read',
       'formulas-eval',
+      'delegation',
     ]);
   });
 
@@ -584,6 +600,8 @@ describe('system manifest integrity', () => {
       ['c71f3636a', 'server/web'],
       // v0.232.295, the Phase 6 member-chat default, before W6b reworded it
       ['88ec82984', 'server/web'],
+      // v0.400.11, read-only with no hand-off (before workspace delegation)
+      ['e600bec62', 'server/web'],
     ];
     const src = ([sha, dir]: [string, string]): string | null => {
       try {
@@ -620,6 +638,28 @@ describe('system manifest integrity', () => {
     // Retired in W7b: the responder files no request any more.
     expect(p).not.toMatch(/team_request_create/);
     expect(p).not.toMatch(/\u2014/); // house style: no em dashes
+  });
+
+  it('the workspace delegates: Draftsman, Presenter and Appsmith, shipped delegates with no adminOnly group', async () => {
+    // Owner decision 2026-10-26. The gateway's one list (@mantle/tools),
+    // re-exported here: a change to it is a change of who a workspace
+    // assistant may hand work to, made here on purpose.
+    const { MANIFEST_ADMIN_ONLY_GROUPS, WORKSPACE_DELEGATION_GROUP } = await import('./manifest');
+    expect([...WORKSPACE_DELEGATE_SLUGS]).toEqual(['diagrammer', 'presenter', 'appsmith']);
+    expect(WORKSPACE_DELEGATE_SLUGS).not.toContain('toolsmith');
+    for (const slug of WORKSPACE_DELEGATE_SLUGS) {
+      const a = MANIFEST_AGENTS.find((x) => x.slug === slug);
+      expect(a?.isDelegate, `${slug} is a shipped delegate`).toBe(true);
+      for (const g of a!.toolGroupSlugs ?? []) {
+        expect(MANIFEST_ADMIN_ONLY_GROUPS, `${slug} holds no adminOnly group (${g})`).not.toContain(
+          g,
+        );
+      }
+    }
+    // The group granted with them holds invoke_agent alone, and runs outside Admin.
+    expect(WORKSPACE_DELEGATION_GROUP).toBe('delegation');
+    expect(groupTools.get('delegation')).toEqual(['invoke_agent']);
+    expect(MANIFEST_ADMIN_ONLY_GROUPS).not.toContain('delegation');
   });
 
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {

@@ -77,7 +77,7 @@ import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
-import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
+import { actingLoginId, isOwnerSurface, loginTurnSurfaceId, OWNER_ONLY_ERROR } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
 import {
@@ -86,10 +86,10 @@ import {
   db as scopedDb,
   mayManageSql,
   nodes as nodesTable,
-  scopeHoldsAdmin,
   withCreateHome,
 } from '@mantle/db';
 import { CS } from './client-sourced-rule';
+import { scopeOutsideAdmin } from './outside-admin';
 
 /**
  * This file's one system door (arch A6): the trash of deleted apps (their
@@ -103,16 +103,26 @@ function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * The app write tools (everything that writes an app's code, manifest,
- * schema, data or exports outside the brokers) run only for the owner
- * (client tier audit I8). Marked `ownerOnly` so dispatchTool refuses a team,
- * client or missing surface first; this is the handler's own check, for the
- * MCP path that calls handlers directly. Before, only the column grant held
- * it (a limited role cannot read `apps.draft_source`).
+ * schema, data or exports outside the brokers) run on a login's own
+ * surfaces (client tier audit I8): an owner surface (web, Telegram, its MCP
+ * connection), and since 2026-10-26 a login's workspace turn too (a team
+ * surface naming the login its turn scope answers: its chat with a
+ * workspace assistant, its run, a delegated Appsmith), where the turn's
+ * scope and the database decide, as on its MCP connection (`loginTurns`).
+ * Marked `ownerOnly` + `loginTurns` so the gate refuses a client, a
+ * contact, a team surface with no login (a heartbeat) or a missing one
+ * first; this is the handler's own check, for the MCP path that calls
+ * handlers directly. Before, only the column grant held it (a limited role
+ * cannot read `apps.draft_source`).
  */
 function ownerOnlyRefusal(
   ctx: Parameters<BuiltinToolDef['handler']>[1],
 ): { ok: false; error: string } | null {
-  return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+  if (isOwnerSurface(ctx.surface)) return null;
+  const turnLogin = loginTurnSurfaceId(ctx.surface);
+  const scope = currentWorkspaceScope();
+  if (turnLogin && scope?.kind === 'assistant' && scope.loginId === turnLogin) return null;
+  return { ok: false, error: OWNER_ONLY_ERROR };
 }
 
 /** Who a history row names for a tool call: the owner's MCP client, or an
@@ -172,6 +182,7 @@ const app_create: BuiltinToolDef = {
     clientSourced: CS.creates(),
   },
   ownerOnly: true,
+  loginTurns: true,
   name: 'Create a mini app',
   description:
     'Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. ' +
@@ -199,7 +210,7 @@ const app_create: BuiltinToolDef = {
     try {
       // A user outside the Admin workspace (W7b): at team rules, its author
       // named, as the web create route makes it.
-      const author = ownerSurfaceLoginId(ctx.surface);
+      const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const app = await createApp(ctx.ownerId, {
         ...(member ? { authorLevel: 'team' as const, authorLoginId: author } : {}),
@@ -251,6 +262,7 @@ const app_update: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Update a mini app's name and look",
   description:
@@ -383,6 +395,7 @@ const app_file_write: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
@@ -442,6 +455,7 @@ const app_file_delete: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
   description:
@@ -489,6 +503,7 @@ const app_source_set: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's whole source tree",
   description:
@@ -571,6 +586,7 @@ const app_build: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Build a mini app',
   description:
@@ -640,6 +656,7 @@ const app_tools_set: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
@@ -707,6 +724,7 @@ const app_db_schema_set: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's SQLite schema",
   description:
@@ -793,6 +811,7 @@ const app_db_seed: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Bulk-load rows into a mini app's database",
   description:
@@ -924,6 +943,7 @@ const app_publish: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
@@ -983,6 +1003,7 @@ const app_delete: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
@@ -1004,7 +1025,7 @@ const app_delete: BuiltinToolDef = {
       // caller's, or one whose path names no login, waits in the trash for
       // the owner (CEO decision 1; W6b fix round 2, M-2). The anchor
       // login's id is the brain's id.
-      const by = ownerSurfaceLoginId(ctx.surface);
+      const by = actingLoginId(ctx.surface);
       const ok = await deleteApp(ctx.ownerId, id, {
         actor: historyActor(ctx),
         deletedBy: { loginId: by, owner: by !== null && by === ctx.ownerId },
@@ -1180,6 +1201,7 @@ const app_table_export_set: BuiltinToolDef = {
     clientSourced: { ...CS.onApp, creates: true },
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Export an app's table to Tables",
   description:
@@ -1242,6 +1264,7 @@ const app_table_export_remove: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Remove an app-table export',
   description:
@@ -1294,6 +1317,7 @@ const app_snapshot_create: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Snapshot a mini app',
   description:
@@ -1340,6 +1364,7 @@ const app_snapshot_list: BuiltinToolDef = {
     keyArea: 'apps',
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "List a mini app's history",
   description:
@@ -1388,6 +1413,7 @@ const app_snapshot_restore: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   requiresConfirm: true,
   preconditions: APP_ID_PRE,
   name: 'Restore a mini app from its history',
@@ -1473,6 +1499,7 @@ const app_snapshot_delete: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   requiresConfirm: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app snapshot',
@@ -1536,6 +1563,7 @@ const app_deleted_list: BuiltinToolDef = {
   slug: 'app_deleted_list',
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   ownerOnly: true,
+  loginTurns: true,
   name: 'List recently deleted mini apps',
   description:
     'List the apps deleted in the last 30 days, newest first: id, name, when, until when it can come back, and whether its data was kept. Bring one back with `app_undelete`.',
@@ -1566,6 +1594,7 @@ const app_undelete: BuiltinToolDef = {
     clientSourced: CS.creates(),
   },
   ownerOnly: true,
+  loginTurns: true,
   name: 'Bring back a deleted mini app',
   description:
     'Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.',
@@ -1628,6 +1657,7 @@ const app_duplicate: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Duplicate a mini app',
   description:
@@ -1654,7 +1684,7 @@ const app_duplicate: BuiltinToolDef = {
     try {
       // A user outside the Admin workspace (W7b): the copy is made at team
       // rules, its author named (W7b fix round 1), never lowered after.
-      const author = ownerSurfaceLoginId(ctx.surface);
+      const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const copy = await duplicateApp(ctx.ownerId, id, {
         ...(member ? { authorLoginId: author } : {}),
@@ -1692,6 +1722,7 @@ const app_export: BuiltinToolDef = {
     clientSourced: CS.onApp,
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
   description:
@@ -1773,6 +1804,7 @@ const app_import: BuiltinToolDef = {
     clientSourced: CS.always(CS.UNSEEN),
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: FILE_ID_PRE,
   name: 'Import a mini app from a file',
   description:
@@ -1820,7 +1852,7 @@ const app_import: BuiltinToolDef = {
       const bytes = await readStreamCapped(file.stream, file.size, appPackageMaxBytes());
       // Imported code always starts at team rules; a user outside the Admin
       // workspace (W7b) is named its author (W7b fix round 1).
-      const author = ownerSurfaceLoginId(ctx.surface);
+      const author = actingLoginId(ctx.surface);
       const member = author && (await outsideAdmin());
       const res = await importAppPackage(ctx.ownerId, bytes, {
         ...(member ? { authorLoginId: author } : {}),
@@ -1888,6 +1920,7 @@ const app_errors: BuiltinToolDef = {
     keyArea: 'apps',
   },
   ownerOnly: true,
+  loginTurns: true,
   preconditions: APP_ID_PRE,
   name: "Read a mini app's errors",
   description:
@@ -1947,11 +1980,9 @@ const app_errors: BuiltinToolDef = {
 
 // ─── The author ceiling for a user outside the Admin workspace (W7b) ─────────
 
-/** Whether the call runs in a user's scope that does not hold the Admin
- *  workspace (a member's MCP, workspaces W7b). */
-async function outsideAdmin(): Promise<boolean> {
-  return currentWorkspaceScope() !== null && !(await scopeHoldsAdmin());
-}
+/** Whether the call runs in a scope that does not hold the Admin workspace
+ *  (a member's MCP, workspaces W7b; a user's workspace turn). */
+const outsideAdmin = scopeOutsideAdmin;
 
 /** Put app `id` at team rules (the author ceiling, apps.author_level) when
  *  the caller may manage it: never lifted here, only lowered. Manage, as

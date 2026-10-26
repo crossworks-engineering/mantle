@@ -152,6 +152,19 @@ describe('the ownerOnly set', () => {
     expect(flagged).toEqual(EXPECTED_OWNER_ONLY);
   });
 
+  it('a login’s workspace turn runs the app tools alone of them (`loginTurns`, 2026-10-26)', () => {
+    // The app tools run in a login's own scope on every surface of its own
+    // (W7b): its MCP connection, its chats, and since workspace delegation
+    // its workspace turn (a team surface naming the login its turn scope
+    // answers), where the database decides. No other owner-only tool.
+    const turns = listBuiltins()
+      .filter((d) => d.loginTurns)
+      .map((d) => d.slug)
+      .sort();
+    expect(turns).toEqual(EXPECTED_OWNER_ONLY.filter((s) => s.startsWith('app_')));
+    for (const d of listBuiltins().filter((b) => b.loginTurns)) expect(d.ownerOnly).toBe(true);
+  });
+
   it('isOwnerSurface is an allowlist', () => {
     for (const [, s] of OWNER) expect(isOwnerSurface(s)).toBe(true);
     for (const [, s] of NOT_OWNER) expect(isOwnerSurface(s)).toBe(false);
@@ -281,11 +294,13 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // draw_get: a team surface that reaches the system pool gets no image,
   // never every image of the owner's (W8 integration, D-L4).
   'builtins-draws.ts': ["const readFor = { teamSurface: ctx.surface?.kind === 'team' };"],
-  // A link is opened as the calling login (A0 fix round, M2): this asks
-  // WHICH login a member's turn names, never "is this the owner". The owner
-  // test is isOwnerSurface, and a team surface with no login is refused.
-  'builtins-share.ts': [
-    "if (s?.kind === 'team' && typeof s.loginId === 'string' && s.loginId !== '') return s.loginId;",
+  // WHICH login a member's workspace turn names, never "is this the owner"
+  // (loginTurnSurfaceId): a link is opened as that login (A0 fix round,
+  // M2), an app tool runs for it (`loginTurns`), a delegation reads it. The
+  // owner test is isOwnerSurface, and a team surface with no login names
+  // none.
+  'surface.ts': [
+    "return surface?.kind === 'team' && typeof surface.loginId === 'string' && surface.loginId !== ''",
   ],
 };
 

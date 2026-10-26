@@ -329,7 +329,9 @@ export {
 } from './app-tool-level';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
 export {
+  actingLoginId,
   isOwnerSurface,
+  loginTurnSurfaceId,
   ownerKeysOff,
   ownerSurfaceLoginId,
   OWNER_ONLY_ERROR,
@@ -437,10 +439,17 @@ export {
   MAX_TERMINAL_EDGE_DEPTH,
   checkAgentDepth,
   checkDelegationAllowed,
+  checkWorkspaceDelegate,
   isTerminalDelegateConfig,
+  turnDelegates,
+  WORKSPACE_DELEGATE_SLUGS,
+  WORKSPACE_DELEGATE_ERROR,
+  WORKSPACE_NO_LOGIN_DELEGATE_ERROR,
+  type DelegationTurn,
   type DepthCheckResult,
   type AllowlistCheckResult,
 } from './invoke-agent-guards';
+export { delegationTurnOf } from './builtins-delegation';
 
 export { KNOWN_MCP_SERVERS, knownMcpServer, type KnownMcpServer } from './mcp-catalog';
 export {

@@ -386,6 +386,14 @@ export type BuiltinToolDef = {
    *  surface never reaches it. The handler keeps its own check too, because
    *  the MCP server calls `def.handler` directly. */
   ownerOnly?: true;
+  /** With `ownerOnly`: a login's workspace turn runs it too (a team surface
+   *  naming the login its turn scope answers: the login's web chat with a
+   *  workspace assistant, its run, a delegated child of either). The
+   *  turn's scope and the database decide what it may change, as on the
+   *  login's own MCP connection. The app tools carry it (owner rule
+   *  2026-10-26: a user's agents may write what the user may, never
+   *  more). */
+  loginTurns?: true;
   /** Registered on the owner MCP surface only when the box opts in (not
    *  access policy: what the surface offers, build-server.ts). `toolsmithWrite`:
    *  the Toolsmith writes, unless MANTLE_MCP_TOOLSMITH_WRITE is off;

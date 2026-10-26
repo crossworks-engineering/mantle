@@ -63,8 +63,11 @@ export type StartTraceInit = {
    *  failure: what the close writes to the row. For a caller that must
    *  keep the count where the trace row's writers cannot change it (the
    *  member turn ledger's tokens, migration 0327). Late usage after the
-   *  close is not in it. */
-  onClose?: (tokens: { in: number; out: number }) => void;
+   *  close is not in it. `delegated`: the model tokens of the traces opened
+   *  inside this one that closed before it (a delegated child's, and its
+   *  children's), which the row does not count (no double count in the
+   *  aggregates) but a per-turn budget must. */
+  onClose?: (tokens: { in: number; out: number }, delegated: { in: number; out: number }) => void;
 };
 
 export type StartStepInit = {
@@ -134,6 +137,10 @@ export type TraceContext = {
    *  kept apart: the member token budget reads the completion tokens only
    *  (docs/spend-recording.md). */
   tokens: { in: number; out: number; cacheRead: number; embed: number };
+  /** Completion tokens of the traces opened inside this one (a delegated
+   *  child's, with its own nested ones), added when each closes. Never
+   *  written to this trace's row; handed to onClose for a per-turn budget. */
+  delegatedTokens?: { in: number; out: number };
   costMicroUsd: number;
   stepCount: number;
   status: 'running' | 'success' | 'error';
@@ -199,6 +206,10 @@ export type PreludeStep = {
   startedAtMs: number;
   durationMs: number | null;
   tokens: { in: number; out: number; cacheRead: number; embed: number };
+  /** Completion tokens of the traces opened inside this one (a delegated
+   *  child's, with its own nested ones), added when each closes. Never
+   *  written to this trace's row; handed to onClose for a per-turn budget. */
+  delegatedTokens?: { in: number; out: number };
   costMicroUsd: number;
   /** Index of the enclosing prelude step, or null for a root step. */
   parentIndex: number | null;
@@ -588,6 +599,10 @@ export type UsageAttribution = {
    *  and `cacheRead` are completion tokens; `embed` the embedding input
    *  tokens, kept apart (the member token budget reads `in + out` only). */
   tokens: { in: number; out: number; cacheRead: number; embed: number };
+  /** Completion tokens of the traces opened inside this one (a delegated
+   *  child's, with its own nested ones), added when each closes. Never
+   *  written to this trace's row; handed to onClose for a per-turn budget. */
+  delegatedTokens?: { in: number; out: number };
   costMicroUsd: number;
   /** The step meta keys this call adds (numbers are summed into the step's,
    *  `model` and `provider` replace). */
@@ -831,9 +846,17 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
           turnSeqCounters.delete(turnId);
         }
         const duration = Date.now() - ctx.startedAtMs;
+        const delegated = ctx.delegatedTokens ?? { in: 0, out: 0 };
+        // A nested trace's tokens (its own and its children's) count on the
+        // trace it ran in, for that trace's onClose only.
+        if (parent) {
+          const up = (parent.delegatedTokens ??= { in: 0, out: 0 });
+          up.in += ctx.tokens.in + delegated.in;
+          up.out += ctx.tokens.out + delegated.out;
+        }
         if (init.onClose) {
           try {
-            init.onClose({ in: ctx.tokens.in, out: ctx.tokens.out });
+            init.onClose({ in: ctx.tokens.in, out: ctx.tokens.out }, { ...delegated });
           } catch (err) {
             logErr('close hook', err);
           }

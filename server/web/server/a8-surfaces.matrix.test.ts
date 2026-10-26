@@ -958,9 +958,11 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       {
         ...teamEntry,
         // A surface limit the oracle cannot see: the team chat calls no
-        // owner-side tool (`app_delete` is one: ownerOnly), for everyone.
-        // The home Moderator's app delete, allowed by hand (plan s34), is
-        // run whatever the pick so the limit stays pinned.
+        // owner-side tool, for everyone. The app tools are not such a limit
+        // since workspace delegation (2026-10-26, `loginTurns`): a login's
+        // workspace turn runs them in its scope, so `app_delete` answers as
+        // the oracle does. The home Moderator's app delete, allowed by hand
+        // (plan s34), is run whatever the pick so that stays pinned.
         narrow: (kind, action, role) => {
           const tc = toolCall(kind, action, 'x');
           return (
@@ -1231,7 +1233,9 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       if (b.mcpOnly) mcpOnly.add(b.slug);
       if (b.requiresConfirm) confirmGated.add(b.slug);
       if (b.policy?.peerRisky) peerRisky.add(b.slug);
-      if (b.ownerOnly) ownerSide.add(b.slug);
+      // A `loginTurns` tool (the app tools) runs on a login's workspace
+      // turn too (2026-10-26): the oracle answers its team-turn cells.
+      if (b.ownerOnly && !b.loginTurns) ownerSide.add(b.slug);
     }
     const unresolved: string[] = [];
     for (const slug of slugs) {
@@ -1402,7 +1406,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
  *  unseen. */
 const NARROWED: Readonly<Record<string, number>> = {
   'peer: a peer may not call app_delete: a risky tool its list does not allow': 6,
-  'team-turn: the team chat calls no app_delete: an owner-side tool': 3,
   'run: run_plan is Admin only': 61,
   'run: a run item may not run app_delete: it waits for approval': 5,
   'run-demoted: its login left Admin before the item ran: fail closed': 1,

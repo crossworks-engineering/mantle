@@ -42,6 +42,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | **Persona** skill links (by ROLE, reaches operator personas too) | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
 | Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
 | Content-kind groups (`ASSISTANT_CONTENT_KIND_GROUPS`: `present-read`, `present`) on **every workspace's** assistant (Admin's persona too) | ✅ **once per agent**: each group reaches each assistant one time (recorded per agent id in the anchor's `contentKindGroupsGranted`), so an owner's later removal sticks; a later assistant or a group added to the list later gets it once; never an `adminOnly` group, never a manifest agent with its own entry; the persona union skips these groups | `reconcileAssistantContentKinds` |
+| Workspace delegation (`delegation` + `WORKSPACE_DELEGATE_SLUGS`: `diagrammer`, `presenter`, `appsmith` in `delegate_to`) on the assistant of **every workspace other than Admin** and the Team responder | ✅ **once per agent**, after the provision (recorded per agent id in the anchor's `workspaceDelegationGranted`: `group:delegation`, `delegate:<slug>`), so an owner's later removal sticks; a later assistant, or a delegate the brain gets later, reaches it once; the delegate_to merge is one jsonb union that keeps every entry; the Team responder's manifest entry lists both (fresh installs) and the specialist union leaves its `delegation` out | `reconcileWorkspaceDelegation` |
 | New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
 | Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
@@ -90,12 +91,16 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   to a responder on no workspace (`groupsForAgent`), so the team responder
   never gets `team-read-admin` back; the persona reconcile never reaches a
   manifest agent with its own entry or another workspace's assistant. The
-  one declared exception is `ASSISTANT_CONTENT_KIND_GROUPS` (a workspace
+  first declared exception is `ASSISTANT_CONTENT_KIND_GROUPS` (a workspace
   content kind every assistant writes where its user may: Present): those
   groups alone reach every workspace's assistant, granted once per agent
   (an owner's removal is kept, unlike the persona's default groups). Keep
   the list to content-kind groups with no delete and no spend
-  (manifest.test.ts).
+  (manifest.test.ts). The other is the workspace delegation grant
+  (`delegation` and the workspace delegates, `reconcileWorkspaceDelegation`),
+  granted once the same way; what a workspace turn may delegate to is the
+  gateway's list (`WORKSPACE_DELEGATE_SLUGS`), whatever else `delegate_to`
+  names.
 - **Operator-authored** skills/agents (not in the manifest), never seen, never
   clobbered. (Named operator personas like `telegram-default`/Saskia are NOT
   manifest slugs.)

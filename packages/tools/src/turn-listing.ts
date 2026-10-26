@@ -37,7 +37,7 @@ import {
 } from './connector-scope';
 import { gateCallerFor, turnCaller, type ToolCaller } from './gate-callers';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
-import { isOwnerSurface } from './surface';
+import { surfaceGateFacts } from './surface';
 import type { ToolHandlerContext } from './types';
 import { builtinToolGatePolicy, builtinToolRef } from './tool-gate-policy';
 
@@ -66,7 +66,7 @@ function callerKey(tool: Tool, policy: GatePolicy): string {
 }
 
 /** What a loop's listing knows of its turn (A5 step 6a, carried L1): its
- *  owner, and its surface, read by isOwnerSurface as turnCallRefusal reads
+ *  owner, and its surface, read by surfaceGateFacts as turnCallRefusal reads
  *  the call's (fix round 1, LOW-3: one rule). No `surface` key: not known,
  *  and an owner-only tool is not narrowed by it here; a `surface` key that
  *  holds undefined is a missing surface, never the owner's. */
@@ -113,7 +113,7 @@ export async function turnListedTools<T extends Tool>(
   const out: T[] = [];
   const known = {
     ...(facts.ownerId !== undefined ? { ownerId: facts.ownerId } : {}),
-    ...('surface' in facts ? { ownerSurface: isOwnerSurface(facts.surface) } : {}),
+    ...('surface' in facts ? surfaceGateFacts(facts.surface) : {}),
   };
   for (const tool of tools) {
     const asked = gateRefOf(tool);
@@ -210,7 +210,7 @@ async function callRefusal(
       queue: true,
     },
   };
-  const facts = { ownerSurface: isOwnerSurface(ctx.surface), ownerId: ctx.ownerId };
+  const facts = { ...surfaceGateFacts(ctx.surface), ownerId: ctx.ownerId };
   try {
     if (h?.kind === 'builtin') {
       // A builtin with no policy meets the gate's step 3, as at dispatch.

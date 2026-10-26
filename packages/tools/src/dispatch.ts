@@ -64,7 +64,7 @@ import { isMcpManagedSecretService } from './mcp-oauth';
 import { builtinPolicy, policyUntrusted } from './tool-policy';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
-import { isOwnerSurface } from './surface';
+import { surfaceGateFacts } from './surface';
 import { runGated } from './admin-gate';
 import { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 import {
@@ -74,6 +74,7 @@ import {
   nestedToolCaller,
   withToolCaller,
   type AppBrokerVerdict,
+  type GateCallFacts,
   type ToolCaller,
 } from './gate-callers';
 import { maskToolDatabaseErrors } from './tool-error-mask';
@@ -260,11 +261,11 @@ function keyOrPeer(caller: ToolCaller): boolean {
   return caller.via === 'key' || caller.via === 'peer';
 }
 
-/** What a call tells the gate caller beyond its entry (A5 step 6a): whether
- *  its surface is the owner's (the owner-only narrower) and its owner (the
- *  connector narrower's resource rows). */
-function callFacts(ctx: ToolHandlerContext): { ownerSurface: boolean; ownerId: string } {
-  return { ownerSurface: isOwnerSurface(ctx.surface), ownerId: ctx.ownerId };
+/** What a call tells the gate caller beyond its entry (A5 step 6a): what
+ *  its surface says (surfaceGateFacts: the owner-only narrower) and its
+ *  owner (the connector narrower's resource rows). */
+function callFacts(ctx: ToolHandlerContext): GateCallFacts & { ownerId: string } {
+  return { ...surfaceGateFacts(ctx.surface), ownerId: ctx.ownerId };
 }
 
 /**

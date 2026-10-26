@@ -26,7 +26,7 @@ import type { ToolItemArg } from './tool-policy';
 import { db, nodes } from '@mantle/db';
 import { eq } from 'drizzle-orm';
 import { str } from './coerce';
-import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
+import { isOwnerSurface, keyOrPeerVia, loginTurnSurfaceId, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
 import { CS } from './client-sourced-rule';
@@ -74,7 +74,8 @@ const OWNER_FALLBACK_VIAS: ReadonlySet<string> = new Set(['mcp', 'run', 'pending
 
 export function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string {
   const s = ctx.surface;
-  if (s?.kind === 'team' && typeof s.loginId === 'string' && s.loginId !== '') return s.loginId;
+  const turnLogin = loginTurnSurfaceId(s);
+  if (turnLogin) return turnLogin;
   if (isOwnerSurface(s)) {
     const named = ownerSurfaceLoginId(s);
     if (named) return named;

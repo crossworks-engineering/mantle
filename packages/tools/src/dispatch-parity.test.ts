@@ -27,7 +27,10 @@
  * pre-check removal (docs/actors.md, "Pre-check deletion") re-recorded the
  * 56 tools whose item pre-check went and whose cases reach it (an item the
  * stubbed rights refuse now runs the handler: the database refuses it);
- * every other hash stands.
+ * every other hash stands. Workspace delegation (owner decision
+ * 2026-10-26) re-recorded the 23 app tools alone: they carry `loginTurns`,
+ * so the member turn (a team surface naming the login its turn scope
+ * answers) runs them where the owner-only gate refused it before.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';

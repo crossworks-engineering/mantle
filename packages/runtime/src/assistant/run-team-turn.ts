@@ -31,6 +31,10 @@
  *   - No persona notes, no owner conversation history, no other login's
  *     turns or digests in the prompt. The ONLY cross-member state is brain
  *     content retrieval.
+ *   - A delegation (Draftsman, Presenter, Appsmith only: the workspace
+ *     delegates) runs its child in this turn's scope and on its surface:
+ *     this login's rights in this workspace, none of the owner's context;
+ *     its tokens count on the turn's ledger slot.
  *   - The member's identity line rides the volatile block, so the cached
  *     system prefix stays shared across members.
  */
@@ -437,7 +441,11 @@ async function runTeamTurnSteps(
       // Shared responder-turn assembly (audit #5c), configured for the team
       // surface's HARD isolation: no identity/journal block, no heartbeats, no
       // owner thinking budget (an effort set on the responder agent itself
-      // still applies), no delegation (fail closed). The private-reads
+      // still applies). Delegation: the workspace delegates of the agent's
+      // delegate_to only (Draftsman, Presenter, Appsmith; owner decision
+      // 2026-10-26), which the assembly and the delegation gateway read from
+      // this turn's scope; the child runs in this scope, on this surface,
+      // with this login's rights. The private-reads
       // switch (default OFF) is enforced HERE, at tool resolution — independent
       // of the `team-read` group grant, so it can't be bypassed by a manifest
       // change that re-adds the slugs.
@@ -450,7 +458,6 @@ async function runTeamTurnSteps(
           includeIdentity: false,
           volatileExtras: [memberLine],
           withThinking: false,
-          allowDelegation: false,
           excludePrivateCorpus: !privateReads,
         }),
       );
@@ -495,8 +502,10 @@ async function runTeamTurnSteps(
             subjectId: inbound.id,
             subjectKind: 'team_turn',
             agentId: agent.id,
-            onClose: (t) => {
-              closed.tokens = t;
+            // The turn's tokens and its delegated children's: a delegation
+            // spends on this member's budget too.
+            onClose: (t, delegated) => {
+              closed.tokens = { in: t.in + delegated.in, out: t.out + delegated.out };
             },
             data: {
               surface: 'team',
@@ -519,8 +528,8 @@ async function runTeamTurnSteps(
               prefs,
               logPrefix: '[team-turn]',
               recordToolCount: true,
-              // Fail closed: the team responder never delegates (assembly ran
-              // with allowDelegation:false / withThinking:false). `assembled` also
+              // Delegation is the workspace delegates only (assembled.delegateTo,
+              // and the gateway at the call). `assembled` also
               // carries loopOverrides (spread by runResponderLoop): since the
               // unification, the team-responder's memory_config max_tool_calls /
               // max_calls_per_tool clamps are enforced here where they weren't

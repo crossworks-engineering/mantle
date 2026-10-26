@@ -22,7 +22,11 @@ import {
   MAX_TERMINAL_EDGE_DEPTH,
   checkAgentDepth,
   checkDelegationAllowed,
+  checkWorkspaceDelegate,
   isTerminalDelegateConfig,
+  turnDelegates,
+  WORKSPACE_DELEGATE_ERROR,
+  WORKSPACE_NO_LOGIN_DELEGATE_ERROR,
 } from './invoke-agent-guards';
 
 describe('depth constants', () => {
@@ -236,5 +240,34 @@ describe('checkDelegationAllowed', () => {
       expect(r.reason).not.toContain('secret_internal_agent');
       expect(r.reason).not.toContain('admin_console');
     }
+  });
+});
+
+// Owner decision 2026-10-26: the workspace half of the gateway.
+describe('workspace delegation', () => {
+  const WS = { workspaceTurn: true, loginId: 'u1' };
+  const ADMIN = { workspaceTurn: false, loginId: 'u1' };
+
+  it('turnDelegates cuts a workspace turn to the list, in the allowlist order', () => {
+    const list = ['appsmith', 'researcher', 'presenter', 'toolsmith', 'diagrammer'];
+    expect(turnDelegates(list, WS)).toEqual(['appsmith', 'presenter', 'diagrammer']);
+    expect(turnDelegates(list, ADMIN)).toEqual(list);
+    expect(turnDelegates(null, WS)).toEqual([]);
+  });
+
+  it('checkDelegationAllowed refuses a slug off the list in a workspace turn, whatever the allowlist', () => {
+    const r = checkDelegationAllowed('ws', 'toolsmith', ['toolsmith'], WS);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe(WORKSPACE_DELEGATE_ERROR('toolsmith'));
+    expect(checkDelegationAllowed('ws', 'toolsmith', ['toolsmith'], ADMIN).ok).toBe(true);
+    expect(checkDelegationAllowed('ws', 'toolsmith', ['toolsmith']).ok).toBe(true);
+  });
+
+  it('a listed delegate still needs the allowlist and a login', () => {
+    expect(checkDelegationAllowed('ws', 'presenter', ['presenter'], WS).ok).toBe(true);
+    expect(checkDelegationAllowed('ws', 'presenter', ['diagrammer'], WS).ok).toBe(false);
+    const none = checkWorkspaceDelegate('presenter', { workspaceTurn: true, loginId: null });
+    expect(none).toEqual({ ok: false, reason: WORKSPACE_NO_LOGIN_DELEGATE_ERROR });
+    expect(checkWorkspaceDelegate('coder', { workspaceTurn: false, loginId: null }).ok).toBe(true);
   });
 });

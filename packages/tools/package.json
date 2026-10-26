@@ -10,6 +10,8 @@
     "./client-sourced": "./src/client-sourced.ts",
     "./client-sourced-rules": "./src/client-sourced-rules.ts",
     "./surface": "./src/surface.ts",
+    "./invoke-agent-guards": "./src/invoke-agent-guards.ts",
+    "./outside-admin": "./src/outside-admin.ts",
     "./third-party": "./src/third-party.ts",
     "./gate-narrowers": "./src/gate-narrowers.ts",
     "./canvas-render": "./src/canvas-render/sidecar.ts",

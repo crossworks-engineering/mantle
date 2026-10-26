@@ -42,6 +42,7 @@ import {
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
+  WORKSPACE_DELEGATE_SLUGS as TOOLS_WORKSPACE_DELEGATE_SLUGS,
   type HttpHandler,
 } from '@mantle/tools';
 import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig } from '@mantle/db';
@@ -1887,7 +1888,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only. Never appears in the owner's Conversations inbox and is never a delegate.",
+      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only itself, it hands a diagram, a canvas or an app to Draftsman, Presenter or Appsmith, which work with the member's own rights. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
@@ -1904,6 +1905,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
       '1bfb73a81b0513e88302a9c3d6b27dc0b05a083a8a3eab31a6758acb188889ab',
       '8b0afadf564ea0e8ea3880091aee3ba48209371434604235182cc695ef81531e',
+      // v0.400.11, read-only with no hand-off (before workspace delegation).
+      '46d7a49616d0cf4539668cd2305f8b97d050a9c1e833482b82f4a6d00973ca03',
     ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it
@@ -1912,8 +1915,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // I/O, no model. A member asking "what's the release rate at 300 psi" gets
     // a number with its derivation; authoring stays owner-side.
     // Not a delegate, no assist surface — it is resolved explicitly by the team
-    // turn pipeline and nothing else.
-    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval'],
+    // turn pipeline and nothing else. `delegation` (owner decision
+    // 2026-10-26): its own surface stays read-only, and it hands a drawing,
+    // a canvas or an app to the workspace delegates (delegate_to below,
+    // WORKSPACE_DELEGATE_SLUGS), which run with the member's own rights in
+    // its workspace. Granted ONCE to an existing brain's responder
+    // (reconcileWorkspaceDelegation), so an owner's removal sticks: the
+    // specialist union leaves this group out for it.
+    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,
     // and describing one when it could be shown is the weaker answer on the
@@ -1943,7 +1952,11 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       chunk_limit: 8,
       inject_journal: false,
       inject_working_notes: false,
-      delegate_to: [],
+      // The workspace delegates (owner decision 2026-10-26); a fresh install
+      // seeds them, an existing brain gets them once
+      // (reconcileWorkspaceDelegation). The reconcile never re-syncs
+      // delegate_to (syncSpecialistDefs keeps the live list).
+      delegate_to: [...TOOLS_WORKSPACE_DELEGATE_SLUGS],
       max_iterations: 15,
     },
     priority: 100,
@@ -2195,6 +2208,20 @@ export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] = PERSONA_MANIFEST.tool
  * the rights come from the turn's login (row rules), not the group.
  */
 export const ASSISTANT_CONTENT_KIND_GROUPS: readonly string[] = ['present-read', 'present'];
+
+/**
+ * The specialists a workspace turn may delegate to (owner decision
+ * 2026-10-26): Draftsman, Presenter and Appsmith. The one list lives with the
+ * delegation gateway in @mantle/tools (invoke-agent-guards.ts), which
+ * enforces it at the call; re-exported here as the manifest's name for it
+ * and pinned in manifest.test.ts (each a shipped delegate specialist with
+ * no adminOnly group, and toolsmith not among them).
+ */
+export const WORKSPACE_DELEGATE_SLUGS: readonly string[] = TOOLS_WORKSPACE_DELEGATE_SLUGS;
+
+/** The group that holds invoke_agent: what a workspace assistant is granted,
+ *  once, with the workspace delegates (reconcileWorkspaceDelegation). */
+export const WORKSPACE_DELEGATION_GROUP = 'delegation';
 
 /** The agents the persona delegates to (memory_config.delegate_to). */
 export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a.isDelegate).map(

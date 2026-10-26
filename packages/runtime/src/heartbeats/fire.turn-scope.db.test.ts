@@ -242,7 +242,9 @@ describe.skipIf(!URL)('the Team assistant outside a chat turn runs in Team (M2)'
               ${apiKeyId}, 'You answer people.', 'admin', null)`);
     const { invokeAgent } = await import('../agent/invoke-agent');
     const { AgentWorkspaceError } = await import('../agent/agent-viewer');
-    // No open scope and no login: a run or a heartbeat's system work.
+    // No open scope and no login: a run's system work (the owner's run
+    // path names itself; a missing surface is no owner, and the delegation
+    // gateway refuses it first, as a workspace turn that answers no login).
     await expect(
       invokeAgent({
         ownerId,
@@ -250,8 +252,17 @@ describe.skipIf(!URL)('the Team assistant outside a chat turn runs in Team (M2)'
         prompt: 'hello',
         depth: 1,
         parentTraceId: null,
+        surface: { kind: 'owner', via: 'run' },
       } as never),
     ).rejects.toBeInstanceOf(AgentWorkspaceError);
+    const none = await invokeAgent({
+      ownerId,
+      agentSlug: 'lone-responder',
+      prompt: 'hello',
+      depth: 1,
+      parentTraceId: null,
+    } as never);
+    expect(none.ok).toBe(false);
     expect(h.calls).toBe(0);
   });
 });

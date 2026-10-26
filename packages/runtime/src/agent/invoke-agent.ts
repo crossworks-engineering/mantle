@@ -36,7 +36,16 @@ import {
 } from '@mantle/db';
 import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
-import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH, isTerminalDelegateConfig } from '@mantle/tools';
+import {
+  MAX_AGENT_DEPTH,
+  MAX_TERMINAL_EDGE_DEPTH,
+  builtinPolicy,
+  checkWorkspaceDelegate,
+  delegationTurnOf,
+  isOwnerSurface,
+  isTerminalDelegateConfig,
+  turnDelegates,
+} from '@mantle/tools';
 import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
 import { applyAgentThinking } from '@mantle/content-core/profile-projections';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
@@ -124,6 +133,14 @@ export const invokeAgent: AgentInvoker = async ({
       error: `agent '${agentSlug}' answers in another workspace, so it cannot run inside this turn`,
     };
   }
+  // The workspace half of the delegation gateway, again (invoke-agent-guards
+  // checkWorkspaceDelegate; the handler asked it with the parent's
+  // allowlist): in a workspace turn only a workspace delegate, and only for
+  // a turn that answers a login. Read from this turn's own scope and
+  // surface, as the handler reads them, before any trace or model call.
+  const turn = await delegationTurnOf(surface);
+  const wsCheck = checkWorkspaceDelegate(agentSlug, turn);
+  if (!wsCheck.ok) return { ok: false, error: wsCheck.reason };
   const childWorkspaceId = scoped || openScope ? (target.workspaceId ?? null) : null;
   const childLoginId = surfaceLoginId(surface);
   const inChildScope = <T>(fn: () => Promise<T>): Promise<T> =>
@@ -207,12 +224,22 @@ export const invokeAgent: AgentInvoker = async ({
   ];
   // Resolved in the child's scope: a workspace assistant's adminOnly groups
   // drop out there, and its tool rows are read on the workspace role.
+  // The owner's private corpus (a policy's `privateCorpus`: mail, the
+  // Journal) stays out of a child that runs for anyone but the owner's own
+  // surfaces, as its parent's turn (excludePrivateCorpus in assemble-turn):
+  // a team surface keeps it only with the owner's private-reads switch,
+  // which the surface carries from the parent turn.
+  const hidePrivate =
+    !isOwnerSurface(surface) && !(surface?.kind === 'team' && surface.privateReads === true);
   const allowedTools = await inChildScope(async () => {
     const groupTools = await resolveAgentToolGroups(
       ownerId,
       (target as Agent).toolGroupSlugs ?? [],
     );
-    return resolveAgentTools(ownerId, effectiveToolSlugs(groupTools));
+    const slugs = effectiveToolSlugs(groupTools).filter(
+      (slug) => !hidePrivate || builtinPolicy(slug)?.privateCorpus !== true,
+    );
+    return resolveAgentTools(ownerId, slugs);
   });
 
   // Open the child's trace inside a startTrace block so the child's
@@ -244,6 +271,16 @@ export const invokeAgent: AgentInvoker = async ({
         parent_trace_id: parentTraceId,
         delegated_agent_slug: agentSlug,
         delegation_depth: depth,
+        // A workspace delegation says so (its parent is a workspace turn):
+        // the surface it runs on and the login it answers. The trace's
+        // login is the parent's (startTrace inherits it).
+        ...(turn.workspaceTurn
+          ? {
+              workspace_delegation: true,
+              surface: surface?.kind ?? null,
+              login_id: turn.loginId,
+            }
+          : {}),
       },
     },
     async () => {
@@ -277,7 +314,10 @@ export const invokeAgent: AgentInvoker = async ({
         // refused there, as it is at every other entry point.
         agentRole: target.role,
         agentDepth: depth,
-        delegateTo: (mc?.delegate_to ?? []) as readonly string[],
+        // Its own delegates, cut to the workspace delegates in a workspace
+        // turn (turnDelegates): what its invoke_agent shows, which the
+        // gateway enforces again at the call.
+        delegateTo: turnDelegates(mc?.delegate_to as readonly string[] | undefined, turn),
         resultHandling: mc?.result_handling ?? null,
         // The child's own thinking effort when set; on inherit, the budget the
         // parent forwarded (the profile's, via the invoke_agent tool-context

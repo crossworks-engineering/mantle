@@ -304,6 +304,33 @@ A folder is an item with a home and grants like any other.
   user's. An export with no folder named goes where every export goes
   (Auto-filed / Exports for an Admin user, else the top of Files and the
   create home), and the reply says where.
+- **Delegation from a workspace** (owner decision 2026-10-26). The
+  assistant of a workspace other than Admin, the team responder included,
+  hands a drawing, a canvas or an app to Draftsman (`diagrammer`),
+  Presenter (`presenter`) or Appsmith (`appsmith`), and to no other agent:
+  the one list is `WORKSPACE_DELEGATE_SLUGS` (packages/tools
+  invoke-agent-guards.ts, re-exported by the system manifest), and a
+  delegate must be in both that list and the assistant's own `delegate_to`.
+  The delegation gateway (`checkDelegationAllowed`, asked by the
+  `invoke_agent` handler and again by the runtime invoker) reads the turn
+  from its own scope and surface: a turn whose scope does not hold Admin,
+  or that is not on an owner surface, is a workspace turn, and one that
+  answers no user (a heartbeat, a run planned with none) delegates
+  nothing. The specialist runs in the turn's own scope and on its team
+  surface: the user's rights in that one workspace, never Admin's, its
+  creates landing by the home rule as the user's own would, no owner
+  identity, Journal, persona notes or working notes in its prompt, the
+  owner's mail and Journal tools dropped unless the private-reads switch
+  is on, and its Admin-only groups dropped as in any turn outside Admin.
+  Its own delegation follows the same list, so Appsmith's hand-off to
+  the Toolsmith is refused in a workspace turn. Its trace is the usual
+  `child_agent` trace with `workspace_delegation`, `surface: team` and the
+  user's login; its tokens count on the user's turn slot (the daily token
+  budget). An upgrade grants the `delegation` group and the three
+  delegates to each such assistant once (`workspaceDelegationGranted`); an
+  owner's removal sticks. The web chat and a workspace run delegate; a
+  workspace's Telegram chat does not yet (its turn slot has no tokens
+  settled, so a child's spend would pass the budget unseen).
 - **With no user** (a heartbeat, a scheduled run) an assistant only reads,
   except the Admin assistant, which acts for the owner.
 - **Each user reads only their own chats.** Every user has their own thread
@@ -429,7 +456,10 @@ chat belongs to one user. Details: [telegram.md](./telegram.md).
 
 An app is an item: it has a home and grants like a page.
 
-- **Code.** A Moderator of the app's home builds and edits it.
+- **Code.** A Moderator of the app's home builds and edits it, by hand,
+  over MCP, or through an assistant of a workspace it is in (Appsmith,
+  delegated: the app tools run on a user's workspace turn with that
+  user's rights, `loginTurns`).
 - **Delete.** Delete an app: its home Moderator, Admin users and the
   owner. It goes to Recently deleted with a snapshot. An app someone
   other than the owner deleted waits there until the owner deletes it

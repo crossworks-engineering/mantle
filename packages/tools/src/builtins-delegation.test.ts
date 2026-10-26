@@ -31,6 +31,16 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const selectQueue: unknown[][] = [];
 const whereArgs: unknown[] = [];
+/** The open workspace scope the gateway reads (null: none), and whether it
+ *  holds the Admin workspace. */
+const scope = vi.hoisted(() => ({
+  open: null as null | { kind: 'assistant'; loginId: string | null; ws: string[]; modWs: string[] },
+  holdsAdmin: true,
+}));
+vi.mock('@mantle/db/viewer', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  currentWorkspaceScope: () => scope.open,
+}));
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
@@ -44,13 +54,18 @@ vi.mock('@mantle/db', async (importOriginal) => {
     then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
       Promise.resolve(selectQueue.shift() ?? []).then(res, rej),
   };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
+  return {
+    ...actual,
+    db: { ...actual.db, select: vi.fn(() => chain) },
+    scopeHoldsAdmin: vi.fn(async () => scope.holdsAdmin),
+  };
 });
 vi.mock('./agent-bridge', () => ({ getAgentInvoker: vi.fn(), registerAgentInvoker: vi.fn() }));
 
 import * as dbmod from '@mantle/db';
 import { getAgentInvoker, type AgentInvoker } from './agent-bridge';
 import { invoke_agent, NO_PARENT_AGENT_ERROR } from './builtins-delegation';
+import { WORKSPACE_DELEGATE_SLUGS } from './invoke-agent-guards';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
@@ -81,6 +96,8 @@ const USER_ASK = 'Find the Q3 numbers and put them in the runbook';
 function parent(over: Partial<NonNullable<ToolHandlerContext['agent']>> = {}): ToolHandlerContext {
   return {
     ownerId: 'o1',
+    // The owner's web chat, unscoped (an Admin turn): the allowlist alone.
+    surface: { kind: 'web' },
     agent: {
       slug: 'responder',
       depth: 1,
@@ -97,6 +114,8 @@ const ARGS = { agent_slug: 'researcher', prompt: 'Look up the Q3 revenue.' };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  scope.open = null;
+  scope.holdsAdmin = true;
   selectQueue.length = 0;
   whereArgs.length = 0;
   vi.mocked(getAgentInvoker).mockReturnValue(invoker);
@@ -288,9 +307,116 @@ describe('invoke_agent passes the caller down to the child', () => {
     ['missing surface', undefined, undefined],
   ];
   it.each(cases)('%s', async (_name, surface, expected) => {
-    outputOf(await invoke_agent.handler(ARGS, { ...parent(), ...(surface ? { surface } : {}) }));
+    // A team or missing surface is a workspace turn: a workspace delegate,
+    // in a scope that answers the login.
+    scope.open = { kind: 'assistant', loginId: TEAM.loginId, ws: ['w1'], modWs: [] };
+    scope.holdsAdmin = false;
+    const ctx = { ...parent({ delegateTo: ['presenter'] }), surface };
+    outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx));
     const input = invoker.mock.calls[0]![0];
     expect(input.surface).toEqual(expected);
+  });
+});
+
+// Owner decision 2026-10-26: a workspace turn delegates to the workspace
+// delegates only (Draftsman, Presenter, Appsmith), in BOTH that list and
+// its own allowlist, and only when it answers a login. One gateway: the
+// handler asks checkDelegationAllowed with the turn read from its scope and
+// surface, before any lookup or child turn.
+describe('invoke_agent in a workspace turn', () => {
+  const LOGIN = '00000000-0000-4000-8000-000000000003';
+  const ALL = ['researcher', 'pages', 'toolsmith', 'coder', ...WORKSPACE_DELEGATE_SLUGS];
+  const wsTurn = (over: Partial<NonNullable<ToolHandlerContext['agent']>> = {}) => {
+    scope.open = { kind: 'assistant', loginId: LOGIN, ws: ['w1'], modWs: [] };
+    scope.holdsAdmin = false;
+    return {
+      ...parent({ slug: 'ws-assistant', delegateTo: ALL, ...over }),
+      surface: { kind: 'team' as const, loginId: LOGIN },
+    };
+  };
+
+  it('the list is exactly Draftsman, Presenter and Appsmith', () => {
+    expect([...WORKSPACE_DELEGATE_SLUGS]).toEqual(['diagrammer', 'presenter', 'appsmith']);
+  });
+
+  it.each(['researcher', 'pages', 'toolsmith', 'coder'])(
+    'refuses %s even when the allowlist names it, before any lookup',
+    async (slug) => {
+      const err = errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: slug }, wsTurn()));
+      expect(err).toMatch(/cannot be delegated to from a workspace/);
+      expect(err).toContain(`'${slug}'`);
+      expect(invoker).not.toHaveBeenCalled();
+      expect(dbmod.db.select).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([...WORKSPACE_DELEGATE_SLUGS])(
+    'hands %s the turn: next depth, the team surface',
+    async (slug) => {
+      outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: slug }, wsTurn()));
+      expect(invoker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentSlug: slug,
+          depth: 2,
+          surface: { kind: 'team', loginId: LOGIN },
+        }),
+      );
+    },
+  );
+
+  it('a workspace delegate off the allowlist is still refused', async () => {
+    const err = errorOf(
+      await invoke_agent.handler(
+        { ...ARGS, agent_slug: 'presenter' },
+        wsTurn({ delegateTo: ['diagrammer'] }),
+      ),
+    );
+    expect(err).toMatch(/not in the parent's delegation allowlist/);
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('a workspace turn that answers no login delegates nothing', async () => {
+    const ctx = wsTurn();
+    scope.open = { kind: 'assistant', loginId: null, ws: ['w1'], modWs: [] };
+    const err = errorOf(await invoke_agent.handler({ ...ARGS, agent_slug: 'presenter' }, ctx));
+    expect(err).toMatch(/answers no user/);
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('nested: Appsmith to Toolsmith is refused in a workspace turn, before the terminal lookup', async () => {
+    const err = errorOf(
+      await invoke_agent.handler(
+        { ...ARGS, agent_slug: 'toolsmith' },
+        wsTurn({ slug: 'appsmith', depth: 2, delegateTo: ['toolsmith'] }),
+      ),
+    );
+    expect(err).toMatch(/cannot be delegated to from a workspace/);
+    expect(invoker).not.toHaveBeenCalled();
+    expect(dbmod.db.select).not.toHaveBeenCalled();
+  });
+
+  it('an owner surface in a scope without Admin is a workspace turn too', async () => {
+    scope.open = { kind: 'assistant', loginId: LOGIN, ws: ['w1'], modWs: [] };
+    scope.holdsAdmin = false;
+    const ctx = {
+      ...parent({ delegateTo: ALL }),
+      surface: { kind: 'web' as const, loginId: LOGIN },
+    };
+    expect(errorOf(await invoke_agent.handler(ARGS, ctx))).toMatch(/from a workspace/);
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('an Admin turn (owner surface, a scope that holds Admin) keeps its whole allowlist', async () => {
+    scope.open = { kind: 'assistant', loginId: LOGIN, ws: ['admin'], modWs: ['admin'] };
+    scope.holdsAdmin = true;
+    for (const slug of ['researcher', 'toolsmith', 'presenter']) {
+      const ctx = {
+        ...parent({ delegateTo: ALL }),
+        surface: { kind: 'web' as const, loginId: LOGIN },
+      };
+      outputOf(await invoke_agent.handler({ ...ARGS, agent_slug: slug }, ctx));
+    }
+    expect(invoker).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -30,7 +30,10 @@
  *      links CONVERGE (add new + drop a retired manifest skill like rich_writing;
  *      operator-authored skills kept). See reconcilePersonaCapabilitiesByRole.
  *      Then the content-kind groups (Present) onto the assistant of EVERY
- *      workspace, once per agent: reconcileAssistantContentKinds.
+ *      workspace, once per agent: reconcileAssistantContentKinds; and, after
+ *      step 4's provision, the delegation group and the workspace delegates
+ *      onto the assistant of every workspace other than Admin (the Team
+ *      responder too), once per agent: reconcileWorkspaceDelegation.
  *   4. Provision any specialist agent that this version of the manifest ships but
  *      the brain is MISSING (e.g. `appsmith` in 0.31) — create-only, and wire the
  *      persona's delegation to it. This closes the same gap step 1 closes for
@@ -53,7 +56,12 @@ import { sql } from 'drizzle-orm';
 import { db, agents, skills, toolGroups, tools, workspaces, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
-import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
+import {
+  addAgentDelegates,
+  applyManifest,
+  seedToolCapabilities,
+  seedManifestWorkers,
+} from './seed';
 import {
   ASSISTANT_CONTENT_KIND_GROUPS,
   MANIFEST_AGENTS,
@@ -62,6 +70,8 @@ import {
   PERSONA_TOOL_GROUP_SLUGS,
   RETIRED_BUILTIN_TOOL_SLUGS,
   RETIRED_TOOL_GROUP_SLUGS,
+  WORKSPACE_DELEGATE_SLUGS,
+  WORKSPACE_DELEGATION_GROUP,
 } from './manifest';
 import {
   convergeManifestSkills,
@@ -72,6 +82,7 @@ import {
   shippedUpgradeNote,
   sameTopLevel,
   specialistParamsTarget,
+  TEAM_RESPONDER_SLUG,
 } from './reconcile-util';
 import { listProseVersions, saveProse } from '../studio/prompt-versions';
 import { env, feature } from '@mantle/config';
@@ -177,6 +188,7 @@ async function agentRows(ownerId: string, roles?: ('responder' | 'assistant')[])
       role: agents.role,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
+      memoryConfig: agents.memoryConfig,
       wsIsAdmin: workspaces.isAdmin,
       workspaceId: agents.workspaceId,
     })
@@ -319,6 +331,96 @@ export async function reconcileAssistantContentKinds(ownerId: string): Promise<s
   return changes;
 }
 
+/** The record's token for the delegation group, and for one delegate. */
+const GROUP_TOKEN = `group:${WORKSPACE_DELEGATION_GROUP}`;
+const delegateToken = (slug: string) => `delegate:${slug}`;
+
+/**
+ * Give the assistant of every workspace other than Admin (and the shipped
+ * Team responder, when a workspace holds it) the `delegation` group and the
+ * workspace delegates (WORKSPACE_DELEGATE_SLUGS: Draftsman, Presenter,
+ * Appsmith) in its delegate_to, ONCE per agent (owner decision 2026-10-26),
+ * the pattern of reconcileAssistantContentKinds: the anchor's preferences
+ * hold `workspaceDelegationGranted`, agent id to what this step granted it
+ * (`group:delegation`, `delegate:<slug>`). An item reaches an agent only
+ * while its id does not list it, and is listed then, added or already
+ * held, so an owner who removes the group or a delegate later keeps it
+ * removed; an assistant made or attached later gets them at the next
+ * reconcile. A delegate whose agent the brain does not have is neither
+ * added nor listed (it is, once provisioned). Admin's persona is not
+ * reached (wireDelegation owns its list); neither is a disabled agent, an
+ * agent on no workspace or another manifest agent. The delegate_to merge
+ * keeps every entry it had (addAgentDelegates). What the turn may call of
+ * the list is the delegation gateway's (turnDelegates): a workspace
+ * assistant's older delegate_to (copied from the persona) reaches nothing
+ * off WORKSPACE_DELEGATE_SLUGS. Returns the `slug:+added` strings changed.
+ */
+export async function reconcileWorkspaceDelegation(ownerId: string): Promise<string[]> {
+  const adminOnly = await adminOnlyGroups(ownerId);
+  const rows = await agentRows(ownerId);
+  const assistants = rows.filter(
+    (a) =>
+      a.workspace === 'other' &&
+      (a.slug === TEAM_RESPONDER_SLUG ||
+        ((a.role === 'responder' || a.role === 'assistant') &&
+          !MANIFEST_NON_PERSONA_SLUGS.has(a.slug))),
+  );
+  const present = new Set(
+    (
+      await db
+        .select({ slug: agents.slug })
+        .from(agents)
+        .where(
+          and(eq(agents.ownerId, ownerId), inArray(agents.slug, [...WORKSPACE_DELEGATE_SLUGS])),
+        )
+    ).map((r) => r.slug),
+  );
+  const granted = (await loadProfilePreferences(ownerId)).workspaceDelegationGranted ?? {};
+  const next: Record<string, string[]> = { ...granted };
+  const changes: string[] = [];
+  let marked = false;
+  for (const a of assistants) {
+    const listed = granted[a.id] ?? [];
+    const groupDue =
+      !listed.includes(GROUP_TOKEN) &&
+      groupsForAgent([WORKSPACE_DELEGATION_GROUP], a, adminOnly).length > 0;
+    const delegatesDue = WORKSPACE_DELEGATE_SLUGS.filter(
+      (d) => present.has(d) && !listed.includes(delegateToken(d)),
+    );
+    if (!groupDue && delegatesDue.length === 0) continue;
+    const added: string[] = [];
+    if (groupDue) {
+      const missing = missingPersonaGroups(a.groups, [WORKSPACE_DELEGATION_GROUP]);
+      if (await addAgentGroups(a.id, missing)) added.push(...missing);
+    }
+    const cur = (a.memoryConfig as { delegate_to?: unknown } | null)?.delegate_to;
+    const listedNow = Array.isArray(cur) ? cur : [];
+    const delegatesMissing = delegatesDue.filter((d) => !listedNow.includes(d));
+    if (await addAgentDelegates(a.id, delegatesMissing)) added.push(...delegatesMissing);
+    if (added.length) changes.push(`${a.slug}:+${added.join(',')}`);
+    next[a.id] = [
+      ...listed,
+      ...(groupDue ? [GROUP_TOKEN] : []),
+      ...delegatesDue.map(delegateToken),
+    ];
+    marked = true;
+  }
+  // Drop the ids of deleted agents (a disabled one keeps its list).
+  const live = new Set(
+    (await db.select({ id: agents.id }).from(agents).where(eq(agents.ownerId, ownerId))).map(
+      (r) => r.id,
+    ),
+  );
+  for (const id of Object.keys(next)) {
+    if (!live.has(id)) {
+      delete next[id];
+      marked = true;
+    }
+  }
+  if (marked) await updateProfilePreferences(ownerId, { workspaceDelegationGranted: next });
+  return changes;
+}
+
 /**
  * Reconcile each manifest specialist's product-owned capability links onto the
  * EXISTING specialist agent: UNION tool groups (additive — operator group adds
@@ -341,8 +443,14 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
+    // The team responder's `delegation` is granted once instead
+    // (reconcileWorkspaceDelegation), so an owner's removal sticks.
+    const unionGroups =
+      a.slug === TEAM_RESPONDER_SLUG
+        ? (a.toolGroupSlugs ?? []).filter((g) => g !== WORKSPACE_DELEGATION_GROUP)
+        : (a.toolGroupSlugs ?? []);
     const missingGroups = groupsForAgent(
-      missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []),
+      missingPersonaGroups(row.groups, unionGroups),
       row,
       adminOnly,
     );
@@ -572,6 +680,8 @@ export async function reconcileOwner(ownerId: string) {
   const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
   const contentKindChanges = await reconcileAssistantContentKinds(ownerId);
   const provisioned = await provisionMissingSpecialists(ownerId);
+  // After the provision: a delegate is granted only once its agent exists.
+  const delegationChanges = await reconcileWorkspaceDelegation(ownerId);
   const specialistGrants = await grantSpecialistCapabilities(ownerId);
   const defsSynced = await syncSpecialistDefs(ownerId);
   const promptsUpgraded = await upgradeUneditedPrompts(ownerId);
@@ -587,6 +697,7 @@ export async function reconcileOwner(ownerId: string) {
     personaChanges,
     contentKindChanges,
     provisioned,
+    delegationChanges,
     specialistGrants,
     defsSynced,
     promptsUpgraded,
@@ -641,6 +752,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
       personaChanges,
       contentKindChanges,
       provisioned,
+      delegationChanges,
       specialistGrants,
       defsSynced,
       promptsUpgraded,
@@ -654,6 +766,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (personaChanges.length ? `; persona ${personaChanges.join('; ')}` : ' (persona current)') +
         (contentKindChanges.length ? `; assistants ${contentKindChanges.join('; ')}` : '') +
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
+        (delegationChanges.length ? `; delegation ${delegationChanges.join('; ')}` : '') +
         (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
         (promptsUpgraded.length ? `; prompts upgraded ${promptsUpgraded.join(', ')}` : '') +

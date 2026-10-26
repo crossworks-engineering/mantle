@@ -209,6 +209,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.lastReconciledVersion
         : undefined,
     contentKindGroupsGranted: projectGrantedGroups(prefs.contentKindGroupsGranted),
+    workspaceDelegationGranted: projectGrantedGroups(prefs.workspaceDelegationGranted),
   };
 }
 
@@ -428,6 +429,7 @@ export async function updateProfilePreferences(
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
+    workspaceDelegationGranted: projectGrantedGroups(merged.workspaceDelegationGranted),
   };
 }
 

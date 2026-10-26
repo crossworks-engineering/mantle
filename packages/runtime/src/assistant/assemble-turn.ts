@@ -27,6 +27,9 @@
  */
 
 import type { Agent } from '@mantle/db';
+// The guard's leaf module: no tool registry loads with the assembly.
+import { turnDelegates } from '@mantle/tools/invoke-agent-guards';
+import { scopeOutsideAdmin } from '@mantle/tools/outside-admin';
 import {
   delegationHintLine,
   loadDelegates,
@@ -125,8 +128,12 @@ export type AssembleResponderTurnOptions = {
   /** Resolve the per-user adaptive thinking budget (web + Telegram). Team
    *  turns pass false — no owner thinking budget for an external member. */
   withThinking?: boolean;
-  /** Honour memory_config.delegate_to. Team turns pass false — the team
-   *  responder never delegates (fail closed). */
+  /** Honour memory_config.delegate_to (default true). A workspace turn (a
+   *  scope that does not hold Admin) gets the workspace delegates of it only
+   *  (turnDelegates, WORKSPACE_DELEGATE_SLUGS), whatever the caller passes:
+   *  the same rule the delegation gateway enforces at the call. False: no
+   *  delegation at all (a Telegram workspace turn, whose member turn ledger
+   *  slot has no tokens settled yet). */
   allowDelegation?: boolean;
   /** The user's message for this turn (plus the previous user message as
    *  context). Enables the decider's `delegation_hint` use: one typed
@@ -328,7 +335,15 @@ async function assembleResponderTurnAtLevel(
   // lands in the trace; in live one hint line rides in the volatile slot —
   // a hint, never a route: the tool loop's allowlist is what delegation is
   // checked against. Best-effort like the blocks above.
-  const delegateTo = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
+  //
+  // A workspace turn (its scope does not hold the Admin workspace) is shown
+  // the workspace delegates of its list only (turnDelegates): the rule the
+  // delegation gateway (invoke_agent) enforces at the call, read here from
+  // the same scope, so the enum, the roster and the hint never offer what
+  // the call refuses.
+  const listed = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
+  const workspaceTurn = listed.length > 0 && (await scopeOutsideAdmin());
+  const delegateTo = turnDelegates(listed, { workspaceTurn });
   let delegationHint: DelegationHint | null = null;
   let delegationHintText: string | null = null;
   if (opts.inboundText && delegateTo.length > 0) {

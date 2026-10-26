@@ -258,10 +258,12 @@ export async function runsResumeTurnImpl(
         loginId: runLoginId,
         prefs,
         logPrefix: '[runs]',
-        // A workspace run: no identity block, no owner thinking budget, no
-        // delegation and no private reads, as runTeamTurn.
+        // A workspace run: no identity block, no owner thinking budget and
+        // no private reads, as runTeamTurn; delegation to the workspace
+        // delegates only (the assembly and the gateway read the scope), and
+        // only for a run planned by a login (none: no delegation at all).
         withThinking: !workspaceTurn,
-        allowDelegation: !workspaceTurn,
+        allowDelegation: !workspaceTurn || runLoginId !== null,
         ...(workspaceTurn ? { includeIdentity: false, excludePrivateCorpus: true } : {}),
       });
 

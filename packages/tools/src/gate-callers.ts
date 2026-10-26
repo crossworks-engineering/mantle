@@ -302,6 +302,10 @@ let warnedNoActor = false;
  *  the row (the connector narrower's resource rows). */
 export type GateCallFacts = Readonly<{
   ownerSurface?: boolean;
+  /** The login a team surface names (surfaceGateFacts): with a turn scope
+   *  that answers it, the call is that login's workspace turn
+   *  (`facts.loginTurn`, which a `loginTurns` owner-only tool admits). */
+  loginTurnId?: string | null;
   ownerId?: string;
   row?: Tool;
 }>;
@@ -352,8 +356,12 @@ export async function gateCallerFor(
       ? await connectorScopeFacts(call.ownerId, call.row, connScope)
       : null;
   const connector = loaded && caller.approval?.lifted ? elevatedConnectorFacts(loaded) : loaded;
+  // A login's workspace turn: its team surface names the login its turn
+  // scope answers (never one the scope does not, nor a scope with none).
+  const loginTurn = !!call.loginTurnId && !!turnScope && turnScope.loginId === call.loginTurnId;
   const facts = {
     ...(call.ownerSurface !== undefined ? { ownerSurface: call.ownerSurface } : {}),
+    ...(loginTurn ? { loginTurn: true } : {}),
     ...(connector ? { connector } : {}),
   };
   return {

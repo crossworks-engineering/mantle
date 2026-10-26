@@ -7,7 +7,10 @@
 
 import { and, eq } from 'drizzle-orm';
 import { agents, db } from '@mantle/db';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { scopeOutsideAdmin } from './outside-admin';
 import { type BuiltinToolDef, type ToolHandlerContext } from './types';
+import type { DelegationTurn } from './invoke-agent-guards';
 import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
 import { str } from './coerce';
 import { CS } from './client-sourced-rule';
@@ -36,6 +39,24 @@ export function childSurface(
   // never the brain owner in its place.
   const loginId = ownerSurfaceLoginId(surface);
   return loginId ? { kind: 'owner', via: 'delegate', loginId } : { kind: 'owner', via: 'delegate' };
+}
+
+/**
+ * What the delegation gateway (checkDelegationAllowed) knows of the turn a
+ * delegation starts in, read from the turn itself, never from arguments: a
+ * WORKSPACE turn when its surface is not the owner's (a team surface, a
+ * missing one: fail closed) or its scope does not hold the Admin workspace
+ * (any workspace assistant's turn, whatever its surface); and the login its
+ * scope answers. An Admin turn (an owner surface in a scope that holds
+ * Admin, or unscoped owner work) keeps the allowlist alone. The
+ * invoke_agent handler and the runtime invoker both read it here, so the
+ * two gates cannot drift.
+ */
+export async function delegationTurnOf(
+  surface: ToolHandlerContext['surface'],
+): Promise<DelegationTurn> {
+  const workspaceTurn = !isOwnerSurface(surface) || (await scopeOutsideAdmin());
+  return { workspaceTurn, loginId: currentWorkspaceScope()?.loginId ?? null };
 }
 
 export const invoke_agent: BuiltinToolDef = {
@@ -107,8 +128,11 @@ export const invoke_agent: BuiltinToolDef = {
     if (!targetSlug) return { ok: false, error: 'agent_slug is required' };
     if (!prompt) return { ok: false, error: 'prompt is required' };
 
-    // Guardrail 3: explicit allowlist + no self-call.
-    const allowed = checkDelegationAllowed(ctx.agent.slug, targetSlug, ctx.agent.delegateTo);
+    // Guardrail 3: explicit allowlist + no self-call; in a workspace turn,
+    // only the workspace delegates (WORKSPACE_DELEGATE_SLUGS), and only for
+    // a turn that answers a login.
+    const turn = await delegationTurnOf(ctx.surface);
+    const allowed = checkDelegationAllowed(ctx.agent.slug, targetSlug, ctx.agent.delegateTo, turn);
     if (!allowed.ok) return { ok: false, error: allowed.reason };
 
     // Guardrail 1: bounded depth. One sanctioned exception (see

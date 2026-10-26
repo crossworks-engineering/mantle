@@ -19,7 +19,7 @@
  * attaches the persona's manifest skills + wires delegation to it.
  */
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { InputError } from '@mantle/std';
 import { findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
@@ -374,6 +374,42 @@ async function upsertAgent(
 }
 
 /**
+ * Add `add` to an agent's memory_config.delegate_to, the slugs it does not
+ * list, in their order after its own: ONE update that reads the row it
+ * writes (a jsonb array union in SQL), so nothing the list holds is ever
+ * dropped and a Studio edit between the read and the write is kept. A
+ * delegate is a grant (memory_config's delegate_to, 0321): the full route's
+ * assistant-grant spot, as wireDelegation. True when the row changed.
+ */
+export async function addAgentDelegates(agentId: string, add: readonly string[]): Promise<boolean> {
+  if (add.length === 0) return false;
+  const want = sql`ARRAY[${sql.join(
+    add.map((s) => sql`${s}`),
+    sql`, `,
+  )}]::text[]`;
+  const cur = sql`(case when jsonb_typeof(${agents.memoryConfig}->'delegate_to') = 'array'
+    then ${agents.memoryConfig}->'delegate_to' else '[]'::jsonb end)`;
+  const changed = await onFullSystemRoute('assistant-grant', () =>
+    db
+      .update(agents)
+      .set({
+        memoryConfig: sql`jsonb_set(coalesce(${agents.memoryConfig}, '{}'::jsonb), '{delegate_to}',
+          ${cur} || coalesce((select jsonb_agg(d order by i) from unnest(${want})
+            with ordinality as u(d, i) where not (${cur} ? d)), '[]'::jsonb))`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(agents.id, agentId),
+          sql`exists (select 1 from unnest(${want}) as u(d) where not (${cur} ? d))`,
+        ),
+      )
+      .returning({ id: agents.id }),
+  );
+  return changed.length > 0;
+}
+
+/**
  * Wire each in-scope delegate specialist into the delegate_to of every enabled
  * entry-point agent (responder/assistant) — additive, slug-agnostic (so it
  * works whether the persona is the manifest 'assistant' or an operator persona
@@ -389,16 +425,11 @@ async function wireDelegation(ownerId: string, delegateSlugs: string[]): Promise
   for (const entry of entries) {
     const mc = (entry.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
     const current = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
-    const merged = union(current, delegateSlugs);
-    if (merged.length === current.length) continue;
-    // A delegate is a grant (it runs with its own tool groups), and
-    // memory_config is off the narrow list (round 13b): assistant-grant.
-    await onFullSystemRoute('assistant-grant', () =>
-      db
-        .update(agents)
-        .set({ memoryConfig: { ...mc, delegate_to: merged }, updatedAt: new Date() })
-        .where(eq(agents.id, entry.id)),
-    );
+    const missing = delegateSlugs.filter((s) => !current.includes(s));
+    if (missing.length === 0) continue;
+    // The one delegate merge (a grant, at assistant-grant): a jsonb union
+    // that keeps every entry the row holds when it writes.
+    await addAgentDelegates(entry.id, missing);
   }
 }
 

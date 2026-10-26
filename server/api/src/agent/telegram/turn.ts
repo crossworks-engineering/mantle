@@ -140,6 +140,10 @@ export async function runTelegramTurn(args: {
       ? {
           includeIdentity: false,
           withThinking: false,
+          // No delegation here yet, unlike the web workspace turn: this
+          // turn's member ledger slot gets no tokens settled, so a
+          // delegated child's spend would pass the member's token budget
+          // unseen. The workspace delegates come with that settle.
           allowDelegation: false,
           excludePrivateCorpus: !privateReads,
           volatileExtras: [

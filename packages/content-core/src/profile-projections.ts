@@ -526,8 +526,9 @@ export function projectAppOpens(raw: unknown): Record<string, AppOpenStat> | und
   return Object.fromEntries(rows.slice(0, APP_OPENS_MAX));
 }
 
-/** The content-kind groups granted per agent id (contentKindGroupsGranted):
- *  uuid keys, each a list of group slugs; anything else is dropped. */
+/** The content-kind groups granted per agent id (contentKindGroupsGranted),
+ *  and the delegation items (workspaceDelegationGranted): uuid keys, each a
+ *  list of non-empty strings; anything else is dropped. */
 export function projectGrantedGroups(raw: unknown): Record<string, string[]> | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
   const rows: [string, string[]][] = [];

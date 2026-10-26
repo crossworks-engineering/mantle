@@ -551,10 +551,12 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     expect(seen).toBe(
       '{"kind":"team","loginId":"login-m","privateReads":false,"originTelegramChatId":"555"}',
     );
+    // Delegation on (owner decision 2026-10-26): the run names its login, and
+    // the assembly and the gateway cut it to the workspace delegates.
     expect(h.assembleArgs[0]).toMatchObject({
       includeIdentity: false,
       withThinking: false,
-      allowDelegation: false,
+      allowDelegation: true,
       excludePrivateCorpus: true,
     });
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
@@ -574,6 +576,8 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     expect(await surfaceFor({ loginId: null, workspaceId: 'ws-team' }, [{ isAdmin: false }])).toBe(
       '{"kind":"team","privateReads":false}',
     );
+    // A workspace run with no login delegates nothing (no user's rights).
+    expect(h.assembleArgs.at(-1)).toMatchObject({ allowDelegation: false });
     expect(
       await surfaceFor({ loginId: null, workspaceId: 'ws-team' }, [{ isAdmin: false }], {
         originChannel: { kind: 'telegram', chat_id: '555' },

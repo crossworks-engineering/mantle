@@ -4,6 +4,58 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: workspace delegation
+
+- **Feature (owner decision 2026-10-26):** the assistant of a workspace
+  other than Admin, the shipped Team responder included, delegates to
+  Draftsman (`diagrammer`), Presenter (`presenter`) and Appsmith
+  (`appsmith`), and to no other agent. One list, `WORKSPACE_DELEGATE_SLUGS`
+  (packages/tools invoke-agent-guards.ts, re-exported and pinned by the
+  system manifest), enforced in one gateway: `checkDelegationAllowed`
+  reads the turn from its own scope and surface (`delegationTurnOf`: a
+  scope without Admin, or a surface that is not the owner's, is a
+  workspace turn) and refuses a slug off the list, whatever the
+  assistant's `delegate_to` names (an assistant copied from the persona
+  names every specialist), and a workspace turn that answers no user. The
+  runtime invoker asks the same check again before the child starts, the
+  turn assembly (`turnDelegates`) shows the model the same list (the
+  `invoke_agent` enum, the roster, the decider's hint), and a child's own
+  delegates are cut to it too, so Appsmith's hand-off to the Toolsmith is
+  refused in a workspace turn. The child runs in the turn's scope and on
+  its team surface: the user's rights in that one workspace, its creates
+  landing by the home rule, no owner identity, Journal or persona notes,
+  the owner's mail and Journal tools dropped unless the private-reads
+  switch is on, its Admin-only groups dropped. Its trace says
+  `workspace_delegation`, `surface: team` and the user's login. The web
+  workspace chat and a workspace run planned by a user delegate; a
+  workspace's Telegram chat does not yet (its member turn slot gets no
+  tokens settled).
+- **Feature:** the app tools (`app_*`, the 23 owner-only ones) run on a
+  user's workspace turn too (`loginTurns`: a team surface naming the
+  login its turn scope answers, `facts.loginTurn` in the gate), with that
+  user's rights, as on its MCP connection; an app made there is at team
+  rules with the user as its author (`actingLoginId`). No other
+  owner-only tool changes.
+- **Cost:** a delegated child's model tokens now count on the turn that
+  started it (`startTrace`'s `onClose` hands `delegated` tokens; never
+  written to the turn's own row), so a member's delegation spends from its
+  daily token budget. The child keeps its own iteration and tool caps and
+  the depth cap; nothing new runs on its own.
+- **Grants:** the boot reconcile gives the `delegation` group and the
+  three delegates to every enabled workspace assistant and the Team
+  responder held by a workspace, ONCE per agent
+  (`reconcileWorkspaceDelegation`, the anchor's
+  `workspaceDelegationGranted`), so an owner's later removal sticks; the
+  delegate_to merge is one jsonb union that keeps every entry. A fresh
+  install's Team responder ships with both; its prompt names the hand-off
+  (an unedited earlier default is upgraded) and its own tools stay
+  read-only.
+- **Tests:** `ws-delegation.db.test.ts` (the real member turn through the
+  child's loop, actor and edit checks on), `workspace-delegation.db.test.ts`
+  (the grant), unit tests of the gateway. Re-recorded: the dispatch parity
+  hashes of the 23 app tools, and the A8 surface cells' team-turn
+  `app_delete` narrowing (now the oracle's answer).
+
 ## Unreleased: untouched specialist prompts follow the product
 
 - **Change:** a specialist whose prompt is still, byte for byte, an

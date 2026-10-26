@@ -522,6 +522,11 @@ export type ProfilePreferences = {
    *  once, so one the owner removes later stays removed. Written by the
    *  reconcile alone. */
   contentKindGroupsGranted?: Record<string, string[]>;
+  /** What the boot reconcile has granted each workspace assistant for
+   *  delegation, per agent id (reconcileWorkspaceDelegation):
+   *  `group:delegation` and `delegate:<slug>`, each once, so one the owner
+   *  removes later stays removed. Written by the reconcile alone. */
+  workspaceDelegationGranted?: Record<string, string[]>;
   /** When true, outbound/egress tools (email_send, web_fetch, web_search)
    *  fired during an UNATTENDED heartbeat run park for operator approval
    *  instead of executing inline. Only tools that reach OUT are gated — the
