@@ -224,12 +224,56 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
   });
 
   /** The owner-only create tools: refused in any turn outside the Admin
-   *  workspace, so their turn home is the Admin assistant's, Admin. */
+   *  workspace, so their turn home is the Admin assistant's, Admin. (Not
+   *  app_create since workspace delegation, 2026-10-26: a login's workspace
+   *  turn runs the app tools, `loginTurns`; its case is below.) */
   const OWNER_ONLY_CREATES: Array<[string, (name: string) => Record<string, unknown>, string]> = [
     ['tree_folder_create', (n) => ({ kind: 'notes', name: n }), 'branch'],
-    ['app_create', (n) => ({ name: n }), 'app'],
     ['recall_map_create', (n) => ({ title: n, enter_when: 'testing the home rule' }), 'recall'],
   ];
+
+  it('app_create: a Moderator’s workspace turn lands in the workspace, the Admin turn in Admin', async () => {
+    const homeOfApp = async (token: string) =>
+      (
+        await x<{ home: string | null }>(sql`
+          select g.workspace_id::text as home from nodes n
+            join item_grants g on g.node_id = n.id and g.is_home
+           where n.type = 'app'::node_type and n.title ilike ${`%${token}%`}
+           order by n.created_at desc limit 1`)
+      )[0]?.home;
+    const inTeam = `${tag}${randomUUID().slice(0, 6)}`;
+    const made = await m.withTurnScope(
+      { kind: 'assistant', loginId: mod, ws: [team], modWs: [team] },
+      () =>
+        tools.dispatchTool(
+          builtin('app_create'),
+          { name: inTeam },
+          {
+            ownerId: owner,
+            surface: { kind: 'team', loginId: mod },
+          },
+        ),
+      { writes: true },
+    );
+    expect(made.ok, made.ok ? '' : made.error).toBe(true);
+    expect(await homeOfApp(inTeam)).toBe(team);
+    const inAdmin = `${tag}${randomUUID().slice(0, 6)}`;
+    const res = await m.withTurnScope(
+      { kind: 'assistant', loginId: owner, ws: [admin], modWs: [admin] },
+      () =>
+        tools.dispatchTool(
+          builtin('app_create'),
+          { name: inAdmin },
+          {
+            ownerId: owner,
+            surface: { kind: 'web', loginId: owner },
+          },
+        ),
+      { writes: true },
+    );
+    expect(res.ok, res.ok ? '' : res.error).toBe(true);
+    expect(await homeOfApp(inAdmin)).toBe(admin);
+  });
 
   it.each(OWNER_ONLY_CREATES)(
     '%s: refused in a workspace turn, Admin from the Admin turn',
