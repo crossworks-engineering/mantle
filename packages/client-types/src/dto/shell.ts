@@ -17,7 +17,7 @@ export type ShellRole = LoginRole;
 export type ShellFeatures = { recallV2: boolean };
 
 /**
- * The login's Home desk: where each widget and desk icon sits on the
+ * The login's Desk: where each widget and desk icon sits on the
  * client's grid, and the desk's few settings. The CLIENT owns the meaning
  * (which ids exist, each widget's bounds); the brain only keeps the shape
  * sound and the size bounded (projectHomeDesk), so a new widget needs no
@@ -64,7 +64,7 @@ export type Shell = {
   email: string | null;
   /** The login's starred screens. [] when none. */
   navFavorites: string[];
-  /** The login's Home desk; null until one is saved (the client lays out its
+  /** The login's Desk; null until one is saved (the client lays out its
    *  default). Absent from a brain that predates saving it, and when the
    *  brain could not read the login's own row this time (never read as
    *  "never saved": the client keeps its local desk for that visit). */

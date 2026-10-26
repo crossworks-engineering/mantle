@@ -73,6 +73,7 @@ export {
   projectAppPins,
   projectNavFavorites,
   projectHomeDesk,
+  validateHomeDeskWrite,
   HOME_DESK_BYTES_MAX,
   projectAppOpens,
   projectAppNav,

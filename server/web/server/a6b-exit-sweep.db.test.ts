@@ -431,7 +431,7 @@ const NAMED_CHANGES: Record<
     {
       cells: /^GET \/api\/shell (pending )?\w+$/,
       reason:
-        "the shell names the login's Home desk (homeDesk, null until one is saved, read from " +
+        "the shell names the login's Desk (homeDesk, null until one is saved, read from " +
         "the login's own row as navFavorites is). A new field only: every other byte answers " +
         'as main.',
       back: (now) => now.replace(',"homeDesk":null,', ','),
