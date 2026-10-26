@@ -174,6 +174,7 @@ member cookies keep working because the origin never changes:
 | `/api/*`                                                  | server app (Hono)                                                      |
 | `/s/*`, `/print/*`                                        | server app, the server-rendered share + print surfaces                 |
 | `/share-runtime/*`, `/app-runtime/*`, `/canvas-runtime/*` | server app, bundles those surfaces and the Present canvas load         |
+| `/fonts/*`, `/Inter/*`                                    | server app, CORS-open for sandboxed frames (canvases, mini apps)       |
 | `/.well-known/oauth-*`                                    | server app, MCP connector discovery                                    |
 | **everything else**                                       | client app, owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
 

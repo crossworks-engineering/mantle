@@ -81,3 +81,31 @@ describe('mountStatic /excalidraw-assets', () => {
     expect(await res.text()).toBe('wOF2');
   });
 });
+
+describe('mountStatic for sandboxed frames', () => {
+  // A Present canvas or mini-app frame has the opaque origin 'null' and sends
+  // no cookies: its bundles and fonts load only when served CORS-open before
+  // the gate (the same-origin Caddy shape sends these paths here).
+  const dir = mkdtempSync(join(tmpdir(), 'mantle-static-'));
+  mkdirSync(join(dir, 'canvas-runtime'));
+  mkdirSync(join(dir, 'fonts', 'library'), { recursive: true });
+  mkdirSync(join(dir, 'Inter'));
+  writeFileSync(join(dir, 'canvas-runtime', 'diagram-templates-ABCD1234.js'), 'export {};');
+  writeFileSync(join(dir, 'fonts', 'library', 'face.woff2'), 'wOF2');
+  writeFileSync(join(dir, 'Inter', 'Inter.woff2'), 'wOF2');
+  const app = new Hono();
+  mountStatic(app, dir);
+  app.notFound((c) => c.text('nope', 404));
+
+  for (const path of [
+    '/canvas-runtime/diagram-templates-ABCD1234.js',
+    '/fonts/library/face.woff2',
+    '/Inter/Inter.woff2',
+  ]) {
+    it(`serves ${path} CORS-open`, async () => {
+      const res = await app.request(path, { headers: { Origin: 'null' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    });
+  }
+});
