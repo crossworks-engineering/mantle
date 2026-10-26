@@ -96,4 +96,43 @@ login; each equals membership while drift is 0.
 
 ## Gates
 
-See the final section, written with the results.
+Mac, on 7def7a565 (exit codes): `pnpm -r typecheck` 0, `pnpm lint` 0,
+`pnpm format:check` 0, `pnpm docs:check` 0, `pnpm arch:check` 0,
+`pnpm -C server/web build` 0, unit vitest (`server packages eslint-rules`,
+DATABASE_URL unset) 0 (932 files, 12051 passed). f73fed7b0 changes one DB
+test file only (the 0334 revert cell grants the runtime role as the older
+image's migrate did).
+
+Workstation, each suite in a fresh clone of the pushed commit and its own
+pgvector pg18 container (`s8d-*`, removed), MANTLE_CHECK_FLOOR=keep,
+`--maxWorkers=3`, through `~/bin/test-lane`:
+
+| suite                       | head      | exit | tests                   |
+| --------------------------- | --------- | ---- | ----------------------- |
+| DB vitest shard 1/2         | f73fed7b0 | 0    | 6887 passed, 19 skipped |
+| DB vitest shard 2/2         | 7def7a565 | 0    | 8344 passed, 11 skipped |
+| test:actor-off              | f73fed7b0 | 0    | 1647 passed, 1 skipped  |
+| test:actor-on               | 7def7a565 | 0    | 419 passed, 1 skipped   |
+| test:edit-on                | 7def7a565 | 0    | 589 passed              |
+| test:matrix                 | 7def7a565 | 0    | 8 passed                |
+| test:runtime-role (full)    | f73fed7b0 | 0    | 3170 passed, 1 skipped  |
+| test:serial                 | f73fed7b0 | 0    | 1 passed                |
+| 0334 up, revert, up (fresh) | 7def7a565 | 0    | see below               |
+
+The suites on 7def7a565 do not run `role-guard.db.test.ts`, the only file
+f73fed7b0 changes. The drill: after migrate the bridge is gone and 0334 is
+on the ledger; after the revert it is back, owned as `mantle_ws_add_user`,
+the runtime role may run it, PUBLIC may not, 0334 is off the ledger; a
+second migrate drops it again and puts 0334 back on the ledger.
+
+Found and fixed on the way: the first run (0e07e459b) found the looser
+member asset answer above (edit-on) and the 0334 cell's grant assumption
+(shard 1, actor-off).
+
+## Open items
+
+- The 14 role reads that are not the caller's role and the member pair's
+  two (pins note): each equals membership while `mantle_role_drift()` is 0.
+- `MemberCaller` and `SessionUser` stay (above).
+- Migration 0334's `when` is 1790200200000; renumber at merge if main
+  takes a migration first.
