@@ -369,6 +369,18 @@ const OPAQUE = '500 application/json {"error":"internal error"}';
 function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
   const moved = FOLD2_PATTERNS.has(cell.split(' ')[1] ?? '');
+  // The Desk's write check (fix round 2): a desk the read would change is
+  // refused whole, so the body with a NUL at the end of its strings (the
+  // clock face) is the route's 400, where main stored the default face and
+  // answered the stand-in's 500. The real answers: home-desk-route.db.test.ts.
+  if (
+    cell.startsWith('PUT /api/profile/home-desk ') &&
+    variant === 'nul' &&
+    main === OPAQUE &&
+    now === '400 application/json {"error":"homeDesk (a v1 desk) required"}'
+  ) {
+    return 'desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)';
+  }
   // F4 fix round 2 (item 4): a bulk delete checks every id it names first,
   // by @mantle/db's own client (itemWriteVerdicts), which the database
   // stand-in does not reach: its error answers the one opaque 500, where

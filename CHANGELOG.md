@@ -4,18 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: the Home desk follows the person
+## Unreleased: the Desk follows the login
 
 - **Feature:** `PUT /api/profile/home-desk { homeDesk }` saves the login's
-  Home desk (where each widget and desk icon sits, the kind widgets' counts,
+  Desk (where each widget and desk icon sits, the kind widgets' counts,
   desk icons on or off, the clock face) on its own profile row, and
   `GET /api/shell` returns it as `homeDesk` (null until one is saved). It
-  used to live in one browser's storage; like nav favourites, it now follows
-  the person to another browser, machine or the desktop app. The brain checks
-  the shape and the size only (`projectHomeDesk`: a v1 desk, at most 400
-  items and 32 KB counted in UTF-8 bytes, one bad item dropped on its own);
-  the client owns what a widget is, so a new widget needs no brain release.
-  A desk that does not project is a 400, never a silent clear.
+  used to live in one browser's storage; like nav favourites, the Desk now
+  follows the login to another browser, machine or the desktop app. The
+  brain checks the shape and the size only (a v1 desk, at most 400 items
+  and 32 KB counted in UTF-8 bytes); the client owns what a widget is, so a
+  new widget needs no brain release.
+- **A save is kept as sent or refused whole:** the write check
+  (`validateHomeDeskWrite`) is a 400 when the projection would change the
+  desk (an item or a count dropped, the list cut at the cap, an id or a key
+  that is not printable ASCII, a setting of the wrong type), so garbage
+  never saves as an empty desk and a NUL or a lone surrogate is a 400, not
+  a 500. The read side (`projectHomeDesk`) stays loose: a stored desk is
+  never lost to the stricter rule. The body is read up to 64 KB (413 past
+  it).
 - **Every login saves its own desk:** the route is an any-login row
   (`open: 'any'`, `anyLoginCaller`), so a member saves its desk as an Admin
   user does. The write runs in the login's scope, where the profile write

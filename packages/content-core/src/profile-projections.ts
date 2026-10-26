@@ -511,7 +511,7 @@ export function projectNavFavorites(raw: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
-/** The Home desk's bounds. Generous (a full desk is a few KB); they bound
+/** The Desk's bounds. Generous (a full desk is a few KB); they bound
  *  the stored jsonb, not the layout. */
 export const HOME_DESK_ITEMS_MAX = 400;
 export const HOME_DESK_ID_MAX = 160;
@@ -561,6 +561,40 @@ export function projectHomeDesk(raw: unknown): HomeDesk | undefined {
   // The cap is BYTES as stored (UTF-8), not UTF-16 code units: an id of
   // non-Latin text is up to 3 bytes a character.
   return utf8Bytes(JSON.stringify(desk)) <= HOME_DESK_BYTES_MAX ? desk : undefined;
+}
+
+/** What a desk item id and a counts key may hold on WRITE: printable ASCII,
+ *  no space. A NUL or a lone surrogate would never reach the jsonb column
+ *  (a 500); refused as a 400 instead. */
+const HOME_DESK_KEY_RE = /^[\x21-\x7e]+$/;
+
+/**
+ * The WRITE side of `projectHomeDesk`, for PUT /api/profile/home-desk only:
+ * strict where the read is loose. The desk projected, or undefined (a 400)
+ * when the projection would have changed what was sent: an item or a count
+ * dropped, the list cut at the cap, an id or a key that is not printable
+ * ASCII, a setting of the wrong type. So a save is kept as sent or refused
+ * whole, and garbage never saves as an empty desk. The read side
+ * (`projectHomeDesk`, loadProfilePreferences) stays loose, so a desk already
+ * stored is never lost to a stricter rule.
+ */
+export function validateHomeDeskWrite(raw: unknown): HomeDesk | undefined {
+  const desk = projectHomeDesk(raw);
+  if (!desk) return undefined;
+  const d = raw as Record<string, unknown>;
+  if ((d.items as unknown[]).length !== desk.items.length) return undefined;
+  if (!desk.items.every((i) => HOME_DESK_KEY_RE.test(i.id))) return undefined;
+  if (d.counts !== undefined) {
+    if (typeof d.counts !== 'object' || d.counts === null || Array.isArray(d.counts)) {
+      return undefined;
+    }
+    const keys = Object.keys(d.counts);
+    if (keys.length !== Object.keys(desk.counts).length) return undefined;
+    if (!keys.every((k) => HOME_DESK_KEY_RE.test(k))) return undefined;
+  }
+  if (d.icons !== undefined && typeof d.icons !== 'boolean') return undefined;
+  if (d.clock !== undefined && d.clock !== 'digital' && d.clock !== 'analog') return undefined;
+  return desk;
 }
 
 const utf8 = new TextEncoder();

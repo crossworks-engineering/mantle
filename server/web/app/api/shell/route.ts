@@ -131,7 +131,7 @@ async function handleGET(login: Login) {
     // The rail's starred screens: per LOGIN, so they follow the person
     // across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
-    // The login's Home desk, likewise per LOGIN. null until one is saved:
+    // The login's Desk, likewise per LOGIN. null until one is saved:
     // the client lays out its default and moves a local desk up once. Left
     // out when the login's own row could not be read: a failed read is not
     // "never saved", so the client keeps this browser's desk for the visit

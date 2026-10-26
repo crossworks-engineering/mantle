@@ -13,7 +13,11 @@
  *    to the login's own row);
  *  - an API key (a member's or the anchor's) is refused 401 at the gate, and
  *    nothing is written;
- *  - a desk that does not project is a 400, and nothing is written.
+ *  - a desk that does not project is a 400, and nothing is written;
+ *  - strict on write: a desk the projection would change (an item dropped,
+ *    the list cut, an id or a key with a NUL, a lone surrogate or a space)
+ *    is a 400, never a 500 or a partial save, and nothing is written;
+ *  - a body over 64 KB is a 413, and nothing is written.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/app/api/profile/home-desk/home-desk-route.db.test.ts
  */
@@ -204,6 +208,38 @@ describe.skipIf(!DB_URL)('PUT /api/profile/home-desk: every login saves its own 
         const res = await put(L.member, body);
         expect(res.status, res.text).toBe(400);
       }
+      expect(await prefsOf(L.member)).toEqual(before);
+    });
+
+    it(`${mode}: a desk the read would change is a 400, never a 500, and nothing is written`, async () => {
+      await setMode(mode);
+      const before = await prefsOf(L.member);
+      const item = (id: string) => ({ id, x: 0, y: 0, w: 1, h: 1 });
+      const many = Array.from({ length: 401 }, (_, i) => ({ ...item(`pin:${i}`), y: i }));
+      for (const homeDesk of [
+        { ...desk(1), items: [item('clock'), null] }, // an item dropped
+        { ...desk(1), items: [null, 'x', 7] }, // garbage is not an empty desk
+        { ...desk(1), items: many }, // the list cut at the cap
+        { ...desk(1), items: [item('a\u0000b')] }, // a NUL
+        { ...desk(1), items: [item('\ud800')] }, // a lone surrogate
+        { ...desk(1), items: [item('caf\u00e9')] }, // not ASCII
+        { ...desk(1), counts: { 'no\u0000tes': 3 } }, // a NUL in a key
+        { ...desk(1), counts: { notes: 'many' } }, // a count dropped
+      ]) {
+        const res = await put(L.member, { homeDesk });
+        expect(res.status, res.text).toBe(400);
+      }
+      expect(await prefsOf(L.member)).toEqual(before);
+    });
+
+    it(`${mode}: a body over 64 KB is a 413, and nothing is written`, async () => {
+      await setMode(mode);
+      const before = await prefsOf(L.member);
+      const res = await runRoute(L.member, 'PUT', '/api/profile/home-desk', {
+        homeDesk: desk(1),
+        pad: 'x'.repeat(65 * 1024),
+      });
+      expect(res.status, await res.text()).toBe(413);
       expect(await prefsOf(L.member)).toEqual(before);
     });
   }

@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
   gate: 'pass' as 'pass' | 'refuse',
   role: 'admin' as 'admin' | 'member',
   minted: [] as Array<{ anchorId: string; loginId: string; ttlSeconds?: number }>,
-  /** The login's saved Home desk on its own row (undefined: never saved). */
+  /** The login's saved Desk on its own row (undefined: never saved). */
   desk: undefined as Record<string, unknown> | undefined,
 }));
 

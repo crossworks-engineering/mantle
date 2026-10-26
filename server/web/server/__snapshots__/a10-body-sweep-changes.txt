@@ -2,7 +2,7 @@
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
 # bad-json-400 (malformed): 194 cells
-# chunked-413: 205 cells
+# chunked-413: 207 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
@@ -13,6 +13,7 @@
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
 # bad-json-400 (empty): 2 cells
+# desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400): 2 cells
 # map-read-first (pre-check removal part 2: the owner act reads the map in the scope first): 10 cells
 # close-first (Admin act definer, 0310: the close is asked of the database first): 6 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
@@ -1011,6 +1012,18 @@ PUT /api/profile/fonts owner malformed [bad-json-400 (malformed)]
 PUT /api/profile/fonts owner chunked [chunked-413]
   main 500 application/json {"error":"internal error"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/home-desk owner nul [desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)]
+  main 500 application/json {"error":"internal error"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) required"}
+PUT /api/profile/home-desk owner chunked [chunked-413]
+  main 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
+PUT /api/profile/home-desk member nul [desk-write-strict (the Desk, fix round 2: a desk the read would change is a 400)]
+  main 500 application/json {"error":"internal error"}
+  now  400 application/json {"error":"homeDesk (a v1 desk) required"}
+PUT /api/profile/home-desk member chunked [chunked-413]
+  main 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
 PUT /api/profile/logo owner chunked [chunked-413]
   main 400 application/json {"error":"multipart field `file` required"}
   now  413 application/json {"error":"This request is too large (at most 1 MB).","reason":"body-too-large"}

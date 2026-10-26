@@ -468,7 +468,7 @@ describe('the architecture ratchets (pinned counts)', () => {
     // list, item, revisions, frame-ticket and frame rows, with their HEADs.
     // Present in Pages (+4 rows, +2 with a caller): the poster with its HEAD
     // (readerAsset), and the share's canvas snapshot (a link row, no caller).
-    // The Home desk (+1): PUT /api/profile/home-desk (self).
+    // The Desk (+1): PUT /api/profile/home-desk (self).
     expect(rows.filter((r) => r.caller).length).toBe(776);
     expect(rows.length).toBe(836);
   });
