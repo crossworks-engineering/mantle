@@ -4,6 +4,35 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the A8 matrix covers the routes
+
+- **Security (tests):** every write route that names its item now runs A8
+  route cells (`server/web/server/a8-route-cells.matrix.test.ts`, in
+  `pnpm test:matrix`): the outsider, a read grant's member, a Write grant's
+  member, the home's Moderator and an Admin user (and, on a route open to
+  Admin users only, one with Write and no Moderator seat), on each placement
+  of the item, through the full HTTP pipeline, with the checks in warn and
+  in on. A hidden item answers as a random uuid does (status, body, content
+  type, cache control). Each route's declared need is checked against the
+  guide action its cells ask; the grant add, remove and Write switch run
+  cells by theirs. In warn the 13 routes whose edit is the database's check
+  alone make the edit and log it (`docs/edit-check.md`). A route that
+  takes a higher right too (a move, an app's description or code restore)
+  runs that request as its own cells. The grants panel's "Change here" and
+  restore run cells on a grant the item takes from its folder. Eight routes
+  run their refused cells only or declare none with an item in their path,
+  each with why (`a8Exempt` 104 to 112, reviewed by the final audit).
+- **Internal:** the app snapshot writes declare edit, the right their
+  handlers ask. A route declares the lowest right its handler accepts. The
+  item pre-check's no-op path (`itemWriteGate`, `routeItemTarget`,
+  `RouteRow.item`) is gone; no answer changes.
+- **Internal:** the 113 route declarations that said "not decided yet" each
+  name their item (`{ param, need }`, the right the handler asks) or say
+  why none (`itemNonePlaceholders` 113 to 0); the declaration states intent
+  only, so no item pre-check comes back and no answer changes. The
+  validator refuses the placeholder, and a none declaration on a workspace
+  kind's item route must name its param.
+
 ## Unreleased: one login shape, the login bridge dropped (plan v3.2 S8d)
 
 - **Security:** a request's login resolves to one shape: the brain, the
@@ -18,31 +47,6 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   image (it deleted nothing on a box whose Admin seats all have role
   admin). Its revert puts 0330's body back (`docs/update-prod.md`, "Going
   up to 0334"). `mantle_role_drift()` stays as the box count.
-
-## Unreleased: the A8 matrix covers the routes
-
-- **Security (tests):** every write route that names its item now runs A8
-  route cells (`server/web/server/a8-route-cells.matrix.test.ts`, in
-  `pnpm test:matrix`): the outsider, a read grant's member, a Write grant's
-  member, the home's Moderator and an Admin user (and, on a route open to
-  Admin users only, one with Write and no Moderator seat), on each placement
-  of the item, through the full HTTP pipeline, with the checks in warn and
-  in on. A hidden item answers as a random uuid does (status, body, content
-  type, cache control). Each route's declared need is checked against the
-  guide action its cells ask; the grant add, remove and Write switch run
-  cells by theirs. In warn the 13 routes whose edit is the database's check
-  alone make the edit and log it (`docs/edit-check.md`). Ten routes run
-  their refused cells only or declare none with an item in their path, each
-  with why (`a8Exempt` 104 to 114, for the final audit's review).
-- **Internal:** the app snapshot writes declare edit, the right their
-  handlers ask. A route declares the lowest right its handler accepts. The
-  item pre-check's no-op path (`itemWriteGate`, `routeItemTarget`,
-  `RouteRow.item`) is gone; no answer changes.
-- **Internal:** the 113 route declarations that said "not decided yet" each
-  name their item (`{ param, need }`, the right the handler asks) or say
-  why none (`itemNonePlaceholders` 113 to 0); the declaration states intent
-  only, so no item pre-check comes back and no answer changes. The
-  validator refuses the placeholder.
 
 ## Unreleased: the trace's guesses checked by an image model
 
