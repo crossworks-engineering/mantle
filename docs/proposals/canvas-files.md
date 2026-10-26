@@ -937,3 +937,40 @@ save with a look drew) and opens the canvas itself.
 - **Agents.** `present_create`, `present_update` and `present_get` return
   `page_embed`; `canvas_authoring` and `page_editing` say to use it for a
   page and `present_export` only for outside Mantle.
+
+## 15. The data store (DWG phase 7a)
+
+A canvas runs with no network, no cookies and no storage, so it could not
+keep anything a viewer adds. Phase 7a gives it a small store, brain side,
+with no SDK: the frame's prelude defines `window.mantle.data` (`get`, `set`,
+`delete`, `list`, `info`), each a promise.
+
+- **Transport.** The frame posts `{v:1, kind:'data', id, op, bucket, key,
+  json, everyone}` to its parent, only after `ready` (the parent takes
+  nothing before the nonce proof). The parent (share-ui CanvasSandbox, with
+  canvas-data-bridge.ts) takes it only from its own frame (`e.source`),
+  checks every field, and forwards it to this canvas's own API
+  (`/api/presents/:id/data`) with its own credential. The message names no
+  canvas and no login; the canvas never holds a token. A canvas that never
+  calls it sends nothing. With no parent (a render, the poster, an export)
+  reads answer empty and writes refuse.
+- **Storage.** `canvas_data` (migration 0335): one row per (canvas, key) in
+  `shared`, per (canvas, login, key) in `mine`; jsonb values, at most 64 KB
+  each, 1 MB and 1000 entries per canvas, 256 KB and 200 entries per login
+  in `mine` (@mantle/content-core/canvas-data). Never a canvas revision:
+  nothing touches `presents`.
+- **Rights.** The canvas's own. `shared`: every reader reads; writing asks
+  Write on the canvas (the right a source save asks). `mine`: every reader
+  writes and reads their own entries; a user with Write on the canvas (its
+  Moderators and Write grants; the owner) lists everyone's. A read-only
+  copy is never written. Reads run in the caller's scope under the row
+  rule; writes run on the system pool after the content layer's checks
+  (packages/content/src/canvas-data.ts), as item_marks.
+- **Agents.** `present_get` with `data: true` returns `shared`, the user's
+  own `mine` and, with Write, `everyone`. The canvas_authoring skill and
+  canvas_library `data` (what an MCP client reads) carry one text
+  (CANVAS_DATA_HOWTO).
+- **Share links.** `/s` shows a canvas's snapshot only, never the live
+  frame, so a link reader never reads or writes the store.
+- **Later.** Meeting mode's "Save markup" (phase 7) uses the `shared`
+  bucket. Export "with data" is not built.

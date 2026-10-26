@@ -195,6 +195,141 @@ describe('the prelude', () => {
   });
 });
 
+describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
+  /** The prelude run in a stand-in window; `nonce` '' is a render. */
+  function frame(nonce: string) {
+    const html = buildCanvasFrameHtml({
+      source: '<html><body>x</body></html>',
+      css: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      size: 'fill',
+      theme: 'follow',
+      fontCss: '',
+      nonce,
+    });
+    const prelude = /<script>(\(function\(\)\{[\s\S]*?\}\)\(\);)<\/script>/.exec(html)![1]!;
+    const toParent: Record<string, unknown>[] = [];
+    const handlers: Record<string, Array<(e: unknown) => void>> = {};
+    const parent = Object.freeze({
+      postMessage: (m: Record<string, unknown>) => toParent.push(m),
+    });
+    const win: Record<string, unknown> = {
+      parent,
+      addEventListener: (k: string, f: (e: unknown) => void) => (handlers[k] ??= []).push(f),
+      innerWidth: 800,
+      innerHeight: 600,
+    };
+    const el = {
+      className: '',
+      setAttribute() {},
+      removeAttribute() {},
+      style: { setProperty() {} },
+    };
+    const ctx = {
+      window: win,
+      document: { currentScript: null, documentElement: el },
+      Object,
+      String,
+      Math,
+      JSON,
+      Promise,
+      Error,
+      TypeError,
+      setTimeout,
+      clearTimeout,
+    };
+    runInNewContext(prelude, ctx);
+    const api = (win.mantle as { data: Record<string, (...a: unknown[]) => Promise<unknown>> })
+      .data;
+    const load = () => {
+      for (const f of handlers.load ?? []) f({});
+    };
+    const reply = (source: unknown, data: unknown) => {
+      for (const f of handlers.message ?? []) f({ source, data });
+    };
+    return { api, toParent, load, reply, parent };
+  }
+
+  it('holds every call until ready has gone, and names no canvas and no login', async () => {
+    const f = frame('n1');
+    const got = f.api.get!('marks');
+    const saved = f.api.set!('marks', { a: [1, 2] }, { bucket: 'mine' });
+    expect(f.toParent).toEqual([]);
+    f.load();
+    expect(f.toParent[0]).toEqual({ v: 1, kind: 'ready', n: 'n1' });
+    const calls = f.toParent.slice(1);
+    expect(calls).toEqual([
+      {
+        v: 1,
+        kind: 'data',
+        id: 1,
+        op: 'get',
+        bucket: 'shared',
+        key: 'marks',
+        json: undefined,
+        everyone: undefined,
+      },
+      {
+        v: 1,
+        kind: 'data',
+        id: 2,
+        op: 'set',
+        bucket: 'mine',
+        key: 'marks',
+        json: '{"a":[1,2]}',
+        everyone: undefined,
+      },
+    ]);
+    for (const c of calls) {
+      expect(Object.keys(c).sort()).toEqual([
+        'bucket',
+        'everyone',
+        'id',
+        'json',
+        'key',
+        'kind',
+        'op',
+        'v',
+      ]);
+    }
+    // Only the parent answers: a reply from anyone else is not taken.
+    f.reply(
+      { postMessage() {} },
+      { v: 1, kind: 'data-reply', id: 1, ok: true, result: { value: 'forged' } },
+    );
+    f.reply(f.parent, {
+      v: 1,
+      kind: 'data-reply',
+      id: 1,
+      ok: true,
+      result: { key: 'marks', value: 7 },
+    });
+    f.reply(f.parent, { v: 1, kind: 'data-reply', id: 2, ok: false, error: 'no right' });
+    await expect(got).resolves.toBe(7);
+    await expect(saved).rejects.toThrow('no right');
+  });
+
+  it('refuses a value that is not JSON without sending it', async () => {
+    const f = frame('n2');
+    f.load();
+    await expect(f.api.set!('k', () => 1)).rejects.toThrow('JSON');
+    await expect(f.api.set!('k', undefined)).rejects.toThrow('JSON');
+    expect(f.toParent.filter((m) => m.kind === 'data')).toEqual([]);
+  });
+
+  it('in a render (no parent proof) reads answer empty and writes refuse, sending nothing', async () => {
+    const f = frame('');
+    f.load();
+    await expect(f.api.get!('k')).resolves.toBeUndefined();
+    await expect(f.api.list!()).resolves.toEqual([]);
+    await expect(f.api.info!()).resolves.toMatchObject({ canWriteShared: false, readOnly: true });
+    await expect(f.api.set!('k', 1)).rejects.toThrow('picture');
+    expect(f.toParent.filter((m) => m.kind === 'data')).toEqual([]);
+  });
+});
+
 describe('buildCanvasEmbedCsp', () => {
   it('requires no network of whatever loads in the frame, and names only what an embedder may', () => {
     const csp = buildCanvasEmbedCsp('https://brain.example');

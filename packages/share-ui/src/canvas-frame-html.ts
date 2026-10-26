@@ -124,6 +124,15 @@ function styleText(css: string): string {
  *    or rejection as `{v:1, kind:'error', message}` (deduplicated), so the
  *    host can tell a broken canvas from a slow one. The parent checks
  *    `e.source` and accepts nothing else.
+ *  - Data (DWG phase 7a): `window.mantle.data` (get, set, delete, list,
+ *    info), each a promise. A call is `{v:1, kind:'data', id, op, bucket,
+ *    key, json, everyone}` to the parent, held until `ready` has gone (the
+ *    parent takes none before the proof), and answered by
+ *    `{v:1, kind:'data-reply', id, ok, result | error}` from the parent only.
+ *    The message names no canvas and no login: the parent binds both, and
+ *    checks every field (canvas-sandbox.tsx). A canvas that never calls it
+ *    sends nothing. With no parent (a render: no nonce) reads answer empty
+ *    and writes refuse, at once.
  */
 function preludeScript(opts: {
   cls: string;
@@ -154,10 +163,36 @@ function preludeScript(opts: {
     try{Object.defineProperty(window,n,{value:undefined,writable:false,configurable:false});}catch(_){}});
   function theme(cls,ct){h.className=cls||'';if(ct){h.setAttribute('data-color-theme',ct);}else{h.removeAttribute('data-color-theme');}}
   theme(cfg.cls,cfg.ct);
+  var waits={},seq=0,up=false,queue=[],noHost=!nonce;
   window.addEventListener('message',function(e){
     if(e.source!==P)return;var m=e.data;if(!m||m.v!==1)return;
     if(m.kind==='theme'&&cfg.follow){theme(m.cls,m.colorTheme);}
+    else if(m.kind==='data-reply'){var w=waits[m.id];if(!w)return;delete waits[m.id];clearTimeout(w.t);
+      if(m.ok===true){w.ok(m.result);}else{w.no(new Error(typeof m.error==='string'?m.error.slice(0,300):'the canvas data store refused'));}}
   });
+  function send(m){try{P.postMessage(m,'*');}catch(_){var w=waits[m.id];if(w){delete waits[m.id];clearTimeout(w.t);w.no(new Error('the canvas data store is not available'));}}}
+  function call(op,a){return new Promise(function(ok,no){
+    if(noHost){
+      if(op==='get'){ok(null);}else if(op==='list'){ok([]);}
+      else if(op==='info'){ok({canWriteShared:false,readsEveryone:false,me:null,readOnly:true});}
+      else{no(new Error('nothing is saved here: this is a picture of the canvas'));}
+      return;}
+    var id=++seq;var t=setTimeout(function(){if(waits[id]){delete waits[id];no(new Error('the canvas data store did not answer'));}},30000);
+    waits[id]={ok:ok,no:no,t:t};
+    var m={v:1,kind:'data',id:id,op:op,bucket:a.bucket,key:a.key,json:a.json,everyone:a.everyone};
+    if(up){send(m);}else{queue.push(m);}
+  });}
+  function bk(o){return o&&typeof o==='object'&&o.bucket!==undefined?o.bucket:'shared';}
+  var data={
+    get:function(k,o){return call('get',{bucket:bk(o),key:k}).then(function(r){return r&&typeof r==='object'?r.value:undefined;});},
+    set:function(k,v,o){var j;try{j=JSON.stringify(v);}catch(err){return Promise.reject(err);}
+      if(j===undefined){return Promise.reject(new TypeError('the value must be JSON'));}
+      return call('set',{bucket:bk(o),key:k,json:j}).then(function(){return undefined;});},
+    delete:function(k,o){return call('delete',{bucket:bk(o),key:k}).then(function(r){return !!(r&&r.deleted);});},
+    list:function(o){return call('list',{bucket:bk(o),everyone:!!(o&&typeof o==='object'&&o.everyone)});},
+    info:function(){return call('info',{});}
+  };
+  try{window.mantle=Object.freeze({data:Object.freeze(data)});}catch(_){}
   if(cfg.size){
     var fit=function(){var W=cfg.size.w,H=cfg.size.h,iw=window.innerWidth||W,ih=window.innerHeight||H;
       var s=Math.min(iw/W,ih/H);if(!(s>0))s=1;
@@ -175,7 +210,8 @@ function preludeScript(opts: {
   window.addEventListener('unhandledrejection',function(e){
     report((e&&e.reason&&(e.reason.message||e.reason))||'the canvas failed');});
   window.addEventListener('load',function(){
-    try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}});
+    try{P.postMessage({v:1,kind:'ready',n:nonce},'*');}catch(_){}
+    up=true;var q=queue;queue=[];for(var i=0;i<q.length;i++){send(q[i]);}});
 })();`;
 }
 

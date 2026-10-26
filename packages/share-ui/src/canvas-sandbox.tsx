@@ -5,8 +5,18 @@
  * canvas-files.md section 5.2). Like AppSandbox (./app-sandbox.tsx), the
  * iframe NAVIGATES to a brain-rendered frame document, after this parent
  * mints a seconds-lived ticket for it (the sandboxed navigation can carry no
- * credential). Unlike an app there is no bridge: the frame may post `ready`
- * and `error`, and this parent posts `theme`. Nothing else crosses.
+ * credential). Unlike an app there is no tool or database bridge: the frame
+ * may post `ready`, `error` and `data`, and this parent posts `theme` and
+ * `data-reply`. Nothing else crosses.
+ *
+ * Data (DWG phase 7a): a canvas's `mantle.data` calls arrive as `data`
+ * messages. This parent takes them only from its own frame (`e.source`)
+ * and only once the frame proved itself (`ready` with the nonce), checks
+ * every field (./canvas-data-bridge.ts), and forwards each to THIS canvas's
+ * API (`apiBase` + `/data`) with its own fetcher: the canvas names no
+ * canvas and no login, and never holds a credential. At most
+ * CANVAS_DATA_IN_FLIGHT_MAX wait at once. A canvas that never calls it
+ * costs no request.
  *
  * The iframe is `sandbox="allow-scripts"` only: an opaque origin, no
  * cookies, no storage, no forms, no popups, no top navigation. The frame's
@@ -26,6 +36,11 @@
  */
 import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { buildCanvasEmbedCsp } from './canvas-frame-html';
+import {
+  CANVAS_DATA_IN_FLIGHT_MAX,
+  canvasDataReply,
+  readCanvasDataMessage,
+} from './canvas-data-bridge';
 
 type Status = 'loading' | 'ready' | 'error' | 'missing' | 'left';
 
@@ -87,6 +102,12 @@ export function CanvasSandbox({
   // The latest callbacks, read by the effects without re-running them.
   const handlers = useRef({ onReady, onDown, onError, fetcher });
   handlers.current = { onReady, onDown, onError, fetcher };
+  // The frame load each data call belongs to: a reply to an earlier load
+  // (a reload, Replay, a take-down) is dropped, never sent to the new one.
+  const frameLoad = useRef(0);
+  const dataInFlight = useRef(0);
+  const apiBaseRef = useRef(apiBase);
+  apiBaseRef.current = apiBase;
 
   // Mint a ticket and point the frame at the document it opens.
   useEffect(() => {
@@ -94,6 +115,7 @@ export function CanvasSandbox({
     setStatus('loading');
     setFailure(null);
     setSrc(null);
+    frameLoad.current += 1;
     handlers.current.onDown?.();
     void (async () => {
       try {
@@ -129,6 +151,8 @@ export function CanvasSandbox({
   const takeDown = (why: string) => {
     if (proofWait.current) clearTimeout(proofWait.current);
     proofWait.current = null;
+    proven.current = false;
+    frameLoad.current += 1;
     setSrc(null);
     setStatus('left');
     handlers.current.onDown?.();
@@ -165,6 +189,45 @@ export function CanvasSandbox({
         const text = typeof m.message === 'string' ? m.message.slice(0, 500) : 'the canvas failed';
         setFailure(text);
         handlers.current.onError?.(text);
+      } else if (m.kind === 'data') {
+        // Only the proven document: before the proof, the frame may be a
+        // page the canvas navigated to.
+        if (!proven.current) return;
+        void forwardData(frame, m);
+      }
+    }
+
+    /** One `mantle.data` call, checked, forwarded and answered. */
+    async function forwardData(frame: HTMLIFrameElement, raw: unknown) {
+      const load = frameLoad.current;
+      const answer = (id: number | null, reply: Record<string, unknown>) => {
+        if (id === null || load !== frameLoad.current || !proven.current) return;
+        frame.contentWindow?.postMessage({ v: 1, kind: 'data-reply', id, ...reply }, '*');
+      };
+      const read = readCanvasDataMessage(raw);
+      if (!read.ok) {
+        answer(read.rejection.id, { ok: false, error: read.rejection.error });
+        return;
+      }
+      const { req } = read;
+      if (dataInFlight.current >= CANVAS_DATA_IN_FLIGHT_MAX) {
+        answer(req.id, { ok: false, error: 'too many calls at once: wait for the ones sent' });
+        return;
+      }
+      dataInFlight.current += 1;
+      try {
+        const res = await handlers.current.fetcher(`${apiBaseRef.current}${req.path}`, {
+          method: req.method,
+          ...(req.body !== undefined
+            ? { headers: { 'content-type': 'application/json' }, body: req.body }
+            : {}),
+        });
+        const body: unknown = await res.json().catch(() => null);
+        answer(req.id, canvasDataReply(req.op, res.status, body));
+      } catch {
+        answer(req.id, { ok: false, error: 'the canvas data store could not be reached' });
+      } finally {
+        dataInFlight.current -= 1;
       }
     }
     window.addEventListener('message', onMessage);
