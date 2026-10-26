@@ -52,10 +52,13 @@
  * IMAGE) are never part of a label's text: a label is text anyone with
  * Write may type. The view draws them from the mark (`markSuffix` after a
  * connector's text, `lineNoteSuffix` after a line's note), and a save
- * strips them from every label (`withoutMarkWords`), so a word on the
- * drawing is always the mark's. A mark's seal covers the element it sits
- * on (`markSite`: the page, its ids, ends, link and label, and on a line
- * the ordered keys of every mark the line carries), so a sealed mark copied
+ * strips them from every label (`withoutMarkWords`; on an element with no
+ * mark a typed claim leaves GUESS, which claims nothing), so a word on the
+ * drawing that claims a check is always the mark's. A mark's seal covers
+ * the element it sits on (`markSite`: the page, its ids, ends, link and
+ * label, and on a line the ordered keys of every mark the line carries;
+ * a connector or line whose id another shares, or that has none, vouches
+ * for no mark), so a sealed mark copied
  * onto another element, kept under a changed label, or left on a line one
  * of whose other marks was dropped or swapped, is made unchecked. The
  * provenance's seal covers the drawing's title and sheet, so renaming a
