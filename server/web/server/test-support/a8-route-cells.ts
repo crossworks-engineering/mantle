@@ -105,6 +105,7 @@ export type A8RouteHigher = {
   seed?: string;
   params?: (c: A8RouteCtx) => Readonly<Record<string, string>>;
   body?: (c: A8RouteCtx) => unknown;
+  refusedStatus?: A8RouteSpec['refusedStatus'];
 };
 
 /** The request a route takes in a cell, and the guide action it is. */
@@ -145,6 +146,10 @@ export type A8RouteSpec = {
   allowedStatus?: { status: number; why: string };
   /** The request that asks the higher right of the route, its own cells. */
   higher?: A8RouteHigher;
+  /** A refusal may answer this status as well as a 403 or a 404, with why
+   *  (still changing nothing): the caller's right passed, and what the
+   *  request names beside the item is one it does not read. */
+  refusedStatus?: { status: number; why: string };
   /** The placements its cells run on (every one of its kind when unset),
    *  with why the others are left out. */
   placements?: { only: readonly GuidePlacement[]; why: string };
@@ -447,6 +452,10 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
       action: 'move',
       seed: 'file_move',
       body: (c) => ({ move: String(c.input.dest_path), confirm: true }),
+      refusedStatus: {
+        status: 400,
+        why: 'a destination the caller does not read is the 400 of a path no folder has (moveFileById, moveFolderById), after the manage check passed: an Admin user on an Admin-homed item, no seat in T',
+      },
     },
   },
   'DELETE /api/files/files/:id': { kind: 'file', action: 'delete', seed: 'file_rename' },
@@ -467,6 +476,10 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
       action: 'move',
       seed: 'folder_move',
       body: (c) => ({ move: String(c.input.dest_parent_path), confirm: true }),
+      refusedStatus: {
+        status: 400,
+        why: 'a destination the caller does not read is the 400 of a path no folder has (moveFileById, moveFolderById), after the manage check passed: an Admin user on an Admin-homed item, no seat in T',
+      },
     },
   },
   'DELETE /api/files/folders/:id': { kind: 'branch', action: 'delete', seed: 'folder_rename' },
@@ -531,7 +544,8 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
       only: ['folder'],
       why: 'only a grant the item takes from its folder is made its own (at the root its grant of R is set on the item: 409 not_derived)',
     },
-    blind: 'the folder’s grant becomes one set on the item: nobody gains or loses access, and the probe reads access',
+    blind:
+      'the folder’s grant becomes one set on the item: nobody gains or loses access, and the probe reads access',
   },
   // R's grant from folder F, removed here first ("Remove from this
   // workspace": excluded), as the grants panel makes it; the restore brings
@@ -911,7 +925,7 @@ export function judgeA8RouteCell(a: A8RouteJudge): string | null {
   }
   if (ok)
     return `answered ${out.status}, the oracle denies (${'why' in cell.want ? cell.want.why : ''})`;
-  if (out.status !== 403 && out.status !== 404) {
+  if (out.status !== 403 && out.status !== 404 && out.status !== spec.refusedStatus?.status) {
     return `refused with ${out.status}, not 403 or 404: ${out.text.slice(0, 100)}`;
   }
   // A caller that does not read the item gets a random uuid's answer.

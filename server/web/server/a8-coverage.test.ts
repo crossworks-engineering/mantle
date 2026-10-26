@@ -157,7 +157,8 @@ describe('A8 coverage: every kind, tool and item route is in a cell set or exemp
         );
         if (!of) continue;
         const key = `${method} ${e.pattern}`;
-        if (A8_KINDS.includes(of.kind) || !(of.kind in A8_EXEMPT)) unsaid.push(`${key} (${of.kind})`);
+        if (A8_KINDS.includes(of.kind) || !(of.kind in A8_EXEMPT))
+          unsaid.push(`${key} (${of.kind})`);
         else byClass.push(key);
       }
     }
