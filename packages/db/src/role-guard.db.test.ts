@@ -616,8 +616,13 @@ describe.skipIf(!URL)('mantle_bridge_login demoted only (0330) until 0334 droppe
           select pg_get_userbyid(p.proowner)::text as o from pg_proc p
            where p.oid = 'public.mantle_ws_add_user(uuid,uuid,uuid,boolean)'::regprocedure`
       )[0]!.o;
-    // A box's grants, as migrate leaves them: the runtime role may run it.
+    // A box's grants as the image one release back's migrate leaves them:
+    // this image's allowlist no longer names the bridge, so the older
+    // image's grant to the runtime role is made by hand.
     await applyRuntimeGrants(sql);
+    await sql.unsafe(
+      `GRANT EXECUTE ON FUNCTION "public"."mantle_bridge_login"(uuid) TO "${RUNTIME_ROLE}"`,
+    );
     const before = await fact();
     expect(before).toMatch(/ true false true false$/);
     expect(before!.split(' ')[1]).toBe(await owner());
