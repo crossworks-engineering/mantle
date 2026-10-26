@@ -25,11 +25,11 @@ export const policy = routePolicy({
   GET: { class: 'content' },
   PATCH: {
     class: 'content',
-    item: { param: 'id', need: 'manage' },
+    item: { param: 'id', need: 'edit' },
   },
   DELETE: {
     class: 'content',
-    item: { param: 'id', need: 'manage' },
+    item: { param: 'id', need: 'edit' },
   },
 });
 
