@@ -89,6 +89,10 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',
+  // An assistant's and an AI worker's use counters (last_used_at,
+  // usage_count), bumped in the turn or request that used them (S4a list).
+  'packages/db/src/agents-resolve.ts': 'narrow',
+  'packages/db/src/ai-workers-resolve.ts': 'narrow',
   // The audit row of a tool write, written by the gate in the turn.
   'packages/db/src/call-audit.ts': 'narrow',
   // The push worker's count of parked extractions.

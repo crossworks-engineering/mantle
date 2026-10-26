@@ -9,7 +9,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db } from './client';
+import { systemDb } from './client';
 import { agents } from './schema/agents';
 
 /**
@@ -19,10 +19,12 @@ import { agents } from './schema/agents';
  *
  * Mirrors `bumpWorkerUsage`. Bumps only `last_used_at` + `usage_count`
  * to match the existing responder bump sites (assistant.ts / main.ts),
- * which deliberately leave `updated_at` untouched.
+ * which deliberately leave `updated_at` untouched. A counter, so systemDb
+ * (the narrow route in a scope, NARROW_WRITES' agents columns), never the
+ * caller's scoped write (docs/fail-open.md).
  */
 export async function bumpAgentUsage(id: string): Promise<void> {
-  await db
+  await systemDb
     .update(agents)
     .set({
       lastUsedAt: new Date(),

@@ -419,13 +419,15 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'backup_via_tailnet',
       'enabled',
       'is_default',
+      'last_used_at',
       'name',
       'priority',
       'updated_at',
+      'usage_count',
       'via_tailnet',
     ],
     delete: true,
-    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12). Round 13b (item C): params off the list, its edit at skill-text (the params of a kind carry its prompt, extraction_prompt, and its limits). Round 14 (DB LOW-4): its provider and model and their backups (which provider and model a kind pays) off the list, at model-route',
+    why: 'measured (round 8): INSERT, UPDATE, DELETE by system:http:admin-area. The use counters (last_used_at, usage_count): bumpWorkerUsage on systemDb in the turn or request that used the worker (S4a list), as agents. A worker made, or its vault keys, base URLs or configuring login changed, runs at the full-route spot model-route; its prompt (what it runs) at skill-text (round 12). Round 13b (item C): params off the list, its edit at skill-text (the params of a kind carry its prompt, extraction_prompt, and its limits). Round 14 (DB LOW-4): its provider and model and their backups (which provider and model a kind pays) off the list, at model-route',
   },
   'public.api_keys': {
     update: [

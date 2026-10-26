@@ -9,7 +9,7 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db } from './client';
+import { db, systemDb } from './client';
 import { aiWorkers, type AiWorker, type AiWorkerKind } from './schema/ai-workers';
 
 /**
@@ -77,9 +77,12 @@ export async function getAgentTtsWorker(
 }
 
 /** Best-effort usage telemetry bump. Never throws — workers should
- *  succeed even if the bump fails. */
+ *  succeed even if the bump fails. A counter, so systemDb (the narrow
+ *  route in a scope, NARROW_WRITES' ai_workers columns): a login's or an
+ *  assistant's turn bumps the worker it used, never through its own
+ *  scoped write (docs/fail-open.md). */
 export async function bumpWorkerUsage(id: string): Promise<void> {
-  await db
+  await systemDb
     .update(aiWorkers)
     .set({
       lastUsedAt: new Date(),
