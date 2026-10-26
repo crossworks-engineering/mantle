@@ -28,12 +28,14 @@
  *   - warn: the read-only edit is made on the write role and logged as a
  *     miss;
  *   - off: the system pool, for every login alike (the rollout switch);
- *   - the pre-check in place, every mode: the read-only edit is its 403;
- *     an item the scope does not read is the 404 (before F4: 403 "Add
- *     yourself to it first", which told the item existed);
+ *   - a link's change, whose handler asks the item's right (the item
+ *     gate's answers, item-answers.ts), every mode: the read-only edit is
+ *     its 403; an item the scope does not read is the 404 (before F4: 403
+ *     "Add yourself to it first", which told the item existed);
  *   - a create with no ?ws= lands in Admin, on the write role;
- *   - kept on the system pool (itemWriteGate's ADMIN_ACT): an Admin user
- *     with the users area closes a link of an item it does not read.
+ *   - kept (the item gate's ADMIN_ACT once, the link's definer now): an
+ *     Admin user with the users area closes a link of an item it does not
+ *     read.
  *
  * `pnpm test:edit-on` and `pnpm test:runtime-role` run this file too.
  *
@@ -150,13 +152,12 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     who: Who,
     what: 'edit' | 'draft' | 'gated',
     grant: Grant,
-    _precheck: boolean,
   ): Promise<Cell> => {
     const id = await makeItem(what === 'edit' ? 'note' : 'page', grant);
-    // 'gated': a write through a route that keeps the pre-check (a link's
-    // change, PATCH /api/shares/:id, one of the two the pre-check removal
-    // part 2 keeps for plan v3 S6): the gate reads the item the share names
-    // and answers before any handler (every item route's entry is gone).
+    // 'gated': a link's change (PATCH /api/shares/:id), whose handler asks
+    // the right of the item the share names before it writes
+    // (shareItemRefusal, the item gate's answers byte for byte since plan
+    // v3.2 S6 c2, lib/auth/item-answers.ts).
     const shareId = randomUUID();
     if (what === 'gated') {
       await raw.begin(async (tx) => {
@@ -272,16 +273,16 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('on, the pre-check bypassed: the database refuses a read-only edit and draft edit; editable ones are made on the write role', async () => {
+  it('on: the database refuses a read-only edit and draft edit; editable ones are made on the write role', async () => {
     await setMode('on');
     for (const who of ['admin', 'owner'] as const) {
       for (const what of ['edit', 'draft'] as const) {
-        const ro = await cell(`on ${who} ${what} read-only`, who, what, 'read-only', false);
+        const ro = await cell(`on ${who} ${what} read-only`, who, what, 'read-only');
         expect(ro.status, ro.text).toBe(403);
         expect(ro.changed).toBe(false);
         expect(ro.text).not.toMatch(RAW);
         expect(ro.text).toContain('item-workspace');
-        const rw = await cell(`on ${who} ${what} editable`, who, what, 'editable', false);
+        const rw = await cell(`on ${who} ${what} editable`, who, what, 'editable');
         expect(rw.status, rw.text).toBe(200);
         expect(rw.changed).toBe(true);
         expect(rw.role).toBe('write');
@@ -290,11 +291,11 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     }
   }, 180_000);
 
-  it('on, the pre-check bypassed: an item the scope does not read is not found and not written', async () => {
+  it('on: an item the scope does not read is not found and not written', async () => {
     await setMode('on');
     for (const who of ['admin', 'owner'] as const) {
       for (const what of ['edit', 'draft'] as const) {
-        const hidden = await cell(`on ${who} ${what} hidden`, who, what, 'hidden', false);
+        const hidden = await cell(`on ${who} ${what} hidden`, who, what, 'hidden');
         expect(hidden.status, hidden.text).toBe(404);
         expect(hidden.changed).toBe(false);
         expect(hidden.text).not.toMatch(RAW);
@@ -304,12 +305,12 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
 
   it('warn makes the read-only edit on the write role and logs it as a miss', async () => {
     await setMode('warn');
-    const ro = await cell('warn admin edit read-only', 'admin', 'edit', 'read-only', false);
+    const ro = await cell('warn admin edit read-only', 'admin', 'edit', 'read-only');
     expect(ro.status, ro.text).toBe(200);
     expect(ro.changed).toBe(true);
     expect(ro.role).toBe('write');
     expect(ro.misses).toContain(EDIT_MISS);
-    const rw = await cell('warn admin edit editable', 'admin', 'edit', 'editable', false);
+    const rw = await cell('warn admin edit editable', 'admin', 'edit', 'editable');
     expect(rw.status, rw.text).toBe(200);
     expect(rw.misses).toEqual([]);
   }, 120_000);
@@ -317,36 +318,24 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   it('off runs on the write role too and reports as warn (plan v3 S3: the mode never picks the pool)', async () => {
     // Changed in S3: off was the rollout switch, the system pool unchecked.
     await setMode('off');
-    const ro = await cell('off admin edit read-only', 'admin', 'edit', 'read-only', false);
+    const ro = await cell('off admin edit read-only', 'admin', 'edit', 'read-only');
     expect(ro.status, ro.text).toBe(200);
     expect(ro.changed).toBe(true);
     expect(ro.role).toBe('write');
     expect(ro.misses).toContain(EDIT_MISS);
   }, 120_000);
 
-  it('with the pre-check in place: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
-    // A route that keeps the pre-check (a link's change: every item route
-    // lost its entry in the pre-check removal part 2, docs/actors.md).
+  it('a link’s change, the handler’s item check: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
+    // The handler's check holds in every mode (the database's alone only
+    // reports below on).
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {
-        const ro = await cell(
-          `${mode} ${who} gated read-only, pre-check`,
-          who,
-          'gated',
-          'read-only',
-          true,
-        );
+        const ro = await cell(`${mode} ${who} gated read-only`, who, 'gated', 'read-only');
         expect(ro.status, ro.text).toBe(403);
         expect(ro.text).toContain('You cannot change this item in your workspaces.');
         expect(ro.changed).toBe(false);
-        const hidden = await cell(
-          `${mode} ${who} gated hidden, pre-check`,
-          who,
-          'gated',
-          'hidden',
-          true,
-        );
+        const hidden = await cell(`${mode} ${who} gated hidden`, who, 'gated', 'hidden');
         expect(hidden.status, hidden.text).toBe(404);
         expect(JSON.parse(hidden.text)).toEqual({ ok: false, error: 'not found' });
         expect(hidden.changed).toBe(false);
