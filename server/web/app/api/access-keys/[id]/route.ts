@@ -13,7 +13,8 @@ import { NextResponse } from '@/server/http-compat';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@mantle/db';
-import { forgetRequestLogins, loginCaller, type AnyLogin } from '@/lib/auth';
+import { anyLoginCaller, forgetRequestLogins } from '@/lib/auth';
+import type { Login } from '@/lib/auth/login';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -31,7 +32,7 @@ const Params = z.object({ id: z.string().uuid() });
 
 type Ctx = { params: Promise<{ id: string }> };
 
-async function handleDELETE(login: AnyLogin, ctx: Ctx) {
+async function handleDELETE(login: Login, ctx: Ctx) {
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   // By its definer (mantle_access_key_revoke, 0293): the login's own live
@@ -72,6 +73,6 @@ async function handleDELETE(login: AnyLogin, ctx: Ctx) {
 /** The login the pipeline answered (A4 hand batch A); the handler runs
  *  where the request runs. */
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const login = loginCaller();
+  const login = anyLoginCaller();
   return handleDELETE(login, ctx);
 }

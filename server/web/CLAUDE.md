@@ -17,9 +17,9 @@ What is here:
   (`lib/auth-constants.ts`). A handler calls no session guard (a hard
   lint ban since A4 exit, `eslint-rules/no-guard-calls.mjs`): it reads the
   caller the gate answered for its row, `const owner = ownerCaller()` (or
-  `memberCaller()`, `loginCaller()`, `chatLoginCaller()`, the asset and
+  `memberCaller()`, `anyLoginCaller()`, `chatCaller()`, the asset and
   frame readers; a public row reads its login at the read with
-  `await publicLoginCaller()`), the one list being
+  `await publicLoginItself()`), the one list being
   `eslint-rules/session-guards.mjs`; an open share link (`/s/<token>`)
   judges its token with `resolveActiveShareByToken()` (`docs/actors.md`,
   A4 step 3b and the hand batches). Which rows the gate

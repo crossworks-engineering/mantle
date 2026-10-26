@@ -4,7 +4,7 @@
  * none.
  */
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { listMyTelegramChats } from '@/lib/agent-telegram';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -13,7 +13,7 @@ export const policy = routePolicy({
 });
 
 export async function GET() {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const chats = await listMyTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

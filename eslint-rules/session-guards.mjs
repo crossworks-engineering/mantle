@@ -56,11 +56,12 @@ export const SESSION_GUARDS = Object.freeze([
  *  - `atRead`: the gate binds the answer and the handler's first read runs
  *    it, where the handler called its guard (route-policy.ts
  *    ANSWERED_AT_READ): such a read may follow code, and is awaited.
- *  - `logs`: the reader whose entry and projection the guard sweep logs
- *    for this reader's rows, where this one reads the same answer in another shape
- *    (anyLoginCaller, ownerLoginCaller, chatCaller: the Login itself, plan
- *    v3.2 section 2.2; the sweep keeps logging the answer's legacy shape,
- *    so the recorded files compare one answer byte for byte).
+ *    The Login readers (anyLoginCaller, ownerLoginCaller, chatCaller,
+ *    publicLoginItself: plan v3.2 section 2.2) keep the entries of the
+ *    legacy readers they replaced (S8d), and the guard sweep logs the
+ *    answer in the legacy shape it rebuilds from the Login
+ *    (a4-guard-sweep.test.ts), so the recorded files compare one answer
+ *    byte for byte.
  */
 export const READER_ANSWERS = Object.freeze({
   ownerCaller: Object.freeze({ caller: 'owner', guard: 'getOwnerOr401', entry: 'pipeline:owner' }),
@@ -69,39 +70,25 @@ export const READER_ANSWERS = Object.freeze({
     guard: 'getOwnerOr401WithSource',
     entry: 'pipeline:ownerWithSource',
   }),
-  ownerCallerWithLogin: Object.freeze({
-    caller: 'owner',
-    guard: 'getOwnerOr401WithLogin',
-    entry: 'pipeline:ownerWithLogin',
-  }),
   ownerLoginCaller: Object.freeze({
     caller: 'owner',
     guard: 'getOwnerOr401WithLogin',
-    entry: 'pipeline:ownerLoginItself',
-    logs: 'ownerCallerWithLogin',
+    entry: 'pipeline:ownerWithLogin',
   }),
   memberCaller: Object.freeze({
     caller: 'member',
     guard: 'getMemberOr401',
     entry: 'pipeline:member',
   }),
-  loginCaller: Object.freeze({ caller: 'login', guard: 'getLoginOr401', entry: 'pipeline:login' }),
   anyLoginCaller: Object.freeze({
     caller: 'login',
     guard: 'getLoginOr401',
-    entry: 'pipeline:loginItself',
-    logs: 'loginCaller',
-  }),
-  chatLoginCaller: Object.freeze({
-    caller: 'chat',
-    guard: 'getChatLoginOr401',
-    entry: 'pipeline:chat',
+    entry: 'pipeline:login',
   }),
   chatCaller: Object.freeze({
     caller: 'chat',
     guard: 'getChatLoginOr401',
-    entry: 'pipeline:chatItself',
-    logs: 'chatLoginCaller',
+    entry: 'pipeline:chat',
   }),
   sessionUserCaller: Object.freeze({
     caller: 'session',
@@ -119,18 +106,11 @@ export const READER_ANSWERS = Object.freeze({
     entry: 'pipeline:readerAsset',
   }),
   frameTicketCaller: Object.freeze({ caller: 'frame', guard: null, entry: 'pipeline:frame' }),
-  publicLoginCaller: Object.freeze({
+  publicLoginItself: Object.freeze({
     caller: 'publicLogin',
     guard: 'getLoginOr401',
     entry: 'pipeline:publicLogin',
     atRead: true,
-  }),
-  publicLoginItself: Object.freeze({
-    caller: 'publicLogin',
-    guard: 'getLoginOr401',
-    entry: 'pipeline:publicLoginItself',
-    atRead: true,
-    logs: 'publicLoginCaller',
   }),
   cookieUpgradeCaller: Object.freeze({
     caller: 'cookieUpgrade',

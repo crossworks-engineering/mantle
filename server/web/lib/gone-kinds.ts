@@ -15,7 +15,7 @@ import type { RouteCaller } from './auth/route-policy';
 export const GONE_KINDS = Object.freeze({
   owner: Object.freeze({ caller: 'owner', reader: 'ownerCaller' }),
   member: Object.freeze({ caller: 'member', reader: 'memberCaller' }),
-  any: Object.freeze({ caller: 'login', reader: 'loginCaller' }),
+  any: Object.freeze({ caller: 'login', reader: 'anyLoginCaller' }),
 } as const satisfies Record<string, { caller: RouteCaller; reader: string }>);
 
 /** Who the removed route served. */

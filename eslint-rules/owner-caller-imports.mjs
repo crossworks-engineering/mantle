@@ -3,8 +3,8 @@
  * pipeline answers is read only in a route handler, by its reader's own
  * name: every reader of the one list (session-guards.mjs CALLER_READERS),
  * the owner's (ownerCaller and its two projections) and, since part 5, the
- * member's (memberCaller), the any-login's (loginCaller) and the chat
- * login's (chatLoginCaller). The
+ * member's (memberCaller), the any-login's (anyLoginCaller) and the chat
+ * login's (chatCaller). The
  * route manifest generator reads each route file to learn which handlers
  * read it (server/web/scripts/route-callers.ts) and the gate answers only
  * those rows; a read it cannot see (a helper of lib, a renamed import, a
@@ -20,11 +20,11 @@
  *
  *
  * A4 hand batch B fix round 1 (L3): a reader answered at the read
- * (READER_ANSWERS `atRead`: publicLoginCaller, cookieUpgradeCaller,
+ * (READER_ANSWERS `atRead`: publicLoginItself, cookieUpgradeCaller,
  * ownerCallerAtRead) runs the gate's answer when it is called, so in a
  * route file
  *
- *  - its call is awaited where it is made (`await publicLoginCaller()`): a
+ *  - its call is awaited where it is made (`await publicLoginItself()`): a
  *    promise left unawaited is a login that is always there, and a refusal
  *    no one sees;
  *  - ownerCallerAtRead is never called inside a try block: its refusal is
@@ -94,7 +94,7 @@ export const rule = {
     type: 'problem',
     docs: {
       description:
-        'A reader of the caller the pipeline answers (ownerCaller, memberCaller, loginCaller, chatLoginCaller) is imported by its own name, only in an app/api route file (A4 step 3b).',
+        'A reader of the caller the pipeline answers (ownerCaller, memberCaller, anyLoginCaller, chatCaller) is imported by its own name, only in an app/api route file (A4 step 3b).',
     },
     messages: {
       notRoute:

@@ -63,7 +63,7 @@ export type RouteEntry = {
   catchAllOptional: boolean;
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads (ownerCaller(), memberCaller(),
-   *  loginCaller(), chatLoginCaller(); arch A4 step 3b): their rows'
+   *  anyLoginCaller(), chatCaller(); arch A4 step 3b): their rows'
    *  `caller`. */
   reads?: Readonly<Record<string, RouteCaller>>;
   /** Each method exported as a retired route's 410 stub (`gone(kind)`,

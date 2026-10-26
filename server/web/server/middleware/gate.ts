@@ -226,7 +226,7 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
  * another site spends a visitor's budget), then the row's rate limits, with
  * the one 429. A login's limit counts the login the pipeline answered
  * (answeredLimitLogin); on a row answered at the read the read takes it
- * (session.ts publicLoginCaller). A byte row's query is the one its handler
+ * (session.ts publicLoginItself). A byte row's query is the one its handler
  * is handed (assetQueryAsHanded).
  */
 function beforeHandler(row: RouteRow, req: Request): Response | null {

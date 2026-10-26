@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The login the pipeline answers at the read (A4 hand batch B).
-  publicLoginCaller: vi.fn(async () => ({
+  publicLoginItself: vi.fn(async () => ({
     kind: 'member',
     loginId: '00000000-0000-4000-8000-00000000cccc',
     email: 'm@example.invalid',

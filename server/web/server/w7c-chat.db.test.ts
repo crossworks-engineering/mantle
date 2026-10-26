@@ -53,9 +53,6 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     getChatLoginOr401: vi.fn(async () => h.login),
-    // The reader a converted chat handler calls (A4 step 3b part 5): the
-    // same stand-in.
-    chatLoginCaller: vi.fn(() => h.login),
     // The reader the chat handlers call now (chatCaller, plan v3.2 section
     // 2.2): the same answer without its kind, with its Login.
     chatCaller: vi.fn(() => {

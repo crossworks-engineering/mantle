@@ -56,10 +56,6 @@ vi.mock('@/lib/auth/login', async (importOriginal) => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.res),
-  // The reader the workspace routes call (A4 hand batch A): the same
-  // stand-in. The api.write row is the gate's any-login answer step's now
-  // (pinned by the guard sweep's guard writes and gate-caller.test.ts).
-  loginCaller: vi.fn(() => h.res),
   // The Login the routes read (anyLoginCaller, plan v3.2 section 2.2),
   // stood in alongside the same answer; adminFacts (mocked above) answers
   // what it says.

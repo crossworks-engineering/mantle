@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginCaller } from '@/lib/auth';
+import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginItself } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   // sessions, asset tokens and API keys. A public row: the login the
   // pipeline answers at this read, after the origin check and the body (A4
   // hand batch B), as the guard was called here.
-  const login = await publicLoginCaller();
+  const login = await publicLoginItself();
   if (login) {
     if (everywhere) await endLoginSessions(login.loginId, { endKeys: true });
     auditFireAndForget({

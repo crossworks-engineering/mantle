@@ -723,7 +723,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
-  it('ownerCallerWithSource and ownerCallerWithLogin read what their guards answer', async () => {
+  it('ownerCallerWithSource and ownerLoginCaller read what their guards answer', async () => {
     const { gate } = await import('./gate');
     const { registerRoutes: registerRoutesOf } = await import('../route-loader');
     const { withRealPolicies } = await import('../test-support');
@@ -741,7 +741,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           return got instanceof Response ? got : { user: got.user, source: got.source };
         },
       ],
-      ['WithLogin', session.ownerCallerWithLogin, session.getOwnerOr401WithLogin],
+      [
+        'LoginItself',
+        session.ownerLoginCaller,
+        async () => {
+          const got = await session.getOwnerOr401WithLogin();
+          return got instanceof Response ? got : session.ownerAnswerLogin(got);
+        },
+      ],
     ];
     for (const [name, read, guard] of pairs) {
       const build = (reads: boolean) => {
@@ -788,7 +795,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
     // Outside a routed request they throw, as ownerCaller() does.
     expect(() => session.ownerCallerWithSource()).toThrow(/answered no owner/);
-    expect(() => session.ownerCallerWithLogin()).toThrow(/answered no owner/);
+    expect(() => session.ownerLoginCaller()).toThrow(/answered no owner/);
   });
 
   it('the member, any-login and chat rows answer every credential as their guards do (part 5)', async () => {
@@ -803,15 +810,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const kinds = {
       member: [session.memberCaller, session.getMemberOr401],
       // The any-login guard as its rows ask it: with the audit row (A4 hand
-      // batch A, the answer step's), in the legacy shape loginCaller() reads.
-      login: [
-        session.loginCaller,
-        async () => {
-          const got = await session.getLoginOr401({ audit: true });
-          return got instanceof Response ? got : session.legacyLogin(got);
-        },
-      ],
-      chat: [session.chatLoginCaller, session.getChatLoginOr401],
+      // batch A, the answer step's).
+      login: [session.anyLoginCaller, () => session.getLoginOr401({ audit: true })],
+      chat: [session.chatCaller, session.getChatLoginOr401],
     } as const;
     // Real manifest patterns of each list, so registerRoutes builds their
     // real rows: a member read about the login's own things (self) and one
@@ -938,8 +939,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
     // Each reader throws where the pipeline gave no answer of its kind.
     expect(() => session.memberCaller()).toThrow(/answered no member/);
-    expect(() => session.loginCaller()).toThrow(/answered no login/);
-    expect(() => session.chatLoginCaller()).toThrow(/answered no chat login/);
+    expect(() => session.anyLoginCaller()).toThrow(/answered no login/);
+    expect(() => session.chatCaller()).toThrow(/answered no chat login/);
   });
 
   it('a workspace and a grants write: the any-login audit row as workspaceCaller() wrote it (part 5 fix round 1)', async () => {
@@ -1512,11 +1513,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     const ID = '11111111-1111-4111-8111-111111111111';
-    // The guard's Login in the legacy shape publicLoginCaller() reads.
-    const legacyGuard = async (opts?: { audit?: boolean }) => {
-      const got = await session.getLoginOr401(opts);
-      return got instanceof Response ? got : session.legacyLogin(got);
-    };
+    // The guard's Login, as publicLoginItself() reads it.
+    const legacyGuard = (opts?: { audit?: boolean }) => session.getLoginOr401(opts);
     type Row = {
       pattern: string;
       method: string;
@@ -1529,14 +1527,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         pattern: '/api/auth/whoami',
         method: 'GET',
         caller: 'publicLogin',
-        read: () => session.publicLoginCaller(),
+        read: () => session.publicLoginItself(),
         guard: () => legacyGuard(),
       },
       {
         pattern: '/api/auth/logout',
         method: 'POST',
         caller: 'publicLogin',
-        read: () => session.publicLoginCaller(),
+        read: () => session.publicLoginItself(),
         guard: () => legacyGuard(),
       },
       {
@@ -1544,7 +1542,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         pattern: '/api/auth/pair',
         method: 'POST',
         caller: 'publicLogin',
-        read: () => session.publicLoginCaller({ audit: true }),
+        read: () => session.publicLoginItself({ audit: true }),
         guard: () => legacyGuard({ audit: true }),
       },
       {
@@ -1660,7 +1658,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const pair = await drive(pipelineApp, 'POST', '/api/auth/pair', creds[1]!.headers());
     expect(pair.audits).toEqual([`api.write POST /api/auth/pair ${ADMIN}`]);
     // Each reader throws where the pipeline gave no answer of its kind.
-    await expect(session.publicLoginCaller()).rejects.toThrow(/answered no public login/);
+    await expect(session.publicLoginItself()).rejects.toThrow(/answered no public login/);
     await expect(session.cookieUpgradeCaller()).rejects.toThrow(/answered no cookie upgrade/);
     await expect(session.ownerCallerAtRead()).rejects.toThrow(/answered no owner at the read/);
   });

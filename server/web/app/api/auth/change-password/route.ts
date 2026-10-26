@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import {
   endLoginSessions,
-  publicLoginCaller,
+  publicLoginItself,
   setSessionCookie,
   updatePassword,
   verifyPassword,
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   // here. The read takes the row's per-login limit (authChangePassword, 5
   // an hour: a hijacked cookie must not pin bcrypt) and throws the one 429
   // over it.
-  const login = await publicLoginCaller();
+  const login = await publicLoginItself();
   if (!login) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
   }

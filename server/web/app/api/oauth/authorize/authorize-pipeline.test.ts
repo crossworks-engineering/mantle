@@ -2,7 +2,7 @@
  * The MCP consent step through the full pipeline (runRoute), with the
  * remote MCP switch ON (A4 hand batch B fix round 1, L2): the login GET and
  * POST /api/oauth/authorize read is the one the gate answers at the read
- * (publicLoginCaller), from a real session cookie or device token, not a
+ * (publicLoginItself), from a real session cookie or device token, not a
  * stand-in of the reader. The guard sweep drives this row with the switch
  * off (every credential gets the off answer); authorize-route.test.ts
  * stands the reader in. Here: an Admin user, a member with MCP off and on,

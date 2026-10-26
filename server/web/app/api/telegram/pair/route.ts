@@ -25,7 +25,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import {
   pairMyTelegramChat,
   pairingRefusalStatus,
@@ -61,7 +61,7 @@ const Body = z
 export async function POST(req: Request) {
   // The gate took the row's per-login limit (lib/route-limits.ts
   // telegramPair).
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(

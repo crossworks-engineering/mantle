@@ -5,7 +5,7 @@
  * and refuses with it (lib/auth/session.ts answerRouteCaller). A handler
  * reads it with a reader instead of calling a session guard: ownerCaller()
  * (and its two projections) for the owner guard, memberCaller() for the
- * member guard, loginCaller() for the any-login guard, chatLoginCaller()
+ * member guard, anyLoginCaller() for the any-login guard, chatCaller()
  * for the chat guard (A4 step 3b part 5; the one list,
  * eslint-rules/session-guards.mjs READER_ANSWERS).
  *

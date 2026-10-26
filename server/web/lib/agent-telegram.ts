@@ -533,7 +533,7 @@ export async function moderateTelegramChat(args: {
  *  but a client): `{ ok: true }`, 400 for a bad id, 404 for a chat the
  *  login may not touch. */
 export async function moderateTelegramChatResponse(
-  login: { kind: string; ownerId: string; loginId: string },
+  login: { ownerId: string; loginId: string },
   rawId: string,
   action: 'block' | 'unpair',
 ): Promise<{ status: number; body: Record<string, unknown> }> {

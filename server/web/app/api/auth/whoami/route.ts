@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import type { AuthWhoami } from '@mantle/client-types';
-import { legacyLogin, publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
+import { sessionRole, publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { brainIdField } from '@/lib/brain-identity';
 import { loginWorkspaces } from '@/lib/login-workspaces';
@@ -32,7 +32,7 @@ export const policy = routePolicy({
  * only while the database is behind the code (lib/brain-identity.ts).
  *
  * A public row (the gate lets every request in): the login is the one the
- * pipeline answers at the read (publicLoginCaller, A4 hand batch B). A
+ * pipeline answers at the read (publicLoginItself, A4 hand batch B). A
  * public row enters no workspace scope (the login's own rows, on the system
  * pool, 'login-self'), so the handler runs where the request runs (A6b: its
  * 'rule-in-query' exit left no scope).
@@ -48,7 +48,7 @@ export async function GET() {
   // The display role (and its client routes) stays the session's until the
   // role is derived from Admin membership; whether the login
   // is an Admin user is adminFacts (no scope here: the row's answer).
-  const role = legacyLogin(login).kind;
+  const role = sessionRole(login);
   const body: AuthWhoami = {
     role,
     loginId: login.loginId,

@@ -273,7 +273,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
         r.status === 401 ? 401 : 'past',
       );
     // Minted with the epoch the guard checked (the shell passes the
-    // request's AnyLogin.sessionEpoch).
+    // request's Login.sessionEpoch).
     const at = mintAssetToken(anchor, member, await epochOf(member));
     expect(await file(at)).toBe('past');
     await endLoginSessions(member);

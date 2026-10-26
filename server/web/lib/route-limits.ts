@@ -20,7 +20,7 @@
  *    as it runs the base's handler).
  *  - takeRouteLimits: the gate takes a row's limits once the caller is
  *    answered (gate.ts), or, on a public row that reads its login at the
- *    read, when the handler reads it (session.ts publicLoginCaller): where
+ *    read, when the handler reads it (session.ts publicLoginItself): where
  *    the handler took them before, so what came first still does.
  *  - rateLimitedResponse: the one 429. One body text, one header spelling,
  *    always Retry-After.

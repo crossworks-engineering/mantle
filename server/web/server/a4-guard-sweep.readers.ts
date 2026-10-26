@@ -4,7 +4,7 @@
  * is named by that reader and logs the projection it reads, so the two
  * recorded files compare it under the guard it replaced (ownerCaller():
  * getOwnerOr401; ownerCallerWithSource(): getOwnerOr401WithSource;
- * ownerCallerWithLogin(): getOwnerOr401WithLogin).
+ * ownerLoginCaller(): getOwnerOr401WithLogin).
  *
  * From the route file's own code, never a list kept by hand: the one
  * reader of the one list (eslint-rules/session-guards.mjs) the file calls;

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { publicLoginCaller, unauthorizedRefusal } from '@/lib/auth';
+import { publicLoginItself, unauthorizedRefusal } from '@/lib/auth';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 import { CACHE_CONTROL } from '@/lib/cache-control';
@@ -36,7 +36,7 @@ export async function POST() {
   // login the pipeline answers at this read (A4 hand batch B).
   // The read takes the row's per-login limit (lib/route-limits.ts:
   // authPairIssue) and throws the one 429 over it.
-  const login = await publicLoginCaller({ audit: true });
+  const login = await publicLoginItself({ audit: true });
   if (!login) return unauthorizedRefusal();
 
   const issued = await issuePairCode(login.loginId);

@@ -298,6 +298,76 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   // (eslint-rules/session-guards.mjs), read here (the factory is hoisted).
   const { SESSION_GUARDS: GUARDS } = await import('../../../eslint-rules/session-guards.mjs');
   const wrapped: Record<string, unknown> = { ...real, endLoginSessions: async () => 1 };
+  // S8d: the guards answer one Login (no kind); the recorded files keep the
+  // legacy shapes main's guards answered, rebuilt here from the Login and
+  // its display role (sessionRole: the row's membership, as main's kind
+  // was), so the two files still compare one answer byte for byte.
+  type L = {
+    loginId: string;
+    brainId: string;
+    email: string;
+    displayName: string | null;
+    contactId: string | null;
+    source: string;
+    sessionEpoch: number;
+    actor: unknown;
+  };
+  const role = real.sessionRole as (l: L) => 'admin' | 'member';
+  const memberRecord = (l: L) => ({
+    role: 'member',
+    loginId: l.loginId,
+    anchorId: l.brainId,
+    email: l.email,
+    displayName: l.displayName,
+    contactId: l.contactId,
+  });
+  const legacyAny = (l: L) =>
+    role(l) === 'admin'
+      ? {
+          kind: 'admin',
+          loginId: l.loginId,
+          email: l.email,
+          source: l.source,
+          sessionEpoch: l.sessionEpoch,
+          user: { id: l.brainId, email: l.email, actor: l.actor },
+        }
+      : {
+          kind: 'member',
+          loginId: l.loginId,
+          email: l.email,
+          source: l.source,
+          sessionEpoch: l.sessionEpoch,
+          member: memberRecord(l),
+        };
+  const legacyChat = (c: { asLogin: L } & Record<string, unknown>) => {
+    const { asLogin, ...rest } = c;
+    return { kind: role(asLogin), ...rest };
+  };
+  const legacyOwner = (o: { member: unknown } & Record<string, unknown>) => ({
+    kind: o.member ? 'member' : 'admin',
+    ...o,
+  });
+  /** A reader's answer (or a guard's) in the shape main logged. */
+  const legacyShape = (name: string, v: unknown): unknown => {
+    if (v === null || v === undefined || v instanceof NextResponse) return v;
+    switch (name) {
+      case 'anyLoginCaller':
+      case 'publicLoginItself':
+        return legacyAny(v as L);
+      case 'chatCaller':
+      case 'getChatLoginOr401':
+        return legacyChat(v as { asLogin: L });
+      case 'getOwnerOr401WithLogin':
+        return legacyOwner(v as { member: unknown });
+      case 'ownerLoginCaller': {
+        const l = v as L;
+        const { user, source } = (real.ownerCallerWithSource as () => Record<string, unknown>)();
+        return legacyOwner({ user, source, member: role(l) === 'member' ? memberRecord(l) : null });
+      }
+      default:
+        return v;
+    }
+  };
   // The pipeline's answer of the owner caller (A4 step 3b): logged at the
   // gate as the guard's answer was in the handler. Rows with no caller
   // are answered by their guard (no entry).
@@ -322,11 +392,9 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     // ticket replaced no guard (the frame documents read none) and logs
     // nothing, as nothing was logged there.
     if (ENTRIES[reader]!.atRead || ENTRIES[reader]!.guard === null) return answer(row);
-    // A reader that reads another's answer in a new shape logs as that one
-    // (session-guards.mjs `logs`): its entry and its projection.
-    const logged = ENTRIES[reader]!.logs ?? reader;
-    const name = ENTRIES[logged]!.entry;
-    const project = real[logged] as () => unknown;
+    // Its entry, and its projection in the shape main logged (legacyShape).
+    const name = ENTRIES[reader]!.entry;
+    const project = () => legacyShape(reader, (real[reader] as () => unknown)());
     let value: unknown;
     try {
       value = await answer(row);
@@ -364,7 +432,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
         const row = (await import('../lib/auth/route-policy')).currentRoute();
         if (http && row && !sweepState.log.some((l) => l.startsWith('pipeline:'))) {
           const r = readerOfRow(row.key);
-          const name = ENTRIES[ENTRIES[r]!.logs ?? r]!.entry;
+          const name = ENTRIES[r]!.entry;
           sweepState.log.push(
             `${name} R${http.status} ${JSON.stringify(http.body).slice(0, 300)} ${after()}`,
           );
@@ -379,7 +447,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   //
   // A4 hand batch B: the frame ticket is no login (the frame documents
   // called no guard): read as it is. An answer taken at the read
-  // (publicLoginCaller(), cookieUpgradeCaller(), ownerCallerAtRead()) is
+  // (publicLoginItself(), cookieUpgradeCaller(), ownerCallerAtRead()) is
   // logged here, where its guard was called and logged, under its entry,
   // as the guard's: a login let through stops the handler, a public row's
   // null goes on (its guard's refusal was handed back, logged with the 401
@@ -391,13 +459,8 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     if (spec.guard === null) continue;
     if (spec.atRead) {
       const take = real[name] as (...a: unknown[]) => Promise<unknown>;
-      // A reader that reads another's answer in a new shape logs as that
-      // one (session-guards.mjs `logs`): its entry, and its reader's read
-      // of the same answer (taken once, so the second read is that answer).
-      const entry = ENTRIES[spec.logs ?? name]!.entry;
-      const shown = spec.logs
-        ? (real[spec.logs] as (...a: unknown[]) => Promise<unknown>)
-        : async () => undefined;
+      // Its entry, and the answer in the shape main logged (legacyShape).
+      const entry = spec.entry;
       const Refusal = real.RouteRefusal as new (...a: unknown[]) => { response: Response };
       const unauthorized = real.unauthorizedRefusal as () => Response;
       wrapped[name] = async (...args: unknown[]) => {
@@ -425,8 +488,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
           );
           return value;
         }
-        const logged = spec.logs ? await shown(...args) : value;
-        sweepState.log.push(`${entry} ok ${summarize(logged)} ${after()}`);
+        sweepState.log.push(`${entry} ok ${summarize(legacyShape(name, value))} ${after()}`);
         throw new SweepStop();
       };
       continue;
@@ -456,7 +518,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
         sweepState.log.push(`${name} R${value.status} ${body.slice(0, 300)} ${after()}`);
         return value;
       }
-      sweepState.log.push(`${name} ok ${summarize(value)} ${after()}`);
+      sweepState.log.push(`${name} ok ${summarize(legacyShape(name, value))} ${after()}`);
       if (value === null) return value;
       throw new SweepStop();
     };
@@ -488,10 +550,10 @@ type Cred = { name: string; headers: Record<string, string>; query?: string; get
  *  guard the converted handler called, named by the reader that replaced
  *  it (the one list, session-guards.mjs READER_ANSWERS: ownerCaller():
  *  getOwnerOr401, batches 1 to 4; ownerCallerWithSource():
- *  getOwnerOr401WithSource; ownerCallerWithLogin():
+ *  getOwnerOr401WithSource; ownerLoginCaller():
  *  getOwnerOr401WithLogin, batch 3's app brokers and frame ticket;
- *  memberCaller(): getMemberOr401, loginCaller(): getLoginOr401 and
- *  chatLoginCaller(): getChatLoginOr401, batch 5). Each entry logs the
+ *  memberCaller(): getMemberOr401, anyLoginCaller(): getLoginOr401 and
+ *  chatCaller(): getChatLoginOr401, batch 5). Each entry logs the
  *  projection its reader reads. */
 const LEGACY_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
   Object.values(READER_ANSWERS).flatMap((r) => (r.guard === null ? [] : [[r.entry, r.guard]])),

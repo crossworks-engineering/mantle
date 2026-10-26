@@ -52,15 +52,9 @@ vi.mock('@/lib/auth', async () => {
       : { kind: 'admin', loginId: ACTOR, email: admin.actor.email, user: admin, ...base };
   return {
     getLoginOr401: async () => (h.gate === 'refuse' ? refused() : login()),
-    // The reader GET /api/shell calls (A4 hand batch A): the gate refused
-    // before the handler, so with no login it throws, as the real reader
-    // does where the pipeline answered none.
-    loginCaller: () => {
-      if (h.gate === 'refuse') throw new Error('loginCaller(): the pipeline answered no login');
-      return login();
-    },
-    // The Login reader GET /api/shell calls (plan v3.2 section 2.2), and the
-    // legacy shape of that Login (the display role and the workspace caller).
+    // The Login reader GET /api/shell calls (A4 hand batch A; plan v3.2
+    // section 2.2): the gate refused before the handler, so with no login it
+    // throws, as the real reader does where the pipeline answered none.
     anyLoginCaller: () => {
       if (h.gate === 'refuse') throw new Error('anyLoginCaller(): the pipeline answered no login');
       const l = login();
@@ -89,7 +83,8 @@ vi.mock('@/lib/auth', async () => {
             },
           };
     },
-    legacyLogin: () => login(),
+    // The display role of that Login (the row's membership).
+    sessionRole: () => login().kind,
     getOwnerOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'admin' ? admin : wrongRole(),
     getMemberOr401: async () =>

@@ -43,8 +43,6 @@ vi.mock('@/lib/auth/login', async (importOriginal) => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.res),
-  // The reader the grants routes call (A4 hand batch A): the same stand-in.
-  loginCaller: vi.fn(() => h.res),
   // The Login the routes read (anyLoginCaller, plan v3.2 section 2.2),
   // stood in alongside the same answer; adminFacts (mocked above) answers
   // what it says.

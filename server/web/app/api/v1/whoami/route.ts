@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { anyLoginCaller, legacyLogin } from '@/lib/auth';
+import { anyLoginCaller, sessionRole } from '@/lib/auth';
 import type { Login } from '@/lib/auth/login';
 import { getRequestContext } from '@/server/request-context';
 import type { ApiV1Whoami } from '@mantle/client-types';
@@ -19,7 +19,7 @@ async function handleGET(login: Login) {
   const key = getRequestContext()?.accessKey;
   return NextResponse.json({
     // The display role (the legacy shape's, until the role is derived).
-    role: legacyLogin(login).kind,
+    role: sessionRole(login),
     loginId: login.loginId,
     email: login.email,
     displayName,

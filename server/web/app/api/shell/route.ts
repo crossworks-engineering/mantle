@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { Shell } from '@mantle/client-types';
-import { anyLoginCaller, legacyLogin, mintAssetToken } from '@/lib/auth';
+import { anyLoginCaller, sessionRole, mintAssetToken } from '@/lib/auth';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { SHORT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
@@ -102,7 +102,7 @@ async function handleGET(login: Login) {
   const { displayName, email } = login;
   const body: Shell = {
     // The display role (the legacy shape's, until the role is derived).
-    role: legacyLogin(login).kind,
+    role: sessionRole(login),
     loginId,
     // The brain's anchor login (its id is the brain's): the app delete
     // confirm says 30 days for it, "until the owner deletes it" for others.

@@ -121,8 +121,8 @@ describe('owner-caller-imports', () => {
     tester.run('owner-caller-imports', rule, {
       valid: [
         { code: "import { memberCaller } from '@/lib/auth';\nmemberCaller();", filename: member },
-        { code: "import { chatLoginCaller } from '@/lib/auth/session';", filename: chat },
-        { code: "import { loginCaller } from '@/lib/auth';", filename: route },
+        { code: "import { chatCaller } from '@/lib/auth/session';", filename: chat },
+        { code: "import { anyLoginCaller } from '@/lib/auth';", filename: route },
       ],
       invalid: [
         {
@@ -131,12 +131,12 @@ describe('owner-caller-imports', () => {
           errors: [{ messageId: 'notRoute' }],
         },
         {
-          code: "import { chatLoginCaller as who } from '@/lib/auth';",
+          code: "import { chatCaller as who } from '@/lib/auth';",
           filename: chat,
           errors: [{ messageId: 'renamed' }],
         },
         {
-          code: "import { loginCaller } from '@/lib/login-workspaces';",
+          code: "import { anyLoginCaller } from '@/lib/login-workspaces';",
           filename: route,
           errors: [{ messageId: 'module' }],
         },
@@ -146,12 +146,12 @@ describe('owner-caller-imports', () => {
           errors: [{ messageId: 'reexport' }],
         },
         {
-          code: "import * as auth from '@/lib/auth';\nauth.chatLoginCaller();",
+          code: "import * as auth from '@/lib/auth';\nauth.chatCaller();",
           filename: chat,
           errors: [{ messageId: 'member' }],
         },
         {
-          code: "const { loginCaller } = await import('@/lib/auth');",
+          code: "const { anyLoginCaller } = await import('@/lib/auth');",
           filename: lib,
           errors: [{ messageId: 'member' }],
         },
@@ -163,7 +163,6 @@ describe('owner-caller-imports', () => {
     expect([...AT_READ_READERS].sort()).toEqual([
       'cookieUpgradeCaller',
       'ownerCallerAtRead',
-      'publicLoginCaller',
       'publicLoginItself',
     ]);
     const pub = '/r/server/web/app/api/auth/logout/route.ts';
@@ -171,9 +170,9 @@ describe('owner-caller-imports', () => {
     const imp = (name: string) => `import { ${name} } from '@/lib/auth';\n`;
     tester.run('owner-caller-imports', rule, {
       valid: [
-        { code: `${imp('publicLoginCaller')}const l = await publicLoginCaller();`, filename: pub },
+        { code: `${imp('publicLoginItself')}const l = await publicLoginItself();`, filename: pub },
         {
-          code: `${imp('publicLoginCaller')}const l = await publicLoginCaller({ audit: true });`,
+          code: `${imp('publicLoginItself')}const l = await publicLoginItself({ audit: true });`,
           filename: pub,
         },
         {
@@ -195,7 +194,7 @@ describe('owner-caller-imports', () => {
         },
         // The other readers may sit in a try (their answer is no refusal).
         {
-          code: `${imp('publicLoginCaller')}try { await publicLoginCaller(); } catch {}`,
+          code: `${imp('publicLoginItself')}try { await publicLoginItself(); } catch {}`,
           filename: pub,
         },
         // A reader answered before the handler is not awaited.
@@ -205,18 +204,18 @@ describe('owner-caller-imports', () => {
         },
         // Outside a route file the import rule reports, not this one.
         {
-          code: 'const l = publicLoginCaller();',
+          code: 'const l = publicLoginItself();',
           filename: '/r/server/web/app/api/auth/logout/route.test.ts',
         },
       ],
       invalid: [
         {
-          code: `${imp('publicLoginCaller')}const l = publicLoginCaller();`,
+          code: `${imp('publicLoginItself')}const l = publicLoginItself();`,
           filename: pub,
           errors: [{ messageId: 'notAwaited' }],
         },
         {
-          code: `${imp('publicLoginCaller')}publicLoginCaller().then((l) => l);`,
+          code: `${imp('publicLoginItself')}publicLoginItself().then((l) => l);`,
           filename: pub,
           errors: [{ messageId: 'notAwaited' }],
         },

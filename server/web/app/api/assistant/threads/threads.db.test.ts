@@ -42,9 +42,6 @@ vi.mock('@/lib/auth', async () => {
   return {
     getOwnerOr401: vi.fn(async () => ({ id: h.owner, email: 'x', actor: { id: h.owner } })),
     getChatLoginOr401: vi.fn(async () => chatLogin()),
-    // The reader the converted chat handlers call (A4 step 3b part 5): the
-    // same stand-in.
-    chatLoginCaller: vi.fn(() => chatLogin()),
     // The reader the chat handlers call now (chatCaller, plan v3.2 section
     // 2.2): the same answer without its kind, with its Login.
     chatCaller: vi.fn(() => {

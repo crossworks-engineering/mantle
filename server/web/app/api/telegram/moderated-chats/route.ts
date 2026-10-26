@@ -7,7 +7,7 @@
  * never pair them. Empty for anyone else, a client included.
  */
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { listModeratedTelegramChats } from '@/lib/agent-telegram';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -16,7 +16,7 @@ export const policy = routePolicy({
 });
 
 export async function GET() {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const chats = await listModeratedTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

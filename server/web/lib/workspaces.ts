@@ -78,7 +78,6 @@ import type {
   WorkspaceLandingApp,
 } from '@mantle/client-types';
 import type { LoginRole } from '@mantle/client-types/role-names';
-import { loginSessionUser } from '@/lib/auth';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
@@ -122,7 +121,7 @@ export type WsCaller = {
 /**
  * The caller lib/workspaces.ts and lib/grants.ts take, projected from the
  * login the pipeline answered (A4 hand batch A): the route handler reads
- * it first (loginCaller()) and passes it in. No guard and no effect: the
+ * it first (anyLoginCaller()) and passes it in. No guard and no effect: the
  * gate's any-login answer step resolved the login, entered its scope and
  * wrote the api.write row.
  */
@@ -130,7 +129,7 @@ export function workspaceCaller(login: Login): WsCaller {
   return { loginId: login.loginId, anchorId: login.brainId, login };
 }
 
-/** Run a workspace route for the login the handler read (loginCaller()):
+/** Run a workspace route for the login the handler read (anyLoginCaller()):
  *  answer the result as JSON. A WsError answers `{ error, code }` by its
  *  row in the one table (A10 part 2 fix round 1, L7); anything else is the
  *  opaque 500.
@@ -1019,8 +1018,10 @@ async function roleChangeOnSystemPool(
   path: { method: 'POST' | 'DELETE'; path: string },
   change: (tx: Exec) => Promise<void>,
 ): Promise<void> {
-  // adminRoleChange asked adminFacts of this very Login.
-  const actor = loginSessionUser(caller.login!);
+  // adminRoleChange asked adminFacts of this very Login: the brain handle
+  // applyLoginChange and its audit row take.
+  const login = caller.login!;
+  const actor = { id: login.brainId, email: login.email, actor: { ...login.actor } };
   const target = UUID_RE.test(loginId) ? await loadLoginTarget(loginId) : null;
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   if (target.role === role) {

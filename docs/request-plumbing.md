@@ -484,7 +484,7 @@ remembered one.
   id where a member called an owner route, an Admin user's actor). On a
   public row that reads its login at the read (`POST /api/auth/pair`,
   `POST /api/auth/change-password`) the read takes the login's limit
-  (`publicLoginCaller`), where the handler took it after its read: no
+  (`publicLoginItself`), where the handler took it after its read: no
   login spends nothing, and over the limit the read throws the one 429
   (`RouteRefusal`). A row with two limits takes both, then the failure
   budgets (`peek`: looked at, not spent; the handler counts each failure,

@@ -5,7 +5,7 @@
  * Admin user with the users area. 404 for a chat the login may not touch.
  */
 import { NextResponse } from '@/server/http-compat';
-import { chatLoginCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { moderateTelegramChatResponse } from '@/lib/agent-telegram';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -18,7 +18,7 @@ export const policy = routePolicy({
 });
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const login = chatLoginCaller();
+  const login = chatCaller();
   const { id } = await ctx.params;
   const r = await moderateTelegramChatResponse(login, id, 'unpair');
   return NextResponse.json(r.body, { status: r.status });

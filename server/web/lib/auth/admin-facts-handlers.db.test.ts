@@ -186,7 +186,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
     for (const key of ['GET /api/access-keys', 'GET /api/shell']) {
       const got = await table((id) =>
         inRow(key, id, async (login) => [
-          session.legacyLogin(login).kind === 'admin',
+          session.sessionRole(login) === 'admin',
           (await facts.adminFacts(login)).admin,
         ]),
       );
@@ -279,7 +279,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
             expect(m.currentScope().kind).toBe('user');
             const login = session.ownerAnswerLogin(owner);
             if (!login) throw new Error('the owner answer carries no login');
-            return [owner.kind === 'admin', (await facts.adminFacts(login)).admin];
+            return [owner.member === null, (await facts.adminFacts(login)).admin];
           },
         ),
       );
@@ -299,9 +299,9 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           key,
           id,
           () => session.getChatLoginOr401(),
-          async (chat: import('./session').ChatLogin) => {
+          async (chat: import('./session').ChatCaller) => {
             expect(m.currentScope().kind).toBe('user');
-            return [chat.kind === 'admin', await chatAdmin(session.chatCallerOf(chat))];
+            return [session.sessionRole(chat.asLogin) === 'admin', await chatAdmin(chat)];
           },
         ),
       );
@@ -322,10 +322,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
           () => session.getLoginOr401(),
           async (login: import('./login').Login) => {
             expect(m.currentScope().kind).toBe('system');
-            return [
-              session.legacyLogin(login).kind === 'admin',
-              (await facts.adminFacts(login)).admin,
-            ];
+            return [session.sessionRole(login) === 'admin', (await facts.adminFacts(login)).admin];
           },
         ),
       );
@@ -342,7 +339,7 @@ describe.skipIf(!URL)('the handlers that ask adminFacts of the Login', () => {
         inRow(key, id, async (login) => {
           const caller = ws.workspaceCaller(login);
           return [
-            session.legacyLogin(login).kind === 'admin',
+            session.sessionRole(login) === 'admin',
             (await facts.adminFacts(caller.login!)).admin,
           ];
         }),

@@ -8,7 +8,7 @@ import { asSystem } from '@mantle/db';
  * login the pipeline answered first, outside the exit, and runs only its
  * body inside (the exit as narrow as before):
  *
- *     const login = loginCaller();
+ *     const login = anyLoginCaller();
  *     return inRuleInQuery(() => handle(login));
  *
  * For the shell, the access keys, /api/v1/whoami and (A4 hand batch B,

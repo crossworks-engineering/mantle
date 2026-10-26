@@ -17,7 +17,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The login the pipeline answers at the read (A4 hand batch B): null
   // where the guard refused.
-  publicLoginCaller: vi.fn(async () => h.login ?? null),
+  publicLoginItself: vi.fn(async () => h.login ?? null),
   endLoginSessions: vi.fn(async (id: string, opts?: unknown) => {
     h.ended.push(id);
     h.endOpts.push(opts);

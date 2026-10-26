@@ -54,7 +54,7 @@
  *
  * 7 -> 0 (A4 hand batch B, A4 exit): the public rows that read the login
  * (whoami, logout, change password, pair and its poll, the OAuth consent)
- * read it at the read (publicLoginCaller()), and PATCH /api/pages/:id its
+ * read it at the read (publicLoginItself()), and PATCH /api/pages/:id its
  * owner (ownerCallerAtRead()). The guards the count did not see went too:
  * the asset guards (ownerAssetCaller(), readerAssetCaller(), the member
  * byte stubs' memberAssetCaller()) and the cookie upgrade
@@ -113,7 +113,7 @@ export const rule = {
     },
     messages: {
       guard:
-        '{{name}} is a session guard: read the caller the pipeline answered instead (ownerCaller(), memberCaller(), loginCaller(), ...; eslint-rules/session-guards.mjs READER_ANSWERS). The gate runs the guard of the row, once (A4 exit).',
+        '{{name}} is a session guard: read the caller the pipeline answered instead (ownerCaller(), memberCaller(), anyLoginCaller(), ...; eslint-rules/session-guards.mjs READER_ANSWERS). The gate runs the guard of the row, once (A4 exit).',
     },
     schema: [],
   },

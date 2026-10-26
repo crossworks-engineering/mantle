@@ -40,30 +40,32 @@ describe('session-guards', () => {
       entries.add(entry);
     }
     expect(entries.size).toBe(CALLER_READERS.length);
-    // A reader that logs as another (`logs`: the same answer in its legacy
-    // shape) names an existing reader of the same caller kind and guard,
-    // answered the same way (at the read or not), that logs as itself.
-    for (const [reader, spec] of Object.entries(READER_ANSWERS)) {
-      if (spec.logs === undefined) continue;
-      const other = READER_ANSWERS[spec.logs];
-      expect(other, `${reader} logs ${spec.logs}`).toBeDefined();
-      expect(other!.caller, reader).toBe(spec.caller);
-      expect(other!.guard, reader).toBe(spec.guard);
-      expect(other!.atRead ?? false, reader).toBe(spec.atRead ?? false);
-      expect(other!.logs, reader).toBeUndefined();
+    // S8d: the legacy readers are gone; each Login reader is the one reader
+    // of its guard's answer and keeps the legacy reader's entry.
+    for (const gone of [
+      'loginCaller',
+      'chatLoginCaller',
+      'publicLoginCaller',
+      'ownerCallerWithLogin',
+    ]) {
+      expect(READER_ANSWERS, gone).not.toHaveProperty(gone);
     }
+    expect(READER_ANSWERS.anyLoginCaller?.entry).toBe('pipeline:login');
+    expect(READER_ANSWERS.chatCaller?.entry).toBe('pipeline:chat');
+    expect(READER_ANSWERS.publicLoginItself?.entry).toBe('pipeline:publicLogin');
+    expect(READER_ANSWERS.ownerLoginCaller?.entry).toBe('pipeline:ownerWithLogin');
     // A retired guard is gone from session.ts.
     for (const g of RETIRED_GUARDS) expect(exported, g).not.toContain(g);
     // The readers of A4 step 3b part 5, one per guard they replaced.
     expect(READER_ANSWERS.memberCaller?.guard).toBe('getMemberOr401');
-    expect(READER_ANSWERS.loginCaller?.guard).toBe('getLoginOr401');
-    expect(READER_ANSWERS.chatLoginCaller?.guard).toBe('getChatLoginOr401');
+    expect(READER_ANSWERS.anyLoginCaller?.guard).toBe('getLoginOr401');
+    expect(READER_ANSWERS.chatCaller?.guard).toBe('getChatLoginOr401');
     expect(READER_ANSWERS.sessionUserCaller?.guard).toBe('getSessionUser');
     // A4 hand batch B: the asset guards, the frame ticket, and the answers
     // taken at the read.
     expect(READER_ANSWERS.ownerAssetCaller?.guard).toBe('getOwnerForAsset');
     expect(READER_ANSWERS.readerAssetCaller?.guard).toBe('getReaderForAsset');
-    expect(READER_ANSWERS.publicLoginCaller).toMatchObject({
+    expect(READER_ANSWERS.publicLoginItself).toMatchObject({
       guard: 'getLoginOr401',
       atRead: true,
     });

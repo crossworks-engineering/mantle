@@ -28,7 +28,7 @@ describe('no-guard-calls', () => {
       valid: [
         { code: "import { ownerCaller } from '@/lib/auth';\nownerCaller();", filename: route },
         {
-          code: "import { publicLoginCaller } from '@/lib/auth';\nawait publicLoginCaller();",
+          code: "import { publicLoginItself } from '@/lib/auth';\nawait publicLoginItself();",
           filename: route,
         },
         { code: "export * from './auth/session';", filename: '/r/server/web/lib/auth.ts' },

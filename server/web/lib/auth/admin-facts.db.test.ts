@@ -12,9 +12,9 @@
  *    pool): the row's pair and the area rule.
  * For an Admin user, an Admin user with the keys area off, a role=admin
  * login outside Admin (drift), a role=member login inside Admin (drift)
- * and a member. The legacy shape (legacyLogin) keeps the session's kind,
- * as main's getLoginOr401 answered it; the Login carries no kind and no
- * role. A scope for another login throws.
+ * and a member. The display role (sessionRole) is the row's membership,
+ * as main's getLoginOr401 answered its kind; the Login carries no kind and
+ * no role. A scope for another login throws.
  *
  * The memo (fix round 1): it is keyed on the very Login object and on the
  * scope object, after the pair. A copy asked after the real Login in the
@@ -197,7 +197,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         ]);
         expect(login.loginId).toBe(id);
         expect(login.actor.id).toBe(id);
-        kinds[name] = session.legacyLogin(login).kind;
+        kinds[name] = session.sessionRole(login);
       });
     }
     // Membership decides the session (S8b round 4): the two drifted logins
@@ -209,10 +209,10 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
       memIn: 'admin',
       mem: 'member',
     });
-    // A Login getLoginOr401 did not answer has no legacy shape and no pair.
+    // A Login getLoginOr401 did not answer has no pair: shown a member.
     await inRequest(adm, async (login) => {
       const copy = { ...login };
-      expect(() => session.legacyLogin(copy)).toThrow(/getLoginOr401/);
+      expect(session.sessionRole(copy)).toBe('member');
       expect(shown(await facts.adminFacts(copy))).toEqual({ admin: false, areas: [] });
     });
   });
@@ -275,7 +275,7 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         const again = await session.getLoginOr401();
         if (again instanceof Response) throw new Error(`no login again: ${again.status}`);
         expect(again).not.toBe(login);
-        expect(session.legacyLogin(again).kind).toBe('member');
+        expect(session.sessionRole(again)).toBe('member');
         expect(shown(await facts.adminFacts(again))).toEqual({ admin: false, areas: [] });
         const scoped = await m.withViewer({ login: adm }, () => facts.adminFacts(again));
         expect(shown(scoped)).toEqual({ admin: false, areas: [] });
@@ -321,7 +321,6 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
         (admLogin as { loginId: string }).loginId = mem;
       }).toThrow(TypeError);
       expect(admLogin.loginId).toBe(adm);
-      expect(Object.isFrozen(session.legacyLogin(admLogin))).toBe(true);
     });
     // A member's Login with its loginId set to an Admin user's, as an
     // unfrozen copy keyed on nothing, and as a defineProperty on the real

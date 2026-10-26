@@ -34,7 +34,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { anyLoginCaller, legacyLogin, verifyPassword } from '@/lib/auth';
+import { anyLoginCaller, sessionRole, verifyPassword } from '@/lib/auth';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import {
   ACCESS_KEY_ACCESS,
@@ -102,7 +102,7 @@ async function handleGET(login: Login) {
     {
       keys,
       // The display role (the legacy shape's, until the role is derived).
-      role: legacyLogin(login).kind,
+      role: sessionRole(login),
       areas: [...ACCESS_KEY_AREAS],
       defaultExpiryDays: Math.min(DEFAULT_ACCESS_KEY_EXPIRY_DAYS, maxDays ?? Infinity),
       maxExpiryDays: maxDays,
@@ -120,7 +120,7 @@ async function handlePOST(login: Login, req: Request) {
   // The login holds the Admin workspace with its keys area now (adminFacts,
   // asked unscoped here: the area rule about the login, with its Admin pair).
   const keysArea = (await adminFacts(login)).areas.has('keys');
-  const role = legacyLogin(login).kind;
+  const role = sessionRole(login);
   if (riskyTools.length > 0 && !keysArea) {
     return NextResponse.json(
       {

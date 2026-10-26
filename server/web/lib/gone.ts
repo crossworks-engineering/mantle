@@ -24,7 +24,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { getRequestContext } from '@/server/request-context';
-import { loginCaller, memberCaller, ownerCaller } from '@/lib/auth';
+import { anyLoginCaller, memberCaller, ownerCaller } from '@/lib/auth';
 import { GONE_KINDS, type GoneGuard } from './gone-kinds';
 
 export { GONE_KINDS, type GoneGuard } from './gone-kinds';
@@ -36,7 +36,7 @@ export { GONE_KINDS, type GoneGuard } from './gone-kinds';
 const READERS: Readonly<Record<(typeof GONE_KINDS)[GoneGuard]['reader'], () => unknown>> = {
   ownerCaller: () => ownerCaller(),
   memberCaller: () => memberCaller(),
-  loginCaller: () => loginCaller(),
+  anyLoginCaller: () => anyLoginCaller(),
 };
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';

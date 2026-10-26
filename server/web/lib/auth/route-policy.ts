@@ -308,8 +308,8 @@ export type RouteRow = Readonly<{
   /** Whose answer the pipeline gives before the handler (arch A4 step 3b):
    *  the guard of that kind (RouteCaller), run once by the gate from this
    *  row (session.ts answerRouteCaller) and refused with there; the handler
-   *  reads it (ownerCaller(), memberCaller(), loginCaller(),
-   *  chatLoginCaller()) and calls no guard. Set where the route file's
+   *  reads it (ownerCaller(), memberCaller(), anyLoginCaller(),
+   *  chatCaller()) and calls no guard. Set where the route file's
    *  handler for the method reads it (the manifest's `reads`, from the
    *  code: scripts/route-callers.ts); a HEAD row has its GET's. Null: the
    *  handler's own guard answers, as before. */

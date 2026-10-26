@@ -106,7 +106,7 @@ const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found
  *  test can lower it. */
 export const FOLDER_GRANT_LIMIT = { max: 50_000 };
 
-/** Run a grants route for the login the handler read (loginCaller()):
+/** Run a grants route for the login the handler read (anyLoginCaller()):
  *  answer the result as JSON. A GrantError or a WsError answers
  *  `{ error, code }` by its row in the one table (A10 part 2 fix round 1,
  *  L7); anything else is the opaque 500.
