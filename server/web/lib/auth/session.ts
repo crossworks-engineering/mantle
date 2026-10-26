@@ -202,7 +202,7 @@ export function sessionRole(login: Login): LoginRole {
 /** Who is calling, resolved from the login row: the login, its brain
  *  handle (`user`: the anchor's id, the login as actor) and whether it is an
  *  Admin user now (`admin`: adminLogin(row), membership; the role is not
- *  asked). One shape for every login (plan v3.2 S8d: no kind). `epoch`: the
+ *  asked). One shape for every login (no kind). `epoch`: the
  *  login's session epoch on the row the credential was just checked
  *  against. A login carries no permission of its own (workspaces W8a): what
  *  it reads and may do is its workspaces'. */
