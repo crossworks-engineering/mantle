@@ -232,7 +232,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
   const setData = (id: string, patch: Record<string, unknown>) =>
     raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
-      await tx`update nodes set data = coalesce(data, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb
+      await tx`update nodes set data = coalesce(data, '{}'::jsonb) || ${JSON.stringify(patch)}::text::jsonb
                 where id = ${id}`;
     });
   const rankOf = async (id: string) =>
