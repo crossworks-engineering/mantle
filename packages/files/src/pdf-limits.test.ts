@@ -26,7 +26,13 @@ import {
 } from './pdf-fixtures.test-helper';
 import { extractPdfImages, parsePdf, pdfPageCount } from './pdf';
 import { extractPdfTextWithPassword } from './pdf-password';
-import { isPdfBusyError, PDF_MAX_BYTES, PDF_MAX_IMAGE_PIXELS, withPdf } from './pdf-open';
+import {
+  countOversizeImages,
+  isPdfBusyError,
+  PDF_MAX_BYTES,
+  PDF_MAX_IMAGE_PIXELS,
+  withPdf,
+} from './pdf-open';
 import {
   declaresOversizeImage,
   isPdfLimitError,
@@ -270,6 +276,59 @@ describe('a page whose only content is an image over the cap', () => {
     ]);
     expect(declaresOversizeImage(indirect)).toBe(false);
   });
+
+  it('takes a lower threshold, and counts', () => {
+    const mid: FixtureImage = { ...OVERSIZE, width: 6_000, height: 6_000 };
+    const pdf = imagePagesPdf({
+      images: [mid, OVERSIZE, gradient(32, 32)],
+      pages: [{ draw: [0, 1, 2], caption: null }],
+    });
+    expect(countOversizeImages(pdf, PDF_MAX_IMAGE_PIXELS)).toBe(1);
+    expect(countOversizeImages(pdf, 30_000_000)).toBe(2);
+    expect(countOversizeImages(pdf, 30_000_000, 1)).toBe(1);
+    const onlyMid = imagePagesPdf({ images: [mid], pages: [{ draw: [0], caption: null }] });
+    expect(declaresOversizeImage(onlyMid)).toBe(false);
+    expect(declaresOversizeImage(onlyMid, 30_000_000)).toBe(true);
+  });
+});
+
+describe('the pictures pass and a scan page over its own cap', () => {
+  /** 36 M pixels: over the pictures pass's 30 M cap, under the render's
+   *  75 M, so only the pictures pass drops it. Never decoded there, so its
+   *  stream contents never matter. */
+  const BIG_SCAN_PAGE: FixtureImage = {
+    width: 6_000,
+    height: 6_000,
+    flate: zlib.deflateSync(Buffer.alloc(16)),
+  };
+
+  it('still sees a scan when one page holds an image pdfjs drops', async () => {
+    // Four scan pages, the third one a 6000x6000 image: dropped from its
+    // operator list, it read as a page with no image, broke the scan shape
+    // and the other three pages came back as figures (three vision calls).
+    const pdf = imagePagesPdf({
+      images: [gradient(320, 240), gradient(321, 240), BIG_SCAN_PAGE, gradient(322, 240)],
+      pages: [0, 1, 2, 3].map((i) => ({ draw: [i], caption: null })),
+    });
+    expect(await extractPdfImages(pdf)).toEqual([]);
+  });
+
+  it('allows one image-less page per over-cap image, no more', async () => {
+    // Text pages and figures plus one big photo: the second text page breaks
+    // the shape, and every figure still comes out.
+    const pdf = imagePagesPdf({
+      images: [gradient(320, 240), BIG_SCAN_PAGE, gradient(321, 240)],
+      pages: [
+        { draw: [0], caption: 'Figure 1: first' },
+        { draw: [], caption: 'Text only' },
+        { draw: [], caption: 'More text' },
+        { draw: [1], caption: 'Figure 2: the big photo' },
+        { draw: [2], caption: 'Figure 3: last' },
+      ],
+    });
+    const images = await extractPdfImages(pdf);
+    expect(images.map((i) => i.location)).toEqual([{ page: 1 }, { page: 5 }]);
+  });
 });
 
 describe('the size limit', () => {
@@ -328,6 +387,28 @@ describe('one decode at a time', () => {
     expect(await extractPdfTextWithPassword(pdf, '')).toMatchObject({ ok: true });
     let_go();
     await held;
+    expect(await withPdf(pdf, { waitMs: 30 }, async () => 'ran')).toBe('ran');
+  });
+
+  it('stops a decode that holds the slot past its limit, and lets the slot go', async () => {
+    const pdf = helveticaPdf();
+    let opened: { getPage(n: number): Promise<unknown> } | undefined;
+    const err = await withPdf(pdf, { holdMs: 50 }, ({ doc }) => {
+      opened = doc;
+      return new Promise<never>(() => {}); // never settles
+    }).catch((e: unknown) => e);
+    expect(isPdfBusyError(err)).toBe(true);
+    expect((err as Error).message).toMatch(/ran past/);
+    // The loading task was destroyed under the stuck caller (pdfjs then
+    // throws on any use of the document, synchronously or not).
+    const use = Promise.resolve().then(() => opened!.getPage(1));
+    expect(
+      await use.then(
+        () => 'open',
+        () => 'destroyed',
+      ),
+    ).toBe('destroyed');
+    // And the slot is free for the next decode at once.
     expect(await withPdf(pdf, { waitMs: 30 }, async () => 'ran')).toBe('ran');
   });
 });

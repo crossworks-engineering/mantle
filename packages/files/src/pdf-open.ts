@@ -44,6 +44,15 @@
  * pixels for a 297 x 420 mm sheet, 35 M for A4 paper or US Letter. With one
  * decode at a time, it is also the largest round value whose render stays
  * under a 1.2 GB rise in an api container capped at 3 GB.
+ *
+ * That rise fits. Peak memory measured on every fleet box on 2026-10-27
+ * (cgroup `memory.peak`, about one day since the last roll): mantle_api
+ * 449 to 783 MiB against a 3 GiB limit (4 GiB on one box), mantle_web 580 to
+ * 932 MiB against 3 GiB (6 GiB on one box). The ~1.46 GB in the api's
+ * mem_limit comment (docker-compose.yml) is where the old 1.5g cap OOMed in
+ * 2026-09, not normal load: a worst render (+1.13 GB) on top of the highest
+ * measured peak is about 1.9 GB, still well under 3 GiB.
+ *
  * Measured on Linux, rendering a one-page scan holding one image, peak RSS
  * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is
  * lower, +0.87 GB at 75 M), and two renders racing for the slot cost no more
@@ -59,12 +68,20 @@ export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 export const PDF_MAX_BYTES = 256 * 1024 * 1024;
 
 /** How long a decode waits for the slot by default. Sized for a background
- *  job (the extractor), which retries a `PdfBusyError`; a live chat turn
- *  passes `PDF_TURN_WAIT_MS` instead. */
-export const PDF_JOB_WAIT_MS = 60_000;
+ *  job (the extractor), which retries a `PdfBusyError`: a few long holders
+ *  in a row (each bounded by `PDF_MAX_HOLD_MS`), and still well under the
+ *  job's 60-minute expiry. A live chat turn passes `PDF_TURN_WAIT_MS`
+ *  instead. */
+export const PDF_JOB_WAIT_MS = 10 * 60_000;
 
 /** How long a live chat turn waits for the slot before giving up. */
 export const PDF_TURN_WAIT_MS = 15_000;
+
+/** The longest a `'decode'` open may hold the slot. Past it the loading task
+ *  is destroyed, the slot is released and the open throws a `PdfBusyError`,
+ *  so a document whose decode never settles cannot wedge every PDF behind
+ *  it; its job fails and is retried like any other busy slot. */
+export const PDF_MAX_HOLD_MS = 5 * 60_000;
 
 /** pdfjs `getDocument` parameters every open in this package uses. */
 export const SAFE_PDF_PARAMS = {
@@ -95,8 +112,10 @@ export function isPdfLimitError(err: unknown): err is PdfLimitError {
 }
 
 /**
- * Another PDF held the decode slot for longer than this caller would wait.
- * Says nothing about the document: retry it later.
+ * Another PDF held the decode slot for longer than this caller would wait,
+ * or this decode held it past `PDF_MAX_HOLD_MS` and was stopped. Retryable:
+ * the extractor fails the job (pg-boss retries it) rather than recording a
+ * verdict on the document.
  */
 export class PdfBusyError extends Error {
   override readonly name = 'PdfBusyError';
@@ -104,6 +123,80 @@ export class PdfBusyError extends Error {
 
 export function isPdfBusyError(err: unknown): err is PdfBusyError {
   return err instanceof Error && err.name === 'PdfBusyError';
+}
+
+// ─── declared image sizes ─────────────────────────────────────────────
+
+/** How far around an `/Subtype /Image` the scan below looks for the rest of
+ *  that image's dictionary. */
+const DICT_WINDOW = 4096;
+
+/** PDF delimiter or whitespace: what may follow a complete name. */
+function endsName(byte: number | undefined): boolean {
+  return byte === undefined || /[\s/<>[\]()%]/.test(String.fromCharCode(byte));
+}
+
+/** A direct integer value of `/key` in a dictionary's text; null when the
+ *  key is missing or an indirect reference (`/Width 12 0 R`). */
+function directInt(dict: string, key: string): number | null {
+  const m = new RegExp(`/${key}\\s+(\\d+)(?![\\d.]|\\s+\\d+\\s+R)`).exec(dict);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * How many image XObjects in the file declare more pixels than `maxPixels`,
+ * read from the raw bytes without parsing the document; counting stops at
+ * `stopAt`. An image XObject is a stream and a stream is never stored inside
+ * an object stream, so its dictionary sits in the file as plain text (also
+ * when the file is encrypted: encryption covers strings and stream data, not
+ * dictionary numbers). Only direct `/Width` and `/Height` values are read.
+ *
+ * A cheap hint, not a verdict: a miss (an indirect size, an oversize inline
+ * image) or an image declared but never drawn is possible, so callers use it
+ * only to decide how hard to look, never to refuse a file.
+ */
+export function countOversizeImages(
+  bytes: Uint8Array,
+  maxPixels: number,
+  stopAt = Number.POSITIVE_INFINITY,
+): number {
+  // A view on the same memory: no copy of a file that may be 256 MB.
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const needle = '/Image';
+  let found = 0;
+  for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
+    // `/ImageB`, `/ImageMask` and friends are other names.
+    if (!endsName(buf[at + needle.length])) continue;
+    if (!/\/Subtype\s*$/.test(buf.toString('latin1', Math.max(0, at - 32), at))) continue;
+    const lo = Math.max(0, at - DICT_WINDOW);
+    const objAt = buf.subarray(lo, at).lastIndexOf('obj');
+    const from = objAt >= 0 ? lo + objAt : lo;
+    const streamAt = buf.indexOf('stream', at);
+    const to =
+      streamAt >= 0 && streamAt - at <= DICT_WINDOW
+        ? streamAt
+        : Math.min(buf.length, at + DICT_WINDOW);
+    const dict = buf.toString('latin1', from, to);
+    const width = directInt(dict, 'Width');
+    const height = directInt(dict, 'Height');
+    if (width && height && width * height > maxPixels && ++found >= stopAt) break;
+  }
+  return found;
+}
+
+/**
+ * Whether any image XObject in the file declares more than `maxPixels`
+ * (default `PDF_MAX_IMAGE_PIXELS`), so pdfjs, opened with that cap, will drop
+ * it from the operator list. The render reads each page's operator list
+ * first when this is true (`drawsSomething` in rasterize.ts); a false
+ * positive costs that extra list, a miss leaves the page rendered without the
+ * image.
+ */
+export function declaresOversizeImage(
+  bytes: Uint8Array,
+  maxPixels: number = PDF_MAX_IMAGE_PIXELS,
+): boolean {
+  return countOversizeImages(bytes, maxPixels, 1) > 0;
 }
 
 // ─── the decode slot ──────────────────────────────────────────────────
@@ -167,6 +260,9 @@ export type WithPdfOptions = OpenPdfOptions & {
   waitMs?: number;
   /** A lower image cap for this open (never above `PDF_MAX_IMAGE_PIXELS`). */
   maxImagePixels?: number;
+  /** How long a `'decode'` open may hold the slot. Default
+   *  `PDF_MAX_HOLD_MS`; only tests pass anything else. */
+  holdMs?: number;
 };
 
 /**
@@ -176,8 +272,10 @@ export type WithPdfOptions = OpenPdfOptions & {
  * before `getDocument` until that teardown is done.
  *
  * Throws `PdfLimitError` for a file over `PDF_MAX_BYTES`, `PdfBusyError`
- * when the slot stays taken past `waitMs`, and whatever pdfjs throws loading
- * the document (a wrong password, a corrupt file).
+ * when the slot stays taken past `waitMs` or this open holds it past
+ * `holdMs`, and whatever pdfjs throws loading the document (a wrong
+ * password, a corrupt file). A timed-out `fn` is not awaited: the task is
+ * destroyed under it, so its next pdfjs call fails, and the slot moves on.
  *
  * Never nest a `'decode'` open inside another's `fn`: the inner one would
  * wait on the slot its own caller holds.
@@ -193,7 +291,13 @@ export async function withPdf<T>(
       `PDF is ${Math.round(bytes.byteLength / (1024 * 1024))} MB; the limit is ${PDF_MAX_BYTES / (1024 * 1024)} MB`,
     );
   }
-  const { mode = 'decode', waitMs = PDF_JOB_WAIT_MS, maxImagePixels, ...params } = opts;
+  const {
+    mode = 'decode',
+    waitMs = PDF_JOB_WAIT_MS,
+    holdMs = PDF_MAX_HOLD_MS,
+    maxImagePixels,
+    ...params
+  } = opts;
   const release = mode === 'decode' ? await takeSlot(waitMs) : null;
   try {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -212,10 +316,32 @@ export async function withPdf<T>(
           ? Math.min(maxImagePixels, PDF_MAX_IMAGE_PIXELS)
           : PDF_MAX_IMAGE_PIXELS,
     });
+    const work = task.promise.then((doc) => fn({ pdfjs, doc }));
+    if (!release) {
+      try {
+        return await work;
+      } finally {
+        await task.destroy().catch(() => {});
+      }
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new PdfBusyError(
+              `PDF decode ran past ${Math.round(holdMs / 1000)} s and was stopped (retry later)`,
+            ),
+          ),
+        holdMs,
+      );
+    });
     try {
-      const doc = await task.promise;
-      return await fn({ pdfjs, doc });
+      // `race` subscribes to `work`, so a rejection after the deadline won
+      // is handled, not an unhandled rejection.
+      return await Promise.race([work, deadline]);
     } finally {
+      clearTimeout(timer);
       await task.destroy().catch(() => {});
     }
   } finally {

@@ -27,6 +27,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import {
+  declaresOversizeImage,
   isPdfLimitError,
   PDF_JOB_WAIT_MS,
   PDF_MAX_IMAGE_PIXELS,
@@ -34,7 +35,7 @@ import {
   withPdf,
 } from './pdf-open';
 
-export { isPdfLimitError, PdfLimitError };
+export { declaresOversizeImage, isPdfLimitError, PdfLimitError };
 
 /** Default page cap: bounds rasterization memory + per-page vision spend.
  *  A passport is one page; a long scanned doc is capped here. */
@@ -96,59 +97,6 @@ function renderParams() {
     enableXfa: true,
     verbosity: 0,
   };
-}
-
-/** How far around an `/Subtype /Image` the scan below looks for the rest of
- *  that image's dictionary. */
-const DICT_WINDOW = 4096;
-
-/** PDF delimiter or whitespace: what may follow a complete name. */
-function endsName(byte: number | undefined): boolean {
-  return byte === undefined || /[\s/<>[\]()%]/.test(String.fromCharCode(byte));
-}
-
-/** A direct integer value of `/key` in a dictionary's text; null when the
- *  key is missing or an indirect reference (`/Width 12 0 R`). */
-function directInt(dict: string, key: string): number | null {
-  const m = new RegExp(`/${key}\\s+(\\d+)(?![\\d.]|\\s+\\d+\\s+R)`).exec(dict);
-  return m ? Number(m[1]) : null;
-}
-
-/**
- * Whether any image XObject in the file declares more pixels than
- * `PDF_MAX_IMAGE_PIXELS`, read from the raw bytes without parsing the
- * document. An image XObject is a stream and a stream is never stored inside
- * an object stream, so its dictionary sits in the file as plain text (also
- * when the file is encrypted: encryption covers strings and stream data, not
- * dictionary numbers). Only direct `/Width` and `/Height` values are read.
- *
- * A cheap gate, not the verdict: true only makes the render read each page's
- * operator list first (`drawsSomething`). A false positive costs that extra
- * list; a miss (an indirect size, an oversize inline image) leaves the page
- * as it was before, rendered without the image.
- */
-export function declaresOversizeImage(bytes: Uint8Array): boolean {
-  // A view on the same memory: no copy of a file that may be 256 MB.
-  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const needle = '/Image';
-  for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
-    // `/ImageB`, `/ImageMask` and friends are other names.
-    if (!endsName(buf[at + needle.length])) continue;
-    if (!/\/Subtype\s*$/.test(buf.toString('latin1', Math.max(0, at - 32), at))) continue;
-    const lo = Math.max(0, at - DICT_WINDOW);
-    const objAt = buf.subarray(lo, at).lastIndexOf('obj');
-    const from = objAt >= 0 ? lo + objAt : lo;
-    const streamAt = buf.indexOf('stream', at);
-    const to =
-      streamAt >= 0 && streamAt - at <= DICT_WINDOW
-        ? streamAt
-        : Math.min(buf.length, at + DICT_WINDOW);
-    const dict = buf.toString('latin1', from, to);
-    const width = directInt(dict, 'Width');
-    const height = directInt(dict, 'Height');
-    if (width && height && width * height > PDF_MAX_IMAGE_PIXELS) return true;
-  }
-  return false;
 }
 
 /** pdfjs operators that put something on the page: image paints, painted
@@ -215,10 +163,12 @@ export async function rasterizePdfToPngs(
   const wanted = opts?.viewportScale ?? 2.0;
   const waitMs = opts?.waitMs ?? PDF_JOB_WAIT_MS;
   const { createCanvas } = await import('@napi-rs/canvas');
-  // Only a file that declares an over-cap image pays for the extra operator
-  // list below; every other PDF renders exactly as before.
-  const mayDropImages = declaresOversizeImage(bytes);
   return withPdf(bytes, { ...renderParams(), waitMs }, async ({ pdfjs, doc }) => {
+    // Only a file that declares an over-cap image pays for the extra operator
+    // list below; every other PDF renders exactly as before. Read here, after
+    // `withPdf` has refused a file over `PDF_MAX_BYTES`, so such a file is
+    // never scanned.
+    const mayDropImages = declaresOversizeImage(bytes);
     const count = Math.min(doc.numPages, maxPages);
     const out: RasterPage[] = [];
     const tooLarge: string[] = [];

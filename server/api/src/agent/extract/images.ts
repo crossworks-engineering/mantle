@@ -7,7 +7,13 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf, ensureExtractedImagesFolder, isPdfLimitError, upsertFile } from '@mantle/files';
+import {
+  extOf,
+  ensureExtractedImagesFolder,
+  isPdfBusyError,
+  isPdfLimitError,
+  upsertFile,
+} from '@mantle/files';
 import { startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
@@ -552,9 +558,16 @@ export async function ocrIngestPdfNode(
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
+            // A `PdfBusyError` (another PDF held the decode slot too long, or
+            // this render ran past its hold limit) says nothing about the
+            // document: fail the job so pg-boss retries it, as the pictures
+            // pass does (gates.ts). Recorded as `pdf_unreadable` it would
+            // complete the job and strand the scan until something re-queued
+            // it. The retry repeats the native read above when it ran (one
+            // model call that found no text).
+            if (isPdfBusyError(err)) throw err;
             // Unrenderable / corrupt / encrypted / oversized PDF: record and
-            // give up. A `PdfBusyError` (another PDF held the decode slot too
-            // long) lands in `rasterizeError`, the retryable `pdf_unreadable`.
+            // give up.
             const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
             else if (isPdfLimitError(err)) tooLarge = msg;

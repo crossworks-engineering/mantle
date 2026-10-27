@@ -21,7 +21,7 @@ import {
   passesGate,
   type EmbeddedImage,
 } from './embedded-images';
-import { type PdfDocument, withPdf } from './pdf-open';
+import { countOversizeImages, type PdfDocument, withPdf } from './pdf-open';
 
 /** pdf-parse (v2) ends every page with a `-- N of M --` marker line, text or
  *  no text. */
@@ -193,6 +193,15 @@ function resolveImage(page: PdfPage, name: string): Promise<PdfImageData | null>
  * before it carries on, so the output is exactly what reading every page
  * fully would give.
  *
+ * A scan page whose image is over this pass's cap reads as NO image: pdfjs
+ * drops it from the operator list. Left at that, one such page would break
+ * the shape and hand the scan's other pages out as figures (one vision call
+ * each). So a page with no image still counts as scan-shaped while the file
+ * declares an over-cap image not yet accounted for: at most one such page per
+ * over-cap image the bytes declare (`countOversizeImages`), so a document of
+ * text pages and one big photo still breaks the shape at its second textual
+ * page.
+ *
  * It stops once `maxImages` images have passed the gate (the caller's
  * per-document cap; decorations do not count toward it), so a long document
  * is not decoded past what will be kept. Holds the process-wide decode slot
@@ -284,12 +293,18 @@ export async function extractPdfImages(
       // Pages read while the document is still scan-shaped (one image on
       // every page so far), counted but not yet fetched.
       let deferred: number[] | null = pageCount >= 2 ? [] : null;
+      // Pages with no image that may each be a scan page whose image pdfjs
+      // dropped (see above). Read inside `withPdf`, after its size refusal.
+      let droppedLeft = deferred
+        ? countOversizeImages(bytes, MAX_IMAGE_PIXELS, MAX_PDF_PAGES_SCANNED)
+        : 0;
       for (let p = 1; p <= pageCount && kept < maxImages; p++) {
         if (!deferred) {
           await readPage(p, true);
           continue;
         }
-        if ((await readPage(p, false)) === 1) {
+        const candidates = await readPage(p, false);
+        if (candidates === 1 || (candidates === 0 && droppedLeft-- > 0)) {
           deferred.push(p);
           continue;
         }
