@@ -59,10 +59,12 @@ COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
 COPY packages/calendar/package.json packages/calendar/package.json
 COPY packages/client-types/package.json packages/client-types/package.json
+COPY packages/config/package.json packages/config/package.json
 COPY packages/content/package.json packages/content/package.json
 COPY packages/content-core/package.json packages/content-core/package.json
 COPY packages/crypto/package.json packages/crypto/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/decisions/package.json packages/decisions/package.json
 COPY packages/diagram-templates/package.json packages/diagram-templates/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
@@ -74,6 +76,7 @@ COPY packages/runs/package.json packages/runs/package.json
 COPY packages/runtime/package.json packages/runtime/package.json
 COPY packages/search/package.json packages/search/package.json
 COPY packages/share-ui/package.json packages/share-ui/package.json
+COPY packages/std/package.json packages/std/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/tabledb/package.json packages/tabledb/package.json
 COPY packages/telegram/package.json packages/telegram/package.json
