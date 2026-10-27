@@ -69,7 +69,7 @@ echo "→ Bringing up postgres + object store + the PDF browser (docker-compose.
 # even when this script is invoked from a worktree. The dev SERVERS below
 # still run from this tree — you want your branch's code against the one
 # database. See scripts/dev-compose.sh.
-bash scripts/dev-compose.sh up -d --wait
+bash scripts/dev-compose.sh up -d --wait --remove-orphans
 
 # ── 4. Ensure the object-store bucket ----------------------------------------
 # Plain S3 CreateBucket through the app's own storage package, with the same

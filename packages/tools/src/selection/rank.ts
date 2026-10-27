@@ -146,7 +146,6 @@ const SYNONYMS: Record<string, readonly string[]> = {
   total: ['aggregate', 'calculate'],
   average: ['aggregate'],
   video: ['video'],
-  youtube: ['video'],
   transcript: ['video'],
   speak: ['speech'],
   voice: ['speech'],

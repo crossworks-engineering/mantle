@@ -56,7 +56,7 @@ defineDomainError(PdfRendererUnavailableError, {
 
 /**
  * Probe the browser sidecar for the system-health dashboard — the analog of
- * `tikaVersion` in @mantle/files. Never throws.
+ * `parserHealth` in @mantle/files. Never throws.
  *
  *   up: null   → BROWSER_WS_ENDPOINT unset (unconfigured — e.g. detached dev);
  *                rendered as a neutral pill, not a red one.

@@ -221,9 +221,11 @@ compose_env_ok() {
   return 1
 }
 
-# refresh_one <box-file> <release-path> — extract one canonical compose from
-# the (already pulled) target image and swap it in when the box copy is
-# pristine. Echoes the outcome token. Never blocks the update.
+# refresh_one <box-file> <release-path> [<keep>] — extract one canonical
+# compose from the (already pulled) target image and swap it in when the box
+# copy is pristine. Echoes the outcome token. Never blocks the update. With
+# <keep>, a copy of the canonical it read is left there (the parser check
+# reads the target's server compose from it, not from a second extract).
 refresh_one() {
   file="$1"; rel="$2"
   incoming="$STACK/.compose-incoming.tmp"
@@ -234,6 +236,7 @@ refresh_one() {
   if [ ! -s "$incoming" ]; then
     rm -f "$incoming"; echo unavailable; return
   fi
+  [ -z "${3:-}" ] || cp "$incoming" "$3"
   if [ ! -f "$STACK/$file.release" ]; then
     rm -f "$incoming"; echo no-baseline; return
   fi
@@ -257,7 +260,12 @@ refresh_one() {
 # refresh_compose <tag> — refresh BOTH release-owned compose files (server +
 # client) from the target server image. The client file is optional: a
 # server-only box (file absent) skips it. Sets REFRESH / CLIENT_REFRESH.
+# The server file goes first: when the parser check refuses the roll
+# (PCR_ERR set, see parser_compose_refusal) it returns before the client and
+# core files, so a refused roll has refreshed nothing (the server file is
+# never refreshed when it refuses).
 refresh_compose() {
+  PCR_ERR=""
   ns=$(sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' "$STACK/.env" 2>/dev/null | head -1)
   IMG="${ns:-titanwest}/mantle-server:$1"
   echo "[updater] compose refresh: reading canonicals from $IMG" | tee -a "$SIG/update.log"
@@ -266,7 +274,8 @@ refresh_compose() {
     echo "[updater] compose refresh skipped: could not pull $IMG" | tee -a "$SIG/update.log"
     return
   fi
-  REFRESH=$(refresh_one docker-compose.yml /app/release/docker-compose.yml)
+  rm -f "$STACK/.compose-canonical.tmp"
+  REFRESH=$(refresh_one docker-compose.yml /app/release/docker-compose.yml "$STACK/.compose-canonical.tmp")
   case "$REFRESH" in
     refreshed) echo "[updater] server compose refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
     unavailable) echo "[updater] compose refresh skipped: $IMG ships no embedded canonical" | tee -a "$SIG/update.log" ;;
@@ -280,6 +289,7 @@ refresh_compose() {
          "Release-level compose changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
     write-failed) echo "[updater] ⚠ server compose refresh FAILED writing files" | tee -a "$SIG/update.log" ;;
   esac
+  parser_compose_refusal && return
   # Client stack (v0.200+): only on boxes that RUN it (file present).
   if [ -f "$STACK/docker-compose.client.yml" ]; then
     CLIENT_REFRESH=$(refresh_one docker-compose.client.yml /app/release/docker-compose.client.yml)
@@ -305,26 +315,21 @@ refresh_compose() {
 # file through the parser service (its compose defines `parser`) and the
 # box's compose, which this roll did NOT refresh (local edits, no baseline,
 # an .env it cannot satisfy, a failed write), does not define it. Rolled on,
-# that box would run a brain that can read no file. Reads the target image
-# set by refresh_compose; a target whose compose cannot be read (no image,
-# no embedded canonical) is not refused here: the pull and up decide.
+# that box would run a brain that can read no file. Reads the target's
+# server compose that refresh_compose already extracted (refresh_one's
+# copy); a target whose compose could not be read (no image, no embedded
+# canonical) is not refused here: the pull and up decide.
 parser_compose_refusal() {
   PCR_ERR=""
+  pcr_canon="$STACK/.compose-canonical.tmp"
+  pcr_has=""
+  if [ -s "$pcr_canon" ] && grep -q 'container_name: mantle_parser' "$pcr_canon"; then pcr_has=1; fi
+  rm -f "$pcr_canon"
   [ "$REFRESH" = refreshed ] && return 1
+  [ -n "$pcr_has" ] || return 1
   grep -q 'container_name: mantle_parser' "$STACK/docker-compose.yml" 2>/dev/null && return 1
-  [ "$REFRESH" = pull-failed ] && return 1
-  pcr_tmp="$STACK/.compose-parser-check.tmp"
-  rm -f "$pcr_tmp"
-  pcr_cid=$(docker create "$IMG" 2>> "$SIG/update.log") || return 1
-  docker cp "$pcr_cid:/app/release/docker-compose.yml" "$pcr_tmp" >> "$SIG/update.log" 2>&1
-  docker rm "$pcr_cid" > /dev/null 2>&1
-  if [ -s "$pcr_tmp" ] && grep -q 'container_name: mantle_parser' "$pcr_tmp"; then
-    rm -f "$pcr_tmp"
-    PCR_ERR="the release reads every file through the parser service, but this box's docker-compose.yml was not refreshed ($REFRESH) and does not define it. Bring the compose up to the release (move local edits to docker-compose.override.yml, then scripts/compose-adopt.sh), then request the update again"
-    return 0
-  fi
-  rm -f "$pcr_tmp"
-  return 1
+  PCR_ERR="the release reads every file through the parser service, but this box's docker-compose.yml was not refreshed ($REFRESH) and does not define it. Bring the compose up to the release (move local edits to docker-compose.override.yml, then scripts/compose-adopt.sh), then request the update again"
+  return 0
 }
 
 # ── front door: Caddyfile + shapes are release-owned too ─────────────────────
@@ -1193,6 +1198,29 @@ s8b_seat_refusal() {
 # container_image <name>: the full image id a container runs ("" when absent).
 container_image() { docker inspect -f '{{.Image}}' "$1" 2>/dev/null; }
 
+# prune_rmi <repo> <keep>: remove every image of exactly <repo> whose id is
+# not a line of <keep>, by tag (by id when dangling), each removal or refusal
+# logged.
+prune_rmi() {
+  docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$1" 2>/dev/null \
+    | while read -r pr_id pr_ref; do
+      [ -n "$pr_id" ] && [ -n "$pr_ref" ] || continue
+      # Exact repository only: the reference filter is exact already, this
+      # makes it independent of how a docker version reads that filter.
+      [ "${pr_ref%:*}" = "$1" ] || continue
+      printf '%s\n' "$2" | grep -qxF "$pr_id" && continue
+      case "$pr_ref" in
+        *':<none>') pr_target=$pr_id ;;
+        *) pr_target=$pr_ref ;;
+      esac
+      if docker rmi "$pr_target" > /dev/null 2>&1; then
+        echo "[updater] image prune: removed $pr_ref"
+      else
+        echo "[updater] image prune: kept $pr_ref (docker refused to remove it; still in use?)"
+      fi
+    done
+}
+
 # prune_repo <repo> <prev-id> <cur-id>
 prune_repo() {
   pr_repo=$1; pr_prev=$2; pr_cur=$3
@@ -1206,24 +1234,7 @@ prune_repo() {
   pr_newest=$(printf '%s\n' "$pr_list" \
     | awk -v r="$pr_repo" 'NF { ref = $2; sub(/:[^:]*$/, "", ref); if (ref == r) print $1 }' \
     | awk '!seen[$0]++' | head -2)
-  printf '%s\n' "$pr_list" | while read -r pr_id pr_ref; do
-    [ -n "$pr_id" ] && [ -n "$pr_ref" ] || continue
-    # Exact repository only: the reference filter is exact already, this
-    # makes it independent of how a docker version reads that filter.
-    [ "${pr_ref%:*}" = "$pr_repo" ] || continue
-    [ "$pr_id" = "$pr_prev" ] && continue
-    [ "$pr_id" = "$pr_cur" ] && continue
-    printf '%s\n' "$pr_newest" | grep -qxF "$pr_id" && continue
-    case "$pr_ref" in
-      *':<none>') pr_target=$pr_id ;;
-      *) pr_target=$pr_ref ;;
-    esac
-    if docker rmi "$pr_target" > /dev/null 2>&1; then
-      echo "[updater] image prune: removed $pr_ref"
-    else
-      echo "[updater] image prune: kept $pr_ref (docker refused to remove it; still in use?)"
-    fi
-  done
+  prune_rmi "$pr_repo" "$(printf '%s\n%s\n%s\n' "$pr_prev" "$pr_cur" "$pr_newest")"
 }
 
 # prune_images <prev-server-id> <prev-client-id> <prev-parser-id> <prev-media-id>:
@@ -1252,18 +1263,7 @@ prune_media() {
     echo "[updater] image prune: $pm_repo skipped (mantle_media still exists; remove it: docker rm -f mantle_media)"
     return 0
   fi
-  docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$pm_repo" 2>/dev/null \
-    | while read -r pm_id pm_ref; do
-      [ -n "$pm_id" ] && [ -n "$pm_ref" ] || continue
-      [ "${pm_ref%:*}" = "$pm_repo" ] || continue
-      [ "$pm_id" = "$1" ] && continue
-      case "$pm_ref" in *':<none>') pm_target=$pm_id ;; *) pm_target=$pm_ref ;; esac
-      if docker rmi "$pm_target" > /dev/null 2>&1; then
-        echo "[updater] image prune: removed $pm_ref"
-      else
-        echo "[updater] image prune: kept $pm_ref (docker refused to remove it; still in use?)"
-      fi
-    done
+  prune_rmi "$pm_repo" "$1"
 }
 
 # topup_scripts: install an operator script the RUNNING release names but the
@@ -1905,16 +1905,11 @@ while true; do
     # already 'pulling' — claimed above the .env rewrite.)
     CADDY_RECREATE=""
     refresh_compose "$TARGET"
-    # Front door too (same image, same roll): a release that changes the
-    # Caddyfile or a shape lands with its image, no hand copy per box.
-    [ "$REFRESH" = pull-failed ] || refresh_caddy "$TARGET"
-    # Operator tooling rides the same roll. It does not affect THIS update —
-    # the scripts are run by hand — but it is what stops the next one being
-    # applied by a compose-adopt three releases behind the compose it installs.
-    [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
     # A release with the parser on a compose without it: stop here, loudly,
-    # before any pull or container change, with the old tag back in .env.
-    if parser_compose_refusal; then
+    # before any other release-owned file is refreshed and before any pull or
+    # container change, with the old tag back in .env (refresh_compose set
+    # PCR_ERR after the server file, which it did not refresh).
+    if [ -n "$PCR_ERR" ]; then
       if [ -n "$ROLL_PREV_TAG" ]; then
         persist_env MANTLE_IMAGE_TAG "$ROLL_PREV_TAG"
       elif [ "$TARGET" != latest ]; then
@@ -1925,6 +1920,13 @@ while true; do
       write_stack_info
       continue
     fi
+    # Front door too (same image, same roll): a release that changes the
+    # Caddyfile or a shape lands with its image, no hand copy per box.
+    [ "$REFRESH" = pull-failed ] || refresh_caddy "$TARGET"
+    # Operator tooling rides the same roll. It does not affect THIS update —
+    # the scripts are run by hand — but it is what stops the next one being
+    # applied by a compose-adopt three releases behind the compose it installs.
+    [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
     # After the compose refresh (the check reads the compose this roll brings
     # up) and before the pull/up that recreates the app containers with it.
     ensure_service_tokens

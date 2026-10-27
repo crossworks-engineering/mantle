@@ -30,9 +30,48 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   extracted (`.xls` pictures never were).
 - **Rolling to it:** see [docs/update-prod.md](docs/update-prod.md),
   "Rolling to the parser service": `PARSER_TOKEN` is written on the second
-  roll, `data/media/` (an operator's `cookies.txt`) is to be removed by
-  hand, and a hand-edited compose without the parser is refused before any
-  container changes.
+  roll, and `data/media/` (an operator's `cookies.txt`) is to be removed by
+  hand.
+- **A hand-edited compose without the parser does not roll to it.** The
+  first roll to this release is run by the box's current updater, which
+  does not know the parser and would roll such a box on with no parser:
+  `scripts/roll.sh` (the operator's checkout, so this release's copy)
+  refuses it at step 2f, before the backup and the request, unless the box's
+  compose already defines `mantle_parser`; and after any roll to a release
+  that ships the parser, a missing `mantle_parser` is a failure (exit 1).
+  An update requested any other way on that first roll is not guarded: use
+  `roll.sh`. Later rolls are run by this release's updater, which refuses
+  such a roll itself (`parser_compose_refusal`) before it refreshes any
+  release-owned file or changes any container.
+- **`:latest` moves for both images at once:** the release workflow probes
+  the server and parser images on both architectures' native runners, cuts
+  the release, and only then points `:latest` of both at it, in one job.
+- **`--remove-orphans`** on every documented and scripted `compose up`
+  (`install.sh`, `scripts/install.sh`, `scripts/up.sh`, the update
+  command in docs/update-prod.md), so a removed service (Tika, the media
+  sidecar) does not keep running after a hand update.
+- **A person waiting goes first:** a chat attachment or a thumbnail asks
+  the parser for the head of its queue (`X-Parser-Priority: interactive`),
+  skips its process's client queue, and is answered `busy` after at most
+  10 s ("try again in a moment"), never waited out behind background
+  extracts. No second slot.
+- **A job leaves nothing behind for the next one:** a reader's child
+  program (Python, ffprobe, ffmpeg) runs in its job's process group, so the
+  job's kill takes it; a process that left the group is killed before the
+  slot is given back; a job's temp files, home and caches live in its own
+  directory and tsx keeps no cache; `/tmp` is cleared beside the job root
+  after each job. A slow body or an unread answer gives the slot back after
+  60 s.
+- **A fixed cap is terminal at once:** a `too_large` from the body, a zip
+  part, the cells, the pixels or the answer is final the first time; a full
+  scratch space still gets its one retry.
+- **The native PDF read that found nothing is kept on the node**
+  (`data.native_pdf.empty_sha256`), so a retry or a redrive after a restart
+  does not pay for it again.
+- **Images refuse to start on stale dependencies:**
+  `pnpm_config_verify_deps_before_run=error` in the image, so pnpm never
+  installs at container start; `pnpm arch:check` fails when the
+  Dockerfile's manifest list and the workspace differ.
 
 ## Unreleased: the Desk follows the login
 

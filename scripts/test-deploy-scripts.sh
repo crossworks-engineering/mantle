@@ -1065,6 +1065,11 @@ printf 'MANTLE_IMAGE_TAG=v7\n' >> "$T/stack/.env"
 printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
 printf '# a local edit\n' >> "$T/stack/docker-compose.yml"
 cp "$T/stack/docker-compose.yml" "$T/compose.before"
+# A pristine client compose with a newer canonical: a refused roll must not
+# refresh it either.
+cp "$T/stack/docker-compose.client.yml" "$T/stack/docker-compose.client.yml.release"
+printf 'services: {client_web: {image: newer}}\n' > "$T/img/docker-compose.client.yml"
+cp "$T/stack/docker-compose.client.yml" "$T/client.before"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "parser gate: status error, refused, says why" sh -c "grep -q '\"phase\":\"error\",\"target\":\"v8\".*\"ok\":false' '$T/sig/status.json' && grep -q 'roll refused, no container changed: the release reads every file through the parser service' '$T/sig/status.json'"
 check "parser gate: names the refresh outcome (modified)" grep -q 'was not refreshed (modified)' "$T/sig/status.json"
@@ -1073,6 +1078,11 @@ check "parser gate: no compose pull and no compose up" sh -c "! grep -qE 'compos
 check "parser gate: the old image tag is back in .env" sh -c "grep -qx 'MANTLE_IMAGE_TAG=v7' '$T/stack/.env' && test \"\$(grep -c '^MANTLE_IMAGE_TAG=' '$T/stack/.env')\" = 1"
 check "parser gate: the box compose is left as it was" same "$T/stack/docker-compose.yml" "$T/compose.before"
 check "parser gate: no container moved" test "$(cat "$T/state/mantle_web")" = sha256:S7
+check "parser gate: no other release-owned file read or refreshed (client compose, Caddy, scripts)" \
+  sh -c "! grep 'docker cp' '$T/calls' | grep -v ':/app/release/docker-compose.yml ' | grep -q ."
+check "parser gate: the client compose is left as it was" same "$T/stack/docker-compose.client.yml" "$T/client.before"
+check "parser gate: the server canonical is read once, and its copy is gone" \
+  sh -c "test \"\$(grep -c 'docker cp fakecid:/app/release/docker-compose.yml ' '$T/calls')\" = 1 && test ! -e '$T/stack/.compose-canonical.tmp'"
 
 roll_case pgate-notag
 printf "$PARSER_COMPOSE" > "$T/img/docker-compose.yml"
@@ -1539,6 +1549,9 @@ roll_box() { # <name>: a fake box; its db-dump.sh follows FAKE_DUMP (ok, fail, l
   printf '{"phase":"done","target":"v7","started_at":"OLD","finished_at":"F0","ok":true,"error":""}\n' > "$RS/sig/status.json"
   printf '#!/bin/sh\necho old updater\n' > "$RS/stack/infra/updater/updater.sh"
   : > "$RS/stack/.env"
+  # A pristine compose (equal to its baseline): the roll refreshes it (2f).
+  printf 'services: {web: {image: old}}\n' > "$RS/stack/docker-compose.yml"
+  cp "$RS/stack/docker-compose.yml" "$RS/stack/docker-compose.yml.release"
   cat > "$RS/stack/scripts/db-dump.sh" <<'DUMP'
 #!/bin/sh
 echo "db-dump strict=${MANTLE_DUMP_STRICT:-}" >> "$RS/calls"
@@ -1596,7 +1609,11 @@ roll_sh --ssh fakebox v8
 check "parser healthy: the roll goes on and says so" sh -c "test '$rc' = 0 && grep -q 'mantle_parser: healthy' '$RS/out'"
 roll_box parser-none
 FAKE_NO_PARSER=1 roll_sh --ssh fakebox v8
-check "no parser container (a release before it): not waited for" sh -c "test '$rc' = 0 && grep -q 'mantle_parser: none' '$RS/out'"
+check "no parser container after a roll to a release that may ship it: exit 1, loud" sh -c "test '$rc' = 1 && grep -q 'PARSER MISSING on fakebox after the roll to v8' '$RS/out'"
+check "no parser container: the counts after are never reached" sh -c "! grep -q 'after:  apps=' '$RS/out'"
+roll_box parser-none-before
+FAKE_NO_PARSER=1 roll_sh --ssh fakebox v0.400.13
+check "no parser container, a release before it: not waited for" sh -c "test '$rc' = 0 && grep -q 'mantle_parser: none' '$RS/out' && grep -q 'v0.400.13 is older than any release with the parser' '$RS/out'"
 
 roll_box unhealthy
 FAKE_HEALTH=unhealthy roll_sh --ssh fakebox v8
@@ -1948,6 +1965,66 @@ roll_box seatgarbage
 FAKE_SEAT="oops" ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.300.140
 check "Admin seats: an answer that is not a number stops the roll" \
   sh -c "test '$rc' = 1 && grep -q 'unexpected Admin seat count' '$RS/out' && test ! -e '$RS/request.seen'"
+
+# Step 2f: v0.400.20 has no parser service, v0.400.21 ships it (its
+# docker-compose.yml defines container_name: mantle_parser).
+printf 'services: {web: {image: x}}\n' > "$RG/docker-compose.yml"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm d
+git -C "$RG" tag v0.400.20
+printf 'services:\n  parser:\n    container_name: mantle_parser\n' > "$RG/docker-compose.yml"
+git -C "$RG" add -A
+git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm e
+git -C "$RG" tag v0.400.21
+check "parser: step 2f looks for the name the release compose gives the parser" \
+  grep -q '^    container_name: mantle_parser$' "$ROOT/docker-compose.yml"
+
+roll_box pcompose-modified
+printf '# a local edit\n' >> "$RS/stack/docker-compose.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose, local edits, a target that ships the parser: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'has local edits, so the roll will not refresh it, and it does not define the parser service; v0.400.21 ships the parser service' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+check "parser compose: the repair is named" grep -q 'compose-adopt.sh --apply' "$RS/out"
+
+roll_box pcompose-nobaseline
+rm -f "$RS/stack/docker-compose.yml.release"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose, no baseline: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'has no baseline' '$RS/out' && test ! -e '$RS/request.seen'"
+
+roll_box pcompose-unknown
+printf '# a local edit\n' >> "$RS/stack/docker-compose.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.99
+check "parser compose, a target this checkout has no tag for: counts as shipping it (refused)" \
+  sh -c "test '$rc' = 1 && grep -q 'cannot tell whether v0.400.99 ships the parser' '$RS/out' && test ! -e '$RS/request.seen'"
+
+roll_box pcompose-has
+printf 'services:\n  parser:\n    container_name: mantle_parser\n' > "$RS/stack/docker-compose.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose, local edits that define the parser: the roll goes ahead" \
+  sh -c "test '$rc' = 0 && grep -q 'docker-compose.yml defines the parser service' '$RS/out' && test -e '$RS/request.seen' && grep -q 'mantle_parser: healthy' '$RS/out'"
+
+roll_box pcompose-pristine
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose, pristine: the roll goes ahead, and says the roll refreshes it" \
+  sh -c "test '$rc' = 0 && grep -q 'is the release.s (pristine)' '$RS/out'"
+
+roll_box pcompose-noparser-release
+printf '# a local edit\n' >> "$RS/stack/docker-compose.yml"
+FAKE_NO_PARSER=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.20
+check "parser compose, local edits, a target without the parser: not refused, and none is waited for" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.400.20 does not ship the parser service' '$RS/out' && grep -q 'mantle_parser: none' '$RS/out'"
+
+roll_box pcompose-before
+printf '# a local edit\n' >> "$RS/stack/docker-compose.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.13
+check "parser compose: a release older than any with the parser is not checked" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.400.13 is older than any release with the parser' '$RS/out'"
+
+roll_box pcompose-missing-after
+FAKE_NO_PARSER=1 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "parser compose, pristine, but no mantle_parser after the roll (the old updater did not refresh it): exit 1" \
+  sh -c "test '$rc' = 1 && grep -q 'PARSER MISSING' '$RS/out' && test -e '$RS/request.seen'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"

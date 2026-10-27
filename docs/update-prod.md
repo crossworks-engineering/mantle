@@ -49,12 +49,14 @@ vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
    contract change: mantle first — the tag publishes the npm contracts — then
    jackdaw pins them, then the NEXT mantle release records the new pair.)
 2. **CI builds** ([`release.yml`](../.github/workflows/release.yml), fires on
-   `v*`): builds amd64 + arm64 in parallel, pushes one multi-arch manifest tagged
-   **both** `:vX.Y.Z` and `:latest`, then cuts a GitHub Release with generated
-   notes + a `mantle-deploy-vX.Y.Z.tar.gz` bundle (compose, `.env.prod.example`,
-   `infra/`, db scripts). ~5–6 min.
+   `v*`): builds the server and parser images for amd64 + arm64 in parallel,
+   pushes each as one multi-arch manifest tagged `:vX.Y.Z`, probes both, cuts
+   a GitHub Release with generated notes + a `mantle-deploy-vX.Y.Z.tar.gz`
+   bundle (compose, `.env.prod.example`, `infra/`, db scripts), and only then
+   moves `:latest` of both images, in one job: `:latest` never points at a
+   server whose parser (or release) failed. ~5–6 min.
 3. **VPS pull + roll**: `db-dump` → `docker compose pull` → `docker compose up -d
---wait`. The one-shot `migrate` service runs pending DB migrations first
+--wait --remove-orphans`. The one-shot `migrate` service runs pending DB migrations first
    (gated), then web/api/workers recreate on the new image.
 4. **manifest reconcile** (automatic, in the web image). On boot the web server
    runs `reconcileManifestOnBoot` (server/web `instrumentation.ts`): once per
@@ -92,7 +94,10 @@ What it does, in order:
 
 1. Preflight: the updater is idle and no `request.json` is waiting.
 2. Counts apps and sandboxes (Postgres) and app-db files (`*.sqlite` under
-   `APP_DB_DIR` in `mantle_web`).
+   `APP_DB_DIR` in `mantle_web`), then the refusals 2a to 2f (below; 2f: a
+   release that ships the parser service on a box whose compose the roll
+   will not refresh and that does not define it, see "Rolling to the parser
+   service").
 3. Backup: `MANTLE_DUMP_STRICT=1 bash scripts/db-dump.sh` on the box, checked
    by its own exit status (never through a pipe), and refused when any part
    reports "NOT backed up" (a box whose `db-dump.sh` predates strict mode).
@@ -104,8 +109,10 @@ What it does, in order:
 5. Waits for a NEW `started_at` with this target and a `finished_at` (a
    same-tag re-roll shows the last run's `done` until the updater claims the
    request), then requires `"ok":true`.
-6. Waits for `mantle_web` healthy. If it never is, it stops with exit 1, a
-   banner saying the box is down, and the last 20 lines of the `mantle_web`
+6. Waits for `mantle_web` healthy, then for `mantle_parser` (a release that
+   ships the parser with no `mantle_parser` after the roll stops with exit 1,
+   `PARSER MISSING`). If one never is healthy, it stops with exit 1, a
+   banner saying the box is down, and the last 20 lines of that container's
    log, every line, with secret values masked: URL credentials
    (`://[redacted]@`), Authorization and Cookie header values, the word after
    `Bearer`, a bare token wherever it stands (`sk-ant-`, `sk-or-`,
@@ -1418,15 +1425,33 @@ rolls; its rollback is `packages/db/rollback/0337_parser_failures_key.revert.sql
   the box (and in its backups):
 
   ```bash
-  rm -r ~/mantle/data/media
+  rm -r "${MANTLE_DATA_DIR:-./data}/media"   # from the stack dir
   ```
 
 - **A hand-edited compose is refused, not half-rolled.** The release reads
   every file through the parser. A box whose `docker-compose.yml` the roll
   cannot refresh (local edits, no baseline) and that does not define the
-  parser is refused before any container changes, with the old image tag
-  back in `.env` (`parser_compose_refusal` in the updater). Move the edits to
-  `docker-compose.override.yml`, run `scripts/compose-adopt.sh`, then roll.
+  parser must not roll to it. Move the edits to
+  `docker-compose.override.yml`, run `scripts/compose-adopt.sh --apply`,
+  then roll. Who stops it differs by roll:
+  - **The first roll to this release** is run by the box's current updater,
+    from a release before the parser. It does not know the parser: on such
+    a compose it would roll on, bring up a brain with no parser, and report
+    success. `scripts/roll.sh` (run from the operator's checkout, so it is
+    this release's copy) refuses that roll at step 2f, before the backup and
+    the request, unless the box's compose already defines
+    `container_name: mantle_parser`; a target tag this checkout does not
+    have counts as shipping the parser (`git fetch --tags`). After the
+    roll, a release that ships the parser with no `mantle_parser` running is
+    a failure (exit 1, `PARSER MISSING`): that catches what step 2f cannot
+    see, such as a pristine compose the old updater still did not refresh
+    because `.env` lacks a variable the new compose requires. A roll
+    requested any other way (the in-app Update button, a hand-written
+    `request.json`) has none of this on the first roll: use `roll.sh`.
+  - **Every later roll** is run by this release's updater, which refuses
+    such a roll itself before it refreshes any release-owned file or
+    changes any container, with the old image tag back in `.env`
+    (`parser_compose_refusal`), whoever requested it.
 
 - **`PARSER_TOKEN` is written on the SECOND roll.** The first roll to this
   release is run by the updater of the release before it, which does not
