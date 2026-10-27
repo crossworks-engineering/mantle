@@ -4,7 +4,8 @@
  * (packages/files/src/parser-client.ts, `ParserFailureLedger`).
  *
  * A file whose bytes time out, crash or are refused as too large by the
- * parser twice in the same job is terminal for that job. In memory, a
+ * parser twice in the same job is terminal for that job; a refusal the
+ * parser marks final (a fixed cap) is terminal the first time. In memory, a
  * restart or a roll between the two failures forgot the first, and a bomb
  * got a fresh pair of tries on every roll. On the node, the second real
  * failure is terminal whatever happened in between; the extractor then
@@ -33,8 +34,10 @@ export function nodeParserFailures(nodeId: string, ownerId: string): ParserFailu
       if (!f || typeof f.n !== 'number' || typeof f.code !== 'string') return null;
       return { n: f.n, code: f.code as ParserErrorCode } satisfies ParserFailureCount;
     },
-    async add(key, code) {
+    async add(key, code, opts) {
       const prior = sql`${nodes.data}->'parser_failures'->(${key}::text)->>'n'`;
+      // A final refusal (a fixed cap) is terminal at once: 2, or more.
+      const floor = opts?.final === true ? 2 : 0;
       const [row] = await db
         .update(nodes)
         .set({
@@ -43,7 +46,10 @@ export function nodeParserFailures(nodeId: string, ownerId: string): ParserFailu
             '{parser_failures}',
             coalesce(${nodes.data}->'parser_failures', '{}'::jsonb) || jsonb_build_object(
               ${key}::text,
-              jsonb_build_object('n', coalesce((${prior})::int, 0) + 1, 'code', ${code}::text)
+              jsonb_build_object(
+                'n', greatest(coalesce((${prior})::int, 0) + 1, ${floor}::int),
+                'code', ${code}::text
+              )
             )
           )`,
         })
