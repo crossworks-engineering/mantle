@@ -585,7 +585,9 @@ so PDFs keep working out of the box; the dedicated worker is purely additive.
   `extract_document` trace step makes it visible in `/traces`.
 - **Indexer** (`server/api/src/agent/extractor.ts` `ocrIngestPdfNode`): same
   native-first → rasterize chain for the durable `data.text`. Native results are
-  flagged `native_pdf: true` (not `ocr`, which means page-OCR).
+  flagged `native_pdf: true` (not `ocr`, which means page-OCR). A native read
+  that found no text is kept as `native_pdf: { empty_sha256 }`, so a retry of
+  the same bytes goes straight to the render.
 
 **The bug this fixed.** Before this, the live turn ran *text-only* PDF parsing
 with no OCR fallback, a scanned invoice (no text layer) came back "No text

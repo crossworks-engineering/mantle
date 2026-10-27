@@ -445,21 +445,30 @@ export async function visionIngestImageNode(
 /** Page cap for PDF OCR — bounds rasterization memory + per-page vision spend. */
 const MAX_OCR_PAGES = 10;
 
-/** The PDFs (by sha256) whose native read ran in this process and found no
- *  text, so a retry of the same bytes does not pay for that model call
- *  again. Small: the retry follows within minutes. A restart forgets it, so
- *  the most a document pays is one extra read per api restart between two
- *  runs. A timeout or crash of the render ends after two runs (the count on
- *  the node, parser-failures.ts); a busy or unavailable parser is retried
- *  within minutes, in this process, where this set holds. */
-const NATIVE_EMPTY_MAX = 256;
-const nativeFoundNothing = new Set<string>();
-function rememberNativeEmpty(sha: string): void {
-  nativeFoundNothing.add(sha);
-  if (nativeFoundNothing.size > NATIVE_EMPTY_MAX) {
-    const oldest = nativeFoundNothing.values().next().value;
-    if (oldest !== undefined) nativeFoundNothing.delete(oldest);
-  }
+/**
+ * The native read of a PDF that found no text, kept on the node:
+ * `data.native_pdf = { empty_sha256: "<sha256 of the bytes>" }` (a read that
+ * found text writes `native_pdf: true` with the text). A retry of the same
+ * bytes (the render busy, a first refusal, a dead-letter redrive at api
+ * boot) goes straight to the render instead of paying for the model call
+ * again, whatever restarted in between. `native_pdf` is a byte-derived key
+ * (BYTE_DERIVED_DATA_KEYS): new bytes drop it, and the sha256 keeps a stale
+ * one from ever applying to other bytes.
+ */
+function nativeFoundNothing(node: typeof nodes.$inferSelect, sha: string): boolean {
+  const mark = (node.data as Record<string, unknown> | null)?.native_pdf;
+  return (
+    !!mark && typeof mark === 'object' && (mark as { empty_sha256?: unknown }).empty_sha256 === sha
+  );
+}
+
+async function rememberNativeEmpty(nodeId: string, ownerId: string, sha: string): Promise<void> {
+  await db
+    .update(nodes)
+    .set({
+      data: sql`jsonb_set(coalesce(${nodes.data}, '{}'::jsonb), '{native_pdf}', jsonb_build_object('empty_sha256', ${sha}::text))`,
+    })
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
 }
 
 /**
@@ -528,11 +537,12 @@ export async function ocrIngestPdfNode(
       //    whole-document context + real tables, no rasterization. Only runs
       //    when the worker's provider supports it; else falls through to the
       //    per-page raster OCR below.
-      //    A read that already ran on these bytes in this process and found
-      //    no text is not paid for again: a retry after the render (the
-      //    parser busy, a first refusal) goes straight to the render.
+      //    A read that already ran on these bytes and found no text (kept on
+      //    the node) is not paid for again: a retry after the render (the
+      //    parser busy, a first refusal, a redrive after a restart) goes
+      //    straight to the render.
       const bytesSha = createHash('sha256').update(buf).digest('hex');
-      const knownEmpty = nativeFoundNothing.has(bytesSha);
+      const knownEmpty = nativeFoundNothing(node, bytesSha);
       const native = await step(
         {
           name: 'extract_document',
@@ -541,7 +551,7 @@ export async function ocrIngestPdfNode(
         },
         async (h) => {
           if (knownEmpty) {
-            h.setMeta({ ran: true, skipped: 'read before in this process, no text' });
+            h.setMeta({ ran: true, skipped: 'read before, no text (data.native_pdf)' });
             return {
               ran: true,
               text: '',
@@ -587,7 +597,9 @@ export async function ocrIngestPdfNode(
         return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
       }
       let ran = native.ran;
-      if (native.ran && !knownEmpty) rememberNativeEmpty(bytesSha);
+      // Kept before the render runs: the render may fail the job, and its
+      // retry must not pay for this read again.
+      if (native.ran && !knownEmpty) await rememberNativeEmpty(node.id, ownerId, bytesSha);
 
       // 2) Fall back to rasterize → per-page image OCR.
       //
@@ -619,9 +631,8 @@ export async function ocrIngestPdfNode(
             // timed out or crashed it: the extract fails and pg-boss retries
             // it. The second time (counted on the node, parser-failures.ts)
             // is terminal: the caller records document_unreadable. Either
-            // way the native read's empty answer is remembered
-            // (nativeFoundNothing), so the retry does not pay for it again
-            // in this process.
+            // way the native read's empty answer is kept on the node
+            // (data.native_pdf), so the retry does not pay for it again.
             if (isParserError(err) && (err.retryable || err.terminal)) {
               h.setMeta({ pages: 0, error: msg, parser_code: err.code });
               throw err;

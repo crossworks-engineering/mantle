@@ -35,6 +35,9 @@ export default defineConfig({
       'server/web/server/f4-owner-flows.db.test.ts',
       // Plan v3.2 S4a: the fail-open miss rows with both checks on.
       'packages/db/src/fail-open.db.test.ts',
+      // The parser keys the extractor keeps on a file node (the failure
+      // count, the native PDF read that found nothing), both checks on.
+      'server/api/src/agent/extract/parser-node-keys.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
