@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { anyLoginCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -13,8 +14,9 @@ export const policy = routePolicy({
 
 /** POST /api/messenger/attachments: the upload of an attachment's bytes
  *  arrives with Messenger Phase 4 (plan page d8954876 section 9). Until
- *  then the route answers 501 and reads nothing. */
+ *  then the route answers 501 and reads no body. */
 export async function POST() {
+  anyLoginCaller();
   return NextResponse.json(
     { error: 'Attachments are not available yet.', code: 'not_implemented' },
     { status: 501 },
