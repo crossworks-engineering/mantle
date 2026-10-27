@@ -600,11 +600,9 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
 
   it('a copy carries no place (Files), and a Files move drops it', async () => {
     await setMode('on');
-    await sys(() => tree.ensureKindRoot(owner, 'files'));
-    const dest = idIn(
-      await sysTool('tree_folder_create', { kind: 'files', name: `${tag} fdest ${n()}` }),
-    );
-    const [d] = await raw<{ p: string }[]>`select path::text as p from nodes where id = ${dest}`;
+    const filesFolder = async (slug: string) =>
+      ((await sysTool('folder_create', { parent_path: 'files', slug })) as { path: string }).path;
+    const destPath = await filesFolder(`${tag}-fdest-${n()}`);
     const made = (await sysTool('file_create', {
       parent_path: 'files',
       filename: `${tag}-${n()}.md`,
@@ -613,17 +611,14 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     await setData(made.id, { tree_rank: 'i' });
     const copy = (await sysTool('file_copy', {
       file_id: made.id,
-      dest_path: d!.p,
+      dest_path: destPath,
       confirm: true,
     })) as { id: string };
     expect(await rankOf(copy.id)).toBeNull();
     expect(await rankOf(made.id)).toBe('i');
-    await sysTool('tree_item_move', {
-      kind: 'files',
-      item_ids: [made.id],
-      folder_id: dest,
-      confirm: true,
-    });
+    // The copy took the name there: the move goes to a folder of its own.
+    const movePath = await filesFolder(`${tag}-fmove-${n()}`);
+    await sysTool('file_move', { file_id: made.id, dest_path: movePath, confirm: true });
     expect(await rankOf(made.id)).toBeNull();
   });
 
