@@ -109,7 +109,7 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     const k2 = randomUUID();
     // One login, two credentials, a group with one human (decision 19.3 B).
     const made = await call('messenger_create', A, k1, { kind: 'group', participants: [] });
-    expect(made.ok).toBe(true);
+    expect(made.ok, made.error).toBe(true);
     const c = made.output!.conversation as string;
     const first = await call('messenger_send', A, k1, { conversation: c, text: 'from k1' });
     expect(first.ok).toBe(true);
@@ -152,6 +152,7 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
       kind: 'direct',
       participants: [B],
     });
+    expect(made.ok, made.error).toBe(true);
     const c = made.output!.conversation as string;
     const opened = await call('messenger_open', B, randomUUID(), { conversation: c });
     const last = opened.output!.lastSeq as number;

@@ -64,25 +64,27 @@ describe.skipIf(!URL)('the messenger fan-out (lib/realtime.ts)', () => {
     await scratch?.drop();
   }, 120_000);
 
-  const clear = () => {
-    for (const k of Object.keys(heard)) heard[k]!.length = 0;
-  };
-
   it('a NOTIFY reaches only the participants, never with text', async () => {
     const { conversationId: c } = await ms.createMessengerConversation(actor(A), {
       kind: 'group',
       participants: [B],
     });
-    clear();
     const secret = `secret-${randomUUID()}`;
-    await ms.sendMessengerMessage(actor(A), c, { body: secret });
-    await ts.pollUntil(() => heard[A]!.length > 0 && heard[B]!.length > 0, {
+    const { message } = await ms.sendMessengerMessage(actor(A), c, { body: secret });
+    const isIt = (e: string) =>
+      e.includes(c) && e.includes('"new"') && e.includes(`"seq":${message.seq}`);
+    await ts.pollUntil(() => heard[A]!.some(isIt) && heard[B]!.some(isIt), {
       what: 'the participants hear the message',
     });
     await new Promise((r) => setTimeout(r, 300));
-    expect(heard[C]).toEqual([]);
+    expect(heard[C]!.filter((e) => e.includes(c))).toEqual([]);
     for (const e of [...heard[A]!, ...heard[B]!]) expect(e).not.toContain(secret);
-    expect(JSON.parse(heard[B]![0]!)).toMatchObject({ c, seq: 1, kind: 'new' });
+    expect(JSON.parse(heard[B]!.find(isIt)!)).toEqual({
+      c,
+      seq: message.seq,
+      kind: 'new',
+      actor: A,
+    });
   });
 
   it('a left participant hears nothing past its left_seq; typing skips the typist', async () => {
@@ -91,18 +93,17 @@ describe.skipIf(!URL)('the messenger fan-out (lib/realtime.ts)', () => {
       participants: [B],
     });
     await ms.leaveMessengerConversation(actor(B), c);
-    await ts.pollUntil(() => heard[A]!.some((e) => e.includes(c)), { what: 'the leave' });
-    clear();
-    await ms.sendMessengerMessage(actor(A), c, { body: 'after' });
-    await ts.pollUntil(() => heard[A]!.some((e) => e.includes('"new"')), { what: 'A hears' });
+    const { message } = await ms.sendMessengerMessage(actor(A), c, { body: 'after' });
+    const after = (e: string) => e.includes(c) && e.includes(`"seq":${message.seq}`);
+    await ts.pollUntil(() => heard[A]!.some(after), {
+      what: 'A hears the message after the leave',
+    });
     await new Promise((r) => setTimeout(r, 300));
-    expect(heard[B]!.filter((e) => e.includes('"new"'))).toEqual([]);
-    clear();
+    expect(heard[B]!.filter(after)).toEqual([]);
     const { conversationId: d } = await ms.createMessengerConversation(actor(A), {
       kind: 'group',
       participants: [B],
     });
-    clear();
     await m.withViewer({ login: A }, () => ms.messengerTyping(actor(A), d));
     await ts.pollUntil(() => heard[B]!.some((e) => e.includes('typing')), {
       what: 'B hears typing',

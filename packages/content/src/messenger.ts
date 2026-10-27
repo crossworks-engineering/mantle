@@ -223,11 +223,16 @@ function previewOf(body: string): string {
 }
 
 /** A login's shown name (display name, else the mailbox part), read on the
- *  system pool. */
-async function loginNames(ids: readonly string[]): Promise<Map<string, string>> {
+ *  system pool, or on `on`: inside a write's transaction always its own
+ *  connection (a second one, under many concurrent sends, empties the
+ *  pool). */
+async function loginNames(
+  ids: readonly string[],
+  on: Exec = systemDb,
+): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await q<{ id: string; name: string }>(
-    systemDb,
+    on,
     sql`select id::text as id,
                coalesce(nullif(btrim(display_name), ''), split_part(coalesce(email, ''), '@', 1), 'User') as name
           from auth.users where id = any(${uuidArray(ids)})`,
@@ -646,7 +651,7 @@ export async function sendMessengerMessage(
         }
       }
     }
-    const names = await loginNames([self]);
+    const names = await loginNames([self], tx);
     const seq = await appendMessage(tx, conv, {
       authorKind: 'login',
       authorLoginId: self,
@@ -898,7 +903,7 @@ export async function patchMessengerConversation(
           .update(messengerConversations)
           .set({ title })
           .where(eq(messengerConversations.id, conv.id));
-        const names = await loginNames([actor.loginId]);
+        const names = await loginNames([actor.loginId], tx);
         await systemLine(
           tx,
           conv,
@@ -933,7 +938,7 @@ export async function deleteMessengerHistory(
         ),
       )
       .returning({ id: messengerMessages.id });
-    const names = await loginNames([actor.loginId]);
+    const names = await loginNames([actor.loginId], tx);
     await systemLine(
       tx,
       conv,
@@ -984,7 +989,7 @@ export async function addMessengerParticipants(
       throw new InputError(`A group holds at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
     }
     if (added.length === 0) return { added: [] };
-    const names = await loginNames([self, ...added]);
+    const names = await loginNames([self, ...added], tx);
     await systemLine(
       tx,
       conv,
@@ -1035,7 +1040,7 @@ export async function removeMessengerParticipant(
            where conversation_id = ${conv.id}::uuid and kind = 'login' and login_id = ${target}::uuid`,
     );
     if (!p || p.left_at) throw new MessengerNotFoundError('That person is not in this chat.');
-    const names = await loginNames([actor.loginId, target]);
+    const names = await loginNames([actor.loginId, target], tx);
     const seq = await systemLine(
       tx,
       conv,
@@ -1057,7 +1062,7 @@ export async function leaveMessengerConversation(
     if (conv.kind !== 'group') {
       throw new MessengerRefusedError('A direct chat cannot be left; clear it instead.');
     }
-    const names = await loginNames([actor.loginId]);
+    const names = await loginNames([actor.loginId], tx);
     const seq = await systemLine(tx, conv, `${names.get(actor.loginId) ?? 'Someone'} left.`);
     await updateParticipant(tx, me.id, { leftAt: new Date(), leftSeq: seq, admin: false });
     const rest = await q<{ id: string; admin: boolean }>(
