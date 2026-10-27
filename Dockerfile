@@ -209,8 +209,10 @@ ENV TSX_DISABLE_CACHE=1 \
 USER node
 EXPOSE 8095
 # The exec form (pnpm … exec), as the server image: SIGTERM reaches the
-# server's handler.
-CMD ["pnpm", "-C", "server/parser", "exec", "tsx", "src/main.ts"]
+# server's handler. Node with tsx's loader, not the `tsx` command: that one
+# stays as a parent process and keeps an IPC socket in /tmp (tsx-<uid>),
+# which the check after every job would find.
+CMD ["pnpm", "-C", "server/parser", "exec", "node", "--import", "tsx", "src/main.ts"]
 
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,

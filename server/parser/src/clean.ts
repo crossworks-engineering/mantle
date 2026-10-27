@@ -8,10 +8,10 @@
  * Clean means, inside the parser's container:
  *
  *  - Processes: PID 1 (Docker's init, tini), the server's launcher chain
- *    (pnpm, then this server; `strays`), the processes the server itself
- *    keeps under it (tsx's esbuild transformer), and processes entered from
- *    outside the container (`docker exec`: the healthcheck, an operator),
- *    whose parent is outside it. Nothing of the job: no member of its
+ *    (pnpm, then this server; `strays`), the processes they keep under them
+ *    (tsx's esbuild transformer, pnpm's process-group helper), and processes
+ *    entered from outside the container (`docker exec`: the healthcheck, an
+ *    operator), whose parent is outside it. Nothing of the job: no member of its
  *    process group, and nothing that left it (setsid, a double fork): such a
  *    process is re-parented to PID 1 when the job dies, and descends from
  *    neither the server nor `docker exec`.

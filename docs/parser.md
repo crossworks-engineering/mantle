@@ -96,11 +96,11 @@ is given back, the server (`server/parser/src/main.ts` `afterJob`,
 
 1. kills the job's process group again, and removes the job's directory;
 2. checks the processes. Inside the container the only ones allowed are
-   PID 1 (Docker's init, tini), the server's launcher chain (`pnpm`, the
-   `tsx` command, the server), what those keep under them (tsx's `esbuild`
-   service, pnpm's process-group helper `sh`), and a process entered from
-   outside the container (`docker exec`: the healthcheck, an operator),
-   whose parent is outside it. Nothing of the job's group, nothing that
+   PID 1 (Docker's init, tini), the server's launcher chain (`pnpm`, then
+   the server: `node` with tsx's loader), what those keep under them
+   (tsx's `esbuild` service, pnpm's process-group helper `sh`), and a
+   process entered from outside the container (`docker exec`: the
+   healthcheck, an operator), whose parent is outside it. Nothing of the job's group, nothing that
    descends from the job, and nothing that left it: a process that left the
    job's group (`setsid`, a double fork) is re-parented to PID 1 when the
    job dies, so it descends from neither the server nor `docker exec`. A
