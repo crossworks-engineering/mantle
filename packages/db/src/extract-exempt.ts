@@ -92,6 +92,10 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'needs_export',
   'unsupported_media',
   'no_parser',
+  // The parser refused the same bytes twice (too large, past its time
+  // limit, or it ran out of memory reading them): the same bytes fail the
+  // same way every time (packages/files/src/parser-client.ts).
+  'document_unreadable',
   'body_too_short',
   'encrypted_pdf',
   'pdf_too_large',

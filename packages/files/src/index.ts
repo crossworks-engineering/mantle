@@ -7,7 +7,9 @@ export {
   extOf,
   mimeForExt,
   TEXT_EXTS,
-  TIKA_EXTS,
+  ANYDOC_EXTS,
+  MARKUP_EXTS,
+  LEGACY_SHEET_EXTS,
   INGESTABLE_EXTS,
   MEDIA_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
@@ -22,33 +24,38 @@ export { isHeic, transcodeImageForVision } from './transcode';
 
 export { parseDocumentBytes } from './parse';
 
-export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-password';
+export type { PdfPasswordResult } from './pdf-password';
 
-// Light: pdfjs itself loads only inside `withPdf`, so these cost nothing to
-// import. They let a caller tell a verdict on a PDF from a busy slot.
-export { isPdfBusyError, isPdfLimitError, PDF_TURN_WAIT_MS } from './pdf-open';
-
-export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
-
+// The one client for the parser service (server/parser): every untrusted
+// file the brain reads goes through it.
 export {
-  mediaSidecarEnabled,
-  mediaSidecarHealth,
-  mediaProbe,
-  mediaCaptions,
-  mediaAudio,
-  mediaExtractAudio,
-  mediaVideo,
-  mediaDwgCrop,
+  ParserError,
+  isParserError,
+  parserText,
+  parserImages,
+  parserGrid,
+  parserRasterizePdf,
+  parserPdfPageCount,
+  parserPdfUnlock,
+  parserThumbnail,
+  parserImageForVision,
+  parserExtractAudio,
+  parserHealth,
+  resetParserFailures,
+  type ParserErrorCode,
+  type ParserResult,
+  type ParserHealth,
+  type ParserGrid,
+} from './parser-client';
+export {
+  parserDwgCrop,
+  parserDwgRender,
   type DwgCrop,
   type DwgCropItem,
   type DwgCropSpec,
   type DwgCrops,
-  type MediaResult,
-  type MediaErrorCode,
-  type MediaProbe,
-  type MediaCaptions,
-  type MediaBytes,
-} from './media-sidecar';
+  type DwgRender,
+} from './parser-cad';
 
 export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
