@@ -27,6 +27,7 @@ export * from './secrets';
 export * from './pages';
 export * from './draws';
 export * from './presents';
+export * from './messenger';
 export * from './apps';
 export * from './app-databases';
 export * from './app-table-exports';

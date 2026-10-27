@@ -1243,6 +1243,18 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
   none('public.push_login_prefs', 'system'),
+  // The messenger (0335): written by @mantle/content/messenger on the system
+  // pool, read by the role under the participant rule
+  // (mantle_messenger_seq_cap): no Admin exception, a left participant up to
+  // left_seq. Favourites are the login's own.
+  { ...none('public.messenger_conversations', 'system'), user: 'all' },
+  { ...none('public.messenger_participants', 'system'), user: 'all' },
+  { ...none('public.messenger_messages', 'system'), user: 'all' },
+  { ...none('public.messenger_attachments', 'system'), user: 'all' },
+  { ...none('public.messenger_reactions', 'system'), user: 'all' },
+  { ...none('public.messenger_favourites', 'system'), user: 'all' },
+  // "Online" (0335): the messenger stream's heartbeat, read on the system pool.
+  none('public.login_presence', 'system'),
   // A public link (A3a, plan 5.2): edit of its item, an app's manage;
   // closing it (revoked_at, or the row deleted) also an Admin user with the
   // users area. Its view counter is the brain's (a named read-path write).
@@ -1496,6 +1508,13 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
 export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.presents', // 0332
   'public.present_revisions', // 0332
+  'public.messenger_conversations', // 0335
+  'public.messenger_participants', // 0335
+  'public.messenger_messages', // 0335
+  'public.messenger_attachments', // 0335
+  'public.messenger_reactions', // 0335
+  'public.messenger_favourites', // 0335
+  'public.login_presence', // 0335
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

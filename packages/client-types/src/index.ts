@@ -106,6 +106,32 @@ export type {
 } from './dto/member-invites';
 export type { MemberMcpClient, MemberMcpConnector, MemberMcpView } from './dto/member-mcp';
 export type {
+  MessengerAuthorKind,
+  MessengerConversation,
+  MessengerConversationKind,
+  MessengerCreateRequest,
+  MessengerCreateResponse,
+  MessengerDirectoryEntry,
+  MessengerDirectoryResponse,
+  MessengerFavouriteKind,
+  MessengerListResponse,
+  MessengerListRow,
+  MessengerMention,
+  MessengerMessage,
+  MessengerMessageStatus,
+  MessengerMessagesResponse,
+  MessengerParticipant,
+  MessengerParticipantKind,
+  MessengerPreview,
+  MessengerReaction,
+  MessengerRole,
+  MessengerRowKind,
+  MessengerSendRequest,
+  MessengerSendResponse,
+  MessengerStreamEvent,
+  MessengerUnreadResponse,
+} from './dto/messenger';
+export type {
   BulkDeleteCascadeResponse,
   BulkDeleteFilesResponse,
   BulkDeleteRefusal,

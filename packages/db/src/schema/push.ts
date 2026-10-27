@@ -117,6 +117,11 @@ export const pushLoginPrefs = pgTable('push_login_prefs', {
    *  nothing sends a comment push. Neither read nor offered; the column
    *  stays so a rollback finds it. */
   comments: boolean('comments').notNull().default(true),
+  /** Messenger pushes (0335, sent from Messenger Phase 5): every message,
+   *  mentions only, or none. */
+  messages: text('messages').$type<'all' | 'mentions' | 'off'>().notNull().default('all'),
+  /** Show the author and the first 100 characters; off: the chat title only. */
+  messagePreview: boolean('message_preview').notNull().default(true),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

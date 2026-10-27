@@ -103,13 +103,16 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
   if (!grant) return null;
   if (!(await actorMayConnect(grant.actorId, grant.sessionEpoch))) return null;
   if (grant.sessionEpoch === null) {
-    // An admin's grant: the owner's connector, as before 0227.
+    // An admin's grant: the owner's connector, as before 0227. Its OAuth
+    // client too: a messenger message names the credential it came through,
+    // and messenger_wait skips the caller's own (Messenger V1, plan 20.3).
     return {
       role: 'admin',
       anchorId: grant.ownerId,
       loginId: grant.actorId,
       via: 'oauth',
       write: !grant.readOnly,
+      oauthClientId: grant.clientId,
     };
   }
   const row = await loadLogin(grant.actorId);
