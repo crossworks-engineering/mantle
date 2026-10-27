@@ -268,7 +268,7 @@ export const ENV_NUMBERS = {
     default: null,
     atLeast: 1,
     int: 'floor',
-    doc: 'a job slot held longer turns the parser /healthz to 503, ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire; tests only)',
+    doc: 'a job slot held longer turns the parser /healthz to 503 (autoheal restarts it), ms (default parserSlotHoldMaxMs, @mantle/files/parser-wire)',
   },
   PARSER_MAX_UPLOAD_MB: {
     default: 512,

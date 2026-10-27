@@ -153,7 +153,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   `messenger_mark_read` and `messenger_directory`. A message records the
   credential it came through, and `messenger_wait` skips the caller's own,
   so two Claude clients on one login can wait for each other. No agent in a
-  group, no attachment bytes and no phone push yet: those are Phases 3 to 5. An Admin user's OAuth MCP connection now carries its client id.
+  group, no attachment bytes and no phone push yet: those are Phases 3 to
+  5. An Admin user's OAuth MCP connection now carries its client id.
 - **Fix round 2 (two outside reviews):** one per-login budget in the store
   (60 sends, 120 other writes a minute), so an MCP client and the routes
   share it; migration 0336: the workspace role reads no conversation tail

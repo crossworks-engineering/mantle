@@ -512,11 +512,10 @@ services:
   #
   # The safety guarantee is this container, not code in it:
   #   - one job at a time, with the whole mem_limit and no swap beyond it
-  #     (memswap_limit = mem_limit): a
-  #     document that blows up is OOM-killed by the kernel inside this
-  #     limit (the job, usually; the service if need be, and `restart`
-  #     brings it back), and a healthy file never shares the memory with
-  #     it. The brain reads that as `crashed`: retried once, terminal the
+  #     (memswap_limit = mem_limit): a document that blows up is OOM-killed
+  #     by the kernel inside this limit (the job, usually; the service if
+  #     need be, and `restart` brings it back), and a healthy file never
+  #     shares the memory with it. The brain reads that as `crashed`: retried once, terminal the
   #     second time for the same bytes (counted on the node).
   #   - cpus 1 by default, so every box starts it (a 1-vCPU box too).
   #   - a read-only root filesystem: the job user can write only to the

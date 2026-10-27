@@ -207,6 +207,21 @@ async function withTransferDeadline<T>(
   }
 }
 
+/** The write stream drained, or failed (its error is kept by the caller).
+ *  Both listeners go once either fires: a large body waits here many
+ *  times, and a listener left each time piles up on the stream. */
+function drained(file: NodeJS.WritableStream): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      file.off('drain', done);
+      file.off('error', done);
+      resolve();
+    };
+    file.once('drain', done);
+    file.once('error', done);
+  });
+}
+
 /** Stream the body to the job's directory: the options, then the file,
  *  under the byte cap. */
 async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number> {
@@ -245,7 +260,7 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
       // dropped (never written), and the refusal follows the whole body
       // (see drainBody).
       if (size > MAX_BODY_BYTES || writeError) continue;
-      if (!file.write(rest)) await new Promise((r) => file.once('drain', r).once('error', r));
+      if (!file.write(rest)) await drained(file);
     }
   } finally {
     await new Promise<void>((resolve) => {
