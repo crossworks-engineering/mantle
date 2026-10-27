@@ -3,13 +3,15 @@
  *
  * The render runs in the parser (POST /pdf/rasterize). What the pass does
  * with each answer:
- *  - the parser busy, or a first refusal (timeout, crash): recorded as
- *    `rasterizeError`, the non-terminal pdf_unreadable skip the drain
- *    retries. The job does not fail.
+ *  - the parser busy or unavailable, or a first refusal (timeout, crash):
+ *    rethrown, so the extract job fails and pg-boss retries it (the count
+ *    of a refusal is on the node, so the retry's second one is terminal);
  *  - `too_large`: a verdict on the document, recorded as `tooLarge`
- *    (pdf_too_large).
+ *    (pdf_too_large);
  *  - the second refusal of the same bytes (`terminal`): rethrown, so the
- *    caller records document_unreadable.
+ *    caller records document_unreadable;
+ *  - a reader's `failed`: recorded as `rasterizeError`, the non-terminal
+ *    pdf_unreadable skip.
  * And a retry does not pay for the native read again when it already found
  * nothing in these bytes.
  *
@@ -84,17 +86,14 @@ beforeEach(() => {
 });
 
 describe('ocrIngestPdfNode: the parser render', () => {
-  it('records the parser busy as rasterizeError, not a failed job', async () => {
-    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
-    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
-    expect(r).toMatchObject({ text: null, rasterizeError: 'parser busy' });
-  });
-
-  it('records a first timeout as rasterizeError (the drain retries it)', async () => {
-    h.parserRasterizePdf.mockRejectedValue(parserError('timeout'));
-    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
-    expect(r).toMatchObject({ text: null, rasterizeError: 'parser timeout' });
-  });
+  for (const code of ['busy', 'unavailable', 'timeout', 'crashed'] as const) {
+    it(`rethrows ${code} (retryable): the job fails and pg-boss retries it`, async () => {
+      h.parserRasterizePdf.mockRejectedValue(parserError(code));
+      const err = await ocrIngestPdfNode(pdfNode(), 'o1').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ParserError);
+      expect(err).toMatchObject({ code, retryable: true, terminal: false });
+    });
+  }
 
   it('rethrows the second refusal of the same bytes (terminal)', async () => {
     h.parserRasterizePdf.mockRejectedValue(parserError('timeout', true));
@@ -109,8 +108,10 @@ describe('ocrIngestPdfNode: the parser render', () => {
     expect(r).toMatchObject({ text: null, rasterizeError: null, tooLarge: 'parser too_large' });
   });
 
-  it('records any other render failure as rasterizeError (pdf_unreadable)', async () => {
-    h.parserRasterizePdf.mockRejectedValue(parserError('failed'));
+  it("records a reader's refusal as rasterizeError (pdf_unreadable)", async () => {
+    h.parserRasterizePdf.mockRejectedValue(
+      new ParserError('failed', 'parser failed', { retryable: false, terminal: false }),
+    );
     const r = await ocrIngestPdfNode(pdfNode(), 'o1');
     expect(r).toMatchObject({ text: null, rasterizeError: 'parser failed' });
   });
@@ -123,8 +124,10 @@ describe('ocrIngestPdfNode: the native read is paid for once', () => {
     h.runDocumentWorker.mockResolvedValue({ ran: true, text: '', note: null, model: 'm' });
     h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
 
-    await ocrIngestPdfNode(pdfNode(), 'o1');
-    await ocrIngestPdfNode(pdfNode(), 'o1');
+    // The first run fails on the busy parser (the job is retried); the
+    // retry goes straight to the render.
+    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
+    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
 
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
     expect(h.parserRasterizePdf).toHaveBeenCalledTimes(2);
@@ -135,8 +138,8 @@ describe('ocrIngestPdfNode: the native read is paid for once', () => {
     h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
     h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
 
-    await ocrIngestPdfNode(pdfNode(), 'o1');
-    await ocrIngestPdfNode(pdfNode(), 'o1');
+    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
+    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
 
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(2);
   });

@@ -97,6 +97,9 @@ export const BYTE_DERIVED_DATA_KEYS = [
   'extract_incomplete',
   'extract_skipped',
   'indexing_applied',
+  // The parser failure count on these bytes (keyed by their sha256, so a
+  // stale one never matches; dropped with the rest all the same).
+  'parser_failures',
 ] as const;
 
 /**
