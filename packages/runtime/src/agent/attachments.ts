@@ -13,8 +13,8 @@
  *     persists; durable metadata is the extractor's job.
  *
  * This module composes @mantle/db (worker resolution), @mantle/api-keys,
- * @mantle/voice (adapters + the shared prompt), and @mantle/files (parsers +
- * HEIC transcode). None of those depend back on agent-runtime, so there's no
+ * @mantle/voice (adapters + the shared prompt), and @mantle/files (the parser
+ * client: documents, PDF pages and HEIC all read in the parser service). None of those depend back on agent-runtime, so there's no
  * cycle.
  */
 
@@ -24,7 +24,8 @@ import {
   extOf,
   isVisionImage,
   parseDocumentBytes,
-  PDF_TURN_WAIT_MS,
+  isParserError,
+  parserRasterizePdf,
   transcodeImageForVision,
   INGESTABLE_EXTS,
   parserRouteForExt,
@@ -33,16 +34,19 @@ import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice'
 import { step } from '@mantle/tracing';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
 
+/** The parser codes that are about the document, not the reader's load. */
+const PARSER_COUNTED = new Set(['too_large', 'timeout', 'crashed']);
+
 /** Max chars of parsed document text folded into a responder prompt. The full
  *  text is persisted + indexed by the extractor; the turn only needs a slice. */
 export const DOC_TEXT_MAX = 24_000;
 
-/** Live-turn ceiling for DWF containers. DWF is the one INGESTABLE format
- *  whose whole parse is in-process CPU (pure-JS inflate + regex scans over
- *  every sheet, no Tika hop, no streaming), so a large container parsed
- *  inline would stall the event loop for every concurrent request. Above
- *  this size the turn answers with a stored-and-indexing note instead; the
- *  durable extractor parses the same bytes in the background either way. */
+/** Live-turn ceiling for DWF containers. A DWF's whole parse is CPU
+ *  (inflate + scans over every sheet, in the parser service), so a large
+ *  container read inline would hold the turn and a parser job slot for
+ *  long. Above this size the turn answers with a stored-and-indexing note
+ *  instead; the durable extractor reads the same bytes in the background
+ *  either way. */
 export const DWF_INLINE_PARSE_MAX = 8 * 1024 * 1024;
 
 export type VisionResult = {
@@ -244,16 +248,10 @@ async function ocrPdfForTurn(opts: {
 }): Promise<{ text: string; note: string | null } | null> {
   const pages = await (async () => {
     try {
-      const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
       return await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: TURN_OCR_PAGES } },
         async (h) => {
-          // A live turn waits less for the decode slot than a background job:
-          // past it, the reply goes ahead without the scan's text.
-          const r = await rasterizePdfToPngs(opts.bytes, {
-            maxPages: TURN_OCR_PAGES,
-            waitMs: PDF_TURN_WAIT_MS,
-          });
+          const r = await parserRasterizePdf(opts.bytes, { maxPages: TURN_OCR_PAGES });
           h.setMeta({ pages: r.length });
           return r;
         },
@@ -369,8 +367,8 @@ export async function extractAttachmentForTurn(opts: {
       };
     }
 
-    // DWG/DXF parsing is a media-sidecar round trip (convert/read + parse +
-    // render) — never inline work for a live turn, whatever the file size.
+    // DWG/DXF parsing is a CAD-tier round trip in the parser (convert/read +
+    // parse + render) — never inline work for a live turn, whatever the size.
     // The durable extractor pays it once in the background.
     if (ext === 'dwg' || ext === 'dxf') {
       return {
@@ -426,10 +424,9 @@ export async function extractAttachmentForTurn(opts: {
 
     try {
       // Trace the parse for the live path too, mirroring the durable extractor
-      // (server/api/src/extractor.ts readNodeBodyRaw). Makes Tika vs in-process
-      // parser tiers visible in /traces on conversational attachments — same
-      // diagnostic value as the durable path: parser=tika+chars_out=0 means
-      // "Tika is down" vs "doc really has no text" without spelunking logs.
+      // (server/api/src/extractor.ts readNodeBodyRaw): which reader ran and
+      // what came out, and a parser failure's typed code, visible in /traces
+      // on conversational attachments.
       const route = parserRouteForExt(ext);
       const raw = (
         await step(
@@ -475,7 +472,10 @@ export async function extractAttachmentForTurn(opts: {
       return {
         kind: 'file',
         text: '',
-        note: `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?): ${errorMessage(err)}`,
+        note:
+          isParserError(err) && err.retryable && !PARSER_COUNTED.has(err.code)
+            ? `${opts.filename} could not be read just now (the document reader is busy or restarting); it is stored and will be indexed in the background.`
+            : `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, too large, or corrupt?): ${errorMessage(err)}`,
       };
     }
   }

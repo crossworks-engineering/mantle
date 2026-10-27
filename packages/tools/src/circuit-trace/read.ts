@@ -372,7 +372,7 @@ export async function readSheet(
   const ys = segments.flatMap((g) => [g.y1, g.y2]).filter(Number.isFinite);
   let near = nearFromDescription(t.description);
   if (!near) {
-    // The sidecar's own rule (dwg_bones.extent_diagonal): the box of the
+    // The CAD tier's own rule (dwg_bones.extent_diagonal): the box of the
     // middle 99% of every segment end point, so a stray entity far off
     // does not loosen it.
     const counted = await q(`SELECT count(*) FROM ${ident(segTab.viewName)}`);

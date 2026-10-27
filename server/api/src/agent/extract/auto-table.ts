@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf } from '@mantle/files';
+import { extOf, isParserError, parserGrid } from '@mantle/files';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest, step } from '@mantle/tracing';
 import { createTable, tableDocFromGrid } from '@mantle/content';
@@ -62,7 +62,7 @@ export async function maybeAutoTableSpreadsheet(
     const head = await loadFileHead(node);
     // An unreadable head is not evidence — fall through and let the full path
     // decide, exactly as it did before.
-    if (head && !(await import('@mantle/files/mspdi')).mspdiRootPresent(head)) return;
+    if (head && !(await import('@mantle/files/mspdi-sniff')).mspdiRootPresent(head)) return;
   }
 
   // Dedupe: if a table already references this file, do nothing (re-ingest safe).
@@ -91,10 +91,12 @@ export async function maybeAutoTableSpreadsheet(
     if (fileExt === 'xml') {
       // Sniffed again, not redundantly: the early check is skipped when the head
       // could not be read, so this is the one that runs for those. It costs a
-      // regex over 8 KB of a buffer already in hand.
-      const { parseMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
-      const plan = sniffMspdi(loaded.bytes) ? parseMspdi(loaded.bytes) : null;
-      sheets = plan?.sheets ?? [];
+      // regex over 8 KB of a buffer already in hand. The plan itself is read
+      // by the parser service.
+      const { sniffMspdi } = await import('@mantle/files/mspdi-sniff');
+      const grid = sniffMspdi(loaded.bytes) ? await parserGrid(loaded.bytes, 'xml') : null;
+      const plan = grid?.plan ? { meta: grid.plan } : null;
+      sheets = grid?.sheets ?? [];
       if (plan) {
         // Only the ROLL-UP sentence is conditional. Gating the whole
         // description on summaryCount left a flat plan — one with no summary
@@ -113,11 +115,11 @@ export async function maybeAutoTableSpreadsheet(
           ` Rows are in plan order.`;
       }
     } else if (fileExt === 'dwf') {
-      // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs)
-      // from @mantle/files/dwf — on circuitization sets the Layers tab IS the
-      // circuit registry. Content-gated on the DWF magic like parse.ts.
-      const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/dwf');
-      sheets = sniffDwf(loaded.bytes) ? await parseDwfToGrids(loaded.bytes) : [];
+      // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
+      // read by the parser service (packages/files/src/dwf.ts) — on
+      // circuitization sets the Layers tab IS the circuit registry. The
+      // parser gates it on the DWF magic.
+      sheets = (await parserGrid(loaded.bytes, 'dwf')).sheets;
       if (sheets.length > 0) {
         description =
           `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
@@ -128,7 +130,7 @@ export async function maybeAutoTableSpreadsheet(
     } else if (fileExt === 'dwg' || fileExt === 'dxf') {
       // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks /
       // Counts, and the bones: Segments / Nodes / Inserts / Circuits) from
-      // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
+      // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass shares the one
       // memoised exchange with the text digest and the image pass. The
       // description says what each tab holds and what it does not.
       const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
@@ -141,11 +143,21 @@ export async function maybeAutoTableSpreadsheet(
     }
   } catch (err) {
     // DWG/DXF: the workbook, the text digest and the image pass all hang off
-    // the SAME sidecar exchange. A transient sidecar failure here used to
-    // vanish (`return`), the text pass then succeeded against a recovered
-    // sidecar, and the node completed WITHOUT its registry table, permanently
-    // and silently. Rethrow (flagged for the call site) so the whole extract
-    // errors and the pg-boss retry heals all passes together.
+    // the SAME parser exchange. A transient failure here used to vanish
+    // (`return`), the text pass then succeeded against a recovered service,
+    // and the node completed WITHOUT its registry table, permanently and
+    // silently. Rethrow (flagged for the call site) so the whole extract
+    // errors and the pg-boss retry heals all passes together. A terminal
+    // parser refusal (the same bytes refused twice) is not retried: the text
+    // pass records it as document_unreadable.
+    if (isParserError(err) && err.terminal) return;
+    // The parser busy or restarting, or a first refusal of these bytes: the
+    // whole extract is retried (gates.ts), any format.
+    if (isParserError(err) && err.retryable) throw err;
+    // The reader's own verdict (`failed`: no DXF came out of the drawing, a
+    // workbook that is not one): the same every time, so no retry; the text
+    // pass records it.
+    if (isParserError(err)) return;
     if (fileExt === 'dwg' || fileExt === 'dxf') {
       const e = err instanceof Error ? err : new Error(String(err));
       throw Object.assign(e, { fatalToExtract: true });

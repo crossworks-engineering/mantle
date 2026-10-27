@@ -86,7 +86,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
   return {
     ...actual,
-    parseTikaBytes: vi.fn(),
+    parserText: vi.fn(),
     createDocCollection: vi.fn(),
     upsertDocFromDisk: vi.fn(),
   };
@@ -132,7 +132,7 @@ vi.mock('firecrawl', () => ({
 
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import { getApiKey, getApiKeyById, resolveProviderKey } from '@mantle/api-keys';
-import { createDocCollection, parseTikaBytes, upsertDocFromDisk } from '@mantle/files';
+import { createDocCollection, parserText, upsertDocFromDisk } from '@mantle/files';
 import { captureLlmUsage, recordIngest } from '@mantle/tracing';
 import { paramsOf } from './test-support';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
@@ -190,7 +190,7 @@ beforeEach(() => {
     async (owner, service, keyId) =>
       (keyId ? await getApiKeyById(keyId) : null) ?? (await getApiKey(owner, service)),
   );
-  vi.mocked(parseTikaBytes).mockResolvedValue('');
+  vi.mocked(parserText).mockResolvedValue('');
   h.send.mockResolvedValue({
     choices: [{ message: { content: 'The answer' } }],
     citations: ['https://a.example/source'],
@@ -265,19 +265,22 @@ describe('web_fetch', () => {
       offset: 0,
       truncated: false,
     });
-    expect(parseTikaBytes).not.toHaveBeenCalled();
+    expect(parserText).not.toHaveBeenCalled();
   });
 
-  it('sends html through Tika and falls back to the crude stripper when Tika is empty', async () => {
+  it('sends html through the parser service, never a local stripper', async () => {
     const html = '<html><body><script>x()</script><p>Hi &amp; bye</p></body></html>';
     // A fresh Response per call: a body can only be read once.
     fetchSpy.mockImplementation(async () => textResponse(html, 'text/html; charset=utf-8'));
+    vi.mocked(parserText).mockResolvedValue('Hi & bye');
     const out = outputOf(await webFetch.handler({ url: PUBLIC }, ctx));
-    expect(parseTikaBytes).toHaveBeenCalledWith(expect.any(Buffer), { mimeType: 'text/html' });
+    expect(parserText).toHaveBeenCalledWith(expect.any(Buffer), 'html');
     expect(out.text).toBe('Hi & bye');
 
-    vi.mocked(parseTikaBytes).mockResolvedValue('Tika text');
-    expect(outputOf(await webFetch.handler({ url: PUBLIC }, ctx)).text).toBe('Tika text');
+    // The parser down: a tool error, not the raw markup.
+    vi.mocked(parserText).mockRejectedValue(new Error('the parser service could not be reached'));
+    const failed = await webFetch.handler({ url: PUBLIC }, ctx);
+    expect(failed.ok).toBe(false);
   });
 
   it('pages with offset and max_chars (floored at 1000) and flags truncation', async () => {

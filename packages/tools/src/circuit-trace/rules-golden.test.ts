@@ -1,8 +1,8 @@
 /**
  * The circuit rules circuit_trace applies (walk.ts) against the golden
- * cases the DWG sidecar is held to as well
+ * cases the parser's CAD tier is held to as well
  * (packages/files/src/dwg-circuit-rules.golden.json; the Python half is
- * infra/media-sidecar/tests/test_rules_golden.py). The two sides used to
+ * server/parser/cad/tests/test_rules_golden.py). The two sides used to
  * copy the rules by hand; this file and its Python twin are what keeps them
  * one rule.
  */

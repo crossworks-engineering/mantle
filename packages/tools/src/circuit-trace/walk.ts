@@ -1,7 +1,7 @@
 /**
  * circuit_trace, the pure part: one circuit's geometry from the DWG bones
  * tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits; phase 1, see
- * infra/media-sidecar/dwg_bones.py) walked into ordered runs, sheet links,
+ * server/parser/cad/dwg_bones.py) walked into ordered runs, sheet links,
  * a `pid` template input and, when an outside register is given, the
  * differences both ways.
  *
@@ -244,7 +244,7 @@ export type TraceResult = {
 
 /* ----------------------------------------------------------------- rules */
 
-/** The rules the sidecar's circuit pass (dwg_bones.py) uses too; both sides
+/** The rules the CAD tier's circuit pass (dwg_bones.py) uses too; both sides
  *  are held to packages/files/src/dwg-circuit-rules.golden.json. */
 const CIRCUIT_LAYER = /^\s*circuit\s+(.+?)\s*$/i;
 /** A circuit name (dwg_bones._CIRCUIT_NAME): letters, digits and . _ / -

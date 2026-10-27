@@ -18,7 +18,11 @@
  *  - The two SIDE passes (auto-table, embedded images) run mid-chain, after
  *    the hard skips and before the type allowlist, because a spreadsheet
  *    should still reach /tables when `file` is not in target_types. They are
- *    best-effort and deliberately not gates.
+ *    best-effort and deliberately not gates, with one exception: a parser
+ *    read that is retryable (the parser busy or restarting, or a first
+ *    refusal of these bytes, packages/files/src/parser-client.ts) fails the
+ *    whole job, before any model call, so pg-boss retries it. A terminal
+ *    refusal is logged like any failure; the text pass then records it.
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
@@ -60,7 +64,7 @@ import {
 import { digestEmbedText, embed } from '@mantle/embeddings';
 import {
   effectiveBrainDepth,
-  isPdfBusyError,
+  isParserError,
   resolveEffectiveIndexing,
   metadataSpineText,
 } from '@mantle/files';
@@ -73,6 +77,11 @@ import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
 import { writeRetrievalChunks } from './index-writes';
+
+/** A parser read worth retrying: the job fails so pg-boss tries again. */
+function retryableRead(err: unknown): boolean {
+  return isParserError(err) && err.retryable;
+}
 
 /**
  * The cost guard's index (workspaces plan 5.3): the body as the typed
@@ -502,10 +511,11 @@ export async function admitForExtraction(
   // 'file' isn't in target_types). Best-effort: never let it block or fail the
   // text-extraction pass. Deduped + published inside the helper.
   await maybeAutoTableSpreadsheet(node, ownerId).catch((err) => {
-    // Flagged fatal (DWG sidecar failure): every pass depends on that same
-    // exchange, so let the whole extract fail and retry rather than complete
-    // a node that silently lost its registry workbook.
-    if ((err as { fatalToExtract?: boolean })?.fatalToExtract) throw err;
+    // Flagged fatal (a DWG exchange failure): every pass depends on that
+    // same exchange, so let the whole extract fail and retry rather than
+    // complete a node that silently lost its registry workbook. A retryable
+    // parser read is retried the same way.
+    if ((err as { fatalToExtract?: boolean })?.fatalToExtract || retryableRead(err)) throw err;
     console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
   });
 
@@ -516,19 +526,13 @@ export async function admitForExtraction(
   const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
 
   // Pull embedded diagrams/screenshots out into their own image files, on the
-  // same terms: independent of the text allowlist, best-effort, never fatal.
-  // Read AFTER params so the per-document image cap is configurable.
-  // One exception: a `PdfBusyError` (another PDF held the decode slot past
-  // the wait) says nothing about this document, so the extract fails and is
-  // retried rather than completing without its pictures. This pass runs
-  // before the body load, so the retry repeats no model call.
+  // same terms: independent of the text allowlist, best-effort, never fatal
+  // but for a retryable parser read. Read AFTER params so the per-document
+  // image cap is configurable.
   await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
     (err) => {
-      if (isPdfBusyError(err)) throw err;
-      console.error(
-        '[extractor] embedded images failed:',
-        err instanceof Error ? err.message : err,
-      );
+      if (retryableRead(err)) throw err;
+      console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err);
     },
   );
 

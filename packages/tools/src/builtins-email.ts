@@ -40,7 +40,7 @@ import {
   recordContactSent,
   normalizeEmail,
 } from '@mantle/content';
-import { readFileById } from '@mantle/files';
+import { parserText, readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
 import { linkError, openLink } from './builtins-share';
 import { str, strOptTrim as strOpt } from './coerce';
@@ -566,29 +566,6 @@ const email_list: BuiltinToolDef = {
   },
 };
 
-/** Crude HTML→text for the body_html FALLBACK path only (body_text absent).
- *  Drops style/script subtrees, turns breaks/blocks into newlines, strips the
- *  rest of the tags, and decodes the handful of entities that matter in mail.
- *  Not a sanitizer — output goes to an LLM as plain text, never to a browser.
- *  Exported for unit tests only. */
-export function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<(style|script|head)[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0?39;|&apos;/gi, "'")
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\s*\n\s*/g, '\n')
-    .trim();
-}
-
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
   usageTier: 3,
@@ -670,7 +647,20 @@ const email_get: BuiltinToolDef = {
         .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };
       const text = row.bodyText?.trim();
-      const body = text || (row.bodyHtml ? htmlToPlainText(row.bodyHtml) : '');
+      // No text part: the HTML part's text, taken out by the parser service
+      // (the linear markup reader). Mail from outside is untrusted markup, so
+      // it is never stripped here; a parser that cannot read it now leaves
+      // the body empty and says so.
+      let htmlBody = '';
+      let htmlFailed = false;
+      if (!text && row.bodyHtml) {
+        try {
+          htmlBody = (await parserText(Buffer.from(row.bodyHtml, 'utf8'), 'html')).trim();
+        } catch {
+          htmlFailed = true;
+        }
+      }
+      const body = text || htmlBody;
       const { bodyText: _t, bodyHtml: _h, ...head } = row;
       ctx.step?.setOutput({ id: row.id, subject: row.subject });
       return {
@@ -678,7 +668,15 @@ const email_get: BuiltinToolDef = {
         output: {
           ...head,
           body,
-          ...(text ? {} : { body_source: row.bodyHtml ? 'html_converted' : 'empty' }),
+          ...(text
+            ? {}
+            : {
+                body_source: !row.bodyHtml
+                  ? 'empty'
+                  : htmlFailed
+                    ? 'html_unreadable_now'
+                    : 'html_converted',
+              }),
         },
       };
     } catch (err) {
