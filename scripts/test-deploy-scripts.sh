@@ -2100,9 +2100,26 @@ git -C "$RG" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false 
 git -C "$RG" tag v0.400.22
 roll_box pcore
 printf 'COMPOSE_FILE=%s/docker-compose.yml:%s/docker-compose.core.yml\n' "$RS/stack" "$RS/stack" > "$RS/stack/.env"
+printf 'services:\n  worker_email: {profiles: [old]}\n' > "$RS/stack/docker-compose.core.yml"
+cp "$RS/stack/docker-compose.core.yml" "$RS/stack/docker-compose.core.yml.release"
 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.22
-check "compose check: a core box loads the release's core file too" \
+check "compose check: a core box with a pristine core file loads the release's core file too" \
   sh -c "test '$rc' = 0 && grep -q 'mantle-roll-compose\\.[A-Za-z0-9]*/docker-compose.core.yml config -q' '$RS/calls' && test -z \"\$(ls -A '$RS/tmp')\""
+
+roll_box pcore-modified
+printf 'COMPOSE_FILE=%s/docker-compose.yml:%s/docker-compose.core.yml\n' "$RS/stack" "$RS/stack" > "$RS/stack/.env"
+printf 'services:\n  worker_email: {profiles: [old]}\n' > "$RS/stack/docker-compose.core.yml.release"
+printf 'services:\n  tika:\n    mem_limit: 1g\n' > "$RS/stack/docker-compose.core.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.22
+check "compose check: a core box whose core file has local edits naming tika: its own core file is loaded, refused before anything" \
+  sh -c "test '$rc' = 1 && grep -qF -- \"-f $RS/stack/docker-compose.core.yml config -q\" '$RS/calls' && grep -q 'service \"tika\" has neither an image' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+
+roll_box poverride-composefile
+printf 'COMPOSE_FILE=docker-compose.yml\n' > "$RS/stack/.env"
+printf 'services:\n  tika:\n    mem_limit: 1g\n' > "$RS/stack/docker-compose.override.yml"
+ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
+check "compose check: .env sets COMPOSE_FILE, so compose ignores the override and the check leaves it out (rolls)" \
+  sh -c "test '$rc' = 0 && grep -q '^docker compose .* config -q\$' '$RS/calls' && ! grep -q '^docker compose .*docker-compose.override.yml' '$RS/calls'"
 
 roll_box pmanifest
 FAKE_NO_MANIFEST=mantle-parser ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21

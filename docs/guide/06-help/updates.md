@@ -35,6 +35,6 @@ container, which pulls the new images and restarts the stack, then reports
 back. The app never gets control of the container runtime. Database
 migrations run automatically before the app starts. If the screen says the
 updater is not available, set `MANTLE_STACK_DIR` in `.env`, or update from the
-stack directory with `docker compose pull && docker compose up -d --wait`.
+stack directory with `docker compose pull && docker compose up -d --wait --remove-orphans`.
 After the update, **Last update log** shows what happened. More detail:
 [Update MantleOS](../05-admin/01-update.md).

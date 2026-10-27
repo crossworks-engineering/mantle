@@ -359,7 +359,7 @@ MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v2 scripts/docker-build-push.sh
 # VPS
 #   bump MANTLE_IMAGE_TAG=v2 in .env, then:
 docker compose pull
-docker compose up -d --wait        # migrate runs first (gated); then app rolls
+docker compose up -d --wait --remove-orphans   # migrate runs first (gated); then app rolls
 
 #   …AND the client stack. Since the v0.200 split a box runs TWO compose
 #   projects off one .env: the server project (this file) and `mantle-client`

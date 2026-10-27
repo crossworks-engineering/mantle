@@ -646,15 +646,24 @@ EOF
       cc_clean
       die "could not copy the release's docker-compose.yml to the box for the compose check"
     fi
+    # A core box's core file: the release's only when the box's is pristine
+    # (equal to its baseline, the updater's own rule); one with local edits
+    # stays, so its own is loaded.
     if rsh "grep -q '^COMPOSE_FILE=.*docker-compose.core.yml' '$STACK/.env'" 2> /dev/null; then
-      if ! release_file "$TAG" docker-compose.core.yml | rsh "cat > '$CC_TMP/docker-compose.core.yml'"; then
-        cc_clean
-        die "could not copy the release's docker-compose.core.yml to the box for the compose check"
+      if rsh "cd '$STACK' && [ -f docker-compose.core.yml.release ] && cmp -s docker-compose.core.yml docker-compose.core.yml.release" 2> /dev/null; then
+        if ! release_file "$TAG" docker-compose.core.yml | rsh "cat > '$CC_TMP/docker-compose.core.yml'"; then
+          cc_clean
+          die "could not copy the release's docker-compose.core.yml to the box for the compose check"
+        fi
+        CC_FILES="$CC_FILES -f '$CC_TMP/docker-compose.core.yml'"
+      else
+        CC_FILES="$CC_FILES -f '$STACK/docker-compose.core.yml'"
       fi
-      CC_FILES="$CC_FILES -f '$CC_TMP/docker-compose.core.yml'"
     fi
+    # The override only when .env sets no COMPOSE_FILE: compose does not load
+    # it on its own then.
     CC_RC=0
-    CC_OUT=$(rsh "cd '$STACK' && if [ -f docker-compose.override.yml ]; then o='-f docker-compose.override.yml'; else o=''; fi && docker compose --project-directory '$STACK' --env-file .env $CC_FILES \$o config -q 2>&1") || CC_RC=$?
+    CC_OUT=$(rsh "cd '$STACK' && if [ -f docker-compose.override.yml ] && ! grep -q '^COMPOSE_FILE=' .env 2>/dev/null; then o='-f docker-compose.override.yml'; else o=''; fi && docker compose --project-directory '$STACK' --env-file .env $CC_FILES \$o config -q 2>&1") || CC_RC=$?
     cc_clean
     if [ "$CC_RC" -ne 0 ]; then
       printf '%s\n' "$CC_OUT" | sed 's/^/    /' >&2

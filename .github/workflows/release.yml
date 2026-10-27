@@ -345,6 +345,14 @@ jobs:
               .then((r) => r.json())
               .then((j) => { console.log(JSON.stringify(j)); process.exit(j.ok && /hello parser/.test(j.text) ? 0 : 1); }, () => process.exit(1));
           " || { docker logs parser-probe; exit 1; }
+          # The job must leave the service up: still running, never
+          # restarted (the probe has no restart policy, so an exit shows),
+          # and answering /healthz.
+          sleep 3
+          state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' parser-probe)
+          [ "$state" = "true 0" ] || { echo "parser after the job: running/restarts = $state"; docker logs parser-probe; exit 1; }
+          docker exec parser-probe node -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))" \
+            || { echo "parser after the job: /healthz is not 200"; docker logs parser-probe; exit 1; }
           docker rm -f parser-probe
 
   release:
