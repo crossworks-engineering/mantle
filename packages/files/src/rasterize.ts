@@ -7,11 +7,17 @@
  * take. Pure Node: pdfjs draws onto an `@napi-rs/canvas` canvas (prebuilt
  * native binaries), no system packages required.
  *
- * Bounded on both axes that can blow the process up: the document is opened
- * through `openPdf`, so pdfjs drops an embedded image over
- * `PDF_MAX_IMAGE_PIXELS` instead of decoding it, and each page's canvas is
- * held to `MAX_RENDER_PIXELS` by lowering that page's scale. One page renders
- * at a time, so one canvas is alive at a time.
+ * Bounded on every axis that can blow the process up: the document is opened
+ * through `withPdf`, so pdfjs drops an embedded image that declares more than
+ * `PDF_MAX_IMAGE_PIXELS` instead of decoding it and only one PDF decodes in
+ * the process at a time, and each page's canvas is held to
+ * `MAX_RENDER_PIXELS` by lowering that page's scale. One page renders at a
+ * time, so one canvas is alive at a time.
+ *
+ * A page whose only content was such an image is not rendered: with the image
+ * dropped it would come out blank and be read as a blank scan. It counts as
+ * too large, like a page past the canvas cap. (A page with other content
+ * beside the dropped image still renders, without it.)
  *
  * Kept as a separate entry point (`@mantle/files/rasterize`) with the heavy
  * deps behind dynamic imports, so they load only when a textless PDF actually
@@ -20,7 +26,15 @@
 
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { openPdf } from './pdf-open';
+import {
+  isPdfLimitError,
+  PDF_JOB_WAIT_MS,
+  PDF_MAX_IMAGE_PIXELS,
+  PdfLimitError,
+  withPdf,
+} from './pdf-open';
+
+export { isPdfLimitError, PdfLimitError };
 
 /** Default page cap: bounds rasterization memory + per-page vision spend.
  *  A passport is one page; a long scanned doc is capped here. */
@@ -43,21 +57,6 @@ export type RasterPage = {
   /** PNG-encoded bytes of the rendered page. */
   png: Buffer;
 };
-
-/**
- * Every page asked for was too large to render. A verdict on the document,
- * not a failure of the machinery: rendering it again gives the same answer,
- * so the extractor records it as a terminal skip (`pdf_too_large`) instead of
- * retrying. Matched by `name` (see `isPdfLimitError`) so a caller that loaded
- * this module through another import path still recognises it.
- */
-export class PdfLimitError extends Error {
-  override readonly name = 'PdfLimitError';
-}
-
-export function isPdfLimitError(err: unknown): err is PdfLimitError {
-  return err instanceof Error && err.name === 'PdfLimitError';
-}
 
 /**
  * The scale to render a page at, given its size at scale 1 (PDF points times
@@ -86,32 +85,140 @@ function pdfjsAssetUrls(): { cMapUrl: string; standardFontDataUrl: string } {
   };
 }
 
+/** The `getDocument` settings a render uses: those of the previous renderer
+ *  (pdf-to-png-converter), so a normal page renders to the same pixels. A
+ *  function because the asset paths are resolved at call time. */
+function renderParams() {
+  return {
+    ...pdfjsAssetUrls(),
+    cMapPacked: true,
+    useSystemFonts: false,
+    enableXfa: true,
+    verbosity: 0,
+  };
+}
+
+/** How far around an `/Subtype /Image` the scan below looks for the rest of
+ *  that image's dictionary. */
+const DICT_WINDOW = 4096;
+
+/** PDF delimiter or whitespace: what may follow a complete name. */
+function endsName(byte: number | undefined): boolean {
+  return byte === undefined || /[\s/<>[\]()%]/.test(String.fromCharCode(byte));
+}
+
+/** A direct integer value of `/key` in a dictionary's text; null when the
+ *  key is missing or an indirect reference (`/Width 12 0 R`). */
+function directInt(dict: string, key: string): number | null {
+  const m = new RegExp(`/${key}\\s+(\\d+)(?![\\d.]|\\s+\\d+\\s+R)`).exec(dict);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Whether any image XObject in the file declares more pixels than
+ * `PDF_MAX_IMAGE_PIXELS`, read from the raw bytes without parsing the
+ * document. An image XObject is a stream and a stream is never stored inside
+ * an object stream, so its dictionary sits in the file as plain text (also
+ * when the file is encrypted: encryption covers strings and stream data, not
+ * dictionary numbers). Only direct `/Width` and `/Height` values are read.
+ *
+ * A cheap gate, not the verdict: true only makes the render read each page's
+ * operator list first (`drawsSomething`). A false positive costs that extra
+ * list; a miss (an indirect size, an oversize inline image) leaves the page
+ * as it was before, rendered without the image.
+ */
+export function declaresOversizeImage(bytes: Uint8Array): boolean {
+  // A view on the same memory: no copy of a file that may be 256 MB.
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const needle = '/Image';
+  for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
+    // `/ImageB`, `/ImageMask` and friends are other names.
+    if (!endsName(buf[at + needle.length])) continue;
+    if (!/\/Subtype\s*$/.test(buf.toString('latin1', Math.max(0, at - 32), at))) continue;
+    const lo = Math.max(0, at - DICT_WINDOW);
+    const objAt = buf.subarray(lo, at).lastIndexOf('obj');
+    const from = objAt >= 0 ? lo + objAt : lo;
+    const streamAt = buf.indexOf('stream', at);
+    const to =
+      streamAt >= 0 && streamAt - at <= DICT_WINDOW
+        ? streamAt
+        : Math.min(buf.length, at + DICT_WINDOW);
+    const dict = buf.toString('latin1', from, to);
+    const width = directInt(dict, 'Width');
+    const height = directInt(dict, 'Height');
+    if (width && height && width * height > PDF_MAX_IMAGE_PIXELS) return true;
+  }
+  return false;
+}
+
+/** pdfjs operators that put something on the page: image paints, painted
+ *  paths, shadings and text. Looked up by name so a renamed operator drops
+ *  out rather than matching the wrong one. */
+const DRAWING_OP_NAMES = [
+  'paintImageXObject',
+  'paintInlineImageXObject',
+  'paintInlineImageXObjectGroup',
+  'paintImageXObjectRepeat',
+  'paintImageMaskXObject',
+  'paintImageMaskXObjectGroup',
+  'paintImageMaskXObjectRepeat',
+  'paintSolidColorImageMask',
+  'shadingFill',
+  'showText',
+  'showSpacedText',
+  'nextLineShowText',
+  'nextLineSetSpacingShowText',
+] as const;
+
+type OperatorList = { fnArray: number[]; argsArray: unknown[] };
+
+/**
+ * Whether a page's operator list draws anything. pdfjs drops an over-cap
+ * image and carries on without saying so where a caller can see it (even in
+ * strict mode its operator list and render resolve with what was built), so
+ * a page whose only content was such an image is a list that draws nothing:
+ * rendered, it is a blank canvas that OCR files as a blank scan. A path
+ * counts when it is painted; a clip-only path (`re W n`, pdfjs's `endPath`)
+ * draws nothing.
+ */
+function drawsSomething(ops: OperatorList, OPS: Record<string, number>): boolean {
+  const drawing = new Set(
+    DRAWING_OP_NAMES.map((n) => OPS[n]).filter((v): v is number => typeof v === 'number'),
+  );
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const fn = ops.fnArray[i]!;
+    if (drawing.has(fn)) return true;
+    if (fn === OPS.constructPath) {
+      const paint = (ops.argsArray[i] as unknown[] | undefined)?.[0];
+      if (paint !== OPS.endPath) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Render up to `maxPages` pages of a PDF to PNG buffers. `viewportScale` 2
  * roughly doubles resolution for cleaner OCR; a page too big for
  * `MAX_RENDER_PIXELS` at that scale renders at the largest scale that fits.
- * Throws on an unrenderable / corrupt PDF, and a `PdfLimitError` when every
- * page asked for was too large to render at all. Callers wrap this in a trace
- * step and treat a throw or an empty result as "couldn't OCR".
+ * Throws on an unrenderable / corrupt PDF, a `PdfLimitError` when the file is
+ * over `PDF_MAX_BYTES` or every page asked for was too large to render (past
+ * the canvas cap, or holding an image past `PDF_MAX_IMAGE_PIXELS`), and a
+ * `PdfBusyError` (retryable) when another PDF held the decode slot past
+ * `waitMs`. Callers wrap this in a trace step and treat a throw or an empty
+ * result as "couldn't OCR".
  */
 export async function rasterizePdfToPngs(
   bytes: Buffer,
-  opts?: { maxPages?: number; viewportScale?: number },
+  opts?: { maxPages?: number; viewportScale?: number; waitMs?: number },
 ): Promise<RasterPage[]> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_OCR_PAGES);
   const wanted = opts?.viewportScale ?? 2.0;
+  const waitMs = opts?.waitMs ?? PDF_JOB_WAIT_MS;
   const { createCanvas } = await import('@napi-rs/canvas');
-  const { task } = await openPdf(bytes, {
-    ...pdfjsAssetUrls(),
-    cMapPacked: true,
-    // The settings the previous renderer (pdf-to-png-converter) used, so a
-    // normal page renders to the same pixels.
-    useSystemFonts: false,
-    enableXfa: true,
-    verbosity: 0,
-  });
-  try {
-    const doc = await task.promise;
+  // Only a file that declares an over-cap image pays for the extra operator
+  // list below; every other PDF renders exactly as before.
+  const mayDropImages = declaresOversizeImage(bytes);
+  return withPdf(bytes, { ...renderParams(), waitMs }, async ({ pdfjs, doc }) => {
     const count = Math.min(doc.numPages, maxPages);
     const out: RasterPage[] = [];
     const tooLarge: string[] = [];
@@ -126,6 +233,18 @@ export async function rasterizePdfToPngs(
           );
           continue;
         }
+        if (
+          mayDropImages &&
+          !drawsSomething(
+            await page.getOperatorList(),
+            pdfjs.OPS as unknown as Record<string, number>,
+          )
+        ) {
+          tooLarge.push(
+            `page ${pageNumber} draws nothing once an embedded image over ${PDF_MAX_IMAGE_PIXELS} pixels is dropped`,
+          );
+          continue;
+        }
         const viewport = page.getViewport({ scale });
         const canvas = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height));
         const context = canvas.getContext('2d');
@@ -137,17 +256,18 @@ export async function rasterizePdfToPngs(
           viewport,
         }).promise;
         out.push({ pageNumber, png: await canvas.encode('png') });
+        // Let go of the page's pixels now rather than whenever the GC
+        // gets to the canvas.
+        canvas.width = 0;
       } finally {
         page.cleanup();
       }
     }
     if (out.length === 0 && tooLarge.length > 0) {
       throw new PdfLimitError(
-        `PDF pages too large to render (${tooLarge.join('; ')}); the render limit is ${MAX_RENDER_PIXELS} pixels a page`,
+        `PDF pages too large to render (${tooLarge.join('; ')}); the limits are ${MAX_RENDER_PIXELS} pixels a page and ${PDF_MAX_IMAGE_PIXELS} pixels an embedded image`,
       );
     }
     return out;
-  } finally {
-    await task.destroy().catch(() => {});
-  }
+  });
 }

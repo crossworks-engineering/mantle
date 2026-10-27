@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { extOf, ensureExtractedImagesFolder, upsertFile } from '@mantle/files';
+import { extOf, ensureExtractedImagesFolder, isPdfLimitError, upsertFile } from '@mantle/files';
 import { startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
@@ -544,13 +544,17 @@ export async function ocrIngestPdfNode(
       const pages = await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {
-          const { rasterizePdfToPngs, isPdfLimitError } = await import('@mantle/files/rasterize');
           try {
+            // Inside the try: a failed import is the pipeline breaking, so it
+            // must land as `pdf_unreadable` (recorded) and not escape.
+            const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
             const r = await rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES });
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
-            // Unrenderable / corrupt / encrypted / oversized PDF: record and give up.
+            // Unrenderable / corrupt / encrypted / oversized PDF: record and
+            // give up. A `PdfBusyError` (another PDF held the decode slot too
+            // long) lands in `rasterizeError`, the retryable `pdf_unreadable`.
             const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
             else if (isPdfLimitError(err)) tooLarge = msg;

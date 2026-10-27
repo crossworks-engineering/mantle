@@ -24,6 +24,7 @@ import {
   extOf,
   isVisionImage,
   parseDocumentBytes,
+  PDF_TURN_WAIT_MS,
   transcodeImageForVision,
   INGESTABLE_EXTS,
   parserRouteForExt,
@@ -247,13 +248,18 @@ async function ocrPdfForTurn(opts: {
       return await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: TURN_OCR_PAGES } },
         async (h) => {
-          const r = await rasterizePdfToPngs(opts.bytes, { maxPages: TURN_OCR_PAGES });
+          // A live turn waits less for the decode slot than a background job:
+          // past it, the reply goes ahead without the scan's text.
+          const r = await rasterizePdfToPngs(opts.bytes, {
+            maxPages: TURN_OCR_PAGES,
+            waitMs: PDF_TURN_WAIT_MS,
+          });
           h.setMeta({ pages: r.length });
           return r;
         },
       );
     } catch {
-      return []; // unrenderable / corrupt / encrypted PDF
+      return []; // unrenderable / corrupt / encrypted / oversized PDF, or the slot stayed busy
     }
   })();
   if (pages.length === 0) return null;

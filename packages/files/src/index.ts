@@ -24,6 +24,10 @@ export { parseDocumentBytes } from './parse';
 
 export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-password';
 
+// Light: pdfjs itself loads only inside `withPdf`, so these cost nothing to
+// import. They let a caller tell a verdict on a PDF from a busy slot.
+export { isPdfBusyError, isPdfLimitError, PDF_TURN_WAIT_MS } from './pdf-open';
+
 export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
 
 export {

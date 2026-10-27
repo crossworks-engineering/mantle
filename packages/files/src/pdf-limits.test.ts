@@ -16,15 +16,19 @@
 import { once } from 'node:events';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { PDFParse } from 'pdf-parse';
 import {
   assemblePdf,
   helveticaPdf,
   imagePagePdf,
+  imagePagesPdf,
   type FixtureImage,
 } from './pdf-fixtures.test-helper';
 import { extractPdfImages, parsePdf, pdfPageCount } from './pdf';
-import { PDF_MAX_IMAGE_PIXELS } from './pdf-open';
+import { extractPdfTextWithPassword } from './pdf-password';
+import { isPdfBusyError, PDF_MAX_BYTES, PDF_MAX_IMAGE_PIXELS, withPdf } from './pdf-open';
 import {
+  declaresOversizeImage,
   isPdfLimitError,
   MAX_RENDER_PIXELS,
   pageRenderScale,
@@ -213,5 +217,139 @@ describe('a page too large to render', () => {
 
   it('still reads the text of such a page', async () => {
     expect(await parsePdf(bigPage(100_000))).toContain('big');
+  });
+});
+
+/** Declared past the cap with a few bytes of samples: pdfjs drops it before
+ *  decoding, so its stream contents never matter. */
+const OVERSIZE: FixtureImage = {
+  width: 10_000,
+  height: 10_000,
+  flate: zlib.deflateSync(Buffer.alloc(16)),
+};
+
+describe('a page whose only content is an image over the cap', () => {
+  it('is too large, not a blank scan: one such page throws PdfLimitError', async () => {
+    expect(OVERSIZE.width * OVERSIZE.height).toBeGreaterThan(PDF_MAX_IMAGE_PIXELS);
+    const pdf = imagePagesPdf({ images: [OVERSIZE], pages: [{ draw: [0], caption: null }] });
+    const err = await rasterizePdfToPngs(pdf).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isPdfLimitError(err)).toBe(true);
+    expect((err as Error).message).toMatch(/page 1 draws nothing once an embedded image over/);
+  });
+
+  it('skips only that page: the normal scan page beside it still renders', async () => {
+    const pdf = imagePagesPdf({
+      images: [gradient(320, 240), OVERSIZE],
+      pages: [
+        { draw: [0], caption: null },
+        { draw: [1], caption: null },
+      ],
+    });
+    const pages = await rasterizePdfToPngs(pdf);
+    expect(pages.map((p) => p.pageNumber)).toEqual([1]);
+  });
+
+  it('finds the declared size in the raw bytes, and only a direct one', () => {
+    const one = (img: FixtureImage) =>
+      imagePagesPdf({ images: [img], pages: [{ draw: [0], caption: null }] });
+    expect(declaresOversizeImage(one(OVERSIZE))).toBe(true);
+    expect(declaresOversizeImage(one(gradient(320, 240)))).toBe(false);
+    expect(declaresOversizeImage(helveticaPdf())).toBe(false);
+    // An indirect size (here the width) is not followed.
+    const indirect = assemblePdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [] /Count 0 >>',
+      [
+        '<< /Type /XObject /Subtype /Image /Width 4 0 R /Height 100000 /BitsPerComponent 8 /Length 1 >>',
+        Buffer.alloc(1),
+      ],
+      '100000',
+    ]);
+    expect(declaresOversizeImage(indirect)).toBe(false);
+  });
+});
+
+describe('the size limit', () => {
+  it(`refuses a PDF over ${PDF_MAX_BYTES / (1024 * 1024)} MB before pdfjs sees it`, async () => {
+    // Zero-filled, so the pages are never touched and cost no memory.
+    const big = Buffer.alloc(PDF_MAX_BYTES + 1);
+    const err = await withPdf(big, {}, async () => 'opened').catch((e: unknown) => e);
+    expect(isPdfLimitError(err)).toBe(true);
+    expect(isPdfLimitError(await rasterizePdfToPngs(big).catch((e: unknown) => e))).toBe(true);
+    expect(isPdfLimitError(await parsePdf(big).catch((e: unknown) => e))).toBe(true);
+    expect(await pdfPageCount(big)).toBeNull();
+  });
+});
+
+describe('one decode at a time', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('serialises two concurrent decodes, in arrival order', async () => {
+    const pdf = helveticaPdf();
+    let inside = 0;
+    let most = 0;
+    const order: string[] = [];
+    const hold = (name: string) =>
+      withPdf(pdf, {}, async () => {
+        inside++;
+        most = Math.max(most, inside);
+        order.push(`${name} in`);
+        await sleep(40);
+        order.push(`${name} out`);
+        inside--;
+      });
+    await Promise.all([hold('a'), hold('b'), hold('c')]);
+    expect(most).toBe(1);
+    expect(order).toEqual(['a in', 'a out', 'b in', 'b out', 'c in', 'c out']);
+  });
+
+  it('serialises the real passes too, and both still read', async () => {
+    const pdf = imagePagePdf({ caption: 'Figure 9: both', images: [gradient(320, 240)] });
+    const [images, pages] = await Promise.all([extractPdfImages(pdf), rasterizePdfToPngs(pdf)]);
+    expect(images).toHaveLength(1);
+    expect(pages).toHaveLength(1);
+  });
+
+  it('gives up with a retryable PdfBusyError past the wait, and lets the slot go after', async () => {
+    const pdf = helveticaPdf();
+    let let_go!: () => void;
+    const held = withPdf(pdf, {}, () => new Promise<void>((r) => (let_go = r)));
+    await sleep(20);
+    const err = await withPdf(pdf, { waitMs: 30 }, async () => 'ran').catch((e: unknown) => e);
+    expect(isPdfBusyError(err)).toBe(true);
+    expect(isPdfLimitError(err)).toBe(false);
+    expect(await rasterizePdfToPngs(pdf, { waitMs: 30 }).catch(isPdfBusyError)).toBe(true);
+    // Text-only reads do not take the slot, so they are not held up.
+    expect(await parsePdf(pdf)).toContain('Hello Mantle');
+    expect(await pdfPageCount(pdf)).toBe(1);
+    expect(await extractPdfTextWithPassword(pdf, '')).toMatchObject({ ok: true });
+    let_go();
+    await held;
+    expect(await withPdf(pdf, { waitMs: 30 }, async () => 'ran')).toBe('ran');
+  });
+});
+
+describe('the text layer is read exactly as pdf-parse reads it', () => {
+  it('matches pdf-parse opening the document itself', async () => {
+    const pdf = imagePagesPdf({
+      images: [gradient(32, 32)],
+      pages: [
+        { draw: [0], caption: 'Figure 1: first page' },
+        { draw: [], caption: 'Second page, no picture' },
+        { draw: [0], caption: 'Third (and last) page' },
+      ],
+    });
+    const parser = new PDFParse({ data: new Uint8Array(pdf) });
+    const direct = (await parser.getText()).text.trim();
+    // pdf-parse's own destroy() calls a doc.destroy() pdfjs 6 no longer has;
+    // tear its loading task down by hand.
+    await (
+      parser as unknown as { doc: { loadingTask: { destroy(): Promise<void> } } }
+    ).doc.loadingTask.destroy();
+    expect(direct).toContain('Third (and last) page');
+    expect(await parsePdf(pdf)).toBe(direct);
   });
 });

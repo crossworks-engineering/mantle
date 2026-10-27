@@ -58,7 +58,12 @@ import {
   type ExtractorParams,
 } from '@mantle/db';
 import { digestEmbedText, embed } from '@mantle/embeddings';
-import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
+import {
+  effectiveBrainDepth,
+  isPdfBusyError,
+  resolveEffectiveIndexing,
+  metadataSpineText,
+} from '@mantle/files';
 import { recordSkippedTrace } from '@mantle/tracing';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 import { resolveChatKey } from '@mantle/runtime/agent';
@@ -513,8 +518,18 @@ export async function admitForExtraction(
   // Pull embedded diagrams/screenshots out into their own image files, on the
   // same terms: independent of the text allowlist, best-effort, never fatal.
   // Read AFTER params so the per-document image cap is configurable.
-  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch((err) =>
-    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
+  // One exception: a `PdfBusyError` (another PDF held the decode slot past
+  // the wait) says nothing about this document, so the extract fails and is
+  // retried rather than completing without its pictures. This pass runs
+  // before the body load, so the retry repeats no model call.
+  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
+    (err) => {
+      if (isPdfBusyError(err)) throw err;
+      console.error(
+        '[extractor] embedded images failed:',
+        err instanceof Error ? err.message : err,
+      );
+    },
   );
 
   // Brain depth: documentation collections default to 'retrieval' — index to
