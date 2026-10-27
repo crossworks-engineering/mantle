@@ -83,21 +83,30 @@ import { resolveExtractor } from './model';
 import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
+import { crashedRead, crashedReadHint } from './read-guard';
 import { readNodeBodyLocal } from './load-body';
 import { writeRetrievalChunks } from './index-writes';
 
 /**
  * True when no pass has read this file's current bytes: none of the keys a
- * pass leaves on a file is there. A new upload has none; new bytes drop
- * them (BYTE_DERIVED_DATA_KEYS); a rename keeps them, and an indexing toggle
- * drops only the summary and the vector (markContentChanged), so neither
- * reads as unread.
+ * pass leaves on a file is there, and it has no vector. A new upload has
+ * none; new bytes drop them (BYTE_DERIVED_DATA_KEYS) and the vector; a
+ * rename keeps them, and an indexing toggle drops only the summary and the
+ * vector (markContentChanged), so neither reads as unread. A file read
+ * before the pass stamps existed (2026-07-15) carries only a summary
+ * (`summary_at`) or a vector: also read.
  */
-export function bytesUnread(data: Record<string, unknown>): boolean {
+export function bytesUnread(node: {
+  readonly data: unknown;
+  readonly embedding?: unknown;
+}): boolean {
+  const data = (node.data ?? {}) as Record<string, unknown>;
   return (
     data.indexing_applied == null &&
     data.extract_completed_at == null &&
-    data.extract_skipped == null
+    data.extract_skipped == null &&
+    data.summary_at == null &&
+    node.embedding == null
   );
 }
 
@@ -379,6 +388,32 @@ export async function admitForExtraction(
           'is indexed once an admin edits, closes or answers it (data.reviewed_at).',
       },
     });
+    return { proceed: false };
+  }
+  // A heavy read of this node took the process down last time (its crash
+  // stamp is still there, ./read-guard.ts): record the terminal skip for
+  // good and read nothing, so a job handed out again (a retry, a dead
+  // letter re-sent at boot) cannot take it down twice.
+  const crashed = crashedRead(node);
+  if (crashed) {
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: nodeId,
+        subjectKind: 'node',
+        disposition: 'document_too_large',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          limit: 'stopped',
+          pass: crashed,
+          hint: crashedReadHint(crashed),
+        },
+      },
+      node,
+    );
     return { proceed: false };
   }
   // A page or drawing the W2 mark flagged (0247, 0248) that the hand-run
@@ -670,7 +705,7 @@ export async function admitForExtraction(
     // bytes no pass has read yet only (see the module note), best-effort and
     // never fatal except for a read to retry. Before the stamp below: a
     // retry after a busy box still finds the bytes unread.
-    if (bytesUnread(fullData)) {
+    if (bytesUnread(node)) {
       await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
         (err) => {
           if (isRetryableReadError(err)) throw err;

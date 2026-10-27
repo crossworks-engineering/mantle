@@ -27,6 +27,7 @@ dbos-workflow server/api/src/workflows/team-turn.ts the member's login as it is 
 dbos-workflow server/api/src/workflows/telegram-turn.ts the paired chat's login as it is now (login(owner) for the owner's), else system(workflow:telegram-turn); system(workflow:telegram-turn) with the check off or when the lookup fails
 interval packages/content/src/process-heartbeat.ts none: touches a file, no database
 interval packages/db/src/gateway/check-mode.ts none: the box mode read, on the raw pool outside the actor client (started in runWithoutActor)
+interval packages/files/src/isolate.ts none: the memory watch while document reads run, no database
 interval packages/share-ui/src/event-presenter.tsx none: browser code
 interval server/api/src/agent/extract-queue.ts system(tick:extract-reconcile); each job system(queue:extract)
 interval server/api/src/agent/telegram/helpers.ts none: a typing indicator, no database
@@ -67,6 +68,7 @@ timeout-loop packages/db/src/reserved.ts the caller's actor: every pool's bounde
 timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup
 timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
 timeout-loop packages/db/src/viewer-roles.ts the caller's actor: a retry sleep
+timeout-loop server/api/src/agent/extract/images.ts system(listen:pictures-requested): a requested pictures read that found every read slot busy, asked again at most three times
 timeout-loop server/api/src/agent/runtime.ts system(timer:summarize) for the summarize debounce
 timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-notify), carried by the batching timer
 timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown

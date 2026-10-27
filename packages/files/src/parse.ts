@@ -10,8 +10,9 @@
  *      RTF, EPUB), the markup reader (HTML, XML), and the UTF-8 read for
  *      text files. Throws on a parser failure (encrypted / corrupt) so
  *      callers can tell a real failure apart from a genuinely-empty file.
- *      Every one of them but the UTF-8 read (and the CAD and plan readers
- *      below, which have their own exchange) runs in a worker thread with
+ *      Every one of them but the UTF-8 read (and the DWG and DXF readers
+ *      below, which hand the file to the media sidecar) runs in a worker
+ *      thread with
  *      a heap and time limit (./isolate.ts), a zip-based file inflated
  *      under per-part caps first (./zip-guard.ts): nothing an upload holds
  *      runs on the server's own heap or event loop. A document stopped by a
@@ -159,9 +160,9 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   // searchable document; it is never silently nothing, which is the failure
   // this whole path exists to prevent.
   if (ext === 'xml') {
-    const { sniffMspdi, renderMspdiText } = await import('./mspdi');
+    const { sniffMspdi, readMspdiText } = await import('./mspdi');
     if (sniffMspdi(bytes)) {
-      const plan = renderMspdiText(bytes);
+      const plan = await readMspdiText(bytes);
       if (plan) return plan;
     }
   }

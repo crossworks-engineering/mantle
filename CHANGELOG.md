@@ -47,6 +47,38 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   timed out for the first time is retried instead (the same bytes timing
   out twice is terminal). A read's slot frees when its thread has exited.
   anydoc's own native memory is bounded by its fixed safety limits.
+- Fix round 3: the readers that were still on the main thread run in a
+  worker thread too: the DWF container (its entries now inflated under the
+  zip guard's real output cap, 16 MB an entry, 256 MB a file; a 3.5 MB
+  `.dwf` that claimed 1 KB entries inflated 3.7 GB), the Project plan `.xml`
+  reader, the PDF page count, password read and OCR page render. Every PDF
+  reader opens pdfjs through one entry point (`pdfjs.ts`) that leaves out a
+  picture past 25 million pixels unread, and the OCR render scales a page
+  down to a 25-million-pixel canvas: a 747 KB PDF holding one
+  16,000 x 16,000 picture took the pictures pass to 1.9 GB and the OCR
+  render to 5.4 GB with a 2 s stall; each now adds about 10 MB over a read
+  thread's own start (about 400 MB with pdfjs loaded), with no stall. The OCR
+  render no longer uses `pdf-to-png-converter` (removed). A render stopped
+  by a limit is the terminal `document_too_large`, not a retried
+  `pdf_unreadable`.
+- A read's input is copied once and moved into its thread; reads waiting
+  for a slot hold at most 256 MB of input between them. A process with no
+  container memory cap reads one document at a time and logs it. While
+  reads run, resident memory is sampled every 20 ms, and the read using the
+  most is stopped (`document_too_large`, `memory`) when the memory the heap
+  cap does not see passes its share or the process comes within 160 MB of
+  its cap (a 16,000 x 16,000 soft mask, which pdfjs's picture limit does not
+  see, is stopped at about 1.3 GB).
+- A heavy read that takes the process down is not read again on its own:
+  the node carries a `document_too_large` stamp naming the pass while the
+  read runs, so the boot drain skips it and the next job for it (a retry, a
+  dead letter re-sent at boot) records the terminal skip instead of reading.
+  An owner's re-extract reads it again.
+- The pictures pass treats a file read before the pass stamps existed (a
+  summary or a vector only) as read. A requested pictures read
+  (`pictures_requested`) is refused for an exempt node, one whose read took
+  the process down and a brain with no extractor worker, and is asked again
+  up to three times (1, 5 and 15 minutes) when every read slot is busy.
 - The HTML scanner is linear: 5 MB of hostile markup (unclosed `<?`,
   comments, scripts) reads in milliseconds, where 128 KB of `<?` took 23 s.
   So are the `.pptx`, picture and Visio tag scanners (512 KB of unclosed
@@ -62,9 +94,12 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   anydoc's document model and the Visio media parts, under the same
   per-document gate and cap; Tika, when on, is the second try and the only
   reader for `.vsd`, `.xls` and `.xlsb` pictures (anydoc's sheet reader
-  carries none). **`.epub`, `.vsdx` and `.vsd` are new picture formats and
-  wait for the owner's approval:** one list, `PICTURE_FORMATS_PENDING_APPROVAL`
-  (`packages/files/src/embedded-images.ts`), turns all three off.
+  carries none). **`.epub`, `.vsdx` and `.vsd` are new picture formats,
+  approved by the owner 2026-10-27,** for new uploads only: up to 30 vision
+  calls for each new upload of these types (one per picture kept). One list,
+  `PICTURE_FORMATS_OPT_IN` (`packages/files/src/embedded-images.ts`); remove
+  a format there to stop its picture spend. The images backfill leaves the
+  three out unless they are named with `--types`.
 - The pictures pass runs for new or changed bytes only, after the
   metadata-only check: a rename, a move, an indexing toggle or a re-run of a
   file already read never takes pictures or spends a vision call. The

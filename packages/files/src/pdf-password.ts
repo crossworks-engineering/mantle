@@ -5,9 +5,8 @@
  * text covers the common case without rasterizing. The extractor calls this
  * with each vaulted password until one opens the document.
  *
- * pdfjs is the only tool in the stack that takes a password (pdf-parse /
- * pdf-to-png-converter don't expose one), and it's already present via
- * pdf-to-png-converter — promoted to a direct dep here.
+ * pdfjs takes the password directly; it is opened through ./pdfjs.ts, the
+ * one entry point with the package's limits, in a worker thread.
  *
  * Returns:
  *  - { ok: true, text }              — opened and got a text layer
@@ -17,36 +16,49 @@
  *    later enhancement)
  *  - { ok: false, reason: 'error' }    — corrupt / unreadable
  */
+
+import { errorMessage } from '@mantle/std';
+
 export type PdfPasswordResult =
   | { ok: true; text: string; numPages: number }
   | { ok: false; reason: 'password' | 'no_text' | 'error'; message?: string };
 
 const DEFAULT_MAX_PAGES = 15;
 
+/** The text layer with this password, read in a worker thread
+ *  (./isolate.ts). A read stopped by a limit is an `error`. */
 export async function extractPdfTextWithPassword(
   bytes: Buffer,
   password: string,
   opts?: { maxPages?: number },
 ): Promise<PdfPasswordResult> {
   const maxPages = Math.max(1, opts?.maxPages ?? DEFAULT_MAX_PAGES);
-  let pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs');
-  try {
-    pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  } catch (err) {
-    return { ok: false, reason: 'error', message: `pdfjs load failed: ${(err as Error).message}` };
-  }
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('pdfTextWithPassword', [bytes, password, maxPages]).catch(
+    (err: unknown): PdfPasswordResult => ({
+      ok: false,
+      reason: 'error',
+      message: errorMessage(err),
+    }),
+  );
+}
+
+/** {@link extractPdfTextWithPassword} on the calling thread: the parse
+ *  worker's job. */
+export async function extractPdfTextWithPasswordInProcess(
+  bytes: Buffer,
+  password: string,
+  maxPages: number,
+): Promise<PdfPasswordResult> {
+  const { openPdf } = await import('./pdfjs');
   // pdfjs 6 moved destroy() off PDFDocumentProxy onto the loading task, so the
   // task is what must be held and torn down — it owns the worker. Declared out
   // here so the `finally` reaches it on the failure path too: the wrong-password
   // case is this function's most common outcome, and it used to leak a worker
   // every time (the old doc.destroy() only ran on success).
-  let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
+  let loadingTask: Awaited<ReturnType<typeof openPdf>> | null = null;
   try {
-    loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(bytes),
-      password,
-      useSystemFonts: true,
-    });
+    loadingTask = await openPdf(bytes, { password });
     const doc = await loadingTask.promise;
     const numPages = doc.numPages;
     const parts: string[] = [];

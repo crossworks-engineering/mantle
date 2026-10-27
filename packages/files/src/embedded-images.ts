@@ -54,14 +54,18 @@ import { sniffImage } from './image-probe';
 import { ANYDOC_EXTS, LEGACY_SHEET_EXTS, ODF_EXTS, TIKA_EXTS, extOf, slugifyFolder } from './slug';
 
 /**
- * Formats that gained a picture pass with the anydoc move (2026-10) and wait
- * for the owner's approval: every picture kept from one is a vision call
- * when it is indexed, so a new format is new spend. EMPTY THIS LIST to turn
- * all three off; nothing else needs to change (the extractor's image pass,
- * the images backfill and {@link extractEmbeddedImages} all read
- * {@link IMAGE_BEARING_EXTS}). See docs/update-prod.md.
+ * Formats that gained a picture pass with the anydoc move (2026-10).
+ * Approved by the owner 2026-10-27; remove a format here to stop its
+ * picture spend. Every picture kept from one is a vision call when it is
+ * indexed (at most {@link MAX_EMBEDDED_IMAGES_PER_DOC} a document), and only
+ * for a NEW upload or new bytes: the extractor's pictures pass runs for
+ * bytes no pass has read yet. The images backfill leaves these formats out
+ * unless they are named with `--types`. Nothing else needs to change (the
+ * extractor's image pass, the images backfill and
+ * {@link extractEmbeddedImages} all read {@link IMAGE_BEARING_EXTS}). See
+ * docs/update-prod.md.
  */
-export const PICTURE_FORMATS_PENDING_APPROVAL: readonly string[] = ['epub', 'vsdx', 'vsd'];
+export const PICTURE_FORMATS_OPT_IN: readonly string[] = ['epub', 'vsdx', 'vsd'];
 
 /** Pictures from anydoc's document model: the formats it reads, less
  *  OpenDocument, whose zip the in-process reader opens directly. The legacy
@@ -106,7 +110,7 @@ export const IMAGE_BEARING_EXTS: ReadonlySet<string> = new Set<string>([
   // DWG and DXF drawings: one essential model-space render from the sidecar.
   'dwg',
   'dxf',
-  ...PICTURE_FORMATS_PENDING_APPROVAL,
+  ...PICTURE_FORMATS_OPT_IN,
 ]);
 
 /** Where the image sits in its source document. Which field is populated

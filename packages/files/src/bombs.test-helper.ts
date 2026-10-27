@@ -206,3 +206,117 @@ export function hostilePptx(body: string): Buffer {
     { name: 'ppt/slides/slide1.xml', data: `<p:sld>${body}</p:sld>` },
   ]);
 }
+
+/** A zlib stream (FlateDecode) of `bytes` zero bytes, built without holding
+ *  them: one deflated zero chunk, full-flushed and repeated, as zipOf does,
+ *  with the zlib header and the Adler-32 of zeros (a = 1, b = n mod 65521). */
+function zlibZeros(bytes: number): Buffer {
+  const chunk = Buffer.alloc(1024 * 1024);
+  const times = Math.ceil(bytes / chunk.length);
+  const tail = bytes - (times - 1) * chunk.length;
+  const flush = { level: 9, finishFlush: constants.Z_FULL_FLUSH };
+  const one = deflateRawSync(chunk, flush);
+  const adler = Buffer.alloc(4);
+  adler.writeUInt32BE(((((times - 1) * chunk.length + tail) % 65521) * 65536 + 1) >>> 0);
+  return Buffer.concat([
+    Buffer.from([0x78, 0xda]),
+    ...Array<Buffer>(times - 1).fill(one),
+    deflateRawSync(chunk.subarray(0, tail)),
+    adler,
+  ]);
+}
+
+/** A PDF from its object bodies (1-based, object 1 the catalog); a stream
+ *  object is `[dict, data]`. */
+function pdfOf(objects: Array<string | [string, Buffer]>): Buffer {
+  const parts: Buffer[] = [Buffer.from('%PDF-1.7\n')];
+  let length = parts[0]!.length;
+  const offsets: number[] = [];
+  objects.forEach((body, i) => {
+    offsets.push(length);
+    const chunk =
+      typeof body === 'string'
+        ? Buffer.from(`${i + 1} 0 obj\n${body}\nendobj\n`, 'latin1')
+        : Buffer.concat([
+            Buffer.from(`${i + 1} 0 obj\n${body[0]}\nstream\n`, 'latin1'),
+            body[1],
+            Buffer.from('\nendstream\nendobj\n', 'latin1'),
+          ]);
+    parts.push(chunk);
+    length += chunk.length;
+  });
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) xref += `${String(o).padStart(10, '0')} 00000 n \n`;
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`;
+  parts.push(Buffer.from(xref, 'latin1'));
+  return Buffer.concat(parts);
+}
+
+/**
+ * A one-page PDF drawing one `side` x `side` RGB picture of zeros, deflated:
+ * 16,000 (the default) is 768 MB of pixels in a 747 KB file, 24,000 is
+ * 1.7 GB in 1.7 MB. `page` is the MediaBox side in points (a page that large
+ * asks a renderer for a canvas to match). With `smask`, the picture is
+ * 100 x 100 and its soft mask is the `side` x `side` one instead.
+ */
+export function pdfPictureBomb(
+  side = 16_000,
+  opts: { page?: number; smask?: boolean } = {},
+): Buffer {
+  const page = opts.page ?? 612;
+  const content = Buffer.from(`q ${page} 0 0 ${page} 0 0 cm /Im1 Do Q`, 'latin1');
+  const objects: Array<string | [string, Buffer]> = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page} ${page}] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>`,
+    [`<< /Length ${content.length} >>`, content],
+  ];
+  if (opts.smask) {
+    const small = zlibZeros(100 * 100 * 3);
+    const mask = zlibZeros(side * side);
+    objects.push([
+      `<< /Type /XObject /Subtype /Image /Width 100 /Height 100 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask 6 0 R /Length ${small.length} >>`,
+      small,
+    ]);
+    objects.push([
+      `<< /Type /XObject /Subtype /Image /Width ${side} /Height ${side} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${mask.length} >>`,
+      mask,
+    ]);
+  } else {
+    const pixels = zlibZeros(side * side * 3);
+    objects.push([
+      `<< /Type /XObject /Subtype /Image /Width ${side} /Height ${side} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${pixels.length} >>`,
+      pixels,
+    ]);
+  }
+  return pdfOf(objects);
+}
+
+/**
+ * A DWF plot set of `sheets` sheets whose W2D streams each inflate to
+ * `w2dBytes` behind a directory claiming 1 KB, and whose thumbnails do the
+ * same: about 3.5 MB on disk for the default, gigabytes inflated (JSZip,
+ * trusting the directory, inflated each whole).
+ */
+export function dwfBomb(sheets = 8, w2dBytes = 400_000_000): Buffer {
+  const chunk = Buffer.alloc(1024 * 1024, 'A');
+  const times = Math.ceil(w2dBytes / chunk.length);
+  const sections = Array.from({ length: sheets }, (_, i) => `com.autodesk.dwf.ePlot_${i}`);
+  const manifest = `<?xml version="1.0"?><dwf:Manifest>${sections
+    .map((s, i) => `<Section name="${s}" title="Sheet ${i + 1}"/>`)
+    .join('')}</dwf:Manifest>`;
+  const entries: ZipEntry[] = [{ name: 'manifest.xml', data: manifest }];
+  for (const s of sections) {
+    entries.push({
+      name: `${s}\\descriptor.xml`,
+      data: '<ePlot:Page><ePlot:Paper units="in" width="17" height="11"/></ePlot:Page>',
+    });
+    entries.push({ name: `${s}\\${s}.w2d`, repeat: { chunk, times }, declaredSize: 1_000 });
+    entries.push({
+      name: `${s}\\thumb.png`,
+      repeat: { chunk: Buffer.alloc(1024 * 1024), times: 64 },
+      declaredSize: 1_000,
+    });
+  }
+  return Buffer.concat([Buffer.from('(DWF V06.00)', 'latin1'), zipOf(entries)]);
+}

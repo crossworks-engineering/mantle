@@ -44,10 +44,16 @@
  *     run is re-decoded as UTF-8 with a latin1 fallback so non-English layer
  *     names survive.
  *
- * Memory safety: every entry read is preflighted against the ZIP central
- * directory's DECLARED uncompressed size before inflating (same defence as
- * sheet-read.ts's `sheetXmlBytes`), so a deflate bomb degrades that sheet to
- * metadata-only instead of allocating gigabytes in-process.
+ * Memory safety: the container is read in a worker thread (./isolate.ts,
+ * the `dwfStructured` and `dwfThumbnails` jobs), never on the server's own
+ * heap or event loop, and every entry is inflated through the zip guard
+ * (./zip-guard.ts) with a REAL output cap, not the size the central
+ * directory declares (which can lie: a 3.5 MB .dwf whose entries claimed a
+ * few KB each inflated to 3.7 GB). An entry past its cap, or past the
+ * file's total, degrades that sheet to metadata-only; the directory's
+ * declared size is still checked first, so an honest oversized entry is not
+ * inflated at all. Only the media sidecar's render (an HTTP exchange) runs
+ * here.
  *
  * DWFx (`.dwfx`) is a different container (OPC/XPS) and stream format — it is
  * routed to an honest export-required skip in ./slug.ts, not here. Dispatch in
@@ -55,8 +61,9 @@
  * renamed DWFx) yields '' and takes the extractor's honest hollow-skip rather
  * than indexing its own filename.
  */
-import JSZip from 'jszip';
+import { isDocumentLimitError } from './document-limit';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
+import { loadZip, type Zip, type ZipEntry } from './zip-guard';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -109,6 +116,8 @@ const MAX_W2D_SCAN_BYTES = 16 * 1024 * 1024;
 const MAX_XML_BYTES = 4 * 1024 * 1024;
 /** Ceiling on an inflated sheet thumbnail (real ones are ~5-10 KB). */
 const MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024;
+/** Ceiling on everything one container may inflate to, together. */
+const MAX_DWF_INFLATED_BYTES = 256 * 1024 * 1024;
 /** Row ceiling for the Labels tab of the auto-imported registry workbook. */
 const MAX_LABEL_ROWS = 20_000;
 const DIGEST_LAYERS_PER_SHEET = 80;
@@ -152,22 +161,27 @@ function properties(xml: string): Map<string, string> {
   return map;
 }
 
-/** The entry's declared uncompressed size from the central directory, without
- *  inflating anything. JSZip keeps it on the internal `_data` slot (the same
- *  access sheet-read.ts uses); unknown → -1, treated as "trust but it will be
- *  the writer's problem" only for tiny XML entries, never for W2D. */
-function declaredSize(entry: JSZip.JSZipObject): number {
-  const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data
-    ?.uncompressedSize;
-  return typeof size === 'number' && Number.isFinite(size) ? size : -1;
+/** An entry's bytes, inflated under the zip guard's caps, or null when it
+ *  declares more than `cap`, inflates past the guard's caps, or comes out
+ *  larger than `cap` (a directory that lied): that sheet degrades rather
+ *  than the read failing. */
+async function entryBytes(entry: ZipEntry | null | undefined, cap: number): Promise<Buffer | null> {
+  if (!entry) return null;
+  if (entry.declaredSize != null && entry.declaredSize > cap) return null;
+  let out: Uint8Array;
+  try {
+    out = await entry.async('uint8array');
+  } catch (err) {
+    if (isDocumentLimitError(err)) return null;
+    throw err;
+  }
+  if (out.byteLength > cap) return null;
+  return Buffer.from(out.buffer, out.byteOffset, out.byteLength);
 }
 
-/** Inflate a text entry, refusing past `cap` on declared size ('' instead). */
-async function entryText(entry: JSZip.JSZipObject | undefined, cap: number): Promise<string> {
-  if (!entry) return '';
-  const size = declaredSize(entry);
-  if (size > cap) return '';
-  return entry.async('string');
+/** A text entry under `cap`, '' past it. */
+async function entryText(entry: ZipEntry | null | undefined, cap: number): Promise<string> {
+  return (await entryBytes(entry, cap))?.toString('utf8') ?? '';
 }
 
 /** W2D opcode strings are usually ASCII, occasionally UTF-8. The scrape
@@ -232,7 +246,8 @@ type SectionEntries = { desc?: string; w2d?: string; png?: string };
 
 type OpenedDwf = {
   version: string | null;
-  entries: Map<string, JSZip.JSZipObject>;
+  /** Normalised path → the entry, read through the zip guard. */
+  entries: Map<string, ZipEntry>;
   sectionEntries: Map<string, SectionEntries>;
   /** ePlot sections in manifest order: sheet identity for every consumer. */
   sections: Array<{ name: string; title: string }>;
@@ -245,29 +260,38 @@ async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
   // One load on the whole buffer: JSZip corrects for the DWF magic prefix
   // itself, for both offset conventions (see the header comment). Rethrown
   // with a named message so the trace says WHAT was wrong, not just where.
-  let zip: JSZip;
+  // Every entry inflates under one budget for the file, and none past the
+  // largest per-entry cap below (the W2D scan's); each read checks its own.
+  let zip: Zip;
   try {
-    zip = await JSZip.loadAsync(bytes);
+    zip = await loadZip(bytes, {
+      maxEntryBytes: MAX_W2D_SCAN_BYTES,
+      maxTotalBytes: MAX_DWF_INFLATED_BYTES,
+    });
   } catch (err) {
+    if (isDocumentLimitError(err)) throw err;
     const msg = errorMessage(err);
     throw new Error(`dwf: no readable ZIP archive in container (${msg})`, { cause: err });
   }
 
   // One pass: normalised path → entry, plus per-section-directory roles.
-  const entries = new Map<string, JSZip.JSZipObject>();
+  const entries = new Map<string, ZipEntry>();
   const sectionEntries = new Map<string, SectionEntries>();
-  zip.forEach((path, file) => {
+  for (const [path, info] of Object.entries(zip.files)) {
+    if (info.dir) continue;
+    const file = zip.file(path);
+    if (!file) continue;
     const p = norm(path);
     entries.set(p, file);
     const slash = p.indexOf('/');
-    if (slash <= 0) return;
+    if (slash <= 0) continue;
     const dir = p.slice(0, slash);
     const rec = sectionEntries.get(dir) ?? {};
     if (p.endsWith('descriptor.xml')) rec.desc ??= p;
     else if (p.endsWith('.w2d')) rec.w2d ??= p;
     else if (p.endsWith('.png')) rec.png ??= p;
     sectionEntries.set(dir, rec);
-  });
+  }
 
   const manifest = await entryText(entries.get('manifest.xml'), MAX_XML_BYTES);
 
@@ -288,20 +312,24 @@ async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
  *  the image pass all consume the same result, and the extractor hands all
  *  three passes the same Buffer within one ingest — without the memo the
  *  dominant W2D scrape ran two to three times on byte-identical input.
- *  Failures are not memoized. */
+ *  Failures are not memoized. The parse itself runs in a worker thread
+ *  (./isolate.ts); its result is plain data, bounded by the caps above. */
 const parsedCache = new WeakMap<Buffer, Promise<DwfParsed>>();
 
 export function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
   const hit = parsedCache.get(bytes);
   if (hit) return hit;
-  const parsed = parseDwfStructuredUncached(bytes);
+  const parsed = import('./isolate').then(({ runIsolated }) =>
+    runIsolated('dwfStructured', [bytes]),
+  );
   parsedCache.set(bytes, parsed);
   parsed.catch(() => parsedCache.delete(bytes));
   return parsed;
 }
 
-/** Open the container and extract every ePlot sheet's metadata + scrape. */
-async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
+/** Open the container and extract every ePlot sheet's metadata + scrape, on
+ *  the calling thread: the parse worker's job. */
+export async function parseDwfStructuredInProcess(bytes: Buffer): Promise<DwfParsed> {
   const { version, entries, sectionEntries, sections } = await openDwf(bytes);
 
   const sheets: DwfSheet[] = [];
@@ -319,13 +347,11 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
     // W2D scrape, declared-size preflighted: an oversized (or bomb) stream
     // degrades this sheet to metadata-only instead of inflating unbounded.
     let scraped: ReturnType<typeof scrapeW2d> = { layers: [], labels: [], labelTotal: 0 };
-    const w2dEntry = paths.w2d ? entries.get(paths.w2d) : undefined;
-    if (w2dEntry) {
-      const size = declaredSize(w2dEntry);
-      if (size >= 0 && size <= MAX_W2D_SCAN_BYTES) {
-        scraped = scrapeW2d(await w2dEntry.async('nodebuffer'));
-      }
-    }
+    const w2d = await entryBytes(
+      paths.w2d ? entries.get(paths.w2d) : undefined,
+      MAX_W2D_SCAN_BYTES,
+    );
+    if (w2d) scraped = scrapeW2d(w2d);
 
     sheets.push({
       title,
@@ -447,15 +473,19 @@ export async function extractDwfImages(
     }
   }
 
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('dwfThumbnails', [bytes]);
+}
+
+/** Each sheet's embedded thumbnail, on the calling thread: the parse
+ *  worker's job (the fallback tier of {@link extractDwfImages}). */
+export async function dwfThumbnailsInProcess(bytes: Buffer): Promise<EmbeddedImage[]> {
   const { entries, sectionEntries, sections } = await openDwf(bytes);
   const images: EmbeddedImage[] = [];
   for (const { name, title } of sections) {
     const pngPath = sectionEntries.get(name)?.png;
-    const entry = pngPath ? entries.get(pngPath) : undefined;
-    if (!entry) continue;
-    const size = declaredSize(entry);
-    if (size < 0 || size > MAX_THUMBNAIL_BYTES) continue;
-    const png = await entry.async('nodebuffer');
+    const png = await entryBytes(pngPath ? entries.get(pngPath) : undefined, MAX_THUMBNAIL_BYTES);
+    if (!png) continue;
     images.push(sheetImage(png, title, images.length + 1, 'embedded_thumbnail'));
   }
   return images;

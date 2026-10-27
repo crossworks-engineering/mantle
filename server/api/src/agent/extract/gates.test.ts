@@ -118,7 +118,7 @@ vi.mock('./images', () => ({ maybeExtractEmbeddedImages: h.embeddedImages }));
 vi.mock('./load-body', () => ({ readNodeBodyLocal: h.readNodeBodyLocal }));
 vi.mock('./index-writes', () => ({ writeRetrievalChunks: h.writeRetrievalChunks }));
 
-import { admitForExtraction } from './gates';
+import { admitForExtraction, bytesUnread } from './gates';
 import { sqlValues } from './test-support';
 
 const WORKER = { id: 'w1', slug: 'extractor', params: {}, apiKeyId: null };
@@ -784,5 +784,21 @@ describe('admitForExtraction — rows the clean-derived mark flagged (workspaces
     h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
     h.selectQueue.push([node({ type: 'page', derivedMixed: false })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+});
+
+describe("bytesUnread: whether a pass has read this file's bytes", () => {
+  it('is true for a new upload only', () => {
+    expect(bytesUnread({ data: { filename: 'a.pdf' }, embedding: null })).toBe(true);
+    expect(bytesUnread({ data: { indexing_applied: 'full' }, embedding: null })).toBe(false);
+    expect(bytesUnread({ data: { extract_completed_at: 'x' }, embedding: null })).toBe(false);
+    expect(bytesUnread({ data: { extract_skipped: { reason: 'x' } }, embedding: null })).toBe(
+      false,
+    );
+  });
+
+  it('counts a file read before the pass stamps existed (a summary or a vector) as read', () => {
+    expect(bytesUnread({ data: { summary_at: '2026-07-01' }, embedding: null })).toBe(false);
+    expect(bytesUnread({ data: {}, embedding: [0.1, 0.2] })).toBe(false);
   });
 });

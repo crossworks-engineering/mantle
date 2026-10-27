@@ -9,8 +9,9 @@
  * worker that did not run is not, or a provider outage would lock an image
  * out of the brain for good.
  *
- * The node loader, file bytes, tracing, the vision/OCR passes and the stamp
- * are stubbed; the branching under test is real.
+ * The node loader, file bytes, tracing, the vision/OCR passes, the stamp and
+ * the crash stamp around a read are stubbed; the branching under test is
+ * real.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,6 +60,12 @@ vi.mock('./images', () => ({
   composeImageBody: vi.fn((_d: unknown, text: string) => text),
 }));
 vi.mock('./terminal', () => ({ recordTerminalSkip: h.recordTerminalSkip }));
+// The crash stamp around a read writes the node (read-guard.db.test.ts covers
+// it); here the read just runs.
+vi.mock('./read-guard', () => ({
+  guardedReadFor: (_node: unknown, _ext: string, _pass: string, read: () => Promise<unknown>) =>
+    read(),
+}));
 
 import { loadExtractableBody } from './load-body';
 
@@ -175,6 +182,21 @@ describe('loadExtractableBody: terminal skips', () => {
     await run(fileNode('scan.pdf', 'application/pdf'));
     expect(plain()).toBe('pdf_unreadable');
     expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+  });
+
+  it('stamps a scan whose page render a limit stopped terminal (the file, not the pipeline)', async () => {
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: null,
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      limit: 'Reading the file needed more memory than a document read may use.',
+      ran: false,
+    });
+    const res = await run(fileNode('scan.pdf', 'application/pdf'));
+    expect(res.ok).toBe(false);
+    expect(terminal()).toBe('document_too_large');
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
   });
 
   it('stamps a document stopped by a size limit terminal, with the reason', async () => {

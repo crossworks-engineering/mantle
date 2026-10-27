@@ -508,6 +508,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       '@napi-rs/canvas':
         specifier: 1.0.10
         version: 1.0.10
@@ -529,9 +532,6 @@ importers:
       pdf-parse:
         specifier: ^2.4.5
         version: 2.4.5
-      pdf-to-png-converter:
-        specifier: ^4.2.1
-        version: 4.2.1
       pdfjs-dist:
         specifier: 6.4.299
         version: 6.4.299
@@ -5117,11 +5117,6 @@ packages:
   pdf-parse@2.4.5:
     resolution: {integrity: sha512-mHU89HGh7v+4u2ubfnevJ03lmPgQ5WU4CxAVmTSh/sxVTEDYd1er/dKS/A6vg77NX47KTEoihq8jZBLr8Cxuwg==}
     engines: {node: '>=20.16.0 <21 || >=22.3.0'}
-    hasBin: true
-
-  pdf-to-png-converter@4.2.1:
-    resolution: {integrity: sha512-xHWMulJbxHTb/vzo00XCNhXESYbOHTRxdzl+W95bCEHxr9n6UxXOz17cVuBk/8U481PAy8rNt/67Cna/8xMOmA==}
-    engines: {node: '>=22.13.0 || >=24'}
     hasBin: true
 
   pdfjs-dist@6.4.299:
@@ -9823,11 +9818,6 @@ snapshots:
   path-key@3.1.1: {}
 
   pdf-parse@2.4.5:
-    dependencies:
-      '@napi-rs/canvas': 1.0.10
-      pdfjs-dist: 6.4.299
-
-  pdf-to-png-converter@4.2.1:
     dependencies:
       '@napi-rs/canvas': 1.0.10
       pdfjs-dist: 6.4.299

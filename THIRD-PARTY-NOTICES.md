@@ -8,7 +8,7 @@ The Mantle product incorporates the third-party open-source software listed belo
 
 ## Summary
 
-A total of **659** production packages across **22** license types.
+A total of **658** production packages across **22** license types.
 
 | License | Packages |
 | --- | ---: |
@@ -27,7 +27,7 @@ A total of **659** production packages across **22** license types.
 | CC0-1.0 | 2 |
 | ISC | 64 |
 | LGPL-3.0 | 1 |
-| MIT | 497 |
+| MIT | 496 |
 | MIT-0 | 1 |
 | MIT/X11 | 2 |
 | MPL-2.0 | 2 |
@@ -25576,38 +25576,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-#### pdf-to-png-converter (4.2.1)
-
-**Author:** Igor Magdich · **License:** MIT · **Homepage:** https://github.com/dichovsky/pdf-to-png-converter#readme
-
-<details><summary>License text</summary>
-
-````
-MIT License
-
-Copyright (c) 2021 Igor Magdich
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-````
-
-</details>
-
 #### peberminta (0.10.0)
 
 **Author:** KillyMXI · **License:** MIT · **Homepage:** https://github.com/mxxii/peberminta
@@ -32383,4 +32351,4 @@ SOFTWARE.
 
 ---
 
-_659 components attributed; license text embedded for 656 (each package's own file where present, otherwise the standard SPDX text). For 3 component(s) no license file was bundled and no canonical text is on file; the SPDX identifier shown above governs._
+_658 components attributed; license text embedded for 655 (each package's own file where present, otherwise the standard SPDX text). For 3 component(s) no license file was bundled and no canonical text is on file; the SPDX identifier shown above governs._

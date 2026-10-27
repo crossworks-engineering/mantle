@@ -17,7 +17,7 @@
  *  1. **The invariant.** Every consumer resolves pdfjs to the same file. This
  *     is the root cause, and it is order-independent — if a second copy ever
  *     appears, this fails no matter which entry point ran first.
- *  2. **The smoke.** All four entry points actually run in one process. This
+ *  2. **The smoke.** Every entry point actually runs in one process. This
  *     catches the other half: an upgrade that keeps one pdfjs but breaks what
  *     a consumer does with it.
  *
@@ -27,6 +27,7 @@
  * module registry, so the second file starts from a clean `GlobalWorkerOptions`.
  */
 
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -44,9 +45,9 @@ const CONSUMERS: Record<string, string> = {
   // anything ever loads pdf-parse through the `require` condition, this test is
   // what says so.
   'pdf-parse': path.dirname(require_.resolve('pdf-parse')),
-  // Scanned-PDF OCR fallback. Declares `pdfjs-dist` ~6.0.227.
-  'pdf-to-png-converter': path.dirname(require_.resolve('pdf-to-png-converter')),
-  // Our own direct use: embedded figures and the password path.
+  // Our own direct use, through ./pdfjs.ts: embedded figures, the password
+  // path, the page count and the OCR page render (rasterize.ts, which used
+  // pdf-to-png-converter and its own pdfjs pin until fix round 3).
   '@mantle/files': import.meta.dirname,
 };
 
@@ -74,6 +75,29 @@ describe('pdf stack: one pdfjs', () => {
     // ships a 5.4.296 `pdf.worker.mjs` in its dist for the browser build, and
     // `PDFParse.setWorker()` is the call that would install it.
     expect(pdfjs.GlobalWorkerOptions.workerSrc).toBe(before);
+  });
+});
+
+describe('pdf stack: one way in', () => {
+  it('opens pdfjs only through pdfjs.ts, with its limits (pdf-parse given the same parameters)', () => {
+    const root = path.join(import.meta.dirname, '..', '..', '..');
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (['node_modules', '.next', 'dist', '.turbo'].includes(e.name)) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$|test-helper/.test(e.name)) {
+          const text = readFileSync(p, 'utf8');
+          const rel = path.relative(root, p);
+          if (/\bgetDocument\(/.test(text) && rel !== 'packages/files/src/pdfjs.ts')
+            offenders.push(rel);
+          if (/new PDFParse\((?!pdfDocumentParams\()/.test(text)) offenders.push(rel);
+        }
+      }
+    };
+    for (const top of ['packages', 'server']) walk(path.join(root, top));
+    expect(offenders).toEqual([]);
   });
 });
 

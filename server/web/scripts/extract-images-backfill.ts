@@ -3,8 +3,8 @@
  *
  * Documents ingested before this feature existed (or in a format that gained
  * a picture pass later: `.epub`, `.vsdx` and `.vsd` with the anydoc move,
- * still awaiting the owner's approval, PICTURE_FORMATS_PENDING_APPROVAL in
- * @mantle/files/embedded-images) kept their diagrams and screenshots locked
+ * PICTURE_FORMATS_OPT_IN in @mantle/files/embedded-images, which this
+ * script leaves out unless they are named with `--types`) kept their diagrams and screenshots locked
  * inside the binary. This raises `pictures_requested` for every document
  * that could carry pictures and hasn't produced any yet; the agent's
  * `extractPicturesOnRequest` (server/api extract/images.ts) runs the
@@ -55,7 +55,7 @@
 
 import postgres from 'postgres';
 import { env } from '@mantle/config';
-import { IMAGE_BEARING_EXTS } from '@mantle/files/embedded-images';
+import { IMAGE_BEARING_EXTS, PICTURE_FORMATS_OPT_IN } from '@mantle/files/embedded-images';
 import {
   closeDb,
   db,
@@ -73,8 +73,12 @@ if (!DATABASE_URL) {
 }
 
 /** The extractor's own list (it reads the same export), so a format can
- *  never be extracted but not backfilled, or the reverse. */
-const DEFAULT_EXTS = [...IMAGE_BEARING_EXTS];
+ *  never be extracted but not backfilled, or the reverse; less the opt-in
+ *  formats (PICTURE_FORMATS_OPT_IN): their pictures are taken for new
+ *  uploads, and a document already read is backfilled only when its format
+ *  is named with `--types`, so a backfill run never spends on them by
+ *  default. */
+const DEFAULT_EXTS = [...IMAGE_BEARING_EXTS].filter((ext) => !PICTURE_FORMATS_OPT_IN.includes(ext));
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in
  *  `@mantle/files/embedded-images`. Used only when the extractor worker has no

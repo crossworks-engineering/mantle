@@ -6,10 +6,11 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, isExtractExempt, nodes } from '@mantle/db';
 import {
   extOf,
   ensureExtractedImagesFolder,
+  isDocumentLimitError,
   isRetryableReadError,
   upsertFile,
 } from '@mantle/files';
@@ -24,6 +25,7 @@ import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import { loadFileBytes } from './file-bytes';
 import { stepInOwnTrace } from './trace';
+import { crashedRead, guardedReadFor } from './read-guard';
 
 /** Tag marking a file node as derived from a document rather than uploaded.
  *  The lookup path for "show me the pictures from that manual". */
@@ -35,15 +37,29 @@ export const PICTURES_REQUESTED_CHANNEL = 'pictures_requested';
 
 let picturesChain: Promise<void> = Promise.resolve();
 
+/** When a requested pictures read could not run in time (every read slot
+ *  busy), it is asked again after these waits, then given up with a log
+ *  line: bounded, and never a loop. */
+export const PICTURES_RETRY_DELAYS_MS: readonly number[] = [60_000, 300_000, 900_000];
+
 /**
  * An owner's explicit request to take the pictures of a document the
  * extractor has already read: the images backfill's door. The extractor's
  * own pass runs for new or changed bytes only (gates.ts), so a re-notify of
  * an indexed document no longer reaches it, and must not (a rename, a move
  * or an indexing toggle never takes pictures). One request at a time, after
- * the ones before it. A name-only (metadata) file is never opened.
+ * the ones before it. Refused, as the extractor refuses them: a node that
+ * is not a file of the brain, an exempt node (extract-exempt.ts), one whose
+ * read took the process down (./read-guard.ts), a brain with no extractor
+ * worker, and a name-only (metadata) file, which is never opened. A read
+ * that could not run in time is asked again later
+ * ({@link PICTURES_RETRY_DELAYS_MS}).
  */
-export function extractPicturesOnRequest(nodeId: string, ownerId: string): Promise<void> {
+export function extractPicturesOnRequest(
+  nodeId: string,
+  ownerId: string,
+  attempt = 0,
+): Promise<void> {
   picturesChain = picturesChain
     .then(async () => {
       const [node] = await db
@@ -52,12 +68,37 @@ export function extractPicturesOnRequest(nodeId: string, ownerId: string): Promi
         .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
         .limit(1);
       if (!node || node.type !== 'file') return;
-      const { resolveEffectiveIndexing } = await import('@mantle/files');
-      if ((await resolveEffectiveIndexing(ownerId, node)).effective === 'metadata') return;
+      if (isExtractExempt(node) || crashedRead(node)) return;
       const { resolveExtractor } = await import('./model');
       const worker = await resolveExtractor(ownerId);
-      const params = (worker?.params ?? {}) as { max_embedded_images_per_doc?: number | null };
-      await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc);
+      if (!worker) {
+        log('extractor').warn(
+          `requested pictures of ${nodeId.slice(0, 8)} not taken: no extractor worker`,
+        );
+        return;
+      }
+      const { resolveEffectiveIndexing } = await import('@mantle/files');
+      if ((await resolveEffectiveIndexing(ownerId, node)).effective === 'metadata') return;
+      const params = (worker.params ?? {}) as { max_embedded_images_per_doc?: number | null };
+      try {
+        await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc);
+      } catch (err) {
+        if (!isRetryableReadError(err)) throw err;
+        const wait = PICTURES_RETRY_DELAYS_MS[attempt];
+        if (wait === undefined) {
+          log('extractor').error(
+            `requested pictures of ${nodeId.slice(0, 8)} given up after ${attempt + 1} tries: ${errorMessage(err)}`,
+          );
+          return;
+        }
+        log('extractor').warn(
+          `requested pictures of ${nodeId.slice(0, 8)} wait for a read slot; asked again in ${Math.round(wait / 1000)} s`,
+        );
+        setTimeout(
+          () => void extractPicturesOnRequest(nodeId, ownerId, attempt + 1),
+          wait,
+        ).unref?.();
+      }
     })
     .catch((err: unknown) =>
       log('extractor').error('requested pictures failed:', errorMessage(err)),
@@ -144,10 +185,14 @@ export async function maybeExtractEmbeddedImages(
     await import('@mantle/files/embedded-images');
   let result: Awaited<ReturnType<typeof extractEmbeddedImages>>;
   try {
-    result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
-      // Blank/0 on the worker means "use the built-in default", not "keep none".
-      maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
-    });
+    // Stamped while it runs (./read-guard.ts): a read that takes the process
+    // down is never run again on its own.
+    result = await guardedReadFor(node, loaded.ext, 'pictures', () =>
+      extractEmbeddedImages(loaded.bytes, loaded.ext, {
+        // Blank/0 on the worker means "use the built-in default", not "keep none".
+        maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
+      }),
+    );
   } catch (err) {
     // A read that could not run in time (every read slot busy, a first
     // time-out): the extract is retried, pictures included.
@@ -485,6 +530,9 @@ export async function ocrIngestPdfNode(
    *  the document is what went wrong. Null when rasterize wasn't reached or
    *  didn't throw. */
   rasterizeError: string | null;
+  /** The render was stopped by a document limit (a picture or a page past
+   *  what a read may hold): a verdict on the document, terminal. */
+  limit: string | null;
   /** A document or vision worker really read the PDF (native or any page).
    *  With no text, that is a blank scan: a verdict on the content. */
   ran: boolean;
@@ -497,7 +545,14 @@ export async function ocrIngestPdfNode(
   // unreadable scan": the caller records `bytes_unavailable`, not the
   // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
   if (!loaded)
-    return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null, ran: false };
+    return {
+      text: null,
+      encrypted: false,
+      bytesMissing: true,
+      rasterizeError: null,
+      limit: null,
+      ran: false,
+    };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -563,7 +618,14 @@ export async function ocrIngestPdfNode(
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
           h.setMeta({ chars: text.length, native: true });
         });
-        return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
+        return {
+          text,
+          encrypted: false,
+          bytesMissing: false,
+          rasterizeError: null,
+          limit: null,
+          ran: true,
+        };
       }
       let ran = native.ran;
 
@@ -576,18 +638,27 @@ export async function ocrIngestPdfNode(
       // configure a vision worker. Carry the message out so the caller can be
       // honest about which of the two happened.
       let rasterizeError: string | null = null;
+      let limit: string | null = null;
       const pages = await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {
           try {
             const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
-            const r = await rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES });
+            // In a worker thread under limits, stamped while it runs
+            // (./read-guard.ts).
+            const r = await guardedReadFor(node, 'pdf', 'ocr', () =>
+              rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES }),
+            );
             h.setMeta({ pages: r.length });
             return r;
           } catch (err) {
-            // Unrenderable / corrupt / encrypted PDF — record and give up.
+            // A render that could not run in time: the extract is retried.
+            if (isRetryableReadError(err)) throw err;
             const msg = errorMessage(err);
-            if (/password/i.test(msg)) encrypted = true;
+            // Stopped by a limit: the document, not the machinery.
+            if (isDocumentLimitError(err)) limit = msg;
+            // Unrenderable / corrupt / encrypted PDF — record and give up.
+            else if (/password/i.test(msg)) encrypted = true;
             else rasterizeError = msg;
             h.setMeta({ pages: 0, error: msg });
             return [];
@@ -595,7 +666,7 @@ export async function ocrIngestPdfNode(
         },
       );
       if (pages.length === 0)
-        return { text: null, encrypted, bytesMissing: false, rasterizeError, ran };
+        return { text: null, encrypted, bytesMissing: false, rasterizeError, limit, ran };
 
       const parts: string[] = [];
       let model: string | null = null;
@@ -633,7 +704,17 @@ export async function ocrIngestPdfNode(
       }
 
       const text = cleanText(parts.join('\n\n').trim());
-      if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null, ran }; // worker unavailable / blank scan / encrypted
+      // worker unavailable / blank scan / encrypted
+      if (!text) {
+        return {
+          text: null,
+          encrypted,
+          bytesMissing: false,
+          rasterizeError: null,
+          limit: null,
+          ran,
+        };
+      }
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
@@ -645,7 +726,14 @@ export async function ocrIngestPdfNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length, pages: pages.length });
       });
-      return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
+      return {
+        text,
+        encrypted: false,
+        bytesMissing: false,
+        rasterizeError: null,
+        limit: null,
+        ran: true,
+      };
     },
   );
 }

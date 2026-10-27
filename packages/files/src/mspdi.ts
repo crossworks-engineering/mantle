@@ -732,6 +732,20 @@ export function parseMspdi(bytes: Buffer | string): MspdiResult | null {
   }
 }
 
+/** {@link parseMspdi} in a worker thread (./isolate.ts): a plan export can
+ *  be 64 MB of XML, which is parsed off the server's heap and event loop.
+ *  Throws a DocumentLimitError when a limit stopped the read. */
+export async function readMspdi(bytes: Buffer): Promise<MspdiResult | null> {
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('mspdi', [bytes]);
+}
+
+/** {@link renderMspdiText} in a worker thread, as {@link readMspdi}. */
+export async function readMspdiText(bytes: Buffer): Promise<string> {
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('mspdiText', [bytes]);
+}
+
 /** Grids only — the `ParsedSheet[]` contract the auto-table pass consumes. */
 export function parseMspdiToGrids(bytes: Buffer | string): ParsedSheet[] {
   return parseMspdi(bytes)?.sheets ?? [];

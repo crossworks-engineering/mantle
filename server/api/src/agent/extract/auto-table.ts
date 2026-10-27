@@ -13,6 +13,7 @@ import { recordIngest, step } from '@mantle/tracing';
 import { createTable, tableDocFromGrid } from '@mantle/content';
 import { envNum } from '@mantle/config';
 import { loadFileBytes, loadFileHead } from './file-bytes';
+import { guardedReadFor } from './read-guard';
 
 /** Extensions that auto-convert to Table(s) on ingest.
  *
@@ -81,64 +82,67 @@ export async function maybeAutoTableSpreadsheet(
 
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
-  let sheets: Awaited<ReturnType<typeof parseSpreadsheetToGrid>>;
+  let sheets: Awaited<ReturnType<typeof parseSpreadsheetToGrid>> = [];
   /** Caveat the reader needs before querying — set only where the grid is
    *  genuinely misleading read the obvious way. */
   let description: string | undefined;
   /** A drawing's table names the bytes it was built from (its revision). */
   let sourceSha256: string | undefined;
   try {
-    if (fileExt === 'xml') {
-      // Sniffed again, not redundantly: the early check is skipped when the head
-      // could not be read, so this is the one that runs for those. It costs a
-      // regex over 8 KB of a buffer already in hand.
-      const { parseMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
-      const plan = sniffMspdi(loaded.bytes) ? parseMspdi(loaded.bytes) : null;
-      sheets = plan?.sheets ?? [];
-      if (plan) {
-        // Only the ROLL-UP sentence is conditional. Gating the whole
-        // description on summaryCount left a flat plan — one with no summary
-        // rows — with no description at all, losing the unit guidance, which is
-        // true of every plan. Correct-looking and quietly less useful.
-        const rollup =
-          plan.meta.summaryCount > 0
-            ? ` ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are summary` +
-              ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
-              ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
-              ` level.`
-            : '';
-        description =
-          `Microsoft Project plan.${rollup}` +
-          ` Durations are hours unless the column says days; slack is in days.` +
-          ` Rows are in plan order.`;
+    // A read in this process is stamped while it runs (./read-guard.ts).
+    await guardedReadFor(node, fileExt, 'tables', async () => {
+      if (fileExt === 'xml') {
+        // Sniffed again, not redundantly: the early check is skipped when the head
+        // could not be read, so this is the one that runs for those. It costs a
+        // regex over 8 KB of a buffer already in hand.
+        const { readMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
+        const plan = sniffMspdi(loaded.bytes) ? await readMspdi(loaded.bytes) : null;
+        sheets = plan?.sheets ?? [];
+        if (plan) {
+          // Only the ROLL-UP sentence is conditional. Gating the whole
+          // description on summaryCount left a flat plan — one with no summary
+          // rows — with no description at all, losing the unit guidance, which is
+          // true of every plan. Correct-looking and quietly less useful.
+          const rollup =
+            plan.meta.summaryCount > 0
+              ? ` ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are summary` +
+                ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
+                ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
+                ` level.`
+              : '';
+          description =
+            `Microsoft Project plan.${rollup}` +
+            ` Durations are hours unless the column says days; slack is in days.` +
+            ` Rows are in plan order.`;
+        }
+      } else if (fileExt === 'dwf') {
+        // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs)
+        // from @mantle/files/dwf — on circuitization sets the Layers tab IS the
+        // circuit registry. Content-gated on the DWF magic like parse.ts.
+        const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/dwf');
+        sheets = sniffDwf(loaded.bytes) ? await parseDwfToGrids(loaded.bytes) : [];
+        if (sheets.length > 0) {
+          description =
+            `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
+            ` registry; Labels is every annotation string with its occurrence count and` +
+            ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
+            ` per row in Sheets for measurements.`;
+        }
+      } else if (fileExt === 'dwg' || fileExt === 'dxf') {
+        // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks /
+        // Counts, and the bones: Segments / Nodes / Inserts / Circuits) from
+        // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
+        // memoised exchange with the text digest and the image pass. The
+        // description says what each tab holds and what it does not.
+        const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
+        const built = await cadRegistryWorkbook(loaded.bytes, fileExt);
+        sourceSha256 = dwgSourceSha(loaded.bytes);
+        sheets = built.grids.sheets;
+        description = built.description;
+      } else {
+        sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
       }
-    } else if (fileExt === 'dwf') {
-      // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs)
-      // from @mantle/files/dwf — on circuitization sets the Layers tab IS the
-      // circuit registry. Content-gated on the DWF magic like parse.ts.
-      const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/dwf');
-      sheets = sniffDwf(loaded.bytes) ? await parseDwfToGrids(loaded.bytes) : [];
-      if (sheets.length > 0) {
-        description =
-          `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
-          ` registry; Labels is every annotation string with its occurrence count and` +
-          ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
-          ` per row in Sheets for measurements.`;
-      }
-    } else if (fileExt === 'dwg' || fileExt === 'dxf') {
-      // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks /
-      // Counts, and the bones: Segments / Nodes / Inserts / Circuits) from
-      // @mantle/files/{dwg,dxf}, sidecar-parsed, so this pass shares the one
-      // memoised exchange with the text digest and the image pass. The
-      // description says what each tab holds and what it does not.
-      const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
-      const built = await cadRegistryWorkbook(loaded.bytes, fileExt);
-      sourceSha256 = dwgSourceSha(loaded.bytes);
-      sheets = built.grids.sheets;
-      description = built.description;
-    } else {
-      sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
-    }
+    });
   } catch (err) {
     // DWG/DXF: the workbook, the text digest and the image pass all hang off
     // the SAME sidecar exchange. A transient sidecar failure here used to

@@ -1391,26 +1391,38 @@ Files already indexed are not read again by the roll. A file the in-process
 readers refuse for its size gets a `document_too_large` skip with the
 reason, and is not retried until it changes.
 
-**Pictures from three more formats, awaiting the owner's approval.** With
-this roll the extractor takes the pictures inside `.epub`, `.vsdx` and
+**Pictures from three more formats, approved by the owner 2026-10-27.**
+With this roll the extractor takes the pictures inside `.epub`, `.vsdx` and
 `.vsd` files too (it took them from `.docx`, `.pdf`, `.pptx`, the
 spreadsheets, OpenDocument, `.doc`, `.ppt`, `.rtf` and the CAD formats
 before). Each picture kept becomes an image the vision worker describes: one
-model call each, at most 30 a document. They are one list,
-`PICTURE_FORMATS_PENDING_APPROVAL` in `packages/files/src/embedded-images.ts`;
-empty it to turn all three off, nothing else changes. The roll itself spends
-nothing on them: the pictures pass runs for new or changed bytes only (a new
-upload), never for a file already read, and never on a rename, a move or an
-indexing toggle. Existing documents get their pictures only through the
-hand-run images backfill (`extract-images-backfill`, dry run by default;
-`--types` leaves these three out).
+model call each, so up to 30 vision calls for each new upload of these
+types. They are one list, `PICTURE_FORMATS_OPT_IN` in
+`packages/files/src/embedded-images.ts`; remove a format there to stop its
+picture spend, nothing else changes. The roll itself spends nothing on them:
+the pictures pass runs for new or changed bytes only (a new upload), never
+for a file already read, and never on a rename, a move or an indexing
+toggle. Existing documents get their pictures only through the hand-run
+images backfill (`extract-images-backfill`, dry run by default), whose
+default list leaves these three out: they are backfilled only when named
+with `--types`.
 
 **Document reads and memory.** Every document read runs in a worker thread
 sized from the container's memory cap: in the 3 GB api and web containers,
 one read at a time with a 768 MB heap (counted as 1,280 MB with the memory
-the heap does not see), at most 16 waiting, each up to 120 s (15 s for a
-chat attachment). A read that waits too long, or times out once, is
-retried, not skipped.
+the heap does not see, so the process peaks at about 2.8 GB), at most 16
+waiting with at most 256 MB of input between them, each up to 120 s (15 s
+for a chat attachment). A read that waits too long, or times out once, is
+retried, not skipped. A process that finds no container cap logs
+`[files] document reads: ... no container memory cap found, so one read at
+a time` at its first read: on a box that runs the api or web without a
+memory cap, expect that line, and reads one at a time. A read that grows
+past its share of memory outside its heap is stopped and skipped
+(`document_too_large`). From this roll on, a heavy read stamps its node
+first, so a read that takes the process down is not read again by a retry
+or a dead letter re-sent at boot (it ends as `document_too_large`); a
+document that took it down before the roll has no stamp, and its retried
+job reads it again, under the limits.
 
 ## Rollback
 

@@ -71,7 +71,9 @@ export function claimPdfStackProcess(): boolean {
 }
 
 /**
- * Every pdfjs-backed entry point in the package, as `[name, run]` pairs.
+ * Every pdfjs-backed entry point in the package, as `[name, run]` pairs: the
+ * in-process halves, the code each read thread runs (./isolate.ts), so they
+ * share THIS module registry.
  *
  * Callers run these in ONE process and in a chosen order — that is the whole
  * point. See `pdf-stack.test.ts`.
@@ -81,8 +83,8 @@ export function pdfStackSteps(bytes: Buffer): [string, () => Promise<unknown>][]
     [
       'rasterizePdfToPngs',
       async () => {
-        const { rasterizePdfToPngs } = await import('./rasterize');
-        const pages = await rasterizePdfToPngs(bytes, { maxPages: 1 });
+        const { rasterizePdfToPngsInProcess } = await import('./rasterize');
+        const pages = await rasterizePdfToPngsInProcess(bytes, 1, 2);
         if (pages.length !== 1 || !pages[0]?.png.length) throw new Error('no page rendered');
         return pages;
       },
@@ -99,10 +101,19 @@ export function pdfStackSteps(bytes: Buffer): [string, () => Promise<unknown>][]
     [
       'extractPdfTextWithPassword',
       async () => {
-        const { extractPdfTextWithPassword } = await import('./pdf-password');
-        const r = await extractPdfTextWithPassword(bytes, '');
+        const { extractPdfTextWithPasswordInProcess } = await import('./pdf-password');
+        const r = await extractPdfTextWithPasswordInProcess(bytes, '', 15);
         if (!r.ok) throw new Error(`failed: ${r.reason} ${r.message ?? ''}`);
         return r;
+      },
+    ],
+    [
+      'pdfPageCount',
+      async () => {
+        const { pdfPageCountInProcess } = await import('./pdf');
+        const n = await pdfPageCountInProcess(bytes);
+        if (n !== 1) throw new Error(`page count ${n}`);
+        return n;
       },
     ],
     [

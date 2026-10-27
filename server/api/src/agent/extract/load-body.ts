@@ -28,6 +28,7 @@ import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
+import { guardedReadFor } from './read-guard';
 
 /** The body of a node with no model call (no vision, no OCR worker): the typed
  *  dispatch below. The cost guard's local-only index reads this. */
@@ -291,7 +292,14 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
             },
           },
           async (h) => {
-            const t = await parseDocumentBytes(loaded.bytes, loaded.ext);
+            const read = () => parseDocumentBytes(loaded.bytes, loaded.ext);
+            // A read in this process is stamped while it runs
+            // (./read-guard.ts); a plain-text read, a Tika-only format and
+            // the sidecar's CAD exchange are not heavy reads here.
+            const t =
+              route === 'utf8' || route === 'tika' || route === 'none'
+                ? await read()
+                : await guardedReadFor(node, loaded.ext, 'text', read);
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },
@@ -585,6 +593,29 @@ export async function loadExtractableBody(
             filename: existingData.filename,
             sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
             hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+          },
+        },
+        node,
+      );
+      return { ok: false };
+    } else if (ocr.limit) {
+      // The page render was stopped by a document limit: the same bytes stop
+      // the same way every time, so terminal, and the drain must not re-queue
+      // it (each re-queue would ask the document worker again).
+      await recordTerminalSkip(
+        {
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'document_too_large',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            extension: fileExt,
+            hint: `${ocr.limit} The file stays stored and findable by name.`,
           },
         },
         node,

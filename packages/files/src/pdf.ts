@@ -16,13 +16,16 @@
 
 import { PDFParse } from 'pdf-parse';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
+import { PDF_MAX_IMAGE_PIXELS, loadPdfjs, openPdf, pdfDocumentParams } from './pdfjs';
 
 /** pdf-parse (v2) ends every page with a `-- N of M --` marker line, text or
  *  no text. */
 const PAGE_MARKER_LINE = /^[ \t]*-- \d+ of \d+ --[ \t]*$/gm;
 
 export async function parsePdf(buf: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  // pdf-parse passes these straight to pdfjs: the same limits as every other
+  // reader (./pdfjs.ts).
+  const parser = new PDFParse(pdfDocumentParams(buf));
   try {
     const result = await parser.getText();
     const text = (result.text ?? '').trim();
@@ -39,11 +42,17 @@ export async function parsePdf(buf: Buffer): Promise<string> {
 }
 
 /** Page count of a PDF, or null when pdfjs cannot open it (corrupt,
- *  encrypted). Reads the page tree only: no text, no rendering. Used to price
- *  an OCR pass before it runs (maintain `ocr-rescan`). */
+ *  encrypted) or the read was stopped. Reads the page tree only: no text, no
+ *  rendering, in a worker thread (./isolate.ts). Used to price an OCR pass
+ *  before it runs (maintain `ocr-rescan`). */
 export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+  const { runIsolated } = await import('./isolate');
+  return runIsolated('pdfPageCount', [bytes]).catch(() => null);
+}
+
+/** {@link pdfPageCount} on the calling thread: the parse worker's job. */
+export async function pdfPageCountInProcess(bytes: Buffer): Promise<number | null> {
+  const task = await openPdf(bytes);
   try {
     const doc = await task.promise;
     return doc.numPages;
@@ -60,10 +69,11 @@ export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
  *  output; this bounds the *work* on a long document. */
 const MAX_PDF_PAGES_SCANNED = 100;
 
-/** Refuse to materialise an image beyond this many pixels. RGBA expansion is
- *  4 bytes a pixel, so 30 MP is already a 120 MB buffer — past this we're
- *  looking at a full-bleed scan, which the OCR path owns anyway. */
-const MAX_IMAGE_PIXELS = 30_000_000;
+/** Refuse to materialise an image beyond this many pixels: pdfjs's own
+ *  picture limit (./pdfjs.ts), so pdfjs never decodes one either. RGBA is 4
+ *  bytes a pixel, so 25 MP is a 100 MB buffer; past it is a full-bleed scan,
+ *  which the OCR path owns anyway. */
+const MAX_IMAGE_PIXELS = PDF_MAX_IMAGE_PIXELS;
 
 /** pdfjs `ImageKind`. Only the two colour kinds are handled — see the note
  *  in `toPngBytes`. */
@@ -131,10 +141,10 @@ function soleFigureCaption(lines: string[]): string | undefined {
  * `rasterizePdfToPngs` + the vision worker where they belong.
  */
 export async function extractPdfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
+  const pdfjs = await loadPdfjs();
+  let loadingTask: Awaited<ReturnType<typeof openPdf>> | null = null;
   try {
-    loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+    loadingTask = await openPdf(bytes);
     const doc = await loadingTask.promise;
     const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
 

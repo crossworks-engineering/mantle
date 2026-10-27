@@ -17,6 +17,7 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
   // The extractor.
   extract_skipped: [
     'server/api/src/agent/extract/terminal.ts',
+    'server/api/src/agent/extract/read-guard.ts',
     'packages/db/src/extract-skip-backfill.ts',
   ],
   extract_completed_at: ['server/api/src/agent/extractor.ts'],

@@ -37,6 +37,16 @@ async function guarded(bytes: Buffer): Promise<Map<string, number>> {
 
 const JOBS = {
   pdfText: async (bytes: Buffer) => capped(await (await import('./pdf')).parsePdf(bytes)),
+  pdfPageCount: async (bytes: Buffer) => (await import('./pdf')).pdfPageCountInProcess(bytes),
+  pdfTextWithPassword: async (bytes: Buffer, password: string, maxPages: number) =>
+    (await import('./pdf-password')).extractPdfTextWithPasswordInProcess(bytes, password, maxPages),
+  pdfRaster: async (bytes: Buffer, maxPages: number, viewportScale: number) =>
+    (await import('./rasterize')).rasterizePdfToPngsInProcess(bytes, maxPages, viewportScale),
+  dwfStructured: async (bytes: Buffer) =>
+    (await import('./dwf')).parseDwfStructuredInProcess(bytes),
+  dwfThumbnails: async (bytes: Buffer) => (await import('./dwf')).dwfThumbnailsInProcess(bytes),
+  mspdi: async (bytes: Buffer) => (await import('./mspdi')).parseMspdi(bytes),
+  mspdiText: async (bytes: Buffer) => capped((await import('./mspdi')).renderMspdiText(bytes)),
   docxText: async (bytes: Buffer) => {
     await guarded(bytes);
     return capped(await (await import('./docx')).parseDocx(bytes));

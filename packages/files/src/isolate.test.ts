@@ -11,6 +11,7 @@ import { docxBomb, odsBomb, sparseXlsx, vsdxBomb } from './bombs.test-helper';
 import { isDocumentLimitError, isRetryableReadError } from './document-limit';
 import {
   MAX_CONCURRENT_READS,
+  MAX_WAITING_BYTES,
   MAX_WAITING_READS,
   readBudget,
   readSlots,
@@ -56,6 +57,22 @@ function limitReason(result: PromiseSettledResult<unknown>): string | undefined 
  *  seconds to tens of seconds. Generous for a loaded test box. */
 const MAX_LAG_MS = 500;
 
+/**
+ * The read's stall, held against the box's own: when it is over
+ * {@link MAX_LAG_MS}, the same span is measured again with no read running,
+ * and the read may stall that much more than the box did on its own. A
+ * parallel test run loads the machine (other files' workers, GC in the
+ * runner), which stalls this loop whatever the read does; a read that stalled
+ * it itself (the bombs took seconds) is still far past both.
+ */
+async function expectNoStall(lagMs: number, spanMs: number): Promise<void> {
+  if (lagMs < MAX_LAG_MS) return;
+  const { lagMs: ambient } = await lagWhile(
+    () => new Promise((r) => setTimeout(r, Math.min(Math.max(spanMs, 200), 10_000))),
+  );
+  expect(lagMs).toBeLessThan(ambient + MAX_LAG_MS);
+}
+
 const ORIGINAL_TIKA_URL = process.env.TIKA_URL;
 beforeEach(() => {
   delete process.env.TIKA_URL;
@@ -69,12 +86,18 @@ describe('document reads under limits', () => {
   it('an ODS that unpacks to 77 MB of text is refused, the server untouched', async () => {
     const bomb = odsBomb();
     expect(bomb.length).toBeLessThan(1_000_000);
+    const start = performance.now();
     const { result, lagMs } = await lagWhile(() => parseDocumentBytes(bomb, 'ods'));
     expect(limitReason(result)).toBe('too_large');
     expect(String((result as PromiseRejectedResult).reason.message)).toContain(
       MAX_READ_TEXT_CHARS.toLocaleString('en-US'),
     );
-    expect(lagMs).toBeLessThan(MAX_LAG_MS);
+    // Relative to the box's own stall: this read takes seconds in its
+    // thread, and under a parallel run the box stalls on its own (LOW 9).
+    await expectNoStall(lagMs, performance.now() - start);
+    // The caller's bytes were copied for the thread, not moved from it.
+    expect(bomb.length).toBeGreaterThan(0);
+    expect(bomb.readUInt32BE(0)).toBe(0x504b0304);
   }, 30_000);
 
   it("an ODS past anydoc's own node limit ends as its reader limit", async () => {
@@ -299,7 +322,10 @@ describe('the legacy-sheet cell budget', () => {
     await a;
     expect(convertLegacySheetToXlsx(xls, 'application/vnd.ms-excel')).toBe(a);
     // Another upload of the same bytes is its own read.
-    expect(convertLegacySheetToXlsx(Buffer.from(xls), 'application/vnd.ms-excel')).not.toBe(a);
+    const other = convertLegacySheetToXlsx(Buffer.from(xls), 'application/vnd.ms-excel');
+    expect(other).not.toBe(a);
+    // Let it finish: a read left running would hold a slot into the next test.
+    await other;
   }, 30_000);
 
   /** Tika-shaped XHTML: one `<h1>` and `<table>` per sheet. */
@@ -346,7 +372,33 @@ describe('the read budget and the wait', () => {
     // Room for two.
     expect(readBudget(8 * GiB)).toMatchObject({ heapMb: 768, concurrency: 2 });
     expect(readBudget(64 * GiB)).toMatchObject({ heapMb: 768, concurrency: 2 });
+    // No container cap found: the machine's memory is no budget, one read.
+    expect(readBudget(64 * GiB, false)).toMatchObject({ heapMb: 768, concurrency: 1 });
   });
+
+  it('refuses a read whose input would take the waiting bytes past their cap', async () => {
+    const held = Array.from({ length: MAX_CONCURRENT_READS }, (_, i) =>
+      runIsolated('anydocMarkdown', [odsBomb(4_101 + i), 'ods'], { timeoutMs: 1_500 }).catch(
+        (e: unknown) => e,
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    const big = Buffer.alloc(MAX_WAITING_BYTES / 2 + 1, 0x20);
+    // Waits less than the held reads take, so it is never read itself.
+    const first = runIsolated('markup', [big, 'html'], { waitMs: 300 }).catch((e: unknown) => e);
+    expect(readSlots().waitingBytes).toBeGreaterThanOrEqual(big.length);
+    const second = await runIsolated('markup', [big, 'html']).catch((e: unknown) => e);
+    expect(isRetryableReadError(second)).toBe(true);
+    expect(isRetryableReadError(await first)).toBe(true);
+    expect(readSlots().waitingBytes).toBe(0);
+    for (const r of await Promise.all(held)) expect(r).toBeInstanceOf(Error);
+    await vi.waitFor(
+      () => expect(readSlots()).toEqual({ active: 0, waiting: 0, waitingBytes: 0 }),
+      {
+        timeout: 5_000,
+      },
+    );
+  }, 60_000);
 
   it('a read that waits past its deadline, or finds the queue full, is retryable', async () => {
     // Hold every slot with reads of a bomb (each a different document: the
@@ -382,8 +434,11 @@ describe('the read budget and the wait', () => {
     for (const r of await Promise.all(queued)) expect(r).toBe('hi');
     // A slot is the thread's: it frees when the thread has exited, just
     // after the answer.
-    await vi.waitFor(() => expect(readSlots()).toEqual({ active: 0, waiting: 0 }), {
-      timeout: 5_000,
-    });
+    await vi.waitFor(
+      () => expect(readSlots()).toEqual({ active: 0, waiting: 0, waitingBytes: 0 }),
+      {
+        timeout: 5_000,
+      },
+    );
   }, 60_000);
 });
