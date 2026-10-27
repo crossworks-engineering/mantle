@@ -30,7 +30,7 @@ export const IMAGE_CHECK_NOTE =
  *  a second call on a circuit by the same caller at the same revision of
  *  its drawings is refused for `againMinutes` unless `recheck`, and a
  *  recheck at most `perHour` times an hour on a circuit, counting every
- *  call that filed answers. It protects the owner's money, nothing else. */
+ *  call claimed (checks-store.ts claimVerifyRun). It protects the owner's money, nothing else. */
 export const VERIFY_GUARD = { againMinutes: 10, perHour: 3 } as const;
 
 /** How often circuit_verify runs: one call per trace in a turn, never a

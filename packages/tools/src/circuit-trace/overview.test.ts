@@ -10,7 +10,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildCanvas } from '@mantle/diagram-templates';
 import { sealFieldsOf, type StoredCheck } from './check';
 import { sealOf } from './check-seal';
-import { canvasDataOf, checksOverviewOf, OVERVIEW_SOURCE_MAX, traceSourceOf } from './overview';
+import {
+  canvasDataOf,
+  checksOverviewOf,
+  OVERVIEW_COUNTS_NOTE,
+  OVERVIEW_SOURCE_MAX,
+  traceSourceOf,
+} from './overview';
 import type { CandidateTable } from './read';
 import { IMAGE_CHECK_NOTE } from './workflow';
 
@@ -127,6 +133,8 @@ describe('the overview', () => {
     expect(valve.overview).toBe(OV);
     // An alternative only after a no.
     expect(c.items.find((i) => i.kind === 'join')!.alternative).toBeUndefined();
+    // The counts are the Checks tab's: said every time, in words only.
+    expect(out.limits[0]).toBe(OVERVIEW_COUNTS_NOTE);
     const said = out.limits.join(' ');
     expect(said).toMatch(/1 of the drawing's 3 drawing tables could not be read/);
     expect(said).toMatch(/1 check of an earlier revision/);
@@ -139,6 +147,9 @@ describe('the overview', () => {
       checks: async () => null,
     });
     expect(out.circuits[0]!.items).toEqual([]);
-    expect(out.limits).toEqual(['PID-1001: its Checks tab could not be read.']);
+    expect(out.limits).toEqual([
+      OVERVIEW_COUNTS_NOTE,
+      'PID-1001: its Checks tab could not be read.',
+    ]);
   });
 });

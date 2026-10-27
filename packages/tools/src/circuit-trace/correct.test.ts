@@ -189,7 +189,7 @@ describe('the trace corrects from the image', () => {
     expect(validate('pid', r.pid).ok).toBe(true);
   });
 
-  it("a row's Crops cell reads as file ids and, when every crop has one, their hashes", () => {
+  it("a row's Crops cell reads as file ids; the hash words are skipped", () => {
     const [a, b] = ['a'.repeat(64), 'b'.repeat(64)];
     const C1 = '00000000-0000-4000-8000-00000000c001';
     const C2 = '00000000-0000-4000-8000-00000000c002';
@@ -197,11 +197,9 @@ describe('the trace corrects from the image', () => {
     expect(cropIdsOf(cell)).toEqual({
       overview: '00000000-0000-4000-8000-0000000000a1',
       crops: [C1, C2],
-      cropSha: [a, b],
     });
-    // A crop without its hash (a row filed before them, or a cell edited
-    // by hand): no hashes at all.
-    expect(cropIdsOf(`${C1} ${cropCellWords(C2, b)}`).cropSha).toBeUndefined();
+    // A crop without its hash (a row filed before them) reads the same.
+    expect(cropIdsOf(`${C1} ${cropCellWords(C2, b)}`).crops).toEqual([C1, C2]);
     // Only file ids: other words in a cell edited by hand are left out.
     expect(cropIdsOf(`<b>x</b> ${C1} javascript:1`).crops).toEqual([C1]);
   });

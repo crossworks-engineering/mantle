@@ -257,6 +257,7 @@ describe.skipIf(!URL)('the image check store', () => {
       },
       storable: s.storeRefusal,
       claim: s.claimVerifyRun,
+      runs: s.readVerifyRuns,
       store: s.storeChecks,
       now: () => new Date('2026-10-25T12:00:00.000Z'),
       ...over,
@@ -363,9 +364,13 @@ describe.skipIf(!URL)('the image check store', () => {
     expect(check.sealedRow(t, check.storedCheckOf(row))).toBe(true);
     expect(check.sealedRow(t, check.storedCheckOf({ ...row, Reason: 'typed' }))).toBe(false);
     // Each crop's id with the sha256 of the bytes stored, sealed with the row.
-    const cell = check.cropIdsOf(String(row.Crops));
-    const cropIds = cell.crops;
-    expect(cell.cropSha).toEqual([createHash('sha256').update(Buffer.from('png-1')).digest('hex')]);
+    const cropIds = check.cropIdsOf(String(row.Crops)).crops;
+    expect(String(row.Crops)).toContain(
+      check.cropCellWords(
+        cropIds[0]!,
+        createHash('sha256').update(Buffer.from('png-1')).digest('hex'),
+      ),
+    );
     const crops = await admin`select data from nodes where id = any(${cropIds}::uuid[])`;
     expect(crops).toHaveLength(1);
     expect(crops[0]!.data).toMatchObject({
@@ -580,6 +585,10 @@ describe.skipIf(!URL)('the image check store', () => {
     const [after] =
       await admin`select data->${s.VERIFY_RUNS_KEY} as runs from nodes where id = ${t}`;
     expect(after!.runs).toEqual([{ circuit, by: 'login:c', at: later.at, revision: 'r1' }]);
+    // The guard's early look reads the same claims, without the lock.
+    expect(await s.readVerifyRuns(anchor, [t])).toEqual([
+      { tableId: t, circuit, by: 'login:c', at: later.at, revision: 'r1' },
+    ]);
   });
 
   it('one circuit however its name is written: the lock and the claims read it alike', async () => {

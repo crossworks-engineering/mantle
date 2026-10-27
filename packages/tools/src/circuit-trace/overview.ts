@@ -33,6 +33,10 @@ export const OVERVIEW_SOURCE_MAX = 1_100_000;
 export const OVERVIEW_ITEMS_MAX = 200;
 /** Circuits a canvas's data names (one today: a trace is one circuit). */
 const CIRCUITS_MAX = 4;
+/** The one line every traced overview carries: the counts are the Checks
+ *  tab's, not the drawing's. Words only; nothing compares the two. */
+export const OVERVIEW_COUNTS_NOTE =
+  "Counts are the Checks tab's latest answers; the drawing shows only those its current trace still asks.";
 
 const KINDS: readonly CheckKind[] = ['join', 'end', 'link', 'valve'];
 const clip = (s: string | undefined, n: number) => (s ?? '').slice(0, n);
@@ -91,7 +95,7 @@ export async function checksOverviewOf(
   };
   const src = traceSourceOf(data);
   if (!src) return none;
-  const limits: string[] = [];
+  const limits: string[] = [OVERVIEW_COUNTS_NOTE];
   const tables = await (deps.tables ?? dwgTablesByIds)(ownerId, src.tables);
   const missing = src.tables.length - tables.length;
   if (missing > 0)
@@ -110,7 +114,7 @@ export async function checksOverviewOf(
     }
     if (read.cut)
       limits.push(
-        `${t.title}: more image checks of this circuit than one read takes; only the first were read.`,
+        `${t.title}: more image checks of this circuit than one read takes; only the newest were read.`,
       );
     const { byKey, stale, unsealed } = latestChecks(t.id, read.rows, t.revision ?? null);
     if (stale)

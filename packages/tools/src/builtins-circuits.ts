@@ -21,7 +21,12 @@ import {
   type AppliedCheck,
   type CheckKind,
 } from './circuit-trace/check';
-import { claimVerifyRun, storeChecks, storeRefusal } from './circuit-trace/checks-store';
+import {
+  claimVerifyRun,
+  readVerifyRuns,
+  storeChecks,
+  storeRefusal,
+} from './circuit-trace/checks-store';
 import { callerHash } from './circuit-trace/check-seal';
 import { verifyCircuit } from './circuit-trace/verify';
 import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
@@ -378,8 +383,8 @@ export async function circuitVerifyHandler(
     }
     max = Math.min(Math.floor(n), VERIFY_MAX.questions);
   }
-  // Who calls: the Checks rows' By column, which the guard against a second
-  // call reads (verify.ts verifyAgainRefusal).
+  // Who calls: the Checks rows' By column and the call's claim; the guard
+  // against a second call reads the claims (verify.ts verifyAgainRefusal).
   const by = callerOf();
   // The resolved worker and its key, for the asks of this call only.
   let route: { worker: AiWorker; credential: ProviderCredential } | null = null;
@@ -456,6 +461,7 @@ export async function circuitVerifyHandler(
         },
         storable: storeRefusal,
         claim: claimVerifyRun,
+        runs: readVerifyRuns,
         store: (owner, sheet, c, answers, overview, checkedAt) =>
           storeChecks(owner, sheet, c, answers, overview, checkedAt, by),
         now: () => new Date(),

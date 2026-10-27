@@ -634,7 +634,8 @@ function checksQuery(tab: WorkbookTabRef, circuit: string): string {
  * One drawing table's Checks tab rows of `circuit` (the check overview, no
  * geometry read): the table opened through `tableSqlSurface` as the
  * caller, null when it cannot be read, an empty list when it has no Checks
- * tab. At most MAX_CHECK_ROWS rows, `cut` past them.
+ * tab. At most MAX_CHECK_ROWS rows, the newest first (`_rid` descending,
+ * so a cut keeps the latest answers), `cut` past them.
  */
 export async function readCircuitChecks(
   ownerId: string,
@@ -653,7 +654,7 @@ export async function readCircuitChecks(
   if (!surface) return null;
   const tab = surface.tabs.find((x) => x.name === CHECKS_TAB);
   if (!tab) return { rows: [], cut: false };
-  const ordered = `${checksQuery(tab, circuit)}${ORDER}`;
+  const ordered = `${checksQuery(tab, circuit)}${ORDER} DESC`;
   const rows: StoredCheck[] = [];
   for (let offset = 0; offset < MAX_CHECK_ROWS; offset += PAGE) {
     const r = await run(surface.abs, `${ordered} LIMIT ${PAGE} OFFSET ${offset}`, PAGE);

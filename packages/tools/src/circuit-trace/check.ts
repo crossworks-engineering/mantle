@@ -803,7 +803,8 @@ export type StoredCheck = {
   /** Who ran the call that filed it (builtins-circuits.ts callerOf: the
    *  caller's kind and a keyed hash of its id, never the raw id); '' on
    *  older rows. Sealed with the row when it has one (check-seal.ts); the
-   *  guard against a second call reads it (verify.ts verifyAgainRefusal). */
+   *  call's claim carries the same value, and the guard against a second
+   *  call reads the claims (verify.ts verifyAgainRefusal). */
   by?: string;
 };
 
@@ -958,34 +959,24 @@ const SHA_WORD = /^sha256:([0-9a-f]{64})$/;
 export const FILE_ID = /^[0-9a-f-]{36}$/i;
 
 /** The Crops cell (`overview <id> <id> sha256:<hex> ...`) as the overview's
- *  file id, the crops' file ids and, when every crop carries one, the
- *  sha256 of each crop's bytes as stored (`cropSha`, in the order of
- *  `crops`; the cell is sealed with the row, so these are what
- *  circuit_verify stored). Only words that are file ids (FILE_ID) and
- *  hashes, so a cell edited by hand never puts other text in the check
- *  overview (the present checks route reads crops through this). */
-export function cropIdsOf(cell: string): {
-  overview?: string;
-  crops: string[];
-  cropSha?: string[];
-} {
+ *  file id and the crops' file ids. Only words that are file ids (FILE_ID),
+ *  so a cell edited by hand never puts other text in the check overview
+ *  (the present checks route reads crops through this); a crop's sha256
+ *  word stays in the sealed cell, for whoever opens the tab. */
+export function cropIdsOf(cell: string): { overview?: string; crops: string[] } {
   const words = cell.split(/\s+/).filter(Boolean);
   let overview: string | undefined;
   const crops: string[] = [];
-  const shas: (string | null)[] = [];
   for (let i = 0; i < words.length; i++) {
     if (words[i] === 'overview' && words[i + 1]) {
       if (FILE_ID.test(words[i + 1]!)) overview = words[i + 1];
       i += 1;
     } else if (FILE_ID.test(words[i]!)) {
       crops.push(words[i]!);
-      const sha = SHA_WORD.exec(words[i + 1] ?? '');
-      shas.push(sha ? sha[1]! : null);
-      if (sha) i += 1;
+      if (SHA_WORD.test(words[i + 1] ?? '')) i += 1;
     }
   }
-  const cropSha = shas.every((x): x is string => x !== null) && shas.length ? shas : null;
-  return { ...(overview ? { overview } : {}), crops, ...(cropSha ? { cropSha } : {}) };
+  return { ...(overview ? { overview } : {}), crops };
 }
 
 /**
