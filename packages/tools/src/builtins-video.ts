@@ -1,5 +1,5 @@
 /**
- * `video_ingest` — point at an uploaded video (or audio) file, get a
+ * `video_ingest`: point at an uploaded video (or audio) file, get a
  * searchable transcript page + a durable audio artifact into the brain.
  *
  * Pipeline:
@@ -130,7 +130,7 @@ const video_ingest: BuiltinToolDef = {
     if (meta.sizeBytes > MAX_FILE_BYTES()) {
       return {
         ok: false,
-        error: `file is ${meta.sizeBytes} bytes — over the ${MAX_FILE_BYTES()}-byte cap (VIDEO_INGEST_MAX_FILE_BYTES)`,
+        error: `file is ${meta.sizeBytes} bytes, over the ${MAX_FILE_BYTES()}-byte cap (VIDEO_INGEST_MAX_FILE_BYTES)`,
       };
     }
     // The STT worker BEFORE the bytes: never extract audio for a

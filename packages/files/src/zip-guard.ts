@@ -63,8 +63,13 @@ function inflateCapped(
   budget: number,
 ): Buffer | null {
   const data = compressedOf(entry);
-  const content = data?.compressedContent;
-  if (!data || !content) return null;
+  // JSZip's private `_data` is what lets a part be measured before anything
+  // inflates it. Gone (a JSZip that changed its insides), the guard would
+  // measure nothing and pass every bomb: fail closed instead
+  // (zip-guard.test.ts pins it).
+  if (!data) throw new Error(`the zip guard cannot read part ${path}: JSZip has no _data`);
+  const content = data.compressedContent;
+  if (!content) return null;
   const cap = Math.min(maxEntry, budget);
   const magic = data.compression?.magic;
   if (magic === STORE) {
@@ -173,8 +178,11 @@ export async function loadZip(bytes: Buffer, limits: ZipLimits = {}): Promise<Zi
       return {
         declaredSize: typeof declared === 'number' && Number.isFinite(declared) ? declared : null,
         async(kind: 'string' | 'uint8array'): Promise<never> {
-          const out = read(path, entry);
-          return Promise.resolve((kind === 'string' ? out.toString('utf8') : out) as never);
+          // A refusal is a rejected promise, as JSZip's own `async` gives.
+          return Promise.resolve().then(() => {
+            const out = read(path, entry);
+            return (kind === 'string' ? out.toString('utf8') : out) as never;
+          });
         },
       } as ZipEntry;
     },

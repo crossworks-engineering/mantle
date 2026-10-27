@@ -51,7 +51,7 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  *
  * Accepts modern workbooks (.xlsx / .xlsm) and delimited text (.csv / .tsv),
  * which yields a single sheet named "Sheet1". Legacy binaries must be
- * converted first (`convertLegacySheetToXlsx`) — `bytesLookLikeOoxml` tells
+ * converted first (`convertLegacySheetToXlsx`): `bytesLookLikeOoxml` tells
  * them apart. Returns an empty array if nothing tabular is found.
  *
  * **Throws** rather than degrading: an unreadable workbook (encrypted,
@@ -62,7 +62,7 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
 export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
   if (bytesLookLikeLegacyBiff(buf)) {
     throw new Error(
-      'legacy .xls/.xlsb workbook — convert it with convertLegacySheetToXlsx before importing',
+      'legacy .xls/.xlsb workbook: convert it with convertLegacySheetToXlsx before importing',
     );
   }
   if (!bytesLookLikeOoxml(buf)) return parseDelimited(buf.toString('utf-8'));
@@ -83,7 +83,7 @@ export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
  * `PK\x03\x04`). SheetJS used to sniff the format for us and hand back a
  * workbook either way; exceljs reads only OOXML, so the CSV/TSV branch has to
  * be chosen here instead. A legacy `.xls` (BIFF, magic `D0 CF 11 E0`) fails
- * this check too and is correctly NOT treated as text — it never reaches this
+ * this check too and is correctly NOT treated as text: it never reaches this
  * function, because ./parse.ts converts it upstream.
  */
 function bytesLookLikeOoxml(buf: Buffer): boolean {
@@ -92,7 +92,7 @@ function bytesLookLikeOoxml(buf: Buffer): boolean {
   );
 }
 
-/** OLE2 compound-file magic (`D0 CF 11 E0 A1 B1 1A E1`) — a legacy `.xls` or
+/** OLE2 compound-file magic (`D0 CF 11 E0 A1 B1 1A E1`): a legacy `.xls` or
  *  `.xlsb`. Detected explicitly so such bytes raise a message that names the
  *  fix, instead of being read as UTF-8 and yielding a grid of mojibake. */
 function bytesLookLikeLegacyBiff(buf: Buffer): boolean {

@@ -196,7 +196,7 @@ export const file_upload: BuiltinToolDef = {
         : Buffer.from(contentBase64!, 'base64');
     if (bytes.byteLength > MAX_UPLOAD_BYTES) {
       const hint = MEDIA_EXTS.has(extOf(filename))
-        ? ' — for video, ingest the link instead (video_ingest)'
+        ? ': for a recording, upload the file through the web uploader (its cap is larger), then video_ingest with its file id'
         : '';
       return {
         ok: false,

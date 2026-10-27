@@ -351,7 +351,7 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  * pipeline (`extractEmbeddedImages` → gate → file nodes) and stamped with
  * its `provenance` tier:
  *
- *   - **sidecar_render** — the CAD tier's ezdwf raster of the sheet's
+ *   - **sidecar_render**: the CAD tier's ezdwf raster of the sheet's
  *     vector content (300 dpi, engineering-legible), rendered in the parser
  *     service (the value is the stored provenance name, kept from the days
  *     of the media sidecar). Taken only when the
@@ -371,7 +371,7 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  * `location.sheet` carries the sheet title so the naming cascade yields
  * "… (90-10-01)"-style node titles.
  */
-/** Render resolution for CAD-tier sheet rasters — a PER-BOX dial via the
+/** Render resolution for CAD-tier sheet rasters: a PER-BOX dial via the
  *  `DWF_RENDER_DPI` env (clamped to the renderer's 50–600 range; default
  *  300). The brain reads it and passes it to the parser with the request.
  *
@@ -469,11 +469,11 @@ export async function extractDwfImages(
         );
       }
       console.warn(
-        `[dwf] CAD render incomplete (${sheets.length}/${sheetCount}, skipped ${skipped}) — using embedded thumbnails`,
+        `[dwf] CAD render incomplete (${sheets.length}/${sheetCount}, skipped ${skipped}); using embedded thumbnails`,
       );
     } else {
       console.warn(
-        `[dwf] CAD render unavailable (${render.code}: ${render.message}) — using embedded thumbnails`,
+        `[dwf] CAD render unavailable (${render.code}: ${render.message}); using embedded thumbnails`,
       );
     }
   }

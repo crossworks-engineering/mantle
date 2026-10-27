@@ -1,5 +1,5 @@
 {
-  "about": "The circuit rules the DWG sidecar (infra/media-sidecar/dwg_bones.py) and circuit_trace (packages/tools/src/circuit-trace/walk.ts) both apply. Each side has a test that runs its own rules over these cases: infra/media-sidecar/tests/test_rules_golden.py and packages/tools/src/circuit-trace/rules-golden.test.ts. Change a rule here and on both sides together. Names are made up.",
+  "about": "The circuit rules the parser's CAD tier (server/parser/cad/dwg_bones.py) and circuit_trace (packages/tools/src/circuit-trace/walk.ts) both apply. Each side has a test that runs its own rules over these cases: server/parser/cad/tests/test_rules_golden.py and packages/tools/src/circuit-trace/rules-golden.test.ts. Change a rule here and on both sides together. Names are made up.",
   "nearRel": 0.01,
   "extentTrim": 0.005,
   "layers": [

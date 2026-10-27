@@ -21,36 +21,67 @@ gigabytes, a spreadsheet that declares a billion cells, a PDF with a
 inside a process cannot reliably stop that, so the guarantee is the
 operating system's:
 
-- **Memory.** `mem_limit` (default `2g`, `PARSER_MEM_LIMIT`) and `cpus`
-  (default `2`, `PARSER_CPUS`) in `docker-compose.yml`. A document that
-  blows the limit is killed by the kernel inside the parser, never in a
-  brain process.
-- **No network.** The parser sits only on the compose network `parser`
-  (`mantle_parser_net`, `internal: true`): no route out, no DNS beyond the
-  stack. The app services join that network as well as the default one, so
-  they reach `parser:8095` and the parser reaches nothing.
+- **Memory, one job at a time.** `mem_limit` (default `2g`,
+  `PARSER_MEM_LIMIT`) with `memswap_limit` equal to it (no swap past it),
+  and one job at a time (`PARSER_MAX_JOBS`, default 1), so a job has the
+  whole memory and a healthy file is never killed for its neighbour. A
+  document that blows the limit is killed by the kernel inside the parser,
+  never in a brain process.
+- **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
+  1-vCPU box included. Raise it, and `PARSER_MAX_JOBS` with the memory, on
+  a box with cores to spare.
+- **Disk.** The scratch space (`/tmp`, where a job's files live) is a tmpfs
+  of `PARSER_TMP_SIZE` (default `1g`): a job cannot fill the host's disk.
+  A tmpfs is memory: a job's files count in `mem_limit` while they sit
+  there. A request takes its job slot before its body is read, so the
+  scratch space only ever holds the files of the job that runs, and the
+  job's directory is removed before its slot is given back.
+- **Network.** The parser sits only on the compose network `parser`
+  (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
+  `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
+  The app services that send it files (web, api and the workers that run
+  turns or tools: telegram, events, runs, push) join that network as well
+  as the default one. What the parser can reach is exactly those
+  containers, on that network; not postgres, the object store or anything
+  past the host. The other workers and migrate are not on it.
 - **Little else.** `cap_drop: ALL`, `no-new-privileges`, `pids_limit: 512`,
-  no mounted data, no secret but its bearer token. `init: true` (tini)
-  reaps a job's children.
+  no mounted data, no secret but its bearer token (a job's process does
+  not get it; a reader's child program gets a minimal environment of its
+  own). `init: true` (tini) reaps a job's children.
 - **Restarts.** `restart: unless-stopped`, a `/healthz` healthcheck, and the
   `autoheal` label for a wedged process.
 
 Inside, each job runs in its own process and process group
 (`server/parser/src/job.ts`), and the server sends `SIGKILL` to the group at
-the job's deadline. The kernel's OOM kill lands on that job process (the
-largest), the server answers `crashed`, and the next job starts clean.
+the job's deadline. The deadline is absolute: the server settles on the
+job's exit, not on its output pipes closing, so a descendant that left the
+group (`setsid`) cannot hold the slot; and when the job ends, any process it
+left running (a child of PID 1 that is not the server) is killed
+(`server/parser/src/proc.ts`, `reapOrphans`). The kernel's OOM kill lands on
+the job process (the largest), the server answers `crashed`, and the next
+job starts clean.
 
 ## Limits
 
 | Setting                     | Default | What it bounds                                                         |
 | --------------------------- | ------- | ---------------------------------------------------------------------- |
-| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory (compose)                                       |
-| `PARSER_CPUS`               | `2`     | the container's CPU share (compose)                                    |
-| `PARSER_MAX_JOBS`           | 2       | jobs at once, each its own process                                     |
+| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                      |
+| `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                    |
+| `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)          |
+| `PARSER_MAX_JOBS`           | 1       | jobs at once, each its own process                                     |
 | `PARSER_QUEUE_MAX`          | 16      | requests that may wait for a slot; one waits at most 30 s, then `busy` |
-| `PARSER_MAX_UPLOAD_MB`      | 1024    | the largest body, enforced while it streams to disk                    |
+| `PARSER_MAX_UPLOAD_MB`      | 512     | the largest body (the brain's streamed upload cap), while it streams   |
 | `PARSER_CLIENT_CONCURRENCY` | 2       | jobs one brain process sends at once                                   |
 | `PARSER_TOKEN`              | none    | the bearer token on every route but `GET /healthz`                     |
+
+An answer is at most 96 MB (`PARSER_ANSWER_MAX_BYTES`,
+`packages/files/src/parser-wire.ts`): the brain holds an answer in memory
+while it reads it, so the parser refuses a larger one `too_large` rather
+than send it, and the client refuses one past it. The pictures of one
+answer (a document's images, a PDF's pages for OCR, a drawing's crops)
+share a 64 MB budget: the pictures past it are left out and counted, never
+an error. A PDF page whose PNG is past 12 MB is sent as JPEG, and at most
+20 pages are rendered for one answer.
 
 Without `PARSER_TOKEN` the parser serves without auth and logs that it does
 (its network is internal to the stack). `scripts/install.sh` writes one, and
@@ -116,13 +147,18 @@ Every failure is a typed `ParserError` with a `code`, and `retryable` and
 | `unavailable` | 503  | the parser could not be reached, or a wrong token                          | retried, never counted |
 | `bad_request` | 400  | the request was malformed (a client bug)                                   | a verdict              |
 
-**Counted** codes count against the bytes in that job, in the brain process:
-the first is retryable (a loaded box can be slow once, a restart can drop
-one connection), the second is terminal, and a terminal job is refused at
-once without asking the parser again. One bomb costs the parser at most two
-jobs of each kind per brain process, and a restart in between gives it one
-more try, never a loop. Counted per job, a document whose pictures run out
-of time still has its text read.
+**Counted** codes count against the bytes in that job: the first is
+retryable (a loaded box can be slow once, a restart can drop one
+connection), the second is terminal, and a terminal job is refused at once
+without asking the parser again. The extractor keeps the count on the node
+(`data.parser_failures`, keyed by the job and the bytes' sha256, written by
+`server/api/src/agent/extract/parser-failures.ts`; migration 0337), so it
+survives a restart or a roll: one bomb costs the parser at most two jobs of
+each kind, whatever happens in between. A content change drops the key
+with the other byte keys. Anything else (a chat turn, a thumbnail) counts
+in its process's memory. Counted per job, a document whose pictures run
+out of time still has its text read. Nothing re-drives a terminal file: it
+waits for its bytes to change.
 
 What each caller does with them:
 
@@ -133,14 +169,31 @@ What each caller does with them:
   and `unsupported` index the title, as before.
 - **Side passes** (pictures, auto-table): only `busy` and `unavailable` fail
   the job; any other failure is logged and the text body is indexed anyway.
+  DWG and DXF are the exception: their workbook, digest and picture come
+  from one exchange, so a retryable failure there fails the whole extract,
+  and the failure is kept for the rest of that extract (no later pass asks
+  again or counts it twice).
 - **A PDF with a text layer, read natively by preference**: the text layer
   is kept whatever the parser answers.
-- **The scanned-PDF OCR pass**: a first refusal or `busy` is the
-  non-terminal `pdf_unreadable` skip the drain retries; `too_large` is the
-  terminal `pdf_too_large`. The native model read of a PDF that found no
-  text is remembered per bytes in the process, so a retry does not pay for
-  it again (at most one extra read across a restart).
-- **A chat turn** with an attachment says the file could not be read.
+- **The scanned-PDF OCR pass**: `busy`, `unavailable` and the first
+  timeout or crash fail the extract and pg-boss retries it; the second
+  counted failure is the terminal `document_unreadable`; `too_large` is the
+  terminal `pdf_too_large`; a reader's `failed` is the non-terminal
+  `pdf_unreadable`. The native model read of a PDF that found no text is
+  remembered per bytes in the api process, so a retry there does not pay
+  for it again. The gap: an api restart between two runs costs one more
+  native read (the count on the node ends a timing-out or crashing render
+  after two runs).
+- **HEIC for vision** (`packages/files/src/transcode.ts`): a retryable
+  failure is thrown, never an unconverted HEIC sent on to a vision model.
+- **A chat turn** with an attachment says the file could not be read. A
+  busy parser is said at once ("try again in a moment"): the interactive
+  path does not wait out `busy` (`withParserScope({ interactive: true })`),
+  the background extract does (2, 5 and 10 s).
+- **Health** (`parserHealth`): up means the parser answers `/healthz` AND
+  takes this process's token. `/healthz` says whether the parser asks for a
+  token and whether the caller's is right; a mismatch, or a parser that asks
+  none while this process has one, reads as down.
 
 ## What stays in the brain
 
@@ -156,11 +209,22 @@ structure or the brain wrote the bytes itself:
 - **Image header sniffs** (`packages/files/src/image-probe.ts`): format and
   dimensions from a handful of header bytes, no decode.
 - **Email MIME** (`mailparser` in `packages/email/src/providers/imap.ts`):
-  the mail itself; an attachment's contents go to the parser like any file.
-  An email's HTML body is turned into text by the parser (`/text`).
-- **Writing**: exceljs and jszip build workbooks and app packages, and
-  saxes sanitizes SVG the brain produced (`packages/content/src`). Those
-  libraries never read an untrusted file in the brain.
+  the mail itself, at most 64 MB a message (the size is read before the
+  source is fetched; a larger one lands with its headers and a note), with
+  `skipHtmlToText`. An attachment's contents go to the parser like any
+  file, and an HTML-only body is turned into text by the parser (`/text`,
+  in the extractor and `email_get`).
+- **`.mantleapp` imports** (`packages/content/src/app-package.ts`): jszip
+  reads an app package, bounded before it is opened (entry count from the
+  zip's end record, at most 16 entries, each file and the whole package
+  capped).
+- **Drawing SVGs** (`packages/content/src/svg-sanitize.ts`): a drawing's
+  own snapshot, parsed by saxes and rebuilt from an allowlist, element
+  count and depth capped, DOCTYPE refused, then rendered by resvg as
+  WebAssembly in a worker thread with no file system.
+- **Writing**: exceljs and jszip build workbooks and app packages. Past
+  the two bounded reads above, those libraries never read an untrusted file
+  in the brain.
 
 The rule is enforced by lint: `eslint-rules/readers-in-parser.mjs` refuses
 an import of a reader module (`@mantle/files/readers/*`, or a reader file
@@ -173,11 +237,16 @@ parser route, never a reader in the brain.
 
 - **Legacy Visio (`.vsd`)**: Tika read its text; nothing reads it now. The
   extractor asks for a `.vsdx` export. `.vsdx` reads in full.
-- **Pictures in `.xls` and `.xlsb`**: the text and grids read, the embedded
-  pictures do not.
+- **Pictures in `.xlsb`**: the text and grids read, the embedded pictures
+  do not (Tika's `/unpack` read them). `.xls` pictures were never read.
 - **`video_ingest` by link**: removed with `yt-dlp`. The tool takes an
-  uploaded file only (`file_node_id`); for a video on the web, download it
-  and upload the file.
+  uploaded file only: upload the file, then `video_ingest` with its file
+  id (`file_node_id`).
+- **The audio extract** is held to the duration limit (`-t`) and one byte
+  past the size limit (`-fs`), and reads only local files (`-protocol_whitelist
+file`) in the demuxers of the stored media formats (`-format_whitelist`:
+  mp4/mov/m4a, matroska/webm, avi, mp3, wav, ogg, flac, aac). A recording
+  whose length ffprobe cannot read is cut at the duration limit.
 
 ## Running it in development
 
@@ -192,3 +261,26 @@ fail typed (`crashed`, "could not start") and everything else still reads.
 
 The CAD Python tests live in `server/parser/cad/tests`; they skip the
 cases that need ezdxf when it is not installed.
+
+## Building the images before a release
+
+The release workflow (`.github/workflows/release.yml`) builds both images
+for amd64 and arm64, probes them (the readers, then the parser service
+booted with no network reading a document end to end) and only then moves
+`:latest`. Building both architectures on the workstation BEFORE the tag
+catches a broken arch an hour earlier. Once per machine (arm64 emulation
+and a builder that can build for both):
+
+```sh
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker buildx create --name mantle-xarch --use
+```
+
+Then, from a clean checkout of the commit to tag:
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 --target parser --output type=cacheonly .
+docker buildx build --platform linux/amd64,linux/arm64 --target server --output type=cacheonly .
+```
+
+Both must finish without an error; nothing is pushed.
