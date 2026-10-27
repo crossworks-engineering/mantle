@@ -21,7 +21,7 @@
  * A colour the data names itself (`#rrggbb` on a circuit or a service) is
  * the author's and is left alone.
  */
-import { NODE_KINDS, PALETTE, SERIES, opaque } from './style.ts';
+import { NODE_KINDS, PALETTE, ROLE_COLOURS, SERIES, opaque } from './style.ts';
 
 /** Where a house ink goes: the token of the same role. */
 const INKS: Record<string, string> = {
@@ -84,11 +84,45 @@ export const THEME_TEXT_COLOURS: Readonly<Record<string, string>> = Object.fromE
   ]),
 );
 
+/** A role's token: its own variable (an app may set it), else the theme's
+ *  ink of the role's hue, else (a page without the inks) the plain token. */
+const role = (name: string, ink: string, plain: string) =>
+  `var(--diagram-${name}, ${ink.startsWith('color-mix') ? ink : `var(--${ink}, ${plain})`})`;
+/** Two inks mixed half and half (a role between two hues). */
+const between = (a: string, b: string) => `color-mix(in oklab, var(--${a}) 50%, var(--${b}))`;
+
+/** The colour set's roles (style 2) and their tokens: one each, no two the
+ *  same. Each is one of the theme's inks (share-ui themes.css: every
+ *  `-ink` and `code-` token is solved to 4.5:1 on every neutral surface,
+ *  the card among them, in light and in dark), or half and half of two
+ *  (contradicted red-violet, link teal), so a role keeps the contrast a
+ *  line (3:1) and its text (4.5:1) need in every theme
+ *  (colour-set.test.ts reads them all). The chart ramp is tuned for fills
+ *  and falls short on some themes' cards. Drawn only for a style 2
+ *  drawing (`themeSvg`), so a classic drawing, or a profile colour that
+ *  happens to equal a role's, themes as before. Text takes a quarter of
+ *  the foreground, as the series do. */
+export const THEME_ROLE_COLOURS: Readonly<Record<string, string>> = {
+  [ROLE_COLOURS.main]: role('main', 'destructive-ink', 'var(--destructive)'),
+  [ROLE_COLOURS.branch]: role('branch', 'info-ink', 'var(--chart-2)'),
+  [ROLE_COLOURS.deadleg]: role('deadleg', 'code-number', 'var(--chart-3)'),
+  [ROLE_COLOURS.instrument]: role('instrument', 'code-variable', 'var(--chart-5)'),
+  [ROLE_COLOURS.guess]: role('guess', 'warning-ink', 'var(--chart-4)'),
+  [ROLE_COLOURS.checked]: role('checked', 'success-ink', 'var(--chart-1)'),
+  [ROLE_COLOURS.contradicted]: role(
+    'contradicted',
+    between('destructive-ink', 'code-variable'),
+    'var(--destructive)',
+  ),
+  [ROLE_COLOURS.corrected]: role('corrected', 'primary-ink', 'var(--primary)'),
+  [ROLE_COLOURS.link]: role('link', between('info-ink', 'success-ink'), 'var(--chart-2)'),
+};
+
 /** The attribute that marks a themed drawing; the stylesheet is scoped to it,
  *  since a `<style>` inside inline SVG applies to the whole document. */
 export const THEME_ATTR = 'data-mantle-theme';
 
-function themeCss(): string {
+function themeCss(svg: string, style: number): string {
   const rules: string[] = [];
   for (const [house, token] of Object.entries(THEME_COLOURS)) {
     for (const prop of ['fill', 'stroke']) {
@@ -99,13 +133,23 @@ function themeCss(): string {
   for (const [house, css] of Object.entries(THEME_TEXT_COLOURS)) {
     rules.push(`svg[${THEME_ATTR}] text[fill="${house}"]{fill:${css}}`);
   }
+  for (const [hex, token] of Object.entries(style >= 2 ? THEME_ROLE_COLOURS : {})) {
+    if (!svg.includes(`"${hex}"`)) continue;
+    for (const prop of ['fill', 'stroke'])
+      rules.push(`svg[${THEME_ATTR}] [${prop}="${hex}"]{${prop}:${token}}`);
+    rules.push(
+      `svg[${THEME_ATTR}] text[fill="${hex}"]{fill:color-mix(in oklab, ${token} 75%, var(--foreground))}`,
+    );
+  }
   return rules.join('');
 }
 
-/** The drawing, themed: the marker on its root and the stylesheet first. */
-export function themeSvg(svg: string): string {
+/** The drawing, themed: the marker on its root and the stylesheet first.
+ *  `style`: the drawing's style edition (style.ts); the colour set's roles
+ *  are themed only from 2. */
+export function themeSvg(svg: string, style = 1): string {
   const open = /^<svg\b[^>]*>/.exec(svg);
   if (!open) return svg;
   const root = open[0].replace(/^<svg\b/, `<svg ${THEME_ATTR}="tokens"`);
-  return `${root}<style>${themeCss()}</style>${svg.slice(open[0].length)}`;
+  return `${root}<style>${themeCss(svg, style)}</style>${svg.slice(open[0].length)}`;
 }

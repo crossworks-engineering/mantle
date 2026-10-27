@@ -441,7 +441,13 @@ export function drawBubble(inst: Instrument, cx: number, cy: number, stroke: str
 export const OPC_SIZE = { w: 56, h: 24 };
 
 /** An off-page connector: a pentagon pointing in the flow direction. */
-export function drawOffPage(b: Box, sheet: string, stroke: string = INK): string {
+export function drawOffPage(
+  b: Box,
+  sheet: string,
+  stroke: string = INK,
+  /** A dash for the outline (style 2: a guessed end, dotted). */
+  dash?: string,
+): string {
   const { x, y, w, h } = b;
   return (
     el('path', {
@@ -449,6 +455,7 @@ export function drawOffPage(b: Box, sheet: string, stroke: string = INK): string
       fill: PAPER,
       stroke,
       'stroke-width': 1.2,
+      'stroke-dasharray': dash,
     }) +
     textEl('eyebrow', x + (w - 12) / 2 + 2, y + h / 2 + 3, sheet, {
       'text-anchor': 'middle',

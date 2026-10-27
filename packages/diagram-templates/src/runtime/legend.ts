@@ -81,3 +81,9 @@ export function lineSwatch(stroke: string, width = 1.2, dash?: string) {
       'stroke-dasharray': dash,
     });
 }
+
+/** A text sample in a mark's colour: what a coloured word on the drawing
+ *  (a GUESS note, a page reference) means. */
+export function markSwatch(colour: string, sample = 'Abc') {
+  return (x: number, y: number) => textEl('legend', x + 2, y + 9, sample, { fill: colour });
+}

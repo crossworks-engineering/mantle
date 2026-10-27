@@ -33,6 +33,7 @@ import {
   suggest,
   type Checked,
   type Obj,
+  said,
 } from '../../runtime/validate.ts';
 import { clipText, type Measurer } from '../../runtime/text.ts';
 import type { PageFailure, RenderResult } from '../../types.ts';
@@ -41,18 +42,20 @@ import {
   PAGE_ID,
   PID_LIMITS,
   PID_VERSION,
+  drawingFields,
   validatePid,
   type LinkSite,
   type PidData,
 } from './schema.ts';
+import { SET_LIMITS } from './sizes.ts';
+import { overLimitError, pidLimitsProblem } from './limits.ts';
 
 export type PidPage = { id: string; title: string; data: PidData };
 export type PidSet = { set: true; title: string; description?: string; pages: PidPage[] };
 /** What the `pid` template takes: one drawing, or a set of them. */
 export type PidInput = PidData | PidSet;
 
-/** The pages a set holds, and the longest page title (the page bar's). */
-export const SET_LIMITS = { pages: 40, pageTitle: 60 } as const;
+export { SET_LIMITS };
 
 /** The set's own fields; the four after `description` are page defaults. */
 const SET_KEYS = [
@@ -65,8 +68,12 @@ const SET_KEYS = [
   'legend',
   'showTitle',
   'pages',
+  'style',
+  'view',
 ];
-const INHERITED = ['profile', 'legendNames', 'legend', 'showTitle'] as const;
+/** Page defaults the set gives every page that does not set its own: the
+ *  style edition too, so every page draws in one style. */
+const INHERITED = ['profile', 'legendNames', 'legend', 'showTitle', 'style'] as const;
 /** A drawing's own fields, which belong in a page's data, not on the set. */
 const DRAWING_KEYS = [
   'sheet',
@@ -90,11 +97,14 @@ export function isPidSet(d: PidInput): d is PidSet {
 export function validatePidSet(input: unknown): Checked<PidSet> {
   const issues = newIssues();
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
+  // The sizes first, as for one drawing (schema.ts validatePid).
+  const tooLarge = pidLimitsProblem(input);
+  if (tooLarge !== null) return { ok: false, errors: [overLimitError(tooLarge)], warnings: [] };
   const d = input as Obj;
   const misplaced = Object.keys(d).filter((k) => DRAWING_KEYS.includes(k));
   for (const k of misplaced) {
     issues.errors.push(
-      `${k}: a set holds its drawings in pages[].data; move '${k}' into the page it belongs to.`,
+      `${k}: a set holds its drawings in pages[].data; move ${said(k)} into the page it belongs to.`,
     );
   }
   checkKeys(
@@ -104,9 +114,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
     issues,
   );
   if (d.template !== undefined && d.template !== 'pid') {
-    issues.errors.push(
-      `template: this is the 'pid' template, the data says '${String(d.template)}'.`,
-    );
+    issues.errors.push(`template: this is the 'pid' template, the data says ${said(d.template)}.`);
   }
   const title = str(d, 'title', '', issues, { required: true, max: PID_LIMITS.text.title }) ?? '';
   const description = str(d, 'description', '', issues, {
@@ -116,6 +124,9 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
     issues.warnings.push(
       'description: add one sentence on what the set shows (screen readers read it).',
     );
+  // The set's view (the live canvas's zoom); its style is checked as every
+  // page's default below.
+  if (d.view !== undefined) drawingFields({ view: d.view }, issues);
   const rawPages = objects(
     list(d, 'pages', '', issues, { required: true, max: SET_LIMITS.pages }),
     'pages',
@@ -138,7 +149,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       patternText: 'a page id (letters, digits, - . _)',
     });
     if (id && seen.has(id))
-      issues.errors.push(`${p}.id: page id '${id}' is already used by ${seen.get(id)}.`);
+      issues.errors.push(`${p}.id: page id ${said(id)} is already used by ${seen.get(id)}.`);
     else if (id) seen.set(id, p);
     if (!isObj(page.data)) {
       issues.errors.push(
@@ -202,7 +213,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       if (!target) {
         const s = suggest(site.link.page, [...pageNo.keys()]);
         issues.errors.push(
-          `${path}: no page '${site.link.page}'${s ? ` (did you mean '${s}'?)` : ''}; a link names a page id of this set.`,
+          `${path}: no page ${said(site.link.page)}${s ? ` (did you mean ${said(s)}?)` : ''}; a link names a page id of this set.`,
         );
         continue;
       }
@@ -215,7 +226,7 @@ export function validatePidSet(input: unknown): Checked<PidSet> {
       if (site.link.focus && target.r.data && !elementsOf(target.r.data).has(site.link.focus)) {
         const s = suggest(site.link.focus, [...elementsOf(target.r.data)]);
         issues.errors.push(
-          `${path.replace(/\.link$/, '.focus')}: page '${site.link.page}' has no line, equipment, connector or tee '${site.link.focus}'${s ? ` (did you mean '${s}'?)` : ''}.`,
+          `${path.replace(/\.link$/, '.focus')}: page ${said(site.link.page)} has no line, equipment, connector or tee ${said(site.link.focus)}${s ? ` (did you mean ${said(s)}?)` : ''}.`,
         );
         continue;
       }
@@ -293,13 +304,19 @@ export function renderPidSet(set: PidSet, m: Measurer): RenderResult {
       const path = `pages[${i}].data`;
       failed.push({ page: p.id, path, error });
       warnings.push(
-        `${path}: page '${p.id}' could not be drawn (${error}); its page shows this error in place of the drawing. This is a template bug; report it with the data.`,
+        `${path}: page ${said(p.id)} could not be drawn (${error}); its page shows this error in place of the drawing. This is a template bug; report it with the data.`,
       );
       return { ...failedPage(p.title, idPrefix, i + 1, error), id: p.id };
     }
-    for (const w of r.warnings) warnings.push(`page '${p.id}': ${w}`);
+    for (const w of r.warnings) warnings.push(`page ${said(p.id)}: ${w}`);
     for (const [k, v] of Object.entries(r.stats)) stats[k] = (stats[k] ?? 0) + v;
-    return { id: p.id, title: p.title, svg: r.svg, width: r.width, height: r.height };
+    return {
+      id: p.id,
+      title: p.title,
+      svg: r.svg,
+      width: r.width,
+      height: r.height,
+    };
   });
   const names = set.pages.map((p) => p.title).join(', ');
   const stacked = stackPages({

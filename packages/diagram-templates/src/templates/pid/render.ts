@@ -43,9 +43,22 @@ import {
   textEl,
   type Pt,
 } from '../../runtime/svg.ts';
-import { PALETTE, SPACE, gridUp, resolveColour } from '../../runtime/style.ts';
+import {
+  PALETTE,
+  ROLE_COLOURS,
+  ROLE_STROKES,
+  SPACE,
+  gridUp,
+  resolveColour,
+} from '../../runtime/style.ts';
 import { measure, type Measurer } from '../../runtime/text.ts';
-import { legendStrip, lineSwatch, boxSwatch, type LegendEntry } from '../../runtime/legend.ts';
+import {
+  legendStrip,
+  lineSwatch,
+  boxSwatch,
+  markSwatch,
+  type LegendEntry,
+} from '../../runtime/legend.ts';
 import { slugify, svgDocument } from '../../runtime/export.ts';
 import type { RenderResult } from '../../types.ts';
 import { SERVICE_NAMES } from './profile.ts';
@@ -236,6 +249,52 @@ function miniBubble(kind: Pick<Instrument, 'location' | 'display'>) {
   };
 }
 
+/** The text lines under an off-page connector: its text, then its page
+ *  reference (a set's link), where the drawing writes them. */
+function opcLabelBoxes(
+  m: Measurer,
+  o: PidData['offpage'][number],
+  b: Box,
+): { id: string; box: Box }[] {
+  const right = o.direction === 'out';
+  const out: { id: string; box: Box }[] = [];
+  if (o.link?.ref) {
+    const y = b.y + b.h + (o.text ? 24 : 12);
+    const tw = measure(m, o.link.ref, 'eyebrow');
+    out.push({
+      id: `${o.id} link`,
+      box: { x: right ? b.x : b.x + b.w - tw, y: y - 8, w: tw, h: 10 },
+    });
+  }
+  if (o.text) {
+    const tw = measure(m, o.text, 'eyebrow');
+    out.push({
+      id: `${o.id} text`,
+      box: { x: right ? b.x : b.x + b.w - tw, y: b.y + b.h + 4, w: tw, h: 10 },
+    });
+  }
+  return out;
+}
+
+/**
+ * The colour of a label by the plain words circuit_trace writes in it
+ * (style 2): IMAGE: NO (or "IMAGE: 2 NO") the contradicted colour, FROM
+ * IMAGE the corrected one, CHECKED BY IMAGE the checked one, a GUESS the
+ * guess colour; null for any other label (its own colour). The words are
+ * the label's own text, so the colour never says other than the words. An
+ * image check helps; it is not a guarantee: the words and colours say
+ * what a vision model answered, never that the drawing is right.
+ */
+export function wordColour(text: string | undefined): string | null {
+  if (!text) return null;
+  const t = text.toUpperCase();
+  if (/IMAGE: (?:\d+ )?NO/.test(t)) return ROLE_COLOURS.contradicted;
+  if (t.includes('FROM IMAGE')) return ROLE_COLOURS.corrected;
+  if (t.includes('CHECKED BY IMAGE')) return ROLE_COLOURS.checked;
+  if (/\bGUESS\b/.test(t)) return ROLE_COLOURS.guess;
+  return null;
+}
+
 export type RenderPidOptions = {
   /** The prefix of the drawing's ids; a set gives each page its own. */
   idPrefix?: string;
@@ -244,6 +303,10 @@ export type RenderPidOptions = {
 export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {}): RenderResult {
   const P = data.profile;
   const warnings: string[] = [];
+  /** Style 2 (style.ts): the colour set and the label room. Style 1 is
+   *  every older drawing, drawn byte for byte as before. */
+  const v2 = data.style >= 2;
+  const C = ROLE_COLOURS;
 
   // Plain lines run between two nodes (equipment, connectors). A branch has
   // a tee, an instrument or a free end at one end: it is routed after the
@@ -552,6 +615,27 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const eqBoxes = data.equipment.map((e) => nodes.get(e.id)!.box);
   const eqExtent = union(eqBoxes.length ? eqBoxes : [{ x: 0, y: 0, w: 0, h: 0 }]);
   const usedOpc: Box[] = [];
+  // Style 2: a connector takes the room of its text lines too (its text and
+  // its page reference), and those lines are labels from the moment it is
+  // placed, so nothing later is drawn over them (the classic style adds
+  // them only when it draws).
+  const usedRooms: Box[] = [];
+  const opcNotes: { box: Box; svg: string; id: string }[] = [];
+  const roomOf = (o: PidData['offpage'][number], b: Box): Box =>
+    inflate(union([b, ...opcLabelBoxes(m, o, b).map((x) => x.box)]), 4);
+  const roomFree = (o: PidData['offpage'][number], b: Box): boolean => {
+    const r = roomOf(o, b);
+    return (
+      !usedRooms.some((u) => overlaps(u, r)) &&
+      !eqBoxes.some((e) => overlaps(inflate(e, 8), r)) &&
+      !tagLabels.some((t) => overlaps(t.box, r))
+    );
+  };
+  const reserveOpc = (o: PidData['offpage'][number], b: Box) => {
+    if (!v2) return;
+    usedRooms.push(roomOf(o, b));
+    for (const x of opcLabelBoxes(m, o, b)) opcNotes.push({ ...x, svg: '' });
+  };
   for (const o of data.offpage) {
     if (deferred.has(o.id)) continue;
     const n = nodes.get(o.id)!;
@@ -588,12 +672,14 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       // Other connectors with the text line under them.
       const opcRoom = (u: Box) => inflate({ ...u, h: u.h + 20 }, 12);
       const box =
-        cands.find(
-          (c) =>
-            !taken.some((t) => overlaps(t, opcRoom(c))) &&
-            !usedOpc.some((u) => overlaps(opcRoom(u), opcRoom(c))),
+        cands.find((c) =>
+          v2
+            ? !taken.some((t) => overlaps(t, roomOf(o, c))) && roomFree(o, c)
+            : !taken.some((t) => overlaps(t, opcRoom(c))) &&
+              !usedOpc.some((u) => overlaps(opcRoom(u), opcRoom(c))),
         ) ?? cands[cands.length - 1]!;
       usedOpc.push(box);
+      reserveOpc(o, box);
       n.box = box;
       continue;
     }
@@ -608,8 +694,12 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     const x =
       o.direction === 'in' ? snap(eqExtent.x - gap) - n.w : snap(eqExtent.x + eqExtent.w + gap);
     let box: Box = { x, y: y - n.h / 2, w: n.w, h: n.h };
-    while (usedOpc.some((u) => overlaps(inflate(u, 8), box))) box = { ...box, y: box.y + 48 };
+    if (v2) {
+      for (let k = 0; k < 60 && !roomFree(o, box); k++) box = { ...box, y: box.y + 24 };
+    } else
+      while (usedOpc.some((u) => overlaps(inflate(u, 8), box))) box = { ...box, y: box.y + 48 };
     usedOpc.push(box);
+    reserveOpc(o, box);
     n.box = box;
   }
   placePorts(false);
@@ -624,12 +714,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const pipes = new GridRouter(world);
   for (const n of nodes.values()) if (!deferred.has(n.id)) pipes.block(inflate(n.box, 8));
   for (const t of tagLabels) pipes.block(inflate(t.box, 4));
+  for (const t of opcNotes) pipes.block(inflate(t.box, 2));
   const routed = new Map<string, Pt[]>();
   const joins: Pt[] = [];
   const joined = new Set<string>();
   type Placed = { item: InlineItem; at: Pt; dir: Pt; box: Box; line: string };
   const placed: Placed[] = [];
-  const notes: { box: Box; svg: string; id: string }[] = [];
+  const notes: { box: Box; svg: string; id: string }[] = [...opcNotes];
   const isH = (s: [Pt, Pt]) => Math.abs(s[0].y - s[1].y) < 0.01;
   const len = (s: [Pt, Pt]) => Math.abs(s[1].x - s[0].x) + Math.abs(s[1].y - s[0].y);
   /** A line's runs; a line with no length (both ends on one point) is one
@@ -768,6 +859,8 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
         const b = boxAt(cand);
         if (others.some(([a, z]) => segmentHitsBox(a, z, b, 0))) continue;
         if (placed.some((p) => overlaps(inflate(p.box, 4), b))) continue;
+        // Style 2: and off the labels already down (a connector's text).
+        if (v2 && notes.some((n) => overlaps(n.box, b))) continue;
         at = cand;
         break;
       }
@@ -784,7 +877,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           id,
           box: { x: tx - 2, y: ty - 9, w: tw + 4, h: 12 },
           svg: textEl('sublabel', tx, ty, it.tag, {
-            fill: it.focal ? PALETTE.accent : PALETTE.ink,
+            fill: it.focal ? PALETTE.accent : v2 ? C.instrument : PALETTE.ink,
           }),
         });
         if (extra.length) {
@@ -811,7 +904,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           box: { x: vertical ? sx - 2 : sx - sw / 2 - 2, y: sy - 9, w: sw + 4, h: 12 },
           svg: textEl('sublabel', sx, sy, s, {
             'text-anchor': vertical ? 'start' : 'middle',
-            fill: PALETTE.ink,
+            fill: v2 ? C.instrument : PALETTE.ink,
           }),
         });
       }
@@ -984,13 +1077,29 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       T.along.x !== 0 ? [56, -56, 104, -104, 152, -152].map((dy) => T.at.y + dy) : [T.at.y];
     const fits = (b: Box) =>
       !usedOpc.some((u) => overlaps(inflate(u, 8), b)) &&
-      ![...nodes.values()].some((x) => x.eq && overlaps(inflate(x.box, 16), b));
+      ![...nodes.values()].some((x) => x.eq && overlaps(inflate(x.box, 16), b)) &&
+      (!v2 ||
+        (roomFree(n.opc!, b) &&
+          !notes.some((t) => overlaps(roomOf(n.opc!, b), t.box)) &&
+          ![...routed.values()].some((p) =>
+            segments(p).some(([u, v]) =>
+              opcLabelBoxes(m, n.opc!, b).some((x) => segmentHitsBox(u, v, x.box, 0)),
+            ),
+          )));
     const at = (y: number): Box => ({ x, y: snap(y) - n.h / 2, w: n.w, h: n.h });
     let box = ys.map(at).find(fits) ?? at(ys[0]!);
     for (let k = 0; k < 40 && !fits(box); k++) box = { ...box, y: box.y + 48 };
     n.box = box;
     usedOpc.push(box);
     pipes.block(inflate(box, 8));
+    if (v2) {
+      const before = opcNotes.length;
+      reserveOpc(n.opc!, box);
+      for (const x of opcNotes.slice(before)) {
+        notes.push(x);
+        pipes.block(inflate(x.box, 2));
+      }
+    }
     placePorts(false, id);
   };
   /** Is a straight run from `from` (leaving it) to `tip` clear of symbols,
@@ -1023,6 +1132,31 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     ![...tipBubbles.values()].some((c) => overlaps(inflate(boxAround(c, BUBBLE_R), 4), b)) &&
     ![...routed.values()].some((p) => segments(p).some(([u, v]) => segmentHitsBox(u, v, b, 0)));
   const boxAround = (c: Pt, r: number): Box => ({ x: c.x - r, y: c.y - r, w: 2 * r, h: 2 * r });
+  /** Style 2: more places for a label beside a line when the first ones are
+   *  taken: along each of its runs (the longest first, or the last for a
+   *  mark at the far end), on both sides, one and two rows out. */
+  const besideRuns = (lineId: string, w: number, h: number, atEnd: boolean): Box[] => {
+    const runs = atEnd
+      ? runsOf(lineId).reverse()
+      : [...runsOf(lineId)].sort((a, b) => len(b) - len(a));
+    const out: Box[] = [];
+    for (const s of runs) {
+      const d = { x: Math.sign(s[1].x - s[0].x), y: Math.sign(s[1].y - s[0].y) };
+      const c = atEnd
+        ? { x: s[1].x - d.x * 16, y: s[1].y - d.y * 16 }
+        : { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 };
+      if (isH(s)) {
+        for (const dx of [0, -(w / 2 + 16), w / 2 + 16, -(w + 32), w + 32])
+          for (const dy of [8, -h - 8, h + 16, -2 * h - 16])
+            out.push({ x: c.x - w / 2 + dx, y: c.y + dy, w, h });
+      } else {
+        for (const dy of [0, -(h + 8), h + 8, -2 * (h + 8), 2 * (h + 8)])
+          for (const dx of [8, -8 - w, w + 24, -24 - 2 * w])
+            out.push({ x: c.x + dx, y: c.y - h / 2 + dy, w, h });
+      }
+    }
+    return out;
+  };
 
   /** A line that stops (a stub, a cap, a dead leg) or ends at a bubble: a
    *  straight run square off its tee (or out of its port), on the first
@@ -1206,11 +1340,14 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           { x: c.x + 8, y: c.y - 6, w: tw, h: 12 },
           { x: c.x - 8 - tw, y: c.y - 6, w: tw, h: 12 },
         ];
-    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
+    const box =
+      cands.find((b) => endFree(b)) ??
+      (v2 ? besideRuns(l.id, tw, 12, true).find((b) => endFree(b)) : undefined) ??
+      cands[0]!;
     notes.push({
       id: `${l.id} DL`,
       box,
-      svg: textEl('sublabel', box.x + 2, box.y + 9, 'DL', { fill: PALETTE.ink }),
+      svg: textEl('sublabel', box.x + 2, box.y + 9, 'DL', { fill: v2 ? C.deadleg : PALETTE.ink }),
     });
   }
   // A line's note (an honesty mark) beside the middle of its longest run.
@@ -1230,11 +1367,16 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           { x: c.x + 8, y: c.y - 6, w: tw, h: 12 },
           { x: c.x - 8 - tw, y: c.y - 6, w: tw, h: 12 },
         ];
-    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
+    const box =
+      cands.find((b) => endFree(b)) ??
+      (v2 ? besideRuns(l.id, tw, 12, false).find((b) => endFree(b)) : undefined) ??
+      cands[0]!;
     notes.push({
       id: `${l.id} note`,
       box,
-      svg: textEl('sublabel', box.x + 2, box.y + 9, l.note, { fill: PALETTE.ink }),
+      svg: textEl('sublabel', box.x + 2, box.y + 9, l.note, {
+        fill: (v2 && wordColour(l.note)) || PALETTE.ink,
+      }),
     });
   }
   // A "more here" marker (what this page leaves to another, a set's link)
@@ -1270,8 +1412,15 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
             [-10 - w, -bh - 12],
           ].map(([dx, dy]) => ({ x: c.x + dx!, y: c.y - bh / 2 + dy!, w, h: bh }))
     ).map((b) => ({ ...b, x: snap(b.x), y: snap(b.y) }));
-    const box = cands.find((b) => endFree(b)) ?? cands[0]!;
-    const tone = l.more.link ? PALETTE.link : PALETTE.muted;
+    const box =
+      cands.find((b) => endFree(b)) ??
+      (v2
+        ? besideRuns(l.id, w, bh, false)
+            .map((b) => ({ ...b, x: snap(b.x), y: snap(b.y) }))
+            .find((b) => endFree(b))
+        : undefined) ??
+      cands[0]!;
+    const tone = l.more.link ? (v2 ? ROLE_COLOURS.link : PALETTE.link) : PALETTE.muted;
     notes.push({
       id: `${l.id} more`,
       box,
@@ -1294,7 +1443,11 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
             'stroke-width': 1,
           }),
           textEl('sublabel', box.x + 5, box.y + 10, l.more.text, { fill: tone }),
-          ref ? textEl('eyebrow', box.x + 5, box.y + 21, ref, { fill: PALETTE.muted }) : '',
+          ref
+            ? textEl('eyebrow', box.x + 5, box.y + 21, ref, {
+                fill: v2 ? C.link : PALETTE.muted,
+              })
+            : '',
         ],
       ),
     });
@@ -1329,35 +1482,41 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       ...segs.filter((s) => !isH(s)).sort((a, b) => len(b) - len(a)),
     ];
     let chosen: { box: Box; x: number; y: number; anchor: 'middle' | 'end' } | null = null;
-    for (const s of cands) {
-      const h = isH(s);
-      const lo = h ? Math.min(s[0].x, s[1].x) : Math.min(s[0].y, s[1].y);
-      const hi = h ? Math.max(s[0].x, s[1].x) : Math.max(s[0].y, s[1].y);
-      const mid = (lo + hi) / 2;
-      for (let off = 0; off <= (hi - lo) / 2; off += 8) {
-        for (const c of off ? [mid - off, mid + off] : [mid]) {
-          const box = h
-            ? { x: c - tw / 2, y: s[0].y - 6 - th, w: tw, h: th }
-            : { x: s[0].x - 8 - tw, y: c - th / 2, w: tw, h: th };
-          if (
-            h ? box.x < lo + 8 || box.x + box.w > hi - 8 : box.y < lo + 8 || box.y + box.h > hi - 8
-          )
-            continue;
-          if (blockers().some((b) => overlaps(b, box, 0))) continue;
-          if (
-            [...routed.values()].some((p) =>
-              segments(p).some(([a, b]) => segmentHitsBox(a, b, box, 0)),
+    // Above a run (left of a vertical one); style 2 then tries below (right).
+    for (const side of v2 ? [0, 1] : [0]) {
+      if (chosen) break;
+      for (const s of cands) {
+        const h = isH(s);
+        const lo = h ? Math.min(s[0].x, s[1].x) : Math.min(s[0].y, s[1].y);
+        const hi = h ? Math.max(s[0].x, s[1].x) : Math.max(s[0].y, s[1].y);
+        const mid = (lo + hi) / 2;
+        for (let off = 0; off <= (hi - lo) / 2; off += 8) {
+          for (const c of off ? [mid - off, mid + off] : [mid]) {
+            const box = h
+              ? { x: c - tw / 2, y: s[0].y - 6 - th + side * (th + 12), w: tw, h: th }
+              : { x: s[0].x - 8 - tw + side * (tw + 16), y: c - th / 2, w: tw, h: th };
+            if (
+              h
+                ? box.x < lo + 8 || box.x + box.w > hi - 8
+                : box.y < lo + 8 || box.y + box.h > hi - 8
             )
-          )
-            continue;
-          chosen = h
-            ? { box, x: c, y: s[0].y - 9, anchor: 'middle' }
-            : { box, x: s[0].x - 12, y: c + 3, anchor: 'end' };
-          break;
+              continue;
+            if (blockers().some((b) => overlaps(b, box, 0))) continue;
+            if (
+              [...routed.values()].some((p) =>
+                segments(p).some(([a, b]) => segmentHitsBox(a, b, box, 0)),
+              )
+            )
+              continue;
+            chosen = h
+              ? { box, x: c, y: box.y + th - 3, anchor: 'middle' }
+              : { box, x: box.x + tw - 4, y: c + 3, anchor: 'end' };
+            break;
+          }
+          if (chosen) break;
         }
         if (chosen) break;
       }
-      if (chosen) break;
     }
     if (!chosen) {
       warnings.push(
@@ -1681,12 +1840,15 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   // ---------------------------------------------------------- 9. colours, hops
   const circuitOf = new Map<string, PidData['circuits'][number]>();
   for (const c of data.circuits) for (const l of c.lines) circuitOf.set(l, c);
+  /** What a line is on the drawing (style 2's colour and weight). */
+  const roleOf = (l: Line): 'main' | 'branch' | 'deadleg' =>
+    l.deadleg ? 'deadleg' : l.weight === 'main' ? 'main' : 'branch';
   const lineColour = (l: Line): string => {
     if (l.focal) return PALETTE.accent;
     const c = circuitOf.get(l.id);
     if (c?.colour) return resolveColour(c.colour, PALETTE.ink);
     if (P.colourByService) return P.serviceColour(l.service);
-    return PALETTE.ink;
+    return v2 ? C[roleOf(l)] : PALETTE.ink;
   };
   const drawn: Pt[][] = [
     ...data.lines.map((l) => routed.get(l.id)!),
@@ -1752,9 +1914,14 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   data.lines.forEach((l, i) => {
     const pts = routed.get(l.id)!;
     const colour = lineColour(l);
-    const width = l.weight === 'main' ? 2 : 1.2;
-    // A dead leg is dashed only where the site's profile says so.
-    const dash = l.deadleg && P.symbols.deadleg === 'dashed' ? '8,4' : undefined;
+    const width = v2 ? ROLE_STROKES[roleOf(l)].width : l.weight === 'main' ? 2 : 1.2;
+    // A dead leg is dashed only where the site's profile says so (always in
+    // style 2, so a grey print still tells it from a branch).
+    const dash = v2
+      ? ROLE_STROKES[roleOf(l)].dash
+      : l.deadleg && P.symbols.deadleg === 'dashed'
+        ? '8,4'
+        : undefined;
     // No arrowhead where a line joins a tee, stops, or meets its bubble.
     const open = !isPlain(l) && !(l.to && nodeIds.has(l.to));
     // A line with no length has no direction to point an arrow along.
@@ -1786,7 +1953,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           'stroke-width': width,
           'stroke-dasharray': dash,
         }),
-        arrowHead(tip, dir, colour, l.weight === 'main' ? 9 : 8),
+        arrowHead(tip, dir, colour, l.weight === 'main' ? (v2 ? 10 : 9) : 8),
       ]),
     );
   });
@@ -1798,12 +1965,13 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     L.pipes!.push(el('circle', { cx: j.x, cy: j.y, r: 3.5, fill: PALETTE.ink, 'data-tee': t.id }));
   }
   const base = data.lines.length;
+  const signalInk = v2 ? C.instrument : PALETTE.muted;
   connections.forEach((c, i) => {
     L.signals!.push(
       el('path', {
         d: orthoPath(c.pts, radius, hops[base + i], 5, hopStyle),
         fill: 'none',
-        stroke: PALETTE.muted,
+        stroke: signalInk,
         'stroke-width': 1,
       }),
     );
@@ -1815,11 +1983,11 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
         el('path', {
           d: orthoPath(s.pts, radius, hops[base + connections.length + i], 5, hopStyle),
           fill: 'none',
-          stroke: PALETTE.muted,
+          stroke: signalInk,
           'stroke-width': 1,
           'stroke-dasharray': st.dash,
         }),
-        signalMarks(s.pts, s.type, PALETTE.muted),
+        signalMarks(s.pts, s.type, signalInk),
       ]),
     );
   });
@@ -1834,7 +2002,7 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     );
   }
   for (const p of placed) {
-    const colour = p.item.focal ? PALETTE.accent : PALETTE.ink;
+    const colour = p.item.focal ? PALETTE.accent : v2 ? C.instrument : PALETTE.ink;
     L.inline!.push(
       el(
         'g',
@@ -1845,7 +2013,9 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   }
   for (const inst of data.instruments) {
     const c = bubbles.get(inst.tag)!;
-    L.bubbles!.push(drawBubble(inst, c.x, c.y, inst.focal ? PALETTE.accent : PALETTE.ink));
+    L.bubbles!.push(
+      drawBubble(inst, c.x, c.y, inst.focal ? PALETTE.accent : v2 ? C.instrument : PALETTE.ink),
+    );
     if (inst.setpoint) {
       const sw = measure(m, inst.setpoint, 'eyebrow');
       L.labels!.push(
@@ -1865,11 +2035,21 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   for (const l of lineLabels) L.labels!.push(l.svg);
   for (const o of data.offpage) {
     const n = nodes.get(o.id)!;
+    // Style 2: a connector whose text says GUESS (or IMAGE: NO, still a
+    // guess) is outlined dotted in its word's colour, so a grey print
+    // still tells a guessed end from a drawn one.
+    const tone = v2 ? wordColour(o.text) : null;
+    const guessed = tone === C.guess || tone === C.contradicted;
     L.offpage!.push(
       el(
         'g',
         { 'data-offpage': o.id, 'data-link': o.link?.page, 'data-focus': o.link?.focus },
-        drawOffPage(n.box, o.sheet),
+        drawOffPage(
+          n.box,
+          o.sheet,
+          guessed ? tone! : v2 && o.link ? C.link : undefined,
+          guessed ? ROLE_STROKES.guess.dash : undefined,
+        ),
       ),
     );
     if (o.link?.ref) {
@@ -1883,36 +2063,39 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
           { 'data-link': o.link.page, 'data-focus': o.link.focus },
           textEl('eyebrow', right ? n.box.x : n.box.x + n.box.w, y, o.link.ref, {
             'text-anchor': right ? 'start' : 'end',
-            fill: PALETTE.link,
+            fill: v2 ? C.link : PALETTE.link,
           }),
         ),
       );
       const tw = measure(m, o.link.ref, 'eyebrow');
-      notes.push({
-        id: `${o.id} link`,
-        box: { x: right ? n.box.x : n.box.x + n.box.w - tw, y: y - 8, w: tw, h: 10 },
-        svg: '',
-      });
+      // Style 2 reserved it when the connector was placed.
+      if (!v2)
+        notes.push({
+          id: `${o.id} link`,
+          box: { x: right ? n.box.x : n.box.x + n.box.w - tw, y: y - 8, w: tw, h: 10 },
+          svg: '',
+        });
     }
     if (o.text) {
       const right = o.direction === 'out';
       L.labels!.push(
         textEl('eyebrow', right ? n.box.x : n.box.x + n.box.w, n.box.y + n.box.h + 12, o.text, {
           'text-anchor': right ? 'start' : 'end',
-          fill: PALETTE.muted,
+          fill: !v2 ? PALETTE.muted : (tone ?? (o.link ? C.link : PALETTE.muted)),
         }),
       );
       const tw = measure(m, o.text, 'eyebrow');
-      notes.push({
-        id: `${o.id} text`,
-        box: {
-          x: right ? n.box.x : n.box.x + n.box.w - tw,
-          y: n.box.y + n.box.h + 4,
-          w: tw,
-          h: 10,
-        },
-        svg: '',
-      });
+      if (!v2)
+        notes.push({
+          id: `${o.id} text`,
+          box: {
+            x: right ? n.box.x : n.box.x + n.box.w - tw,
+            y: n.box.y + n.box.h + 4,
+            w: tw,
+            h: 10,
+          },
+          svg: '',
+        });
     }
   }
 
@@ -1994,20 +2177,39 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
   const entries: LegendEntry[] = [];
   if (data.legend) {
     const weights = new Set(data.lines.map((l) => l.weight));
+    const roles = new Set(data.lines.filter((l) => !l.focal).map(roleOf));
+    // Style 2: each role its colour and weight, deadlegs their own entry.
+    if (v2 && !P.colourByService) {
+      if (roles.has('main'))
+        entries.push({
+          label: data.legendNames?.main ?? 'Process line',
+          swatch: lineSwatch(C.main, ROLE_STROKES.main.width),
+        });
+      if (roles.has('branch'))
+        entries.push({
+          label: data.legendNames?.secondary ?? 'Utility line',
+          swatch: lineSwatch(C.branch, ROLE_STROKES.branch.width),
+        });
+      if (roles.has('deadleg'))
+        entries.push({
+          label: 'Deadleg',
+          swatch: lineSwatch(C.deadleg, ROLE_STROKES.deadleg.width, ROLE_STROKES.deadleg.dash),
+        });
+    }
     // Colour by service names the lines by service instead: a weight entry
     // beside them said "Process" twice.
-    if (weights.has('main') && !P.colourByService)
+    if (!v2 && weights.has('main') && !P.colourByService)
       entries.push({
         label: data.legendNames?.main ?? 'Process line',
         swatch: lineSwatch(PALETTE.ink, 2),
       });
-    if (weights.has('secondary') && !P.colourByService)
+    if (!v2 && weights.has('secondary') && !P.colourByService)
       entries.push({
         label: data.legendNames?.secondary ?? 'Utility line',
         swatch: lineSwatch(PALETTE.ink, 1.2),
       });
     if (connections.length)
-      entries.push({ label: 'Instrument connection', swatch: lineSwatch(PALETTE.muted, 1) });
+      entries.push({ label: 'Instrument connection', swatch: lineSwatch(signalInk, 1) });
     const names: Record<SignalType, string> = {
       electric: 'Electric signal',
       pneumatic: 'Pneumatic signal',
@@ -2022,14 +2224,14 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
       entries.push({
         label: names[t],
         swatch: (x, y) =>
-          lineSwatch(PALETTE.muted, 1, st.dash)(x, y) +
+          lineSwatch(signalInk, 1, st.dash)(x, y) +
           signalMarks(
             [
               { x, y: y + 6 },
               { x: x + 28, y: y + 6 },
             ],
             t,
-            PALETTE.muted,
+            signalInk,
           ),
       });
     }
@@ -2068,6 +2270,22 @@ export function renderPid(data: PidData, m: Measurer, opts: RenderPidOptions = {
     }
     if (data.circuits.length)
       entries.push({ label: 'Circuit', swatch: boxSwatch('none', PALETTE.soft, '4,4') });
+    if (v2) {
+      // The plain words the drawing's labels say, in their colour, named.
+      const used = new Set([
+        ...data.lines.map((l) => wordColour(l.note)),
+        ...data.offpage.map((o) => wordColour(o.text)),
+      ]);
+      for (const [colour, label] of [
+        [C.guess, 'Guess'],
+        [C.checked, 'Checked by image'],
+        [C.contradicted, 'Image says no'],
+        [C.corrected, 'From image'],
+      ] as const)
+        if (used.has(colour)) entries.push({ label, swatch: markSwatch(colour) });
+      if (data.offpage.some((o) => o.link) || data.lines.some((l) => l.more?.link))
+        entries.push({ label: 'Page link', swatch: markSwatch(C.link, 'p.3') });
+    }
   }
   // The guide's legend budget: four kinds of line at most (pipes and
   // signals; a bubble's short connection stub is not counted).

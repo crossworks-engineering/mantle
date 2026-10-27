@@ -1,0 +1,1305 @@
+{
+ "template": "pid",
+ "title": "Circuit 10000-001-01",
+ "description": "A made-up circuit traced from random synthetic sheets: connectors with long texts and page references next to guess notes (the label-overlap case).",
+ "legendNames": {
+  "main": "Main process line",
+  "secondary": "Process branch or deadleg"
+ },
+ "pages": [
+  {
+   "id": "overview",
+   "title": "Overview",
+   "data": {
+    "title": "Circuit 10000-001-01",
+    "description": "Circuit 10000-001-01 traced from 3 uploaded drawings; no main line between two pieces of equipment was found. 5 pages: the overview draws 20 of 63 lines; the sheet pages draw every line, deadleg and valve. Guesses are marked GUESS (sheet links, joins through process lines).",
+    "lines": [
+     {
+      "id": "L1",
+      "from": "V-100",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L3",
+      "number": "2\"-P-0004-A1",
+      "from": "OPC-1",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L4",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-2",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L5",
+      "from": "OPC-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L6",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-4",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L7",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "T-1",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L8",
+      "from": "T-2",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L9",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-5",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L10",
+      "from": "OPC-6",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L11",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-7",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L12",
+      "from": "OPC-8",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L13",
+      "from": "OPC-9",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L14",
+      "note": "2 INFERRED JOINS (GUESS)",
+      "from": "OPC-10",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       },
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L15",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "T-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L16",
+      "from": "T-3",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L17",
+      "from": "OPC-11",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L18",
+      "from": "OPC-12",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L19",
+      "from": "OPC-13",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L20",
+      "from": "OPC-14",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L42",
+      "number": "2\"-P-0000-A1",
+      "from": "OPC-15",
+      "to": "OPC-16",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ],
+      "more": {
+       "text": "+1 DEADLEG",
+       "link": "sheet-3",
+       "focus": "L43"
+      }
+     }
+    ],
+    "equipment": [
+     {
+      "id": "V-100",
+      "type": "vertical-vessel"
+     }
+    ],
+    "offpage": [
+     {
+      "id": "OPC-1",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-2",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-3",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-4",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-5",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-6",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-7",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-8",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-9",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-10",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-11",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-12",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-13",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-14",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-15",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-16",
+      "direction": "out",
+      "sheet": "PID-1002",
+      "text": "TO PID-1002 (GUESS)"
+     }
+    ],
+    "tees": [
+     {
+      "id": "T-1",
+      "on": "L6",
+      "at": 0.77
+     },
+     {
+      "id": "T-2",
+      "on": "L7",
+      "at": 0.12
+     },
+     {
+      "id": "T-3",
+      "on": "L14",
+      "at": 0.29
+     }
+    ],
+    "circuits": [
+     {
+      "id": "CIRCUIT-10000-001-01",
+      "label": "10000-001-01",
+      "lines": [
+       "L1",
+       "L3",
+       "L4",
+       "L5",
+       "L6",
+       "L7",
+       "L8",
+       "L9",
+       "L10",
+       "L11",
+       "L12",
+       "L13",
+       "L14",
+       "L15",
+       "L16",
+       "L17",
+       "L18",
+       "L19",
+       "L20",
+       "L42"
+      ],
+      "equipment": [
+       "V-100"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "sheet-1",
+   "title": "PID-1001",
+   "data": {
+    "title": "Circuit 10000-001-01: PID-1001",
+    "description": "Sheet PID-1001 of circuit 10000-001-01: 17 lines drawn here. Guesses are marked GUESS (joins through process lines).",
+    "lines": [
+     {
+      "id": "L3",
+      "number": "2\"-P-0004-A1",
+      "from": "OPC-1",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L4",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-2",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L5",
+      "from": "OPC-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L6",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-4",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L7",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "T-1",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L8",
+      "from": "T-2",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L9",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-5",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L10",
+      "from": "OPC-6",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L11",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "OPC-7",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L12",
+      "from": "OPC-8",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L13",
+      "from": "OPC-9",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L14",
+      "note": "2 INFERRED JOINS (GUESS)",
+      "from": "OPC-10",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       },
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L15",
+      "note": "INFERRED JOIN (GUESS)",
+      "from": "T-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L16",
+      "from": "T-3",
+      "end": "open",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L17",
+      "from": "OPC-11",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L18",
+      "from": "OPC-12",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L46",
+      "from": "OPC-13",
+      "deadleg": true,
+      "weight": "secondary"
+     }
+    ],
+    "equipment": [],
+    "offpage": [
+     {
+      "id": "OPC-1",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-2",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-3",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-4",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-5",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-6",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-7",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-8",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-9",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-10",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-11",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-12",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-13",
+      "direction": "in",
+      "sheet": "PID-1001",
+      "text": "OPEN END"
+     }
+    ],
+    "tees": [
+     {
+      "id": "T-1",
+      "on": "L6",
+      "at": 0.77
+     },
+     {
+      "id": "T-2",
+      "on": "L7",
+      "at": 0.12
+     },
+     {
+      "id": "T-3",
+      "on": "L14",
+      "at": 0.29
+     }
+    ],
+    "circuits": [
+     {
+      "id": "CIRCUIT-10000-001-01",
+      "label": "10000-001-01",
+      "lines": [
+       "L3",
+       "L4",
+       "L5",
+       "L6",
+       "L7",
+       "L8",
+       "L9",
+       "L10",
+       "L11",
+       "L12",
+       "L13",
+       "L14",
+       "L15",
+       "L16",
+       "L17",
+       "L18",
+       "L46"
+      ],
+      "equipment": []
+     }
+    ]
+   }
+  },
+  {
+   "id": "sheet-2-p1",
+   "title": "PID-1002 (part 1 of 2)",
+   "data": {
+    "title": "Circuit 10000-001-01: PID-1002 (part 1 of 2)",
+    "description": "Sheet PID-1002 of circuit 10000-001-01: 20 lines drawn here. Guesses are marked GUESS (ends only near equipment).",
+    "lines": [
+     {
+      "id": "L1",
+      "from": "V-100",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L2",
+      "from": "V-100",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L19",
+      "from": "OPC-1",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L20",
+      "from": "OPC-2",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L21",
+      "from": "OPC-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L22",
+      "from": "OPC-4",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L23",
+      "from": "OPC-5",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L24",
+      "from": "OPC-6",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L25",
+      "from": "OPC-7",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L26",
+      "from": "OPC-8",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L27",
+      "from": "OPC-9",
+      "to": "OPC-10",
+      "weight": "secondary"
+     },
+     {
+      "id": "L28",
+      "from": "OPC-11",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L29",
+      "from": "OPC-12",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L30",
+      "from": "OPC-13",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L31",
+      "from": "OPC-14",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L32",
+      "from": "OPC-15",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L33",
+      "from": "OPC-16",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L47",
+      "from": "OPC-17",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L48",
+      "from": "OPC-18",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L49",
+      "from": "OPC-19",
+      "deadleg": true,
+      "weight": "secondary"
+     }
+    ],
+    "equipment": [
+     {
+      "id": "V-100",
+      "type": "vertical-vessel"
+     }
+    ],
+    "offpage": [
+     {
+      "id": "OPC-1",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-2",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-3",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-4",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-5",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-6",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-7",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-8",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-9",
+      "direction": "in",
+      "sheet": "V-100",
+      "text": "NEAR V-100 (GUESS)"
+     },
+     {
+      "id": "OPC-10",
+      "direction": "out",
+      "sheet": "V-100",
+      "text": "NEAR V-100 (GUESS)"
+     },
+     {
+      "id": "OPC-11",
+      "direction": "in",
+      "sheet": "V-100",
+      "text": "NEAR V-100 (GUESS)"
+     },
+     {
+      "id": "OPC-12",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-13",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-14",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-15",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-16",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-17",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-18",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-19",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     }
+    ],
+    "tees": [],
+    "circuits": [
+     {
+      "id": "CIRCUIT-10000-001-01",
+      "label": "10000-001-01",
+      "lines": [
+       "L1",
+       "L2",
+       "L19",
+       "L20",
+       "L21",
+       "L22",
+       "L23",
+       "L24",
+       "L25",
+       "L26",
+       "L27",
+       "L28",
+       "L29",
+       "L30",
+       "L31",
+       "L32",
+       "L33",
+       "L47",
+       "L48",
+       "L49"
+      ],
+      "equipment": [
+       "V-100"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "sheet-2-p2",
+   "title": "PID-1002 (part 2 of 2)",
+   "data": {
+    "title": "Circuit 10000-001-01: PID-1002 (part 2 of 2)",
+    "description": "Sheet PID-1002 of circuit 10000-001-01: 6 lines drawn here. Guesses are marked GUESS (ends only near equipment).",
+    "lines": [
+     {
+      "id": "L50",
+      "from": "OPC-1",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L51",
+      "from": "OPC-2",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L52",
+      "from": "OPC-3",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L53",
+      "from": "OPC-4",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L54",
+      "from": "OPC-5",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L55",
+      "from": "OPC-6",
+      "deadleg": true,
+      "weight": "secondary"
+     }
+    ],
+    "equipment": [],
+    "offpage": [
+     {
+      "id": "OPC-1",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-2",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-3",
+      "direction": "in",
+      "sheet": "V-100",
+      "text": "NEAR V-100 (GUESS)"
+     },
+     {
+      "id": "OPC-4",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-5",
+      "direction": "in",
+      "sheet": "PID-1002",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-6",
+      "direction": "in",
+      "sheet": "V-100",
+      "text": "NEAR V-100 (GUESS)"
+     }
+    ],
+    "tees": [],
+    "circuits": [
+     {
+      "id": "CIRCUIT-10000-001-01",
+      "label": "10000-001-01",
+      "lines": [
+       "L50",
+       "L51",
+       "L52",
+       "L53",
+       "L54",
+       "L55"
+      ],
+      "equipment": []
+     }
+    ]
+   }
+  },
+  {
+   "id": "sheet-3",
+   "title": "PID-1003",
+   "data": {
+    "title": "Circuit 10000-001-01: PID-1003",
+    "description": "Sheet PID-1003 of circuit 10000-001-01: 20 lines drawn here. Guesses are marked GUESS (sheet links).",
+    "lines": [
+     {
+      "id": "L34",
+      "from": "OPC-1",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L35",
+      "from": "OPC-2",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L36",
+      "from": "OPC-3",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L37",
+      "from": "T-1",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L38",
+      "from": "OPC-4",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L39",
+      "from": "OPC-5",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L40",
+      "from": "OPC-6",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L41",
+      "from": "T-2",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L42",
+      "number": "2\"-P-0000-A1",
+      "from": "OPC-7",
+      "to": "OPC-8",
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L43",
+      "from": "T-3",
+      "deadleg": true,
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L44",
+      "from": "OPC-9",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L45",
+      "from": "OPC-10",
+      "end": "open",
+      "weight": "secondary"
+     },
+     {
+      "id": "L56",
+      "from": "OPC-11",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L57",
+      "from": "OPC-12",
+      "deadleg": true,
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L58",
+      "from": "OPC-13",
+      "deadleg": true,
+      "weight": "secondary",
+      "inline": [
+       {
+        "type": "gate"
+       }
+      ]
+     },
+     {
+      "id": "L59",
+      "from": "OPC-14",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L60",
+      "from": "OPC-15",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L61",
+      "from": "OPC-16",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L62",
+      "from": "OPC-17",
+      "deadleg": true,
+      "weight": "secondary"
+     },
+     {
+      "id": "L63",
+      "from": "OPC-18",
+      "deadleg": true,
+      "weight": "secondary"
+     }
+    ],
+    "equipment": [],
+    "offpage": [
+     {
+      "id": "OPC-1",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-2",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-3",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-4",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-5",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-6",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-7",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-8",
+      "direction": "out",
+      "sheet": "PID-1002",
+      "text": "TO PID-1002 (GUESS)"
+     },
+     {
+      "id": "OPC-9",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-10",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-11",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-12",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-13",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-14",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-15",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-16",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-17",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     },
+     {
+      "id": "OPC-18",
+      "direction": "in",
+      "sheet": "PID-1003",
+      "text": "OPEN END"
+     }
+    ],
+    "tees": [
+     {
+      "id": "T-1",
+      "on": "L36",
+      "at": 0.23
+     },
+     {
+      "id": "T-2",
+      "on": "L40",
+      "at": 0.65
+     },
+     {
+      "id": "T-3",
+      "on": "L42",
+      "at": 0.61
+     }
+    ],
+    "circuits": [
+     {
+      "id": "CIRCUIT-10000-001-01",
+      "label": "10000-001-01",
+      "lines": [
+       "L34",
+       "L35",
+       "L36",
+       "L37",
+       "L38",
+       "L39",
+       "L40",
+       "L41",
+       "L42",
+       "L43",
+       "L44",
+       "L45",
+       "L56",
+       "L57",
+       "L58",
+       "L59",
+       "L60",
+       "L61",
+       "L62",
+       "L63"
+      ],
+      "equipment": []
+     }
+    ]
+   }
+  }
+ ]
+}
