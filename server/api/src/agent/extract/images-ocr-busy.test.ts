@@ -1,23 +1,29 @@
 /**
- * The scanned-PDF OCR pass (`ocrIngestPdfNode`) and a busy decode slot.
+ * The scanned-PDF OCR pass (`ocrIngestPdfNode`) and the parser's answers.
  *
- * A `PdfBusyError` from the rasterizer (another PDF held the one-at-a-time
- * decode slot past the wait, or this render ran past its hold limit) says
- * nothing about the document. It must fail the extract job so pg-boss
- * retries it, as the pictures pass does (gates.ts). Folded into
- * `rasterizeError` it became the `pdf_unreadable` skip, the job completed,
- * and the scan sat unread until something re-queued it.
+ * The render runs in the parser (POST /pdf/rasterize). What the pass does
+ * with each answer:
+ *  - the parser busy, or a first refusal (timeout, crash): recorded as
+ *    `rasterizeError`, the non-terminal pdf_unreadable skip the drain
+ *    retries. The job does not fail.
+ *  - `too_large`: a verdict on the document, recorded as `tooLarge`
+ *    (pdf_too_large).
+ *  - the second refusal of the same bytes (`terminal`): rethrown, so the
+ *    caller records document_unreadable.
+ * And a retry does not pay for the native read again when it already found
+ * nothing in these bytes.
  *
- * File bytes, tracing, the document worker and the rasterizer are stubbed;
- * the catch under test is real.
+ * File bytes, tracing, the document worker and the parser client are
+ * stubbed; the catch under test is real.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ParserError } from '@mantle/files';
 
 const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   runDocumentWorker: vi.fn(),
-  rasterizePdfToPngs: vi.fn(),
+  parserRasterizePdf: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -39,16 +45,20 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
   return { ...actual, runDocumentWorker: h.runDocumentWorker };
 });
-vi.mock('@mantle/files/rasterize', () => ({ rasterizePdfToPngs: h.rasterizePdfToPngs }));
+vi.mock('@mantle/files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files')>();
+  return { ...actual, parserRasterizePdf: h.parserRasterizePdf };
+});
 vi.mock('./file-bytes', () => ({ loadFileBytes: h.loadFileBytes }));
 
 import { ocrIngestPdfNode } from './images';
 
-/** Built the way pdf-open.ts builds it: the callers match on `name`. */
-function named(name: string, message: string): Error {
-  const err = new Error(message);
-  Object.defineProperty(err, 'name', { value: name });
-  return err;
+let seq = 0;
+/** Fresh bytes per test, so the native-read memo of one test does not
+ *  reach the next. */
+function pdfBytes(): Buffer {
+  seq += 1;
+  return Buffer.from(`%PDF-1.4 test ${seq}`);
 }
 
 function pdfNode() {
@@ -61,33 +71,73 @@ function pdfNode() {
   } as unknown as Parameters<typeof ocrIngestPdfNode>[0];
 }
 
+function parserError(code: ParserError['code'], terminal = false): ParserError {
+  return new ParserError(code, `parser ${code}`, { retryable: !terminal, terminal });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  h.loadFileBytes.mockResolvedValue({ bytes: Buffer.from('%PDF-1.4'), filename: 'scan.pdf' });
+  h.loadFileBytes.mockResolvedValue({ bytes: pdfBytes(), filename: 'scan.pdf' });
   // The provider cannot read a PDF natively, so the pass falls through to
-  // the rasterizer.
+  // the render.
   h.runDocumentWorker.mockResolvedValue({ ran: false, text: '', note: 'no native PDF' });
 });
 
-describe('ocrIngestPdfNode: a busy decode slot', () => {
-  it('rethrows a PdfBusyError so the job fails and is retried', async () => {
-    h.rasterizePdfToPngs.mockRejectedValue(
-      named('PdfBusyError', 'another PDF is being decoded; gave up after waiting 600 s'),
-    );
+describe('ocrIngestPdfNode: the parser render', () => {
+  it('records the parser busy as rasterizeError, not a failed job', async () => {
+    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r).toMatchObject({ text: null, rasterizeError: 'parser busy' });
+  });
+
+  it('records a first timeout as rasterizeError (the drain retries it)', async () => {
+    h.parserRasterizePdf.mockRejectedValue(parserError('timeout'));
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r).toMatchObject({ text: null, rasterizeError: 'parser timeout' });
+  });
+
+  it('rethrows the second refusal of the same bytes (terminal)', async () => {
+    h.parserRasterizePdf.mockRejectedValue(parserError('timeout', true));
     const err = await ocrIngestPdfNode(pdfNode(), 'o1').catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).name).toBe('PdfBusyError');
+    expect(err).toBeInstanceOf(ParserError);
+    expect((err as ParserError).terminal).toBe(true);
   });
 
-  it('still records any other render failure as rasterizeError (pdf_unreadable)', async () => {
-    h.rasterizePdfToPngs.mockRejectedValue(new Error('Invalid PDF structure'));
+  it('records too_large as tooLarge, not a retry', async () => {
+    h.parserRasterizePdf.mockRejectedValue(parserError('too_large'));
     const r = await ocrIngestPdfNode(pdfNode(), 'o1');
-    expect(r).toMatchObject({ text: null, rasterizeError: 'Invalid PDF structure' });
+    expect(r).toMatchObject({ text: null, rasterizeError: null, tooLarge: 'parser too_large' });
   });
 
-  it('records a PdfLimitError as tooLarge, not a retry', async () => {
-    h.rasterizePdfToPngs.mockRejectedValue(named('PdfLimitError', 'PDF pages too large'));
+  it('records any other render failure as rasterizeError (pdf_unreadable)', async () => {
+    h.parserRasterizePdf.mockRejectedValue(parserError('failed'));
     const r = await ocrIngestPdfNode(pdfNode(), 'o1');
-    expect(r).toMatchObject({ text: null, rasterizeError: null, tooLarge: 'PDF pages too large' });
+    expect(r).toMatchObject({ text: null, rasterizeError: 'parser failed' });
+  });
+});
+
+describe('ocrIngestPdfNode: the native read is paid for once', () => {
+  it('skips the native read on a retry of bytes it already found empty', async () => {
+    const bytes = pdfBytes();
+    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
+    h.runDocumentWorker.mockResolvedValue({ ran: true, text: '', note: null, model: 'm' });
+    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
+
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+
+    expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
+    expect(h.parserRasterizePdf).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs it again when the first read did not run (no worker that reads PDFs)', async () => {
+    const bytes = pdfBytes();
+    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
+    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
+
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+
+    expect(h.runDocumentWorker).toHaveBeenCalledTimes(2);
   });
 });

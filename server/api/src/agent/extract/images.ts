@@ -5,6 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
+import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import {
@@ -444,6 +445,20 @@ export async function visionIngestImageNode(
 /** Page cap for PDF OCR — bounds rasterization memory + per-page vision spend. */
 const MAX_OCR_PAGES = 10;
 
+/** The PDFs (by sha256) whose native read ran in this process and found no
+ *  text, so a retry of the same bytes does not pay for that model call
+ *  again. Small: the retry follows within minutes. A restart forgets it, so
+ *  the most a document pays is one extra read per process. */
+const NATIVE_EMPTY_MAX = 256;
+const nativeFoundNothing = new Set<string>();
+function rememberNativeEmpty(sha: string): void {
+  nativeFoundNothing.add(sha);
+  if (nativeFoundNothing.size > NATIVE_EMPTY_MAX) {
+    const oldest = nativeFoundNothing.values().next().value;
+    if (oldest !== undefined) nativeFoundNothing.delete(oldest);
+  }
+}
+
 /**
  * OCR-ingest a scanned / image-only PDF file node. When a PDF has no text layer
  * (`parseDocumentBytes` yields nothing and `readNodeBodyRaw` falls back to the
@@ -510,13 +525,27 @@ export async function ocrIngestPdfNode(
       //    whole-document context + real tables, no rasterization. Only runs
       //    when the worker's provider supports it; else falls through to the
       //    per-page raster OCR below.
+      //    A read that already ran on these bytes in this process and found
+      //    no text is not paid for again: a retry after the render (the
+      //    parser busy, a first refusal) goes straight to the render.
+      const bytesSha = createHash('sha256').update(buf).digest('hex');
+      const knownEmpty = nativeFoundNothing.has(bytesSha);
       const native = await step(
         {
           name: 'extract_document',
           kind: 'llm_call',
-          input: { mime: 'application/pdf', bytes: buf.length },
+          input: { mime: 'application/pdf', bytes: buf.length, known_empty: knownEmpty },
         },
         async (h) => {
+          if (knownEmpty) {
+            h.setMeta({ ran: true, skipped: 'read before in this process, no text' });
+            return {
+              ran: true,
+              text: '',
+              note: 'the native read of these bytes found no text earlier',
+              model: null,
+            } as Awaited<ReturnType<typeof runDocumentWorker>>;
+          }
           const r = await runDocumentWorker({
             ownerId,
             bytes: buf,
@@ -555,6 +584,7 @@ export async function ocrIngestPdfNode(
         return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
       }
       let ran = native.ran;
+      if (native.ran && !knownEmpty) rememberNativeEmpty(bytesSha);
 
       // 2) Fall back to rasterize → per-page image OCR.
       //
@@ -577,8 +607,9 @@ export async function ocrIngestPdfNode(
             // These bytes refused by the parser for the second time: the
             // caller records document_unreadable. Anything else, the parser
             // busy or a first refusal included, stays the pdf_unreadable skip
-            // below, which the drain retries: throwing here would make the
-            // job's retry pay the native read above a second time.
+            // below, which the drain retries; that retry finds the native
+            // read's empty answer remembered (nativeFoundNothing) and does
+            // not pay for it again.
             if (isParserError(err) && err.terminal) {
               h.setMeta({ pages: 0, error: err.message, parser_code: err.code });
               throw err;

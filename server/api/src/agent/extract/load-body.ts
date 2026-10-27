@@ -322,7 +322,8 @@ function isTerminalParserError(err: unknown): err is ParserError {
 /** The owner-facing reason for a document_unreadable skip, by the parser's
  *  code. */
 function unreadableHint(code: string): string {
-  if (code === 'too_large') return 'The document is too large to read (past a size limit of the parser).';
+  if (code === 'too_large')
+    return 'The document is too large to read (past a size limit of the parser).';
   if (code === 'timeout') return 'Reading the document took longer than the parser allows, twice.';
   return 'Reading the document ran the parser out of memory (or crashed it), twice.';
 }
@@ -614,7 +615,7 @@ export async function loadExtractableBody(
       return { ok: false };
     } else if (ocr.tooLarge) {
       // Every page was past a render limit, or the file past the size limit
-      // (@mantle/files/rasterize, pdf-open). The
+      // (the parser's PDF reader, packages/files/src/pdf-open.ts). The
       // same bytes give the same answer, so this is a verdict on the document
       // and terminal: retrying it is how one oversized upload became a
       // restart loop before the limits existed.
@@ -686,16 +687,20 @@ export async function loadExtractableBody(
       return { ok: false };
     }
   } else if (preferNativePdf) {
-    let native: Awaited<ReturnType<typeof ocrIngestPdfNode>>;
+    // The text layer is already in hand: whatever the native read or the
+    // parser does here (busy, a timeout, a refusal), the body is kept and the
+    // job goes on. It never fails or retries the job, so the native read is
+    // never paid for twice on its account.
+    let native: Awaited<ReturnType<typeof ocrIngestPdfNode>> | null;
     try {
       native = await ocrIngestPdfNode(node, ownerId);
     } catch (err) {
-      if (!isTerminalParserError(err)) throw err;
-      return unreadable(err);
+      if (!isParserError(err)) throw err;
+      native = null;
     }
     // Only replace the text-layer body if native produced something usable;
     // otherwise keep the text we already have (native is best-effort here).
-    if (native.text && native.text.trim().length >= 20) rawBody = native.text;
+    if (native?.text && native.text.trim().length >= 20) rawBody = native.text;
   }
 
   // Generalised hollow-body guard. readNodeBodyRaw falls back to the TITLE for

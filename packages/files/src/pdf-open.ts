@@ -1,16 +1,16 @@
 /**
- * The one way this package opens a PDF with pdfjs: `withPdf`.
+ * The one way this package opens a PDF with pdfjs: `withPdf`. Runs in the
+ * parser service (server/parser) only, one job per process.
  *
  * pdfjs decodes an embedded image at its full declared size before anything
  * downstream can look at it, and the decoded pixels (plus the canvas a render
  * draws them on) live outside the V8 heap, so no JS-side check sees them
  * coming. A 747 KB PDF holding one 16000x16000 image peaked at ~1.9 GB in the
- * pictures pass and ~5.2 GB in the scanned-PDF render (which also blocked the
- * event loop ~2 s); the api container is capped at 3 GB, so one upload could
- * OOM-kill it and the extract job's retry and the boot sweep would load the
- * same file again.
+ * pictures pass and ~5.2 GB in the scanned-PDF render.
  *
- * Three bounds, all here:
+ * The guarantee is the parser container: its OS memory limit kills the job
+ * (the parser answers `crashed`), and the job's deadline kills a decode that
+ * never settles (`timeout`). Inside it, two cheap bounds here:
  *
  *  - `maxImageSize` makes pdfjs drop an image whose dictionary DECLARES more
  *    than `PDF_MAX_IMAGE_PIXELS` before decoding it (it logs "Image exceeded
@@ -18,22 +18,12 @@
  *    layer and every normal picture on the page still come through. It is a
  *    check on the size the PDF declares, nothing more: a crafted file whose
  *    decoder output disagrees with its header (a JPEG whose own header is
- *    bigger, a huge soft mask) is not bounded by it. Those are bounded only by
- *    the planned parser sidecar, which runs the decode under an OS memory
- *    limit.
+ *    bigger, a huge soft mask) is bounded by the container alone.
  *  - A file over `PDF_MAX_BYTES` is refused before pdfjs sees it.
- *  - One decode at a time per process: a `withPdf` that may decode images or
- *    draw (the default) holds a process-wide slot from `getDocument` until the
- *    loading task is destroyed, so two big documents never decode side by
- *    side. A caller that waits longer than its `waitMs` gets a `PdfBusyError`,
- *    which is retryable and never a verdict on the document.
  *
- * Text-only reads (`mode: 'text'`: the text layer, the page count, the
- * password probe) open through `withPdf` for the same parameters, size refusal
- * and teardown, but do NOT take the slot. pdfjs's text extraction skips image
- * XObjects and draws nothing, so their cost is the file itself (bounded by
- * `PDF_MAX_BYTES`), and making a chat attachment's text read queue behind a
- * hundred-page pictures pass would turn it into a timeout for no memory saved.
+ * (In the brain these were joined by a process-wide decode slot with wait and
+ * hold deadlines; one job per process in a memory-limited container made them
+ * unnecessary, and they are gone.)
  */
 
 /**
@@ -41,22 +31,13 @@
  * the image's dictionary declares them).
  *
  * 75 M keeps a 600 dpi scan readable, a real scanner setting: about 70 M
- * pixels for a 297 x 420 mm sheet, 35 M for A4 paper or US Letter. With one
- * decode at a time, it is also the largest round value whose render stays
- * under a 1.2 GB rise in an api container capped at 3 GB.
- *
- * That rise fits. Peak memory measured on every fleet box on 2026-10-27
- * (cgroup `memory.peak`, about one day since the last roll): mantle_api
- * 449 to 783 MiB against a 3 GiB limit (4 GiB on one box), mantle_web 580 to
- * 932 MiB against 3 GiB (6 GiB on one box). The ~1.46 GB in the api's
- * mem_limit comment (docker-compose.yml) is where the old 1.5g cap OOMed in
- * 2026-09, not normal load: a worst render (+1.13 GB) on top of the highest
- * measured peak is about 1.9 GB, still well under 3 GiB.
+ * pixels for a 297 x 420 mm sheet, 35 M for A4 paper or US Letter. It is
+ * also the largest round value whose render stays under a 1.2 GB rise, which
+ * fits a job in the parser's default 2 GB limit.
  *
  * Measured on Linux, rendering a one-page scan holding one image, peak RSS
  * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is
- * lower, +0.87 GB at 75 M), and two renders racing for the slot cost no more
- * than one. The 16000x16000 case drops from ~1.9 GB to the baseline. The
+ * lower, +0.87 GB at 75 M). The 16000x16000 case drops from ~1.9 GB to the baseline. The
  * pictures pass opens with a lower cap of its own (`MAX_IMAGE_PIXELS` in
  * pdf.ts, 30 M), so pdfjs never decodes an image there that the pass would
  * only throw away.
@@ -66,22 +47,6 @@ export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 /** The largest PDF any open accepts, in bytes. The old renderer
  *  (pdf-to-png-converter) refused past the same size. */
 export const PDF_MAX_BYTES = 256 * 1024 * 1024;
-
-/** How long a decode waits for the slot by default. Sized for a background
- *  job (the extractor), which retries a `PdfBusyError`: a few long holders
- *  in a row (each bounded by `PDF_MAX_HOLD_MS`), and still well under the
- *  job's 60-minute expiry. A live chat turn passes `PDF_TURN_WAIT_MS`
- *  instead. */
-export const PDF_JOB_WAIT_MS = 10 * 60_000;
-
-/** How long a live chat turn waits for the slot before giving up. */
-export const PDF_TURN_WAIT_MS = 15_000;
-
-/** The longest a `'decode'` open may hold the slot. Past it the loading task
- *  is destroyed, the slot is released and the open throws a `PdfBusyError`,
- *  so a document whose decode never settles cannot wedge every PDF behind
- *  it; its job fails and is retried like any other busy slot. */
-export const PDF_MAX_HOLD_MS = 5 * 60_000;
 
 /** pdfjs `getDocument` parameters every open in this package uses. */
 export const SAFE_PDF_PARAMS = {
@@ -111,20 +76,6 @@ export function isPdfLimitError(err: unknown): err is PdfLimitError {
   return err instanceof Error && err.name === 'PdfLimitError';
 }
 
-/**
- * Another PDF held the decode slot for longer than this caller would wait,
- * or this decode held it past `PDF_MAX_HOLD_MS` and was stopped. Retryable:
- * the extractor fails the job (pg-boss retries it) rather than recording a
- * verdict on the document.
- */
-export class PdfBusyError extends Error {
-  override readonly name = 'PdfBusyError';
-}
-
-export function isPdfBusyError(err: unknown): err is PdfBusyError {
-  return err instanceof Error && err.name === 'PdfBusyError';
-}
-
 // ─── declared image sizes ─────────────────────────────────────────────
 
 /** How far around an `/Subtype /Image` the scan below looks for the rest of
@@ -143,6 +94,19 @@ function directInt(dict: string, key: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** The object numbers the file names as soft masks (`/SMask 12 0 R`). */
+function softMaskObjects(buf: Buffer): Set<number> {
+  const out = new Set<number>();
+  const needle = '/SMask';
+  for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
+    const m = /^\s*(\d+)\s+\d+\s+R/.exec(
+      buf.toString('latin1', at + needle.length, at + needle.length + 32),
+    );
+    if (m) out.add(Number(m[1]));
+  }
+  return out;
+}
+
 /**
  * How many image XObjects in the file declare more pixels than `maxPixels`,
  * read from the raw bytes without parsing the document; counting stops at
@@ -150,6 +114,12 @@ function directInt(dict: string, key: string): number | null {
  * an object stream, so its dictionary sits in the file as plain text (also
  * when the file is encrypted: encryption covers strings and stream data, not
  * dictionary numbers). Only direct `/Width` and `/Height` values are read.
+ *
+ * An image that is another image's soft mask (an object a `/SMask n 0 R`
+ * names: the alpha of a transparent photo) is not counted: it is never drawn
+ * on its own, and counting it made a brochure with one big transparent photo
+ * look like two oversize images, enough to be misread as a scan and lose its
+ * figures.
  *
  * A cheap hint, not a verdict: a miss (an indirect size, an oversize inline
  * image) or an image declared but never drawn is possible, so callers use it
@@ -162,6 +132,7 @@ export function countOversizeImages(
 ): number {
   // A view on the same memory: no copy of a file that may be 256 MB.
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const masks = softMaskObjects(buf);
   const needle = '/Image';
   let found = 0;
   for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
@@ -171,6 +142,10 @@ export function countOversizeImages(
     const lo = Math.max(0, at - DICT_WINDOW);
     const objAt = buf.subarray(lo, at).lastIndexOf('obj');
     const from = objAt >= 0 ? lo + objAt : lo;
+    if (objAt >= 0) {
+      const header = /(\d+)\s+\d+\s+$/.exec(buf.toString('latin1', Math.max(lo, from - 24), from));
+      if (header && masks.has(Number(header[1]))) continue;
+    }
     const streamAt = buf.indexOf('stream', at);
     const to =
       streamAt >= 0 && streamAt - at <= DICT_WINDOW
@@ -199,44 +174,6 @@ export function declaresOversizeImage(
   return countOversizeImages(bytes, maxPixels, 1) > 0;
 }
 
-// ─── the decode slot ──────────────────────────────────────────────────
-
-let slotHeld = false;
-const slotWaiters: (() => void)[] = [];
-
-/** Take the slot, waiting at most `waitMs`. Resolves to its release, which
- *  hands the slot straight to the next waiter (so a late arrival can never
- *  jump the queue) and is safe to call more than once. */
-async function takeSlot(waitMs: number): Promise<() => void> {
-  if (slotHeld) {
-    await new Promise<void>((resolve, reject) => {
-      const wake = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        const at = slotWaiters.indexOf(wake);
-        if (at >= 0) slotWaiters.splice(at, 1);
-        reject(
-          new PdfBusyError(
-            `another PDF is being decoded; gave up after waiting ${Math.round(waitMs / 1000)} s (retry later)`,
-          ),
-        );
-      }, waitMs);
-      slotWaiters.push(wake);
-    });
-  }
-  slotHeld = true;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    const next = slotWaiters.shift();
-    if (next) next();
-    else slotHeld = false;
-  };
-}
-
 // ─── opening ──────────────────────────────────────────────────────────
 
 type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -251,34 +188,17 @@ export type OpenPdfOptions = Omit<
 >;
 
 export type WithPdfOptions = OpenPdfOptions & {
-  /** `'decode'` (the default) for anything that may decode an image or draw:
-   *  it holds the process-wide slot. `'text'` for a read of the text layer or
-   *  page tree only: no slot. */
-  mode?: 'decode' | 'text';
-  /** How long a `'decode'` open waits for the slot before throwing a
-   *  `PdfBusyError`. Default `PDF_JOB_WAIT_MS`. */
-  waitMs?: number;
   /** A lower image cap for this open (never above `PDF_MAX_IMAGE_PIXELS`). */
   maxImagePixels?: number;
-  /** How long a `'decode'` open may hold the slot. Default
-   *  `PDF_MAX_HOLD_MS`; only tests pass anything else. */
-  holdMs?: number;
 };
 
 /**
  * Open a PDF with the safe parameters, run `fn` on the loaded document, and
  * tear the loading task down (since pdfjs 6 the task, not the document, owns
- * the worker side) whatever happens. A `'decode'` open holds the slot from
- * before `getDocument` until that teardown is done.
+ * the worker side) whatever happens.
  *
- * Throws `PdfLimitError` for a file over `PDF_MAX_BYTES`, `PdfBusyError`
- * when the slot stays taken past `waitMs` or this open holds it past
- * `holdMs`, and whatever pdfjs throws loading the document (a wrong
- * password, a corrupt file). A timed-out `fn` is not awaited: the task is
- * destroyed under it, so its next pdfjs call fails, and the slot moves on.
- *
- * Never nest a `'decode'` open inside another's `fn`: the inner one would
- * wait on the slot its own caller holds.
+ * Throws `PdfLimitError` for a file over `PDF_MAX_BYTES`, and whatever pdfjs
+ * throws loading the document (a wrong password, a corrupt file).
  */
 export async function withPdf<T>(
   bytes: Uint8Array,
@@ -291,60 +211,25 @@ export async function withPdf<T>(
       `PDF is ${Math.round(bytes.byteLength / (1024 * 1024))} MB; the limit is ${PDF_MAX_BYTES / (1024 * 1024)} MB`,
     );
   }
-  const {
-    mode = 'decode',
-    waitMs = PDF_JOB_WAIT_MS,
-    holdMs = PDF_MAX_HOLD_MS,
-    maxImagePixels,
-    ...params
-  } = opts;
-  const release = mode === 'decode' ? await takeSlot(waitMs) : null;
+  const { maxImagePixels, ...params } = opts;
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  // The one copy, and a needed one: pdfjs refuses a Node Buffer and detaches
+  // the array it is handed, while the caller keeps using its bytes.
+  const data = new Uint8Array(bytes);
+  const task = pdfjs.getDocument({
+    ...params,
+    data,
+    ...SAFE_PDF_PARAMS,
+    // Only ever lower: pdfjs reads -1 as "no limit", so anything not a
+    // positive number keeps the package cap.
+    maxImageSize:
+      maxImagePixels && maxImagePixels > 0
+        ? Math.min(maxImagePixels, PDF_MAX_IMAGE_PIXELS)
+        : PDF_MAX_IMAGE_PIXELS,
+  });
   try {
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    // The one copy, and a needed one: pdfjs refuses a Node Buffer and detaches
-    // the array it is handed, while every caller keeps using its bytes (the
-    // extractor reads the same Buffer for its next pass).
-    const data = new Uint8Array(bytes);
-    const task = pdfjs.getDocument({
-      ...params,
-      data,
-      ...SAFE_PDF_PARAMS,
-      // Only ever lower: pdfjs reads -1 as "no limit", so anything not a
-      // positive number keeps the package cap.
-      maxImageSize:
-        maxImagePixels && maxImagePixels > 0
-          ? Math.min(maxImagePixels, PDF_MAX_IMAGE_PIXELS)
-          : PDF_MAX_IMAGE_PIXELS,
-    });
-    const work = task.promise.then((doc) => fn({ pdfjs, doc }));
-    if (!release) {
-      try {
-        return await work;
-      } finally {
-        await task.destroy().catch(() => {});
-      }
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () =>
-          reject(
-            new PdfBusyError(
-              `PDF decode ran past ${Math.round(holdMs / 1000)} s and was stopped (retry later)`,
-            ),
-          ),
-        holdMs,
-      );
-    });
-    try {
-      // `race` subscribes to `work`, so a rejection after the deadline won
-      // is handled, not an unhandled rejection.
-      return await Promise.race([work, deadline]);
-    } finally {
-      clearTimeout(timer);
-      await task.destroy().catch(() => {});
-    }
+    return await task.promise.then((doc) => fn({ pdfjs, doc }));
   } finally {
-    release?.();
+    await task.destroy().catch(() => {});
   }
 }

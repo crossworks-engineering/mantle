@@ -33,6 +33,7 @@ const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   tryUnlockPdf: vi.fn(),
   documentWorkerPrefersNative: vi.fn(),
+  parseDocumentBytes: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -54,6 +55,10 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
   return { ...actual, documentWorkerPrefersNative: h.documentWorkerPrefersNative };
 });
+vi.mock('@mantle/files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files')>();
+  return { ...actual, parseDocumentBytes: h.parseDocumentBytes };
+});
 vi.mock('./file-bytes', () => ({
   loadFileBytes: h.loadFileBytes,
   tryUnlockPdf: h.tryUnlockPdf,
@@ -64,6 +69,7 @@ vi.mock('./images', () => ({
   visionIngestImageNode: vi.fn(),
 }));
 
+import { ParserError } from '@mantle/files';
 import { loadExtractableBody } from './load-body';
 
 const WORKER = { id: 'w1', slug: 'extractor', params: {}, apiKeyId: null };
@@ -218,5 +224,50 @@ describe('loadExtractableBody — PDF dead-ends', () => {
     const res = await run();
     expect(res.ok).toBe(true);
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadExtractableBody: prefer_native keeps the text layer', () => {
+  const TEXT_LAYER = 'Quarterly summary. Revenue rose and costs held steady.';
+
+  beforeEach(() => {
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('%PDF-1.4'),
+      ext: 'pdf',
+      filename: 'scan.pdf',
+    });
+    h.parseDocumentBytes.mockResolvedValue(TEXT_LAYER);
+    h.documentWorkerPrefersNative.mockResolvedValue(true);
+  });
+
+  for (const code of ['busy', 'timeout', 'unavailable'] as const) {
+    it(`keeps the text-layer body when the parser answers ${code}`, async () => {
+      h.ocrIngestPdfNode.mockRejectedValue(
+        new ParserError(code, `parser ${code}`, { retryable: true, terminal: false }),
+      );
+      const res = await run();
+      expect(res).toEqual({ ok: true, rawBody: TEXT_LAYER });
+      expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+    });
+  }
+
+  it('keeps it on a terminal refusal of the render too', async () => {
+    h.ocrIngestPdfNode.mockRejectedValue(
+      new ParserError('timeout', 'parser timeout', { retryable: false, terminal: true }),
+    );
+    const res = await run();
+    expect(res).toEqual({ ok: true, rawBody: TEXT_LAYER });
+  });
+
+  it('takes the native read when it yields a usable body', async () => {
+    const nativeText = 'Native read of the quarterly summary, with its table intact.';
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: nativeText,
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+    });
+    const res = await run();
+    expect(res).toEqual({ ok: true, rawBody: nativeText });
   });
 });

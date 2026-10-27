@@ -32,6 +32,7 @@ export const READERS = Object.freeze([
   'mspdi',
   'ooxml-media',
   'pdf',
+  'pdf-open',
   'pdf-password',
   'pptx',
   'rasterize',
