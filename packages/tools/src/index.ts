@@ -168,6 +168,7 @@ export {
   DIAGRAM_RENDER_TOOLS,
 } from './builtins-presents';
 export { CANVAS_LIBRARY_TOOLS, CANVAS_LIBRARIES } from './builtins-canvas-library';
+export { MESSENGER_TOOLS, MESSENGER_TOOL_SLUGS } from './builtins-messenger';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, parsePlan } from './builtins-runs';

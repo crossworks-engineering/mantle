@@ -45,6 +45,7 @@ import { CALCULATE_TOOLS } from './builtins-calculate';
 import { DIAGRAM_TOOLS } from './builtins-diagrams';
 import { CIRCUIT_TOOLS } from './builtins-circuits';
 import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
+import { MESSENGER_TOOLS } from './builtins-messenger';
 import { CANVAS_LIBRARY_TOOLS } from './builtins-canvas-library';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
@@ -229,6 +230,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,
   ...CANVAS_LIBRARY_TOOLS,
+  // The messenger (Messenger V1): MCP only, as the caller, no spend.
+  ...MESSENGER_TOOLS,
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,
