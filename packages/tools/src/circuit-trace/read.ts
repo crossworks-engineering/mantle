@@ -9,8 +9,9 @@
  * answers null for a table the caller cannot read. A table the scope does
  * not return is never opened, so its rows cannot reach the trace.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { isUuid } from '@mantle/std';
 import { nodeUrl } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
@@ -117,26 +118,51 @@ export async function dwgTables(
     )
     .orderBy(desc(nodes.updatedAt))
     .limit(MAX_TABLES + 1);
+  return { more: rows.length > MAX_TABLES, tables: rows.slice(0, MAX_TABLES).map(candidateOf) };
+}
+
+/** One listed table row as a candidate (dwgTables, dwgTablesByIds). */
+function candidateOf(r: { id: string; title: string; data: unknown; fileSha: unknown }) {
+  const d = (r.data ?? {}) as Record<string, unknown>;
+  const stamped =
+    typeof d[DWG_SOURCE_SHA_KEY] === 'string' && d[DWG_SOURCE_SHA_KEY]
+      ? (d[DWG_SOURCE_SHA_KEY] as string)
+      : null;
+  const fileSha = typeof r.fileSha === 'string' && r.fileSha ? r.fileSha : null;
   return {
-    more: rows.length > MAX_TABLES,
-    tables: rows.slice(0, MAX_TABLES).map((r) => {
-      const d = (r.data ?? {}) as Record<string, unknown>;
-      const stamped =
-        typeof d[DWG_SOURCE_SHA_KEY] === 'string' && d[DWG_SOURCE_SHA_KEY]
-          ? (d[DWG_SOURCE_SHA_KEY] as string)
-          : null;
-      const fileSha = typeof r.fileSha === 'string' && r.fileSha ? r.fileSha : null;
-      return {
-        id: r.id,
-        title: r.title,
-        description: typeof d.description === 'string' ? d.description : null,
-        sourceFileId: typeof d.sourceFileId === 'string' ? d.sourceFileId : null,
-        revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
-        sourceSha: stamped,
-        source: sourceStateOf(stamped, fileSha),
-      };
-    }),
-  };
+    id: r.id,
+    title: r.title,
+    description: typeof d.description === 'string' ? d.description : null,
+    sourceFileId: typeof d.sourceFileId === 'string' ? d.sourceFileId : null,
+    revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
+    sourceSha: stamped,
+    source: sourceStateOf(stamped, fileSha),
+  } satisfies CandidateTable;
+}
+
+/** The DWG/DXF registry tables among `ids` the caller's scope reads, in
+ *  the order of `ids` (the scope filters as dwgTables'); an id that is no
+ *  uuid, no such table or not readable is left out. */
+export async function dwgTablesByIds(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<CandidateTable[]> {
+  const want = [...new Set(ids.filter((id) => isUuid(id)))].slice(0, MAX_TABLES);
+  if (!want.length) return [];
+  const rows = await db
+    .select({ id: nodes.id, title: nodes.title, data: nodes.data, fileSha: FILE_SHA })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'table'),
+        inArray(nodes.id, want),
+        sql`'auto-import' = ANY(${nodes.tags})`,
+        sql`${nodes.data}->>'description' ilike 'AutoCAD %model-space registry%'`,
+      ),
+    );
+  const byId = new Map(rows.map((r) => [r.id, candidateOf(r)]));
+  return want.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
 }
 
 const ident = (s: string) => `"${s.replace(/"/g, '""')}"`;
@@ -543,11 +569,7 @@ export async function readSheet(
   const checksTab = tab(CHECKS_TAB);
   if (checksTab)
     await optional('the image checks (Checks)', async () => {
-      const cols = CHECK_COLUMNS.filter((c) => hasColumn(checksTab, c));
-      const r = await paged(
-        `SELECT ${cols.map(ident).join(', ')} FROM ${ident(checksTab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})`,
-        MAX_CHECK_ROWS,
-      );
+      const r = await paged(checksQuery(checksTab, circuit), MAX_CHECK_ROWS);
       for (const o of asObjects(r)) checks.push(storedCheckOf(o));
       if (r.cut)
         limits.push(
@@ -600,4 +622,44 @@ function emptySheet(
     near: 0,
     limits,
   };
+}
+
+/** The Checks tab rows of one circuit (every column the tab has). */
+function checksQuery(tab: WorkbookTabRef, circuit: string): string {
+  const cols = CHECK_COLUMNS.filter((c) => !tab.columns || tab.columns.some((x) => x.name === c));
+  return `SELECT ${cols.map(ident).join(', ')} FROM ${ident(tab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})`;
+}
+
+/**
+ * One drawing table's Checks tab rows of `circuit` (the check overview, no
+ * geometry read): the table opened through `tableSqlSurface` as the
+ * caller, null when it cannot be read, an empty list when it has no Checks
+ * tab. At most MAX_CHECK_ROWS rows, `cut` past them.
+ */
+export async function readCircuitChecks(
+  ownerId: string,
+  t: CandidateTable,
+  circuit: string,
+  deps: {
+    run?: (abs: string, q: string, cap: number) => ReturnType<typeof runTableSql>;
+    surface?: (
+      ownerId: string,
+      id: string,
+    ) => Promise<{ abs: string; tabs: WorkbookTabRef[] } | null>;
+  } = {},
+): Promise<{ rows: StoredCheck[]; cut: boolean } | null> {
+  const run = deps.run ?? ((abs: string, q: string, cap: number) => runTableSql(abs, q, { cap }));
+  const surface = await (deps.surface ?? tableSqlSurface)(ownerId, t.id);
+  if (!surface) return null;
+  const tab = surface.tabs.find((x) => x.name === CHECKS_TAB);
+  if (!tab) return { rows: [], cut: false };
+  const ordered = `${checksQuery(tab, circuit)}${ORDER}`;
+  const rows: StoredCheck[] = [];
+  for (let offset = 0; offset < MAX_CHECK_ROWS; offset += PAGE) {
+    const r = await run(surface.abs, `${ordered} LIMIT ${PAGE} OFFSET ${offset}`, PAGE);
+    for (const o of asObjects(r)) rows.push(storedCheckOf(o));
+    if (r.rows.length < PAGE) return { rows, cut: false };
+  }
+  const past = await run(surface.abs, `${ordered} LIMIT 1 OFFSET ${MAX_CHECK_ROWS}`, 1);
+  return { rows, cut: past.rows.length > 0 };
 }

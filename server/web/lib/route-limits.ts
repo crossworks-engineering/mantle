@@ -190,6 +190,9 @@ export const RATE_LIMITS = {
   // A canvas's snapshot in a page, per login: a page with many canvases
   // loads one each, and a stamp asks ?meta=1 for each.
   presentPoster: perLogin('present-poster', 600),
+  // A traced canvas's image check overview (the panel beside it): one
+  // read of the drawing tables' Checks tabs per open.
+  presentChecks: perLogin('present-checks', 120),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),
   shareRows: perIp('share-rows', 120),

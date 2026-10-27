@@ -18,6 +18,7 @@
  * template's SVG, or a PNG of any other canvas. The canvas stays the
  * editable source; the export is a copy.
  */
+import { checksOverviewOf, traceSourceOf } from './circuit-trace/overview';
 import {
   createPresent,
   deletePresent,
@@ -473,7 +474,7 @@ const present_get: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Get a canvas',
   description:
-    'Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.',
+    "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. A P&ID made by `circuit_trace` also returns `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -491,6 +492,10 @@ const present_get: BuiltinToolDef = {
     const p = await getPresent(ctx.ownerId, id);
     if (!p) return notFound('canvas', id, LOOKUP);
     const tpl = templateOf(p.source);
+    // A traced P&ID: the overview of its image checks, read as the caller
+    // (the drawing tables it names, their Checks tabs), the app's panel's.
+    const checks =
+      tpl && traceSourceOf(tpl.data) ? await checksOverviewOf(ctx.ownerId, tpl.data) : null;
     return {
       ok: true,
       output: {
@@ -499,6 +504,7 @@ const present_get: BuiltinToolDef = {
         summary: p.summary,
         libs: p.meta.libs,
         ...(tpl ? { template: tpl.template, data: tpl.data } : {}),
+        ...(checks?.traced ? { image_checks: checks } : {}),
         // A template canvas is its data: the source is the template's own
         // runtime around it, asked for only by name.
         ...(input.source === true || (input.source !== false && !tpl) ? { source: p.source } : {}),

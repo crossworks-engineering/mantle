@@ -1,12 +1,15 @@
 /** The `pid` template: a P&ID first draft from data. */
 export {
   validatePid,
+  traceOf,
+  TRACE_TABLES_MAX,
   PID_VERSION,
   PID_LIMITS,
   EQUIPMENT_TYPES,
   VALVE_TYPES,
   SIGNAL_TYPES,
   type PidData,
+  type TraceSource,
 } from './schema.ts';
 export { renderPid } from './render.ts';
 export {

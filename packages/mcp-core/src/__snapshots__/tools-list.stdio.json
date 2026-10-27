@@ -7483,7 +7483,7 @@
  },
  {
   "name": "circuit_verify",
-  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing (a help, not a guarantee). **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and say how many guesses are not checked by image. A second call within 10 minutes is refused unless `recheck`.",
+  "description": "Ask a vision model about each guess of `circuit_trace` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; `dry_run` is free. Call `circuit_verify` at most once per trace in a turn, never again in the same turn for guesses it left out (not_asked, a cap, a time limit); save the drawing and say how many are unchecked. A second call within 10 minutes is refused unless `recheck`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7644,7 +7644,7 @@
  },
  {
   "name": "present_get",
-  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. A P&ID made by `circuit_trace` also returns `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {
    "type": "object",
    "properties": {

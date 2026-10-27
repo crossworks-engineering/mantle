@@ -113,10 +113,15 @@ const DATA_BLOCK = new RegExp(
 /** The data block of a canvas, parsed. Throws with a clear message when the
  *  block is missing or not JSON. */
 export function readCanvasData(html: string): Record<string, unknown> {
-  const m = DATA_BLOCK.exec(html);
-  if (!m) throw new Error(`canvas: no <script type="application/json" id="${DATA_ID}"> block`);
+  // Two indexOf scans, linear in the source: the first opening tag, then
+  // the first closing tag after it (what DATA_BLOCK matches, without a
+  // pattern that could try every opening tag again).
+  const open = `<script type="application/json" id="${DATA_ID}">`;
+  const at = html.indexOf(open);
+  const end = at < 0 ? -1 : html.indexOf('</script>', at + open.length);
+  if (end < 0) throw new Error(`canvas: no <script type="application/json" id="${DATA_ID}"> block`);
   try {
-    return JSON.parse(m[2]!) as Record<string, unknown>;
+    return JSON.parse(html.slice(at + open.length, end)) as Record<string, unknown>;
   } catch (err) {
     throw new Error(`canvas: the data block is not valid JSON (${messageOf(err)})`, { cause: err });
   }

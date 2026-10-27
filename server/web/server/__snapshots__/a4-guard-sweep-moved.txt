@@ -224,7 +224,7 @@ m222 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m223 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m224 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9457
+# cells whose guard entry moved to the pipeline: 9481
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -3637,6 +3637,20 @@ first HEAD /api/presents/:id member-cookie=m58
 first HEAD /api/presents/:id admin-bearer=m32
 first HEAD /api/presents/:id member-bearer=m59
 first HEAD /api/presents/:id revoked-bearer=m34
+first GET /api/presents/:id/checks owner-cookie=m21
+first GET /api/presents/:id/checks admin-cookie=m22
+first GET /api/presents/:id/checks limited-cookie=m23
+first GET /api/presents/:id/checks member-cookie=m49
+first GET /api/presents/:id/checks admin-bearer=m25
+first GET /api/presents/:id/checks member-bearer=m50
+first GET /api/presents/:id/checks revoked-bearer=m27
+first HEAD /api/presents/:id/checks owner-cookie=m28
+first HEAD /api/presents/:id/checks admin-cookie=m29
+first HEAD /api/presents/:id/checks limited-cookie=m30
+first HEAD /api/presents/:id/checks member-cookie=m58
+first HEAD /api/presents/:id/checks admin-bearer=m32
+first HEAD /api/presents/:id/checks member-bearer=m59
+first HEAD /api/presents/:id/checks revoked-bearer=m34
 first POST /api/presents/:id/frame-ticket owner-cookie=m179
 first POST /api/presents/:id/frame-ticket admin-cookie=m180
 first POST /api/presents/:id/frame-ticket limited-cookie=m181
@@ -8232,6 +8246,16 @@ more HEAD /api/presents/:id bumped-cookie=m34
 more HEAD /api/presents/:id gone-cookie=m34
 more HEAD /api/presents/:id rotated-bearer=m34
 more HEAD /api/presents/:id expired-bearer=m34
+more GET /api/presents/:id/checks disabled-cookie=m27
+more GET /api/presents/:id/checks bumped-cookie=m27
+more GET /api/presents/:id/checks gone-cookie=m27
+more GET /api/presents/:id/checks rotated-bearer=m27
+more GET /api/presents/:id/checks expired-bearer=m27
+more HEAD /api/presents/:id/checks disabled-cookie=m34
+more HEAD /api/presents/:id/checks bumped-cookie=m34
+more HEAD /api/presents/:id/checks gone-cookie=m34
+more HEAD /api/presents/:id/checks rotated-bearer=m34
+more HEAD /api/presents/:id/checks expired-bearer=m34
 more POST /api/presents/:id/frame-ticket disabled-cookie=m57
 more POST /api/presents/:id/frame-ticket bumped-cookie=m57
 more POST /api/presents/:id/frame-ticket gone-cookie=m57

@@ -28,6 +28,7 @@ import {
   CURRENT_STYLE,
   PID_LIMITS,
   SET_LIMITS,
+  TRACE_TABLES_MAX,
   VALVE_TYPES,
 } from '@mantle/diagram-templates';
 import { splitPages, type SplitPage } from './pages';
@@ -1613,6 +1614,12 @@ export function buildPid(
       setNote + note,
     );
   const head = `Circuit ${circuit}`.slice(0, TEXT.title);
+  // Where the drawing came from (plain data, never drawn): the app shows
+  // the image checks of these tables beside the saved drawing.
+  const trace = {
+    circuit: circuit.slice(0, TEXT.title),
+    tables: [...new Set(sheets.map((s) => s.tableId))].slice(0, TRACE_TABLES_MAX),
+  };
   // One page holds it all: one plain drawing, no set around it.
   if (!needSheets) {
     return {
@@ -1622,6 +1629,7 @@ export function buildPid(
       title: head,
       description: about(guessNoteOf(allMarks)),
       legendNames: LEGEND_NAMES,
+      trace,
       ...ov,
     };
   }
@@ -1632,6 +1640,7 @@ export function buildPid(
     title: head,
     description: about(guessNoteOf(allMarks)),
     legendNames: LEGEND_NAMES,
+    trace,
     pages: [
       {
         id: 'overview',

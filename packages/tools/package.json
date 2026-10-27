@@ -16,7 +16,8 @@
     "./gate-narrowers": "./src/gate-narrowers.ts",
     "./canvas-render": "./src/canvas-render/sidecar.ts",
     "./canvas-frame-document": "./src/canvas-render/frame-document.ts",
-    "./circuit-workflow": "./src/circuit-trace/workflow.ts"
+    "./circuit-workflow": "./src/circuit-trace/workflow.ts",
+    "./present-checks": "./src/circuit-trace/overview.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

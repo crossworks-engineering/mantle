@@ -74,6 +74,21 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   return { ...real, db: q };
 });
+// A traced P&ID's image check overview (present_get): its drawing table and
+// Checks rows, stood in.
+vi.mock('./circuit-trace/read', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./circuit-trace/read')>()),
+  dwgTablesByIds: vi.fn(async (_o: string, ids: string[]) =>
+    ids.map((id) => ({
+      id,
+      title: 'PID-1001',
+      description: null,
+      sourceFileId: null,
+      revision: null,
+    })),
+  ),
+  readCircuitChecks: vi.fn(async () => ({ rows: [], cut: false })),
+}));
 vi.mock('@mantle/app-build', () => ({
   CANVAS_MODULE_SPECIFIERS: ['d3', 'echarts', '@mantle/diagram-templates/browser'],
   buildCanvasCss: vi.fn(async () => ''),
@@ -570,6 +585,33 @@ describe('the reads and the restore', () => {
     h.getPresent.mockResolvedValueOnce(null);
     const none = await tool('present_get').handler({ id: ID }, ctx);
     expect((none as { error: string }).error).toContain('present_list');
+  });
+
+  it('present_get of a traced P&ID adds its image check overview; any other canvas none', async () => {
+    const T1 = '22222222-2222-4222-8222-222222222222';
+    const data = {
+      template: 'pid',
+      title: 'Circuit 10000-001-01',
+      trace: { circuit: '10000-001-01', tables: [T1] },
+      equipment: [{ id: 'V-1', type: 'vertical-vessel' }],
+    };
+    const { buildCanvas } = await import('@mantle/diagram-templates');
+    h.getPresent.mockResolvedValueOnce(
+      detail(buildCanvas({ template: 'pid', data, mode: 'import' })),
+    );
+    const out = (await tool('present_get').handler({ id: ID }, ctx)) as {
+      output: { image_checks?: { traced: boolean; note: string; circuits: unknown[] } };
+    };
+    expect(out.output.image_checks).toMatchObject({
+      traced: true,
+      note: 'Image checks help; they are not a guarantee. Verify on the drawing.',
+      circuits: [{ circuit: '10000-001-01', counts: { checked: 0, no: 0, unsure: 0 } }],
+    });
+    h.getPresent.mockResolvedValueOnce(detail(CANVAS));
+    const plain = (await tool('present_get').handler({ id: ID }, ctx)) as {
+      output: Record<string, unknown>;
+    };
+    expect(plain.output).not.toHaveProperty('image_checks');
   });
 
   it('present_render draws the saved canvas with the asked moment, slide and theme, and changes nothing', async () => {

@@ -131,11 +131,19 @@ export { estimateMeasurer, domMeasurer, clipText, type Measurer } from './runtim
 export { buildCanvas, readCanvasData, replaceCanvasData, type CanvasMode } from './canvas.ts';
 export type { PageFailure, RenderResult } from './types.ts';
 export type { FlowData } from './templates/flow.ts';
-export type { PidData, PidSet, PidPage, PidInput, SiteProfile } from './templates/pid/index.ts';
+export type {
+  PidData,
+  PidSet,
+  PidPage,
+  PidInput,
+  SiteProfile,
+  TraceSource,
+} from './templates/pid/index.ts';
 export {
   PID_LIMITS,
   SET_LIMITS,
   VALVE_TYPES,
+  TRACE_TABLES_MAX,
   pidLimitsProblem,
   RAW_LIMITS,
 } from './templates/pid/index.ts';

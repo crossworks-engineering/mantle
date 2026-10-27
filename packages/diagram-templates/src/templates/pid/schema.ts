@@ -87,6 +87,34 @@ export const DISPLAYS = ['discrete', 'shared', 'computer', 'plc', 'interlock'] a
  *  the drawing does not fit the frame at a readable size. */
 export type DrawingView = { zoom?: boolean };
 
+/** Where a traced drawing came from, as circuit_trace writes it (plain
+ *  data, never drawn): the circuit and the drawing tables it read. The app
+ *  reads it to show the overview of those tables' image checks beside the
+ *  saved drawing (the present checks route); nothing trusts it for more. */
+export type TraceSource = { circuit: string; tables: string[] };
+/** The most tables a trace names (a set's pages, at most). */
+export const TRACE_TABLES_MAX = 40;
+/** A table id as the brain writes one (a uuid); held loosely here (the
+ *  route that reads the tables looks up uuids only). */
+const TABLE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The data's `trace` (TraceSource), checked; undefined when absent. */
+export function traceOf(d: Obj, issues: Issues): TraceSource | undefined {
+  if (d.trace === undefined) return undefined;
+  if (!isObj(d.trace)) {
+    issues.errors.push('trace: must be { circuit, tables } (circuit_trace writes it).');
+    return undefined;
+  }
+  checkKeys(d.trace, ['circuit', 'tables'], 'trace', issues);
+  const circuit = str(d.trace, 'circuit', 'trace', issues, { required: true, max: 80 });
+  const tables: string[] = [];
+  list(d.trace, 'tables', 'trace', issues, { max: TRACE_TABLES_MAX }).forEach((v, i) => {
+    if (typeof v === 'string' && TABLE_ID.test(v)) tables.push(v);
+    else issues.errors.push(`trace.tables[${i}]: not a table id.`);
+  });
+  return circuit ? { circuit, tables } : undefined;
+}
+
 export type Equipment = {
   id: string;
   type: EquipmentType;
@@ -189,6 +217,8 @@ export type PidData = {
   /** The drawing style edition (style.ts): 1 classic, 2 the colour set. */
   style: StyleEdition;
   view?: DrawingView;
+  /** circuit_trace's source of the drawing (TraceSource). */
+  trace?: TraceSource;
   description?: string;
   sheet?: { number?: string; revision?: string };
   profile: ResolvedProfile;
@@ -228,6 +258,7 @@ const TOP_KEYS = [
   'circuits',
   'style',
   'view',
+  'trace',
 ];
 const PROFILE_KEYS = [
   'name',
@@ -463,8 +494,8 @@ export function drawingFields(d: Obj, issues: Issues): { style: StyleEdition; vi
 export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked<PidData> {
   const issues = newIssues();
   if (!isObj(input)) return { ok: false, errors: ['data: must be a JSON object.'], warnings: [] };
-  // The sizes first (limits.ts): data past one is refused whole, so what
-  // this check takes is exactly what a save's honest pass takes.
+  // The sizes first (limits.ts): data past one is refused whole, before
+  // any pass of this check walks it.
   const tooLarge = pidLimitsProblem(input);
   if (tooLarge !== null) return { ok: false, errors: [overLimitError(tooLarge)], warnings: [] };
   const d = input as Obj;
@@ -483,6 +514,7 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
   const showTitle = bool(d, 'showTitle', '', issues) ?? true;
   const legend = bool(d, 'legend', '', issues) ?? true;
   const drawing = drawingFields(d, issues);
+  const trace = traceOf(d, issues);
   let legendNames: PidData['legendNames'];
   if (d.legendNames !== undefined) {
     if (!isObj(d.legendNames))
@@ -1031,5 +1063,6 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
     ...(description ? { description } : {}),
     ...(sheet ? { sheet } : {}),
     ...(legendNames ? { legendNames } : {}),
+    ...(trace ? { trace } : {}),
   });
 }
