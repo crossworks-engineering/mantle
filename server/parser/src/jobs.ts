@@ -210,17 +210,20 @@ export async function runJob(
 /** Any throw as the wire's failure. */
 export function failureOf(err: unknown): JobFailure {
   if (err instanceof JobFailure) return err;
-  if (isDocumentTooLarge(err)) return new JobFailure('too_large', err.message);
+  // A reader's fixed cap (zip parts, cells, pixels): the same bytes are
+  // refused the same way every time.
+  if (isDocumentTooLarge(err)) return new JobFailure('too_large', err.message, { final: true });
   // The PDF readers' size verdict (pdf-open.ts: over 256 MB, or every page
   // too large to render).
   if (err instanceof Error && err.name === 'PdfLimitError') {
-    return new JobFailure('too_large', err.message);
+    return new JobFailure('too_large', err.message, { final: true });
   }
   const e = err as { code?: unknown; name?: unknown; message?: unknown } | null;
   if (e?.code === 'unsupported' || e?.name === 'UnsupportedFormatError') {
     return new JobFailure('unsupported', String(e?.message ?? 'unsupported format'));
   }
-  // The scratch space is full: the document's own output did not fit.
+  // The scratch space is full: the document's own output did not fit, or
+  // something else filled it; not final, so it gets its one retry.
   if ((err as NodeJS.ErrnoException | null)?.code === 'ENOSPC') {
     return new JobFailure(
       'too_large',

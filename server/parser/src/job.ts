@@ -35,7 +35,7 @@ async function main(): Promise<number> {
     const failure = failureOf(err);
     await fs.writeFile(
       path.join(dir, 'error.json'),
-      JSON.stringify({ code: failure.code, message: failure.message }),
+      JSON.stringify({ code: failure.code, message: failure.message, final: failure.final }),
     );
     return 3;
   }

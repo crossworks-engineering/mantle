@@ -1,7 +1,9 @@
 /**
  * The parser's job slots (./slots.ts): at most `maxJobs` at once, at most
  * `queueMax` waiting, each for at most `waitMs`, then `busy`; a freed slot
- * goes to the longest waiter.
+ * goes to the longest waiter; an interactive waiter goes ahead of every
+ * background one, waits its own shorter time, and is not turned away by a
+ * full background queue.
  */
 import { describe, expect, it } from 'vitest';
 import { JobFailure } from './job-failure';
@@ -64,5 +66,46 @@ describe('Slots', () => {
     const slots = new Slots(1, 0, 1_000);
     slots.release();
     expect(slots.running).toBe(0);
+  });
+
+  it('puts an interactive waiter at the head, behind earlier interactive ones', async () => {
+    const slots = new Slots(1, 4, 10_000, 10_000);
+    await slots.acquire();
+    const order: string[] = [];
+    const bg1 = slots.acquire().then(() => order.push('bg1'));
+    const bg2 = slots.acquire().then(() => order.push('bg2'));
+    const i1 = slots.acquire({ interactive: true }).then(() => order.push('i1'));
+    const i2 = slots.acquire({ interactive: true }).then(() => order.push('i2'));
+    for (let n = 0; n < 4; n++) {
+      slots.release();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await Promise.all([bg1, bg2, i1, i2]);
+    expect(order).toEqual(['i1', 'i2', 'bg1', 'bg2']);
+  });
+
+  it('answers an interactive waiter busy after its own short wait', async () => {
+    const slots = new Slots(1, 4, 10_000, 50);
+    await slots.acquire();
+    const started = Date.now();
+    const err = await refusal(slots.acquire({ interactive: true }));
+    expect(err.code).toBe('busy');
+    expect(err.message).toContain('0.05 s');
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(slots.queued).toBe(0);
+  });
+
+  it('lets an interactive request wait though the background queue is full', async () => {
+    const slots = new Slots(1, 1, 10_000, 10_000);
+    await slots.acquire();
+    const bg = slots.acquire();
+    expect((await refusal(slots.acquire())).code).toBe('busy');
+    const person = slots.acquire({ interactive: true });
+    expect(slots.queued).toBe(2);
+    slots.release();
+    await person;
+    slots.release();
+    await bg;
+    expect(slots.queued).toBe(0);
   });
 });

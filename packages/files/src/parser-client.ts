@@ -14,7 +14,10 @@
  *    retryable, never counted against the bytes.
  *  - `too_large`, `timeout` and `crashed` count against the bytes in that
  *    job: the first is retryable (a loaded box can be slow once; a restart
- *    can drop one connection), the second is terminal. A job already
+ *    can drop one connection), the second is terminal. A refusal the
+ *    parser marks `final` (a fixed cap: the body, a zip part, the cells,
+ *    the pixels, the answer) is terminal the first time: the same bytes
+ *    fail the same way every time. A job already
  *    terminal for these bytes is refused at once, without asking the parser
  *    again. Counted per job, a document that fails only one job (the
  *    pictures of a 100-sheet drawing set run out of time) still has its text
@@ -29,7 +32,10 @@
  *
  * A small concurrency cap per process (PARSER_CLIENT_CONCURRENCY, default 2)
  * keeps one busy brain process from filling the parser's queue alone. The
- * parser's own slots and queue are the real bound.
+ * parser's own slots and queue are the real bound. An interactive exchange
+ * (a person is waiting, {@link withParserScope}) skips this cap, asks the
+ * parser for the head of its queue (PRIORITY_HEADER) and takes its `busy`
+ * after a short wait there as the answer, never retried.
  *
  * Never sends a byte anywhere but PARSER_URL, the service on the stack's
  * internal network.
@@ -46,6 +52,8 @@ import {
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_CODES,
   PARSER_ROUTES,
+  PRIORITY_HEADER,
+  PRIORITY_INTERACTIVE,
   parserClientTimeoutMs,
   type ParserErrorCode,
   type ParserJob,
@@ -125,16 +133,24 @@ export type ParserFailureCount = { n: number; code: ParserErrorCode };
  */
 export type ParserFailureLedger = {
   get(key: string): Promise<ParserFailureCount | null>;
-  /** Count one more failure; the count after it. */
-  add(key: string, code: ParserErrorCode): Promise<number>;
+  /** Count one more failure; the count after it. `final`: the failure is
+   *  the bytes' for good, so the count goes straight to terminal (2). */
+  add(key: string, code: ParserErrorCode, opts?: { final?: boolean }): Promise<number>;
 };
+
+/** The count after one more failure: terminal (2) at once when final. */
+export function nextFailureCount(prior: number, final: boolean): number {
+  return final ? Math.max(prior + 1, 2) : prior + 1;
+}
 
 /** What a caller says about its exchanges, for everything under it. */
 export type ParserScope = {
   /** Where the failures are counted (the process's memory without one). */
   failures?: ParserFailureLedger;
-  /** A person is waiting (a chat turn): a `busy` parser is said at once,
-   *  never waited out. */
+  /** A person is waiting (a chat turn, a thumbnail): the exchange skips
+   *  this process's queue, the parser puts it at the head of its own and
+   *  answers `busy` after a short wait (about 10 s), and that `busy` is the
+   *  answer, never retried. */
   interactive?: boolean;
 };
 
@@ -160,8 +176,8 @@ const memoryFailures = new Map<string, ParserFailureCount>();
  *  between gives the bytes one more try, never a loop. */
 const memoryLedger: ParserFailureLedger = {
   get: (key) => Promise.resolve(memoryFailures.get(key) ?? null),
-  add: (key, code) => {
-    const n = (memoryFailures.get(key)?.n ?? 0) + 1;
+  add: (key, code, opts) => {
+    const n = nextFailureCount(memoryFailures.get(key)?.n ?? 0, opts?.final === true);
     memoryFailures.delete(key);
     memoryFailures.set(key, { n, code });
     if (memoryFailures.size > FAILURES_MAX) {
@@ -240,9 +256,15 @@ function bodyOf(head: Buffer, bytes: Buffer): ReadableStream<Uint8Array> {
   });
 }
 
+/** The answer past the caller's cap: the same bytes give the same answer,
+ *  so it is final. */
+class AnswerTooLarge extends ParserError {
+  readonly final = true;
+}
+
 async function readCapped(res: Response, maxBytes: number): Promise<Buffer> {
   const tooLarge = () =>
-    new ParserError('too_large', `the parser's answer was past ${maxBytes} bytes`, {
+    new AnswerTooLarge('too_large', `the parser's answer was past ${maxBytes} bytes`, {
       retryable: false,
       terminal: false,
     });
@@ -286,7 +308,9 @@ type Answer = { body: Buffer; headers: Headers };
 const BUSY_WAITS_MS = [2_000, 5_000, 10_000];
 
 /** One attempt's outcome: the answer, or the typed failure. */
-type Attempt = { ok: true; answer: Answer } | { ok: false; code: ParserErrorCode; message: string };
+type Attempt =
+  | { ok: true; answer: Answer }
+  | { ok: false; code: ParserErrorCode; message: string; final?: boolean };
 
 /** One request: never throws, every failure typed. */
 async function attempt(
@@ -294,6 +318,7 @@ async function attempt(
   bytes: Buffer,
   head: Buffer,
   maxAnswerBytes: number,
+  interactive: boolean,
 ): Promise<Attempt> {
   const cfg = config();
   try {
@@ -302,6 +327,7 @@ async function attempt(
       headers: {
         'content-type': 'application/octet-stream',
         [OPTS_LENGTH_HEADER]: String(head.length),
+        ...(interactive ? { [PRIORITY_HEADER]: PRIORITY_INTERACTIVE } : {}),
         ...(cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}),
       },
       body: bodyOf(head, bytes),
@@ -316,7 +342,14 @@ async function attempt(
     }
     return { ok: false, ...(await envelopeOf(res)) };
   } catch (err) {
-    if (isParserError(err)) return { ok: false, code: err.code, message: err.message };
+    if (isParserError(err)) {
+      return {
+        ok: false,
+        code: err.code,
+        message: err.message,
+        final: err instanceof AnswerTooLarge,
+      };
+    }
     const code = transportCode(err);
     return {
       ok: false,
@@ -356,22 +389,25 @@ async function exchange(
     );
   }
   const head = Buffer.from(JSON.stringify(opts), 'utf8');
-  const busyWaits = current?.interactive ? [] : BUSY_WAITS_MS;
-  await acquire();
+  // A person waiting skips this process's queue and the busy retries: the
+  // parser's short interactive wait is the only one.
+  const interactive = current?.interactive === true;
+  const busyWaits = interactive ? [] : BUSY_WAITS_MS;
+  if (!interactive) await acquire();
   let result: Attempt;
   try {
-    result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes), {
+    result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes, interactive), {
       retries: busyWaits.length,
       isFailure: (r) => !r.ok && r.code === 'busy',
       delayMs: (retry) => busyWaits[retry - 1] ?? null,
     });
   } finally {
-    release();
+    if (!interactive) release();
   }
   if (result.ok) return result.answer;
   const { code, message } = result;
   if (PARSER_COUNTED_CODES.has(code)) {
-    const terminal = (await ledger.add(jobKey, code)) >= 2;
+    const terminal = (await ledger.add(jobKey, code, { final: result.final === true })) >= 2;
     throw new ParserError(code, message, { retryable: !terminal, terminal });
   }
   throw new ParserError(code, message, {
@@ -390,21 +426,27 @@ function statusCode(status: number): ParserErrorCode {
   return 'failed';
 }
 
-async function envelopeOf(res: Response): Promise<{ code: ParserErrorCode; message: string }> {
+async function envelopeOf(
+  res: Response,
+): Promise<{ code: ParserErrorCode; message: string; final: boolean }> {
   let code = statusCode(res.status);
   let message =
     code === 'unavailable'
       ? `the parser service is not available (parser, HTTP ${res.status})`
       : `the parser answered HTTP ${res.status}`;
+  let final = false;
   try {
-    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+    const body = (await res.json()) as {
+      error?: { code?: string; message?: string; final?: unknown };
+    };
     const c = body?.error?.code;
     if (c && (PARSER_ERROR_CODES as readonly string[]).includes(c)) code = c as ParserErrorCode;
     if (body?.error?.message) message = body.error.message;
+    final = body?.error?.final === true;
   } catch {
     /* keep the status-line fallback */
   }
-  return { code, message };
+  return { code, message, final };
 }
 
 function jsonOf(answer: Answer): Record<string, unknown> {

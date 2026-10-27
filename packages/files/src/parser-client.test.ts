@@ -6,8 +6,12 @@
  *    again;
  *  - the count is per job: the pictures pass failing never makes the text
  *    read terminal;
+ *  - a refusal the parser marks final (a fixed cap) is terminal the first
+ *    time;
  *  - failed is neither retryable nor terminal; unavailable (a refused
- *    connection, a wrong token) is retryable and never counted.
+ *    connection, a wrong token) is retryable and never counted;
+ *  - an interactive exchange asks for the head of the parser's queue and
+ *    skips this process's own.
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -27,22 +31,27 @@ import {
 } from './parser-client';
 
 type Reply =
-  | { code: ParserErrorCode }
+  | { code: ParserErrorCode; final?: boolean }
   | { text: string }
   | { status: number }
   | { health: Record<string, unknown> };
 let reply: Reply = { text: '' };
 const hits: string[] = [];
 const auths: string[] = [];
+const priorities: string[] = [];
+/** While set, a request to /images is answered only once it resolves. */
+let holdImages: Promise<void> | null = null;
 let server: Server;
 let saved: { url?: string; token?: string };
 
 beforeAll(async () => {
   server = createServer((req, res) => {
     req.resume();
-    req.on('end', () => {
+    req.on('end', async () => {
       hits.push(req.url ?? '');
       auths.push(req.headers.authorization ?? '');
+      priorities.push(String(req.headers['x-parser-priority'] ?? ''));
+      if (req.url === '/images' && holdImages) await holdImages;
       if ('health' in reply) {
         res
           .writeHead(200, { 'content-type': 'application/json' })
@@ -50,9 +59,16 @@ beforeAll(async () => {
       } else if ('status' in reply) {
         res.writeHead(reply.status).end();
       } else if ('code' in reply) {
-        res
-          .writeHead(PARSER_ERROR_STATUS[reply.code], { 'content-type': 'application/json' })
-          .end(JSON.stringify({ ok: false, error: { code: reply.code, message: reply.code } }));
+        res.writeHead(PARSER_ERROR_STATUS[reply.code], { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: reply.code,
+              message: reply.code,
+              ...(reply.final ? { final: true } : {}),
+            },
+          }),
+        );
       } else {
         res
           .writeHead(200, { 'content-type': 'application/json' })
@@ -83,6 +99,8 @@ beforeEach(() => {
   resetParserFailures();
   hits.length = 0;
   auths.length = 0;
+  priorities.length = 0;
+  holdImages = null;
   reply = { text: '' };
 });
 
@@ -208,6 +226,53 @@ describe('parser client', () => {
     );
     expect(third).toMatchObject({ code: 'timeout', terminal: true });
     expect(hits).toEqual([]);
+  });
+
+  it('makes a final refusal (a fixed cap) terminal the first time, and never sends it again', async () => {
+    const bytes = doc();
+    reply = { code: 'too_large', final: true };
+    const first = await failure(parserText(bytes, 'docx'));
+    expect(first).toMatchObject({ code: 'too_large', retryable: false, terminal: true });
+    hits.length = 0;
+    const again = await failure(parserText(bytes, 'docx'));
+    expect(again).toMatchObject({ code: 'too_large', terminal: true });
+    expect(hits).toEqual([]);
+  });
+
+  it('gives a too_large that is not final (a full scratch space) its one retry', async () => {
+    const bytes = doc();
+    reply = { code: 'too_large' };
+    const first = await failure(parserText(bytes, 'docx'));
+    expect(first).toMatchObject({ code: 'too_large', retryable: true, terminal: false });
+    const second = await failure(parserText(bytes, 'docx'));
+    expect(second).toMatchObject({ code: 'too_large', retryable: false, terminal: true });
+  });
+
+  it('asks for the head of the queue on the interactive path, and skips this process’s queue', async () => {
+    const saved = process.env.PARSER_CLIENT_CONCURRENCY;
+    process.env.PARSER_CLIENT_CONCURRENCY = '1';
+    let release!: () => void;
+    holdImages = new Promise<void>((resolve) => (release = resolve));
+    try {
+      // A background job holds this process's only slot.
+      const background = parserImages(doc(), 'docx', { maxImages: 1 });
+      for (let i = 0; i < 100 && !hits.includes('/images'); i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(hits).toContain('/images');
+      reply = { text: 'now' };
+      // A person waiting does not queue behind it.
+      const text = await withParserScope({ interactive: true }, () => parserText(doc(), 'docx'));
+      expect(text).toBe('now');
+      expect(priorities.at(-1)).toBe('interactive');
+      expect(priorities[0]).toBe('');
+      release();
+      await background;
+    } finally {
+      release?.();
+      if (saved === undefined) delete process.env.PARSER_CLIENT_CONCURRENCY;
+      else process.env.PARSER_CLIENT_CONCURRENCY = saved;
+    }
   });
 
   it('says busy at once on the interactive path, without waiting it out', async () => {
