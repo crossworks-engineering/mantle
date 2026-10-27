@@ -4,8 +4,9 @@
  *
  * Handles the OOXML formats exceljs reads natively — `.xlsx` and `.xlsm`. The
  * legacy binaries (`.xls`, `.xlsb`) are converted to `.xlsx` upstream in
- * `./parse.ts` and arrive here as ordinary modern bytes, so this module has
- * one code path for every spreadsheet in the system.
+ * `./read-document.ts` and arrive here as ordinary modern bytes, so this
+ * module has one code path for every spreadsheet in the system. Runs in the
+ * parser service (server/parser) only.
  *
  * Each sheet is rendered as CSV under a `# Sheet: <name>` header so the LLM
  * can tell tabs apart; blank rows are dropped. Formulas resolve to their
@@ -28,12 +29,7 @@
  * only loaded when a spreadsheet actually shows up.
  */
 
-import {
-  SpreadsheetTooLargeError,
-  loadWorkbook,
-  worksheetToRows,
-  type RawCell,
-} from './sheet-read';
+import { loadWorkbook, worksheetToRows, type RawCell } from './sheet-read';
 
 /** Rows rendered per sheet. Generous for recall + summary. */
 const MAX_ROWS_PER_SHEET = 5_000;
@@ -89,23 +85,11 @@ function rowsToCsv(rows: RawCell[][]): string {
  * Flatten a workbook to `# Sheet: <name>` + CSV blocks.
  *
  * Returns `''` when there is nothing tabular to index. A workbook past the
- * in-process size ceiling falls through to Tika, which streams the parse in
- * its own heap-capped container rather than in the extractor's process — a
- * lower-fidelity rendering of a workbook nobody was going to read as a table
- * anyway, and far better than an OOM.
+ * size ceiling throws `SpreadsheetTooLargeError` (./sheet-read.ts), which the
+ * parser answers as `too_large`.
  */
 export async function parseXlsx(buf: Buffer): Promise<string> {
-  let wb;
-  try {
-    wb = await loadWorkbook(buf);
-  } catch (err) {
-    if (err instanceof SpreadsheetTooLargeError) {
-      const { parseTikaBytes } = await import('./tika');
-      const { mimeForExt } = await import('./slug');
-      return parseTikaBytes(buf, { mimeType: mimeForExt('xlsx') });
-    }
-    throw err;
-  }
+  const wb = await loadWorkbook(buf);
 
   const parts: string[] = [];
   let total = 0;
