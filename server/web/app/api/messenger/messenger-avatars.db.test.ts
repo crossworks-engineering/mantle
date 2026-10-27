@@ -154,10 +154,10 @@ describe.skipIf(!URL)('the messenger faces: avatars and the photo route', () => 
       kind: 'direct',
       participants: [B],
     });
-    const conv = await json(
+    const { conversation } = await json(
       await as(B, 'conversation', `/api/messenger/c/${conversationId}`, { id: conversationId }),
     );
-    const people = conv.participants as Record<string, unknown>[];
+    const people = (conversation as { participants: Record<string, unknown>[] }).participants;
     expect(people.find((p) => p.id === A)).toMatchObject({
       kind: 'login',
       name: 'Ann',
