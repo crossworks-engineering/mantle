@@ -6,7 +6,7 @@
  * connection pinned to a checked address, secret headers dropped across
  * origins, a deadline and a streamed byte cap.
  *
- * Swept: all product code under packages/ and server/{web,api,mcp,sandboxd}/
+ * Swept: all product code under packages/ and server/{web,api,mcp,sandboxd,parser}/
  * (tests and scripts are not product code). The rule flags any use of the
  * platform fetch there: a bare `fetch(`, `fetch` passed or kept as a value
  * (an alias), a global object's `fetch` (`globalThis`, `global`, `window`,
@@ -33,6 +33,9 @@ export const BARE_FETCH_SWEPT = [
   'server/api/',
   'server/mcp/',
   'server/sandboxd/',
+  // The parser fetches nothing (its network has no route out); swept so a
+  // fetch added to it is seen.
+  'server/parser/',
 ];
 
 /** The modules that are a raw HTTP client (or the platform fetch's own
@@ -138,13 +141,9 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: "sandboxd's control API: the stack's own SANDBOXD_URL",
   },
-  'packages/files/src/tika.ts': {
+  'packages/files/src/parser-client.ts': {
     kind: 'owner config',
-    why: "Tika, a service of the stack: the deployment's TIKA_URL",
-  },
-  'packages/files/src/media-sidecar.ts': {
-    kind: 'owner config',
-    why: "the media sidecar, a service of the stack: the deployment's URL",
+    why: "the parser service, a service of the stack on its internal network: the deployment's PARSER_URL",
   },
   'server/web/lib/render-pdf.ts': {
     kind: 'owner config',
@@ -217,6 +216,10 @@ export const RAW_HTTP_ALLOWED = {
   'server/sandboxd/src/main.ts': {
     kind: 'owner config',
     why: "sandboxd's own HTTP listener, and its service proxy to a sandbox container at the internal address sandboxd assigned",
+  },
+  'server/parser/src/main.ts': {
+    kind: 'owner config',
+    why: "the parser service's own HTTP listener on the stack's internal parser network; it makes no outbound call",
   },
 };
 

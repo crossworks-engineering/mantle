@@ -46,6 +46,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { envNum } from '@mantle/config';
 import { sniffImage } from './image-probe';
 import { extOf, slugifyFolder } from './slug';
 
@@ -234,10 +235,11 @@ export async function extractEmbeddedImages(
     return gateAndCap(raw, cap);
   }
   const { parserImages } = await import('./parser-client');
-  const { renderDpi } = await import('./dwf');
+  // DWF sheets render at the box's dial (DWF_RENDER_DPI; packages/files/src/
+  // dwf.ts says what it does), read here and sent with the request.
   return parserImages(bytes, lower, {
     maxImages: cap,
-    ...(lower === 'dwf' ? { dpi: renderDpi() } : {}),
+    ...(lower === 'dwf' ? { dpi: envNum('DWF_RENDER_DPI') } : {}),
   });
 }
 
