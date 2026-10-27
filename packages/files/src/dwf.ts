@@ -51,7 +51,7 @@
  *
  * DWFx (`.dwfx`) is a different container (OPC/XPS) and stream format — it is
  * routed to an honest export-required skip in ./slug.ts, not here. Dispatch in
- * parse.ts is gated on {@link sniffDwf}, so a mislabelled `.dwf` (usually a
+ * read-document.ts is gated on {@link sniffDwf}, so a mislabelled `.dwf` (usually a
  * renamed DWFx) yields '' and takes the extractor's honest hollow-skip rather
  * than indexing its own filename.
  */
@@ -351,15 +351,16 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  * pipeline (`extractEmbeddedImages` → gate → file nodes) and stamped with
  * its `provenance` tier:
  *
- *   - **sidecar_render** — the media sidecar's ezdwf raster of the sheet's
- *     vector content (300 dpi, engineering-legible). Taken only when the
+ *   - **sidecar_render** — the CAD tier's ezdwf raster of the sheet's
+ *     vector content (300 dpi, engineering-legible), rendered in the parser
+ *     service (the value is the stored provenance name, kept from the days
+ *     of the media sidecar). Taken only when the
  *     render set is COMPLETE: no sheet skipped, nothing lost to the payload
  *     cap. A partial render never silently replaces the full set below.
  *     Sheet identity comes from the container MANIFEST (mapped by the
  *     render's sheet index), so titles do not depend on which tier ran.
  *   - **embedded_thumbnail** — the container's own 262×170 preview, the
- *     exact pre-sidecar behaviour and the fallback for every failure mode
- *     (profile off, container down, pre-ezdwf image, busy, timeout, partial
+ *     fallback for every failure mode (a render error, a timeout, a partial
  *     render). The fallback is logged with the failure code, and the
  *     provenance stamp is what lets `extract-images-backfill --upgrade-dwf`
  *     re-render this cohort later.
@@ -370,12 +371,13 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  * `location.sheet` carries the sheet title so the naming cascade yields
  * "… (90-10-01)"-style node titles.
  */
-/** Render resolution for sidecar sheet rasters — a PER-BOX dial via the
- *  `DWF_RENDER_DPI` env (clamped to the sidecar's 50–600 range; default 300).
+/** Render resolution for CAD-tier sheet rasters — a PER-BOX dial via the
+ *  `DWF_RENDER_DPI` env (clamped to the renderer's 50–600 range; default
+ *  300). The brain reads it and passes it to the parser with the request.
  *
- *  Since v0.232.141 the sidecar renders each sheet on a FIXED 33-inch page
+ *  Since v0.232.141 the renderer draws each sheet on a FIXED 33-inch page
  *  (`RENDER_PAGE_INCHES`) rather than ezdwf's own small figure, so this dial
- *  no longer sets the pixel count on its own: the sidecar clamps the
+ *  no longer sets the pixel count on its own: the renderer clamps the
  *  effective dpi to whatever keeps the output under its 30 MP cap, which
  *  lands around 165 dpi ≈ 5400 px on the long edge. Anything above that
  *  saturates — the value is a ceiling now, not a multiplier. The page size,
@@ -384,7 +386,7 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  *  so line numbers and title-block dates filled in solid. Tune DOWN (150 ≈
  *  4950 px) on a box whose vision worker downscales anyway — pixels are
  *  vision tokens. */
-function renderDpi(): number {
+export function renderDpi(): number {
   return envNum('DWF_RENDER_DPI');
 }
 
@@ -405,17 +407,46 @@ function sheetImage(
   };
 }
 
+/** One sheet of a CAD-tier DWF render. */
+export type DwfSheetRender = {
+  /** Sheet title as published ("90-10-01 Rev 2" style). */
+  name: string;
+  /** The sheet's true index in the plot set (failed sheets leave gaps). */
+  index: number;
+  png: Buffer;
+};
+
+/** A CAD-tier render of every sheet of a plot set. */
+export type DwfRender = {
+  /** How many 2D sheets the container holds. */
+  sheetCount: number;
+  /** Sheets that errored in the render worker (counted, never renamed over). */
+  skipped: number;
+  /** A sheet-count or payload cap bit. */
+  capped: boolean;
+  /** Anything at all is missing from `sheets`: cap, error, or otherwise. */
+  truncated: boolean;
+  sheets: DwfSheetRender[];
+};
+
+/** The CAD tier's renderer, handed in by the parser service (its Python
+ *  ezdwf child, server/parser/src/cad.ts). A failure is a value, never a
+ *  throw: the thumbnails are the fallback. */
+export type DwfRenderFn = (
+  bytes: Buffer,
+  opts: { dpi: number; maxSheets?: number },
+) => Promise<{ ok: true; value: DwfRender } | { ok: false; code: string; message: string }>;
+
 export async function extractDwfImages(
   bytes: Buffer,
-  opts?: { maxSheets?: number },
+  opts?: { maxSheets?: number; render?: DwfRenderFn; dpi?: number },
 ): Promise<EmbeddedImage[]> {
   if (!sniffDwf(bytes)) return [];
 
-  const { mediaSidecarEnabled, mediaDwfRender } = await import('./media-sidecar');
-  if (mediaSidecarEnabled()) {
-    const render = await mediaDwfRender(bytes, {
-      dpi: renderDpi(),
-      ...(opts?.maxSheets ? { maxSheets: opts.maxSheets } : {}),
+  if (opts?.render) {
+    const render = await opts.render(bytes, {
+      dpi: opts.dpi ?? renderDpi(),
+      ...(opts.maxSheets ? { maxSheets: opts.maxSheets } : {}),
     });
     if (render.ok) {
       const { sheetCount, skipped, sheets } = render.value;
@@ -423,7 +454,7 @@ export async function extractDwfImages(
       // skipped sheet or the payload cap falls through to the thumbnails,
       // which cover the whole set; a shortfall only from our own maxSheets
       // request is exactly what the caller's cap would keep anyway.
-      const wanted = Math.min(sheetCount, opts?.maxSheets ?? Number.POSITIVE_INFINITY);
+      const wanted = Math.min(sheetCount, opts.maxSheets ?? Number.POSITIVE_INFINITY);
       if (skipped === 0 && sheets.length >= wanted && sheets.length > 0) {
         // Titles from the manifest, mapped by the render's sheet index, so
         // node identity is the same whichever tier produced the pixels.
@@ -438,11 +469,11 @@ export async function extractDwfImages(
         );
       }
       console.warn(
-        `[dwf] sidecar render incomplete (${sheets.length}/${sheetCount}, skipped ${skipped}) — using embedded thumbnails`,
+        `[dwf] CAD render incomplete (${sheets.length}/${sheetCount}, skipped ${skipped}) — using embedded thumbnails`,
       );
     } else {
       console.warn(
-        `[dwf] sidecar render unavailable (${render.code}: ${render.message}) — using embedded thumbnails`,
+        `[dwf] CAD render unavailable (${render.code}: ${render.message}) — using embedded thumbnails`,
       );
     }
   }

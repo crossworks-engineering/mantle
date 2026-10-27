@@ -54,13 +54,15 @@
  *
  * So we pre-flight: read the zip's central directory, sum the uncompressed
  * size of the worksheet parts, and refuse in-process parsing past a ceiling.
- * The caller decides what "refuse" means — `./xlsx.ts` falls through to Tika
- * (out-of-process, its own capped JVM heap), `./sheet-to-grid.ts` raises the
- * error to the user, because a partial grid import would be a lie.
+ * The refusal is a {@link DocumentTooLargeError}: the parser service answers
+ * `too_large` for both the text read (./xlsx.ts) and the grid read, because a
+ * partial grid import would be a lie. It is a cheap early answer; the parser
+ * container's memory limit is what stops a workbook this check misses.
  */
 
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
+import { DocumentTooLargeError } from './read-limit';
 
 /**
  * Ceiling on total uncompressed worksheet XML we will open in-process, in
@@ -72,16 +74,15 @@ import JSZip from 'jszip';
 export const MAX_SHEET_XML_BYTES = 32 * 1024 * 1024;
 
 /** Thrown by {@link loadWorkbook} when the pre-flight ceiling is exceeded. */
-export class SpreadsheetTooLargeError extends Error {
+export class SpreadsheetTooLargeError extends DocumentTooLargeError {
   constructor(
     public readonly xmlBytes: number,
     public readonly limit: number,
   ) {
     super(
-      `spreadsheet too large to parse in-process (${Math.round(xmlBytes / 1e6)} MB of sheet XML > ` +
+      `spreadsheet too large to read (${Math.round(xmlBytes / 1e6)} MB of sheet XML > ` +
         `${Math.round(limit / 1e6)} MB limit)`,
     );
-    this.name = 'SpreadsheetTooLargeError';
   }
 }
 

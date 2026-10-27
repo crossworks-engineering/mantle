@@ -15,14 +15,16 @@ import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import {
   extractDwfImages,
+  type DwfRenderFn,
   parseDwf,
   parseDwfStructured,
   parseDwfToGrids,
   scrapeW2d,
   sniffDwf,
 } from './dwf';
-import { extractEmbeddedImages, passesGate } from './embedded-images';
-import { parseDocumentBytes } from './parse';
+import { passesGate } from './embedded-images';
+import { readEmbeddedImages } from './embedded-images-read';
+import { readDocumentText } from './read-document';
 import { INGESTABLE_EXTS, exportHintForExt, mimeForExt, parserRouteForExt } from './slug';
 
 const SECTION = 'com.autodesk.dwf.ePlot_AAAA0000-0000-0000-0000-000000000001';
@@ -156,14 +158,14 @@ describe('parseDwf digest', () => {
   });
 
   it('is reachable through the shared dispatcher', async () => {
-    const text = await parseDocumentBytes(await buildFixture(), 'dwf');
+    const text = await readDocumentText(await buildFixture(), 'dwf');
     expect(text).toContain('DWF drawing set');
   });
 
   it('a ZIP without the DWF magic (renamed DWFx) is sniff-rejected to ""', async () => {
     const fixture = await buildFixture();
     const bareZip = fixture.subarray('(DWF V06.20)'.length);
-    expect(await parseDocumentBytes(bareZip, 'dwf')).toBe('');
+    expect(await readDocumentText(bareZip, 'dwf')).toBe('');
   });
 });
 
@@ -181,7 +183,7 @@ describe('extractDwfImages (sheet thumbnails)', () => {
   });
 
   it('survives the shared gate despite being under the 200px decoration floor', async () => {
-    const { images, rejected } = await extractEmbeddedImages(await buildFixture(), 'dwf');
+    const { images, rejected } = await readEmbeddedImages(await buildFixture(), 'dwf');
     expect(images).toHaveLength(1);
     expect(rejected.too_small ?? 0).toBe(0);
     // The same bytes WITHOUT the essential flag are decoration-filtered —
@@ -197,68 +199,50 @@ describe('extractDwfImages (sheet thumbnails)', () => {
     expect(await extractDwfImages(Buffer.from('PK\x03\x04nope'))).toEqual([]);
   });
 
-  it('prefers complete sidecar renders, stamps provenance, falls back typed', async () => {
+  it('prefers a complete CAD render, stamps provenance, falls back typed', async () => {
     const renderPng = thumbnailPng();
-    vi.stubEnv('MEDIA_SIDECAR_URL', 'http://media.test:8095');
-    vi.stubEnv('MEDIA_SIDECAR_TOKEN', 'secret');
-    const fetchMock = vi.fn(async (url: unknown, _init?: unknown) => {
-      if (String(url).endsWith('/healthz')) {
-        return Response.json({
-          ok: true,
-          versions: { yt_dlp: null, ffmpeg: '8.1', ezdwf: '0.0.3' },
-        });
-      }
-      return Response.json({
-        ok: true,
-        dpi: 300,
-        sheet_count: 1,
+    const render = vi.fn<DwfRenderFn>(async () => ({
+      ok: true as const,
+      value: {
+        sheetCount: 1,
         skipped: 0,
         capped: false,
         truncated: false,
-        sheets: [{ name: 'wire-name-ignored', index: 0, png_base64: renderPng.toString('base64') }],
-      });
+        sheets: [{ name: 'wire-name-ignored', index: 0, png: renderPng }],
+      },
+    }));
+    const images = await extractDwfImages(await buildFixture(), { render, dpi: 300 });
+    expect(render).toHaveBeenCalledWith(expect.any(Buffer), { dpi: 300 });
+    expect(images).toHaveLength(1);
+    expect(images[0]!.bytes.equals(renderPng)).toBe(true);
+    // Sheet identity comes from the MANIFEST (mapped by index), not the
+    // render's own name, so titles are tier-independent.
+    expect(images[0]!.location?.sheet).toBe('90-10-01 Rev 2');
+    expect(images[0]!.provenance).toBe('sidecar_render');
+    expect(images[0]!.essential).toBe(true);
+
+    // A PARTIAL render (skipped sheet) must NOT replace the complete
+    // thumbnail set — completeness gate falls back.
+    render.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        sheetCount: 2,
+        skipped: 1,
+        capped: false,
+        truncated: true,
+        sheets: [{ name: 'x', index: 0, png: renderPng }],
+      },
     });
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const images = await extractDwfImages(await buildFixture());
-      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain('http://media.test:8095/dwf/render');
-      expect(images).toHaveLength(1);
-      expect(images[0]!.bytes.equals(renderPng)).toBe(true);
-      // Sheet identity comes from the MANIFEST (mapped by index), not the
-      // sidecar's own name, so titles are tier-independent.
-      expect(images[0]!.location?.sheet).toBe('90-10-01 Rev 2');
-      expect(images[0]!.provenance).toBe('sidecar_render');
-      expect(images[0]!.essential).toBe(true);
+    const partial = await extractDwfImages(await buildFixture(), { render });
+    expect(partial).toHaveLength(1);
+    expect(partial[0]!.provenance).toBe('embedded_thumbnail');
 
-      // A PARTIAL render (skipped sheet) must NOT replace the complete
-      // thumbnail set — completeness gate falls back.
-      fetchMock.mockResolvedValueOnce(
-        Response.json({
-          ok: true,
-          dpi: 300,
-          sheet_count: 2,
-          skipped: 1,
-          capped: false,
-          truncated: true,
-          sheets: [{ name: 'x', index: 0, png_base64: renderPng.toString('base64') }],
-        }),
-      );
-      const partial = await extractDwfImages(await buildFixture());
-      expect(partial).toHaveLength(1);
-      expect(partial[0]!.provenance).toBe('embedded_thumbnail');
-
-      // Sidecar down → typed failure inside the client → thumbnail fallback,
-      // never a throw.
-      fetchMock.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
-      const fallback = await extractDwfImages(await buildFixture());
-      expect(fallback).toHaveLength(1);
-      expect(fallback[0]!.location?.sheet).toBe('90-10-01 Rev 2');
-      expect(fallback[0]!.provenance).toBe('embedded_thumbnail');
-    } finally {
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
-    }
+    // A failed render → thumbnail fallback, never a throw.
+    render.mockResolvedValueOnce({ ok: false, code: 'timeout', message: 'killed' });
+    const fallback = await extractDwfImages(await buildFixture(), { render });
+    expect(fallback).toHaveLength(1);
+    expect(fallback[0]!.location?.sheet).toBe('90-10-01 Rev 2');
+    expect(fallback[0]!.provenance).toBe('embedded_thumbnail');
   });
 });
 
