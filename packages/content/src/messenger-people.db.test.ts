@@ -237,6 +237,12 @@ describe.skipIf(!URL)('who may see whom (loginVisibleTo, peopleVisibleTo)', () =
     const faces = await pp.loginFaces(actor(A), [F, B, randomUUID(), 'nope']);
     expect([...faces.keys()]).toEqual([B]);
     expect([...(await pp.loginFaces(actor(adminB), [F])).keys()]).toEqual([F]);
+    // Room people keep their faces: Cat for Ann, who left Ops (she saw Cat
+    // there), and while Cat is disabled.
+    expect([...(await pp.loginFaces(actor(A), [C])).keys()]).toEqual([C]);
+    await su(sqlTag`update auth.users set disabled_at = now() where id = ${C}`);
+    expect([...(await pp.loginFaces(actor(A), [C])).keys()]).toEqual([C]);
+    await su(sqlTag`update auth.users set disabled_at = null where id = ${C}`);
     // Every address holds the test's tag and example.invalid; no name does.
     expect(await ms.peopleVisibleTo(actor(adminB), { q: 'example.invalid' })).toEqual([]);
     expect(await ms.peopleVisibleTo(actor(adminB), { q: tag })).toEqual([]);

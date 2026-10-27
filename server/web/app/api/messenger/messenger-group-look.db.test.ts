@@ -224,12 +224,20 @@ describe.skipIf(!URL)("a group's icon and colour (0341)", () => {
       { icon: '\u202e' },
       { icon: '🚀\u202e' },
       { icon: '🚀🚀' },
+      // Nor a joined chain of separate emoji, hidden tag text, stacked
+      // marks, a lone regional indicator or an unassigned code point.
+      { icon: '🚀\u200d🚀\u200d🚀' },
+      { icon: `🚀${String.fromCodePoint(0xe0069, 0xe0067, 0xe006e)}` },
+      { icon: `🚀${'\u0336'.repeat(6)}` },
+      { icon: '\u20dd' },
+      { icon: String.fromCodePoint(0x1f1ff) },
+      { icon: String.fromCodePoint(0x1fc00) },
     ]) {
       const res = await patch(A, id, body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
     // A sequence or a flag is one emoji.
-    for (const icon of ['👩‍💻', '🇿🇦', '👍🏽']) {
+    for (const icon of ['👩‍💻', '🇿🇦', '👍🏽', '🏳️‍🌈', '❤️']) {
       expect(await conv(await patch(A, id, { icon })), icon).toMatchObject({ icon });
     }
     expect((await patch(A, id, { icon: '🌱' })).status).toBe(200);

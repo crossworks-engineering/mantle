@@ -546,20 +546,17 @@ export type MessengerCreateInput = {
   color?: string | null;
 };
 
-const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+/** One emoji of Unicode's recommended set (RGI: a pictograph, a flag, a
+ *  skin tone or a joined sequence such as a family), the whole string. A
+ *  constructed RegExp: the `v` flag is newer than the compile target. */
+const RGI_EMOJI = new RegExp('^\\p{RGI_Emoji}$', 'v');
 
-/** Whether `v` is one emoji: one grapheme cluster with a pictograph (or a
- *  flag's two regional indicators) and no letter, number, space or control
- *  character; of the format characters only the joiner and a flag's tag
- *  characters (a sequence such as a family or a region's flag). */
+/** Whether `v` is one emoji (RGI_EMOJI), or one a text-style character
+ *  becomes with the emoji presentation selector (a bare heart). Nothing
+ *  else: no letter, no second emoji, no joined chain of separate ones, no
+ *  hidden tag text, no stacked mark, no control. */
 function oneEmoji(v: string): boolean {
-  if ([...GRAPHEMES.segment(v)].length !== 1) return false;
-  if (/[\p{L}\p{N}\p{Z}\p{Cc}]/u.test(v)) return false;
-  for (const ch of v) {
-    const cp = ch.codePointAt(0)!;
-    if (/\p{Cf}/u.test(ch) && cp !== 0x200d && !(cp >= 0xe0020 && cp <= 0xe007f)) return false;
-  }
-  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(v);
+  return RGI_EMOJI.test(v) || RGI_EMOJI.test(`${v}\ufe0f`);
 }
 
 /** A group's icon as given: one emoji (oneEmoji, within the app-nav emoji

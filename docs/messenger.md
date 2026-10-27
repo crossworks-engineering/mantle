@@ -110,8 +110,10 @@ last admin who leaves hands admin to the longest-standing member; a group
 with nobody left is archived. A group may hold just its creator ("message
 yourself").
 
-**A group's look.** A group may carry an `icon`, one emoji (the app-nav
-emoji rule: at most 16 characters, no letters or digits), and a `color`,
+**A group's look.** A group may carry an `icon`, one emoji (one of
+Unicode's recommended emoji, `\p{RGI_Emoji}`: a pictograph, a flag, a skin
+tone or a joined sequence such as a family; at most 16 characters, no
+digit), and a `color`,
 an app tint key (`APP_TINTS` in `@mantle/client-types/app-nav`: the key,
 never a colour, so each theme draws its own). Both are null by default;
 `POST /conversations` takes them for a group, `PATCH /c/:id` lets a group
@@ -180,8 +182,10 @@ brain's one style (the anchor's `avatarStyle`), never a stored one. No
 seed is `avatar: null`, and the client draws initials. A login also
 carries `photoVersion` (the shell's `avatarPhotoVersion`, for that login),
 null when it has no photo; the photo outranks the avatar. Both come from
-the people module (`loginFaces`, `agentFaces`; one query per list) for
-the ids the scoped read returned, as the names do. The photo itself is
+the people module, through its gate (`loginFaces` takes the caller and
+leaves out a login it may not see; one query per list after the Admin
+check; `agentFaces` for the brain's agents), for the ids the scoped read
+returned, as the names do. The photo itself is
 `GET /api/people/:id/photo?v=` (People, below); `/api/messenger/photo/:loginId`
 is its older path. The MCP tools leave both fields out: a face tells a
 model nothing.
