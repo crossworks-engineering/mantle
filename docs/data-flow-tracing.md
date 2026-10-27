@@ -4,10 +4,10 @@ How to verify, by hand, that a piece of content landed where it should,
 from the raw `nodes` row all the way through summary, embedding, facts,
 entities, and the trace trail. Written for an operator (or a future
 Claude session) sitting in front of the running dev stack who needs to
-answer *"I sent X in, did the system actually digest it, and if not,
-where did it stall?"*
+answer _"I sent X in, did the system actually digest it, and if not,
+where did it stall?"_
 
-Companion to [`memory.md`](./memory.md) (what the six layers *are*),
+Companion to [`memory.md`](./memory.md) (what the six layers _are_),
 [`observability.md`](./observability.md) (the trace model), and
 [`journey.md`](./journey.md) (the action→layer map + the `/debug/journey`
 screen). This file is the **operational** counterpart: the exact queries.
@@ -46,15 +46,15 @@ node's pipeline (§6), and that's a `pg_notify`, not a row mutation.
 
 The six memory layers don't all populate per ingested item. Split them:
 
-| Layer | Per-entry? | Where it lands |
-|---|---|---|
-| L6 `content_store` | ✅ yes | `nodes` + specialised table (`emails`, `telegram_messages`, `secrets`, …) |
-| L5 `content_index` | ✅ yes | columns on `nodes`: `data.summary`, `embedding`, `data.entities`, `search_tsv`, `tags` |
-| L4 `profile` (facts) | ✅ yes | `facts` (rows with `source_node_id` = the node) |
-| Graph axis | ✅ yes | `entities` + `entity_edges` (relation `mentioned_in`, **entity → node**) |
-| L1 `persona` | ❌ conversation-driven | `agents.system_prompt` + `agents.persona_notes` |
-| L2 `recent_turns` | ❌ conversation-driven | `telegram_messages` / `assistant_messages` |
-| L3 `conversation_digest` | ❌ conversation-driven | `nodes` of type `note`, tag `conversation-digest` |
+| Layer                    | Per-entry?             | Where it lands                                                                         |
+| ------------------------ | ---------------------- | -------------------------------------------------------------------------------------- |
+| L6 `content_store`       | ✅ yes                 | `nodes` + specialised table (`emails`, `telegram_messages`, `secrets`, …)              |
+| L5 `content_index`       | ✅ yes                 | columns on `nodes`: `data.summary`, `embedding`, `data.entities`, `search_tsv`, `tags` |
+| L4 `profile` (facts)     | ✅ yes                 | `facts` (rows with `source_node_id` = the node)                                        |
+| Graph axis               | ✅ yes                 | `entities` + `entity_edges` (relation `mentioned_in`, **entity → node**)               |
+| L1 `persona`             | ❌ conversation-driven | `agents.system_prompt` + `agents.persona_notes`                                        |
+| L2 `recent_turns`        | ❌ conversation-driven | `telegram_messages` / `assistant_messages`                                             |
+| L3 `conversation_digest` | ❌ conversation-driven | `nodes` of type `note`, tag `conversation-digest`                                      |
 
 So tracing **an ingested item** = checking L6 → L5 → L4 → graph, plus the
 trace trail. L1–L3 are about dialogue, not document ingest; trace those
@@ -106,7 +106,7 @@ Healthy: `summary` non-empty, `emb_dims = 768`, `n_entities ≥ 1`,
 EmbeddingGemma-300m on 2026-05-31; every `vector` column is now
 `vector(768)`. See [`embeddings.md`](./embeddings.md).) **Watch the
 empty-string trap**, `data->>'summary'` can
-be `''` (key present, value blank) which is *not* NULL. Always check the
+be `''` (key present, value blank) which is _not_ NULL. Always check the
 text, or wrap in `nullif(data->>'summary','')`.
 
 ### L4: profile (facts)
@@ -159,18 +159,18 @@ A healthy extractor run is 8 steps:
 
 Three outcomes you'll see, and how to tell them apart at a glance:
 
-| Signature | What it means |
-|---|---|
-| `extractor_run` **success** + summary set + facts > 0 + edges > 0 | **Healthy.** Content reached the brain. |
-| `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. < 20 chars of body, an unsupported file type or a title-only node. 0 facts/edges expected. |
-| `extractor_run` **skipped**, disposition `no_text_layer` | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, or a blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges. |
-| `extractor_run` **skipped**, disposition `pdf_unreadable` | The rasterize step THREW — the PDF pipeline broke, which says nothing about the document. `details.error` has the message; the `rasterize_pdf` step on the preceding `photo_ingest` trace has it too. A version-mismatch error means the worker holds two pdfjs copies and every later PDF fails until it restarts. |
-| `extractor_run` **skipped**, disposition `pdf_too_large` | A textless PDF whose every page is past the render limit (`MAX_RENDER_PIXELS` in `@mantle/files/rasterize`; only a page bigger than the PDF spec allows gets there). Terminal (`data.extract_skipped`): the same bytes give the same answer. `details.error` names the pages and their size. An embedded image past `PDF_MAX_IMAGE_PIXELS` is not a skip: pdfjs drops that one image and the rest of the page still reads. |
-| `extractor_run` **skipped**, disposition `already_extracted` | Declined; node already had `data.summary` + `embedding`. Re-fires no-op. |
-| `extractor_run` **skipped**, disposition `unsupported_media` | An audio/video file: stored + playable, deliberately not indexed. A transcript exists only if `video_ingest` was run on it (look for a page with `transcriptSource`). 0 facts/edges expected. |
-| `extractor_run` **skipped**, disposition `no_parser` | A parserless non-media format whose body fell back to the filename (the hollow-body guard). Honest skip where pre-v0.232.32 recorded a filename-only `success`. 0 facts/edges expected. |
-| `extractor_run` **success** but summary **empty** + 0 facts | **Silent miss.** The LLM ran (cost was spent) but its output couldn't be used, historically a JSON-parse failure where the model appended prose after the object (fixed in `extractor-parse.ts`, but the *signature* is the diagnostic). Check the agent console for `[extractor] LLM returned non-JSON`. |
-| `extractor_run` **success**, summary set, entities > 0, but **0 facts** + `process_facts` step **skipped** (`fact_cost_cap`) | **Cost-cap drop.** The model produced facts but the per-node budget (`extract_cost_cap_micro_usd`) was exhausted, so they were discarded before persisting. The run still succeeds (index/entities landed); only the `process_facts` step is amber. A cap of `0`/negative means *unlimited*, a positive cap set too low is the usual culprit. Surfaced in `/debug` → "Facts dropped to cost cap". Raise the cap (or null it) and re-fire (§6) to recover. |
+| Signature                                                                                                                    | What it means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractor_run` **success** + summary set + facts > 0 + edges > 0                                                            | **Healthy.** Content reached the brain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `extractor_run` **skipped**, disposition `body_too_short`                                                                    | Declined, by design. < 20 chars of body, an unsupported file type or a title-only node. 0 facts/edges expected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `extractor_run` **skipped**, disposition `no_text_layer`                                                                     | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, or a blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `extractor_run` **skipped**, disposition `pdf_unreadable`                                                                    | The rasterize step THREW — the PDF pipeline broke, which says nothing about the document. `details.error` has the message; the `rasterize_pdf` step on the preceding `photo_ingest` trace has it too. A version-mismatch error means the worker holds two pdfjs copies and every later PDF fails until it restarts.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `extractor_run` **skipped**, disposition `pdf_too_large`                                                                     | A textless PDF whose every page is too large to render: past the canvas limit (`MAX_RENDER_PIXELS` in `@mantle/files/rasterize`; only a page bigger than the PDF spec allows gets there), or drawing nothing once an embedded image past `PDF_MAX_IMAGE_PIXELS` (75 M pixels, as the PDF declares them) is dropped; or a file over 256 MB. Terminal (`data.extract_skipped`): the same bytes give the same answer. `details.error` names the pages and why. An over-cap image on a page with other content is not a skip: pdfjs drops that one image and the rest of the page still reads. A `PdfBusyError` (another PDF held the one-at-a-time decode slot past the wait) is `pdf_unreadable`, retried. |
+| `extractor_run` **skipped**, disposition `already_extracted`                                                                 | Declined; node already had `data.summary` + `embedding`. Re-fires no-op.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `extractor_run` **skipped**, disposition `unsupported_media`                                                                 | An audio/video file: stored + playable, deliberately not indexed. A transcript exists only if `video_ingest` was run on it (look for a page with `transcriptSource`). 0 facts/edges expected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `extractor_run` **skipped**, disposition `no_parser`                                                                         | A parserless non-media format whose body fell back to the filename (the hollow-body guard). Honest skip where pre-v0.232.32 recorded a filename-only `success`. 0 facts/edges expected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `extractor_run` **success** but summary **empty** + 0 facts                                                                  | **Silent miss.** The LLM ran (cost was spent) but its output couldn't be used, historically a JSON-parse failure where the model appended prose after the object (fixed in `extractor-parse.ts`, but the _signature_ is the diagnostic). Check the agent console for `[extractor] LLM returned non-JSON`.                                                                                                                                                                                                                                                                                                                                                                                                |
+| `extractor_run` **success**, summary set, entities > 0, but **0 facts** + `process_facts` step **skipped** (`fact_cost_cap`) | **Cost-cap drop.** The model produced facts but the per-node budget (`extract_cost_cap_micro_usd`) was exhausted, so they were discarded before persisting. The run still succeeds (index/entities landed); only the `process_facts` step is amber. A cap of `0`/negative means _unlimited_, a positive cap set too low is the usual culprit. Surfaced in `/debug` → "Facts dropped to cost cap". Raise the cap (or null it) and re-fire (§6) to recover.                                                                                                                                                                                                                                                |
 
 > **Known observability gap:** the silent-miss case records a `success`
 > trace, not `error`/`skipped`, so it's invisible in `/traces`, only the
@@ -212,7 +212,7 @@ fix), re-fire its trigger, **for that single node only**:
 select pg_notify('node_ingested', '<node-id>');
 ```
 
-The extractor re-runs *iff* the node is still eligible: the
+The extractor re-runs _iff_ the node is still eligible: the
 already-extracted guard is `if (data.summary && embedding)`, and an
 **empty-string summary is falsy**, so a node that previously silent-missed
 is re-processed. A node with a real summary will skip
@@ -221,7 +221,7 @@ force it.
 
 > **Do NOT confuse this with a backlog.** `pg_notify('node_ingested', id)`
 > is one node. A full re-process of history is
-> `pnpm -C server/web extract:backfill`, that one *does* sweep old content
+> `pnpm -C server/web extract:backfill`, that one _does_ sweep old content
 > (and spend LLM budget). Never run the backfill to test a single change.
 > Old **emails** are never re-pulled by anything short of the IMAP cursor
 > resetting; restarting the stack does not re-ingest mail.
@@ -231,7 +231,7 @@ force it.
 ## 7. Gotchas worth remembering
 
 - **The agent must run the code you're testing.** The dev stack runs from
-  the **main** worktree, and `tsx --watch` does *not* reliably reload
+  the **main** worktree, and `tsx --watch` does _not_ reliably reload
   workspace-package (`packages/*`) changes. After editing a package or
   merging, **restart `server/api`**: otherwise you're tracing stale code.
 - **New deps need `pnpm install` in the worktree the stack runs from**

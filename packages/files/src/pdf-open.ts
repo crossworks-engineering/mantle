@@ -40,15 +40,19 @@
  * The largest embedded image pdfjs will decode, in pixels (width x height, as
  * the image's dictionary declares them).
  *
- * 50 M keeps a 600 dpi scan of an A4 or US Letter page (about 35 M pixels)
- * readable with room to spare, which is a real scanner setting, while
- * bounding one decoded image to roughly 50 M x 3 bytes of RGB plus pdfjs's
- * working copies (measured: the 16000x16000 case drops from ~1.9 GB to the
- * baseline). The pictures pass opens with a lower cap of its own
- * (`MAX_IMAGE_PIXELS` in pdf.ts, 30 M), so pdfjs never decodes an image there
- * that the pass would only throw away.
+ * 75 M keeps a 600 dpi scan of an A3 page (about 70 M pixels) readable, and
+ * an A4 or US Letter one (about 35 M) with room to spare: real scanner
+ * settings. With one decode at a time, it is also the largest round value
+ * whose render stays under a 1.2 GB rise in an api container capped at 3 GB.
+ * Measured on Linux, rendering a one-page scan holding one image, peak RSS
+ * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is
+ * lower, +0.87 GB at 75 M), and two renders racing for the slot cost no more
+ * than one. The 16000x16000 case drops from ~1.9 GB to the baseline. The
+ * pictures pass opens with a lower cap of its own (`MAX_IMAGE_PIXELS` in
+ * pdf.ts, 30 M), so pdfjs never decodes an image there that the pass would
+ * only throw away.
  */
-export const PDF_MAX_IMAGE_PIXELS = 50_000_000;
+export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 
 /** The largest PDF any open accepts, in bytes. The old renderer
  *  (pdf-to-png-converter) refused past the same size. */

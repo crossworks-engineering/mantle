@@ -547,7 +547,8 @@ export async function loadExtractableBody(
       );
       return { ok: false };
     } else if (ocr.tooLarge) {
-      // Every page was past the render limit (@mantle/files/rasterize). The
+      // Every page was past a render limit, or the file past the size limit
+      // (@mantle/files/rasterize, pdf-open). The
       // same bytes give the same answer, so this is a verdict on the document
       // and terminal: retrying it is how one oversized upload became a
       // restart loop before the limits existed.
@@ -564,7 +565,7 @@ export async function loadExtractableBody(
             title: node.title,
             filename: existingData.filename,
             error: ocr.tooLarge,
-            hint: 'The PDF has no text layer and its pages are too large to render for OCR. Re-export it at a normal page size, then re-extract.',
+            hint: 'The PDF has no text layer and is too large to render for OCR: its pages, an embedded image on them, or the file itself (see `error`). Re-export it at a normal size, then re-extract.',
           },
         },
         node,
