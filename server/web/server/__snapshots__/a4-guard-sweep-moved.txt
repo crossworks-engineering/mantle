@@ -231,7 +231,7 @@ m229 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m230 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m231 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 9901
+# cells whose guard entry moved to the pipeline: 9925
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -3014,6 +3014,20 @@ first DELETE /api/messenger/favourites/:kind/:id member-cookie=m11
 first DELETE /api/messenger/favourites/:kind/:id admin-bearer=m12
 first DELETE /api/messenger/favourites/:kind/:id member-bearer=m13
 first DELETE /api/messenger/favourites/:kind/:id revoked-bearer=m7
+first GET /api/messenger/photo/:loginId owner-cookie=m1
+first GET /api/messenger/photo/:loginId admin-cookie=m2
+first GET /api/messenger/photo/:loginId limited-cookie=m3
+first GET /api/messenger/photo/:loginId member-cookie=m4
+first GET /api/messenger/photo/:loginId admin-bearer=m5
+first GET /api/messenger/photo/:loginId member-bearer=m6
+first GET /api/messenger/photo/:loginId revoked-bearer=m7
+first HEAD /api/messenger/photo/:loginId owner-cookie=m14
+first HEAD /api/messenger/photo/:loginId admin-cookie=m15
+first HEAD /api/messenger/photo/:loginId limited-cookie=m16
+first HEAD /api/messenger/photo/:loginId member-cookie=m17
+first HEAD /api/messenger/photo/:loginId admin-bearer=m18
+first HEAD /api/messenger/photo/:loginId member-bearer=m19
+first HEAD /api/messenger/photo/:loginId revoked-bearer=m20
 first GET /api/messenger/stream owner-cookie=m1
 first GET /api/messenger/stream admin-cookie=m2
 first GET /api/messenger/stream limited-cookie=m3
@@ -8048,6 +8062,16 @@ more DELETE /api/messenger/favourites/:kind/:id bumped-cookie=m7
 more DELETE /api/messenger/favourites/:kind/:id gone-cookie=m7
 more DELETE /api/messenger/favourites/:kind/:id rotated-bearer=m7
 more DELETE /api/messenger/favourites/:kind/:id expired-bearer=m7
+more GET /api/messenger/photo/:loginId disabled-cookie=m7
+more GET /api/messenger/photo/:loginId bumped-cookie=m7
+more GET /api/messenger/photo/:loginId gone-cookie=m7
+more GET /api/messenger/photo/:loginId rotated-bearer=m7
+more GET /api/messenger/photo/:loginId expired-bearer=m7
+more HEAD /api/messenger/photo/:loginId disabled-cookie=m20
+more HEAD /api/messenger/photo/:loginId bumped-cookie=m20
+more HEAD /api/messenger/photo/:loginId gone-cookie=m20
+more HEAD /api/messenger/photo/:loginId rotated-bearer=m20
+more HEAD /api/messenger/photo/:loginId expired-bearer=m20
 more GET /api/messenger/stream disabled-cookie=m7
 more GET /api/messenger/stream bumped-cookie=m7
 more GET /api/messenger/stream gone-cookie=m7

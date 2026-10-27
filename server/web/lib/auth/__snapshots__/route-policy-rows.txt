@@ -183,6 +183,7 @@ GET /api/messenger/c/:id class=self scope=- caller=login gone=false
 GET /api/messenger/c/:id/messages class=self scope=- caller=login gone=false
 GET /api/messenger/conversations class=self scope=- caller=login gone=false
 GET /api/messenger/directory class=self scope=- caller=login gone=false
+GET /api/messenger/photo/:loginId class=self scope=- caller=login gone=false
 GET /api/messenger/stream class=self scope=- caller=login gone=false
 GET /api/messenger/unread class=self scope=- caller=login gone=false
 GET /api/metrics/usage class=area scope=area:settings caller=owner gone=false
@@ -445,6 +446,7 @@ HEAD /api/messenger/c/:id class=self scope=- caller=login gone=false
 HEAD /api/messenger/c/:id/messages class=self scope=- caller=login gone=false
 HEAD /api/messenger/conversations class=self scope=- caller=login gone=false
 HEAD /api/messenger/directory class=self scope=- caller=login gone=false
+HEAD /api/messenger/photo/:loginId class=self scope=- caller=login gone=false
 HEAD /api/messenger/stream class=self scope=- caller=login gone=false
 HEAD /api/messenger/unread class=self scope=- caller=login gone=false
 HEAD /api/metrics/usage class=area scope=area:settings caller=owner gone=false

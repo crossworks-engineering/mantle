@@ -147,11 +147,32 @@ local stdio MCP server and a second replica keep their own.
 | `POST /c/:id/typing` | a NOTIFY, stored nowhere |
 | `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id` | pin and unpin |
 | `GET /directory?q=` | who I may chat with, with "online" |
+| `GET /photo/:loginId?v=` | another login's uploaded photo (below) |
 | `GET /stream` | the SSE stream (below) |
 | `GET /unread` | the badge |
 
 The DTOs are in `packages/client-types/src/dto/messenger.ts`. A mention is
 stored and starts nothing in Phase 1: no agent turn exists yet.
+
+**Faces.** A participant and a directory entry carry `avatar`
+(`{style, seed, parts}`, the shape `GET /api/shell` gives for the
+caller's own): a login's from its own Appearance seed and builder parts,
+an agent's from `agents.avatar` (its slug when the seed is empty); `style`
+is always the brain's one style (the anchor's `avatarStyle`), never a
+stored one. No seed is `avatar: null`, and the client draws initials. A
+login also carries `photoVersion` (the shell's `avatarPhotoVersion`, for
+that login), null when it has no photo; the photo outranks the avatar.
+Both are read on the system pool in one query per list (the workspace
+role reads only its own profile row), for the ids the scoped read
+returned, as the names are. `GET /api/messenger/photo/:loginId?v=` serves
+the bytes with the headers of `/api/profile/photo` (`private`,
+`immutable` only when `v` is the photo served) to a login that may see
+that one: itself, a login of its directory, or a person of a chat it is
+in as it sees the room. Anything else, a login with no photo and an id
+that is no uuid answer the one 404, never a 403. The route takes a
+cookie or a bearer; an `<img>` of a detached client cannot send the
+bearer, and the path takes no `?at=` asset token (not yet). The MCP
+tools leave both fields out: a face tells a model nothing.
 
 ## Live delivery
 
@@ -243,6 +264,10 @@ a login's message that tags the group's agent, never by an agent's message.
   two member logins, one budget with the route, an outsider refused.
 - `packages/mcp-core/src/gate-policy.test.ts`: a read-only key reads and
   waits, and is refused the writes.
+- `server/web/app/api/messenger/messenger-avatars.db.test.ts`: the faces
+  of a participant (in the brain's style, with the photo version) and of
+  a directory entry (a login, an agent, no seed), and who the photo route
+  serves (a shared workspace, a shared chat, an Admin user) and 404s.
 - `server/web/lib/realtime-messenger.db.test.ts`: the fan-out reaches only
   participants, is right after an add or a remove with no stream open, and
   carries the history event.

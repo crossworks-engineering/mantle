@@ -477,8 +477,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // with its HEAD (self, any login).
     // Messenger V1 Phase 1 (+27, every one with a caller): the /api/messenger
     // rows, their HEADs included (the attachments upload is Phase 4's).
-    expect(rows.filter((r) => r.caller).length).toBe(812);
-    expect(rows.length).toBe(872);
+    // Messenger avatars (+2, both with a caller): GET /api/messenger/photo/
+    // :loginId with its HEAD (any login).
+    expect(rows.filter((r) => r.caller).length).toBe(814);
+    expect(rows.length).toBe(874);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

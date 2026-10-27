@@ -21,6 +21,7 @@ export {
   listMessengerMessages,
   markMessengerRead,
   messengerDirectory,
+  messengerLoginPhoto,
   messengerLoginUsable,
   messengerTyping,
   messengerUnread,

@@ -520,7 +520,20 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 40
+# cells: 60
+first HEAD /api/messenger/photo/:loginId none=h1 like=o1
+first HEAD /api/messenger/photo/:loginId owner-cookie=h2 like=o2
+first HEAD /api/messenger/photo/:loginId admin-cookie=h3 like=o3
+first HEAD /api/messenger/photo/:loginId limited-cookie=h4 like=o4
+first HEAD /api/messenger/photo/:loginId member-cookie=h5 like=o5
+first HEAD /api/messenger/photo/:loginId admin-bearer=h6 like=o6
+first HEAD /api/messenger/photo/:loginId member-bearer=h7 like=o7
+first HEAD /api/messenger/photo/:loginId revoked-bearer=h8 like=o8
+first HEAD /api/messenger/photo/:loginId key-read=h1 like=o1
+first HEAD /api/messenger/photo/:loginId key-write=h1 like=o1
+first HEAD /api/messenger/photo/:loginId key-read-area=h1 like=o1
+first HEAD /api/messenger/photo/:loginId key-write-area=h1 like=o1
+first HEAD /api/messenger/photo/:loginId key-member=h1 like=o1
 first HEAD /api/profile/home-desk none=h1 like=o1
 first HEAD /api/profile/home-desk owner-cookie=h2 like=o16
 first HEAD /api/profile/home-desk admin-cookie=h3 like=o17
@@ -547,6 +560,13 @@ first HEAD /api/workspaces/:id/connector-options key-write=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-read-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-write-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-member=h1 like=o1
+more HEAD /api/messenger/photo/:loginId disabled-cookie=h8 like=o8
+more HEAD /api/messenger/photo/:loginId bumped-cookie=h8 like=o8
+more HEAD /api/messenger/photo/:loginId gone-cookie=h8 like=o8
+more HEAD /api/messenger/photo/:loginId rotated-bearer=h8 like=o8
+more HEAD /api/messenger/photo/:loginId expired-bearer=h8 like=o8
+more HEAD /api/messenger/photo/:loginId key-unknown=h1 like=o1
+more HEAD /api/messenger/photo/:loginId key-revoked=h1 like=o1
 more HEAD /api/profile/home-desk disabled-cookie=h8 like=o22
 more HEAD /api/profile/home-desk bumped-cookie=h8 like=o22
 more HEAD /api/profile/home-desk gone-cookie=h8 like=o22

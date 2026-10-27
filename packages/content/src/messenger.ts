@@ -40,6 +40,13 @@ import {
   systemDb,
 } from '@mantle/db';
 import { InputError, defineDomainError, isUuid } from '@mantle/std';
+import {
+  logoVersion,
+  projectAvatarParts,
+  projectAvatarPhotoType,
+  projectLogoKey,
+  readAvatarStyle,
+} from '@mantle/content-core/profile-projections';
 import { workspaceAssistants } from './team-assistant';
 
 // ── Limits (plan section 14) ─────────────────────────────────────────────────
@@ -157,12 +164,22 @@ export type MessengerVia = { label: string | null; ref: string };
 
 export type MessengerMention = { kind: 'login' | 'agent'; id: string };
 
+/** The avatar a login chose in Appearance (its seed and builder parts) or
+ *  an agent's, drawn in the brain's one style; the shape GET /api/shell
+ *  gives for the caller's own. */
+export type MessengerAvatarView = { style: string; seed: string; parts: unknown };
+
 export type MessengerParticipantView = {
   kind: 'login' | 'agent';
   id: string;
   name: string;
   admin: boolean;
   leftAt: string | null;
+  /** null: the client draws initials. */
+  avatar?: MessengerAvatarView | null;
+  /** A login's uploaded photo (GET /api/messenger/photo/:loginId?v=); null
+   *  when it has none. Logins only. */
+  photoVersion?: string | null;
 };
 
 export type MessengerPreviewView = {
@@ -233,6 +250,9 @@ export type MessengerDirectoryEntryView = {
   name: string;
   online: boolean;
   slug?: string;
+  avatar?: MessengerAvatarView | null;
+  /** Logins only, as on a participant. */
+  photoVersion?: string | null;
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -302,13 +322,90 @@ async function loginNames(
   return new Map(rows.map((r) => [r.id, r.name]));
 }
 
-async function agentNames(ids: readonly string[]): Promise<Map<string, string>> {
+// ── Faces: the avatar and the photo (read on the system pool) ────────────────
+
+/** The brain's one avatar style (Settings > Appearance), from the anchor's
+ *  profile row: a brain-level key (BRAIN_PREFERENCE_KEYS). A subquery each
+ *  face query carries, so a face costs no extra round trip. */
+const BRAIN_STYLE = (ownerId: string) =>
+  sql`(select b.preferences->'avatarStyle' from profiles b where b.user_id = ${ownerId}::uuid)`;
+
+/** The face columns of a login's own profile row `pr` (left joined): its
+ *  seed, builder parts and photo pointer, and the brain's style. */
+const LOGIN_FACE_COLUMNS = (ownerId: string) =>
+  sql`pr.preferences->'avatarSeed' as seed, pr.preferences->'avatarParts' as parts,
+      pr.preferences->'avatarPhotoKey' as photo_key, pr.preferences->'avatarPhotoType' as photo_type,
+      ${BRAIN_STYLE(ownerId)} as style`;
+
+type LoginFaceRow = {
+  seed: unknown;
+  parts: unknown;
+  photo_key: unknown;
+  photo_type: unknown;
+  style: unknown;
+};
+
+/** A login's avatar and photo version, as GET /api/shell projects its own:
+ *  no seed is initials (a real choice), and a photo counts only when its
+ *  key and type both project (else the photo route answers 404). */
+function loginFace(r: LoginFaceRow): {
+  avatar: MessengerAvatarView | null;
+  photoVersion: string | null;
+} {
+  const seed = typeof r.seed === 'string' && r.seed.length > 0 ? r.seed : null;
+  const key = projectLogoKey(r.photo_key);
+  return {
+    avatar: seed
+      ? { style: readAvatarStyle(r.style), seed, parts: projectAvatarParts(r.parts) ?? null }
+      : null,
+    photoVersion: key && projectAvatarPhotoType(r.photo_type) ? logoVersion(key) : null,
+  };
+}
+
+/** An agent's avatar (agents.avatar) in the brain's style: the seed, else
+ *  the slug (what GET /api/agents/:id/avatar draws); null when the agent
+ *  has none. */
+function agentFace(avatar: unknown, slug: string, style: unknown): MessengerAvatarView | null {
+  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) return null;
+  const a = avatar as { seed?: unknown; parts?: unknown };
+  const seed = typeof a.seed === 'string' && a.seed.length > 0 ? a.seed : slug;
+  return { style: readAvatarStyle(style), seed, parts: projectAvatarParts(a.parts) ?? null };
+}
+
+/** Logins' names and faces, one query. */
+async function loginFaces(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<
+  Map<string, { name: string; avatar: MessengerAvatarView | null; photoVersion: string | null }>
+> {
   if (ids.length === 0) return new Map();
-  const rows = await q<{ id: string; name: string }>(
+  const rows = await q<{ id: string; name: string } & LoginFaceRow>(
     systemDb,
-    sql`select id::text as id, name from agents where id = any(${uuidArray(ids)})`,
+    sql`select u.id::text as id,
+               coalesce(nullif(btrim(u.display_name), ''), split_part(coalesce(u.email, ''), '@', 1), 'User') as name,
+               ${LOGIN_FACE_COLUMNS(ownerId)}
+          from auth.users u
+          left join profiles pr on pr.user_id = u.id
+         where u.id = any(${uuidArray(ids)})`,
   );
-  return new Map(rows.map((r) => [r.id, r.name]));
+  return new Map(rows.map((r) => [r.id, { name: r.name, ...loginFace(r) }]));
+}
+
+/** Agents' names and faces, one query. */
+async function agentFaces(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<Map<string, { name: string; avatar: MessengerAvatarView | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await q<{ id: string; name: string; slug: string; avatar: unknown; style: unknown }>(
+    systemDb,
+    sql`select a.id::text as id, a.name, a.slug, a.avatar, ${BRAIN_STYLE(ownerId)} as style
+          from agents a where a.id = any(${uuidArray(ids)})`,
+  );
+  return new Map(
+    rows.map((r) => [r.id, { name: r.name, avatar: agentFace(r.avatar, r.slug, r.style) }]),
+  );
 }
 
 /** Whether a login is an Admin user (a user of the live Admin workspace). */
@@ -326,9 +423,18 @@ export async function messengerIsAdmin(loginId: string): Promise<boolean> {
  *  that share a live workspace with it, or every usable login for an Admin
  *  user. Never itself. One query over workspace_users. */
 async function reachableLogins(
+  ownerId: string,
   loginId: string,
   opts: { only?: readonly string[]; q?: string; limit?: number } = {},
-): Promise<{ id: string; name: string; lastActiveAt: Date | null }[]> {
+): Promise<
+  {
+    id: string;
+    name: string;
+    lastActiveAt: Date | null;
+    avatar: MessengerAvatarView | null;
+    photoVersion: string | null;
+  }[]
+> {
   const admin = await messengerIsAdmin(loginId);
   const only = opts.only ? sql`and u.id = any(${uuidArray(opts.only)})` : sql``;
   const like = opts.q
@@ -342,13 +448,14 @@ async function reachableLogins(
               join workspaces w on w.id = mine.workspace_id and ${liveWorkspaceSql('w')}
              where mine.login_id = ${loginId}::uuid and theirs.login_id = u.id)`;
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
-  const rows = await q<{ id: string; name: string; last_active_at: Date | null }>(
+  const rows = await q<{ id: string; name: string; last_active_at: Date | null } & LoginFaceRow>(
     systemDb,
     sql`select u.id::text as id,
                coalesce(nullif(btrim(u.display_name), ''), split_part(u.email, '@', 1)) as name,
-               p.last_active_at
+               p.last_active_at, ${LOGIN_FACE_COLUMNS(ownerId)}
           from auth.users u
           left join login_presence p on p.login_id = u.id
+          left join profiles pr on pr.user_id = u.id
          where u.id <> ${loginId}::uuid
            and u.email is not null and u.disabled_at is null
            ${reach} ${only} ${like}
@@ -359,6 +466,7 @@ async function reachableLogins(
     id: r.id,
     name: r.name,
     lastActiveAt: r.last_active_at ? new Date(r.last_active_at) : null,
+    ...loginFace(r),
   }));
 }
 
@@ -406,27 +514,35 @@ export async function messengerDirectory(
 ): Promise<MessengerDirectoryEntryView[]> {
   const term = query.trim().slice(0, 100);
   const now = Date.now();
-  const [people, agents] = await Promise.all([
-    reachableLogins(actor.loginId, { q: term || undefined }),
+  const [people, chatAgents] = await Promise.all([
+    reachableLogins(actor.ownerId, actor.loginId, { q: term || undefined }),
     messengerChatAgents(actor.ownerId, actor.loginId),
   ]);
   const t = term.toLowerCase();
+  const agents = chatAgents.filter(
+    (a) => !t || a.name.toLowerCase().includes(t) || a.slug.toLowerCase().includes(t),
+  );
+  const faces = await agentFaces(
+    actor.ownerId,
+    agents.map((a) => a.id),
+  );
   return [
     ...people.map((p) => ({
       kind: 'login' as const,
       id: p.id,
       name: p.name,
       online: !!p.lastActiveAt && now - p.lastActiveAt.getTime() < MESSENGER_ONLINE_MS,
+      avatar: p.avatar,
+      photoVersion: p.photoVersion,
     })),
-    ...agents
-      .filter((a) => !t || a.name.toLowerCase().includes(t) || a.slug.toLowerCase().includes(t))
-      .map((a) => ({
-        kind: 'agent' as const,
-        id: a.id,
-        name: a.name,
-        online: false,
-        slug: a.slug,
-      })),
+    ...agents.map((a) => ({
+      kind: 'agent' as const,
+      id: a.id,
+      name: a.name,
+      online: false,
+      slug: a.slug,
+      avatar: faces.get(a.id)?.avatar ?? null,
+    })),
   ];
 }
 
@@ -584,7 +700,7 @@ export async function createMessengerConversation(
     throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
   }
   if (others.length > 0) {
-    const reach = await reachableLogins(actor.loginId, { only: others, limit: 500 });
+    const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: others, limit: 500 });
     if (reach.length !== others.length) {
       throw new MessengerRefusedError(
         'You can only start a chat with people who share a workspace with you.',
@@ -1084,7 +1200,7 @@ export async function addMessengerParticipants(
     (l) => l !== self,
   );
   if (ids.length === 0) throw new InputError('Name at least one login to add (pass logins).');
-  const reach = await reachableLogins(actor.loginId, { only: ids, limit: 500 });
+  const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: ids, limit: 500 });
   if (reach.length !== ids.length) {
     throw new MessengerRefusedError('You can only add people who share a workspace with you.');
   }
@@ -1530,18 +1646,28 @@ async function participantsOf(
          order by x.joined_at, x.id`,
   );
   const [ln, an] = await Promise.all([
-    loginNames([...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id))]),
-    agentNames([...new Set(rows.filter((r) => r.kind === 'agent').map((r) => r.id))]),
+    loginFaces(actor.ownerId, [
+      ...new Set(rows.filter((r) => r.kind === 'login').map((r) => r.id)),
+    ]),
+    agentFaces(actor.ownerId, [
+      ...new Set(rows.filter((r) => r.kind === 'agent').map((r) => r.id)),
+    ]),
   ]);
   for (const r of rows) {
     const list = out.get(r.conversation_id) ?? [];
-    list.push({
-      kind: r.kind,
-      id: r.id,
-      name: (r.kind === 'login' ? ln.get(r.id) : an.get(r.id)) ?? 'Someone',
-      admin: r.admin,
-      leftAt: isoOrNull(r.left_at),
-    });
+    const base = { kind: r.kind, id: r.id, admin: r.admin, leftAt: isoOrNull(r.left_at) };
+    if (r.kind === 'login') {
+      const f = ln.get(r.id);
+      list.push({
+        ...base,
+        name: f?.name ?? 'Someone',
+        avatar: f?.avatar ?? null,
+        photoVersion: f?.photoVersion ?? null,
+      });
+    } else {
+      const f = an.get(r.id);
+      list.push({ ...base, name: f?.name ?? 'Someone', avatar: f?.avatar ?? null });
+    }
     out.set(r.conversation_id, list);
   }
   return out;
@@ -1800,6 +1926,65 @@ export async function messengerUnread(
   const threads = await myAgentThreadRows(actor);
   const agents = threads.reduce((s, t) => s + num(t.unread), 0);
   return { total: messenger + agents, messenger, agents };
+}
+
+// ── A login's photo (GET /api/messenger/photo/:loginId) ──────────────────────
+
+/**
+ * Whether `actor` may see `loginId`'s face: itself; a login of its
+ * directory (a live workspace shared, or every usable login for an Admin
+ * user: reachableLogins); or a person of a chat it is in, as it may see the
+ * room's people (PEOPLE: never one who left before it joined, nobody added
+ * after it left). The room is read in the actor's scope.
+ */
+async function messengerSeesLogin(actor: MessengerActor, loginId: string): Promise<boolean> {
+  if (loginId === actor.loginId) return true;
+  const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: [loginId], limit: 1 });
+  if (reach.length > 0) return true;
+  const mine = await q<{ id: string }>(
+    db,
+    sql`select me.conversation_id::text as id from ${MINE(actor, null)} me
+          join messenger_conversations c on c.id = me.conversation_id
+         where c.owner_id = ${actor.ownerId}::uuid`,
+  );
+  if (mine.length === 0) return false;
+  const [hit] = await q<{ ok: number }>(
+    db,
+    sql`select 1 as ok from ${PEOPLE(
+      actor,
+      mine.map((m) => m.id),
+    )} x
+         where x.kind = 'login' and x.id = ${loginId}::uuid
+         limit 1`,
+  );
+  return !!hit;
+}
+
+/**
+ * The uploaded photo of `loginId` as `actor` may fetch it: the stored
+ * pointer (a content key and a raster type, both projected) when the actor
+ * sees that login (messengerSeesLogin) and it has a photo; null otherwise,
+ * with no difference between "no such login", "not yours to see" and "no
+ * photo" (the route answers each with the one 404). The profile row is
+ * read on the system pool: the workspace role reads only its own.
+ */
+export async function messengerLoginPhoto(
+  actor: MessengerActor,
+  loginId: string,
+): Promise<{ key: string; type: string; version: string } | null> {
+  if (!isUuid(loginId)) return null;
+  const target = loginId.toLowerCase();
+  if (!(await messengerSeesLogin(actor, target))) return null;
+  const [row] = await q<{ photo_key: unknown; photo_type: unknown }>(
+    systemDb,
+    sql`select pr.preferences->'avatarPhotoKey' as photo_key,
+               pr.preferences->'avatarPhotoType' as photo_type
+          from profiles pr where pr.user_id = ${target}::uuid`,
+  );
+  const key = projectLogoKey(row?.photo_key);
+  const type = projectAvatarPhotoType(row?.photo_type);
+  const version = logoVersion(key);
+  return key && type && version ? { key, type, version } : null;
 }
 
 // ── The stream's fan-out (system pool) ───────────────────────────────────────

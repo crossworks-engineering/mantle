@@ -108,6 +108,7 @@ export type {
 export type { MemberMcpClient, MemberMcpConnector, MemberMcpView } from './dto/member-mcp';
 export type {
   MessengerAuthorKind,
+  MessengerAvatar,
   MessengerConversation,
   MessengerConversationKind,
   MessengerCreateRequest,

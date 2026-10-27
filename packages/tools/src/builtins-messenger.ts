@@ -161,7 +161,7 @@ export const messenger_open: BuiltinToolDef = {
             id: conv.id,
             kind: conv.kind,
             title: conv.title,
-            participants: conv.participants,
+            participants: conv.participants.map(faceless),
             lastReadSeq: conv.me.lastReadSeq,
           },
           messages: page.messages.map(slim),
@@ -174,6 +174,16 @@ export const messenger_open: BuiltinToolDef = {
     }
   },
 };
+
+/** A person or an entry as a tool answers it: no avatar and no photo
+ *  version. They draw a face in the chat window and tell a model nothing,
+ *  so they stay out of its context. */
+function faceless<T extends { avatar?: unknown; photoVersion?: unknown }>(
+  p: T,
+): Omit<T, 'avatar' | 'photoVersion'> {
+  const { avatar: _avatar, photoVersion: _photoVersion, ...rest } = p;
+  return rest;
+}
 
 /** A message as a tool answers it: what a reader needs, nothing more. */
 function slim(m: Awaited<ReturnType<typeof listMessengerMessages>>['messages'][number]) {
@@ -396,7 +406,7 @@ export const messenger_directory: BuiltinToolDef = {
         await actorOf(ctx),
         typeof input.q === 'string' ? input.q : '',
       );
-      return { ok: true, output: { entries } };
+      return { ok: true, output: { entries: entries.map(faceless) } };
     } catch (err) {
       return fail(err);
     }

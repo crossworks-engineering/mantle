@@ -475,6 +475,10 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [login('messenger-read', 600)],
   }),
   ...getHead('/api/messenger/unread', { cred: 'member', limits: [login('messenger-read', 600)] }),
+  ...getHead('/api/messenger/photo/:loginId', {
+    cred: 'member',
+    limits: [login('messenger-read', 600)],
+  }),
   {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',

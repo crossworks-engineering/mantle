@@ -31,6 +31,11 @@ export type MessengerPreview = {
   authorKind: MessengerAuthorKind;
 };
 
+/** The avatar a login chose in Appearance, or an agent's: its seed and
+ *  builder parts, drawn in the brain's one style. The shape GET /api/shell
+ *  gives as `avatar` for the caller's own. */
+export type MessengerAvatar = { style: string; seed: string; parts: unknown };
+
 export type MessengerParticipant = {
   kind: MessengerParticipantKind;
   /** The login id or the agent id. */
@@ -40,6 +45,14 @@ export type MessengerParticipant = {
   admin: boolean;
   /** ISO, or null while the participant is in the chat. */
   leftAt: string | null;
+  /** A login's from its own Appearance seed; an agent's from its avatar
+   *  (its slug when it has no seed). null: initials. */
+  avatar?: MessengerAvatar | null;
+  /** Logins only: the uploaded photo's version, the `v` of
+   *  GET /api/messenger/photo/:loginId?v= (what the shell's
+   *  `avatarPhotoVersion` is for the caller). null: no photo. The photo
+   *  outranks the avatar. */
+  photoVersion?: string | null;
 };
 
 /** One row of GET /api/messenger/conversations. */
@@ -172,6 +185,10 @@ export type MessengerDirectoryEntry = {
   online: boolean;
   /** An agent's slug (agents only). */
   slug?: string;
+  /** As on a participant. */
+  avatar?: MessengerAvatar | null;
+  /** Logins only, as on a participant. */
+  photoVersion?: string | null;
 };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };
