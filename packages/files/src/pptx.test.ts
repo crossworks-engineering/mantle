@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { parseDocumentBytes } from './parse';
+import { readDocumentText } from './read-document';
 import { chartLine, paragraphsOf, parsePptx } from './pptx';
 
 const SLIDE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
@@ -116,7 +116,7 @@ describe('parsePptx', () => {
     expect(text).toBe('two\n\nten');
   });
 
-  it('throws on bytes that are not a zip (parseDocumentBytes then tries Tika)', async () => {
+  it('throws on bytes that are not a zip (readDocumentText then tries anydoc)', async () => {
     await expect(parsePptx(Buffer.from('not a deck'))).rejects.toThrow();
   });
 });
@@ -158,9 +158,9 @@ describe('chartLine', () => {
   });
 });
 
-describe('parseDocumentBytes: pptx', () => {
-  it('uses the in-process reader for a readable deck', async () => {
-    const text = await parseDocumentBytes(await deck(), 'pptx');
+describe('readDocumentText (the parser): pptx', () => {
+  it('uses our own reader for a readable deck', async () => {
+    const text = await readDocumentText(await deck(), 'pptx');
     expect(text.startsWith('Slide 1 title\n\nSlide 2 title')).toBe(true);
   });
 });

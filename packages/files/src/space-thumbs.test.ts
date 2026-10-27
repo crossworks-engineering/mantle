@@ -1,10 +1,23 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { thumbnailFor, thumbsRoot } from './thumbnail';
 import { removeSpaceFile, spaceThumbsDir } from './space-disk';
+
+// The render runs in the parser (POST /image/thumbnail); here its job
+// function stands in for the exchange, a refused image answering null as
+// the parser's `failed` does.
+vi.mock('./parser-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./parser-client')>();
+  const { thumbnailJpeg } = await import('./image-read');
+  return {
+    ...actual,
+    parserThumbnail: (bytes: Buffer, mimeType: string, maxDim: number) =>
+      thumbnailJpeg(bytes, mimeType === 'image/heic', maxDim).catch(() => null),
+  };
+});
 
 /** Audit S9: a member's private image is thumbnailed inside its own space,
  *  keyed by node id, never in the brain's shared cache, and the thumbnail

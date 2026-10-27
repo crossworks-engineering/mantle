@@ -32,6 +32,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+import { onShutdown } from '@mantle/std/shutdown';
 import {
   MAX_OPTS_BYTES,
   META_HEADER,
@@ -293,7 +295,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       sendFailure(res, err.code, err.message);
     } else {
       outcome = 'failed';
-      sendFailure(res, 'failed', err instanceof Error ? err.message : String(err));
+      sendFailure(res, 'failed', errorMessage(err));
     }
   } finally {
     if (slot) releaseSlot();
@@ -345,9 +347,7 @@ async function main(): Promise<void> {
     );
   }
   const server = http.createServer((req, res) => {
-    handle(req, res).catch((err: unknown) =>
-      sendFailure(res, 'failed', err instanceof Error ? err.message : String(err)),
-    );
+    handle(req, res).catch((err: unknown) => sendFailure(res, 'failed', errorMessage(err)));
   });
   // A request is the transfer of one file: no long idle sockets.
   server.requestTimeout = 0;
@@ -359,9 +359,13 @@ async function main(): Promise<void> {
     );
     void probeVersions();
   });
-  const stop = () => server.close(() => process.exit(0));
-  process.on('SIGTERM', stop);
-  process.on('SIGINT', stop);
+  // Stop taking requests and let the running ones answer; Docker's default
+  // 10 s grace ends the rest (a job's group dies with the container).
+  onShutdown({
+    name: 'parser',
+    deadlineMs: 8_000,
+    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  });
 }
 
 main().catch((err: unknown) => {

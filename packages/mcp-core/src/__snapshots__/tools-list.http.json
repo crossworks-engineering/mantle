@@ -8443,31 +8443,22 @@
  },
  {
   "name": "video_ingest",
-  "description": "Turn a video into a searchable, timestamped transcript page. Pass `url` for an online video (captions are used when available — free; otherwise the audio is extracted and transcribed via the STT worker), or `file_node_id` for a video file already in Files (always audio + STT). The extracted audio is kept as a file beside the source; `keep_video: true` additionally stores the video itself. For the user's own reference material. Long-running — up to several minutes for an uncaptioned video.",
+  "description": "Turn an uploaded video or audio file (a file node in Files) into a searchable transcript page: the audio is extracted and transcribed by the speech-to-text worker. The extracted audio is kept as a file beside the source. This tool does not fetch links: for a video on the web, ask the user to download it and upload the file, then pass its file_node_id. For the user's own reference material. Long-running: up to several minutes for a long recording.",
   "inputSchema": {
    "type": "object",
    "properties": {
-    "url": {
-     "type": "string",
-     "description": "http(s) link to the video. Exactly one of url / file_node_id."
-    },
     "file_node_id": {
      "type": "string",
-     "description": "Id of a video file node already in Files. Exactly one of url / file_node_id."
+     "description": "Id of a video or audio file node already in Files."
     },
     "language": {
      "type": "string",
-     "description": "Optional ISO-639-1 hint for captions/STT (e.g. 'en', 'af')."
-    },
-    "keep_video": {
-     "type": "boolean",
-     "description": "Also store the full video file (url path only). Default false — disk."
-    },
-    "force_stt": {
-     "type": "boolean",
-     "description": "Skip captions and transcribe the audio even when captions exist."
+     "description": "Optional ISO-639-1 hint for speech-to-text (e.g. 'en', 'af')."
     }
    },
+   "required": [
+    "file_node_id"
+   ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   }
  },

@@ -480,9 +480,7 @@ export async function verifyCircuit(
     }
     const cropped = await deps.crop(bytes, spec);
     if (!cropped.ok) {
-      skip(
-        `the drawing could not be cropped (${cropped.code}: ${cropped.message.slice(0, 160)})`,
-      );
+      skip(`the drawing could not be cropped (${cropped.code}: ${cropped.message.slice(0, 160)})`);
       continue;
     }
     const cropsOf = new Map<string, DwgCrops['crops']>();
@@ -499,7 +497,7 @@ export async function verifyCircuit(
       if (capped.has(q.id))
         skip(
           cropsOf.has(q.id)
-            ? "the crop budget for one sheet ran out partway along it, so it was not asked on part of its path"
+            ? 'the crop budget for one sheet ran out partway along it, so it was not asked on part of its path'
             : 'the crop budget for one sheet ran out',
           [q],
         );
