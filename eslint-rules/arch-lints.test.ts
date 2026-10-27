@@ -472,8 +472,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The tree's custom order (+1, with a caller): POST /api/tree/:kind/place.
     // The canvas data store (+4, DWG phase 7a): GET, HEAD, PUT and DELETE,
     // each reading the owner's login.
-    expect(rows.filter((r) => r.caller).length).toBe(781);
-    expect(rows.length).toBe(841);
+    // DWG phase 6 (+2, both with a caller): a traced canvas's image check
+    // overview with its HEAD (owner).
+    expect(rows.filter((r) => r.caller).length).toBe(783);
+    expect(rows.length).toBe(843);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
