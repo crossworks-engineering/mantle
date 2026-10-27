@@ -380,6 +380,7 @@ type ParticipantRow = {
   left_seq: string | number | null;
   last_read_seq: string | number;
   cleared_before_seq: string | number;
+  from_seq: string | number;
   muted: boolean;
 };
 
@@ -413,7 +414,7 @@ async function lockForActor(
   if (!conv) throw new MessengerNotFoundError();
   const [me] = await q<ParticipantRow>(
     tx,
-    sql`select id::text as id, admin, left_at, left_seq, last_read_seq, cleared_before_seq, muted
+    sql`select id::text as id, admin, left_at, left_seq, last_read_seq, cleared_before_seq, from_seq, muted
           from messenger_participants
          where conversation_id = ${c}::uuid and kind = 'login' and login_id = ${actor.loginId}::uuid`,
   );
@@ -758,7 +759,7 @@ export async function editMessengerMessage(
   }
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq))
+    if (s <= Math.max(num(me.cleared_before_seq), num(me.from_seq)))
       throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.author_kind !== 'login' || m.author_login_id !== actor.loginId.toLowerCase()) {
@@ -786,7 +787,7 @@ export async function deleteMessengerMessage(
   const s = seqOr(seq, 'seq');
   await systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq))
+    if (s <= Math.max(num(me.cleared_before_seq), num(me.from_seq)))
       throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) return;
@@ -820,7 +821,7 @@ export async function toggleMessengerReaction(
   const self = actor.loginId.toLowerCase();
   return systemDb.transaction(async (tx) => {
     const { conv, me } = await lockForActor(tx, actor, conversationId);
-    if (s <= num(me.cleared_before_seq))
+    if (s <= Math.max(num(me.cleared_before_seq), num(me.from_seq)))
       throw new MessengerNotFoundError('Message not found in this chat.');
     const m = await lockMessage(tx, conv.id, s);
     if (m.deleted_at) throw new MessengerRefusedError('A deleted message takes no reaction.');
@@ -1338,8 +1339,10 @@ type ParticipantReadRow = {
   left_at: Date | null;
 };
 
-/** The people of each conversation as `actor` may see them: for a
- *  conversation it left, only those who joined before it left. */
+/** The people of each conversation as `actor` may see them: never one who
+ *  left before the actor joined; for a conversation it left, only those who
+ *  joined before it left, and a later leave shown as not yet (the title and
+ *  admin flags are the room's current ones). */
 async function participantsOf(
   actor: MessengerActor,
   conversationIds: readonly string[],
@@ -1349,13 +1352,15 @@ async function participantsOf(
   const rows = await q<ParticipantReadRow>(
     db,
     sql`select p.conversation_id::text as conversation_id, p.kind,
-               coalesce(p.login_id, p.agent_id)::text as id, p.admin, p.left_at
+               coalesce(p.login_id, p.agent_id)::text as id, p.admin,
+               case when me.left_at is null or p.left_at <= me.left_at then p.left_at end as left_at
           from messenger_participants p
           join messenger_participants me
             on me.conversation_id = p.conversation_id and me.kind = 'login'
            and me.login_id = ${actor.loginId}::uuid
          where p.conversation_id = any(${uuidArray(conversationIds)})
            and (me.left_at is null or p.joined_at <= me.left_at)
+           and (p.left_at is null or p.left_at >= me.joined_at)
          order by p.joined_at, p.id`,
   );
   const [ln, an] = await Promise.all([
@@ -1482,7 +1487,7 @@ async function myConversationRows(actor: MessengerActor, unreadOnly = false): Pr
             on f.login_id = me.login_id and f.kind = 'conversation' and f.ref_id = c.id
          where me.kind = 'login' and me.login_id = ${actor.loginId}::uuid
            and c.owner_id = ${actor.ownerId}::uuid
-           ${unreadOnly ? sql`and c.last_seq > greatest(me.last_read_seq, me.cleared_before_seq)` : sql``}`,
+           ${unreadOnly ? sql`and least(c.last_seq, coalesce(me.left_seq, c.last_seq)) > greatest(me.last_read_seq, me.cleared_before_seq)` : sql``}`,
   );
 }
 
