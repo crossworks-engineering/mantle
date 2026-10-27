@@ -1625,8 +1625,9 @@ type ParticipantReadRow = {
  * mantle_messenger_people answers it (the workspace role reads no left_at,
  * 0336); outside one the same rows inline.
  */
-function PEOPLE(actor: MessengerActor, conversationIds: readonly string[]): SQL {
-  const cs = uuidArray(conversationIds);
+function PEOPLE(actor: MessengerActor, conversationIds: readonly string[] | SQL): SQL {
+  // The ids, or a uuid[] expression (messengerSeesLogin: every chat I am in).
+  const cs = Array.isArray(conversationIds) ? uuidArray(conversationIds) : (conversationIds as SQL);
   if (currentWorkspaceScope()) return sql`mantle_messenger_people(${cs})`;
   return sql`(select p.conversation_id, p.kind, coalesce(p.login_id, p.agent_id) as id, p.admin,
                      p.joined_at,
@@ -1950,19 +1951,12 @@ async function messengerSeesLogin(actor: MessengerActor, loginId: string): Promi
   if (loginId === actor.loginId) return true;
   const reach = await reachableLogins(actor.ownerId, actor.loginId, { only: [loginId], limit: 1 });
   if (reach.length > 0) return true;
-  const mine = await q<{ id: string }>(
-    db,
-    sql`select me.conversation_id::text as id from ${MINE(actor, null)} me
-          join messenger_conversations c on c.id = me.conversation_id
-         where c.owner_id = ${actor.ownerId}::uuid`,
-  );
-  if (mine.length === 0) return false;
+  const mine = sql`array(select me.conversation_id from ${MINE(actor, null)} me
+                           join messenger_conversations c on c.id = me.conversation_id
+                          where c.owner_id = ${actor.ownerId}::uuid)`;
   const [hit] = await q<{ ok: number }>(
     db,
-    sql`select 1 as ok from ${PEOPLE(
-      actor,
-      mine.map((m) => m.id),
-    )} x
+    sql`select 1 as ok from ${PEOPLE(actor, mine)} x
          where x.kind = 'login' and x.id = ${loginId}::uuid
          limit 1`,
   );

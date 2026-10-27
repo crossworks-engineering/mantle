@@ -151,6 +151,11 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     expect(read.output).toEqual({ lastReadSeq: 2 });
     const dir = await call('messenger_directory', A, k1, {});
     expect((dir.output!.entries as { id: string }[]).some((e) => e.id === B)).toBe(true);
+    // No face reaches a model: the content module always sets avatar (null
+    // without a seed), and the tools leave it and photoVersion out.
+    for (const e of dir.output!.entries as Record<string, unknown>[]) {
+      expect('avatar' in e || 'photoVersion' in e).toBe(false);
+    }
   }, 30_000);
 
   it('a connection that names no login is refused, never the owner (a peer of an Admin user)', async () => {
@@ -180,6 +185,10 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     expect(made.ok, made.error).toBe(true);
     const c = made.output!.conversation as string;
     const opened = await call('messenger_open', B, randomUUID(), { conversation: c });
+    const people = (opened.output!.conversation as { participants: Record<string, unknown>[] })
+      .participants;
+    expect(people.length).toBe(2);
+    for (const p of people) expect('avatar' in p || 'photoVersion' in p).toBe(false);
     const last = opened.output!.lastSeq as number;
     const waiting = call('messenger_wait', B, randomUUID(), {
       conversation: c,

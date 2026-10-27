@@ -80,6 +80,23 @@ describe.skipIf(!URL)('the messenger faces: avatars and the photo route', () => 
     expect(res.status).toBe(200);
     return (await res.json()) as Record<string, unknown>;
   };
+  /** A member login in `workspaces`, with a seed and, given a hex char, a
+   *  PNG photo. */
+  const newLogin = async (name: string, workspaces: string[], photo?: string) => {
+    const id = randomUUID();
+    await su(sqlTag`insert into auth.users (id, email, password_hash, role, display_name)
+      values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', 'member', ${name})`);
+    await su(sqlTag`delete from workspace_users where login_id = ${id}`);
+    for (const w of workspaces)
+      await su(sqlTag`insert into workspace_users (workspace_id, login_id) values (${w}, ${id})`);
+    await prefs(id, {
+      avatarSeed: `${name}-seed`,
+      ...(photo ? { avatarPhotoKey: key(photo), avatarPhotoType: 'image/png' } : {}),
+    });
+    return id;
+  };
+  const photoStatus = async (caller: string, loginId: string) =>
+    (await as(caller, 'photo', `/api/messenger/photo/${loginId}`, { loginId })).status;
   const prefs = (login: string, p: Record<string, unknown>) =>
     su(sqlTag`insert into profiles (user_id, preferences) values (${login}, ${JSON.stringify(p)}::jsonb)
       on conflict (user_id) do update set preferences = profiles.preferences || excluded.preferences`);
@@ -253,5 +270,109 @@ describe.skipIf(!URL)('the messenger faces: avatars and the photo route', () => 
     expect((await as(owner, 'photo', `/api/messenger/photo/${D}`, { loginId: D })).status).toBe(
       200,
     );
+  });
+
+  it('a chat opens only the people the caller saw: a leaver, a late joiner, a removed one', async () => {
+    const W3 = randomUUID();
+    await su(
+      sqlTag`insert into workspaces (id, owner_id, name) values (${W3}, ${owner}, ${`${tag} W3`})`,
+    );
+    const [F, G, K, L, M] = (await Promise.all(
+      ['Fay', 'Gus', 'Kim', 'Lou', 'Max'].map((n, i) => newLogin(n, [W3], String(i + 1))),
+    )) as [string, string, string, string, string];
+    // Ann leaves a group Fay is in; Gus is added after: Fay yes, Gus no.
+    const left = await ms.createMessengerConversation(actor(owner), {
+      kind: 'group',
+      participants: [A, F],
+      title: 'Left',
+    });
+    await ms.leaveMessengerConversation(actor(A), left.conversationId);
+    await ms.addMessengerParticipants(actor(owner), left.conversationId, [G]);
+    expect(await photoStatus(A, F)).toBe(200);
+    expect(await photoStatus(A, G)).toBe(404);
+    // Kim left before Ann joined: Ann never sees Kim.
+    const late = await ms.createMessengerConversation(actor(owner), {
+      kind: 'group',
+      participants: [K],
+      title: 'Late',
+    });
+    await ms.leaveMessengerConversation(actor(K), late.conversationId);
+    await ms.addMessengerParticipants(actor(owner), late.conversationId, [A]);
+    expect(await photoStatus(A, K)).toBe(404);
+    // Ann is removed from a group Lou is in; Max is added after.
+    const removed = await ms.createMessengerConversation(actor(owner), {
+      kind: 'group',
+      participants: [A, L],
+      title: 'Removed',
+    });
+    await ms.removeMessengerParticipant(actor(owner), removed.conversationId, A);
+    await ms.addMessengerParticipants(actor(owner), removed.conversationId, [M]);
+    expect(await photoStatus(A, L)).toBe(200);
+    expect(await photoStatus(A, M)).toBe(404);
+  });
+
+  it('a disabled login and an archived workspace open nothing; self and any uuid case do', async () => {
+    const H = await newLogin('Hal', [W], '6');
+    await su(sqlTag`update auth.users set disabled_at = now() where id = ${H}`);
+    expect(await photoStatus(A, H)).toBe(404);
+    const W4 = randomUUID();
+    await su(
+      sqlTag`insert into workspaces (id, owner_id, name) values (${W4}, ${owner}, ${`${tag} W4`})`,
+    );
+    const I = await newLogin('Ivy', [W4], '7');
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id) values (${W4}, ${A})`);
+    expect(await photoStatus(A, I)).toBe(200);
+    await su(sqlTag`update workspaces set archived_at = now() where id = ${W4}`);
+    expect(await photoStatus(A, I)).toBe(404);
+    // Its own photo, and an id in capitals names the same login.
+    expect(await photoStatus(A, A)).toBe(200);
+    expect(await photoStatus(B, A.toUpperCase())).toBe(200);
+    // An agent id is no login.
+    expect(await photoStatus(A, tess)).toBe(404);
+  });
+
+  it('every 404 is the same answer, and a photo of an unlisted type is none', async () => {
+    const N = await newLogin('Ned', [W]);
+    await prefs(N, { avatarPhotoKey: key('8'), avatarPhotoType: 'image/svg+xml' });
+    const dir = await json(await as(A, 'directory', '/api/messenger/directory'));
+    expect((dir.entries as Record<string, unknown>[]).find((e) => e.id === N)).toMatchObject({
+      avatar: { seed: 'Ned-seed' },
+      photoVersion: null,
+    });
+    const answer = async (loginId: string) => {
+      const res = await as(A, 'photo', `/api/messenger/photo/${loginId}`, { loginId });
+      return { status: res.status, headers: [...res.headers], body: await res.text() };
+    };
+    const noPhoto = await answer(B);
+    expect(noPhoto.status).toBe(404);
+    expect(await answer(N)).toEqual(noPhoto);
+    expect(await answer(D)).toEqual(noPhoto);
+    expect(await answer(randomUUID())).toEqual(noPhoto);
+    expect(await answer('not-a-uuid')).toEqual(noPhoto);
+  });
+
+  it("an agent's avatar falls back to its slug, and no avatar is null", async () => {
+    const W5 = randomUUID();
+    const W6 = randomUUID();
+    const ida = randomUUID();
+    const jon = randomUUID();
+    await su(sqlTag`insert into workspaces (id, owner_id, name) values
+      (${W5}, ${owner}, ${`${tag} W5`}), (${W6}, ${owner}, ${`${tag} W6`})`);
+    await su(
+      sqlTag`insert into workspace_users (workspace_id, login_id) values (${W5}, ${A}), (${W6}, ${A})`,
+    );
+    await su(sqlTag`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id, avatar)
+      values (${ida}, ${owner}, ${`${tag}-ida`}, 'Ida', 'test/model', 'x', 'assistant', ${W5},
+              ${JSON.stringify({ style: 'legacy', seed: '' })}::jsonb),
+             (${jon}, ${owner}, ${`${tag}-jon`}, 'Jon', 'test/model', 'x', 'assistant', ${W6}, null)`);
+    await su(sqlTag`insert into workspace_resources (workspace_id, type, ref_id)
+      values (${W5}, 'assistant', ${ida}), (${W6}, 'assistant', ${jon})`);
+    const dir = await json(await as(A, 'directory', '/api/messenger/directory'));
+    const entries = dir.entries as Record<string, unknown>[];
+    expect(entries.find((e) => e.id === ida)).toMatchObject({
+      avatar: { style: 'lorelei', seed: `${tag}-ida`, parts: null },
+    });
+    expect(entries.find((e) => e.id === jon)).toMatchObject({ kind: 'agent', avatar: null });
+    expect(entries.find((e) => e.id === jon)).not.toHaveProperty('photoVersion');
   });
 });

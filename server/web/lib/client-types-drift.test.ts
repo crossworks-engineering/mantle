@@ -148,6 +148,12 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<SameUnion<Db.AiWorker['kind'], AiWorkerKind>>().toEqualTypeOf<true>();
   });
 
+  it('the messenger people match the views the content module builds', () => {
+    // The faces (avatar, photoVersion) included: the chat window reads them.
+    expectTypeOf<MessengerParticipantView>().toEqualTypeOf<MessengerParticipant>();
+    expectTypeOf<MessengerDirectoryEntryView>().toEqualTypeOf<MessengerDirectoryEntry>();
+  });
+
   /**
    * These mirror const ARRAYS in @mantle/content rather than a type, so the
    * pin goes through the array's element type. A status added to
@@ -155,12 +161,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
    * is the direction that actually happens: the array is what the server
    * validates incoming values against.
    */
-  it('the messenger people match the views the content module builds', () => {
-    // The faces (avatar, photoVersion) included: the chat window reads them.
-    expectTypeOf<MessengerParticipantView>().toEqualTypeOf<MessengerParticipant>();
-    expectTypeOf<MessengerDirectoryEntryView>().toEqualTypeOf<MessengerDirectoryEntry>();
-  });
-
   it('task vocabulary matches the const arrays in content', () => {
     expectTypeOf<SameUnion<(typeof TASK_STATUSES)[number], TaskStatus>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<(typeof TASK_PRIORITIES)[number], TaskPriority>>().toEqualTypeOf<true>();

@@ -169,7 +169,10 @@ the bytes with the headers of `/api/profile/photo` (`private`,
 `immutable` only when `v` is the photo served) to a login that may see
 that one: itself, a login of its directory, or a person of a chat it is
 in as it sees the room. Anything else, a login with no photo and an id
-that is no uuid answer the one 404, never a 403. The route takes a
+that is no uuid answer the one 404, never a 403. As with the caller's
+own photo, a browser keeps a photo it fetched at its `v` (`private`,
+`immutable`) after the access that opened it ends; a new photo is a new
+`v`. The route takes a
 cookie or a bearer; an `<img>` of a detached client cannot send the
 bearer, and the path takes no `?at=` asset token (not yet). The MCP
 tools leave both fields out: a face tells a model nothing.
