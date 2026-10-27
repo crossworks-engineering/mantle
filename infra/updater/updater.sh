@@ -12,7 +12,7 @@
 #
 # framed by two fixed steps: a strict four-part pre-roll backup BEFORE it (the
 # roll is refused, nothing changed, when that fails; see pre_roll_backup) and,
-# after an OK roll, removal of this product's old server, client and media
+# after an OK roll, removal of this product's old server, client and parser
 # images (see prune_images).
 #
 # The updater excludes ITSELF from the `up`: recreating its own container
@@ -1147,17 +1147,16 @@ s8b_seat_refusal() {
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
 # on 2026-09-01). After an OK roll the updater removes old images of exactly
-# three repositories, <ns>/mantle-server, <ns>/mantle-client and
-# <ns>/mantle-media, and keeps:
+# four repositories, <ns>/mantle-server, <ns>/mantle-client, <ns>/mantle-parser
+# and <ns>/mantle-media, and keeps:
 #   - the image each container ran BEFORE the roll (the rollback set),
 #   - the image each runs NOW,
 #   - the two newest images of the repository (a pre-pulled next release, or
 #     the previous pair when this roll re-rolled the same tag).
-# mantle-media (the opt-in `media` sidecar, container mantle_media, about
-# 1.2 GB a release) joined late and was left out at first: dev reached 105
-# old media and server tags and 4.2 GB free on 2026-10-19, so roll.sh refused
-# the roll. A box with media off has no mantle_media, so that repository is
-# skipped there, the same as any repository whose running image is unknown.
+# mantle-parser (the parser service, container mantle_parser) is core, so
+# every box has it. mantle-media (the removed media sidecar) has no container
+# after the roll that removes it, so it takes its own rule (prune_media): all
+# of its images go but the rollback one, and that one on the next roll.
 # It never touches any other repository (mantle-sandbox, mantle-rustfs, caddy,
 # postgres, app or sandbox images), never volumes or containers, never runs a
 # `system prune`, and never forces: `docker rmi` refuses an image a container
@@ -1200,7 +1199,8 @@ prune_repo() {
   done
 }
 
-# prune_images <prev-server-id> <prev-client-id> <prev-media-id>: after an OK roll.
+# prune_images <prev-server-id> <prev-client-id> <prev-parser-id> <prev-media-id>:
+# after an OK roll.
 prune_images() {
   if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
     echo "[updater] image prune: off (MANTLE_IMAGE_PRUNE=0)" | tee -a "$SIG/update.log"
@@ -1209,7 +1209,34 @@ prune_images() {
   pi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
   prune_repo "${pi_ns:-titanwest}/mantle-server" "$1" "$(container_image mantle_web)" | tee -a "$SIG/update.log"
   prune_repo "${pi_ns:-titanwest}/mantle-client" "$2" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
-  prune_repo "${pi_ns:-titanwest}/mantle-media" "$3" "$(container_image mantle_media)" | tee -a "$SIG/update.log"
+  prune_repo "${pi_ns:-titanwest}/mantle-parser" "$3" "$(container_image mantle_parser)" | tee -a "$SIG/update.log"
+  prune_media "$4" | tee -a "$SIG/update.log"
+}
+
+# prune_media <prev-media-id>: the removed media sidecar's images. The roll
+# removed mantle_media (--remove-orphans: compose no longer defines it), so
+# nothing runs them any more. The image mantle_media ran before THIS roll is
+# kept (the rollback set, as every repository's); every other one goes, and
+# on the next roll (no media container before it) that one goes too. A box
+# that never ran it has no such images: nothing to do.
+prune_media() {
+  pm_repo="${pi_ns:-titanwest}/mantle-media"
+  if [ -n "$(container_image mantle_media)" ]; then
+    echo "[updater] image prune: $pm_repo skipped (mantle_media still exists; remove it: docker rm -f mantle_media)"
+    return 0
+  fi
+  docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$pm_repo" 2>/dev/null \
+    | while read -r pm_id pm_ref; do
+      [ -n "$pm_id" ] && [ -n "$pm_ref" ] || continue
+      [ "${pm_ref%:*}" = "$pm_repo" ] || continue
+      [ "$pm_id" = "$1" ] && continue
+      case "$pm_ref" in *':<none>') pm_target=$pm_id ;; *) pm_target=$pm_ref ;; esac
+      if docker rmi "$pm_target" > /dev/null 2>&1; then
+        echo "[updater] image prune: removed $pm_ref"
+      else
+        echo "[updater] image prune: kept $pm_ref (docker refused to remove it; still in use?)"
+      fi
+    done
 }
 
 # topup_scripts: install an operator script the RUNNING release names but the
@@ -1235,8 +1262,9 @@ topup_scripts() {
 }
 
 # ── optional services: the brain's live capability source ────────────────────
-# Sandboxes, media, the local embedder and (on a core box) the doc helpers are
-# compose PROFILES; each service name IS its profile. Whether one is on is a fact about
+# Sandboxes, the local embedder and (on a core box) the PDF-export helper are
+# compose PROFILES; each service name IS its profile. (The media sidecar was
+# one until the parser service replaced it; the parser is core, no profile.) Whether one is on is a fact about
 # THIS box's .env, and the app containers cannot see .env: their env is what
 # compose resolved when it created them, and a dashboard switch starts or
 # stops ONE container without touching theirs. So this sidecar, which can see
@@ -1244,7 +1272,7 @@ topup_scripts() {
 # /signal read-only) on boot, every ~5 min, after a roll and after a switch.
 # @mantle/config services is the reader. The file carries key NAMES' presence
 # only, never a value.
-SERVICE_PROFILES="sandboxes media local-embedder helpers"
+SERVICE_PROFILES="sandboxes local-embedder helpers"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
 UPDATER_VERBS='"roll","service"'
@@ -1253,23 +1281,22 @@ UPDATER_VERBS='"roll","service"'
 service_container() {
   case "$1" in
     sandboxes) echo mantle_sandboxd ;;
-    media) echo mantle_media ;;
     local-embedder) echo mantle_ollama ;;
-    helpers) echo mantle_tika ;;
+    helpers) echo mantle_browser ;;
   esac
 }
 # service_containers <name>: every container an "on" waits on to be healthy.
 service_containers() {
-  case "$1" in helpers) echo "mantle_tika mantle_browser" ;; *) service_container "$1" ;; esac
+  service_container "$1"
 }
 # service_token_var <name>: the bearer token's .env key; nothing for the
-# local embedder and the helpers, which the app reaches without one.
+# local embedder and the helper, which the app reaches without one.
 service_token_var() {
-  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; media) echo MEDIA_SIDECAR_TOKEN ;; esac
+  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; esac
 }
 
 # core_shape: docker-compose.core.yml is loaded (the 4 GB brain-core shape).
-# Only there do the helpers have a profile; on the full shape they always run.
+# Only there does the helper have a profile; on the full shape it always runs.
 core_shape() {
   case "$(env_val COMPOSE_FILE)" in *docker-compose.core.yml*) return 0 ;; esac
   return 1
@@ -1321,7 +1348,8 @@ gen_token() {
 }
 
 # ensure_service_tokens: give every optional service its bearer token on a
-# roll, whether or not the service is on. A token is inert by itself (the
+# roll, whether or not the service is on, and the parser (core) its
+# PARSER_TOKEN once the compose this roll brings runs it. A token is inert by itself (the
 # profile decides what runs, and the brain reads the profile, not the token),
 # and a roll recreates every app container anyway, so this is the free moment
 # to put it in their env. Afterwards a dashboard switch starts or stops one
@@ -1332,6 +1360,7 @@ gen_token() {
 # /signal mount): a brain built before that reads "token set" as "on", and a
 # provisioned token would light up a service that is not running.
 ensure_service_tokens() {
+  ensure_parser_token
   if ! grep -q 'update-signal:/signal:ro' "$STACK/docker-compose.yml" 2>/dev/null; then
     echo "[updater] optional-service tokens not provisioned: this box's compose predates the live service state" \
       | tee -a "$SIG/update.log"
@@ -1350,12 +1379,30 @@ ensure_service_tokens() {
   done
 }
 
+# ensure_parser_token: the parser service's bearer token, written once and
+# never rotated, when the compose this roll brings runs the parser. Before the
+# token exists the parser serves without one on its internal network (the
+# first roll to the parser release is run by the updater of the release
+# before it, which does not know this step); the roll after writes it and
+# recreates the app containers and the parser with it.
+ensure_parser_token() {
+  grep -q 'container_name: mantle_parser' "$STACK/docker-compose.yml" 2>/dev/null || return 0
+  [ -z "$(env_val PARSER_TOKEN)" ] || return 0
+  if ept_tok=$(gen_token) && persist_env PARSER_TOKEN "$ept_tok"; then
+    echo "[updater] PARSER_TOKEN provisioned (the parser and the app containers take it on this roll)" \
+      | tee -a "$SIG/update.log"
+  else
+    echo "[updater] ⚠ could not provision PARSER_TOKEN; the parser keeps serving without one on its internal network" \
+      | tee -a "$SIG/update.log"
+  fi
+}
+
 # ── switching an optional service on or off ──────────────────────────────────
 # The dashboard's service switch writes /signal/service-request.json, a file
 # of its OWN: an updater older than this never reads it, where the same body
 # in request.json would read as "roll to latest". One fixed operation per
-# request, inputs whitelisted: the service is `sandboxes`, `media`,
-# `local-embedder` or `helpers` (a core box only), the switch true or false.
+# request, inputs whitelisted: the service is `sandboxes`, `local-embedder`
+# or `helpers` (a core box only), the switch true or false.
 # Nothing else in the request reaches a command.
 #
 # On:  free-disk check; back up .env; give the service its token (and, for
@@ -1380,14 +1427,13 @@ SVC_ENV_BAK=""
 SVC_ERR=""
 SVC_TOKEN_NEW=""
 
-# compose_service <name>: the compose service(s) a switch pulls, starts and
-# stops. Space-separated: the helpers are two.
+# compose_service <name>: the compose service a switch pulls, starts and
+# stops.
 compose_service() {
   case "$1" in
     sandboxes) echo sandboxd ;;
-    media) echo media ;;
     local-embedder) echo ollama ;;
-    helpers) echo "tika browser" ;;
+    helpers) echo browser ;;
   esac
 }
 
@@ -1618,7 +1664,7 @@ handle_service_request() {
   SVC_STARTED=$(now)
   # The whitelist: the only request input that reaches a command.
   case "$hs_svc" in
-    sandboxes | media | local-embedder | helpers) : ;;
+    sandboxes | local-embedder | helpers) : ;;
     *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
   esac
   case "$hs_en" in
@@ -1630,8 +1676,8 @@ handle_service_request() {
     write_service_status error "$hs_svc" "$hs_en" "$SVC_STARTED" "$(now)" false "updater not configured: $hs_cfg"
     return 0
   fi
-  # The helpers have a profile only on a core box, and the `full` profile
-  # runs them whatever theirs says: anywhere else a switch could not stop them.
+  # The helper has a profile only on a core box, and the `full` profile runs
+  # it whatever its own says: anywhere else a switch could not stop it.
   if [ "$hs_svc" = helpers ] && { ! core_shape || profile_active full; }; then
     write_service_status error "$hs_svc" "$hs_en" "$SVC_STARTED" "$(now)" false \
       "the helpers always run on this box, so there is nothing to switch"
@@ -1814,6 +1860,7 @@ while true; do
     # The images running now are the rollback set the prune below keeps.
     PREV_SERVER_IMG=$(container_image mantle_web)
     PREV_CLIENT_IMG=$(container_image mantle_client_web)
+    PREV_PARSER_IMG=$(container_image mantle_parser)
     PREV_MEDIA_IMG=$(container_image mantle_media)
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
@@ -1913,7 +1960,7 @@ while true; do
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
         # Old images of this product only, after the status is terminal: a
         # prune problem must never turn an OK roll into a failed one.
-        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_MEDIA_IMG"
+        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_PARSER_IMG" "$PREV_MEDIA_IMG"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already
         # terminal. Sets UPDATER_REFRESH for the write_stack_info below.

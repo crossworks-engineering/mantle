@@ -191,12 +191,12 @@ LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
 # box, keep .env as-is on a re-run — existing boxes never flip implicitly).
 SANDBOXES="${MANTLE_SANDBOXES:-}"
-# Brain-core shape: 1=core (small memory core — channel workers + doc helpers
-# off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
+# Brain-core shape: 1=core (small memory core — channel workers + the PDF
+# browser off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
 CORE="${MANTLE_CORE:-}"
-# Doc helpers (tika parse fallback + PDF-export browser): 1=enable on a core
-# box, 0=disable, empty=keep .env as-is. Only meaningful on the core shape;
-# the full shape always runs them.
+# The helper (the PDF-export browser): 1=enable on a core box, 0=disable,
+# empty=keep .env as-is. Only meaningful on the core shape; the full shape
+# always runs it.
 HELPERS="${MANTLE_HELPERS:-}"
 # Owner web UI (the separate client stack): 1=run it, 0=headless (API + MCP +
 # share pages only — no signup, no owner screens), empty=keep .env as-is
@@ -249,19 +249,19 @@ ${B}Options${RS}
                          fits a 2 vCPU / 4 GB box with ONLINE embeddings. Keeps
                          the HTTP API, MCP, share pages, file/docs ingest and
                          backups; sheds the channel workers (email/telegram/
-                         microsoft/calendar/push/runs) and the doc helpers
-                         (add those back with --helpers). Persists via
+                         microsoft/calendar/push/runs) and the PDF browser
+                         (add it back with --helpers). Persists via
                          COMPOSE_FILE in .env so every later pull/up — the
                          updater included — keeps the shape. Sandboxes default
                          OFF for a fresh core box.
   --no-core              Back to the full shape (the shed services start on
                          the next 'docker compose up -d')
-  --helpers              Doc helpers on a core box: tika (parse fallback for
-                         .odt/.doc/.rtf/.epub; common formats parse in-process
-                         without it) + the PDF-export browser (~2 GB image).
+  --helpers              The PDF-export browser on a core box (~1 GB image).
                          Persists via COMPOSE_PROFILES in .env. No effect on
-                         the full shape, which always runs both.
-  --no-helpers           Shed the doc helpers again on a core box
+                         the full shape, which always runs it. (Every file
+                         format is read by the parser service, which a core
+                         keeps.)
+  --no-helpers           Shed the PDF browser again on a core box
   --client               Run the owner web UI (the default; a separate small
                          container on its own version stream)
   --no-client            Headless box: API + MCP + share pages only. No owner
@@ -799,8 +799,8 @@ if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
   fi
   if [[ "$CORE" == 1 && -z "$HELPERS" ]]; then
     hlp_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *helpers* ]]; then hlp_d=y; fi
-    inf "${DIM}Doc helpers = tika (parses .odt/.doc/.rtf/.epub; common formats parse without it) + the PDF-export browser (~2 GB image).${RS}"
-    if confirm "Add the doc helpers to the core?" "$hlp_d"; then HELPERS=1; else HELPERS=0; fi
+    inf "${DIM}The helper is the PDF-export browser (~1 GB image). Every file format is read without it.${RS}"
+    if confirm "Add the PDF-export browser to the core?" "$hlp_d"; then HELPERS=1; else HELPERS=0; fi
   fi
   if [[ -z "$SANDBOXES" ]]; then
     sbx_d=y; if [[ "$CORE" == 1 ]]; then sbx_d=n; fi
@@ -867,7 +867,8 @@ ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated
 # lets a dashboard switch start ONE container later instead of restarting the
 # brain. Never rotated on re-run. (The updater does the same on a roll.)
 ensure SANDBOXD_TOKEN      "gen_hex 32"
-ensure MEDIA_SIDECAR_TOKEN "gen_hex 32"
+# The parser service's bearer token (core, always on; docs/parser.md).
+ensure PARSER_TOKEN        "gen_hex 32"
 # The runtime role (plan v3.2 S4a): a new install's app logs in as
 # mantle_runtime, not the superuser (docs/runtime-role.md). A FRESH box only,
 # and only when .env has no line: an existing box keeps what it runs with (the
@@ -1014,14 +1015,14 @@ if [[ -n "$CORE" ]]; then
     # Best-effort: stop + remove the services the core sheds (a fresh box has
     # none of them yet; a downsized box drops them here). Naming a service
     # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
-    # The doc helpers (tika + browser) are only shed when the helpers profile
-    # isn't active — the --helpers block below runs after this one.
+    # The PDF browser is only shed when the helpers profile isn't active —
+    # the --helpers block below runs after this one.
     SHED="worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs"
-    if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="tika browser $SHED"; fi
+    if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="browser $SHED"; fi
     # shellcheck disable=SC2086  # word-splitting $SHED into args is intended
     docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
       rm -sf $SHED >/dev/null 2>&1 || true
-    ok "Brain-core shape ON — channel workers + doc helpers won't start (see docker-compose.core.yml)"
+    ok "Brain-core shape ON — channel workers + the PDF browser won't start (see docker-compose.core.yml)"
   else
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
@@ -1031,29 +1032,29 @@ if [[ -n "$CORE" ]]; then
     fi
   fi
 fi
-# ── Doc helpers (tika + PDF-export browser) on the core shape ────────────────
+# ── The helper (the PDF-export browser) on the core shape ────────────────────
 # Persisted via COMPOSE_PROFILES exactly like the embedder. Only meaningful
-# when the core override is active (the full shape runs both unconditionally),
+# when the core override is active (the full shape runs it unconditionally),
 # but writing the profile on a full box is harmless — it simply pre-arms the
 # choice for a later --core. Flag not passed → keep .env as-is.
 if [[ -n "$HELPERS" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'helpers' | grep -v '^$' | paste -sd, -)" || rest=""
   if [[ "$HELPERS" == 1 ]]; then
     upsert COMPOSE_PROFILES "${rest:+$rest,}helpers"
-    ok "Doc helpers ON — tika + the PDF-export browser start with the stack"
+    ok "Helper ON — the PDF-export browser starts with the stack"
   else
     if [[ -n "$rest" ]]; then
       upsert COMPOSE_PROFILES "$rest"
     elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
     fi
-    # Best-effort stop, but ONLY on the core shape — on a full box these two
-    # are always-on services and must not be touched.
+    # Best-effort stop, but ONLY on the core shape — on a full box it is an
+    # always-on service and must not be touched.
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
-        rm -sf tika browser >/dev/null 2>&1 || true
+        rm -sf browser >/dev/null 2>&1 || true
     fi
-    ok "Doc helpers OFF — tika + the PDF-export browser won't start on the core shape"
+    ok "Helper OFF — the PDF-export browser won't start on the core shape"
   fi
 fi
 # ── Owner web UI (the separate client stack) ─────────────────────────────────

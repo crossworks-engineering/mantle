@@ -1,11 +1,17 @@
-# TWO Mantle images from one file (v0.200.0 split):
+# TWO Mantle images from one file:
 #
 #   --target server → mantle-server: every backend service — API/web host,
 #     DBOS runner, the workers, one-shot migrate — same image, different
 #     compose `command:` per service (docker-compose.yml).
+#   --target parser → mantle-parser: the parser service (server/parser), the
+#     one container that reads every untrusted file: the workspace's readers
+#     (Node), the CAD tier (Python: ezdxf, ezdwf, ezdwg, matplotlib, and the
+#     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
+#     sidecar (2026-10).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
+#         docker build --target parser -t <ns>/mantle-parser:<tag> .
 # One MANTLE_IMAGE_TAG drives both composes — releases are lockstep.
 #
 # Note: server/mcp is intentionally NOT run here. The MCP server is stdio-only
@@ -46,6 +52,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY patches patches
 COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
+COPY server/parser/package.json server/parser/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
 COPY server/web/package.json server/web/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
@@ -99,7 +106,7 @@ COPY . .
 
 # ── 1a⅞. ezdwg-build: the DWG fallback converter's wheel, both arches ───────
 # PyPI ships ezdwg wheels for x86_64 only; on arm64 pip falls back to the
-# sdist and tries to compile Rust inside the media stage, which has no
+# sdist and tries to compile Rust inside the parser stage, which has no
 # toolchain ("linker `cc` not found" — the v0.232.100 release failure). Build
 # the wheel here instead, in maturin's official image (Rust toolchain plus
 # manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
@@ -111,23 +118,24 @@ RUN mkdir /tmp/ezdwg \
   && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
 WORKDIR /tmp/ezdwg
 # The wheel is abi3 (pyo3 abi3-py310), so the interpreter only drives the
-# build; it matches the media stage's Python anyway.
+# build; the parser stage's Python (Debian's) installs it as it is.
 RUN maturin build --release --interpreter python3.15 --out /wheels
 
 # ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
 # Debian ships no libredwg package, so the converter is built from the pinned
-# GNU release tarball. GPLv3: it enters the media image as a standalone
+# GNU release tarball. GPLv3: it enters the parser image as a standalone
 # BINARY invoked via subprocess only — the process boundary is the licence
 # boundary; never link or bind it into anything. --disable-werror because
-# newer GCCs flag warnings the release predates; the python base satisfies
+# newer GCCs flag warnings the release predates; python3 satisfies
 # configure's interpreter check, and 0.14's configure also requires
-# pkg-config. The tarball comes from the kernel.org GNU mirror, not
-# ftp.gnu.org: the primary timed out for whole release runs (v0.239.15).
-# The checksum pins the exact bytes, so the mirror cannot change what we
-# build.
-FROM python:3.15-slim AS libredwg-build
+# pkg-config. Built on the parser's own base (node:26-slim, Debian), so the
+# binary links against the glibc it runs on. The tarball comes from the
+# kernel.org GNU mirror, not ftp.gnu.org: the primary timed out for whole
+# release runs (v0.239.15). The checksum pins the exact bytes, so the
+# mirror cannot change what we build.
+FROM node:26-slim AS libredwg-build
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config xz-utils \
+  && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config python3 xz-utils \
   && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275 \
   https://mirrors.kernel.org/gnu/libredwg/libredwg-0.14.tar.xz /tmp/libredwg.tar.xz
@@ -139,52 +147,41 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
   && make -j"$(nproc)" \
   && make install-strip
 
-# ── 1b. media: yt-dlp + ffmpeg sidecar (independent of the node stages) ─────
-# Deliberately NOT built on the node deps stage: this image runs a fast-moving,
-# auto-updating, network-facing binary (yt-dlp) that parses hostile input from
-# the open web, so it gets its own minimal Python base with no workspace code,
-# no DB drivers, and no secrets. Source + safety model: infra/media-sidecar/.
-# yt-dlp is baked in for offline boots, then refreshed from PyPI at start and
-# daily by the entrypoint (see entrypoint.sh for why "always latest" is a hard
-# requirement for this one dependency).
-FROM python:3.15-slim AS media
+# ── 1b. parser: the parser service (server/parser) ─────────────────────────
+# Built on the deps stage: the readers are the workspace's own modules
+# (@mantle/files/readers/*) and their dependencies (pdfjs, exceljs, mammoth,
+# anydoc, canvas). It runs no build step, carries no secret (PARSER_TOKEN is
+# its only one) and mounts no data. Compose gives it its memory limit, its
+# CPU share and a network with no route out (docker-compose.yml); the
+# service itself runs every job in its own process (docs/parser.md).
+FROM deps AS parser
+ENV NODE_ENV=production
+# ffmpeg for the audio extract; Debian's python3 + venv for the CAD tier.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg \
-  && rm -rf /var/lib/apt/lists/*
-RUN useradd -m -u 1001 media \
-  && python -m venv /opt/venv \
-  && chown -R media:media /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-USER media
-RUN pip install --no-cache-dir yt-dlp
-# CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets to
-# PNG for the /dwf/render route; matplotlib is its raster backend. Pinned —
-# unlike yt-dlp, nothing here needs "always latest", and ezdwf is pre-alpha
-# so an unreviewed bump could change render output under us. From PyPI since
-# 0.0.7: our lazy-read memory fix (peak RSS ~1.27 GB -> ~0.54 GB on a 630 KB
-# plot set) merged upstream in 0.0.5, which retired the patched-wheel stage.
-# PyPI ships abi3 manylinux wheels for both amd64 and arm64.
-# matplotlib is pinned exactly for the same reason: its version decides the
-# rendered pixels, and a range let each rebuild pick up whatever was newest.
-ENV MPLBACKEND=Agg
-# DWG tier (v0.232.99): ezdxf parses + renders the converted DXF (the one
-# code path downstream of conversion); ezdwg is the MIT fallback converter
-# for files dwg2dxf mangles. Both pinned like ezdwf and for the same reason.
-# ezdwg installs from the ezdwg-build stage's wheel, never PyPI: PyPI has no
-# arm64 wheel and this stage has no compiler (the v0.232.100 arm64 failure).
+    && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+# CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets;
+# matplotlib is its raster backend. ezdxf parses and renders the DXF (the one
+# code path downstream of conversion); ezdwg is the MIT fallback converter for
+# files dwg2dxf mangles. All pinned: their versions decide the rendered
+# pixels, and ezdwf is pre-alpha. ezdwg installs from the ezdwg-build stage's
+# wheel, never PyPI: PyPI has no arm64 wheel and this stage has no compiler.
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
-RUN pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" /tmp/ezdwg-wheels/ezdwg-*.whl \
-    "matplotlib==3.11.2" "ezdxf==1.4.5"
+RUN python3 -m venv /opt/cad \
+    && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
+       /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
+    && rm -rf /tmp/ezdwg-wheels /root/.cache
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
-COPY infra/media-sidecar/app.py /srv/app.py
-# The DWG bones (segments, network, circuits): imported by the --dwg-render
-# child from next to app.py.
-COPY infra/media-sidecar/dwg_bones.py /srv/dwg_bones.py
-# The image check's crops: imported by the --dwg-crop child the same way.
-COPY infra/media-sidecar/dwg_crop.py /srv/dwg_crop.py
-COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
+ENV PARSER_PYTHON=/opt/cad/bin/python \
+    MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/mpl
+# The base image's unprivileged user: a job that breaks out of its reader
+# still holds no root and no write access to the workspace.
+USER node
 EXPOSE 8095
-ENTRYPOINT ["/bin/sh", "/srv/entrypoint.sh"]
+# The exec form (pnpm … exec), as the server image: SIGTERM reaches the
+# server's handler.
+CMD ["pnpm", "-C", "server/parser", "exec", "tsx", "src/main.ts"]
 
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
