@@ -11,6 +11,7 @@ const box = vi.hoisted(() => ({
   ids: [] as string[],
   outcome: new Map<string, string>(),
   calls: [] as { id: string; apply: boolean }[],
+  posters: new Set<string>(),
 }));
 
 vi.mock('@mantle/content/presents', () => ({
@@ -21,11 +22,11 @@ vi.mock('@mantle/content/presents', () => ({
   },
   resavePidCanvas: async (id: string, opts: { apply: boolean }) => {
     box.calls.push({ id, apply: opts.apply });
-    return box.outcome.get(id) ?? 'unchanged';
+    return { outcome: box.outcome.get(id) ?? 'unchanged', poster: box.posters.has(id) };
   },
 }));
 
-import { RESAVE_PAGE, resavePidCanvases } from './pid-canvas-resave';
+import { parseResaveArgs, RESAVE_PAGE, resavePidCanvases } from './pid-canvas-resave';
 
 beforeEach(() => {
   box.ids = Array.from(
@@ -38,6 +39,7 @@ beforeEach(() => {
     ['id-031', 'moved'],
   ]);
   box.calls = [];
+  box.posters = new Set(['id-001', 'id-030', 'id-040']);
 });
 
 describe('pid-canvas-resave', () => {
@@ -49,6 +51,7 @@ describe('pid-canvas-resave', () => {
       unchanged: box.ids.length - 3,
       refused: 1,
       moved: 1,
+      posters: 3,
       cut: false,
     });
     expect(box.calls.every((x) => !x.apply)).toBe(true);
@@ -67,5 +70,15 @@ describe('pid-canvas-resave', () => {
     expect(c.canvases).toBe(5);
     expect(c.cut).toBe(true);
     expect(box.calls).toHaveLength(5);
+  });
+
+  it('reads --limit 5 and --limit=5 alike, and refuses anything else', () => {
+    expect(parseResaveArgs([])).toEqual({ apply: false, limit: null });
+    expect(parseResaveArgs(['--apply', '--limit', '5'])).toEqual({ apply: true, limit: 5 });
+    expect(parseResaveArgs(['--limit=5', '--apply'])).toEqual({ apply: true, limit: 5 });
+    for (const bad of [['--aply'], ['--limit'], ['--limit=0'], ['--limit', 'x'], ['5']])
+      expect(parseResaveArgs(bad), bad.join(' ')).toMatchObject({
+        error: expect.stringMatching(/usage: pnpm pid:resave/),
+      });
   });
 });

@@ -68,11 +68,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { title, source, tags } = parsed.data;
-  const css = source !== undefined ? await compileCanvasCss(source) : '';
+  // Compiled from the source as stored, after the save's checks.
   const row = await createPresent(user.id, {
     ...(title !== undefined ? { title } : {}),
-    ...(source !== undefined ? { source } : {}),
-    css,
+    ...(source !== undefined ? { source, css: compileCanvasCss } : {}),
     tags,
   });
   return NextResponse.json({ present: row }, { status: 201 });

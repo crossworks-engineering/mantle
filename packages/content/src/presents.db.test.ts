@@ -304,6 +304,18 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     const saved = await presents.savePresentSource(owner, p.id, { source: forged, css: '' });
     expect(saved.ok).toBe(true);
     expect((await stored(p.id)).offpage[0]!.check).toEqual(honest);
+    // The Tailwind compile reads the source as stored, never the one given.
+    const seen: string[] = [];
+    const css = async (s: string) => (seen.push(s), '.p-1{padding:.25rem}');
+    const q = await presents.createPresent(owner, { source: forged, css });
+    expect(readCanvasData(seen[0]!)).toMatchObject({ offpage: [{ check: honest }] });
+    expect(seen[0]).not.toBe(forged);
+    const again = await presents.savePresentSource(owner, q.id, { source: forged, css });
+    expect(again.ok).toBe(true);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toBe(seen[0]);
+    const [c] = await admin<{ css: string }[]>`select css from presents where node_id = ${q.id}`;
+    expect(c!.css).toBe('.p-1{padding:.25rem}');
   });
 
   it('a canvas saved before the seals is re-saved by the maintenance pass: GUESS, a new revision, nothing announced (M1)', async () => {
@@ -324,26 +336,63 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     const old = honest.replace('TO S2 (GUESS)', 'TO S2 (CHECKED BY IMAGE)');
     await su`update presents set source = ${old}, index_due_at = null where node_id = ${p.id}`;
     const row = async () => {
-      const [r] = await admin<{ source: string; rev: number; due: Date | null }[]>`
-        select source, rev, index_due_at as due from presents where node_id = ${p.id}`;
+      const [r] = await admin<
+        {
+          source: string;
+          rev: number;
+          due: Date | null;
+          poster: boolean;
+          posterRev: number | null;
+        }[]
+      >`
+        select source, rev, index_due_at as due, poster_png is not null as poster,
+          poster_rev as "posterRev"
+        from presents where node_id = ${p.id}`;
       return r!;
     };
-    expect(await presents.resavePidCanvas(p.id, { apply: false })).toBe('changed');
+    // A poster the runtime drew before the checks (its words, its colours).
+    expect(await presents.setPresentPoster(owner, p.id, Buffer.from('old-png'), 1)).toBe(true);
+    expect(await presents.resavePidCanvas(p.id, { apply: false })).toEqual({
+      outcome: 'changed',
+      poster: true,
+    });
     expect((await row()).source).toBe(old);
-    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('changed');
+    expect((await row()).poster).toBe(true);
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toEqual({
+      outcome: 'changed',
+      poster: true,
+    });
     const after = await row();
+    // The poster is gone: a Page embed shows no snapshot until the next look.
+    expect(after.poster).toBe(false);
+    expect(after.posterRev).toBeNull();
     const text = (readCanvasData(after.source) as { offpage: { text: string }[] }).offpage[0]!.text;
     expect(text).toBe('TO S2 (GUESS)');
     expect(after.rev).toBe(2);
     expect(after.due).toBeNull();
     expect(await presents.getPresentRevisionSource(owner, p.id, 2)).toBe(after.source);
     // Run again: nothing to do.
-    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('unchanged');
-    // A source a save refuses is left as it is.
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toEqual({
+      outcome: 'unchanged',
+      poster: false,
+    });
+    // An unchanged canvas's old poster is cleared too, the source kept.
+    expect(await presents.setPresentPoster(owner, p.id, Buffer.from('old-png'), 2)).toBe(true);
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toEqual({
+      outcome: 'unchanged',
+      poster: true,
+    });
+    expect(await row()).toMatchObject({ rev: 2, poster: false, posterRev: null });
+    // A source a save refuses is left as it is; its poster still goes.
     const author = `${old.replace('</body>', '<script>alert(1)</script></body>')}`;
     await su`update presents set source = ${author} where node_id = ${p.id}`;
-    expect(await presents.resavePidCanvas(p.id, { apply: true })).toBe('refused');
+    expect(await presents.setPresentPoster(owner, p.id, Buffer.from('old-png'), 2)).toBe(true);
+    expect(await presents.resavePidCanvas(p.id, { apply: true })).toEqual({
+      outcome: 'refused',
+      poster: true,
+    });
     expect((await row()).source).toBe(author);
+    expect((await row()).poster).toBe(false);
     // The listing finds it among the box's pid canvases.
     let after_: string | null = null;
     let found = false;

@@ -283,12 +283,20 @@ export async function getPresentFrame(
   return { source: row.source, css: row.css, meta: metaOf(row.meta), rev: row.rev };
 }
 
+/** A canvas's Tailwind utilities: the caller compiles (the compiler is a
+ *  build-tier package), from the source as the save stores it. A function
+ *  is called with that source once the save's checks and the caller's
+ *  right have passed, so a compile never runs for a source no one may
+ *  store and never reads one the save rewrites. */
+export type CanvasCss = string | ((stored: string) => Promise<string>);
+const cssFor = (css: CanvasCss | undefined, stored: string): Promise<string> =>
+  typeof css === 'function' ? css(stored) : Promise.resolve(css ?? '');
+
 export type CreatePresentInput = {
   /** The canvas; EMPTY_CANVAS when absent. */
   source?: string;
-  /** Tailwind utilities compiled from `source` (the caller compiles: the
-   *  compiler is a build-tier package). */
-  css?: string;
+  /** Tailwind utilities compiled from the stored source (CanvasCss). */
+  css?: CanvasCss;
   /** Display name; the canvas <title> when absent. */
   title?: string;
   tags?: string[];
@@ -321,6 +329,7 @@ export async function createPresent(
   // whoever wrote the source, by whichever path.
   const source = storedCanvasSource(input.source ?? EMPTY_CANVAS);
   const read = readCanvas(source);
+  const css = await cssFor(input.css, source);
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
 
@@ -350,7 +359,7 @@ export async function createPresent(
         source,
         sourceText: read.text,
         meta: read.meta,
-        css: input.css ?? '',
+        css,
         rev: 1,
       });
       await recordRevision(tx, node.id, 1, source);
@@ -377,7 +386,7 @@ export type SavePresentResult =
 export async function savePresentSource(
   ownerId: string,
   id: string,
-  given: { source: string; css: string; ifRev?: number },
+  given: { source: string; css: CanvasCss; ifRev?: number },
 ): Promise<SavePresentResult> {
   // The size first (cheap), then the row and the caller's right, and only
   // then the checks that read the source: no one without the right to
@@ -393,7 +402,8 @@ export async function savePresentSource(
   // it gets the refusal, not a conflict.
   await assertItemRight(id, 'edit');
   // As createPresent: the image checks as sealed, the counts as held.
-  const input = { ...given, source: storedCanvasSource(given.source) };
+  const stored = storedCanvasSource(given.source);
+  const input = { ...given, source: stored, css: await cssFor(given.css, stored) };
   const read = readCanvas(input.source);
 
   return db.transaction(async (tx) => {
@@ -472,6 +482,11 @@ export type PidResaveOutcome =
   /** Saved by someone while the run read it: left for the next run. */
   | 'moved';
 
+/** One canvas's re-save: what happened to its source, and whether its
+ *  poster (the cached picture a Page embed shows) was cleared, or in a dry
+ *  run would be. */
+export type PidResave = { outcome: PidResaveOutcome; poster: boolean };
+
 /**
  * The `pid` canvases of the box (any owner), a page at a time by id: a
  * canvas whose source claims the template (claimsPidTemplate; the SQL
@@ -504,43 +519,64 @@ export async function listPidCanvasPage(
  * and the node are not touched, no re-index is scheduled and no extractor
  * pass runs (the stored text catches up in the index at the canvas's next
  * edit). Its own revision, as a save's, so the old source stays in the
- * canvas's history. `apply` false: what would happen, nothing written.
+ * canvas's history. Its poster is cleared too, whatever the outcome but
+ * `moved`: it was drawn by the runtime before these checks, in its words
+ * and colours (a typed claim in a label, a mark no seal holds), and a Page
+ * embed shows "no snapshot yet" until the canvas's next look draws a new
+ * one (nothing re-renders here). `apply` false: what would happen,
+ * nothing written.
  */
-export async function resavePidCanvas(
-  id: string,
-  opts: { apply: boolean },
-): Promise<PidResaveOutcome> {
+export async function resavePidCanvas(id: string, opts: { apply: boolean }): Promise<PidResave> {
   const [row] = await db
-    .select({ source: presents.source })
+    .select({ source: presents.source, poster: sql<boolean>`${presents.posterPng} is not null` })
     .from(presents)
     .where(eq(presents.nodeId, id))
     .limit(1);
-  if (!row) return 'moved';
-  let next: string;
+  if (!row) return { outcome: 'moved', poster: false };
+  let next: string | null;
+  let outcome: PidResaveOutcome;
   try {
     next = storedCanvasSource(row.source);
+    outcome = next === row.source ? 'unchanged' : 'changed';
   } catch (err) {
-    if (err instanceof InputError) return 'refused';
-    throw err;
+    if (!(err instanceof InputError)) throw err;
+    next = null;
+    outcome = 'refused';
   }
-  if (next === row.source) return 'unchanged';
-  if (!opts.apply) return 'changed';
-  const read = readCanvas(next);
+  if (!opts.apply) return { outcome, poster: row.poster };
   return db.transaction(async (tx) => {
     const [cur] = await tx
-      .select({ rev: presents.rev, source: presents.source })
+      .select({
+        rev: presents.rev,
+        source: presents.source,
+        poster: sql<boolean>`${presents.posterPng} is not null`,
+      })
       .from(presents)
       .where(eq(presents.nodeId, id))
       .for('update')
       .limit(1);
-    if (!cur || cur.source !== row.source) return 'moved' as const;
+    if (!cur || cur.source !== row.source) return { outcome: 'moved' as const, poster: false };
+    const unposter = { posterPng: null, posterRev: null };
+    if (outcome !== 'changed' || next === null) {
+      if (!cur.poster) return { outcome, poster: false };
+      await tx.update(presents).set(unposter).where(eq(presents.nodeId, id));
+      return { outcome, poster: true };
+    }
+    const read = readCanvas(next);
     const rev = cur.rev + 1;
     await tx
       .update(presents)
-      .set({ source: next, sourceText: read.text, meta: read.meta, rev, updatedAt: new Date() })
+      .set({
+        source: next,
+        sourceText: read.text,
+        meta: read.meta,
+        rev,
+        ...unposter,
+        updatedAt: new Date(),
+      })
       .where(eq(presents.nodeId, id));
     await recordRevision(tx, id, rev, next);
-    return 'changed' as const;
+    return { outcome, poster: cur.poster };
   });
 }
 

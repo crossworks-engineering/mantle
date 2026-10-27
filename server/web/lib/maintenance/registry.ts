@@ -412,7 +412,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'pid-canvas-resave',
     title: 'Re-save P&ID canvases through the image check seals',
     description:
-      'Once per box after the release that sealed the image check marks: writes every P&ID (pid) canvas again through the checks a save runs, so a canvas saved before them keeps only the marks circuit_trace sealed, no typed CHECKED BY IMAGE or FROM IMAGE in a label (a typed claim on an element with no mark becomes GUESS) and counts of its own marks. Dry run (default) counts what would change; --apply writes each as a new revision (the old source stays in its history). A canvas a save would refuse is left as it is. Prints counts only.',
+      'Once per box after the release that sealed the image check marks: writes every P&ID (pid) canvas again through the checks a save runs, so a canvas saved before them keeps only the marks circuit_trace sealed, no typed CHECKED BY IMAGE or FROM IMAGE in a label (a typed claim on an element with no mark becomes GUESS) and counts of its own marks. Dry run (default) counts what would change; --apply writes each as a new revision (the old source stays in its history). A canvas a save would refuse is left as it is. Every pid canvas poster (the snapshot a Page embed shows, drawn by the runtime before the seals) is cleared, so the embed shows no snapshot until that canvas is looked at again. Prints counts only.',
     kind: 'remedy',
     status: 'live',
     // A source rewrite: no model, no re-index announced, no trigger.

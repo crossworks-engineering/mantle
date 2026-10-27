@@ -818,10 +818,11 @@ const present_create: BuiltinToolDef = {
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {
-      const css = await cssOf(source);
+      // Compiled from the source as stored, once the save's checks pass.
+      let css = '';
       const p = await createPresent(ctx.ownerId, {
         source,
-        css,
+        css: async (stored) => (css = await cssOf(stored)),
         title: strOptTrim(input.title),
         tags: tagList(input.tags),
       });
@@ -941,10 +942,12 @@ const present_update: BuiltinToolDef = {
         }
         const refused = loadRefusal(next);
         if (refused) return refused;
-        css = await cssOf(next);
+        css = '';
         const res = await savePresentSource(ctx.ownerId, id, {
           source: next,
-          css,
+          // Compiled from the source as stored, after the right and the
+          // save's checks.
+          css: async (stored) => (css = await cssOf(stored)),
           // An edit or new data was made on the source just read: it is a
           // change of THAT rev, never written over a save that came since.
           ...(typeof input.if_rev === 'number'
@@ -1022,8 +1025,11 @@ const present_restore: BuiltinToolDef = {
     const refused = loadRefusal(source);
     if (refused) return refused;
     try {
-      const css = await cssOf(source);
-      const res = await savePresentSource(ctx.ownerId, id, { source, css });
+      let css = '';
+      const res = await savePresentSource(ctx.ownerId, id, {
+        source,
+        css: async (stored) => (css = await cssOf(stored)),
+      });
       if (!res.ok) return notFound('canvas', id, LOOKUP);
       const seen = await lookAndPoster(ctx, res.present, css);
       return saved(res.present, seen, { restored_from: rev });

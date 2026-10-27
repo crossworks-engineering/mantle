@@ -61,10 +61,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const { source, ifRev, ...meta } = parsed.data;
   if (source !== undefined) {
-    const css = await compileCanvasCss(source);
+    // Compiled from the source as stored, after the right and the save's
+    // checks (savePresentSource calls it then).
     const saved = await savePresentSource(user.id, id, {
       source,
-      css,
+      css: compileCanvasCss,
       ...(ifRev !== undefined ? { ifRev } : {}),
     });
     if (!saved.ok) {
