@@ -64,13 +64,15 @@ GRANT EXECUTE ON FUNCTION "public"."mantle_messenger_mine"(uuid) TO mantle_view_
 -- Whether the acting login may see one participant row of a conversation
 -- it is in: a leaver only those who joined before it left, a login added
 -- later only those still there when it joined. Its own row always.
+-- (The parameters are named apart from every column: in a SQL function a
+-- column name wins over a parameter of the same name.)
 CREATE OR REPLACE FUNCTION "public"."mantle_messenger_sees_participant"(
-  c uuid, joined timestamp with time zone, left_at timestamp with time zone)
+  c uuid, their_join timestamp with time zone, their_leave timestamp with time zone)
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT coalesce((
-    SELECT (me."left_at" IS NULL OR joined <= me."left_at")
-       AND (left_at IS NULL OR left_at >= me."joined_at")
+    SELECT (me."left_at" IS NULL OR their_join <= me."left_at")
+       AND (their_leave IS NULL OR their_leave >= me."joined_at")
       FROM "public"."messenger_participants" me
      WHERE me."conversation_id" = c
        AND me."kind" = 'login'
