@@ -21,14 +21,16 @@ import {
   type AppliedCheck,
   type CheckKind,
 } from './circuit-trace/check';
-import { storeChecks, storeRefusal } from './circuit-trace/checks-store';
+import { claimVerifyRun, storeChecks, storeRefusal } from './circuit-trace/checks-store';
+import { callerHash } from './circuit-trace/check-seal';
 import { verifyCircuit } from './circuit-trace/verify';
-import { bumpWorkerUsage, type AiWorker } from '@mantle/db';
+import { bumpWorkerUsage, currentActor, type AiWorker } from '@mantle/db';
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { mediaDwgCrop, readFileById } from '@mantle/files';
 import { extractImages, multiImageProvider, type ProviderCredential } from '@mantle/voice';
 import { CS } from './client-sourced-rule';
 import { traceCircuit, type RegisterInput, type SheetInput } from './circuit-trace/walk';
+import { CIRCUIT_DRAWING_STEPS, VERIFY_ONCE } from './circuit-trace/workflow';
 
 /** The register's size, held both in the schema and here (a schema in
  *  warn mode lets more through): lines and sheets read, and the longest
@@ -144,13 +146,14 @@ export async function readCircuitSheets(
 function checksSummary(applied: AppliedCheck[]) {
   const n = (v: string) => applied.filter((c) => c.answer === v).length;
   return {
-    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE, still not certain), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess). Each is the latest sealed answer in the drawing table's Checks tab: a table editor who deletes a newer row brings the older answer back.`,
+    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE: a help, not a guarantee), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess). Each is the latest sealed answer in the drawing table's Checks tab: a table editor who deletes a newer row brings the older answer back.`,
     items: applied.map((c) => ({
       sheet: c.sheet,
       kind: c.kind,
       ...(c.node !== null ? { node: c.node } : {}),
       guess: c.guess,
       trust: c.trust,
+      ...(c.alt ? { image_says: c.alt } : {}),
       reason: c.reason,
       model: c.model,
       checked_at: c.checkedAt,
@@ -179,15 +182,17 @@ export async function circuitTraceHandler(
     const applied: AppliedCheck[] = [];
     const checkLimits: string[] = [];
     const result = traceCircuit(circuit, sheets, register, {
-      checks: (walked, links) => appliedChecks(walked, links, sheets, applied, checkLimits),
+      checks: (walked, links) =>
+        appliedChecks(walked, links, sheets, applied, checkLimits, register),
     });
     result.limits.push(...cut, ...read.limits, ...checkLimits);
     const { estimateMeasurer, render, validate } = await import('@mantle/diagram-templates');
-    const checked = validate('pid', result.pid);
+    const pid = result.pid;
+    const checked = validate('pid', pid);
     // The data check, then the layout of every page with the estimate
     // measurer: a page that passes the check but cannot be laid out is an
     // error here, named by its page, not a broken page on the saved canvas.
-    const drawn = checked.ok ? render('pid', result.pid, estimateMeasurer) : null;
+    const drawn = checked.ok ? render('pid', pid, estimateMeasurer) : null;
     const errors = !checked.ok
       ? checked.errors
       : drawn && !drawn.ok
@@ -203,7 +208,7 @@ export async function circuitTraceHandler(
         circuit: result.circuit,
         sheets: result.sheets,
         links: result.links,
-        pid: result.pid,
+        pid,
         pid_check: {
           ok: errors.length === 0,
           ...(errors.length ? { errors } : {}),
@@ -219,9 +224,13 @@ export async function circuitTraceHandler(
             }
           : {
               next:
-                'pages' in result.pid
-                  ? `Save it as ONE canvas: present_create with template "pid" and the pid object, unchanged, as data (a drawing set: page 1 the overview, then a page per sheet named after it, linked; pid_check must be ok first). diagram_render shows page 1; present_render with slide N shows page N; present_export writes every page stacked, links printed as page references. Never drop or relabel a GUESS mark.`
-                  : `Save it as a canvas: present_create with template "pid" and the pid object, unchanged, as data (one drawing; pid_check must be ok first); present_export writes it for a page. Never drop or relabel a GUESS mark.`,
+                (result.guesses.length && !applied.length
+                  ? `The guesses are not checked by image yet: circuit_verify on circuit ${JSON.stringify(circuit)} checks them (spends the owner's vision key; dry_run lists the questions for free), then call circuit_trace again and save THAT pid. ${VERIFY_ONCE} `
+                  : '') +
+                ('pages' in pid
+                  ? `Save it as ONE canvas: present_create with template "pid" and the pid object, unchanged, as data (a drawing set: page 1 the overview, then a page per sheet named after it, linked; pid_check must be ok first). diagram_render shows page 1; present_render with slide N shows page N; present_export writes every page stacked, links printed as page references. Never drop or reword its GUESS, CHECKED BY IMAGE, IMAGE: NO or FROM IMAGE words.`
+                  : `Save it as a canvas: present_create with template "pid" and the pid object, unchanged, as data (one drawing; pid_check must be ok first); present_export writes it for a page. Never drop or reword its GUESS, CHECKED BY IMAGE, IMAGE: NO or FROM IMAGE words.`),
+              workflow: CIRCUIT_DRAWING_STEPS,
             }),
       },
     };
@@ -302,7 +311,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); inferred joins and unconfirmed equipment in `guesses`, marked GUESS on the drawing; `pid`, the drawing (a linked set past one page; past 40 pages the rest is counted in `limits`) to save as one canvas with `present_create`; and, with `register`, every difference against it. Reads only. For one drawing's raw tabs use `table_sql` instead.",
+    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `table_sql`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -369,6 +378,9 @@ export async function circuitVerifyHandler(
     }
     max = Math.min(Math.floor(n), VERIFY_MAX.questions);
   }
+  // Who calls: the Checks rows' By column, which the guard against a second
+  // call reads (verify.ts verifyAgainRefusal).
+  const by = callerOf();
   // The resolved worker and its key, for the asks of this call only.
   let route: { worker: AiWorker; credential: ProviderCredential } | null = null;
   try {
@@ -381,6 +393,7 @@ export async function circuitVerifyHandler(
         maxQuestions: max,
         dryRun: verifyFlag(input.dry_run),
         recheck: verifyFlag(input.recheck),
+        by,
       },
       {
         readSheets: readCircuitSheets,
@@ -442,7 +455,9 @@ export async function circuitVerifyHandler(
           return r;
         },
         storable: storeRefusal,
-        store: storeChecks,
+        claim: claimVerifyRun,
+        store: (owner, sheet, c, answers, overview, checkedAt) =>
+          storeChecks(owner, sheet, c, answers, overview, checkedAt, by),
         now: () => new Date(),
       },
     );
@@ -451,6 +466,31 @@ export async function circuitVerifyHandler(
   } catch (err) {
     return { ok: false, error: `circuit_verify failed: ${errorMessage(err)}` };
   }
+}
+
+/** Who runs a circuit_verify call, as its Checks rows and its claim
+ *  record it: the kind of caller (login, assistant, system, peer, owner)
+ *  and a keyed hash of its id (check-seal.ts callerHash, so the table
+ *  holds no login or agent id and no one without the key can tell whose
+ *  it is), or the kind alone when it has no id or the brain no master
+ *  key. Never empty, so rows filed before the By column (empty) are
+ *  nobody's. */
+export function callerOf(): string {
+  const a = currentActor();
+  const [kind, id] = !a
+    ? ['owner', '']
+    : a.kind === 'login'
+      ? ['login', a.loginId]
+      : a.kind === 'assistant'
+        ? ['assistant', a.agentId ?? 'none']
+        : a.kind === 'system'
+          ? ['system', a.reason]
+          : a.kind === 'peer'
+            ? ['peer', a.peerId ?? 'none']
+            : [a.kind, ''];
+  if (!id) return kind;
+  const hash = callerHash(kind, id);
+  return hash ? `${kind}:${hash}` : kind;
 }
 
 /** Questions asked when the call does not say. */
@@ -476,8 +516,7 @@ const circuit_verify: BuiltinToolDef = {
     clientSourced: CS.always("spends the owner's vision key and writes check rows"),
   },
   name: 'Check a traced circuit with an image model',
-  description:
-    "Check the guesses `circuit_trace` made on one circuit with a vision model: each inferred join, end only near equipment, guessed sheet link and valve type read from a block name becomes a yes/no question on a close-up crop of the drawing, the trace drawn over it in colour. Returns per-guess answers (yes, no or unsure, a reason, the model). **Spends the owner's vision key**: call only when asked to check a trace; `dry_run` lists the questions for free. Stores each answer with its crops in the Checks tab of the drawing's table; `circuit_trace` then marks a confirmed guess CHECKED BY IMAGE, never certain. To trace without checking use `circuit_trace`.",
+  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing (a help, not a guarantee). **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
   inputSchema: {
     type: 'object',
     properties: {

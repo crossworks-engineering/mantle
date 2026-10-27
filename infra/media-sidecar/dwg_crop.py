@@ -20,9 +20,10 @@ Planning is pure (no ezdxf, no matplotlib) so it is tested on its own:
   - One small overview of the sheet, with every crop's window drawn on it.
 
 Rendering draws the model space once with ezdxf, adds the trace overlay in
-fixed colours (main red, branch blue, deadleg orange) and green rings on the
-asked spots, and saves each window at its own size. Bounded: at most
-MAX_CROPS images per call and a wall-clock deadline; what is cut is said in
+fixed, solid colours (main red, branch blue, deadleg orange: the words the
+prompt uses) UNDER the drawing's own linework, and green rings on the asked
+spots, and saves each window at its own size. Bounded: at most MAX_CROPS
+images per call and a wall-clock deadline; what is cut is said in
 `capped`, never dropped silently.
 """
 
@@ -40,8 +41,18 @@ MAX_ITEMS = 40
 MAX_PATH_TILES = 6
 MAX_PATH_POINTS = 400
 MAX_OVERLAY_SEGS = 20000
-# Fixed overlay colours; the app names them in its questions.
+# Fixed overlay colours; the app names them in its questions ("red is the
+# main line, blue a branch, orange a deadleg": check.ts COLOR_NOTE), so they
+# are drawn SOLID: a translucent red over the white page read as pink
+# (phase 5's first live run), and a model then sees a colour no prompt names.
 COLORS = {"main": "#E00000", "branch": "#0050FF", "deadleg": "#FF8C00"}
+OVERLAY_ALPHA = 1.0
+# The overlay is drawn UNDER the drawing (ezdxf's matplotlib backend gives
+# each entity a zorder from 0 up): a solid band on top would paint over the
+# valve, reducer and break symbols on the traced pipe, the very symbols a
+# question asks the model to read. Below, the band shows as solid colour
+# on both sides of the black linework, and every symbol stays black on it.
+OVERLAY_ZORDER = -1
 MARK_COLOR = "#00A000"
 # Pixels: overlay stroke and spot ring.
 OVERLAY_PX = 5.0
@@ -293,7 +304,8 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
             continue
         lc = LineCollection(
             [((s[0], s[1]), (s[2], s[3])) for s in g["segs"]],
-            colors=COLORS[g["color"]], alpha=0.55, zorder=50, capstyle="round",
+            colors=COLORS[g["color"]], alpha=OVERLAY_ALPHA, zorder=OVERLAY_ZORDER,
+            capstyle="round",
         )
         ax.add_collection(lc)
         overlay.append(lc)

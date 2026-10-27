@@ -3,7 +3,8 @@
  * the drawing it is about. No new database (owner, 2026-10-25): every DWG
  * import already has its own workbook (the auto-import table), and the
  * check adds a Checks tab to it, one row per answer: the key, the
- * question, the answer and its reason, the trust it gives, the model, the
+ * question, the answer (and, after a no, the alternative the image named)
+ * and its reason, the trust it gives, the model, the
  * date, the drawing's revision and file, the crops' file ids and the seal
  * (./check-seal.ts: only rows circuit_verify wrote are ever applied).
  *
@@ -29,15 +30,16 @@
  * with these rows in it: they publish with the user's commit, and their
  * crops are kept as the evidence (the result says the rows are pending).
  */
-import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
-import { db, nodes, tables, withHeads } from '@mantle/db';
+import { createHash, randomUUID } from 'node:crypto';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { advisoryXactLock, db, nodes, tables, withHeads } from '@mantle/db';
 import { applyTableOps, commitTable, discardTableDraft, tableWriteRefusal } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import {
   autoFiledFolderPath,
   callerMayEditFolder,
   deleteFileById,
+  DRAWING_CHECK_PROVENANCE,
   ensureAutoFiledFolder,
   ensureFilesRootBranch,
   FILES_ROOT_LABEL,
@@ -51,9 +53,17 @@ import {
 } from '@mantle/files/dwg';
 import type { TableOp } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
-import { CHECK_COLUMNS, CHECKS_TAB, TRUST, type CheckColumn } from './check';
+import {
+  ALT_MAX,
+  CHECK_COLUMNS,
+  CHECKS_TAB,
+  cropCellWords,
+  TRUST,
+  type CheckColumn,
+} from './check';
 import { sealOf } from './check-seal';
-import type { CheckAnswer, StoreResult } from './verify';
+import { circuitKey } from './check-keys';
+import type { CheckAnswer, StoreResult, VerifyClaim, VerifyRun } from './verify';
 import type { SheetInput } from './walk';
 
 /** Node data key: the table version a check commit made on an unedited
@@ -152,6 +162,9 @@ export async function storeChecks(
   answers: CheckAnswer[],
   overview: Buffer | null,
   checkedAt: string,
+  /** Who runs the call (the By column, builtins-circuits.ts callerOf: a
+   *  kind and a keyed hash, never a raw id; sealed with the row). */
+  by = '',
 ): Promise<StoreResult> {
   const before = await tableState(sheet.tableId);
   if (!before) return { error: 'the table is gone' };
@@ -164,7 +177,7 @@ export async function storeChecks(
   const when = stamp(checkedAt);
   const base = {
     indexing: 'metadata',
-    provenance: 'drawing-check',
+    provenance: DRAWING_CHECK_PROVENANCE,
     sourceFileId: sheet.sourceFileId,
     sourceTableId: sheet.tableId,
     revision: sheet.revision ?? null,
@@ -199,6 +212,9 @@ export async function storeChecks(
     made.push(id);
     return id;
   };
+  /** Per question, its crops' cell words: each file id with the sha256 of
+   *  the bytes stored (sealed with the row: a crop file replaced later is
+   *  never embedded as this answer's evidence, present-crops.ts). */
   const cropIds = new Map<string, string[]>();
   let overviewId: string | null = null;
   try {
@@ -213,14 +229,13 @@ export async function storeChecks(
     for (const a of answers) {
       const ids: string[] = [];
       for (const c of a.crops) {
-        ids.push(
-          await save(
-            `${fileSafe(circuit)}-${when}-${a.q.id}-${c.part + 1}.png`,
-            c.png,
-            `Image check ${circuit}: ${sheet.title}, ${a.q.id} (${a.q.kind}) crop ${c.part + 1} of ${c.of}`,
-            { checkKey: a.q.key, checkKind: a.q.kind, window: c.window, textPx: c.textPx },
-          ),
+        const id = await save(
+          `${fileSafe(circuit)}-${when}-${a.q.id}-${c.part + 1}.png`,
+          c.png,
+          `Image check ${circuit}: ${sheet.title}, ${a.q.id} (${a.q.kind}) crop ${c.part + 1} of ${c.of}`,
+          { checkKey: a.q.key, checkKind: a.q.kind, window: c.window, textPx: c.textPx },
         );
+        ids.push(cropCellWords(id, createHash('sha256').update(c.png).digest('hex')));
       }
       cropIds.set(a.q.id, ids);
     }
@@ -261,6 +276,9 @@ export async function storeChecks(
   for (const a of answers) {
     const ids = cropIds.get(a.q.id) ?? [];
     const crops = [...(overviewId ? [`overview ${overviewId}`] : []), ...ids].join(' ');
+    // Every listed alternative fits ALT_MAX (check.ts altsOf); capped here
+    // too, the cell and its seal alike, so no stored one is ever longer.
+    const alt = (a.alt ?? '').slice(0, ALT_MAX);
     const cells: Record<CheckColumn, string | number | null> = {
       Key: a.q.key,
       Kind: a.q.kind,
@@ -270,6 +288,7 @@ export async function storeChecks(
       Guess: a.q.guess,
       Question: a.q.question,
       Answer: a.verdict,
+      Alternative: alt,
       Reason: a.reason,
       Trust: TRUST[a.verdict],
       Model: a.model,
@@ -288,7 +307,10 @@ export async function storeChecks(
         revision,
         checkedAt,
         crops,
+        alt,
+        by,
       }),
+      By: by,
     };
     ops.push({
       op: 'row_add',
@@ -363,4 +385,94 @@ export async function storeChecks(
     }
   }
   return { stored: answers.length };
+}
+
+/** Node data key: the circuit_verify calls claimed on a drawing's table in
+ *  the last hour (verify.ts VerifyDeps.claim). Bookkeeping of the server,
+ *  no table op writes it. */
+export const VERIFY_RUNS_KEY = 'dwgVerifyRuns';
+/** Most claims one table keeps per circuit (circuitKey), each pruned to
+ *  the last hour: an hour's worth on one circuit is far fewer (the guard
+ *  lets VERIFY_GUARD.perHour rechecks through), and calls on one circuit
+ *  never push another circuit's claims out. */
+const RUNS_PER_CIRCUIT = 16;
+const HOUR = 60 * 60_000;
+
+/** The claims a node's data holds, read loosely. */
+function runsOf(tableId: string, v: unknown): VerifyRun[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r: unknown) => {
+    if (!r || typeof r !== 'object') return [];
+    const { circuit, by, at, revision } = r as Record<string, unknown>;
+    return typeof circuit === 'string' && typeof at === 'string'
+      ? [
+          {
+            tableId,
+            circuit,
+            at,
+            by: typeof by === 'string' ? by : '',
+            revision: typeof revision === 'string' ? revision : '',
+          },
+        ]
+      : [];
+  });
+}
+
+/**
+ * circuit_verify's claim (verify.ts VerifyDeps.claim): in one transaction,
+ * the heads of the tables it asks about locked and then a lock on the
+ * owner's circuit (so two calls on one circuit take turns, whatever sheets
+ * each asks about), the claims on every sheet of the circuit go to
+ * `refusal`; when it says nothing, this call is recorded on each table it
+ * asks about (claims older than an hour dropped) and null comes back.
+ */
+export async function claimVerifyRun(
+  ownerId: string,
+  claim: VerifyClaim,
+  refusal: (runs: readonly VerifyRun[]) => string | null,
+): Promise<string | null> {
+  const write = [...new Set(claim.sheets.map((s) => s.tableId))];
+  const read = [...new Set([...claim.readFrom, ...write])];
+  return withHeads(write, 'update', async (tx) => {
+    // One lock per circuit however its name is written (circuitKey).
+    const circuit = circuitKey(claim.circuit);
+    await advisoryXactLock(tx, `circuit-verify:${ownerId}:${circuit}`, 'hashtextextended');
+    const rows = await tx
+      .select({ id: nodes.id, runs: sql<unknown>`${nodes.data}->${VERIFY_RUNS_KEY}` })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, read)));
+    const runs = rows.flatMap((r) => runsOf(r.id, r.runs));
+    const why = refusal(runs);
+    if (why) return why;
+    const since = Date.parse(claim.at) - HOUR;
+    for (const s of claim.sheets) {
+      const kept = runs
+        .filter((r) => r.tableId === s.tableId && Date.parse(r.at) >= since)
+        .map(({ tableId: _t, ...r }) => r);
+      const all = [
+        ...kept,
+        { circuit: claim.circuit, by: claim.by, at: claim.at, revision: s.revision },
+      ];
+      // The newest RUNS_PER_CIRCUIT of each circuit, in their order.
+      const left = new Map<string, number>();
+      const next = all
+        .reverse()
+        .filter((r) => {
+          const k = circuitKey(r.circuit);
+          const n = left.get(k) ?? RUNS_PER_CIRCUIT;
+          left.set(k, n - 1);
+          return n > 0;
+        })
+        .reverse();
+      await tx
+        .update(nodes)
+        .set({
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify({
+            [VERIFY_RUNS_KEY]: next,
+          })}::jsonb`,
+        })
+        .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, s.tableId)));
+    }
+    return null;
+  });
 }

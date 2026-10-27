@@ -363,7 +363,9 @@ describe('P11: the branches of a process circuit are process lines', () => {
     const out = render('pid', r.pid, estimateMeasurer);
     expect(out.ok).toBe(true);
     const svg = out.ok ? out.svg : '';
-    expect(svg).toMatch(/Process branch or deadleg/i);
+    // The trace draws in the colour set (style 2): a deadleg has its own
+    // legend entry, a branch the circuit's own name.
+    expect(svg).toMatch(/>Deadleg</i);
     expect(svg).toMatch(/Main process line/i);
     expect(svg).not.toMatch(/Utility line/i);
   });

@@ -15,6 +15,7 @@
 
 import { buildPid, clip, type ChainRole, type PidChecks } from './pid';
 import type { StoredCheck } from './check';
+import { circuitKey } from './check-keys';
 
 /* ------------------------------------------------------------------ input */
 
@@ -356,7 +357,7 @@ export function parseCircuitLayer(layer: string): {
   };
 }
 
-const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+const same = (a: string, b: string) => circuitKey(a) === circuitKey(b);
 
 /** The layers of circuit `c` among `layers`, by role; injection points of
  *  `c` apart (they are circuits of their own). */
