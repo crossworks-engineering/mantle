@@ -7,13 +7,17 @@ import { isThumbable, thumbnailFor, deleteThumbnailsFor, thumbsRoot } from './th
 // The render runs in the parser (POST /image/thumbnail); here its job
 // function stands in for the exchange, a refused image answering null as
 // the parser's `failed` does.
+// Each render records whether it ran as interactive (a person waiting).
+const scopes = vi.hoisted(() => [] as Array<boolean | undefined>);
 vi.mock('./parser-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./parser-client')>();
   const { thumbnailJpeg } = await import('./image-read');
   return {
     ...actual,
-    parserThumbnail: (bytes: Buffer, mimeType: string, maxDim: number) =>
-      thumbnailJpeg(bytes, mimeType === 'image/heic', maxDim).catch(() => null),
+    parserThumbnail: (bytes: Buffer, mimeType: string, maxDim: number) => {
+      scopes.push(actual.currentParserScope()?.interactive);
+      return thumbnailJpeg(bytes, mimeType === 'image/heic', maxDim).catch(() => null);
+    },
   };
 });
 
@@ -70,6 +74,9 @@ describe('thumbnailFor', () => {
       loadBytes: async () => png,
     });
     expect(out).not.toBeNull();
+    // A person is waiting: the parser exchange runs interactive (the head of
+    // the parser's queue, no wait behind background extracts).
+    expect(scopes.at(-1)).toBe(true);
     // JPEG magic — the derivative is a real encode, not the input passed back.
     expect(out![0]).toBe(0xff);
     expect(out![1]).toBe(0xd8);

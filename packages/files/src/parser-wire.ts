@@ -9,7 +9,9 @@
  * bytes, and whose answer is JSON, except the byte routes (audio, images
  * converted for vision, thumbnails), which answer the bytes with the
  * metadata in headers. Every non-2xx answer is the envelope
- * `{ ok: false, error: { code, message } }`. Bearer auth (`PARSER_TOKEN`) on
+ * `{ ok: false, error: { code, message, final? } }`: `final` says the
+ * failure is the file's for good (a fixed cap: the body, a zip part, the
+ * cells, the pixels), so the client makes it terminal at once. Bearer auth (`PARSER_TOKEN`) on
  * everything but GET /healthz.
  */
 
@@ -66,6 +68,22 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
 /** The longest a request waits in the parser for a free job slot before it
  *  is answered `busy`. */
 export const PARSER_QUEUE_WAIT_MS = 30_000;
+
+/** Request header a person-facing caller sends (a chat attachment, a
+ *  thumbnail): the parser puts the request at the head of its queue and
+ *  answers `busy` after {@link PARSER_INTERACTIVE_WAIT_MS}, not the full
+ *  queue wait. Value: {@link PRIORITY_INTERACTIVE}. */
+export const PRIORITY_HEADER = 'x-parser-priority';
+export const PRIORITY_INTERACTIVE = 'interactive';
+
+/** The longest an interactive request waits for a slot before `busy`. */
+export const PARSER_INTERACTIVE_WAIT_MS = 10_000;
+
+/** How long the parser waits for a request's whole body, once its slot is
+ *  taken, and for its answer to be read: a slow transfer cannot hold the
+ *  slot past these. */
+export const PARSER_SPOOL_DEADLINE_MS = 60_000;
+export const PARSER_ANSWER_DEADLINE_MS = 60_000;
 
 /** Slack on top of the job and queue limits for the transfer itself. */
 export const PARSER_BACKSTOP_MS = 30_000;

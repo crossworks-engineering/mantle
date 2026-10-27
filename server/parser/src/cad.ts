@@ -1,7 +1,7 @@
 /**
  * The CAD tier and the audio extract, as parser jobs: each runs a Python
- * (cad/cad.py) or ffmpeg child in the job's own process group, so the job's
- * deadline kills them with it. Ported from the media sidecar's HTTP handlers
+ * (cad/cad.py) or ffmpeg child in the job's process group (./proc.ts
+ * `runChild`), so the server's kill of the job takes them with it. Ported from the media sidecar's HTTP handlers
  * (_op_dwf_render, _op_dwg_render, _op_dwg_crop, _op_extract_audio): the
  * same child modes, the same index files, the same reply shapes, so the
  * brain's readers (packages/files/src/parser-cad.ts) did not change.
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { env, envDynamic } from '@mantle/config';
 import type { DwfRender, DwfRenderFn } from '@mantle/files/readers/dwf';
 import { PARSER_ANSWER_MAX_BYTES, PARSER_PICTURES_BUDGET_BYTES } from '@mantle/files/parser-wire';
-import { childEnv, runGroup, type Ended } from './proc';
+import { childEnv, runChild, type Ended } from './proc';
 import { JobFailure } from './job-failure';
 
 /** Where cad.py, dwg_bones.py and dwg_crop.py sit. */
@@ -57,15 +57,16 @@ async function runCad(
   jobTimeoutMs: number,
   what: string,
 ): Promise<void> {
-  const ended = await runGroup(python(), [path.join(CAD_DIR, 'cad.py'), ...args], {
+  const ended = await runChild(python(), [path.join(CAD_DIR, 'cad.py'), ...args], {
     timeoutMs: childTimeout(jobTimeoutMs),
     cwd: workdir,
     // Its own environment, nothing of the parser's; its temp files in the
     // job's directory, which goes with the job.
     env: childEnv(workdir, {
       MPLBACKEND: 'Agg',
-      // matplotlib's font cache: the image's shared one when it names it
-      // (built once, not per job), else the job's own.
+      // matplotlib's config and font cache: the job's own (the job's
+      // environment puts it in the job's directory, ./proc.ts jobEnv),
+      // never one a later job would read.
       MPLCONFIGDIR: envDynamic('MPLCONFIGDIR') ?? path.join(workdir, '.mpl'),
       PYTHONDONTWRITEBYTECODE: '1',
     }),
@@ -280,7 +281,7 @@ const MEDIA_INPUT_GUARDS = [
 ];
 
 async function ffprobeDuration(input: string, workdir: string): Promise<number | null> {
-  const ended = await runGroup(
+  const ended = await runChild(
     'ffprobe',
     [
       '-hide_banner',
@@ -320,10 +321,11 @@ export async function extractAudio(
     throw new JobFailure(
       'too_large',
       `the recording is ${Math.round(duration)} s, over the ${maxDuration} s limit`,
+      { final: true },
     );
   }
   const mp3 = path.join(workdir, 'out.mp3');
-  const ended = await runGroup(
+  const ended = await runChild(
     'ffmpeg',
     [
       '-hide_banner',
@@ -356,6 +358,7 @@ export async function extractAudio(
     throw new JobFailure(
       'too_large',
       `the extracted audio is ${size} bytes, over the ${maxAudio}-byte limit`,
+      { final: true },
     );
   }
   await fs.rename(mp3, out);

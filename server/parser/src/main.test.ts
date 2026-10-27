@@ -103,6 +103,13 @@ describe('the parser server', () => {
   });
 
   it('answers busy at once when the only slot is taken, never a reset, and writes nothing', async () => {
+    // The answer of the test before may come back before its job has given
+    // the slot back: start from an idle parser.
+    for (let i = 0; i < 300; i++) {
+      const h = (await (await fetch(`${base}/healthz`)).json()) as { running?: number };
+      if (h.running === 0) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
     // The slot is taken before a body is read: hold it with a request whose
     // body arrives slowly.
     let release!: () => void;
@@ -124,12 +131,16 @@ describe('the parser server', () => {
       }),
       duplex: 'half',
     } as RequestInit);
-    // Wait until the slow request holds the slot (the parser says so).
-    for (let i = 0; i < 100; i++) {
+    // Wait until the slow request holds the slot (the parser says so); on
+    // a loaded machine that can take a while, and the test means nothing
+    // until it does.
+    let holding = false;
+    for (let i = 0; i < 300 && !holding; i++) {
       const h = (await (await fetch(`${base}/healthz`)).json()) as { running?: number };
-      if (h.running === 1) break;
-      await new Promise((r) => setTimeout(r, 100));
+      holding = h.running === 1;
+      if (!holding) await new Promise((r) => setTimeout(r, 100));
     }
+    expect(holding).toBe(true);
     try {
       const started = Date.now();
       // Interactive: the client says busy at once instead of waiting it out.

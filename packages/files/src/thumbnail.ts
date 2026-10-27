@@ -137,8 +137,13 @@ async function renderThumbnail(
     return null;
   }
   try {
-    const { parserThumbnail } = await import('./parser-client');
-    const jpeg = await parserThumbnail(original, isHeic(mimeType) ? 'image/heic' : mimeType, dim);
+    const { parserThumbnail, withParserScope } = await import('./parser-client');
+    // A person is waiting for the picture: the head of the parser's queue,
+    // and a busy parser is the answer (the type icon now, the picture on the
+    // next request), never a wait behind the background extracts.
+    const jpeg = await withParserScope({ interactive: true }, () =>
+      parserThumbnail(original, isHeic(mimeType) ? 'image/heic' : mimeType, dim),
+    );
     if (!jpeg) {
       await markFailure(failed);
       return null;

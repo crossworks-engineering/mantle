@@ -13,14 +13,19 @@
  *
  *  - PARSER_MAX_JOBS jobs at a time (default 1, so one job has the whole
  *    memory), up to PARSER_QUEUE_MAX waiting at most PARSER_QUEUE_WAIT_MS
- *    each, then `busy`. A request takes its slot BEFORE its body is read:
- *    a refused one leaves nothing on disk;
+ *    each, then `busy`; an interactive request (PRIORITY_HEADER) waits at
+ *    the head of the queue, at most PARSER_INTERACTIVE_WAIT_MS. A request
+ *    takes its slot BEFORE its body is read: a refused one leaves nothing
+ *    on disk;
  *  - a request-body cap (PARSER_MAX_UPLOAD_MB), enforced while the body
- *    streams to disk, never after it sat in memory;
+ *    streams to disk, never after it sat in memory; a deadline on the
+ *    body's arrival and on the answer's, so a slow transfer cannot hold
+ *    the slot;
  *  - each job in its own process (./job.ts) and process group, killed at
  *    the job's deadline (PARSER_JOB_TIMEOUT_MS); the kernel's OOM kill
- *    lands on the job process, and the server answers `crashed`; what a job
- *    left running is killed when it ends (./proc.ts `reapOrphans`);
+ *    lands on the job process, and the server answers `crashed`. Before
+ *    the slot is given back, what the job left running is killed
+ *    (./proc.ts `reapOrphans`) and what it left in /tmp is removed;
  *  - an answer cap (PARSER_ANSWER_MAX_BYTES), and the readers' own caps
  *    (zip parts, sheet cells, image pixels, pictures per answer).
  *
@@ -30,7 +35,7 @@
  * This process never parses a document. It holds no secret but its bearer
  * token, mounts no data, and reads nothing but the bodies it is sent.
  */
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -43,17 +48,22 @@ import {
   MAX_OPTS_BYTES,
   META_HEADER,
   OPTS_LENGTH_HEADER,
+  PARSER_ANSWER_DEADLINE_MS,
   PARSER_ANSWER_MAX_BYTES,
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_STATUS,
+  PARSER_INTERACTIVE_WAIT_MS,
   PARSER_JOB_TIMEOUT_MS,
   PARSER_QUEUE_WAIT_MS,
   PARSER_ROUTES,
+  PARSER_SPOOL_DEADLINE_MS,
+  PRIORITY_HEADER,
+  PRIORITY_INTERACTIVE,
   type ParserErrorCode,
   type ParserJob,
 } from '@mantle/files/parser-wire';
 import { JobFailure } from './job-failure';
-import { reapOrphans, runGroup } from './proc';
+import { cleanScratch, inParserContainer, jobEnv, reapOrphans, runGroup } from './proc';
 import { Slots } from './slots';
 import { probeVersions } from './versions';
 
@@ -75,10 +85,15 @@ const MAX_JOBS = Math.max(1, envNum('PARSER_MAX_JOBS'));
 const QUEUE_MAX = Math.max(0, envNum('PARSER_QUEUE_MAX'));
 const MAX_BODY_BYTES = Math.max(1, envNum('PARSER_MAX_UPLOAD_MB')) * 1024 * 1024;
 const WORKDIR = env('PARSER_WORKDIR') ?? path.join(os.tmpdir(), 'mantle-parser');
+/** This server's mark on every process its jobs start (./proc.ts
+ *  JOB_MARK_VAR): what the reaper looks for. */
+const MARK = randomUUID();
+/** The process groups of the jobs running now: the reaper leaves them be. */
+const runningGroups = new Set<number>();
 
 // ── slots ───────────────────────────────────────────────────────────────────
 
-const slots = new Slots(MAX_JOBS, QUEUE_MAX, PARSER_QUEUE_WAIT_MS);
+const slots = new Slots(MAX_JOBS, QUEUE_MAX, PARSER_QUEUE_WAIT_MS, PARSER_INTERACTIVE_WAIT_MS);
 
 // ── one request ─────────────────────────────────────────────────────────────
 
@@ -130,14 +145,52 @@ async function sendFailure(
   res: http.ServerResponse,
   code: ParserErrorCode,
   message: string,
+  final = false,
 ): Promise<void> {
-  if (res.headersSent) {
+  // Mid-answer, or the connection is gone (a deadline cut it): nothing to
+  // say it on.
+  if (res.headersSent || res.destroyed || !res.socket || res.socket.destroyed) {
     res.destroy();
     return;
   }
   await drainBody(req);
-  // Close: one request per connection after a refusal.
-  sendJson(res, PARSER_ERROR_STATUS[code], { ok: false, error: { code, message } }, true);
+  // Close: one request per connection after a refusal. `final`: the same
+  // bytes fail the same way every time (the client makes it terminal).
+  sendJson(
+    res,
+    PARSER_ERROR_STATUS[code],
+    { ok: false, error: { code, message, ...(final ? { final: true } : {}) } },
+    true,
+  );
+}
+
+/** `fn`, with the request cut (its socket destroyed) when it runs past
+ *  `ms`: a slow transfer gives the slot back. The cut is answered
+ *  `timeout`. */
+async function withTransferDeadline<T>(
+  req: http.IncomingMessage,
+  ms: number,
+  what: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    req.destroy();
+  }, ms);
+  const tooLate = () => new JobFailure('timeout', `${what} did not arrive within ${ms / 1000} s`);
+  try {
+    const out = await fn();
+    // A cut body may also end without an error: never run a job on part of
+    // a file.
+    if (late) throw tooLate();
+    return out;
+  } catch (err) {
+    if (late) throw tooLate();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Stream the body to the job's directory: the options, then the file,
@@ -152,6 +205,7 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
     throw new JobFailure(
       'too_large',
       `the file is past the ${MAX_BODY_BYTES / 1024 / 1024} MB the parser takes`,
+      { final: true },
     );
   }
   const head: Buffer[] = [];
@@ -189,6 +243,7 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
     throw new JobFailure(
       'too_large',
       `the file is past the ${MAX_BODY_BYTES / 1024 / 1024} MB the parser takes`,
+      { final: true },
     );
   }
   if (writeError) throw scratchFailure(writeError);
@@ -204,7 +259,8 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
 }
 
 /** A write to the scratch space failed. Full (ENOSPC): the file does not
- *  fit beside what the running jobs hold, a verdict on its size. */
+ *  fit beside what the running jobs hold. Not final: the space can be full
+ *  for other reasons, so the bytes get their one retry. */
 function scratchFailure(err: NodeJS.ErrnoException): JobFailure {
   if (err.code === 'ENOSPC') {
     return new JobFailure('too_large', "the file does not fit in the parser's scratch space");
@@ -212,24 +268,26 @@ function scratchFailure(err: NodeJS.ErrnoException): JobFailure {
   return new JobFailure('failed', `the parser could not write the file: ${err.message}`);
 }
 
-/** The job process's environment: the parser's own, less its bearer token
- *  (a job never talks to anything; a reader broken out of its document
- *  must not find the token). */
-function jobEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.PARSER_TOKEN;
-  return env;
-}
-
 type Outcome = 'ok' | ParserErrorCode;
 
 /** Run the job process and read how it ended. */
 async function runJobProcess(job: ParserJob, dir: string, abort: AbortSignal): Promise<Outcome> {
   const timeoutMs = PARSER_JOB_TIMEOUT_MS[job];
+  // The job's temp files, home and caches: in its own directory (./proc.ts
+  // jobEnv), removed with it.
+  const scratch = path.join(dir, 'tmp');
+  await fs.mkdir(scratch);
+  let pgid: number | undefined;
   const ended = await runGroup(process.execPath, [...process.execArgv, JOB_ENTRY, job, dir], {
     timeoutMs,
     abort,
-    env: jobEnv(),
+    env: jobEnv(scratch, MARK),
+    onSpawn: (pid) => {
+      pgid = pid;
+      runningGroups.add(pid);
+    },
+  }).finally(() => {
+    if (pgid !== undefined) runningGroups.delete(pgid);
   });
   if (ended.code === 0) return 'ok';
   if (ended.timedOut) {
@@ -302,6 +360,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   res.on('close', () => {
     if (!res.writableFinished) abort.abort();
   });
+  const interactive = req.headers[PRIORITY_HEADER] === PRIORITY_INTERACTIVE;
   let slot = false;
   let dir: string | null = null;
   let outcome: Outcome = 'failed';
@@ -310,44 +369,57 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     // The slot first: a request that cannot run soon is refused before a
     // byte of its body is read, and the scratch space only ever holds the
     // files of the jobs that run.
-    await slots.acquire();
+    await slots.acquire({ interactive });
     slot = true;
     dir = await fs.mkdtemp(path.join(WORKDIR, `${job}-`));
-    size = await spoolBody(req, dir);
+    const jobDir = dir;
+    size = await withTransferDeadline(req, PARSER_SPOOL_DEADLINE_MS, 'the file', () =>
+      spoolBody(req, jobDir),
+    );
     outcome = await runJobProcess(job, dir, abort.signal);
     if (outcome !== 'ok') {
       const e = JSON.parse(await fs.readFile(path.join(dir, 'error.json'), 'utf8')) as {
         message?: string;
+        final?: boolean;
       };
-      await sendFailure(req, res, outcome, e.message ?? outcome);
+      await sendFailure(req, res, outcome, e.message ?? outcome, e.final === true);
       return;
     }
     await sendAnswer(job, dir, res);
   } catch (err) {
     if (err instanceof JobFailure) {
       outcome = err.code;
-      await sendFailure(req, res, err.code, err.message);
+      await sendFailure(req, res, err.code, err.message, err.final);
     } else {
       outcome = 'failed';
       await sendFailure(req, res, 'failed', errorMessage(err));
     }
   } finally {
     // The job's files go before its slot does: the next job gets the whole
-    // scratch space. Then whatever the job left running.
+    // scratch space. Then whatever the job left running, and whatever it
+    // left in /tmp, before the slot is given back: the next job starts with
+    // neither.
     if (dir) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
     if (slot) {
+      const killed = await reapOrphans({ mark: MARK, keepGroups: runningGroups });
+      if (killed > 0)
+        process.stderr.write(`[parser] ${job}: killed ${killed} left-behind process(es)\n`);
+      // Only while no other job runs (one, by default): a running job's
+      // files are under WORKDIR, but a program may write to /tmp itself.
+      if (slots.running === 1 && (await scratchIsTmp())) await cleanScratch(os.tmpdir(), WORKDIR);
       slots.release();
-      if (slots.running === 0) {
-        const killed = await reapOrphans();
-        if (killed > 0)
-          process.stderr.write(`[parser] ${job}: killed ${killed} left-behind process(es)\n`);
-      }
     }
     // Log the job, never its content.
     process.stdout.write(
-      `[parser] ${job} ${outcome} ${size} B ${Date.now() - started} ms (running ${slots.running}, queued ${slots.queued})\n`,
+      `[parser] ${job}${interactive ? ' (interactive)' : ''} ${outcome} ${size} B ${Date.now() - started} ms (running ${slots.running}, queued ${slots.queued})\n`,
     );
   }
+}
+
+/** /tmp is the parser's own scratch tmpfs: inside its container, with the
+ *  job root directly in it. Never on a developer's machine. */
+async function scratchIsTmp(): Promise<boolean> {
+  return path.dirname(WORKDIR) === os.tmpdir() && (await inParserContainer());
 }
 
 const BYTE_JOBS: ReadonlySet<ParserJob> = new Set(['extractAudio', 'thumbnail', 'visionImage']);
@@ -362,6 +434,7 @@ async function sendAnswer(job: ParserJob, dir: string, res: http.ServerResponse)
     throw new JobFailure(
       'too_large',
       `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${PARSER_ANSWER_MAX_BYTES / 1024 / 1024} MB an answer may be`,
+      { final: true },
     );
   }
   const headers: Record<string, string> = {
@@ -373,13 +446,23 @@ async function sendAnswer(job: ParserJob, dir: string, res: http.ServerResponse)
     headers[META_HEADER] = encodeURIComponent(meta);
   }
   res.writeHead(200, headers);
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(file);
-    stream.on('error', reject);
-    res.on('finish', resolve);
-    res.on('close', resolve);
-    stream.pipe(res);
-  });
+  // A client that does not read its answer gives the slot back at the
+  // deadline: the connection is cut.
+  const cut = setTimeout(() => res.destroy(), PARSER_ANSWER_DEADLINE_MS);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(file);
+      stream.on('error', reject);
+      res.on('finish', resolve);
+      res.on('close', () => {
+        stream.destroy();
+        resolve();
+      });
+      stream.pipe(res);
+    });
+  } finally {
+    clearTimeout(cut);
+  }
 }
 
 // ── boot ────────────────────────────────────────────────────────────────────
@@ -401,7 +484,9 @@ async function main(): Promise<void> {
       (err: unknown) => void sendFailure(req, res, 'failed', errorMessage(err)),
     );
   });
-  // A request is the transfer of one file: no long idle sockets.
+  // A request is the transfer of one file: no long idle sockets. Node's
+  // whole-request timeout is off; the slot holder's own deadlines bound it
+  // (the body's arrival, the job, the answer).
   server.requestTimeout = 0;
   server.headersTimeout = 30_000;
   server.keepAliveTimeout = 5_000;
