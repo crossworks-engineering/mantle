@@ -23,6 +23,7 @@ import { PALETTE } from './runtime/style.ts';
 import { TEMPLATES, isTemplateName, type TemplateName } from './index.ts';
 import {
   CHECK_LIMITS,
+  FILE_ID,
   honestImageChecks,
   imageChecksStale,
   mapDrawings,
@@ -30,6 +31,7 @@ import {
   withImageCheckSummary,
   type SealCheck,
 } from './templates/pid/check.ts';
+import { pidLimitsProblem } from './templates/pid/limits.ts';
 
 /** `inline`: the runtime is inside the file (works anywhere, offline, from
  *  file://; about 110 KB). `import`: the file imports the runtime by name
@@ -129,9 +131,12 @@ function assetsBlock(assets: CanvasAssets | null | undefined): string {
   return `<script type="application/json" id="${ASSETS_ID}">${json}</script>`;
 }
 
-/** The import-mode runtime: the shipped runtime, by name, through the
- *  frame's import map. */
-const IMPORT_RUNTIME = `<script type="module">import { mount } from '${RUNTIME_SPECIFIER}';\nmount();</script>`;
+/** The import-mode runtime's text: the shipped runtime, by name, through
+ *  the frame's import map. The runtime trusts a drawing's marks only under
+ *  exactly this script (data-read.ts). */
+export const IMPORT_RUNTIME_TEXT = `import { mount } from '${RUNTIME_SPECIFIER}';\nmount();`;
+/** The import-mode runtime, as buildCanvas writes it. */
+const IMPORT_RUNTIME = `<script type="module">${IMPORT_RUNTIME_TEXT}</script>`;
 
 /** The canvas document, the one writer of its shape (buildCanvas, and a
  *  save's canonical rebuild, canonicalPidCanvas). `titleHtml` and
@@ -233,10 +238,7 @@ export function readCanvasData(html: string): Record<string, unknown> {
  *  kept in step with it. Everything else is left exactly as it was. */
 export function replaceCanvasData(html: string, data: Record<string, unknown>): string {
   if (!DATA_BLOCK.test(html)) throw new Error(`canvas: no data block to replace`);
-  let out = html.replace(
-    DATA_BLOCK,
-    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
-  );
+  let out = replaceDataBlock(html, data);
   if (typeof data.title === 'string')
     // A function replacer: a title with `$&` or `$'` is text, not a pattern.
     out = out.replace(
@@ -250,6 +252,16 @@ export function replaceCanvasData(html: string, data: Record<string, unknown>): 
     );
   }
   return out;
+}
+
+/** The canvas with its (first) data block written again from `data`
+ *  (scriptJson), nothing else touched: replaceCanvasData's write, and a
+ *  save's for a canvas that claims no template. */
+function replaceDataBlock(html: string, data: unknown): string {
+  return html.replace(
+    DATA_BLOCK,
+    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
+  );
 }
 
 /** HTML whitespace (the tokenizer's: tab, LF, FF, CR, space). */
@@ -539,6 +551,18 @@ export class CanvasShapeError extends Error {
   }
 }
 
+/** A canvas that claims the `pid` template whose data is past a size the
+ *  template holds a drawing to (pidLimitsProblem): a save refuses it
+ *  before any pass reads it. `problem` names the first, by its path. */
+export class CanvasLimitsError extends Error {
+  readonly problem: string;
+  constructor(problem: string) {
+    super(`canvas: the pid data is over a limit (${problem})`);
+    this.problem = problem;
+    this.name = 'CanvasLimitsError';
+  }
+}
+
 /** A regular expression source for `s`, literally. */
 const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -621,7 +645,10 @@ export function canonicalPidCanvas(html: string, data: Record<string, unknown>):
  * circuit_trace's seals (`honestImageChecks`: no trust word typed into a
  * label; a mark whose seal does not hold where it sits is unchecked, its
  * evidence stripped; without a sealed provenance every mark is) and its
- * counts recounted; one that holds anything else throws CanvasShapeError.
+ * counts recounted; one that holds anything else throws CanvasShapeError,
+ * and one whose data is past a size the template holds a drawing to
+ * (pidLimitsProblem, checked before any pass reads the data) throws
+ * CanvasLimitsError.
  * Any other canvas with a data block keeps everything but the block, which
  * is written again from its parsed JSON (scriptJson: no `&`, `<` or `>`,
  * so the stored text reads alike everywhere). Byte for byte unchanged
@@ -636,9 +663,12 @@ export function withHonestImageChecks(html: string, holds: SealCheck): string {
     if (claimsPidTemplate(html)) throw new CanvasShapeError();
     return html;
   }
-  if (!claimsPidTemplate(html)) return withData(html, data);
+  if (!claimsPidTemplate(html)) return replaceDataBlock(html, data);
   if (typeof data !== 'object' || data === null || Array.isArray(data))
     throw new CanvasShapeError();
+  // The sizes first: no normalizing pass runs on data past them.
+  const problem = pidLimitsProblem(data);
+  if (problem !== null) throw new CanvasLimitsError(problem);
   const honest = honestImageChecks(data as Record<string, unknown>, holds);
   const own = imageChecksStale(honest) ? withImageCheckSummary(honest) : honest;
   const out = canonicalPidCanvas(html, own);
@@ -646,16 +676,10 @@ export function withHonestImageChecks(html: string, holds: SealCheck): string {
   return out;
 }
 
-function withData(html: string, data: unknown): string {
-  const out = html.replace(
-    DATA_BLOCK,
-    (_, open: string, __: string, close: string) => `${open}\n${scriptJson(data)}\n${close}`,
-  );
-  return out;
-}
-
-/** Every assets block as this package writes it. */
-const ASSETS_BLOCK_SRC = `<script type="application/json" id="${ASSETS_ID}">([\\s\\S]*?)</script>`;
+/** Every assets block as this package writes it: as the data block, its
+ *  JSON never holds a `<` (scriptSafe), so the block ends at the first
+ *  `<` (and a scan is linear). */
+const ASSETS_BLOCK_SRC = `<script type="application/json" id="${ASSETS_ID}">([^<]*)</script>`;
 const ASSETS_BLOCKS = new RegExp(`${ASSETS_BLOCK_SRC}\\n?`, 'g');
 
 /** A crop data URL the view may show, or null: a base64 PNG, JPEG or WebP
@@ -664,9 +688,6 @@ const CROP_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 export function safeCropUrl(v: unknown): string | null {
   return typeof v === 'string' && v.length <= CROP_LIMITS.urlChars && CROP_URL.test(v) ? v : null;
 }
-
-/** A file id as the brain writes one (36 hex digits and dashes). */
-const FILE_ID = /^[0-9a-f-]{36}$/i;
 
 /**
  * An assets block's text, read: each crop keyed by its file id (lower

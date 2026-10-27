@@ -33,7 +33,7 @@
  */
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
 import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
-import { VALVE_TYPES } from '@mantle/diagram-templates';
+import { FILE_ID, VALVE_TYPES } from '@mantle/diagram-templates';
 import { ALT_WORDS, endKey, guessId, joinKey, linkKey, valveKey } from './check-keys';
 import { sealHolds, type SealedFields } from './check-seal';
 import {
@@ -954,16 +954,18 @@ export type AppliedCheck = {
 };
 
 /** The Crops cell (`overview <id> <id> ...`) as the overview's file id and
- *  the crops' file ids. */
+ *  the crops' file ids: only words that are file ids (FILE_ID, the one
+ *  pattern a mark's crops are held to), so a cell edited by hand never
+ *  puts other text in a mark. */
 export function cropIdsOf(cell: string): { overview?: string; crops: string[] } {
   const words = cell.split(/\s+/).filter(Boolean);
   let overview: string | undefined;
   const crops: string[] = [];
   for (let i = 0; i < words.length; i++) {
     if (words[i] === 'overview' && words[i + 1]) {
-      overview = words[i + 1];
+      if (FILE_ID.test(words[i + 1]!)) overview = words[i + 1];
       i += 1;
-    } else crops.push(words[i]!);
+    } else if (FILE_ID.test(words[i]!)) crops.push(words[i]!);
   }
   return { ...(overview ? { overview } : {}), crops };
 }

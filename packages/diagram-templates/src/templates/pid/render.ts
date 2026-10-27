@@ -296,6 +296,10 @@ export function stateColour(state: CheckState): string {
   return ROLE_COLOURS.guess;
 }
 
+/** The drawn `(GUESS)` form in a label (any case, any spacing), the one
+ *  word an unmarked label is coloured by. */
+const GUESS_WORD = /\(\s*GUESS\s*\)/i;
+
 /** The colour of a trust word the view draws (markSuffix, lineNoteSuffix),
  *  read from the words themselves, so the colour never says other than
  *  the words: any IMAGE: NO (a corrected mark that names no alternative
@@ -327,24 +331,27 @@ export type DrawnMarkWords = {
 
 /**
  * The trust words, drawn from the marks in both styles (check.ts
- * MARK_WORDS): any typed into a label are stripped first, as every save
- * strips them (withoutMarkWords), then a marked connector's text takes its
- * mark's word (markSuffix) and a line with marks its note's (lineNoteSuffix;
- * the word alone when it has no note). `words` says which closing words of
- * those labels the view drew, so they are drawn in a style of their own
- * (bold, in their colour: markedTextEl), never as the label: a look-alike
- * typed into a label stays in the label's style. A drawing with no mark
- * comes back as it is, so it draws byte for byte as before.
+ * MARK_WORDS): any typed into a label are stripped first, on every
+ * drawing, marked or not, as every save strips them (withoutMarkWords: a
+ * typed claim on an element with no mark draws as `(GUESS)`, so a canvas
+ * saved before the marks, whose labels hold the words, is honest on view
+ * without a save), then a marked connector's text takes its mark's word
+ * (markSuffix) and a line with marks its note's (lineNoteSuffix; the word
+ * alone when it has no note). `words` says which closing words of those
+ * labels the view drew, so they are drawn in a style of their own (bold,
+ * in their colour: markedTextEl), never as the label: a look-alike typed
+ * into a label stays in the label's style. A drawing with no mark and no
+ * typed claim comes back as it is, so it draws byte for byte as before.
  */
 export function withMarkWordsDrawn(data: PidData): { data: PidData; words: DrawnMarkWords } {
   const offWords = new Map<string, string>();
   const lineWords = new Map<string, string>();
   const words = { offpage: offWords, lines: lineWords };
-  const marked =
-    data.offpage.some((o) => o.check) ||
-    data.lines.some((l) => l.checks?.length || l.inline?.some((it) => it.check));
-  if (!marked) return { data, words };
   const d = withoutMarkWords(data);
+  const marked =
+    d.offpage.some((o) => o.check) ||
+    d.lines.some((l) => l.checks?.length || l.inline?.some((it) => it.check));
+  if (!marked) return { data: d, words };
   return {
     data: {
       ...d,
@@ -373,16 +380,13 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
    *  every older drawing, drawn byte for byte as before. */
   const v2 = data.style >= 2;
   const C = ROLE_COLOURS;
-  /** The colour of the words a drawing traced before the marks wrote into
-   *  an unmarked label (style 2). A marked element's words are drawn from
-   *  its mark, in their own colour (wordColour). */
-  const noteColour = (text: string): string => {
-    if (/FROM IMAGE/.test(text)) return C.corrected;
-    if (/IMAGE: NO|IMAGE SAYS NO/.test(text)) return C.contradicted;
-    if (/CHECKED BY IMAGE/.test(text)) return C.checked;
-    if (/GUESS/.test(text)) return C.guess;
-    return PALETTE.ink;
-  };
+  /** The colour of an unmarked label (style 2): the guess colour when it
+   *  says `(GUESS)` (a drawing traced before the marks, or a typed claim
+   *  withoutMarkWords turned into one), else null (the label's own colour).
+   *  The trust colours (checked, image says no, from image) come only from
+   *  a mark's words (wordColour), never from a label's text. */
+  const unmarkedColour = (text: string | undefined): string | null =>
+    text && GUESS_WORD.test(text) ? C.guess : null;
 
   // Plain lines run between two nodes (equipment, connectors). A branch has
   // a tee, an instrument or a free end at one end: it is routed after the
@@ -1458,7 +1462,7 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
           box.y + 9,
           l.note,
           word,
-          { fill: v2 && !word ? noteColour(l.note) : PALETTE.ink },
+          { fill: (v2 && !word && unmarkedColour(l.note)) || PALETTE.ink },
           { fill: word ? wordColour(word) : undefined },
         );
         return l.checks?.length ? el('g', { 'data-check': `line:${l.id}` }, t) : t;
@@ -2239,11 +2243,7 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
           'text-anchor': right ? 'start' : 'end',
           fill: !v2
             ? PALETTE.muted
-            : !word && /GUESS|IMAGE/.test(o.text)
-              ? noteColour(o.text)
-              : o.link
-                ? C.link
-                : PALETTE.muted,
+            : (!word && unmarkedColour(o.text)) || (o.link ? C.link : PALETTE.muted),
         },
         { fill: word ? wordColour(word) : undefined },
       );
@@ -2441,15 +2441,11 @@ export function renderPid(given: PidData, m: Measurer, opts: RenderPidOptions = 
       const marks = [
         ...data.lines.map((l) => {
           const word = words.lines.get(l.id);
-          return word ? wordColour(word) : l.note ? noteColour(l.note) : '';
+          return word ? wordColour(word) : (unmarkedColour(l.note) ?? '');
         }),
         ...data.offpage.map((o) => {
           const word = words.offpage.get(o.id);
-          return word
-            ? wordColour(word)
-            : o.text && /GUESS|IMAGE/.test(o.text)
-              ? noteColour(o.text)
-              : '';
+          return word ? wordColour(word) : (unmarkedColour(o.text) ?? '');
         }),
         ...evidenceColours,
       ];

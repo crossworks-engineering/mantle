@@ -51,7 +51,7 @@ function row(
   q: CheckQuestion,
   answer: string,
   alt = '',
-  crops = 'overview ov1 c1 c2',
+  crops = 'overview 00000000-0000-4000-8000-0000000000a1 00000000-0000-4000-8000-00000000c001 00000000-0000-4000-8000-00000000c002',
 ): StoredCheck {
   const r: StoredCheck = {
     key: q.key,
@@ -178,8 +178,8 @@ describe('the trace corrects from the image', () => {
       answer: 'no',
       alt: 'orifice',
       model: 'test/vision-model',
-      crops: ['c1', 'c2'],
-      overview: 'ov1',
+      crops: ['00000000-0000-4000-8000-00000000c001', '00000000-0000-4000-8000-00000000c002'],
+      overview: '00000000-0000-4000-8000-0000000000a1',
     });
     expect((item.check as { guess: string }).guess).toMatch(/gate valve/);
     expect(page.lines.map((l) => l.note)).toContain('VALVE TYPE (FROM IMAGE)');

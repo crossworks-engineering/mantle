@@ -24,6 +24,7 @@ export {
   CHECK_STATES,
   CHECK_GUESS_KINDS,
   CHECK_LIMITS,
+  FILE_ID,
   honestImageChecks,
   imageCheckSummary,
   imageChecksStale,
@@ -48,4 +49,5 @@ export {
   type CheckState,
   type CheckGuessKind,
 } from './check.ts';
+export { pidLimitsProblem, RAW_LIMITS } from './limits.ts';
 export { DEFAULT_LINE_PATTERN, DEFAULT_SERVICE_COLOURS, type SiteProfile } from './profile.ts';

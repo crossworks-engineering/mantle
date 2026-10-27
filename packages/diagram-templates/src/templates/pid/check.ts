@@ -56,11 +56,13 @@
  * mark a typed claim leaves GUESS, which claims nothing), so a word on the
  * drawing that claims a check is always the mark's. A mark's seal covers
  * the element it sits on (`markSite`: the page, its ids, ends, link and
- * label, and on a line the ordered keys of every mark the line carries;
- * a connector or line whose id another shares, or that has none, vouches
- * for no mark), so a sealed mark copied
- * onto another element, kept under a changed label, or left on a line one
- * of whose other marks was dropped or swapped, is made unchecked. The
+ * label; on a connector every line that ends at it, so a line re-pointed
+ * to it or added there moves no check onto a pipe no image saw; on a line
+ * its own ends and the ordered keys of every mark it carries; a connector
+ * or line whose id another shares, or that has none, vouches for no mark),
+ * so a sealed mark copied onto another element, kept under a changed
+ * label, left on a line one of whose other marks was dropped or swapped,
+ * or left on a connector whose lines changed, is made unchecked. The
  * provenance's seal covers the drawing's title and sheet, so renaming a
  * traced drawing (or re-numbering its sheet) makes every mark unchecked
  * until it is traced again.
@@ -69,16 +71,29 @@
  * author-controlled: anyone with Write can draw any picture, fake "CHECKED
  * BY IMAGE" text in their own SVG or script included, and no attempt is
  * made to sanitise arbitrary HTML. The guarantees are: (a) the canonical
- * template path (the data block and the shipped runtime, exactly as
- * buildCanvas emits them, which every save of a canvas claiming the `pid`
- * template is held to) never shows an unsealed check or a trust word that
- * is not the mark's; (b) no agent or tool can mark a guess checked without
+ * template path (the data block and the shipped import runtime, exactly
+ * as buildCanvas emits them, which every save of a canvas claiming the
+ * `pid` template is held to, mounted on the live document: data-read.ts)
+ * never shows an unsealed check, a trust word that is not the mark's, or
+ * a trust colour that is not a mark's (an unmarked label is coloured by
+ * `(GUESS)` alone, render.ts); (b) no agent or tool can mark a guess checked without
  * a real image check (circuit_verify's sealed rows, circuit_trace's seals);
  * (c) the sealed Checks tab of the drawing's table is the record of proof.
  *
  * Removing a mark by hand also removes the GUESS word the view drew for
  * it, while the count still shows the guess unchecked (the provenance
- * lists it): the drawing says fewer words, never a stronger one.
+ * lists it): the drawing says fewer words, never a stronger one. Removing
+ * the provenance as well (and every mark) leaves a drawing that looks
+ * hand-drawn: no word, no count. It then claims no check either, so (a)
+ * holds; what it no longer says is that it was traced. Restoring an older
+ * revision of the canvas can bring back a sealed answer a later trace
+ * superseded (its seal still holds where it sits): the Checks tab, not the
+ * drawing, is the record of what the image said last.
+ *
+ * Every pass here reads raw data: a save and the runtime hold it to the
+ * template's sizes first (limits.ts pidLimitsProblem), and each pass is
+ * linear in the data (the word forms start at their bracket; a line's
+ * marks share one site).
  */
 import {
   checkKeys,
@@ -149,7 +164,7 @@ export const CHECK_LIMITS = {
   model: 120,
   checkedAt: 40,
   crops: 8,
-  fileId: 64,
+  fileId: 36,
   /** Most guess keys a provenance lists. */
   provenanceKeys: 4000,
 } as const;
@@ -170,7 +185,10 @@ const CHECK_KEYS = [
   'sig',
 ];
 const SUMMARY_KEYS = ['guesses', 'unchecked', 'checked', 'unsure', 'contradicted', 'corrected'];
-const FILE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** A file id as the brain writes one (36 hex digits and dashes): the one
+ *  pattern of a crop's or an overview's id, in a mark and in the canvas's
+ *  assets block (canvas.ts). */
+export const FILE_ID = /^[0-9a-f-]{36}$/i;
 /** A seal: an HMAC-SHA256, hex. */
 const SIG = /^[0-9a-f]{64}$/;
 /** A provenance id: random hex. */
@@ -319,6 +337,15 @@ export function checksSummaryOf(
     out[k] = n;
   }
   return out;
+}
+
+/** A list with each item passed through `f` (its index too), the same
+ *  list when nothing changed; a value that is not a list is left as it is.
+ *  The one list walker of this module (raw data is walked loosely). */
+function mapList(v: unknown, f: (x: unknown, i: number) => unknown): unknown {
+  if (!Array.isArray(v)) return v;
+  const out = v.map(f);
+  return out.some((x, i) => x !== v[i]) ? out : v;
 }
 
 /**
@@ -539,14 +566,31 @@ export function lineNoteSuffix(line: unknown): string {
 /** The bracketed forms the view draws after a label (`markSuffix`,
  *  `lineNoteSuffix`), in any case (a label font may draw in capitals) and
  *  any spacing (a drawing collapses it): only these are stripped, never
- *  the same words in prose ("redrawn from image scan" stays). */
+ *  the same words in prose ("redrawn from image scan" stays). Each starts
+ *  at its `(`, so a scan is linear in the label's length (a pattern that
+ *  started with white space would try every space of a long run again);
+ *  the white space before a form goes with it (`cutForms`). */
 const SP = '\\s+';
-const CLAIM_FORM = new RegExp(
-  `\\s*\\(\\s*(?:CHECKED${SP}BY${SP}IMAGE|FROM${SP}IMAGE)\\s*\\)`,
-  'gi',
-);
-const NO_FORM = /\s*\(\s*GUESS\s*[,;]\s*IMAGE\s*:\s*(?:\d+\s+)?NO\s*\)/gi;
-const GUESS_FORM = /\s*\(\s*GUESS\s*\)/gi;
+const CLAIM_FORM = new RegExp(`\\(\\s*(?:CHECKED${SP}BY${SP}IMAGE|FROM${SP}IMAGE)\\s*\\)`, 'gi');
+const NO_FORM = /\(\s*GUESS\s*[,;]\s*IMAGE\s*:\s*(?:\d+\s+)?NO\s*\)/gi;
+const GUESS_FORM = /\(\s*GUESS\s*\)/gi;
+
+/** `s` with every match of `form` (a global pattern) taken out, with the
+ *  white space right before each: what the same pattern led by `\s*`
+ *  would take, in one linear pass. */
+function cutForms(s: string, form: RegExp): string {
+  form.lastIndex = 0;
+  let out = '';
+  let last = 0;
+  for (let m = form.exec(s); m; m = form.exec(s)) {
+    let start = m.index;
+    while (start > last && /\s/.test(s[start - 1]!)) start -= 1;
+    out += s.slice(last, start);
+    last = m.index + m[0].length;
+  }
+  form.lastIndex = 0;
+  return last === 0 ? s : out + s.slice(last);
+}
 
 /** `s` with the forms `forms` match taken out, pass after pass until
  *  nothing changes (so a word hidden inside another, `(CHECKED BY (GUESS)
@@ -554,7 +598,7 @@ const GUESS_FORM = /\s*\(\s*GUESS\s*\)/gi;
 function stripForms(s: string, forms: readonly RegExp[]): string {
   let cur = s;
   for (let i = 0; i < 16; i += 1) {
-    const next = forms.reduce((t, f) => t.replace(f, ''), cur);
+    const next = forms.reduce((t, f) => cutForms(t, f), cur);
     if (next === cur) break;
     cur = next;
   }
@@ -628,15 +672,12 @@ export function withoutMarkWords<T>(data: T): T {
     const next = withoutWords(o[k] as string, true);
     return next === o[k] ? o : { ...o, [k]: next };
   };
-  const mapList = (v: unknown, f: (x: Obj) => Obj): unknown => {
-    if (!Array.isArray(v)) return v;
-    const out = v.map((x) => (isObj(x) ? f(x) : x));
-    return out.some((x, i) => x !== v[i]) ? out : v;
-  };
+  const objects = (v: unknown, f: (x: Obj) => Obj): unknown =>
+    mapList(v, (x) => (isObj(x) ? f(x) : x));
   return mapDrawings(claims, (d) => {
-    const offpage = mapList(d.offpage, (o) => (o.check !== undefined ? guessless(o, 'text') : o));
-    const lines = mapList(d.lines, (l) => {
-      const inline = mapList(l.inline, (it) =>
+    const offpage = objects(d.offpage, (o) => (o.check !== undefined ? guessless(o, 'text') : o));
+    const lines = objects(d.lines, (l) => {
+      const inline = objects(l.inline, (it) =>
         it.check !== undefined ? guessless(it, 'tag') : it,
       );
       const marked =
@@ -654,13 +695,16 @@ export function withoutMarkWords<T>(data: T): T {
 /**
  * Where a mark sits, as its seal covers it: the page of a set it is on
  * (null on one drawing); a connector's id, direction, sheet, text and page
- * link; a line's id, line number, ends and note, and the ordered keys of
- * every mark the line carries (its inferred joins' `checks`, then its
- * marked inline items'), so dropping, swapping or copying one of a line's
- * marks unseals the others; and for an inline item, the line's and the
- * item's place, type and tag. A sealed mark copied onto another element, or
- * left under a label changed since (the view draws the mark's word after
- * it), no longer holds. Raw values.
+ * link, and every line that ends at it (`ends`: each line's id, from and
+ * to, sorted), so a line re-pointed to a checked connector, or one added
+ * there, unseals its mark (the check said what continues at THAT end of
+ * THOSE lines); a line's id, line number, ends and note, and the ordered
+ * keys of every mark the line carries (its inferred joins' `checks`, then
+ * its marked inline items'), so dropping, swapping or copying one of a
+ * line's marks unseals the others; and for an inline item, the line's and
+ * the item's place, type and tag. A sealed mark copied onto another
+ * element, or left under a label changed since (the view draws the mark's
+ * word after it), no longer holds. Raw values.
  */
 export type MarkSite = readonly unknown[];
 const raw = (x: unknown) => (x === undefined ? null : x);
@@ -674,23 +718,65 @@ function lineMarkKeys(l: Obj): unknown[] {
       .map((it) => key((it as Obj).check)),
   ];
 }
+/** What a line's marks' sites share: read once per line (a line carries
+ *  at most LINE_CHECKS_MAX joins and PID_LIMITS.inline items). */
 function lineSite(l: Obj): unknown[] {
   return [raw(l.id), raw(l.number), raw(l.from), raw(l.to), raw(l.note), lineMarkKeys(l)];
 }
+/** The lines of one drawing's raw data that end at each connector id:
+ *  `[id, from, to]` of each, raw, sorted (one pass over the lines). */
+export function connectorEnds(d: Obj): Map<string, unknown[][]> {
+  const ends = new Map<string, unknown[][]>();
+  for (const l of Array.isArray(d.lines) ? d.lines : []) {
+    if (!isObj(l)) continue;
+    const at = new Set([l.from, l.to].filter((x): x is string => typeof x === 'string'));
+    for (const id of at) {
+      const list = ends.get(id) ?? [];
+      list.push([raw(l.id), raw(l.from), raw(l.to)]);
+      ends.set(id, list);
+    }
+  }
+  for (const list of ends.values()) {
+    const keyed = list.map((e) => [JSON.stringify(e), e] as const);
+    keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    list.splice(0, list.length, ...keyed.map((k) => k[1]));
+  }
+  return ends;
+}
 export function markSite(
-  where: { offpage: Obj } | { line: Obj } | { line: Obj; inline: Obj; index: number },
+  where:
+    | { offpage: Obj; ends: readonly unknown[] }
+    | { line: Obj }
+    | { line: Obj; inline: Obj; index: number },
   page: string | null = null,
 ): MarkSite {
   if ('offpage' in where) {
     const o = where.offpage;
-    return ['offpage', page, raw(o.id), raw(o.direction), raw(o.sheet), raw(o.text), raw(o.link)];
+    return [
+      'offpage',
+      page,
+      raw(o.id),
+      raw(o.direction),
+      raw(o.sheet),
+      raw(o.text),
+      raw(o.link),
+      where.ends,
+    ];
   }
-  if ('inline' in where) {
-    const it = where.inline;
-    return ['inline', page, ...lineSite(where.line), where.index, raw(it.type), raw(it.tag)];
-  }
-  return ['line', page, ...lineSite(where.line)];
+  if ('inline' in where) return inlineSite(lineSite(where.line), page, where.index, where.inline);
+  return joinSite(lineSite(where.line), page);
 }
+/** A line's join mark's site, from the line's shared part (lineSite). */
+const joinSite = (shared: unknown[], page: string | null): MarkSite => ['line', page, ...shared];
+/** An inline item's mark's site, from its line's shared part (lineSite). */
+const inlineSite = (shared: unknown[], page: string | null, index: number, it: Obj): MarkSite => [
+  'inline',
+  page,
+  ...shared,
+  index,
+  raw(it.type),
+  raw(it.tag),
+];
 
 /** What circuit_trace seals of one mark: every field the view shows, under
  *  the provenance it was drawn with (a mark cannot move to another trace's
@@ -698,7 +784,7 @@ export function markSite(
  *  element). Raw values, so a changed type breaks the seal too. */
 export function markSealBody(provenanceId: string, c: Obj, site?: MarkSite): string {
   return JSON.stringify([
-    'pid-check v3',
+    'pid-check v4',
     provenanceId,
     site ?? null,
     ...CHECK_KEYS.filter((k) => k !== 'sig').map((k) => c[k] ?? null),
@@ -723,32 +809,32 @@ export type SealCheck = (body: string, sig: string) => boolean;
 
 /** One drawing's raw data with each mark passed through `fn`, with where
  *  it sits (`markSite`, on `page` of a set; null for one drawing): its
- *  connectors', its lines' and their inline items'. The same object comes
- *  back when `fn` changed nothing (so an honest canvas stays byte for
- *  byte); raw data is walked loosely. */
+ *  connectors', its lines' and their inline items'. Linear in the data:
+ *  the connectors' ends are read in one pass, a line's shared site once
+ *  per line. The same object comes back when `fn` changed nothing (so an
+ *  honest canvas stays byte for byte); raw data is walked loosely. */
 export function mapImageChecks(
   d: Obj,
   fn: (mark: unknown, site: MarkSite) => unknown,
   page: string | null = null,
 ): Obj {
-  const mapList = (val: unknown, f: (x: unknown, i: number) => unknown): unknown => {
-    if (!Array.isArray(val)) return val;
-    const out = val.map(f);
-    return out.some((x, i) => x !== val[i]) ? out : val;
-  };
+  const ends = Array.isArray(d.offpage) ? connectorEnds(d) : null;
   const offpage = mapList(d.offpage, (o) => {
     if (!isObj(o) || o.check === undefined) return o;
-    const next = fn(o.check, markSite({ offpage: o }, page));
+    const at = typeof o.id === 'string' ? (ends?.get(o.id) ?? []) : [];
+    const next = fn(o.check, markSite({ offpage: o, ends: at }, page));
     return next === o.check ? o : { ...o, check: next };
   });
   const lines = mapList(d.lines, (l) => {
     if (!isObj(l)) return l;
-    // Every site on the line is read off the line as it came in: a mark's
-    // seal covers its siblings' keys as drawn, not as `fn` left them.
-    const checks = mapList(l.checks, (c) => fn(c, markSite({ line: l }, page)));
+    // Every site on the line is read off the line as it came in, once: a
+    // mark's seal covers its siblings' keys as drawn, not as `fn` left them.
+    const shared = lineSite(l);
+    const join = joinSite(shared, page);
+    const checks = mapList(l.checks, (c) => fn(c, join));
     const inline = mapList(l.inline, (it, index) => {
       if (!isObj(it) || it.check === undefined) return it;
-      const next = fn(it.check, markSite({ line: l, inline: it, index }, page));
+      const next = fn(it.check, inlineSite(shared, page, index, it));
       return next === it.check ? it : { ...it, check: next };
     });
     return checks === l.checks && inline === l.inline ? l : { ...l, checks, inline };

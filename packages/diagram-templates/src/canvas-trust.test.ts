@@ -86,10 +86,9 @@ const WORDS = [
 
 /** Mount a canvas in jsdom, its runtime's script left inert in its place. */
 async function mounted(html: string): Promise<{ api: DiagramApi; doc: Document }> {
-  const dom = new JSDOM(
-    html.replace(/<script type="module">[\s\S]*?<\/script>/, '<script type="module"></script>'),
-    { pretendToBeVisual: true },
-  );
+  // jsdom runs no script (no runScripts): the runtime's import stays as
+  // buildCanvas wrote it, which the runtime reads as the canonical layout.
+  const dom = new JSDOM(html, { pretendToBeVisual: true });
   const win = dom.window;
   (win.SVGElement.prototype as unknown as { getBBox: () => DOMRect }).getBBox = function (
     this: Element,
@@ -310,9 +309,11 @@ describe('a mark copied with its element holds on neither copy (LOW)', () => {
   it('the traced drawing holds; a line or a connector copied, or a line without its id, does not', () => {
     const d = traced();
     expect(honestImageChecks(d, holds)).toBe(d);
+    // A copied line is one more line ending at the connector too: its
+    // check covered the lines that end there (H3), so it goes as well.
     const twoLines = { ...d, lines: [d.lines[0], { ...d.lines[0] }] };
     expect(states(honestImageChecks(twoLines, holds))).toEqual([
-      'checked',
+      'unchecked',
       'unchecked',
       'unchecked',
     ]);
@@ -324,5 +325,68 @@ describe('a mark copied with its element holds on neither copy (LOW)', () => {
     ]);
     // Sealed with no id: the site names no element alone.
     expect(states(honestImageChecks(traced(null), holds))).toEqual(['checked', 'unchecked']);
+  });
+});
+
+describe('the runtime trusts marks only under its own import, on the live document (M2)', () => {
+  /** Mount `html` in the runtime's window: its own document (live), one
+   *  parsed from a string, or another window's document. */
+  async function mountOn(html: string, how: 'live' | 'parsed' | 'other frame'): Promise<string> {
+    const windowOf = () => {
+      const w = new JSDOM(html, { pretendToBeVisual: true }).window;
+      (w.SVGElement.prototype as unknown as { getBBox: () => DOMRect }).getBBox = function (
+        this: Element,
+      ) {
+        return { x: 0, y: 0, width: (this.textContent ?? '').length * 6, height: 10 } as DOMRect;
+      };
+      return w;
+    };
+    const win = windowOf();
+    const doc =
+      how === 'parsed'
+        ? new win.DOMParser().parseFromString(html, 'text/html')
+        : how === 'other frame'
+          ? windowOf().document
+          : win.document;
+    const g = globalThis as { window?: unknown };
+    const had = g.window;
+    g.window = win;
+    try {
+      const api = mount(doc);
+      await api.ready;
+      return doc.getElementById('diagram')!.innerHTML;
+    } finally {
+      g.window = had;
+    }
+  }
+
+  it('the import buildCanvas writes, on the live document: the marks as stored', async () => {
+    expect(worded(await mountOn(canvas(marked()), 'live'))).toEqual(WORDS);
+  });
+
+  it('a document parsed from a string, or another frame’s: every mark unchecked', async () => {
+    for (const how of ['parsed', 'other frame'] as const) {
+      const svg = await mountOn(canvas(marked()), how);
+      expect(worded(svg), how).not.toEqual(WORDS);
+      expect(svg, how).not.toContain('CHECKED BY IMAGE)');
+      expect(svg, how).not.toContain('FROM IMAGE)');
+    }
+  });
+
+  it('an inline runtime, or the import with anything changed: every mark unchecked', async () => {
+    const html = canvas(marked());
+    const inline = buildCanvas({ template: 'pid', data: marked(), runtime: 'mount()' });
+    const variants = [
+      inline,
+      html.replace('mount();</script>', 'mount(); </script>'),
+      html.replace('<script type="module">', '<script type="module" src="/x.js">'),
+      html.replace('<script type="module">', '<script type="module" async>'),
+    ];
+    for (const v of variants) {
+      expect(v).not.toBe(html);
+      const svg = await mountOn(v, 'live');
+      expect(svg).not.toContain('CHECKED BY IMAGE)');
+      expect(svg).not.toContain('FROM IMAGE)');
+    }
   });
 });

@@ -31,7 +31,7 @@ const mark = {
   state: 'checked',
   guess: 'on S2',
   answer: 'yes',
-  crops: ['crop1'],
+  crops: ['00000000-0000-4000-8000-00000000c001'],
 };
 
 /** A traced drawing's canvas, sealed under whichever key is current now. */
@@ -252,5 +252,38 @@ describe('a save checks the size before it reads the source (round 5, M3)', () =
   it('one within it is stored as honestCanvasSource writes it', () => {
     const html = buildCanvas({ template: 'flow', data: { nodes: [] }, mode: 'import' });
     expect(storedCanvasSource(html)).toBe(honestCanvasSource(html));
+  });
+});
+
+describe('a pid canvas past a size the template holds a drawing to is refused first (H1)', () => {
+  const canvasOf = (lines: unknown[]) =>
+    buildCanvas({
+      template: 'pid',
+      mode: 'import',
+      data: {
+        title: 'Bounds',
+        equipment: [{ id: 'V-1', type: 'vertical-vessel' }],
+        offpage: [{ id: 'OPC-1', direction: 'out', sheet: 'S2', text: 'TO S2' }],
+        lines,
+      },
+    });
+
+  it.each([
+    ['a note of 990 000 spaces after a bracket', [{ id: 'L1', note: `(${' '.repeat(990_000)}` }]],
+    [
+      'a line of 13 000 marks',
+      [
+        {
+          id: 'L1',
+          checks: Array.from({ length: 13_000 }, (_, i) => ({ key: `k${i}`, kind: 'join' })),
+        },
+      ],
+    ],
+  ])('%s: refused in words, well under 200 ms', (_why, lines) => {
+    const html = canvasOf(lines);
+    expect(Buffer.byteLength(html)).toBeLessThan(1_000_000);
+    const t = performance.now();
+    expect(() => storedCanvasSource(html)).toThrow(/larger than a P&ID drawing can hold/);
+    expect(performance.now() - t).toBeLessThan(200);
   });
 });

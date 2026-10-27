@@ -2,40 +2,50 @@
  * How the browser runtime reads a canvas's data block, and when it trusts
  * the image check marks in it (DWG bones phase 6).
  *
- * A save holds every canvas that claims the `pid` template to exactly what
- * buildCanvas writes (@mantle/content drawing-seal, canvas.ts
- * canonicalPidCanvas): the head, an empty drawing and error box, the data
- * block, the shipped runtime, nothing else. Its marks are then the ones
- * circuit_trace sealed. Anything else is the author's own HTML, which may
- * draw any picture (the threat model in templates/pid/check.ts): the
- * runtime then draws every mark unchecked (GUESS, no evidence, no count of
- * checked guesses), never a check it cannot vouch for.
+ * The threat model (templates/pid/check.ts): a canvas's frame content is
+ * author-controlled, and anyone with Write can draw any picture. What is
+ * vouched for is narrower: the canonical template path never shows a mark
+ * no save checked. A save holds every canvas whose data names the `pid`
+ * template to exactly what buildCanvas writes (@mantle/content
+ * drawing-seal, canvas.ts canonicalPidCanvas), its marks the ones
+ * circuit_trace sealed. So the runtime trusts the marks it reads only in
+ * a document laid out exactly that way, read the way buildCanvas's own
+ * runtime reads it:
  *
- * So the runtime reads the block once, when `mount()` is called (the
- * inline runtime: as its script runs, right after the block, before any
- * later script; the import: once the document is parsed), and only trusts
- * the marks when the block sits where buildCanvas puts it: a plain HTML
- * `<script type="application/json">`, the third child of `<body>`, after
- * the empty `#diagram` and `#diagram-errors` and before the runtime's own
- * script (the assets block, when the drawing embeds crops, between the
- * two), with no other element in the body, no SVG or MathML anywhere
- * (where a script's text reads differently), and no script but those at
- * all but one import map in the head (the Present frame's prelude
- * holds one, and its classic script removes itself as it runs: share-ui
- * canvas-frame-html.ts).
+ *  - the block sits where buildCanvas puts it: a plain HTML `<script
+ *    type="application/json">`, the third child of `<body>`, after the
+ *    empty `#diagram` and `#diagram-errors`, then the assets block when the
+ *    drawing embeds crops, then the runtime;
+ *  - the runtime is exactly the import buildCanvas writes (a module script
+ *    with that text and no other attribute: IMPORT_RUNTIME_TEXT), never an
+ *    inline copy or a script of the author's;
+ *  - no other element in the body, no SVG or MathML anywhere (where a
+ *    script's text reads differently), and no other script but one import
+ *    map in the head (the Present frame's prelude holds one, and its
+ *    classic script removes itself as it runs: share-ui
+ *    canvas-frame-html.ts);
+ *  - the data itself names the template (`template: "pid"`, canvas.ts
+ *    isPidData): the head's meta may pick what to draw, never what to
+ *    trust;
+ *  - `mount()` is called on the live document (browser.ts): one parsed
+ *    from a string (DOMParser) or another frame's is read as untrusted.
  *
- * And the marks are trusted only when the data itself names the template
- * (`template: "pid"`, canvas.ts isPidData; browser.ts mount): the head's
- * `diagram:template` meta may pick what to draw, never what to trust. A
- * save rebuilds every canvas whose data block names `pid` exactly as
- * buildCanvas writes it (claimsPidTemplate), whatever its meta says, so a
- * script that ran before the runtime and removed itself (which leaves no
- * trace in the document) is never in a canvas whose marks are trusted: one
- * whose data names another template, or none, is the author's picture,
- * its marks drawn unchecked.
+ * What this does not do: it does not make an author's page honest. A
+ * script of the author's that runs before the runtime and removes itself
+ * leaves no trace in the document, and an author can draw any words in
+ * their own markup. Such a canvas is never one whose data names `pid`
+ * (a save rebuilds every one of those exactly as buildCanvas writes it,
+ * with no author script), so the marks it shows are the author's picture,
+ * not the template's claim; the Checks tab of the drawing's table stays
+ * the proof. Anywhere the layout does not hold, the runtime draws every
+ * mark unchecked (GUESS, no evidence, no count of checked guesses).
+ *
+ * The block is read once, when `mount()` is called (the import runs once
+ * the document is parsed).
  */
-import { ASSETS_ID, DATA_ID } from './canvas.ts';
-import { honestImageChecks, withImageCheckSummary } from './templates/pid/check.ts';
+import { ASSETS_ID, DATA_ID, IMPORT_RUNTIME_TEXT } from './canvas.ts';
+import { honestImageChecks, mapDrawings, withImageCheckSummary } from './templates/pid/check.ts';
+import { pidLimitsProblem } from './templates/pid/limits.ts';
 
 const XHTML = 'http://www.w3.org/1999/xhtml';
 const SVG = 'http://www.w3.org/2000/svg';
@@ -54,6 +64,15 @@ const isHtml = (el: Element | undefined, name: string): el is Element =>
 const isJsonScript = (el: Element | undefined): el is Element =>
   isHtml(el, 'script') && el.getAttribute('type') === 'application/json';
 
+/** The runtime exactly as buildCanvas writes it: a module script whose
+ *  only attribute is its type and whose text is the import (no `src`, no
+ *  other script in its place). */
+const isImportRuntime = (el: Element | undefined): el is Element =>
+  isHtml(el, 'script') &&
+  el.getAttribute('type') === 'module' &&
+  el.getAttributeNames().length === 1 &&
+  el.textContent === IMPORT_RUNTIME_TEXT;
+
 /** The assets block of a document laid out as buildCanvas writes it (null
  *  when it embeds none), or false when `block` is not in that layout. */
 function inCanonicalPlace(doc: Document, block: Element): Element | null | false {
@@ -71,7 +90,7 @@ function inCanonicalPlace(doc: Document, block: Element): Element | null | false
   if (!isHtml(main, 'main') || main.id !== 'diagram' || main.childNodes.length) return false;
   if (!isHtml(errors, 'div') || errors.id !== 'diagram-errors' || errors.childNodes.length)
     return false;
-  if (data !== block || !isHtml(runtime, 'script')) return false;
+  if (data !== block || !isImportRuntime(runtime)) return false;
   if (doc.getElementsByTagNameNS(SVG, '*').length || doc.getElementsByTagNameNS(MATHML, '*').length)
     return false;
   let maps = 0;
@@ -99,7 +118,37 @@ export function readDataBlock(doc: Document): DataRead {
 /** `pid` data with no mark the runtime can vouch for: every mark
  *  unchecked with its evidence gone, no provenance, no trust word in a
  *  label, the counts its own (what a save stores for a drawing with no
- *  sealed provenance). */
+ *  sealed provenance). Data past a size the template holds a drawing to
+ *  (pidLimitsProblem) is not normalized at all: its marks and provenance
+ *  are dropped whole (the template's check then refuses it). */
 export function unvouched(data: unknown): unknown {
+  if (pidLimitsProblem(data) !== null) return withoutMarks(data);
   return withImageCheckSummary(honestImageChecks(data, () => false));
+}
+
+/** `pid` data with no mark, provenance or count left on it: each drawing's
+ *  connectors', lines' and inline items' marks taken off, in one pass. */
+function withoutMarks(data: unknown): unknown {
+  const bare = (o: unknown, ...keys: string[]): unknown => {
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) return o;
+    const out = { ...(o as Record<string, unknown>) };
+    for (const k of keys) delete out[k];
+    return out;
+  };
+  const list = (v: unknown, f: (x: unknown) => unknown) => (Array.isArray(v) ? v.map(f) : v);
+  const top = bare(data, 'provenance', 'checks');
+  return mapDrawings(top, (d) => {
+    const out = bare(d, 'provenance', 'checks') as Record<string, unknown>;
+    if (Array.isArray(d.offpage)) out.offpage = list(d.offpage, (o) => bare(o, 'check'));
+    if (Array.isArray(d.lines))
+      out.lines = list(d.lines, (l) => {
+        const line = bare(l, 'checks');
+        if (typeof line !== 'object' || line === null || Array.isArray(line)) return line;
+        const r = line as Record<string, unknown>;
+        return Array.isArray(r.inline)
+          ? { ...r, inline: list(r.inline, (it) => bare(it, 'check')) }
+          : r;
+      });
+    return out;
+  });
 }

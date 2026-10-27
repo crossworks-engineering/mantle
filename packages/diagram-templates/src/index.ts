@@ -148,6 +148,7 @@ export {
   replaceCanvasData,
   dataBlockCount,
   canvasDataReadable,
+  CanvasLimitsError,
   safeCropUrl,
   withHonestImageChecks,
   withSealedCanvasAssets,
@@ -167,11 +168,18 @@ export {
 } from './runtime/style.ts';
 export type { FlowData } from './templates/flow.ts';
 export type { PidData, PidSet, PidPage, PidInput, SiteProfile } from './templates/pid/index.ts';
-export { PID_LIMITS, SET_LIMITS, VALVE_TYPES } from './templates/pid/index.ts';
+export {
+  PID_LIMITS,
+  SET_LIMITS,
+  VALVE_TYPES,
+  pidLimitsProblem,
+  RAW_LIMITS,
+} from './templates/pid/index.ts';
 export {
   CHECK_STATES,
   CHECK_GUESS_KINDS,
   CHECK_LIMITS,
+  FILE_ID,
   honestImageChecks,
   imageCheckSummary,
   imageChecksStale,

@@ -34,6 +34,7 @@ import { env } from '@mantle/config';
 import {
   assetsBlockCount,
   canvasDataReadable,
+  CanvasLimitsError,
   CanvasShapeError,
   claimsPidTemplate,
   CROP_SEAL_PURPOSE,
@@ -170,6 +171,11 @@ const NOT_A_PLAIN_DIAGRAM =
 const UNREADABLE_CROPS =
   "This diagram was not saved: its pictures could not be checked. A diagram keeps the close-ups of its checks in one block that the editor writes; this one has another element with the same name. Undo the change to the diagram's source, or edit the diagram's data instead (the pictures are embedded again for you), and save again.";
 
+/** Why a save refuses a P&ID diagram whose data is past a size the
+ *  template holds a drawing to (its first problem, by its path). */
+const overLimit = (problem: string) =>
+  `This diagram was not saved: its data is larger than a P&ID drawing can hold (${problem}). A drawing that size could not be drawn either. Make it smaller (split it into pages, or shorten the text) and save again.`;
+
 /** Whether `sig` is the server's seal of this crop: its file id and the
  *  sha256 of the picture's bytes (@mantle/tools present-crops.ts seals
  *  them). */
@@ -222,6 +228,7 @@ export function honestCanvasSource(source: string): string {
     return withSealedCanvasAssets(withHonestImageChecks(source, drawingSealHolds), cropSealHolds);
   } catch (err) {
     if (err instanceof CanvasShapeError) throw new InputError(NOT_A_PLAIN_DIAGRAM);
+    if (err instanceof CanvasLimitsError) throw new InputError(overLimit(err.problem));
     throw err;
   }
 }

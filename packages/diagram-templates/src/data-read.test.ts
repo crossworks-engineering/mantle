@@ -9,13 +9,22 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readDataBlock, unvouched } from './data-read.ts';
+import { IMPORT_RUNTIME_TEXT } from './canvas.ts';
 import { render } from './browser.ts';
 import { estimateMeasurer, imageCheckSummary, render as renderIndex } from './index.ts';
 
 const XHTML = 'http://www.w3.org/1999/xhtml';
 const SVG = 'http://www.w3.org/2000/svg';
 
-type Spec = { tag: string; ns?: string; id?: string; type?: string; kids?: Spec[]; text?: string };
+type Spec = {
+  tag: string;
+  ns?: string;
+  id?: string;
+  type?: string;
+  src?: string;
+  kids?: Spec[];
+  text?: string;
+};
 type FakeEl = {
   namespaceURI: string;
   localName: string;
@@ -25,6 +34,7 @@ type FakeEl = {
   children: FakeEl[];
   childNodes: FakeEl[];
   getAttribute: (n: string) => string | null;
+  getAttributeNames: () => string[];
 };
 
 function el(spec: Spec, parent: FakeEl | null, all: FakeEl[]): FakeEl {
@@ -37,7 +47,14 @@ function el(spec: Spec, parent: FakeEl | null, all: FakeEl[]): FakeEl {
     children: [],
     childNodes: [],
     getAttribute: (n) =>
-      n === 'type' ? (spec.type ?? null) : n === 'id' ? (spec.id ?? null) : null,
+      n === 'type'
+        ? (spec.type ?? null)
+        : n === 'id'
+          ? (spec.id ?? null)
+          : n === 'src'
+            ? (spec.src ?? null)
+            : null,
+    getAttributeNames: () => (['type', 'id', 'src'] as const).filter((n) => spec[n] !== undefined),
   };
   all.push(e);
   for (const k of spec.kids ?? []) {
@@ -78,11 +95,13 @@ const DATA = (text = '{}'): Spec => ({
   id: 'diagram-data',
   text,
 });
-const CANONICAL_BODY = (data: Spec = DATA()): Spec[] => [
+/** The runtime exactly as buildCanvas writes it. */
+const RUNTIME: Spec = { tag: 'script', type: 'module', text: IMPORT_RUNTIME_TEXT };
+const CANONICAL_BODY = (data: Spec = DATA(), runtime: Spec = RUNTIME): Spec[] => [
   { tag: 'main', id: 'diagram' },
   { tag: 'div', id: 'diagram-errors' },
   data,
-  { tag: 'script', type: 'module' },
+  runtime,
 ];
 const ASSETS = (text = '{"crops":{}}'): Spec => ({
   tag: 'script',
@@ -115,7 +134,7 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
       { tag: 'div', id: 'diagram-errors' },
       DATA('{"a":1}'),
       assets,
-      { tag: 'script', type: 'module' },
+      RUNTIME,
     ];
     expect(readDataBlock(doc(PRELUDE, body(ASSETS('{"crops":{}}'))))).toEqual({
       text: '{"a":1}',
@@ -148,7 +167,7 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
           { tag: 'div', id: 'diagram-errors' },
           { tag: 'script' },
           DATA(),
-          { tag: 'script', type: 'module' },
+          RUNTIME,
         ]),
       ],
       ['a classic script in the head', doc([...PRELUDE, { tag: 'script' }], CANONICAL_BODY())],
@@ -158,7 +177,7 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
           { tag: 'main', id: 'diagram' },
           { tag: 'div', id: 'diagram-errors' },
           { tag: 'svg', ns: SVG, kids: [{ ...DATA(), ns: SVG }] },
-          { tag: 'script', type: 'module' },
+          RUNTIME,
         ]),
       ],
       ['an SVG element anywhere', doc([...PRELUDE, { tag: 'svg', ns: SVG }], CANONICAL_BODY())],
@@ -168,7 +187,7 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
           { tag: 'main', id: 'diagram', kids: [{ tag: 'b' }] },
           { tag: 'div', id: 'diagram-errors' },
           DATA(),
-          { tag: 'script', type: 'module' },
+          RUNTIME,
         ]),
       ],
       [
@@ -183,10 +202,25 @@ describe('the data block is trusted only where buildCanvas puts it', () => {
             { tag: 'main', id: 'diagram' },
             { tag: 'div', id: 'diagram-errors' },
             { tag: 'p' },
-            { tag: 'script', type: 'module' },
+            RUNTIME,
           ],
         ),
       ],
+      // The runtime: only the import buildCanvas writes (M2).
+      [
+        'an inline runtime',
+        doc(PRELUDE, CANONICAL_BODY(DATA(), { tag: 'script', text: 'mount()' })),
+      ],
+      [
+        'a module script of the author',
+        doc(PRELUDE, CANONICAL_BODY(DATA(), { ...RUNTIME, text: 'window.diagram = {}' })),
+      ],
+      [
+        'the import with one more line',
+        doc(PRELUDE, CANONICAL_BODY(DATA(), { ...RUNTIME, text: `${IMPORT_RUNTIME_TEXT}\n` })),
+      ],
+      ['the import from a src', doc(PRELUDE, CANONICAL_BODY(DATA(), { ...RUNTIME, src: '/x.js' }))],
+      ['an empty module script', doc(PRELUDE, CANONICAL_BODY(DATA(), { ...RUNTIME, text: '' }))],
     ];
     for (const [why, d] of cases) expect(readDataBlock(d).canonical, why).toBe(false);
     expect(readDataBlock(doc(PRELUDE, []))).toEqual({

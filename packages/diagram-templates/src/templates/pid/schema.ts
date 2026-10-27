@@ -230,6 +230,8 @@ export const PID_LIMITS = {
   instruments: 60,
   offpage: 20,
   tees: 30,
+  signals: 60,
+  circuits: 12,
   /** Valves and reducers drawn on one line. */
   inline: 6,
   /** The longest text a field takes, in characters. */
@@ -969,7 +971,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
 
   const signalEnds = new Set([...instruments.map((i) => i.tag), ...inlineTags.keys()]);
   const signals: Signal[] = [];
-  for (const [p, s] of objects(list(d, 'signals', '', issues, { max: 60 }), 'signals', issues)) {
+  for (const [p, s] of objects(
+    list(d, 'signals', '', issues, { max: PID_LIMITS.signals }),
+    'signals',
+    issues,
+  )) {
     checkKeys(s, ['from', 'to', 'type'], p, issues);
     const from = str(s, 'from', p, issues, { required: true });
     const to = str(s, 'to', p, issues, { required: true });
@@ -990,7 +996,11 @@ export function validatePid(input: unknown, opts: PidCheckOptions = {}): Checked
 
   const circuits: Circuit[] = [];
   const lineOwner = new Map<string, string>();
-  for (const [p, c] of objects(list(d, 'circuits', '', issues, { max: 12 }), 'circuits', issues)) {
+  for (const [p, c] of objects(
+    list(d, 'circuits', '', issues, { max: PID_LIMITS.circuits }),
+    'circuits',
+    issues,
+  )) {
     checkKeys(c, ['id', 'label', 'lines', 'equipment', 'colour'], p, issues);
     const id = str(c, 'id', p, issues, { required: true, max: 24 });
     const label = str(c, 'label', p, issues, { max: PID_LIMITS.text.circuitLabel });

@@ -335,15 +335,56 @@ describe('the trust words are drawn from the marks', () => {
     expect(r.svg).toContain(worded('', '(GUESS)', ROLE_COLOURS.guess));
   });
 
-  it('a drawing with no mark keeps its text as written, with no word tspan', () => {
+  it('a drawing with no mark draws a typed claim as GUESS, with no word tspan (M1)', () => {
+    // A canvas saved before the marks wrote the words into its labels: it
+    // is honest on view without a save, as a save would store it.
     const r = render('pid', base(), estimateMeasurer);
     if (!r.ok) throw new Error(r.errors.join());
     expect(r.svg).toContain('NEAR V-9 (GUESS)');
-    expect(r.svg).toContain('VALVE TYPE (GUESS, IMAGE: NO)');
+    expect(r.svg).toContain('VALVE TYPE (GUESS)');
+    expect(r.svg).not.toMatch(/IMAGE: NO/);
     expect(r.svg).not.toContain('mark-word');
-    const r2 = render('pid', base({ style: 2 }), estimateMeasurer);
-    if (!r2.ok) throw new Error(r2.errors.join());
-    expect(r2.svg).not.toContain('mark-word');
+    const typed = base({ style: 2 }) as Record<string, any>;
+    typed.offpage[0].text = 'NEAR V-9 (CHECKED BY IMAGE)';
+    typed.lines[0].note = 'VALVE (FROM IMAGE)';
+    for (const style of [1, 2]) {
+      const r2 = render('pid', { ...typed, style }, estimateMeasurer);
+      if (!r2.ok) throw new Error(r2.errors.join());
+      expect(r2.svg).not.toContain('mark-word');
+      expect(r2.svg).toContain('NEAR V-9 (GUESS)');
+      expect(r2.svg).toContain('VALVE (GUESS)');
+      expect(r2.svg.replace(/NOT CHECKED BY IMAGE/g, '')).not.toMatch(
+        /CHECKED BY IMAGE|FROM IMAGE/,
+      );
+    }
+  });
+
+  it('an unmarked label wears no trust colour, and adds no legend entry (H2)', () => {
+    // Unbracketed words a save leaves as they are (prose, not the view's
+    // form): drawn in the label's own colour, never the checked or the
+    // from-image colour, and the legend names no check.
+    const trust = [ROLE_COLOURS.checked, ROLE_COLOURS.corrected, ROLE_COLOURS.contradicted];
+    for (const style of [1, 2]) {
+      const d = base({ style }) as Record<string, any>;
+      d.offpage[0].text = 'CHECKED BY IMAGE';
+      d.lines[0].note = 'FROM IMAGE';
+      d.lines[1].note = 'IMAGE: NO';
+      const r = render('pid', d, estimateMeasurer);
+      if (!r.ok) throw new Error(r.errors.join());
+      expect(r.svg).toContain('>CHECKED BY IMAGE<');
+      expect(r.svg).toContain('>FROM IMAGE<');
+      for (const c of trust) expect(r.svg, `${style} ${c}`).not.toContain(c);
+      const legend = r.svg.slice(r.svg.indexOf('data-part="legend"'));
+      expect(legend).toContain('PROCESS LINE');
+      expect(legend).not.toMatch(/CHECKED BY IMAGE|FROM IMAGE|IMAGE SAYS NO/i);
+      expect(r.svg).not.toContain('mark-word');
+    }
+    // The drawn (GUESS) form alone keeps the guess colour (style 2).
+    const g = base({ style: 2 }) as Record<string, any>;
+    g.lines[0].note = 'JOIN (GUESS)';
+    const rg = render('pid', g, estimateMeasurer);
+    if (!rg.ok) throw new Error(rg.errors.join());
+    expect(rg.svg).toContain(`fill="${ROLE_COLOURS.guess}">JOIN (GUESS)<`);
   });
 });
 
@@ -495,14 +536,15 @@ describe('the live canvas opens the evidence', () => {
     style?: number,
     edit: (html: string) => string = (h) => h,
   ) => {
-    // The runtime's script stays in its place, inert (the test mounts).
+    // The runtime's script stays in its place as buildCanvas wrote it,
+    // inert (jsdom runs no script; the test mounts).
     const html = edit(
       buildCanvas({
         template: 'pid',
         data: withChecks(style),
         mode: 'import',
         assets: { crops },
-      }).replace(/<script type="module">[\s\S]*?<\/script>/, '<script type="module"></script>'),
+      }),
     );
     const dom = new JSDOM(html, { pretendToBeVisual: true });
     const win = dom.window;

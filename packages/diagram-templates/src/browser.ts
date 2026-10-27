@@ -23,9 +23,11 @@
  *
  * The data block is read once, when `mount()` runs, and a `pid` drawing's
  * image check marks are drawn as stored only when the data names the
- * template itself (`template: "pid"`, never the head's meta) and the block
- * sits where buildCanvas puts it; in any other document, and in `render`
- * called by script, every mark draws unchecked (data-read.ts).
+ * template itself (`template: "pid"`, never the head's meta), the document
+ * is laid out exactly as buildCanvas writes it (its import runtime
+ * included) and `mount()` was called on the live document; in any other
+ * document, and in `render` called by script, every mark draws unchecked
+ * (data-read.ts).
  *
  * Zoom and pan (zoom.ts): a drawing that does not fit the frame at a
  * readable size gets zoom controls (the data's `view.zoom` forces them on
@@ -287,6 +289,14 @@ function fail(doc: Document, errors: string[]): void {
   }
 }
 
+/** Whether `doc` is this window's own live document: not one parsed from
+ *  a string (DOMParser, which has no window) or another frame's. Marks are
+ *  trusted only there (data-read.ts). */
+function isLiveDocument(doc: Document): boolean {
+  const w = (globalThis as { window?: Window }).window;
+  return !!w && doc.defaultView === w && w.document === doc;
+}
+
 export function mount(doc: Document = document): DiagramApi {
   let resolve!: (o: RenderOutcome) => void;
   const ready = new Promise<RenderOutcome>((r) => (resolve = r));
@@ -308,6 +318,7 @@ export function mount(doc: Document = document): DiagramApi {
   // The data block, read once, now: the inline runtime runs right after it,
   // the import once the document is parsed (data-read.ts).
   const read = readDataBlock(doc);
+  const onLive = isLiveDocument(doc);
   const run = async () => {
     let outcome: RenderOutcome;
     let data: unknown;
@@ -333,7 +344,7 @@ export function mount(doc: Document = document): DiagramApi {
       // picks what to draw, never what to trust) in a block where
       // buildCanvas puts it: any other document is the author's own, and
       // draws every mark unchecked.
-      const trusted = read.canonical && isPidData(data);
+      const trusted = onLive && read.canonical && isPidData(data);
       const own = template === 'pid' && !trusted ? unvouched(data) : data;
       outcome = renderTemplate(template, own, domMeasurer(doc));
     }
@@ -353,7 +364,7 @@ export function mount(doc: Document = document): DiagramApi {
       // Only on data read where buildCanvas puts it (data-read.ts): any
       // other document is the author's own, and shows no evidence.
       const evidence =
-        target && read.canonical && isPidData(data) && allChecks.length
+        target && onLive && read.canonical && isPidData(data) && allChecks.length
           ? mountEvidence(doc, target, readCrops(read.assets))
           : undefined;
       let zoom: ZoomController | undefined;

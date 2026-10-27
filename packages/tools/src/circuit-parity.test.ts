@@ -400,7 +400,12 @@ describe('marks are sealed by circuit_trace and kept only so by every save (fix 
       JSON.parse(
         JSON.stringify(data, (k, v: unknown) =>
           k === 'check' && v && (v as Mark).state === 'unchecked'
-            ? { ...(v as Mark), state: 'checked', answer: 'yes', crops: ['made-up'] }
+            ? {
+                ...(v as Mark),
+                state: 'checked',
+                answer: 'yes',
+                crops: ['00000000-0000-4000-8000-0000000f0f0f'],
+              }
             : v,
         ),
       );

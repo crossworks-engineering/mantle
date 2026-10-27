@@ -59,8 +59,8 @@ const yes = {
   question: 'Does it go on S2?',
   answer: 'yes',
   reason: 'a connector says so',
-  crops: ['crop1'],
-  overview: 'ov1',
+  crops: ['00000000-0000-4000-8000-00000000c001'],
+  overview: '00000000-0000-4000-8000-0000000000a1',
 };
 const fresh = { key: 'g1', kind: 'end', state: 'unchecked', guess: 'near V-9' };
 
@@ -360,9 +360,21 @@ describe('the trust words: drawn from the mark, never typed into a label (MED-3)
     // The save strips first, then checks the seals: the marks still hold
     // (under the drawing's own title: a title that now says GUESS is a
     // renamed drawing, whose marks no longer hold).
-    const saved = honestImageChecks({ ...typed, title: d.title }, holds);
-    expect(marksOf(saved)).toEqual(marksOf(d));
+    // Labels typed over (the lines' notes, the ends as drawn): still held.
+    const notes = ['PUMP (GUESS, IMAGE: NO)', '3 JOINS (GUESS; IMAGE: 1 NO)'];
+    const labelled: Drawing = {
+      ...typed,
+      title: d.title,
+      lines: (d.lines as Drawing[]).map((l, i) => ({ ...l, note: notes[i] })),
+    };
+    expect(marksOf(honestImageChecks(labelled, holds))).toEqual(marksOf(d));
+    // A renamed title, or a line's end renamed (V-101 (FROM IMAGE) reads
+    // as V-101 (GUESS), another element: the connector at that line's
+    // other end no longer covers the lines it was checked with), does not.
     expect(marksOf(honestImageChecks(typed, holds))).not.toEqual(marksOf(d));
+    expect(marksOf(honestImageChecks({ ...typed, title: d.title }, holds))[1]).toEqual(
+      unchecked(yes),
+    );
   });
 });
 
@@ -691,5 +703,85 @@ describe('the stored data block reads alike everywhere (HIGH H1)', () => {
     });
     // A pid canvas is held to the loose count.
     expect(dataBlockCount(page('diagram&amp;chart'))).toEqual({ any: 2, written: 1 });
+  });
+});
+
+describe("a connector's mark covers the lines that end at it (H3)", () => {
+  /** OPC-2 checked (its guessed link), OPC-3 unmarked; L1 into OPC-2, L2
+   *  (unmarked) into OPC-3; a line mark on L3 (into OPC-3). */
+  const drawn3 = (): Drawing => ({
+    title: 'Traced',
+    equipment: [
+      { id: 'V-101', type: 'vertical-vessel' },
+      { id: 'V-102', type: 'vertical-vessel' },
+    ],
+    offpage: [
+      { id: 'OPC-2', direction: 'out', sheet: 'S2', text: 'TO S2', check: yes },
+      { id: 'OPC-3', direction: 'out', sheet: 'S3', text: 'TO S3' },
+    ],
+    lines: [
+      { id: 'L1', from: 'V-101', to: 'OPC-2' },
+      { id: 'L2', from: 'V-102', to: 'OPC-3' },
+      {
+        id: 'L3',
+        from: 'V-101',
+        to: 'OPC-3',
+        checks: [{ key: 'j1', kind: 'join', state: 'checked', answer: 'yes' }],
+      },
+    ],
+    provenance: provenance(['g2', 'j1']),
+  });
+  const d3 = () => sign(drawn3());
+  const states = (d: unknown) => {
+    const x = d as { offpage: Drawing[]; lines: Drawing[] };
+    return {
+      opc2: (x.offpage[0]!.check as Mark).state,
+      l3: ((x.lines[2]!.checks as Mark[])[0] as Mark).state,
+    };
+  };
+  const relined = (d: Drawing, lines: Drawing[]): Drawing => ({ ...d, lines });
+
+  it('the traced drawing holds', () => {
+    const d = d3();
+    expect(honestImageChecks(d, holds)).toBe(d);
+    expect(states(d)).toEqual({ opc2: 'checked', l3: 'checked' });
+  });
+
+  it('an unmarked line re-pointed to the checked connector moves no check onto it', () => {
+    const d = d3();
+    const lines = d.lines as Drawing[];
+    const moved = relined(d, [lines[0]!, { ...lines[1]!, to: 'OPC-2' }, lines[2]!]);
+    expect(states(honestImageChecks(moved, holds)).opc2).toBe('unchecked');
+  });
+
+  it('a line added at the checked connector, or the one there taken away, unseals it', () => {
+    const d = d3();
+    const lines = d.lines as Drawing[];
+    const added = relined(d, [...lines, { id: 'L9', from: 'V-102', to: 'OPC-2' }]);
+    expect(states(honestImageChecks(added, holds)).opc2).toBe('unchecked');
+    const gone = relined(d, lines.slice(1));
+    expect(
+      ((honestImageChecks(gone, holds) as Drawing).offpage as Drawing[])[0]!.check,
+    ).toMatchObject({ state: 'unchecked' });
+    // A line elsewhere changes nothing at OPC-2.
+    const elsewhere = relined(d, [...lines, { id: 'L9', from: 'V-102', to: 'V-101' }]);
+    expect(states(honestImageChecks(elsewhere, holds)).opc2).toBe('checked');
+  });
+
+  it("a line's own marks cover its ends: re-pointing the line unseals them", () => {
+    const d = d3();
+    const lines = d.lines as Drawing[];
+    for (const end of [{ to: 'OPC-2' }, { from: 'V-102' }]) {
+      const moved = relined(d, [lines[0]!, lines[1]!, { ...lines[2]!, ...end }]);
+      expect(states(honestImageChecks(moved, holds)).l3, JSON.stringify(end)).toBe('unchecked');
+    }
+  });
+
+  it('the order the lines are written in is not part of it', () => {
+    const d = d3();
+    const lines = d.lines as Drawing[];
+    const swapped = relined(d, [lines[2]!, lines[1]!, lines[0]!]);
+    const out = honestImageChecks(swapped, holds) as Drawing;
+    expect(((out.offpage as Drawing[])[0]!.check as Mark).state).toBe('checked');
   });
 });
