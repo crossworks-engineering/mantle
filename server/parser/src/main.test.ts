@@ -124,7 +124,12 @@ describe('the parser server', () => {
       }),
       duplex: 'half',
     } as RequestInit);
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait until the slow request holds the slot (the parser says so).
+    for (let i = 0; i < 100; i++) {
+      const h = (await (await fetch(`${base}/healthz`)).json()) as { running?: number };
+      if (h.running === 1) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
     try {
       const started = Date.now();
       // Interactive: the client says busy at once instead of waiting it out.
