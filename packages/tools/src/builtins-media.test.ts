@@ -639,7 +639,7 @@ describe('video_ingest', () => {
       sizeBytes: 10,
     } as never);
     expect(errorOf(await videoIngest.handler({ file_node_id: 'f1' }, WEB_CTX))).toMatch(
-      /wants a video\/\* or audio\/\* file/,
+      /must be a video\/\* or audio\/\* file/,
     );
 
     vi.mocked(fileById).mockResolvedValue({

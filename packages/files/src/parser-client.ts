@@ -309,9 +309,22 @@ async function exchange(
   });
 }
 
+/** The code an answer without the parser's envelope stands for, by its
+ *  status: a proxy or a stand-in in front of the parser answers like this. */
+function statusCode(status: number): ParserErrorCode {
+  if (status === 401 || status === 502 || status === 503) return 'unavailable';
+  if (status === 429) return 'busy';
+  if (status === 413) return 'too_large';
+  if (status === 504) return 'timeout';
+  return 'failed';
+}
+
 async function envelopeOf(res: Response): Promise<{ code: ParserErrorCode; message: string }> {
-  let code: ParserErrorCode = res.status === 401 ? 'unavailable' : 'failed';
-  let message = `the parser answered ${res.status}`;
+  let code = statusCode(res.status);
+  let message =
+    code === 'unavailable'
+      ? `the parser service is not available (parser, HTTP ${res.status})`
+      : `the parser answered HTTP ${res.status}`;
   try {
     const body = (await res.json()) as { error?: { code?: string; message?: string } };
     const c = body?.error?.code;

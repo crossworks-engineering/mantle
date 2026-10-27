@@ -124,7 +124,7 @@ const video_ingest: BuiltinToolDef = {
     if (!mime.startsWith('video/') && !mime.startsWith('audio/')) {
       return {
         ok: false,
-        error: `node '${meta.filename}' is ${mime || 'not a media file'} — video_ingest wants a video/* or audio/* file`,
+        error: `file_node_id must be a video/* or audio/* file: node '${meta.filename}' is ${mime || 'not a media file'}`,
       };
     }
     if (meta.sizeBytes > MAX_FILE_BYTES()) {
