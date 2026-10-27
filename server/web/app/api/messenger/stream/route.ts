@@ -58,7 +58,9 @@ function toEvent(c: {
     case 'delete':
       return c.seq === null ? null : { type: 'message', c: c.c, seq: c.seq, kind: c.kind };
     case 'read':
-      return c.seq === null || !c.actor ? null : { type: 'read', c: c.c, seq: c.seq, loginId: c.actor };
+      return c.seq === null || !c.actor
+        ? null
+        : { type: 'read', c: c.c, seq: c.seq, loginId: c.actor };
     case 'reaction':
       return c.seq === null ? null : { type: 'reaction', c: c.c, seq: c.seq };
     case 'typing':

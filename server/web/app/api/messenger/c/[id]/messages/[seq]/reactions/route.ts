@@ -28,5 +28,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
   const s = seqParam(seq);
   if (s === null) return notFound();
   const body = await readBody(req, ReactBody);
-  return NextResponse.json(await toggleMessengerReaction(messengerActorOf(login), id, s, body.emoji));
+  return NextResponse.json(
+    await toggleMessengerReaction(messengerActorOf(login), id, s, body.emoji),
+  );
 }

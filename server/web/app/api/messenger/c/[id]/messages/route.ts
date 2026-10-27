@@ -39,9 +39,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const afterSeq = seqQuery(params, 'after_seq');
   const limit = seqQuery(params, 'limit');
   if (beforeSeq === 'bad' || afterSeq === 'bad' || limit === 'bad') {
-    return NextResponse.json({ error: 'before_seq, after_seq and limit are whole numbers' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'before_seq, after_seq and limit are whole numbers' },
+      { status: 400 },
+    );
   }
-  const page = await listMessengerMessages(messengerActorOf(login), id, { beforeSeq, afterSeq, limit });
+  const page = await listMessengerMessages(messengerActorOf(login), id, {
+    beforeSeq,
+    afterSeq,
+    limit,
+  });
   return NextResponse.json(page satisfies MessengerMessagesResponse);
 }
 
@@ -64,5 +71,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const body = await readBody(req, SendBody);
   const out = await sendMessengerMessage(messengerActorOf(login), id, body);
-  return NextResponse.json(out satisfies MessengerSendResponse, { status: out.created ? 201 : 200 });
+  return NextResponse.json(out satisfies MessengerSendResponse, {
+    status: out.created ? 201 : 200,
+  });
 }

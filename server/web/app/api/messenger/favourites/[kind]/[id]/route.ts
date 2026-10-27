@@ -48,7 +48,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ kind: string; i
 }
 
 /** DELETE /api/messenger/favourites/:kind/:id: unpin. */
-export async function DELETE(_req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ kind: string; id: string }> },
+) {
   const login = anyLoginCaller();
   const { kind, id } = await ctx.params;
   const k = Kind.safeParse(kind);

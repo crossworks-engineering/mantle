@@ -90,7 +90,9 @@ export const messenger_list: BuiltinToolDef = {
             mention: r.mention,
             lastSeq: r.lastSeq,
             lastMessageAt: r.lastMessageAt,
-            last: r.preview ? `${r.preview.authorName ?? ''}${r.preview.authorName ? ': ' : ''}${r.preview.text}` : null,
+            last: r.preview
+              ? `${r.preview.authorName ?? ''}${r.preview.authorName ? ': ' : ''}${r.preview.text}`
+              : null,
             ...(r.agentSlug ? { agentSlug: r.agentSlug } : {}),
           })),
         },
@@ -114,7 +116,13 @@ export const messenger_open: BuiltinToolDef = {
       conversation: CONVERSATION,
       before_seq: { type: 'integer', minimum: 0, description: 'Older than this seq.' },
       after_seq: { type: 'integer', minimum: 0, description: 'Newer than this seq.' },
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 20, description: 'How many messages.' },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 20,
+        description: 'How many messages.',
+      },
     },
     required: ['conversation'],
   },
@@ -185,9 +193,21 @@ export const messenger_send: BuiltinToolDef = {
     type: 'object',
     properties: {
       conversation: CONVERSATION,
-      text: { type: 'string', maxLength: 8000, description: 'The message, in markdown, e.g. "The report is done."' },
-      reply_to_seq: { type: 'integer', minimum: 1, description: 'The seq of the message this answers.' },
-      client_msg_id: { type: 'string', maxLength: 100, description: 'A unique id for safe retries.' },
+      text: {
+        type: 'string',
+        maxLength: 8000,
+        description: 'The message, in markdown, e.g. "The report is done."',
+      },
+      reply_to_seq: {
+        type: 'integer',
+        minimum: 1,
+        description: 'The seq of the message this answers.',
+      },
+      client_msg_id: {
+        type: 'string',
+        maxLength: 100,
+        description: 'A unique id for safe retries.',
+      },
     },
     required: ['conversation', 'text'],
   },
@@ -261,24 +281,36 @@ export const messenger_wait: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Wait for chat messages',
   description:
-    'Wait for new messages in a chat after after_seq, instead of polling. Answers at once if there are some, else the moment one lands, else empty at the timeout. Messages you sent through this same connection are left out, so two clients on one login wait for each other. Pass the answer\'s lastSeq as the next after_seq; to read older messages use `messenger_open`.',
+    "Wait for new messages in a chat after after_seq, instead of polling. Answers at once if there are some, else the moment one lands, else empty at the timeout. Messages you sent through this same connection are left out, so two clients on one login wait for each other. Pass the answer's lastSeq as the next after_seq; to read older messages use `messenger_open`.",
   inputSchema: {
     type: 'object',
     properties: {
       conversation: CONVERSATION,
       after_seq: { type: 'integer', minimum: 0, description: 'Wait for messages after this seq.' },
-      timeout_s: { type: 'integer', minimum: 0, maximum: 60, default: 60, description: 'Seconds to wait.' },
+      timeout_s: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 60,
+        default: 60,
+        description: 'Seconds to wait.',
+      },
     },
     required: ['conversation', 'after_seq'],
   },
   handler: async (input, ctx) => {
     try {
       const after = int(input.after_seq);
-      if (after === null || Number.isNaN(after)) return { ok: false, error: 'after_seq is a whole number.' };
+      if (after === null || Number.isNaN(after))
+        return { ok: false, error: 'after_seq is a whole number.' };
       const t = int(input.timeout_s);
       if (Number.isNaN(t)) return { ok: false, error: 'timeout_s is a whole number.' };
       const ms = Math.min((t ?? 60) * 1000, MESSENGER_WAIT_MAX_MS);
-      const out = await waitForMessengerMessages(await actorOf(ctx), String(input.conversation ?? ''), after, ms);
+      const out = await waitForMessengerMessages(
+        await actorOf(ctx),
+        String(input.conversation ?? ''),
+        after,
+        ms,
+      );
       return {
         ok: true,
         output: { messages: out.messages.map(slim), lastSeq: out.lastSeq, timedOut: out.timedOut },
@@ -314,7 +346,11 @@ export const messenger_mark_read: BuiltinToolDef = {
     try {
       const seq = int(input.seq);
       if (seq === null || Number.isNaN(seq)) return { ok: false, error: 'seq is a whole number.' };
-      const out = await markMessengerRead(await actorOf(ctx), String(input.conversation ?? ''), seq);
+      const out = await markMessengerRead(
+        await actorOf(ctx),
+        String(input.conversation ?? ''),
+        seq,
+      );
       return { ok: true, output: out };
     } catch (err) {
       return fail(err);
@@ -331,11 +367,16 @@ export const messenger_directory: BuiltinToolDef = {
     'The people you may start a chat with (those who share a workspace with you; an Admin user: everyone), each with "online", and the assistants you may chat with. Start a chat with one through `messenger_create`.',
   inputSchema: {
     type: 'object',
-    properties: { q: { type: 'string', maxLength: 100, description: 'Part of a name, e.g. "chris".' } },
+    properties: {
+      q: { type: 'string', maxLength: 100, description: 'Part of a name, e.g. "chris".' },
+    },
   },
   handler: async (input, ctx) => {
     try {
-      const entries = await messengerDirectory(await actorOf(ctx), typeof input.q === 'string' ? input.q : '');
+      const entries = await messengerDirectory(
+        await actorOf(ctx),
+        typeof input.q === 'string' ? input.q : '',
+      );
       return { ok: true, output: { entries } };
     } catch (err) {
       return fail(err);
