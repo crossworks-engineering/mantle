@@ -108,33 +108,15 @@ networks:
     name: mantle_sandbox_restricted
     driver: bridge
     internal: true
-
-# Tika 4 reads its settings from a JSON file. Shipped inline (compose 2.23.1+;
-# every box's updater runs 2.40) so the release owns it with no extra file to
-# copy onto a box. Tika 4 parses every document in a forked JVM from a fixed
-# pool; these keys size that pool for Mantle:
-#   endpoints        only what Mantle calls (/tika/*, /unpack, /version).
-#   numClients 1     one fork, so one parse at a time. Mantle's ingest is
-#                    near serial, and a document that arrives while the fork is
-#                    busy gets a 429 the client waits out (packages/files
-#                    tika.ts). Each extra fork needs about 1.2 GB more mem_limit.
-#   forkedJvmArgs    the fork's heap. Same 1g ceiling the 3.x JVM had (512m
-#                    OOM'd big Office files). JAVA_TOOL_OPTIONS on the service
-#                    sizes the parent, which only relays bytes.
-#   timeouts 60000   matches the client's 60 s timeout: a parse the client has
-#                    given up on is killed instead of holding the only fork (the
-#                    4.x default is one hour). Equal values switch the stall
-#                    detector off on purpose.
-configs:
-  tika_config:
-    content: |
-      {
-        "server": { "endpoints": ["tika", "unpack", "version"] },
-        "pipes": { "numClients": 1, "forkedJvmArgs": ["-Xmx1g", "-Xms128m"] },
-        "parse-context": {
-          "timeout-limits": { "totalTaskTimeoutMillis": 60000, "progressTimeoutMillis": 60000 }
-        }
-      }
+  # The parser service's network (docs/parser.md). `internal` = no NAT: the
+  # parser, which reads every untrusted file, has NO route out, by topology.
+  # It is attached here ONLY; the app services that send it files join this
+  # network as well as the default one (x-app-networks), so they reach it at
+  # parser:8095 and it reaches nothing.
+  parser:
+    name: mantle_parser_net
+    driver: bridge
+    internal: true
 
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
@@ -169,6 +151,14 @@ x-worker-healthcheck: &worker-healthcheck
   timeout: 5s
   retries: 3
   start_period: 60s
+
+# The networks of every app service: the default one (postgres, the object
+# store, each other) and the parser's internal one, so each can send a file
+# to the parser (packages/files/src/parser-client.ts). migrate parses nothing
+# and stays on the default network alone.
+x-app-networks: &app-networks
+  - default
+  - parser
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -233,13 +223,16 @@ x-app-env: &app-env
   MANTLE_NARROW_SYSTEM: ${MANTLE_NARROW_SYSTEM:-}
   # Toolsmith WRITES over MCP (default on; =0 exposes the kit read-only).
   MANTLE_MCP_TOOLSMITH_WRITE: ${MANTLE_MCP_TOOLSMITH_WRITE:-}
-  # Media sidecar (compose profile `media`) — yt-dlp + ffmpeg for video_ingest.
-  # Same posture as sandboxd above: always present so the tool can say "not
-  # enabled on this box" cleanly; with the profile off (or the token unset) it
-  # refuses instead of guessing.
-  MEDIA_SIDECAR_URL: ${MEDIA_SIDECAR_URL:-http://media:8095}
-  MEDIA_SIDECAR_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
-  # Which optional services (compose profiles: sandboxes, media) this box
+  # The parser service (below): every untrusted file the brain reads goes
+  # there, by service name on the parser's internal network. PARSER_TOKEN is
+  # the bearer both sides share (install.sh writes one; a roll provisions it
+  # when missing, and until then the parser serves without one on its
+  # internal network). PARSER_CLIENT_CONCURRENCY: jobs one process sends at
+  # once (default 2).
+  PARSER_URL: ${PARSER_URL:-http://parser:8095}
+  PARSER_TOKEN: ${PARSER_TOKEN:-}
+  PARSER_CLIENT_CONCURRENCY: ${PARSER_CLIENT_CONCURRENCY:-}
+  # Which optional services (compose profiles: sandboxes, local-embedder) this box
   # runs, as compose resolved COMPOSE_PROFILES when it created THIS container.
   # @mantle/config `serviceEnabled` reads the updater's LIVE
   # /signal/services.json first (every app service mounts the signal dir
@@ -249,6 +242,7 @@ x-app-env: &app-env
   MANTLE_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
   # DWF sheet-render resolution (50-600, default 300) — pair 600 with a
   # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf.ts.
+  # The brain reads it and sends it with each render to the parser.
   DWF_RENDER_DPI: ${DWF_RENDER_DPI:-}
   # Same dial for DWG model-space renders; see packages/files/src/dwg.ts.
   DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}
@@ -363,10 +357,7 @@ x-app-env: &app-env
   # the non-auth data API). OFF by default — same-origin clients need no CORS.
   # Set on a box that serves a detached dev frontend (docs/db-less-dev.md).
   MANTLE_API_CORS_ORIGINS: ${MANTLE_API_CORS_ORIGINS:-}
-  # Tika document-parser fallback (.odt / .doc / .rtf / .epub / …). Reached
-  # by service name on the internal docker network. See docs/file-ingestion.md.
-  TIKA_URL: http://tika:9998
-  # Browser sidecar (PDF export) — same pattern as Tika: reached by service
+  # Browser sidecar (PDF export): reached by service
   # name on the internal network, driven via puppeteer-core websocket. The
   # token gates nothing externally (no published port) but browserless
   # requires one; override with BROWSER_TOKEN in .env if desired.
@@ -509,47 +500,63 @@ services:
       # ERROR (503). Harmless; the grace period keeps it from counting.
       start_period: 10s
 
-  # Apache Tika — document-parser fallback for formats our in-process parsers
-  # don't cover (.odt / .ods / .odp / .ppt / .doc / .rtf / .epub / …, and the
-  # fallback for a .pptx the in-process reader cannot open).
-  # Self-hosted; bytes stay on the VPS. Stateless — no volume.
-  tika:
-    image: apache/tika:4.1.0-1
-    container_name: mantle_tika
+  # ── The parser service: reads every untrusted file (docs/parser.md) ───────
+  # Documents (pdfjs, mammoth, exceljs, anydoc and our own readers), CAD
+  # drawings (ezdxf, ezdwf, ezdwg, dwg2dxf), images (thumbnails, HEIC) and
+  # audio out of uploaded video (ffmpeg): every file the brain receives is
+  # opened HERE and nowhere else. It replaced Apache Tika and the media
+  # sidecar (2026-10). Core: no profile, always on, on every deploy shape.
+  #
+  # The safety guarantee is this container, not code in it:
+  #   - mem_limit / cpus: a document that blows up is OOM-killed by the
+  #     kernel inside this limit (the job, usually; the service if need be,
+  #     and `restart` brings it back). The brain reads that as `crashed`:
+  #     retried once, terminal the second time for the same bytes.
+  #   - networks: the internal `parser` network ONLY. No NAT, no route out:
+  #     a reader that is tricked into fetching gets nowhere.
+  #   - nothing mounted, no secret but its bearer token, an unprivileged
+  #     user, no capabilities, no new privileges.
+  # Inside it, cheap bounds only: a body cap, PARSER_MAX_JOBS jobs at once
+  # (each its own process, killed at its deadline), a short queue, then
+  # `busy`. Raise PARSER_MEM_LIMIT on a box that reads big drawing sets.
+  parser:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-parser:${MANTLE_IMAGE_TAG:-latest}
+    container_name: mantle_parser
     restart: unless-stopped
+    # tini as PID 1: it reaps a job's group-killed children (a Python CAD
+    # child, ffmpeg) when the job dies first.
+    init: true
     logging: *default-logging
-    command: ['-c', '/tika-config.json']
-    configs:
-      - source: tika_config
-        target: /tika-config.json
-    # Outer guardrail for BOTH JVMs: the parse fork (-Xmx1g, tika_config) and
-    # the parent (-Xmx256m below), each plus its non-heap. Measured on 4.1.0:
-    # idle ~250 MB, a 43 MB HTML or 2 MB / 20M-char ODT peaks ~1.2 GB, and the
-    # heap stays claimed afterwards (1.42 GB after two big parses), so the
-    # 3.x 1.5g cap was too tight. The fork exits after 60 s idle.
-    mem_limit: 2g
+    mem_limit: ${PARSER_MEM_LIMIT:-2g}
+    cpus: ${PARSER_CPUS:-2}
+    pids_limit: 512
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    networks:
+      - parser
     environment:
-      # The PARENT JVM. Tika 4 parses in a forked JVM whose heap comes from
-      # forkedJvmArgs in tika_config (the fork inherits this variable, but its
-      # own -Xmx wins). The parent only relays request and result, so it is
-      # kept small. JAVA_TOOL_OPTIONS not JAVA_OPTS: the launcher does not
-      # pass JAVA_OPTS on.
-      JAVA_TOOL_OPTIONS: '-Xmx256m -Xms64m'
+      PARSER_TOKEN: ${PARSER_TOKEN:-}
+      PARSER_MAX_JOBS: ${PARSER_MAX_JOBS:-}
+      PARSER_QUEUE_MAX: ${PARSER_QUEUE_MAX:-}
+      PARSER_MAX_UPLOAD_MB: ${PARSER_MAX_UPLOAD_MB:-}
+    # A wedged service (its event loop stuck) fails this probe and autoheal
+    # restarts it; a crashed one restarts on its own.
+    labels: ['autoheal=true']
     healthcheck:
-      # apache/tika image has only bash (no curl/wget/nc), so probe via
-      # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
       test:
-        - CMD
-        - bash
-        - -c
-        - 'exec 3<>/dev/tcp/localhost/9998 || exit 1; printf "GET /version HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; read -t 2 line <&3; [[ "$$line" == *"200 OK"* ]]'
-      interval: 10s
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8095/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 15s
       timeout: 5s
-      retries: 12
+      retries: 4
       start_period: 30s
 
-  # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
-  # exactly like Tika: a stateless, self-hosted service with its own memory
+  # Browser sidecar (browserless/chromium) — the PDF-export render engine: a
+  # stateless, self-hosted service with its own memory
   # space, session queue, and per-session hard timeout. server/web connects with
   # puppeteer-core over websocket (BROWSER_WS_ENDPOINT) and drives it to print
   # the owner-authed /print/pages/<id> surface — so the PDF reuses the live
@@ -578,61 +585,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
-
-  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine,
-  # behind the `media` profile (opt-in, like sandboxes). This is the ONE
-  # container allowed to run an auto-updating, network-facing binary that
-  # parses hostile input from the open web, and that is exactly why it is a
-  # sidecar: no DB, no secrets, no file-store mounts, no published ports — it
-  # takes a URL (or raw video bytes) and hands back captions/audio/video over
-  # a bearer-authed internal-only HTTP interface. yt-dlp refreshes from PyPI
-  # at boot + daily (see infra/media-sidecar/entrypoint.sh for why "always
-  # latest" is a hard requirement); the running version is on /healthz.
-  media:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-media:${MANTLE_IMAGE_TAG:-latest}
-    container_name: mantle_media
-    restart: unless-stopped
-    # tini as PID 1: a timed-out yt-dlp's group-killed ffmpeg reparents to
-    # init, which must reap it — the python server deliberately does NOT
-    # (SIGCHLD auto-reap would destroy subprocess return codes).
-    init: true
-    logging: *default-logging
-    profiles: ['media']
-    # Transcodes stream through temp files, never RAM; 1g covers ffmpeg
-    # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
-    # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
-    # a single buffer (<=64 MB) — bounded, but the one RAM-shaped payload
-    # this container now carries. ezdwf's PARSER is the real ceiling: stock
-    # 0.0.3 peaked at ~1.3 GB transient RSS on a 630 KB real plot set; the
-    # lazy-read fix (upstream since 0.0.5, pinned 0.0.9) brings that to
-    # ~0.54 GB. A bigger set can still exceed 1g: the child dies cleanly and
-    # the brain falls back to thumbnails. MEDIA_MEM_LIMIT raises it per box.
-    mem_limit: ${MEDIA_MEM_LIMIT:-1g}
-    environment:
-      MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
-      MEDIA_MAX_CONCURRENT: ${MEDIA_MAX_CONCURRENT:-2}
-    volumes:
-      # Optional YouTube cookies (datacenter-IP bot check): drop an exported
-      # cookies.txt at ${MANTLE_DATA_DIR}/media/cookies.txt and it is used
-      # read-only on the next request — no restart needed, remove the file to
-      # turn it off. The ONE operator-supplied credential this container may
-      # hold; see docs/video-ingest.md ("YouTube and the bot check").
-      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
-    healthcheck:
-      # python-slim has no curl/wget; probe with the interpreter itself.
-      test:
-        [
-          'CMD',
-          'python',
-          '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      # The listener binds immediately (boot pip refresh is backgrounded);
-      # 60s is margin for a slow image start, not for PyPI.
-      start_period: 60s
 
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
@@ -757,6 +709,7 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     logging: *default-logging
+    networks: *app-networks
     # The web tier also hosts every `pnpm maintain` run (docker exec into
     # mantle_web), and each tsx process loads the whole workspace (~300-400
     # MB). At the old fixed 1.5g, four maintenance runs at once OOM-restarted
@@ -778,10 +731,10 @@ services:
       # service needs it. Empty = no code asked for (a box installed before it).
       MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
       # The box's own COMPOSE_FILE, as compose resolved it for THIS `up` (from
-      # .env, the updater's rolls included). Web derives the deploy shape from
-      # it and MANTLE_COMPOSE_PROFILES (in the app-env anchor;
-      # lib/compose-shape.ts): on a core box without the helpers profile the
-      # onboarding check treats the shed Tika as optional.
+      # .env, the updater's rolls included). @mantle/config reads the deploy
+      # shape from it (with MANTLE_COMPOSE_PROFILES, in the app-env anchor)
+      # when the updater's services.json is not there: on a core box the
+      # PDF browser runs only with the helpers profile.
       MANTLE_COMPOSE_FILE: ${COMPOSE_FILE:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
@@ -1071,6 +1024,7 @@ services:
     # drain short. Takes effect when the container is next recreated (a roll).
     stop_grace_period: 50s
     logging: *default-logging
+    networks: *app-networks
     # A box carrying large Tables workbooks next to heavy extraction spiked
     # past the old 1.5g default: a cgroup OOM measured 2026-09-09 at ~1.46 GB
     # anon-rss killed the runtime mid-extract and left extract jobs stranded
@@ -1096,7 +1050,7 @@ services:
       MANTLE_SPACES_ROOT: /data/spaces
     volumes:
       # Live optional-service state, READ-ONLY (only web writes requests):
-      # services.json tells this process whether sandboxes/media are on
+      # services.json tells this process whether sandboxes are on
       # right now (@mantle/config services). Every app service mounts it.
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
@@ -1118,6 +1072,7 @@ services:
     # runner) before Docker sends SIGKILL; Docker's default is 10 s.
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1143,6 +1098,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1170,6 +1126,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1197,6 +1154,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1228,6 +1186,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1254,6 +1213,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1293,6 +1253,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1321,6 +1282,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -1365,6 +1327,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     labels:
@@ -1389,6 +1352,7 @@ services:
     # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
     stop_grace_period: 20s
     logging: *default-logging
+    networks: *app-networks
     mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe

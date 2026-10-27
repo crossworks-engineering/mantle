@@ -42,8 +42,9 @@
 #   floor:   a roll below v0.232.318 is refused with nothing changed while any
 #            client login exists (or they cannot be counted), unless .env says so
 #   prune:   after an OK roll only old mantle-server / mantle-client /
-#            mantle-media images go; the rollback set, the running set, the
-#            two newest of each and other repositories stay
+#            mantle-parser images go (the rollback set, the running set, the
+#            two newest of each and other repositories stay), and the removed
+#            media sidecar's images but its rollback one
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
@@ -896,9 +897,12 @@ docker() {
       case "$*" in
         *"config --services"*) printf "web\nupdater\n"; return 0 ;;
         *" up "*)
-          for c in mantle_web mantle_client_web mantle_media; do
+          for c in mantle_web mantle_client_web mantle_parser; do
             [ -f "$FAKE_STATE/$c.next" ] && cp "$FAKE_STATE/$c.next" "$FAKE_STATE/$c"
           done
+          # compose no longer defines the media sidecar: --remove-orphans
+          # removes mantle_media (unless a test keeps it).
+          [ -n "${FAKE_KEEP_MEDIA:-}" ] || rm -f "$FAKE_STATE/mantle_media"
           return 0 ;;
       esac
       return 0 ;;
@@ -1052,35 +1056,69 @@ check "never tried another repository (sandbox, rustfs, caddy)" sh -c "! grep -q
 check "never forced a removal" sh -c "! grep -qE 'rmi .*(-f|--force)' '$T/calls'"
 check "an image docker refuses (in use) is kept and logged" grep -q 'image prune: kept test/mantle-server:v4' "$T/sig/update.log"
 check "each removal is logged" grep -q 'image prune: removed test/mantle-server:v6' "$T/sig/update.log"
-check "no media container (media off): media images skipped, and says so" grep -q 'image prune: test/mantle-media skipped' "$T/sig/update.log"
+check "no parser container before the roll: parser images left alone, and says so" grep -q 'image prune: test/mantle-parser skipped' "$T/sig/update.log"
+
+roll_case parser
+# The parser runs p7 and the roll moves it to p8. p10 and p9 are the two
+# newest parser images (pre-pulled), p6 and a dangling p5 are old. Parser
+# tags sit below the server ones, so "the two newest" must be counted inside
+# mantle-parser, not over the whole list.
+echo sha256:P7 > "$T/state/mantle_parser"; echo sha256:P8 > "$T/state/mantle_parser.next"
+cat >> "$T/state/images" <<'IMGS'
+sha256:P10 test/mantle-parser:v10
+sha256:P9 test/mantle-parser:v9
+sha256:P8 test/mantle-parser:v8
+sha256:P7 test/mantle-parser:v7
+sha256:P6 test/mantle-parser:v6
+sha256:P5 test/mantle-parser:<none>
+IMGS
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "parser: roll ok" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "parser: removed the old parser tag and the dangling one" \
+  sh -c "grep -qx test/mantle-parser:v6 '$T/state/removed' && grep -qx sha256:P5 '$T/state/removed'"
+check "parser: kept the rollback (v7), the running (v8) and the two newest (v10, v9)" \
+  sh -c "! grep -qE 'mantle-parser:v(7|8|9|10)\$|^sha256:P(7|8|9|10)\$' '$T/state/removed'"
+check "parser: server and client prune unchanged, other repositories untouched" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:P5 sha256:S5 test/mantle-client:c1 test/mantle-parser:v6 test/mantle-server:v6 "
+check "parser: each removal is logged" grep -q 'image prune: removed test/mantle-parser:v6' "$T/sig/update.log"
 
 roll_case media
-# The media sidecar is on: mantle_media runs m7 and the roll moves it to m8.
-# m10 and m9 are the two newest media images (pre-pulled), m6 and a dangling
-# m5 are old. Media tags sit below the server ones, so "the two newest" must
-# be counted inside mantle-media, not over the whole list.
-echo sha256:M7 > "$T/state/mantle_media"; echo sha256:M8 > "$T/state/mantle_media.next"
+# The removed media sidecar ran m7 before this roll; the roll removes its
+# container (an orphan of the new compose). Its rollback image m7 is kept,
+# every other media image goes, the newest included: nothing runs them.
+echo sha256:M7 > "$T/state/mantle_media"
 cat >> "$T/state/images" <<'IMGS'
 sha256:M10 test/mantle-media:v10
 sha256:M9 test/mantle-media:v9
-sha256:M8 test/mantle-media:v8
 sha256:M7 test/mantle-media:v7
 sha256:M6 test/mantle-media:v6
 sha256:M5 test/mantle-media:<none>
 IMGS
 FAKE_TS=20260105-000000 roll_loop "$T"
-check "media: roll ok" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
-check "media: removed the old media tag and the dangling one" \
-  sh -c "grep -qx test/mantle-media:v6 '$T/state/removed' && grep -qx sha256:M5 '$T/state/removed'"
-check "media: kept the rollback (v7), the running (v8) and the two newest (v10, v9)" \
-  sh -c "! grep -qE 'mantle-media:v(7|8|9|10)\$|^sha256:M(7|8|9|10)\$' '$T/state/removed'"
-check "media: server and client prune unchanged, other repositories untouched" \
-  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:M5 sha256:S5 test/mantle-client:c1 test/mantle-media:v6 test/mantle-server:v6 "
-check "media: never tried another repository (sandbox, rustfs, caddy)" sh -c "! grep -qE 'rmi .*(sandbox|rustfs|caddy|X[123])' '$T/calls'"
-check "media: each removal is logged" grep -q 'image prune: removed test/mantle-media:v6' "$T/sig/update.log"
+check "media removed: roll ok" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "media removed: every media image but the rollback one goes" \
+  test "$(grep -E 'mantle-media|^sha256:M' "$T/state/removed" | sort | tr '\n' ' ')" = "sha256:M5 test/mantle-media:v10 test/mantle-media:v6 test/mantle-media:v9 "
+check "media removed: the rollback image (v7) is kept" sh -c "! grep -qE 'mantle-media:v7\$|^sha256:M7\$' '$T/state/removed'"
+check "media removed: each removal is logged" grep -q 'image prune: removed test/mantle-media:v6' "$T/sig/update.log"
+
+roll_case medianext
+# The roll after: no media container before it, so the rollback image goes too.
+cat >> "$T/state/images" <<'IMGS'
+sha256:M7 test/mantle-media:v7
+IMGS
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "media, the roll after: the last media image goes" grep -qx test/mantle-media:v7 "$T/state/removed"
+
+roll_case mediakept
+# A box where mantle_media survived the roll: none of its images is touched.
+echo sha256:M7 > "$T/state/mantle_media"
+printf 'sha256:M6 test/mantle-media:v6\n' >> "$T/state/images"
+FAKE_KEEP_MEDIA=1 FAKE_TS=20260105-000000 roll_loop "$T"
+check "media container still there: no media image removed, and says how to remove it" sh -c "
+  ! grep -q mantle-media '$T/state/removed' && grep -q 'docker rm -f mantle_media' '$T/sig/update.log'"
 
 roll_case mediaoff
-echo sha256:M7 > "$T/state/mantle_media"; echo sha256:M8 > "$T/state/mantle_media.next"
+echo sha256:M7 > "$T/state/mantle_media"
 printf 'sha256:M6 test/mantle-media:v6\n' >> "$T/state/images"
 printf 'MANTLE_IMAGE_PRUNE=0\n' >> "$T/stack/.env"
 FAKE_TS=20260105-000000 roll_loop "$T"
@@ -1098,15 +1136,16 @@ check "no running server before the roll: server images left alone" sh -c "! gre
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
 
 roll_case tokens
-# A compose whose app services read the live service state: the roll may now
-# provision the optional-service tokens (the refused case above already pins
-# that a refused roll writes nothing to .env, these included).
-printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$T/stack/docker-compose.yml"
+# A compose whose app services read the live service state and that runs the
+# parser: the roll may now provision the tokens (the refused case above
+# already pins that a refused roll writes nothing to .env, these included).
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n  parser:\n    container_name: mantle_parser\n' > "$T/stack/docker-compose.yml"
 cp "$T/stack/docker-compose.yml" "$T/stack/docker-compose.yml.release"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "OK roll on a live-state compose: status done" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
-check "OK roll: both optional-service tokens provisioned" sh -c "
-  grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env' && grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env'"
+check "OK roll: the sandboxes and parser tokens provisioned" sh -c "
+  grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env' && grep -qE '^PARSER_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env'"
+check "OK roll: no media token any more" sh -c "! grep -q MEDIA_SIDECAR_TOKEN '$T/stack/.env'"
 check "OK roll: tokens written before the pull that recreates the app containers" sh -c "
   test \"\$(grep -nE 'SANDBOXD_TOKEN provisioned' '$T/sig/update.log' | head -1 | cut -d: -f1)\" -lt \"\$(grep -n 'done → v8' '$T/sig/update.log' | head -1 | cut -d: -f1)\""
 check "OK roll: services.json refreshed, no profile switched on" sh -c "
@@ -1957,15 +1996,15 @@ check "--status names the running container" sh -c "test '$rc' = 0 && grep -q 'm
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: services.json, the live optional-service state"
-# The brain reads it as the truth for "is sandboxes/media on" (@mantle/config
+# The brain reads it as the truth for "is sandboxes on" (@mantle/config
 # services). It must be valid JSON, carry the profile (not the token) as the
 # switch, the container state from docker, and never a secret value.
 SV="$WORK/services"; fake_stack "$SV"
-printf 'COMPOSE_PROFILES= local-embedder, sandboxes ,\nCOMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\nSANDBOXD_TOKEN=sekrit-sandbox\nMEDIA_SIDECAR_TOKEN=\n' >> "$SV/stack/.env"
+printf 'COMPOSE_PROFILES= local-embedder, sandboxes ,\nCOMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\nSANDBOXD_TOKEN=sekrit-sandbox\n' >> "$SV/stack/.env"
 INSPECT_STUB='docker() {
   case "$1 $4" in
     "inspect mantle_sandboxd") echo "running healthy" ;;
-    "inspect mantle_media") echo "Error: No such object: mantle_media" >&2; return 1 ;;
+    "inspect mantle_browser") echo "Error: No such object: mantle_browser" >&2; return 1 ;;
     *) return 0 ;;
   esac
 }'
@@ -1978,8 +2017,9 @@ svc_field() { node -e "const j=JSON.parse(require('fs').readFileSync('$SJ','utf8
 check "profiles: trimmed, empty items dropped" test "$(svc_field 'j.profiles')" = "local-embedder,sandboxes"
 check "sandboxes: profile on, token present, running + healthy" \
   test "$(svc_field 'JSON.stringify(j.services.sandboxes)')" = '{"profile":true,"token":true,"container":"running","health":"healthy"}'
-check "media: profile off, empty token is no token, no container" \
-  test "$(svc_field 'JSON.stringify(j.services.media)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
+check "the removed media sidecar is not reported" test "$(svc_field 'String(j.services.media)')" = undefined
+check "helpers: the PDF browser's container, absent here" \
+  test "$(svc_field 'JSON.stringify(j.services.helpers)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
 check "local embedder: profile on, no token key at all, no container" \
   test "$(svc_field 'JSON.stringify(j.services["local-embedder"])')" = '{"profile":true,"token":false,"container":"absent","health":"none"}'
 check "helpers: reported (profile off on this core box)" \
@@ -1988,23 +2028,28 @@ check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
 check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
 check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
 
-echo "updater.sh: optional-service tokens provisioned on a roll"
+echo "updater.sh: optional-service and parser tokens provisioned on a roll"
 TK="$WORK/tokens"; fake_stack "$TK"
-printf 'SANDBOXD_TOKEN=keepme\nMEDIA_SIDECAR_TOKEN=\n' >> "$TK/stack/.env"
-# A compose WITHOUT the read-only signal mount: its brain reads "token set" as
-# "on", so nothing may be provisioned.
+printf 'SANDBOXD_TOKEN=\nPARSER_TOKEN=keepme\n' >> "$TK/stack/.env"
+# A compose WITHOUT the read-only signal mount or the parser: its brain reads
+# "token set" as "on", and it runs no parser, so nothing may be provisioned.
 updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
-check "old compose: no token written" grep -qx 'MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env"
+check "old compose: no token written" grep -qx 'SANDBOXD_TOKEN=' "$TK/stack/.env"
 check "old compose: the reason is logged" grep -q 'predates the live service state' "$TK/sig/update.log"
-printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$TK/stack/docker-compose.yml"
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n  parser:\n    container_name: mantle_parser\n' > "$TK/stack/docker-compose.yml"
 updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
-check "an existing token is never rotated" grep -qx 'SANDBOXD_TOKEN=keepme' "$TK/stack/.env"
-check "a missing token gets 64 hex chars" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$TK/stack/.env"
-check "one line per token" test "$(grep -c '^MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env")" = 1
+check "an existing token is never rotated" grep -qx 'PARSER_TOKEN=keepme' "$TK/stack/.env"
+check "a missing token gets 64 hex chars" grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}$' "$TK/stack/.env"
+check "one line per token" test "$(grep -c '^SANDBOXD_TOKEN=' "$TK/stack/.env")" = 1
 check ".env keeps mode 600" test "$(mode_of "$TK/stack/.env")" = 600
-tok1=$(sed -n 's/^MEDIA_SIDECAR_TOKEN=//p' "$TK/stack/.env")
+tok1=$(sed -n 's/^SANDBOXD_TOKEN=//p' "$TK/stack/.env")
 updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
-check "a second roll keeps the provisioned token" grep -qx "MEDIA_SIDECAR_TOKEN=$tok1" "$TK/stack/.env"
+check "a second roll keeps the provisioned token" grep -qx "SANDBOXD_TOKEN=$tok1" "$TK/stack/.env"
+TP="$WORK/tokens-parser"; fake_stack "$TP"
+printf 'services:\n  parser:\n    container_name: mantle_parser\n' > "$TP/stack/docker-compose.yml"
+updater_run "$TP/stack" "$TP/sig" "$TP/img" 'ensure_service_tokens' > /dev/null
+check "a compose that runs the parser: PARSER_TOKEN provisioned, 64 hex" grep -qE '^PARSER_TOKEN=[0-9a-f]{64}$' "$TP/stack/.env"
+check "PARSER_TOKEN provisioned whatever the live-state mount (core, no profile)" grep -q 'PARSER_TOKEN provisioned' "$TP/sig/update.log"
 check "gen_token: 64 hex, two calls differ" sh -c "
   a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
   b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
@@ -2042,8 +2087,8 @@ sleep() { :; }
 '
 svc_case() { # <name> <request-body>: a stack with tokens provisioned, no profiles
   T="$WORK/svc-$1"; fake_stack "$T"; mkdir -p "$T/state"; : > "$T/calls"
-  printf 'COMPOSE_PROFILES=local-embedder\nSANDBOXD_TOKEN=%s\nMEDIA_SIDECAR_TOKEN=%s\nMANTLE_DATA_DIR=./data\n' \
-    aaaa bbbb >> "$T/stack/.env"
+  printf 'COMPOSE_PROFILES=local-embedder\nSANDBOXD_TOKEN=%s\nMANTLE_DATA_DIR=./data\n' \
+    aaaa >> "$T/stack/.env"
   printf '%s\n' "$2" > "$T/sig/service-request.json"
   cp "$T/stack/.env" "$T/env.before"
 }
@@ -2057,49 +2102,49 @@ handle_service_request" > "$T/out" 2>&1
 st() { cat "$T/sig/service-status.json" 2>/dev/null; }
 
 for bad in '{"service":"postgres","enable":true}' '{"service":"media; rm -rf /","enable":true}' \
-           '{"service":"","enable":true}' 'not json at all'; do
+           '{"service":"media","enable":true}' '{"service":"","enable":true}' 'not json at all'; do
   svc_case badsvc "$bad"; svc_run
   check "whitelist: refuses service in $bad" grep -q '"phase":"error".*"ok":false,"error":"unknown service"' "$T/sig/service-status.json"
   check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
   check "whitelist: no docker call for $bad" sh -c "! grep -qE 'compose|stop|pull' '$T/calls'"
 done
-for bad in '{"service":"media","enable":"true"}' '{"service":"media","enable":1}' '{"service":"media"}' \
-           '{"service":"media","enable":yes}'; do
+for bad in '{"service":"sandboxes","enable":"true"}' '{"service":"sandboxes","enable":1}' '{"service":"sandboxes"}' \
+           '{"service":"sandboxes","enable":yes}'; do
   svc_case badenable "$bad"; svc_run
   check "whitelist: refuses the switch value in $bad" grep -q 'the switch must be true or false' "$T/sig/service-status.json"
   check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
 done
-svc_case consumed '{"service":"media","enable":true}'; svc_run
+svc_case consumed '{"service":"sandboxes","enable":true}'; svc_run
 check "the request is consumed" test ! -e "$T/sig/service-request.json"
 
 # ── on, the normal path: tokens already provisioned by a roll ──
-svc_case on '{"service":"media","enable":true}'; svc_run
-check "on: status done, ok true" grep -q '"phase":"done","service":"media","enable":true.*"ok":true' "$T/sig/service-status.json"
-check "on: the profile is added, the others kept" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
-check "on: tokens kept as they were" sh -c "grep -qx 'MEDIA_SIDECAR_TOKEN=bbbb' '$T/stack/.env' && grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env'"
+svc_case on '{"service":"sandboxes","enable":true}'; svc_run
+check "on: status done, ok true" grep -q '"phase":"done","service":"sandboxes","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "on: the profile is added, the others kept" grep -qx 'COMPOSE_PROFILES=local-embedder,sandboxes' "$T/stack/.env"
+check "on: the token kept as it was" grep -qx 'SANDBOXD_TOKEN=aaaa' "$T/stack/.env"
 check "on: .env backed up, mode 600" sh -c "ls '$T/stack/backups/env/'.env-* >/dev/null && test \"\$(stat -c %a '$T'/stack/backups/env/.env-* 2>/dev/null || stat -f %Lp '$T'/stack/backups/env/.env-*)\" = 600"
 check "on: the backup dir is private (0700) and the stack owner's" sh -c "
   test \"\$(stat -c %a '$T/stack/backups/env' 2>/dev/null || stat -f %Lp '$T/stack/backups/env')\" = 700 &&
   test \"\$(stat -c %u '$T/stack/backups/env' 2>/dev/null || stat -f %u '$T/stack/backups/env')\" = \"\$(stat -c %u '$T/stack' 2>/dev/null || stat -f %u '$T/stack')\""
 check "on: the backup is the .env from before" sh -c "cmp -s '$T/env.before' '$T'/stack/backups/env/.env-*"
-check "on: pulls only that service" grep -qE 'compose .*--profile media pull media$' "$T/calls"
-check "on: starts only that container (--no-deps)" grep -qE 'compose .*--profile media up -d --no-deps media$' "$T/calls"
+check "on: pulls only that service" grep -qE 'compose .*--profile sandboxes pull sandboxd$' "$T/calls"
+check "on: starts only that container (--no-deps)" grep -qE 'compose .*--profile sandboxes up -d --no-deps sandboxd$' "$T/calls"
 check "on: no other container recreated" sh -c "! grep -qE ' up -d [^-]' '$T/calls'"
-check "on: waited on the container's health" grep -q 'inspect .*mantle_media' "$T/calls"
-check "on: services.json says media is on" grep -q '"media":{"profile":true,"token":true' "$T/sig/services.json"
+check "on: waited on the container's health" grep -q 'inspect .*mantle_sandboxd' "$T/calls"
+check "on: services.json says sandboxes is on" grep -q '"sandboxes":{"profile":true,"token":true' "$T/sig/services.json"
 check "on: .env keeps mode 600" test "$(mode_of "$T/stack/.env")" = 600
 
-svc_case onagain '{"service":"media","enable":true}'
-sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_case onagain '{"service":"sandboxes","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run
-check "on when already on: profile not doubled" grep -qx 'COMPOSE_PROFILES=media' "$T/stack/.env"
+check "on when already on: profile not doubled" grep -qx 'COMPOSE_PROFILES=sandboxes' "$T/stack/.env"
 
 # ── on, first time on a box whose roll did not provision the token ──
-svc_case newtoken '{"service":"media","enable":true}'
-sed -i.bak 's/^MEDIA_SIDECAR_TOKEN=.*/MEDIA_SIDECAR_TOKEN=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_case newtoken '{"service":"sandboxes","enable":true}'
+sed -i.bak 's/^SANDBOXD_TOKEN=.*/SANDBOXD_TOKEN=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run
-check "new token: generated, 64 hex" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$T/stack/.env"
-check "new token: the app containers are recreated to carry it" grep -qE 'compose .*--profile media up -d web api worker_files$' "$T/calls"
+check "new token: generated, 64 hex" grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}$' "$T/stack/.env"
+check "new token: the app containers are recreated to carry it" grep -qE 'compose .*--profile sandboxes up -d web api worker_files$' "$T/calls"
 check "new token: never the updater or caddy" sh -c "! grep -E ' up -d ' '$T/calls' | grep -qE 'updater|caddy'"
 check "new token: status done" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
 
@@ -2126,37 +2171,37 @@ check "sandboxes on: a data dir with a space is refused, .env restored" sh -c "
 
 # ── on, every failure puts .env back and stops the container ──
 for f in PULL UP; do
-  svc_case "fail$f" '{"service":"media","enable":true}'
+  svc_case "fail$f" '{"service":"sandboxes","enable":true}'
   if [ "$f" = PULL ]; then FAKE_PULL_FAIL=1 svc_run; else FAKE_UP_FAIL=1 svc_run; fi
   check "on, $f fails: status error says it was switched off again" grep -q '"phase":"error".*switched off again and the settings were restored' "$T/sig/service-status.json"
   check "on, $f fails: .env restored byte for byte" same "$T/stack/.env" "$T/env.before"
-  check "on, $f fails: the container is stopped and removed" sh -c "grep -qE 'profile media stop media$' '$T/calls' && grep -qE 'profile media rm -f media$' '$T/calls'"
+  check "on, $f fails: the container is stopped and removed" sh -c "grep -qE 'profile sandboxes stop sandboxd$' '$T/calls' && grep -qE 'profile sandboxes rm -f sandboxd$' '$T/calls'"
 done
-svc_case unhealthy '{"service":"media","enable":true}'
+svc_case unhealthy '{"service":"sandboxes","enable":true}'
 FAKE_HEALTH='running unhealthy' svc_run
 check "on, unhealthy: refused with the reason, .env restored" sh -c "
   grep -q 'it did not become healthy: it reports unhealthy' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
-svc_case exited '{"service":"media","enable":true}'
+svc_case exited '{"service":"sandboxes","enable":true}'
 FAKE_HEALTH='exited none' svc_run
 check "on, the container exits: refused, names the state" grep -q 'the container is exited none' "$T/sig/service-status.json"
-svc_case slow '{"service":"media","enable":true}'
+svc_case slow '{"service":"sandboxes","enable":true}'
 printf 'MANTLE_SERVICE_HEALTH_TIMEOUT_S=6\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
 FAKE_HEALTH='running starting' svc_run
 check "on, never healthy: times out after the .env knob, .env restored" sh -c "
   grep -q 'not healthy after 6s' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
-check "on, never healthy: polled about every 3 s (2 checks for 6 s)" test "$(grep -c 'inspect .*mantle_media' "$T/calls")" -le 4
-svc_case disk '{"service":"media","enable":true}'
+check "on, never healthy: polled about every 3 s (2 checks for 6 s)" test "$(grep -c 'inspect .*mantle_sandboxd' "$T/calls")" -le 4
+svc_case disk '{"service":"sandboxes","enable":true}'
 SVC_PRE='free_kb() { echo 1024; }' svc_run
 check "on, low disk: refused, says how much, nothing changed" sh -c "
   grep -q 'not enough disk: 1 MB free, need 4096 MB' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -qE ' (pull|up|stop|rm) ' '$T/calls' && test ! -d '$T/stack/backups/env'"
 
 # ── off: stop, never remove; keep every piece of data ──
 svc_case off '{"service":"sandboxes","enable":false}'
-sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-embedder,sandboxes,media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-embedder,sandboxes,helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 printf 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
 FAKE_SANDBOX_IDS='c1 c2' svc_run
 check "off: status done" grep -q '"phase":"done","service":"sandboxes","enable":false.*"ok":true' "$T/sig/service-status.json"
-check "off: only that profile dropped" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
+check "off: only that profile dropped" grep -qx 'COMPOSE_PROFILES=local-embedder,helpers' "$T/stack/.env"
 check "off: token and host dir kept" sh -c "grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env' && grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' '$T/stack/.env'"
 check "off: running sandboxes are STOPPED" grep -qx 'docker stop -t 20 c1 c2' "$T/calls"
 check "off: only labelled sandbox containers are listed" grep -q 'ps -q --filter label=mantle.sandbox=true' "$T/calls"
@@ -2164,17 +2209,15 @@ check "off: no sandbox container is removed" sh -c "! grep -E 'docker (rm|contai
 check "off: the only rm is the sandboxd service container" sh -c "test \"\$(grep -c ' rm ' '$T/calls')\" = 1 && grep -qE 'profile sandboxes rm -f sandboxd$' '$T/calls'"
 check "off: nothing is pulled or started" sh -c "! grep -qE ' pull | up ' '$T/calls'"
 check "off: services.json says off" grep -q '"sandboxes":{"profile":false,"token":true' "$T/sig/services.json"
-svc_case offlast '{"service":"media","enable":false}'
-sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_case offlast '{"service":"local-embedder","enable":false}'
 svc_run
 check "off, the last profile: COMPOSE_PROFILES empties" grep -qx 'COMPOSE_PROFILES=' "$T/stack/.env"
-check "off, media: no sandbox is touched" sh -c "! grep -qF 'label=mantle.sandbox' '$T/calls'"
-svc_case offfail '{"service":"media","enable":false}'
-sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+check "off, the embedder: no sandbox is touched" sh -c "! grep -qF 'label=mantle.sandbox' '$T/calls'"
+svc_case offfail '{"service":"local-embedder","enable":false}'
 cp "$T/stack/.env" "$T/env.before"
 FAKE_STOP_FAIL=1 svc_run
 check "off, stop fails: status error, .env unchanged" sh -c "
-  grep -q 'could not stop media; nothing changed in .env' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+  grep -q 'could not stop ollama; nothing changed in .env' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
 svc_case sbxstopfail '{"service":"sandboxes","enable":false}'
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 cp "$T/stack/.env" "$T/env.before"
@@ -2184,15 +2227,15 @@ check "off, a sandbox will not stop: sandboxd left running, .env unchanged" sh -
 
 # ── the local embedder: no token, and the model pull after it is healthy ──
 svc_case emb '{"service":"local-embedder","enable":true}'
-sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run
 check "embedder on: status done" grep -q '"phase":"done","service":"local-embedder","enable":true.*"ok":true' "$T/sig/service-status.json"
-check "embedder on: the profile is added" grep -qx 'COMPOSE_PROFILES=media,local-embedder' "$T/stack/.env"
+check "embedder on: the profile is added" grep -qx 'COMPOSE_PROFILES=sandboxes,local-embedder' "$T/stack/.env"
 check "embedder on: pulls and starts ollama only" sh -c "
   grep -qE 'compose .*--profile local-embedder pull ollama$' '$T/calls' && grep -qE 'compose .*--profile local-embedder up -d --no-deps ollama$' '$T/calls'"
 check "embedder on: waits on mantle_ollama, then runs the model pull" sh -c "
   grep -q 'inspect .*mantle_ollama\$' '$T/calls' && grep -qE 'up -d --no-deps ollama_pull$' '$T/calls'"
-check "embedder on: no token is written" sh -c "! grep -q 'TOKEN=' '$T/stack/.env' || test \"\$(grep -c 'TOKEN=' '$T/stack/.env')\" = 2"
+check "embedder on: no token is written" sh -c "! grep -q 'TOKEN=' '$T/stack/.env' || test \"\$(grep -c 'TOKEN=' '$T/stack/.env')\" = 1"
 check "embedder on: the model is ready" grep -q 'the embedding model is ready' "$T/sig/service.log"
 check "embedder on: services.json says on" grep -q '"local-embedder":{"profile":true,"token":false' "$T/sig/services.json"
 svc_case embpull '{"service":"local-embedder","enable":true}'
@@ -2210,7 +2253,7 @@ svc_run
 check "embedder off: profile dropped, ollama stopped and removed, the model volume untouched" sh -c "
   grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env' && grep -qE 'profile local-embedder stop ollama$' '$T/calls' && grep -qE 'profile local-embedder rm -f ollama$' '$T/calls' && ! grep -q 'volume' '$T/calls'"
 
-# ── the helpers: a core box only, two containers ──
+# ── the helper: a core box only, the PDF browser ──
 svc_case helpfull '{"service":"helpers","enable":false}'
 svc_run
 check "helpers on a full box: refused, nothing to switch" grep -q 'the helpers always run on this box' "$T/sig/service-status.json"
@@ -2221,15 +2264,15 @@ printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/
 svc_run
 check "helpers on a core box: status done" grep -q '"phase":"done","service":"helpers","enable":true.*"ok":true' "$T/sig/service-status.json"
 check "helpers on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,helpers' "$T/stack/.env"
-check "helpers on: pulls and starts both, as two arguments" sh -c "
-  grep -qE 'profile helpers pull tika browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps tika browser$' '$T/calls'"
-check "helpers on: waits on both containers" sh -c "grep -q 'inspect .*mantle_tika\$' '$T/calls' && grep -q 'inspect .*mantle_browser\$' '$T/calls'"
+check "helpers on: pulls and starts the browser alone" sh -c "
+  grep -qE 'profile helpers pull browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps browser$' '$T/calls' && ! grep -q tika '$T/calls'"
+check "helpers on: waits on the browser" grep -q 'inspect .*mantle_browser$' "$T/calls"
 svc_case helpoff '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run
-check "helpers off: both stopped and removed, profile dropped" sh -c "
-  grep -qE 'profile helpers stop tika browser$' '$T/calls' && grep -qE 'profile helpers rm -f tika browser$' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
+check "helpers off: the browser stopped and removed, profile dropped" sh -c "
+  grep -qE 'profile helpers stop browser$' '$T/calls' && grep -qE 'profile helpers rm -f browser$' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
 svc_case helpfullprof '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=full,helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
@@ -2239,18 +2282,18 @@ check "helpers with the full profile on: refused, .env untouched" sh -c "
   grep -q 'the helpers always run on this box' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
 
 # ── unconfigured, and the real poll loop ──
-svc_case unconf '{"service":"media","enable":true}'
+svc_case unconf '{"service":"sandboxes","enable":true}'
 rm "$T/stack/docker-compose.yml"
 svc_run
 check "unconfigured updater: refused with the reason" grep -q 'updater not configured' "$T/sig/service-status.json"
-svc_case loop '{"service":"media","enable":true}'
+svc_case loop '{"service":"sandboxes","enable":true}'
 for s in $SCRIPTS; do printf '#!/bin/sh\n' > "$T/stack/scripts/$s"; done
 MANTLE_STACK_DIR="$T/stack" MANTLE_SIGNAL_DIR="$T/sig" CALLS="$T/calls" "$SH" -c "$SVC_STUB
 sleep() { exit 0; }
 . '$ROOT/infra/updater/updater.sh'" > "$T/loop.out" 2>&1
-check "poll loop: a service request is handled" grep -q '"phase":"done","service":"media"' "$T/sig/service-status.json"
+check "poll loop: a service request is handled" grep -q '"phase":"done","service":"sandboxes"' "$T/sig/service-status.json"
 check "poll loop: the request is consumed" test ! -e "$T/sig/service-request.json"
-check "poll loop: the update status is untouched by a switch" sh -c "! grep -q media '$T/sig/status.json'"
+check "poll loop: the update status is untouched by a switch" sh -c "! grep -q sandboxes '$T/sig/status.json'"
 check "the updater advertises the service verb" grep -q '"verbs":\["roll","service"\]' "$T/sig/services.json"
 
 # ═════════════════════════════════════════════════════════════════════════════

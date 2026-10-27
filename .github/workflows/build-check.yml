@@ -1,7 +1,7 @@
 # CI build-check — validate a change BEFORE it can reach a deploy.
 #
 # Runs typecheck + lint (ESLint) + format check (Prettier) + the architecture
-# counts + the media sidecar's Python tests + the full vitest suite (and the
+# counts + the parser's CAD tier Python tests + the full vitest suite (and the
 # write-path cells again with the actor check off, on, and with the edit
 # check on) + the server/web PRODUCTION
 # build (the edge-runtime / webpack gate that
@@ -99,19 +99,19 @@ jobs:
       - name: Architecture counts
         run: pnpm arch:check
 
-      # The media sidecar's DWG bones (infra/media-sidecar/dwg_bones.py): the
+      # The parser's CAD tier (server/parser/cad): the DWG bones'
       # network and circuit rules, and the registry on synthetic DXF files
       # the test writes itself; and the image check's crops (dwg_crop.py),
       # rendered with matplotlib. Same ezdxf and matplotlib pins as the
-      # media image; the env makes a missing one a failure here instead of
+      # parser image; the env makes a missing one a failure here instead of
       # a skip. Seconds.
-      - name: Media sidecar tests
+      - name: Parser CAD tier tests
         env:
-          MEDIA_TESTS_REQUIRE_EZDXF: '1'
+          PARSER_TESTS_REQUIRE_CAD: '1'
         run: |
-          python3 -m venv /tmp/media-venv
-          /tmp/media-venv/bin/pip install --quiet "ezdxf==1.4.5" "matplotlib==3.11.2"
-          /tmp/media-venv/bin/python -m unittest discover -s infra/media-sidecar/tests -v
+          python3 -m venv /tmp/cad-venv
+          /tmp/cad-venv/bin/pip install --quiet "ezdxf==1.4.5" "matplotlib==3.11.2"
+          /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose
       # service's own command, through tsx) up to the point where its import

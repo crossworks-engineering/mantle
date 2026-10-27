@@ -62,10 +62,15 @@ export const SKIP = {
     'imports no workspace package (node: builtins and its own files only) and has no @mantle/config to read the switch (server/sandboxd)',
 };
 
-/** Entries no compose service runs, smoked the way they are started:
+/** Entries no mantle-server service runs, smoked the way they are started:
  *  the stdio MCP server is spawned by a client, on a box as
- *  `docker exec -i mantle_web pnpm -C server/mcp start` (docs/connecting-claude.md). */
-export const EXTRA = [{ name: 'mcp-stdio', command: ['pnpm', '-C', 'server/mcp', 'start'] }];
+ *  `docker exec -i mantle_web pnpm -C server/mcp start` (docs/connecting-claude.md);
+ *  the parser service runs on its own image (mantle-parser, the Dockerfile's
+ *  parser stage) with this command. */
+export const EXTRA = [
+  { name: 'mcp-stdio', command: ['pnpm', '-C', 'server/mcp', 'start'] },
+  { name: 'parser', command: ['pnpm', '-C', 'server/parser', 'exec', 'tsx', 'src/main.ts'] },
+];
 
 /** The image every app service runs. */
 const SERVER_IMAGE = /\/mantle-server:/;

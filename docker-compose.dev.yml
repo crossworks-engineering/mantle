@@ -3,23 +3,16 @@
 # to be identical, and on a host that also runs a live prod stack, `docker
 # compose -f docker-compose.dev.yml up` would RECREATE the prod containers and
 # take the live brain down (2026-07-02 dev-box incident). Host ports (54323 /
-# 9000 / 9001 / 9998) are unchanged, so existing .env.local files keep working.
+# 9000 / 9001) are unchanged, so existing .env.local files keep working.
 name: mantle-dev
 
-# Mantle dev infra: Postgres + the object store (RustFS) + Tika.
-# server/web, server/mcp, and workers run as native Node via `pnpm dev`.
-# Bring everything up with `pnpm up` (which runs scripts/up.sh).
-
-configs:
-  tika_config:
-    content: |
-      {
-        "server": { "endpoints": ["tika", "unpack", "version"] },
-        "pipes": { "numClients": 1, "forkedJvmArgs": ["-Xmx512m", "-Xms128m"] },
-        "parse-context": {
-          "timeout-limits": { "totalTaskTimeoutMillis": 60000, "progressTimeoutMillis": 60000 }
-        }
-      }
+# Mantle dev infra: Postgres + the object store (RustFS) + the PDF browser.
+# server/web, server/mcp, the workers AND the parser service (server/parser)
+# run as native Node via `pnpm dev`; the parser listens on 127.0.0.1:8095.
+# Its CAD and audio jobs need python3 with ezdxf, ezdwf and matplotlib,
+# dwg2dxf and ffmpeg on the dev machine; without them those jobs fail typed
+# and documents still read. Bring everything up with `pnpm up` (which runs
+# scripts/up.sh).
 
 services:
   postgres:
@@ -138,48 +131,8 @@ services:
       # ERROR (503). Harmless; the grace period keeps it from counting.
       start_period: 10s
 
-  # Apache Tika — the third-tier document parser (the first two being our
-  # in-process pdf-parse / mammoth / SheetJS, and the vision worker for
-  # scanned PDFs). Used as a fallback for formats those can't handle:
-  # .odt / .ods / .odp (LibreOffice), .pptx / .ppt, .doc (legacy Word),
-  # .rtf, .epub, plus the long-tail Tika supports. Self-hosted, stateless
-  # — bytes never leave the VPS. See docs/file-ingestion.md.
-  tika:
-    image: apache/tika:4.1.0-1
-    container_name: mantle_dev_tika
-    restart: unless-stopped
-    # Same Tika 4 settings as docker-compose.yml (see the tika_config comment
-    # there), with the dev fork heap kept at 512m. Tika 4 parses in a forked
-    # JVM: its heap is forkedJvmArgs, and JAVA_TOOL_OPTIONS below sizes only
-    # the parent, which relays bytes. JAVA_TOOL_OPTIONS rather than JAVA_OPTS
-    # because the launcher does not pass JAVA_OPTS on.
-    command: ['-c', '/tika-config.json']
-    configs:
-      - source: tika_config
-        target: /tika-config.json
-    environment:
-      JAVA_TOOL_OPTIONS: "-Xmx256m -Xms64m"
-    ports:
-      # 9998 on the host. server/web + workers run as native Node in dev
-      # and reach Tika here. TIKA_URL in .env.local must match.
-      - "127.0.0.1:9998:9998"
-    healthcheck:
-      # apache/tika image has only bash (no curl/wget/nc), so probe via
-      # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
-      # CMD (not CMD-SHELL) so we invoke bash explicitly — /dev/tcp is
-      # bash-specific and not available in /bin/sh.
-      test:
-        - CMD
-        - bash
-        - -c
-        - 'exec 3<>/dev/tcp/localhost/9998 || exit 1; printf "GET /version HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; read -t 2 line <&3; [[ "$$line" == *"200 OK"* ]]'
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
-  # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
-  # exactly like Tika: a stateless, self-hosted service with its own memory
+  # Browser sidecar (browserless/chromium) — the PDF-export render engine: a
+  # stateless, self-hosted service with its own memory
   # space, session queue, and per-session timeout. server/web connects with
   # puppeteer-core over websocket and drives it to print the owner-authed
   # /print/pages/<id> surface. See server/web/lib/render-pdf.ts.
@@ -212,42 +165,3 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
-
-  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine.
-  # Built locally from the repo's `media` Dockerfile stage (prod pulls the
-  # published mantle-media image instead). Loopback-published like tika; the
-  # native-node dev server connects via
-  # MEDIA_SIDECAR_URL=http://127.0.0.1:8095 + MEDIA_SIDECAR_TOKEN=mantle in
-  # .env.local. Dev-only token — the port is loopback-published, so this is a
-  # formality the app requires, not a security boundary.
-  media:
-    build:
-      context: .
-      target: media
-    container_name: mantle_dev_media
-    restart: unless-stopped
-    # tini reaps group-killed yt-dlp/ffmpeg orphans (see prod compose note).
-    init: true
-    mem_limit: 1g
-    environment:
-      MEDIA_TOKEN: mantle
-    volumes:
-      # Optional YouTube cookies for dev — ./data/media/cookies.txt (see the
-      # prod compose note + docs/video-ingest.md).
-      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
-    ports:
-      - "127.0.0.1:8095:8095"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      # The listener binds immediately (boot pip refresh is backgrounded);
-      # 60s is margin for a slow image start, not for PyPI.
-      start_period: 60s
