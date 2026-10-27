@@ -372,15 +372,14 @@ function agentFace(avatar: unknown, slug: string, style: unknown): MessengerAvat
   return { style: readAvatarStyle(style), seed, parts: projectAvatarParts(a.parts) ?? null };
 }
 
-/** Logins' names and faces, one query. */
-async function loginFaces(
+/** Logins' names and face columns, one query (the workspace role reads
+ *  only its own profile row). */
+async function loginFaceRows(
   ownerId: string,
   ids: readonly string[],
-): Promise<
-  Map<string, { name: string; avatar: MessengerAvatarView | null; photoVersion: string | null }>
-> {
-  if (ids.length === 0) return new Map();
-  const rows = await q<{ id: string; name: string } & LoginFaceRow>(
+): Promise<({ id: string; name: string } & LoginFaceRow)[]> {
+  if (ids.length === 0) return [];
+  return q<{ id: string; name: string } & LoginFaceRow>(
     systemDb,
     sql`select u.id::text as id,
                coalesce(nullif(btrim(u.display_name), ''), split_part(coalesce(u.email, ''), '@', 1), 'User') as name,
@@ -389,6 +388,16 @@ async function loginFaces(
           left join profiles pr on pr.user_id = u.id
          where u.id = any(${uuidArray(ids)})`,
   );
+}
+
+/** Logins' names and faces. */
+async function loginFaces(
+  ownerId: string,
+  ids: readonly string[],
+): Promise<
+  Map<string, { name: string; avatar: MessengerAvatarView | null; photoVersion: string | null }>
+> {
+  const rows = await loginFaceRows(ownerId, ids);
   return new Map(rows.map((r) => [r.id, { name: r.name, ...loginFace(r) }]));
 }
 
@@ -1966,7 +1975,7 @@ async function messengerSeesLogin(actor: MessengerActor, loginId: string): Promi
  * sees that login (messengerSeesLogin) and it has a photo; null otherwise,
  * with no difference between "no such login", "not yours to see" and "no
  * photo" (the route answers each with the one 404). The profile row is
- * read on the system pool: the workspace role reads only its own.
+ * read on the system pool (loginFaceRows), only after the check.
  */
 export async function messengerLoginPhoto(
   actor: MessengerActor,
@@ -1975,12 +1984,7 @@ export async function messengerLoginPhoto(
   if (!isUuid(loginId)) return null;
   const target = loginId.toLowerCase();
   if (!(await messengerSeesLogin(actor, target))) return null;
-  const [row] = await q<{ photo_key: unknown; photo_type: unknown }>(
-    systemDb,
-    sql`select pr.preferences->'avatarPhotoKey' as photo_key,
-               pr.preferences->'avatarPhotoType' as photo_type
-          from profiles pr where pr.user_id = ${target}::uuid`,
-  );
+  const [row] = await loginFaceRows(actor.ownerId, [target]);
   const key = projectLogoKey(row?.photo_key);
   const type = projectAvatarPhotoType(row?.photo_type);
   const version = logoVersion(key);
