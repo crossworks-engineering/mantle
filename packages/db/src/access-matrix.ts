@@ -323,6 +323,55 @@ export type NarrowWrite = {
 };
 
 export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freeze({
+  // The messenger (0335): @mantle/content/messenger writes its own tables
+  // on systemDb in the login's request or MCP call, each statement under
+  // the participant rule it checked in the same transaction (lockForActor).
+  'public.messenger_conversations': {
+    insert: true,
+    update: ['title', 'last_seq', 'last_message_at', 'last_preview', 'archived_at'],
+    delete: false,
+    why: 'a chat made (create), its counters moved by a send, its title, its archive when the last person leaves',
+  },
+  'public.messenger_participants': {
+    insert: true,
+    update: [
+      'last_read_seq',
+      'mention_seq',
+      'cleared_before_seq',
+      'muted',
+      'left_at',
+      'left_seq',
+      'admin',
+      'joined_at',
+      'added_by',
+    ],
+    delete: false,
+    why: "a chat's people: added, removed, leaving, admin handed on; a login's own cursor, clear and mute",
+  },
+  'public.messenger_messages': {
+    insert: true,
+    update: ['body', 'edited_at', 'deleted_at', 'mentions', 'attachments'],
+    delete: true,
+    why: "a send, an edit or a delete by its author, a group admin's delete; a group admin's history delete removes rows",
+  },
+  'public.messenger_reactions': {
+    insert: true,
+    update: [],
+    delete: true,
+    why: "a login's own reaction toggled on and off",
+  },
+  'public.messenger_favourites': {
+    insert: true,
+    update: ['rank'],
+    delete: true,
+    why: "a login's own pins of its chat list",
+  },
+  'public.login_presence': {
+    insert: true,
+    update: ['last_active_at'],
+    delete: false,
+    why: "the messenger stream's heartbeat marks its own login online",
+  },
   'auth.users': {
     update: ['disabled_at', 'session_epoch'],
     delete: false,
@@ -849,6 +898,10 @@ export const NARROW_NEVER_INSERT: readonly string[] = Object.freeze([
  * runtime-role.test.ts fails on one not listed.
  */
 export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.freeze({
+  'public.messenger_reactions':
+    "a login's own reaction on a message of a chat it is in (the messenger module checks the participant row first); a delete and reinsert gives nothing a plain insert does not: a reaction opens no chat and grants no right (row security keys every read on the participant row)",
+  'public.messenger_favourites':
+    "a login's own pin of its chat list (a conversation it is in, an agent it may chat with, checked by the messenger module); a delete and reinsert gives nothing a plain insert does not: a pin opens no chat and grants no right",
   'public.tailscale_config':
     "its sealed auth key and every other column were already the narrow login's to update (the settings area sets the key); a delete and insert again gives nothing an update does not",
   'public.calendar_accounts':

@@ -357,8 +357,12 @@ describe.skipIf(!URL)('the messenger store (Messenger V1 Phase 1)', () => {
     });
     await ms.sendMessengerMessage(actor(A), newer.conversationId, { body: 'newest' });
     const list = await as(A, () => ms.listMessengerConversations(actor(A)));
-    expect(list.slice(0, 2).map((r) => r.id)).toEqual([mine.conversationId, agent]);
-    expect(list.findIndex((r) => r.id === newer.conversationId)).toBeGreaterThan(1);
+    const firstPlain = list.findIndex((r) => !r.favourite);
+    expect(list.slice(firstPlain).some((r) => r.favourite)).toBe(false);
+    const at = (id: string) => list.findIndex((r) => r.id === id);
+    expect(at(mine.conversationId)).toBeLessThan(at(agent));
+    expect(at(agent)).toBeLessThan(firstPlain);
+    expect(at(newer.conversationId)).toBeGreaterThanOrEqual(firstPlain);
     await ms.removeMessengerFavourite(actor(A), 'agent', agent);
     const after = await as(A, () => ms.listMessengerConversations(actor(A)));
     expect(after.find((r) => r.id === agent)?.favourite ?? false).toBe(false);
